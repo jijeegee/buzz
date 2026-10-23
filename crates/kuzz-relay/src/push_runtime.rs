@@ -97,6 +97,8 @@ struct MatchContext {
     leases: Vec<kuzz_db::push::MatchLease>,
     memberships: std::collections::HashSet<(uuid::Uuid, Vec<u8>)>,
     blocked_pairs: std::collections::HashSet<(Vec<u8>, Vec<u8>)>,
+    /// (event id, reader) pairs the reader cannot read (since_join history).
+    hidden_pairs: std::collections::HashSet<(Vec<u8>, Vec<u8>)>,
 }
 
 async fn load_match_context(
@@ -114,12 +116,38 @@ async fn load_match_context(
     let mut authors: Vec<Vec<u8>> = leases.iter().map(|lease| lease.author.clone()).collect();
     authors.sort_unstable();
     authors.dedup();
-    let memberships = state
+    let memberships: std::collections::HashSet<(uuid::Uuid, Vec<u8>)> = state
         .db
         .membership_pairs(batch.community, &channels, &authors)
         .await?
         .into_iter()
         .collect();
+    // since_join: a member is not woken for history they cannot read (a
+    // reply in a thread from before their join, or a reaction to one).
+    let (mut pair_events, mut pair_readers) = (Vec::new(), Vec::new());
+    for job in &batch.jobs {
+        let Some(channel) = job.event.channel_id else {
+            continue;
+        };
+        for author in &authors {
+            if memberships.contains(&(channel, author.clone())) {
+                pair_events.push(job.event.event.id.as_bytes().to_vec());
+                pair_readers.push(author.clone());
+            }
+        }
+    }
+    let mut hidden_pairs = std::collections::HashSet::new();
+    for (events, readers) in pair_events
+        .chunks(kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP)
+        .zip(pair_readers.chunks(kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP))
+    {
+        hidden_pairs.extend(
+            state
+                .db
+                .history_hidden_pairs(batch.community, events, readers)
+                .await?,
+        );
+    }
     let mut event_authors: Vec<Vec<u8>> = batch
         .jobs
         .iter()
@@ -137,6 +165,7 @@ async fn load_match_context(
         leases,
         memberships,
         blocked_pairs,
+        hidden_pairs,
     })
 }
 
@@ -282,6 +311,14 @@ fn match_job(
             if !context
                 .memberships
                 .contains(&(channel, lease.author.clone()))
+            {
+                continue;
+            }
+            if !context.hidden_pairs.is_empty()
+                && context.hidden_pairs.contains(&(
+                    job.event.event.id.as_bytes().to_vec(),
+                    lease.author.clone(),
+                ))
             {
                 continue;
             }
@@ -825,6 +862,7 @@ mod tests {
             )]
             .into_iter()
             .collect(),
+            hidden_pairs: Default::default(),
         };
         let job = |author: &nostr::Keys| kuzz_db::push::BatchedMatch {
             event: kuzz_core::StoredEvent::new(

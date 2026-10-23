@@ -71,6 +71,19 @@ export function describeGoalsChange(
 }
 
 /**
+ * Caption for a group's earlier-message visibility. The relay reports the new
+ * value as `"all"` or `"since_join"`; anything else is not a caption this row
+ * can state.
+ */
+export function describeHistoryChange(
+  value: string | null | undefined,
+): string | null {
+  if (value === "all") return t("messages.system.historyAll");
+  if (value === "since_join") return t("messages.system.historySinceJoin");
+  return null;
+}
+
+/**
  * Adjusts a resolved display name for use inside a sentence rather than in the
  * name slot at the top of a row — "added by you", "removed you from the channel".
  *

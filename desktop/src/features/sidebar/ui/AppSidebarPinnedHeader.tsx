@@ -1,5 +1,6 @@
 import type { ChatListRow } from "@/features/chats/chatListState";
 import { TopbarSearch } from "@/features/search/ui/TopbarSearch";
+import type { ChatStateBinding } from "@/shared/api/chatState";
 import type { Channel, SearchHit } from "@/shared/api/types";
 
 type AppSidebarPinnedHeaderProps = {
@@ -18,6 +19,7 @@ type AppSidebarPinnedHeaderProps = {
   scopeSearchFocusRequest: number;
   suggestionChannels: Channel[];
   threadRows?: readonly ChatListRow[];
+  threadSearchBinding?: ChatStateBinding | null;
 };
 
 export function AppSidebarPinnedHeader({
@@ -36,6 +38,7 @@ export function AppSidebarPinnedHeader({
   scopeSearchFocusRequest,
   suggestionChannels,
   threadRows,
+  threadSearchBinding,
 }: AppSidebarPinnedHeaderProps) {
   return (
     <div
@@ -58,6 +61,7 @@ export function AppSidebarPinnedHeader({
         scopeFocusRequest={scopeSearchFocusRequest}
         suggestionChannels={suggestionChannels}
         threadRows={threadRows}
+        threadSearchBinding={threadSearchBinding}
       />
     </div>
   );

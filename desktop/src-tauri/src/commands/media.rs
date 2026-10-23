@@ -302,6 +302,73 @@ pub(crate) fn detect_and_validate_mime(body: &[u8]) -> Result<String, String> {
 /// a 401 or 403 from the server (expired/rejected token), using a single fresh mint+retry.
 pub(crate) const MEDIA_GET_AUTH_EXPIRY_SECS: u64 = 60;
 
+/// A signed read header is reused for at most this long: well inside its
+/// lifetime, so a server clock running ahead does not see it expired.
+const MEDIA_GET_AUTH_CACHE_SECS: u64 = 30;
+
+/// Device-tagged `t=get` headers per `"{user pubkey} {server}"` with the
+/// time they were signed (one device signature per server and half minute
+/// rather than per media read, as on Android).
+static MEDIA_GET_AUTH_CACHE: std::sync::Mutex<
+    Option<std::collections::HashMap<String, (String, u64)>>,
+> = std::sync::Mutex::new(None);
+
+/// The cached header for `key` when it is still good at `now`. Pure.
+fn reusable_get_auth(
+    cache: &std::collections::HashMap<String, (String, u64)>,
+    key: &str,
+    now: u64,
+) -> Option<String> {
+    cache
+        .get(key)
+        .filter(|(_, signed_at)| {
+            (*signed_at..*signed_at + MEDIA_GET_AUTH_CACHE_SECS).contains(&now)
+        })
+        .map(|(header, _)| header.clone())
+}
+
+/// [`sign_blossom_get_auth_header`] for media reads, reusing a device-tagged
+/// header for up to [`MEDIA_GET_AUTH_CACHE_SECS`]. Without a device key (or
+/// a tag) every read is signed afresh, as before. `fresh` (a retry after the
+/// server refused a header) drops the cached one and signs a new one.
+fn cached_get_auth_header(keys: &Keys, base_url: &str, fresh: bool) -> Result<String, String> {
+    if crate::device_key::current().is_none() {
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
+    }
+    let Some(server) = extract_server_authority(base_url) else {
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
+    };
+    let key = format!("{} {server}", keys.public_key().to_hex());
+    let now = Timestamp::now().as_secs();
+    let lock = || {
+        MEDIA_GET_AUTH_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    if fresh {
+        lock().get_or_insert_with(Default::default).remove(&key);
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
+    }
+    if let Some(header) = lock()
+        .as_ref()
+        .and_then(|cache| reusable_get_auth(cache, &key, now))
+    {
+        return Ok(header);
+    }
+    let event = sign_blossom_get_auth_event(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS)?;
+    let header = blossom_header(&event);
+    let tagged = event
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice().first().map(String::as_str) == Some("device"));
+    if tagged {
+        lock()
+            .get_or_insert_with(Default::default)
+            .insert(key, (header.clone(), now));
+    }
+    Ok(header)
+}
+
 /// Sign a Blossom (BUD-01) `t=get` authorization event, server-scoped to the
 /// relay's authority, and return the full `Authorization` header value.
 ///
@@ -315,6 +382,15 @@ pub(crate) fn sign_blossom_get_auth_header(
     base_url: &str,
     expiry_secs: u64,
 ) -> Result<String, String> {
+    sign_blossom_get_auth_event(keys, base_url, expiry_secs).map(|event| blossom_header(&event))
+}
+
+/// The signed event behind [`sign_blossom_get_auth_header`].
+fn sign_blossom_get_auth_event(
+    keys: &Keys,
+    base_url: &str,
+    expiry_secs: u64,
+) -> Result<nostr::Event, String> {
     let server = extract_server_authority(base_url).ok_or_else(|| {
         eprintln!("kuzz-desktop: cannot derive server authority from relay URL");
         "Couldn't load media.".to_string()
@@ -326,14 +402,18 @@ pub(crate) fn sign_blossom_get_auth_header(
             .map_err(|e| e.to_string())?,
         Tag::parse(vec!["server".to_string(), server]).map_err(|e| e.to_string())?,
     ];
-    let event = EventBuilder::new(Kind::from(24242), "Get kuzz-media")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|e| e.to_string())?;
-    Ok(format!(
+    crate::device_key::sign_auth_event(
+        EventBuilder::new(Kind::from(24242), "Get kuzz-media").tags(tags),
+        keys,
+    )
+}
+
+/// `Authorization` value for a signed Blossom event.
+fn blossom_header(event: &nostr::Event) -> String {
+    format!(
         "Nostr {}",
         URL_SAFE_NO_PAD.encode(event.as_json().as_bytes())
-    ))
+    )
 }
 
 /// Mint a `t=get` Authorization header value for a relay media fetch, or
@@ -347,6 +427,16 @@ pub(crate) fn sign_blossom_get_auth_header(
 /// constructed from (or validated against) the app's own relay base URL —
 /// never to third-party origins, where the bearer token would leak.
 pub(crate) fn mint_media_get_auth(state: &AppState, base_url: &str) -> Option<String> {
+    mint_media_get_auth_with(state, base_url, false)
+}
+
+/// [`mint_media_get_auth`] signed afresh (never a cached header), for the
+/// single retry after the server refused a read.
+pub(crate) fn mint_fresh_media_get_auth(state: &AppState, base_url: &str) -> Option<String> {
+    mint_media_get_auth_with(state, base_url, true)
+}
+
+fn mint_media_get_auth_with(state: &AppState, base_url: &str, fresh: bool) -> Option<String> {
     let credential = match state.user_credential() {
         Ok(credential) => credential,
         Err(e) => {
@@ -354,7 +444,11 @@ pub(crate) fn mint_media_get_auth(state: &AppState, base_url: &str) -> Option<St
             return None;
         }
     };
-    match media_get_auth_header(&credential, base_url) {
+    let header = match &credential {
+        UserCredential::Keys(keys) => cached_get_auth_header(keys, base_url, fresh),
+        UserCredential::Token { .. } => media_get_auth_header(&credential, base_url),
+    };
+    match header {
         Ok(header) => Some(header),
         Err(e) => {
             eprintln!("kuzz-desktop: media get auth signing failed (unsigned request): {e}");
@@ -417,10 +511,10 @@ pub(crate) fn sign_blossom_upload_auth(
             .map_err(|e| e.to_string())?,
         Tag::parse(vec!["server".to_string(), server]).map_err(|e| e.to_string())?,
     ];
-    EventBuilder::new(Kind::from(24242), "Upload kuzz-media")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|e| e.to_string())
+    crate::device_key::sign_auth_event(
+        EventBuilder::new(Kind::from(24242), "Upload kuzz-media").tags(tags),
+        keys,
+    )
 }
 
 /// Execute the upload HTTP request. Shared by all upload entry points.
@@ -956,6 +1050,19 @@ mod tests {
         let now = Timestamp::now().as_secs();
         // Token expiry must be within the 60s NIP-FI window.
         assert!(expiration > now && expiration <= now + 60);
+    }
+
+    #[test]
+    fn cached_read_headers_are_reused_for_at_most_thirty_seconds() {
+        let mut cache = std::collections::HashMap::new();
+        cache.insert("me relay".to_owned(), ("Nostr abc".to_owned(), 1_000));
+        assert_eq!(
+            reusable_get_auth(&cache, "me relay", 1_029).as_deref(),
+            Some("Nostr abc")
+        );
+        assert_eq!(reusable_get_auth(&cache, "me relay", 1_030), None);
+        assert_eq!(reusable_get_auth(&cache, "me relay", 999), None);
+        assert_eq!(reusable_get_auth(&cache, "me other", 1_000), None);
     }
 
     #[test]

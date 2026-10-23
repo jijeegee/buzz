@@ -18,6 +18,7 @@ import '../channel_management_provider.dart';
 import '../channel_mutes/channel_mutes_provider.dart';
 import '../channel_names/channel_names_provider.dart';
 import '../channel_names/channel_names_storage.dart';
+import '../leave_with_agents.dart';
 import '../room_goals_switch.dart';
 import 'chat_grid_avatar.dart';
 import 'chat_title.dart';
@@ -83,6 +84,12 @@ class ChatInfoSheet extends HookConsumerWidget {
     );
     final me = ref.watch(myPubkeyProvider)?.toLowerCase();
     final canAct = channel.isMember && !channel.isArchived;
+    final myAgents = canAct
+        ? ref.watch(myAgentsInChannelProvider(channel.id)).toSet()
+        : const <String>{};
+    final leaveAgents = channel.isMember
+        ? watchAgentsToRemoveOnLeave(ref, channel.id)
+        : const <String>[];
 
     Future<void> addPeople() async {
       await showKuzzModalBottomSheet<bool>(
@@ -111,32 +118,58 @@ class ChatInfoSheet extends HookConsumerWidget {
     }
 
     Future<void> leave() async {
+      final actions = ref.read(channelActionsProvider);
+      final choice = await showLeaveConfirmation(
+        context: context,
+        title: context.l10n.channelLeaveChatTitle,
+        body: context.l10n.channelLeaveChatBody,
+        agentCount: leaveAgents.length,
+        confirmKey: const ValueKey('chat-info-leave-confirm'),
+      );
+      if (choice == null || !context.mounted) return;
+      try {
+        await runLeave(
+          actions,
+          channelId: channel.id,
+          choice: choice,
+          agents: leaveAgents,
+        );
+        if (context.mounted) Navigator.of(context).pop(true);
+      } catch (_) {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(context.l10n.chatInfoLeaveError)),
+        );
+      }
+    }
+
+    Future<void> removeAgent(String pubkey, String label) async {
+      final actions = ref.read(channelActionsProvider);
       final confirmed = await showKuzzDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text(dialogContext.l10n.channelLeaveChatTitle),
-          content: Text(dialogContext.l10n.channelLeaveChatBody),
+          title: Text(dialogContext.l10n.chatInfoRemoveAgentTitle(label)),
+          content: Text(dialogContext.l10n.chatInfoRemoveAgentBody(label)),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
               child: Text(dialogContext.l10n.commonCancel),
             ),
             FilledButton(
-              key: const ValueKey('chat-info-leave-confirm'),
+              key: const ValueKey('chat-info-remove-confirm'),
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: Text(dialogContext.l10n.channelLeave),
+              child: Text(dialogContext.l10n.commonRemove),
             ),
           ],
         ),
       );
       if (confirmed != true || !context.mounted) return;
       try {
-        await ref.read(channelActionsProvider).leaveChannel(channel.id);
-        if (context.mounted) Navigator.of(context).pop(true);
+        await actions.removeMember(channelId: channel.id, pubkey: pubkey);
       } catch (_) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text(context.l10n.chatInfoLeaveError)),
+          SnackBar(content: Text(context.l10n.chatInfoRemoveAgentError(label))),
         );
       }
     }
@@ -241,6 +274,10 @@ class ChatInfoSheet extends HookConsumerWidget {
                 label: pubkey == me
                     ? context.l10n.chatInfoMemberYou(names.labelFor(pubkey))
                     : names.labelFor(pubkey),
+                // Only my own agents: nobody runs a chat of people.
+                onRemove: myAgents.contains(pubkey)
+                    ? () => removeAgent(pubkey, names.labelFor(pubkey))
+                    : null,
               ),
           if (channel.isMember) ...[
             const Divider(),
@@ -262,10 +299,18 @@ class ChatInfoSheet extends HookConsumerWidget {
 }
 
 class _MemberTile extends ConsumerWidget {
-  const _MemberTile({super.key, required this.pubkey, required this.label});
+  const _MemberTile({
+    super.key,
+    required this.pubkey,
+    required this.label,
+    this.onRemove,
+  });
 
   final String pubkey;
   final String label;
+
+  /// Removes this member (one of my agents); null hides the action.
+  final VoidCallback? onRemove;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -283,6 +328,13 @@ class _MemberTile extends ConsumerWidget {
         size: 36,
       ),
       title: Text(label, maxLines: 1, overflow: TextOverflow.ellipsis),
+      trailing: onRemove == null
+          ? null
+          : TextButton(
+              key: ValueKey('chat-info-remove-$pubkey'),
+              onPressed: onRemove,
+              child: Text(context.l10n.commonRemove),
+            ),
       onTap: () => showUserProfileSheet(context, pubkey),
     );
   }

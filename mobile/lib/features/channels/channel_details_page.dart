@@ -108,6 +108,9 @@ class ChannelDetailsPage extends HookConsumerWidget {
         membersAsync.isLoading || agentOwnersAsync.isLoading;
     final lifecycleCapabilitiesUnavailable =
         membersAsync.hasError || agentOwnersAsync.hasError;
+    final leaveAgents = resolvedChannel.isMember && !resolvedChannel.isArchived
+        ? watchAgentsToRemoveOnLeave(ref, resolvedChannel.id)
+        : const <String>[];
     final memberCount =
         membersAsync.value?.length ?? resolvedChannel.memberCount;
     final memberLabel = context.l10n.channelMemberCount(memberCount);
@@ -530,18 +533,16 @@ class ChannelDetailsPage extends HookConsumerWidget {
                     icon: LucideIcons.logOutDir,
                     title: context.l10n.channelLeaveGroup,
                     titleColor: context.colors.error,
-                    onTap: () => _confirmAndRun(
+                    onTap: () => _confirmLeaveAndRun(
                       context,
                       ref,
                       title: context.l10n.channelLeaveGroupTitle(
                         resolvedChannel.name,
                       ),
                       body: context.l10n.channelLeaveGroupBody,
-                      confirmLabel: context.l10n.channelLeave,
                       errorMessage: context.l10n.channelLeaveGroupError,
-                      action: () => ref
-                          .read(channelActionsProvider)
-                          .leaveChannel(resolvedChannel.id),
+                      channelId: resolvedChannel.id,
+                      agents: leaveAgents,
                     ),
                   ),
                 if (lifecycleCapabilitiesLoading)

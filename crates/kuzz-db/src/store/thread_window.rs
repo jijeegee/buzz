@@ -1,12 +1,12 @@
 //! NIP-CW thread-mode newest-first reply windows. This path deliberately does not change
 //! legacy forward threads or the permissive generic event reconstruction path.
 
+use chrono::{DateTime, Utc};
+use futures_util::TryStreamExt;
 use kuzz_core::{
     thread_window::{Cursor, Direction, Request, MAX_LIMIT, ROW_KINDS},
     CommunityId, StoredEvent,
 };
-use chrono::{DateTime, Utc};
-use futures_util::TryStreamExt;
 use sqlx::{PgConnection, PgPool, QueryBuilder, Row};
 use uuid::Uuid;
 
@@ -74,6 +74,7 @@ async fn select_window(
     conn: &mut PgConnection,
     community: CommunityId,
     request: &Request,
+    history_reader: Option<&[u8]>,
     budget: &mut ScanBudget,
 ) -> Result<ThreadWindow> {
     if !(1..=MAX_LIMIT).contains(&request.limit)
@@ -89,10 +90,14 @@ async fn select_window(
     }
     // Retain tombstones: deleting a root must not make its readable replies
     // disappear. Never follow a root belonging to another channel/community.
+    // since_join: a root from before the reader's join is not found (its
+    // whole thread is cut, replies after the join included).
     let root_in_channel: bool = sqlx::query_scalar(
-        "SELECT EXISTS(SELECT 1 FROM events WHERE community_id = $1 AND channel_id = $2 AND id = $3 AND kind = ANY($4))")
+        "SELECT EXISTS(SELECT 1 FROM events WHERE community_id = $1 AND channel_id = $2 AND id = $3 AND kind = ANY($4) \
+         AND ($5::bytea IS NULL OR NOT channel_event_before_join(community_id, channel_id, channel_sequence, $5)))")
         .bind(community.as_uuid()).bind(request.channel).bind(&root)
         .bind(ROW_KINDS.map(|k| k as i32).to_vec())
+        .bind(history_reader)
         .fetch_one(&mut *conn).await?;
     if !root_in_channel {
         return Ok(ThreadWindow {
@@ -160,15 +165,26 @@ async fn select_window(
     // PK uniqueness makes the inner LIMIT 1 exact. All eligibility predicates
     // still precede the *outer* limit+1 that establishes page bounds.
     q.push(order).push(" OFFSET 0) tm \
-        JOIN LATERAL (SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, e.sig, e.received_at, e.channel_id, e.deleted_at \
+        JOIN LATERAL (SELECT e.id, e.pubkey, e.created_at, e.kind, e.tags, e.content, e.sig, e.received_at, e.channel_id, e.deleted_at, e.channel_sequence, e.thread_root_sequence \
         FROM events e WHERE e.community_id = tm.community_id \
         AND e.created_at = tm.event_created_at AND e.id = tm.event_id LIMIT 1) e ON true \
         WHERE e.channel_id = ")
         .push_bind(request.channel)
         .push(" AND e.deleted_at IS NULL AND e.kind = ANY(")
         .push_bind(request.kinds.iter().map(|k| *k as i32).collect::<Vec<_>>())
-        .push(")")
-        .push(order)
+        .push(")");
+    // since_join: replies from before the reader's current join stay hidden.
+    // The root itself is only an anchor here (a later reply already names it).
+    if let Some(reader) = history_reader {
+        q.push(" AND event_history_sequence(e.channel_sequence, e.thread_root_sequence) > channel_history_floor(")
+            .push_bind(community.as_uuid())
+            .push(", ")
+            .push_bind(request.channel)
+            .push(", ")
+            .push_bind(reader.to_vec())
+            .push(")");
+    }
+    q.push(order)
         .push(" LIMIT ")
         .push_bind(i64::from(request.limit) + 1);
     // Selectivity varies drastically with root/depth/cursor. A cached generic
@@ -210,6 +226,7 @@ async fn writer_window(
     pool: &PgPool,
     community: CommunityId,
     request: &Request,
+    history_reader: Option<&[u8]>,
     budget: &mut ScanBudget,
 ) -> Result<ThreadWindow> {
     let conn = crate::observability::acquire_writer(
@@ -219,7 +236,7 @@ async fn writer_window(
     .await?;
     let mut tx = sqlx::Transaction::begin(conn, None).await?;
     set_deadline(&mut tx).await?;
-    let window = select_window(&mut tx, community, request, budget).await?;
+    let window = select_window(&mut tx, community, request, history_reader, budget).await?;
     tx.rollback().await?;
     Ok(window)
 }
@@ -236,6 +253,19 @@ impl Db {
         &self,
         community: CommunityId,
         request: &Request,
+        budget: &mut ScanBudget,
+    ) -> Result<(ThreadWindow, ReadSession)> {
+        self.get_thread_window_for_reader_with_session(community, request, None, budget)
+            .await
+    }
+
+    /// [`Db::get_thread_window_with_session`] without replies from before
+    /// `history_reader` joined a `since_join` room.
+    pub async fn get_thread_window_for_reader_with_session(
+        &self,
+        community: CommunityId,
+        request: &Request,
+        history_reader: Option<&[u8]>,
         budget: &mut ScanBudget,
     ) -> Result<(ThreadWindow, ReadSession)> {
         let cursor = request.cursor.as_ref().map(cursor_key).transpose()?;
@@ -262,7 +292,7 @@ impl Db {
         {
             let result = async {
                 set_deadline(&mut tx).await?;
-                select_window(&mut tx, community, request, budget).await
+                select_window(&mut tx, community, request, history_reader, budget).await
             }
             .await;
             match result {
@@ -292,7 +322,7 @@ impl Db {
                 }
             }
         }
-        let window = writer_window(&self.pool, community, request, budget).await?;
+        let window = writer_window(&self.pool, community, request, history_reader, budget).await?;
         Ok((
             window,
             ReadSession {
@@ -317,6 +347,8 @@ pub struct AuxQuery<'a> {
     pub accessible: &'a [Uuid],
     /// Last raw auxiliary scan position, not last delivered event.
     pub cursor: Option<Cursor>,
+    /// Reader whose `since_join` history cut applies (`None` = no cut).
+    pub history_reader: Option<&'a [u8]>,
 }
 
 /// Fixed raw auxiliary page budget (the probe is one extra row).
@@ -377,17 +409,50 @@ async fn select_aux(
         return Err(invalid("invalid thread auxiliary target batch"));
     }
     budget.query()?;
-    let mut q = QueryBuilder::new(
+    let mut q = QueryBuilder::new("");
+    // since_join: each accessible channel's floor is computed once, not per
+    // row (a hot thread can carry thousands of aux rows).
+    if let Some(reader) = query.history_reader {
+        let target_ids: Vec<Vec<u8>> = query
+            .targets
+            .iter()
+            .filter_map(|t| hex::decode(t).ok())
+            .collect();
+        q.push("WITH floors AS MATERIALIZED (SELECT ch, channel_history_floor(")
+            .push_bind(query.community.as_uuid())
+            .push(", ch, ")
+            .push_bind(reader.to_vec())
+            .push(") AS floor FROM unnest(")
+            .push_bind(query.accessible)
+            .push("::uuid[]) AS ch), hidden AS MATERIALIZED (SELECT encode(e.id, 'hex') AS h FROM events e WHERE e.community_id = ")
+            .push_bind(query.community.as_uuid())
+            .push(" AND e.id = ANY(")
+            .push_bind(target_ids)
+            .push(") AND channel_event_before_join(e.community_id, e.channel_id, event_history_sequence(e.channel_sequence, e.thread_root_sequence), ")
+            .push_bind(reader.to_vec())
+            .push(")) ");
+    }
+    q.push(
         "SELECT id, pubkey, created_at, kind, tags, content, sig, received_at, channel_id, deleted_at, \
          octet_length(content) + octet_length(tags::text) AS payload_bytes \
-         FROM events WHERE community_id = ");
+         FROM events WHERE community_id = ",
+    );
     q.push_bind(query.community.as_uuid())
         .push(" AND ((channel_id IS NULL AND kind IN (5, 9005)) OR channel_id = ANY(")
         .push_bind(query.accessible)
         .push("))")
         .push(" AND kind = ANY(")
         .push_bind(query.kinds.iter().map(|k| *k as i32).collect::<Vec<_>>())
-        .push(") AND (");
+        .push(")");
+    // Rows from before the join, and rows about a target from before it (the
+    // thread root is only an anchor), stay hidden.
+    if query.history_reader.is_some() {
+        q.push(
+            " AND (channel_id IS NULL OR event_history_sequence(channel_sequence, thread_root_sequence) > COALESCE(NULLIF(\
+             (SELECT floor FROM floors WHERE ch = channel_id), 0), -1)) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(tags) ht JOIN hidden ON ht->>1 = hidden.h WHERE ht->>0 = 'e')",
+        );
+    }
+    q.push(" AND (");
     for (index, target) in query.targets.iter().enumerate() {
         if index != 0 {
             q.push(" OR ");

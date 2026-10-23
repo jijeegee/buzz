@@ -63,10 +63,11 @@ fn build_audio_auth_event(
                 .map_err(|e| format!("agent auth tag conversion failed: {e}"))?,
         );
     }
-    nostr::EventBuilder::new(nostr::Kind::Custom(22242), "")
-        .tags(tags)
-        .sign_with_keys(keys)
-        .map_err(|e| format!("sign: {e}"))
+    crate::device_key::sign_auth_event(
+        nostr::EventBuilder::new(nostr::Kind::Custom(22242), "").tags(tags),
+        keys,
+    )
+    .map_err(|e| format!("sign: {e}"))
 }
 
 /// How an audio socket authenticates after the relay's challenge.

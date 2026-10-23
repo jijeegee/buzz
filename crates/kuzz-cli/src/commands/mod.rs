@@ -25,6 +25,7 @@ pub mod teams;
 pub mod threads;
 pub mod upload;
 pub mod users;
+pub mod watch;
 pub mod workflows;
 
 use crate::{client::normalize_write_response, error::CliError};

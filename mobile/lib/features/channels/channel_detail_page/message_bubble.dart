@@ -282,6 +282,7 @@ class _MessageBubble extends HookConsumerWidget {
                           channelId: currentChannelId,
                           tags: message.tags,
                           loadedMessages: allMessages,
+                          quotingMessageId: message.id,
                         ),
                         ReadAloudBody(
                           slots: readAloud,

@@ -84,6 +84,10 @@ class CreateGroupChatResult {
   }
 }
 
+/// Whether a refused kind:9001 means the member was already gone.
+bool isMemberAlreadyGoneError(Object error) =>
+    _relayErrorMessage(error).toLowerCase().contains('member not found');
+
 class ChannelActions {
   final Ref _ref;
   final RelaySessionNotifier _session;
@@ -292,9 +296,40 @@ class ChannelActions {
     await _refreshChannelState(channelId);
   }
 
+  /// Removes each of [agentPubkeys] (kind:9001), then leaves (kind:9022).
+  ///
+  /// The agents go first: once I've left I may no longer remove them. An
+  /// agent that is already gone does not stop the rest; any other refusal
+  /// stops before leaving.
+  Future<void> removeAgentsAndLeave({
+    required String channelId,
+    required Iterable<String> agentPubkeys,
+  }) async {
+    for (final pubkey in agentPubkeys) {
+      _ensureCommunityValid();
+      try {
+        await _signedEventRelay.submit(
+          kind: 9001,
+          content: '',
+          tags: [
+            ['h', channelId],
+            ['p', pubkey.toLowerCase()],
+          ],
+        );
+      } catch (error) {
+        if (isMemberAlreadyGoneError(error)) continue;
+        _ref.invalidate(channelMembersProvider(channelId));
+        _ref.invalidate(channelBotPubkeysProvider(channelId));
+        rethrow;
+      }
+    }
+    await leaveChannel(channelId);
+  }
+
   /// Updates the user-editable channel metadata and refreshes cached details.
   /// [goalsEnabled] toggles the per-room goals switch and may be sent alone.
   /// [picture] sets the group photo URL; an empty string removes it.
+  /// [historyAll] sets whether new members see earlier messages.
   Future<void> updateChannel({
     required String channelId,
     String? name,
@@ -302,6 +337,7 @@ class ChannelActions {
     bool? goalsEnabled,
     String? visibility,
     String? picture,
+    bool? historyAll,
   }) async {
     _ensureCommunityValid();
     await _signedEventRelay.submit(
@@ -314,6 +350,7 @@ class ChannelActions {
         goalsEnabled: goalsEnabled,
         visibility: visibility,
         picture: picture,
+        historyAll: historyAll,
       ),
     );
     _ensureCommunityValid();

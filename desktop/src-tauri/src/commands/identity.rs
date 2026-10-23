@@ -765,10 +765,11 @@ pub async fn create_auth_event(
                 .map_err(|error| format!("challenge tag failed: {error}"))?,
         ];
 
-        let event = EventBuilder::new(Kind::Custom(22242), "")
-            .tags(tags)
-            .sign_with_keys(&keys)
-            .map_err(|error| format!("sign failed: {error}"))?;
+        let event = crate::device_key::sign_auth_event(
+            EventBuilder::new(Kind::Custom(22242), "").tags(tags),
+            &keys,
+        )
+        .map_err(|error| format!("sign failed: {error}"))?;
 
         Ok(event.as_json())
     })

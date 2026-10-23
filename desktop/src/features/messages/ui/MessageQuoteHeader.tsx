@@ -10,10 +10,14 @@ import {
   quotedPreviewFromEvent,
 } from "@/features/messages/lib/messageQuotePreview";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
-import type { UserProfileLookup } from "@/features/profile/lib/identity";
+import {
+  resolveUserLabel,
+  type UserProfileLookup,
+} from "@/features/profile/lib/identity";
 import type { RelayEvent } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { useMessageLinkMetadata } from "@/shared/ui/markdown/useMessageLinkMetadata";
+import { useQuotePreviewFallback } from "./useQuotePreviewFallback";
 
 const QUOTE_HEADER_CLASS =
   "mb-1 flex w-fit max-w-full min-w-0 items-center gap-1.5 rounded-md border-l-2 border-border bg-muted/40 py-0.5 pl-2 pr-2.5 text-left text-sm leading-5 text-muted-foreground";
@@ -22,13 +26,18 @@ const QUOTE_HEADER_CLASS =
  * Compact header for a message that carries a NIP-18 `q` tag. Resolves the
  * quoted message from already-loaded timeline/thread caches first and falls
  * back to an event lookup by id; clicking jumps to the original message.
+ * When the original was sent before the reader joined (the lookup finds
+ * nothing), the relay's excerpt is shown instead, without a jump.
  */
 export function MessageQuoteHeader({
   channelId,
+  messageId,
   profiles,
   tags,
 }: {
   channelId?: string | null;
+  /** The quoting message; scopes the before-you-joined preview request. */
+  messageId?: string | null;
   profiles?: UserProfileLookup;
   tags?: string[][];
 }) {
@@ -55,6 +64,16 @@ export function MessageQuoteHeader({
     },
     Boolean(reference && channelId && !loadedEvent),
   );
+  const lookupFailed =
+    !loadedEvent &&
+    (metadata.state.kind === "deleted" ||
+      metadata.state.kind === "unavailable");
+  const fallback = useQuotePreviewFallback(
+    channelId ?? "",
+    reference?.eventId ?? "",
+    messageId,
+    Boolean(reference && channelId && lookupFailed),
+  );
 
   if (!reference || !channelId) return null;
 
@@ -68,10 +87,27 @@ export function MessageQuoteHeader({
       excerpt: metadata.state.snippet,
       threadRootId: metadata.state.threadRootId,
     };
-  } else if (
-    metadata.state.kind === "deleted" ||
-    metadata.state.kind === "unavailable"
-  ) {
+  } else if (lookupFailed && fallback?.kind === "ready") {
+    const author = resolveUserLabel({
+      fallbackName: fallback.authorName,
+      preferResolvedSelfLabel: true,
+      profiles,
+      pubkey: reference.authorPubkey ?? fallback.authorPubkey,
+    });
+    return (
+      <div
+        className={cn(QUOTE_HEADER_CLASS, "items-start")}
+        data-testid="message-quote-header"
+        title={t("messages.quote.beforeJoin")}
+      >
+        <Quote aria-hidden className="mt-0.5 h-3.5 w-3.5 shrink-0" />
+        <span className="line-clamp-2 min-w-0 break-words">
+          <span className="font-medium text-foreground">{author}</span>{" "}
+          {fallback.excerpt}
+        </span>
+      </div>
+    );
+  } else if (lookupFailed && fallback?.kind === "none") {
     preview = { kind: "unavailable" };
   } else {
     preview = { kind: "loading" };

@@ -39,6 +39,8 @@ pub mod feed;
 pub mod git_repo;
 /// Group search, public addresses, invite links and invitations.
 pub mod groups;
+/// Room history cut (`since_join`) lookups.
+pub mod history;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.
@@ -77,6 +79,8 @@ pub mod replaceable;
 pub mod storage_accounting;
 /// Thread metadata persistence.
 pub mod thread;
+/// Thread search by name over the reader's rooms (closed and quiet included).
+pub mod thread_search;
 /// Strict newest-first thread windows and auxiliary scans.
 pub mod thread_window;
 /// Per-community usage rollup queries for Prometheus gauges.
@@ -104,6 +108,9 @@ mod media_access_postgres_tests;
 mod channel_history_postgres_tests;
 
 #[cfg(test)]
+mod channel_since_join_postgres_tests;
+
+#[cfg(test)]
 mod chat_backfill_postgres_tests;
 
 #[cfg(test)]
@@ -111,6 +118,9 @@ mod chat_import_postgres_tests;
 
 #[cfg(test)]
 mod chat_list_postgres_tests;
+
+#[cfg(test)]
+mod thread_search_postgres_tests;
 
 #[cfg(test)]
 mod chat_state_postgres_tests;

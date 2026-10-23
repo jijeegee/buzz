@@ -5,14 +5,18 @@ use serde::{Deserialize, Serialize};
 use tauri::{
     ipc::{Channel, InvokeResponseBody},
     plugin::TauriPlugin,
-    Manager, Runtime,
+    Emitter, Manager, Runtime,
 };
 
 use crate::native_websocket_batch::{is_auth_challenge, FrameBatch, BATCH_MAX_SERIALIZED_BYTES};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::{
     connect_async,
-    tungstenite::protocol::{frame::coding::CloseCode, CloseFrame, Message},
+    tungstenite::{
+        client::IntoClientRequest,
+        http::{HeaderValue, StatusCode},
+        protocol::{frame::coding::CloseCode, CloseFrame, Message},
+    },
 };
 use tokio_util::sync::CancellationToken;
 
@@ -20,6 +24,27 @@ const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const WRITE_TIMEOUT: Duration = Duration::from_secs(10);
 const SHUTDOWN_TIMEOUT: Duration = Duration::from_millis(250);
 const SEND_QUEUE_CAPACITY: usize = 64;
+
+/// Header naming this build to the relay, which refuses builds below the
+/// minimum supported version with `426` (see the relay's `app_update`).
+const APP_HEADER: &str = "x-kuzz-app";
+/// Error returned to the webview, and event emitted, when the relay refuses
+/// this build as too old.
+pub(crate) const UPDATE_REQUIRED: &str = "update-required";
+
+/// `<target>-<arch>/<version>` in the updater's platform naming, e.g.
+/// `windows-x86_64/0.6.1`.
+pub(crate) fn app_identity() -> String {
+    let target = match std::env::consts::OS {
+        "macos" => "darwin",
+        other => other,
+    };
+    format!(
+        "{target}-{}/{}",
+        std::env::consts::ARCH,
+        env!("CARGO_PKG_VERSION")
+    )
+}
 
 pub(crate) fn install_crypto_provider() {
     // Dependencies enable both rustls providers; choose one before TLS setup.
@@ -133,11 +158,22 @@ async fn open_connection(
     on_message: Channel<InvokeResponseBody>,
 ) -> Result<Id, String> {
     let connect_cancel = manager.connect_cancel.lock().await.clone();
+    let mut request = url.into_client_request().map_err(|error| error.to_string())?;
+    if let Ok(value) = HeaderValue::from_str(&app_identity()) {
+        request.headers_mut().insert(APP_HEADER, value);
+    }
     let (socket, _) = tokio::select! {
         _ = connect_cancel.cancelled() => return Err("WebSocket connection cancelled".to_string()),
-        result = tokio::time::timeout(CONNECT_TIMEOUT, connect_async(url)) => result
+        result = tokio::time::timeout(CONNECT_TIMEOUT, connect_async(request)) => result
             .map_err(|_| "WebSocket connection timed out".to_string())?
-            .map_err(|error| error.to_string())?,
+            .map_err(|error| match error {
+                tokio_tungstenite::tungstenite::Error::Http(response)
+                    if response.status() == StatusCode::UPGRADE_REQUIRED =>
+                {
+                    UPDATE_REQUIRED.to_string()
+                }
+                error => error.to_string(),
+            })?,
     };
 
     // Serialize registration with disconnect_all so a reload cannot miss a
@@ -179,7 +215,8 @@ async fn open_connection(
 }
 
 #[tauri::command]
-async fn connect(
+async fn connect<R: Runtime>(
+    app: tauri::AppHandle<R>,
     manager: tauri::State<'_, WebSocketManager>,
     url: String,
     on_message: Channel<InvokeResponseBody>,
@@ -188,7 +225,12 @@ async fn connect(
     // Every webview socket (the main relay session and read-only account
     // watchers) opens here: only the built-in server may be reached.
     crate::relay::ensure_relay_allowed("websocket connect", &url)?;
-    open_connection(manager.inner(), &url, on_message).await
+    let result = open_connection(manager.inner(), &url, on_message).await;
+    if matches!(&result, Err(error) if error == UPDATE_REQUIRED) {
+        // The updater shows the forced-update screen on this event.
+        let _ = app.emit(UPDATE_REQUIRED, ());
+    }
+    result
 }
 
 pub(crate) async fn send_message(
@@ -666,6 +708,36 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn announces_build_and_maps_426_to_update_required() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut request = vec![0u8; 4096];
+            let read = stream.read(&mut request).await.unwrap();
+            stream
+                .write_all(b"HTTP/1.1 426 Upgrade Required\r\ncontent-length: 0\r\n\r\n")
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request[..read]).to_lowercase()
+        });
+
+        let manager = WebSocketManager::default();
+        let error = open_connection(&manager, &format!("ws://{address}"), silent_channel())
+            .await
+            .unwrap_err();
+        assert_eq!(error, UPDATE_REQUIRED);
+        let request = server.await.unwrap();
+        assert!(
+            request.contains(&format!("x-kuzz-app: {}", app_identity().to_lowercase())),
+            "{request}"
+        );
+        assert!(app_identity().ends_with(&format!("/{}", env!("CARGO_PKG_VERSION"))));
+    }
+
+    #[tokio::test]
     async fn eof_removes_connection() {
         let manager = WebSocketManager::default();
         let (client_io, server_io) = duplex(1024);
@@ -813,6 +885,7 @@ mod tests {
         use tauri::Manager as _;
         let app = crate::relay::server::refusal_test_app();
         let error = super::connect(
+            app.handle().clone(),
             app.state(),
             "ws://127.0.0.1:9".to_string(),
             silent_channel(),

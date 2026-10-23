@@ -57,6 +57,16 @@ pub async fn handle_report_event(
                 .await
                 .map_err(|e| format!("error: database error resolving report target: {e}"))?
                 .ok_or_else(|| "invalid: report target event not found".to_string())?;
+            // since_join rooms: a message from before the reporter's join is
+            // not found to them.
+            let before_join = state
+                .db
+                .history_hidden_event_ids(tenant.community(), &reporter_pubkey, &[event_id.to_vec()])
+                .await
+                .map_err(|e| format!("error: database error resolving report target: {e}"))?;
+            if !before_join.is_empty() {
+                return Err("invalid: report target event not found".to_string());
+            }
             (ReportTarget::Event(event_id), stored.channel_id)
         }
         ParsedReportTarget::Blob { sha256, .. } => {

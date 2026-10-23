@@ -236,15 +236,141 @@ async fn error_from(response: reqwest::Response) -> ApiError {
 }
 
 async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, ApiError> {
-    let response = request
-        .timeout(AUTH_REQUEST_TIMEOUT)
-        .send()
-        .await
-        .map_err(|e| ApiError::network(&e))?;
+    let (client, request) = request.timeout(AUTH_REQUEST_TIMEOUT).build_split();
+    let request = request.map_err(|e| ApiError::network(&e))?;
+    let origin = crate::device_key::origin_of(request.url());
+    let proof = proof_parts(&request);
+    let key = proof.as_ref().and_then(|_| crate::device_key::current());
+    let retry = key.as_ref().and_then(|_| request.try_clone());
+    let response = send_once(&client, request, key.as_ref(), &origin, proof.as_ref()).await?;
+    let clock_moved = crate::device_key::note_server_time(&origin, response.headers());
+    if response.status().is_success() {
+        return Ok(response);
+    }
+    let error = error_from(response).await;
+    // A proof stamped with a clock the relay just corrected: sign once more.
+    let stale = error.code.as_deref() == Some("device_proof_stale");
+    let Some(retry) = retry.filter(|_| stale && clock_moved) else {
+        return Err(error);
+    };
+    let response = send_once(&client, retry, key.as_ref(), &origin, proof.as_ref()).await?;
+    crate::device_key::note_server_time(&origin, response.headers());
     if response.status().is_success() {
         Ok(response)
     } else {
         Err(error_from(response).await)
+    }
+}
+
+/// Send `request`, adding this device's `X-Kuzz-Device-Proof` when there is
+/// a key and the request needs one; otherwise exactly as built.
+async fn send_once(
+    client: &reqwest::Client,
+    mut request: reqwest::Request,
+    key: Option<&crate::device_key::DeviceKey>,
+    origin: &str,
+    proof: Option<&ProofParts>,
+) -> Result<reqwest::Response, ApiError> {
+    if let (Some(key), Some(parts)) = (key, proof) {
+        let signed = crate::device_key::header_proof(
+            key,
+            origin,
+            crate::device_key::ProofRequest {
+                purpose: parts.purpose,
+                binding: parts.binding.clone(),
+                token: Some(parts.token.clone()),
+                body: parts.body.clone(),
+            },
+        )
+        .await;
+        if let Some(value) = signed.and_then(|v| reqwest::header::HeaderValue::from_str(&v).ok()) {
+            request
+                .headers_mut()
+                .insert(crate::device_key::PROOF_HEADER, value);
+        }
+    }
+    client
+        .execute(request)
+        .await
+        .map_err(|e| ApiError::network(&e))
+}
+
+/// What the device proof of an `/auth/*` request covers.
+struct ProofParts {
+    purpose: &'static str,
+    binding: String,
+    token: Zeroizing<String>,
+    body: Vec<u8>,
+}
+
+/// The device proof an `/auth/*` request needs: purpose `auth` for a bearer
+/// call, `refresh` for `/auth/refresh` (whose token is the refresh token in
+/// the body), bound to `<METHOD> <URL>`, the token and the body. `None` for
+/// calls without a token (sign-in, NIP-11). Pure.
+fn proof_parts(request: &reqwest::Request) -> Option<ProofParts> {
+    let url = request.url();
+    if !url.path().starts_with("/auth/") {
+        return None;
+    }
+    let body = request
+        .body()
+        .and_then(reqwest::Body::as_bytes)
+        .map(<[u8]>::to_vec)
+        .unwrap_or_default();
+    let bearer = request
+        .headers()
+        .get(reqwest::header::AUTHORIZATION)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.strip_prefix("Bearer "));
+    let (purpose, token) = match bearer {
+        Some(token) => ("auth", Zeroizing::new(token.to_owned())),
+        None if url.path() == "/auth/refresh" => {
+            #[derive(Deserialize)]
+            struct RefreshBody {
+                refresh: SecretField,
+            }
+            let parsed: RefreshBody = serde_json::from_slice(&body).ok()?;
+            ("refresh", parsed.refresh.0)
+        }
+        None => return None,
+    };
+    let mut target = url.clone();
+    target.set_fragment(None);
+    Some(ProofParts {
+        purpose,
+        binding: format!("{} {}", request.method().as_str(), target.as_str()),
+        token,
+        body,
+    })
+}
+
+/// Learn the relay's clock (`x-kuzz-server-time`) before a sign-in proof,
+/// at most once per origin and run (answered or not): an unauthenticated
+/// `/auth/me` answers 401 with the header. Failures leave the local clock in
+/// use; a stale proof then restarts the sign-in once.
+pub(crate) async fn sync_server_time(client: &reqwest::Client, origin: &str) {
+    if crate::device_key::has_server_time(origin) || !crate::device_key::first_time_ask(origin) {
+        return;
+    }
+    let _ = send(client.get(format!("{origin}/auth/me"))).await;
+}
+
+/// Add the device key and its bind proof to a sign-in body. With no key, or
+/// when the proof cannot be signed, the body stays as before.
+async fn add_device_fields(
+    client: &reqwest::Client,
+    origin: &str,
+    device: Option<&crate::device_key::DeviceKey>,
+    binding: String,
+    body: &mut serde_json::Value,
+) {
+    let Some(device) = device else {
+        return;
+    };
+    sync_server_time(client, origin).await;
+    let fields = crate::device_key::login_fields(device, origin, binding).await;
+    if let (Some(fields), Some(body)) = (fields, body.as_object_mut()) {
+        body.extend(fields);
     }
 }
 
@@ -335,6 +461,7 @@ pub(crate) fn start_url(
     redirect_uri: &str,
     device_name: &str,
     install_id: Option<&str>,
+    device: Option<&crate::device_key::DeviceKey>,
 ) -> String {
     let mut query = url::form_urlencoded::Serializer::new(String::new());
     query
@@ -346,37 +473,49 @@ pub(crate) fn start_url(
     if let Some(install_id) = install_id {
         query.append_pair("install_id", install_id);
     }
+    if let Some(device) = device {
+        query.append_pair("device_pubkey", &device.pubkey().to_hex());
+    }
     let query = query.finish();
     format!("{origin}/auth/oidc/{provider}/start?{query}")
 }
 
-/// `POST /auth/oidc/complete`.
+/// `POST /auth/oidc/complete`. `device`: the key named at `start`, bound
+/// here with a proof over `login:<sha256(login code)>`.
 pub(crate) async fn complete_login(
     client: &reqwest::Client,
     origin: &str,
     login_code: &str,
     verifier: &str,
+    device: Option<&crate::device_key::DeviceKey>,
 ) -> Result<CompleteResponse, ApiError> {
+    let mut body = serde_json::json!({ "login_code": login_code, "code_verifier": verifier });
+    let binding = crate::device_key::hashed_binding("login", login_code);
+    add_device_fields(client, origin, device, binding, &mut body).await;
     send_json(
         client
             .post(format!("{origin}/auth/oidc/complete"))
-            .json(&serde_json::json!({ "login_code": login_code, "code_verifier": verifier })),
+            .json(&body),
     )
     .await
 }
 
 /// `POST /auth/oidc/signup`: create the account the user confirmed and sign
-/// in to it.
+/// in to it. `device`: bound with a proof over `signup:<sha256(ticket)>`.
 pub(crate) async fn signup(
     client: &reqwest::Client,
     origin: &str,
     signup_token: &str,
     verifier: &str,
+    device: Option<&crate::device_key::DeviceKey>,
 ) -> Result<LoginTokens, ApiError> {
+    let mut body = serde_json::json!({ "signup_token": signup_token, "code_verifier": verifier });
+    let binding = crate::device_key::hashed_binding("signup", signup_token);
+    add_device_fields(client, origin, device, binding, &mut body).await;
     send_json(
         client
             .post(format!("{origin}/auth/oidc/signup"))
-            .json(&serde_json::json!({ "signup_token": signup_token, "code_verifier": verifier })),
+            .json(&body),
     )
     .await
 }
@@ -424,6 +563,141 @@ async fn call(
         request = request.json(&body);
     }
     send(request).await.map(|_| ())
+}
+
+/// `POST /auth/agents/challenge`: a one-use agent registration challenge for
+/// this account and device.
+pub(crate) async fn agent_challenge(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<String, ApiError> {
+    #[derive(Deserialize)]
+    struct Challenge {
+        challenge: String,
+    }
+    let challenge: Challenge = send_json(
+        client
+            .post(format!("{origin}/auth/agents/challenge"))
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(challenge.challenge)
+}
+
+/// `POST /auth/agents/register`: host the agent on this device and give the
+/// relay its encrypted copy. Returns `registered`, `unchanged` or `moved`.
+pub(crate) async fn register_agent(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    body: &serde_json::Value,
+) -> Result<String, ApiError> {
+    #[derive(Deserialize)]
+    struct Registered {
+        result: String,
+    }
+    let registered: Registered = send_json(
+        client
+            .post(format!("{origin}/auth/agents/register"))
+            .header("Authorization", bearer(access))
+            .json(body),
+    )
+    .await?;
+    Ok(registered.result)
+}
+
+/// `POST /auth/pairing/start`: a one-use external agent pairing code. The
+/// code and the command holding it stay in zeroizing memory.
+#[derive(Deserialize)]
+pub(crate) struct PairingStarted {
+    pub pairing_id: String,
+    pub command: SecretField,
+    pub code: SecretField,
+    /// The relay the command names (`kuzz pair --relay <url> <code>`).
+    #[serde(default)]
+    pub relay_url: Option<String>,
+    pub expires_at: String,
+    pub expires_in: i64,
+}
+
+/// One row of `GET /auth/pairing`.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub(crate) struct PairingInfo {
+    pub id: String,
+    /// `waiting`, `connected` or `expired`.
+    pub state: String,
+    #[serde(default)]
+    pub agent_pubkey: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub claimed_at: Option<String>,
+    pub expires_at: String,
+}
+
+/// `POST /auth/pairing/start`.
+pub(crate) async fn pairing_start(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<PairingStarted, ApiError> {
+    send_json(
+        client
+            .post(format!("{origin}/auth/pairing/start"))
+            .header("Authorization", bearer(access)),
+    )
+    .await
+}
+
+/// `GET /auth/pairing`: this account's pairings of the last day.
+pub(crate) async fn pairing_list(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<Vec<PairingInfo>, ApiError> {
+    #[derive(Deserialize)]
+    struct Pairings {
+        pairings: Vec<PairingInfo>,
+    }
+    let list: Pairings = send_json(
+        client
+            .get(format!("{origin}/auth/pairing"))
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(list.pairings)
+}
+
+/// One agent key copy of `GET /auth/agents/keys` (hex secret).
+#[derive(Deserialize)]
+pub(crate) struct AgentKeyCopy {
+    pub agent_pubkey: String,
+    pub secret_key: SecretField,
+}
+
+/// `GET /auth/agents/keys`: this device's agent key copies (needs a sign-in
+/// from the last five minutes).
+pub(crate) async fn agent_keys(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<Vec<AgentKeyCopy>, ApiError> {
+    #[derive(Deserialize)]
+    struct Copies {
+        keys: Vec<AgentKeyCopy>,
+    }
+    let copies: Copies = send_json(
+        client
+            .get(format!("{origin}/auth/agents/keys"))
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(copies.keys)
 }
 
 /// `POST /auth/logout`.
@@ -790,7 +1064,9 @@ mod tests {
             "http://127.0.0.1:5555/cb",
             "My Mac",
             Some("5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"),
+            None,
         );
+        assert!(!url.contains("device_pubkey"));
         assert!(url.starts_with("http://127.0.0.1:3000/auth/oidc/google/start?"));
         assert!(url.contains("state=st"));
         assert!(url.contains("code_challenge=ch"));
@@ -798,6 +1074,63 @@ mod tests {
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5555%2Fcb"));
         assert!(url.contains("device_name=My+Mac"));
         assert!(url.contains("install_id=5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"));
+    }
+
+    #[test]
+    fn start_url_names_the_device_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let key =
+            crate::device_key::DeviceKey::open_or_create_file(&dir.path().join("k.key")).unwrap();
+        let url = start_url(
+            "http://r",
+            "google",
+            "s",
+            "c",
+            "http://cb",
+            "d",
+            None,
+            Some(&key),
+        );
+        assert!(url.contains(&format!("device_pubkey={}", key.pubkey().to_hex())));
+    }
+
+    #[test]
+    fn device_proofs_cover_bearer_and_refresh_calls_only() {
+        let client = reqwest::Client::new();
+        let me = client
+            .get("https://relay.example/auth/me?x=1#frag")
+            .header("Authorization", "Bearer acc")
+            .build()
+            .unwrap();
+        let parts = proof_parts(&me).unwrap();
+        assert_eq!(parts.purpose, "auth");
+        assert_eq!(parts.binding, "GET https://relay.example/auth/me?x=1");
+        assert_eq!(parts.token.as_str(), "acc");
+        assert!(parts.body.is_empty());
+
+        let refresh = client
+            .post("https://relay.example/auth/refresh")
+            .json(&serde_json::json!({ "refresh": "rt" }))
+            .build()
+            .unwrap();
+        let parts = proof_parts(&refresh).unwrap();
+        assert_eq!(parts.purpose, "refresh");
+        assert_eq!(parts.token.as_str(), "rt");
+        assert_eq!(parts.body, br#"{"refresh":"rt"}"#);
+
+        for request in [
+            client
+                .post("https://relay.example/auth/oidc/complete")
+                .json(&serde_json::json!({})),
+            client
+                .get("https://relay.example/")
+                .header("Authorization", "Bearer acc"),
+            client
+                .get("https://relay.example/api/groups")
+                .header("Authorization", "Bearer acc"),
+        ] {
+            assert!(proof_parts(&request.build().unwrap()).is_none());
+        }
     }
 
     #[test]

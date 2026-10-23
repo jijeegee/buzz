@@ -303,6 +303,9 @@ pub struct UpdateChannelInput {
     /// Group photo URL; absent = leave unchanged, `""` = remove.
     #[serde(default)]
     pub picture: Option<String>,
+    /// Earlier-message visibility, `"all"` or `"since_join"`; absent = leave unchanged.
+    #[serde(default)]
+    pub history: Option<String>,
 }
 
 #[tauri::command]
@@ -319,6 +322,7 @@ pub async fn update_channel(
         input.ttl_seconds,
         input.goals_enabled,
         input.picture.as_deref(),
+        input.history.as_deref(),
     )?;
     submit_event(builder, &state).await?;
 

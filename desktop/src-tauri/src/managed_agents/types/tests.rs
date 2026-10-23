@@ -920,6 +920,7 @@ fn summary_fixture(
         respond_to: RespondTo::OwnerOnly,
         respond_to_allowlist: Vec::new(),
         effort_level: None,
+        hosted_elsewhere: false,
     }
 }
 

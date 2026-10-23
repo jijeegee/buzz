@@ -381,12 +381,19 @@ tokio::task_local! {
     static REQUEST: RequestContext;
 }
 
-/// Routes whose device proof is checked in every mode
-/// ([`check_request_proof_always`]).
-const ALWAYS_PROVEN_PREFIX: &str = "/auth/agents/";
+/// Route trees whose device proof is checked in every mode
+/// ([`check_request_proof_always`]): each root and everything below it.
+const ALWAYS_PROVEN_ROOTS: &[&str] = &["/auth/agents", "/auth/pairing"];
+
+fn always_proven(path: &str) -> bool {
+    ALWAYS_PROVEN_ROOTS.iter().any(|root| {
+        path.strip_prefix(root)
+            .is_some_and(|rest| rest.is_empty() || rest.starts_with('/'))
+    })
+}
 
 /// `/auth/*` middleware: while the auth surface is on (always for
-/// [`ALWAYS_PROVEN_PREFIX`] routes), buffer the (already size-limited) body,
+/// [`ALWAYS_PROVEN_ROOTS`] routes), buffer the (already size-limited) body,
 /// record what proofs bind to, and tell the client the server time.
 pub(crate) async fn proof_context_layer(
     axum::extract::State(state): axum::extract::State<Arc<AppState>>,
@@ -394,7 +401,7 @@ pub(crate) async fn proof_context_layer(
     next: axum::middleware::Next,
 ) -> Response {
     if mode(&state, Surface::Auth) == DeviceAdmissionMode::Off
-        && !request.uri().path().starts_with(ALWAYS_PROVEN_PREFIX)
+        && !always_proven(request.uri().path())
     {
         return next.run(request).await;
     }
@@ -502,10 +509,10 @@ pub(crate) async fn check_request_proof(
 }
 
 /// The device proof of a user-token call that hands out or binds keys
-/// (`/auth/agents/*`), checked in every auth surface mode: purpose `auth`,
-/// bound to the request target, the token hash and the body hash, nonce
-/// burnt. `key` is the token's device key; keyless tokens are refused by the
-/// caller first. Fails closed without a request context.
+/// (`/auth/agents/*`, `/auth/pairing*`), checked in every auth surface
+/// mode: purpose `auth`, bound to the request target, the token hash and the
+/// body hash, nonce burnt. `key` is the token's device key; keyless tokens
+/// are refused by the caller first. Fails closed without a request context.
 pub(crate) async fn check_request_proof_always(
     state: &AppState,
     key: &DevicePubkey,

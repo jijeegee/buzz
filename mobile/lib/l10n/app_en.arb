@@ -4802,6 +4802,10 @@
       }
     }
   },
+  "searchThreadDone": "Done",
+  "@searchThreadDone": {
+    "description": "Search results, small grey tag on a thread row when the thread is completed (closed). Short."
+  },
   "searchDirectMessage": "Direct message",
   "@searchDirectMessage": {
     "description": "Search results, stands in for the place of a direct message. Short."
@@ -5595,6 +5599,27 @@
   "channelLeaveGroupError": "Couldn’t leave group. Try again.",
   "@channelLeaveGroupError": {
     "description": "Snackbar when leaving a group failed."
+  },
+  "channelLeaveOnly": "Leave only",
+  "@channelLeaveOnly": {
+    "description": "Leave confirmation when I have agents in the room: button that leaves but keeps my agents in it. Short."
+  },
+  "channelLeaveRemoveAgents": "{count, plural, =1{Leave and remove my agent} other{Leave and remove my {count} agents}}",
+  "@channelLeaveRemoveAgents": {
+    "description": "Leave confirmation when I have agents in the room: button that removes my agents, then leaves. count is how many of my agents are in the room. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "groupHistorySwitchTitle": "New members can see earlier messages",
+  "@groupHistorySwitchTitle": {
+    "description": "Group settings, switch label: whether people who join later can read messages sent before they joined."
+  },
+  "groupHistorySaveError": "Couldn’t update this setting. Try again.",
+  "@groupHistorySaveError": {
+    "description": "Snackbar when saving the earlier-messages switch failed."
   },
   "channelGroupActionsLoadingLabel": "Loading group actions",
   "@channelGroupActionsLoadingLabel": {
@@ -6475,6 +6500,24 @@
       }
     }
   },
+  "systemHistoryAll": "{actor} let new members see earlier messages",
+  "@systemHistoryAll": {
+    "description": "Chat system message: someone let people who join later read earlier messages.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemHistorySinceJoin": "{actor} hid earlier messages from new members",
+  "@systemHistorySinceJoin": {
+    "description": "Chat system message: people who join later now see only messages sent after they joined.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
   "systemPhotoChanged": "{room, select, chat{{actor} changed the chat photo} other{{actor} changed the group photo}}",
   "@systemPhotoChanged": {
     "description": "Chat system message: someone changed the room's photo.",
@@ -6960,6 +7003,33 @@
   "@chatInfoLeaveError": {
     "description": "Chat info, snackbar when leaving the chat failed."
   },
+  "chatInfoRemoveAgentTitle": "Remove {name}?",
+  "@chatInfoRemoveAgentTitle": {
+    "description": "Chat info: confirmation title before removing one of my agents from the chat. name is the agent name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatInfoRemoveAgentBody": "{name} will be removed from this chat.",
+  "@chatInfoRemoveAgentBody": {
+    "description": "Chat info: confirmation text before removing one of my agents from the chat. name is the agent name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatInfoRemoveAgentError": "Couldn’t remove {name}. Try again.",
+  "@chatInfoRemoveAgentError": {
+    "description": "Chat info: snackbar when removing one of my agents failed. name is the agent name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "chatInfoRenameForMe": "Rename for me",
   "@chatInfoRenameForMe": {
     "description": "Chat info, item and dialog title for a private chat name only you see. Short."
@@ -7224,6 +7294,22 @@
   "messageQuoteBlocked": "Message from a blocked user",
   "@messageQuoteBlocked": {
     "description": "Message, placeholder for a quoted message written by someone you blocked."
+  },
+  "messageQuoteBeforeJoin": "Sent before you joined",
+  "@messageQuoteBeforeJoin": {
+    "description": "Small italic line under a quoted message that was sent before I joined the room; it cannot be opened. Short."
+  },
+  "messageQuoteBeforeJoinLabel": "Quoted message from {author}. {excerpt}. Sent before you joined.",
+  "@messageQuoteBeforeJoinLabel": {
+    "description": "Screen reader label for a quoted message sent before I joined. author is its sender, excerpt its first words.",
+    "placeholders": {
+      "author": {
+        "type": "String"
+      },
+      "excerpt": {
+        "type": "String"
+      }
+    }
   },
   "messageQuoteJump": "Jump to quoted message from {name}",
   "@messageQuoteJump": {
@@ -7720,5 +7806,53 @@
         "example": "English"
       }
     }
+  },
+  "appUpdateRequiredTitle": "Update required",
+  "@appUpdateRequiredTitle": {
+    "description": "Title of the full-screen page shown when this app version is too old to use."
+  },
+  "appUpdateRequiredBody": "This version of Kuzz is no longer supported. Update to keep using it.",
+  "@appUpdateRequiredBody": {
+    "description": "Body of the full-screen required-update page."
+  },
+  "appUpdateAvailable": "Kuzz {version} is available.",
+  "@appUpdateAvailable": {
+    "description": "Bottom bar text when an optional app update exists.",
+    "placeholders": {
+      "version": {
+        "type": "String",
+        "example": "0.6.2"
+      }
+    }
+  },
+  "appUpdateInstall": "Update",
+  "@appUpdateInstall": {
+    "description": "Button that downloads and installs the app update."
+  },
+  "appUpdateLater": "Later",
+  "@appUpdateLater": {
+    "description": "Button that postpones an optional app update."
+  },
+  "appUpdateDownloading": "Downloading…",
+  "@appUpdateDownloading": {
+    "description": "Update button label while the update downloads and its size is unknown."
+  },
+  "appUpdateDownloadingPercent": "Downloading {percent}%",
+  "@appUpdateDownloadingPercent": {
+    "description": "Update button label with download progress.",
+    "placeholders": {
+      "percent": {
+        "type": "int",
+        "example": "42"
+      }
+    }
+  },
+  "appUpdateRetry": "Try again",
+  "@appUpdateRetry": {
+    "description": "Button that checks for the update again after the check failed."
+  },
+  "appUpdateFailed": "Couldn’t update. Check your connection and try again.",
+  "@appUpdateFailed": {
+    "description": "Error shown when downloading or opening the update failed."
   }
 }

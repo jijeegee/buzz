@@ -12,6 +12,7 @@ import '../channels/group_chat/chat_title.dart';
 import '../chats/chat_list.dart';
 import '../chats/chats_page.dart';
 import 'search_provider.dart';
+import 'thread_name_search.dart';
 
 /// Characters a word starts after in a chat name.
 const _wordBreaks = {' ', '-', '_', '#', '.', '/', '(', '[', '·', '›'};
@@ -192,17 +193,24 @@ SearchChatResults buildSearchChatResults({
   return SearchChatResults(groups: sorted(groups), dms: sorted(dms));
 }
 
-/// The current query's chats by name, from the Chats list and the channels
-/// on this device. Updates as those load.
+/// The current query's chats by name, from the Chats list, the channels on
+/// this device, and the relay's thread-name search (which also finds closed
+/// and quiet threads). Updates as those load.
 final searchChatResultsProvider = Provider<SearchChatResults>((ref) {
   final query = ref.watch(searchProvider.select((state) => state.query));
   if (query.isEmpty) return const SearchChatResults();
+  final searched = ref.watch(
+    searchProvider.select((state) => state.threadResults),
+  );
   final currentPubkey = ref.watch(currentPubkeyProvider);
   final names = ref.watch(identityNameSourcesProvider);
   final privateNames = ref.watch(channelNamesProvider);
   return buildSearchChatResults(
     query: query,
-    rows: ref.watch(chatsRowsProvider) ?? const [],
+    rows: withSearchedThreads(
+      ref.watch(chatsRowsProvider) ?? const [],
+      searched,
+    ),
     channels: ref.watch(channelsProvider).value ?? const [],
     dmLabel: (channel) => channelTitle(
       channel,

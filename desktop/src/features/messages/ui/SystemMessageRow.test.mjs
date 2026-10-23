@@ -612,6 +612,29 @@ test("a removed group photo renders 'removed the group photo'", async () => {
   assert.match(text, /^Elrond ?removed the group photo/);
 });
 
+test("a history change renders who the group now shows earlier messages to", async () => {
+  const { screen } = await import("@testing-library/react");
+  const elrond = "11".repeat(32);
+  await renderSystemMessageRow({
+    groupedMessages: [
+      {
+        ...pictureChangedMessage({ actor: elrond, picture: "" }),
+        body: JSON.stringify({
+          type: "history_changed",
+          actor: elrond,
+          history: "all",
+        }),
+        id: "history-all",
+      },
+    ],
+    profiles: profileFor(elrond, "Elrond"),
+  });
+  const text = normalizeText(
+    screen.getByTestId("system-message-row").textContent ?? "",
+  );
+  assert.match(text, /^Elrond ?let new members see earlier messages/);
+});
+
 function channelEventMessage(payload, id) {
   return {
     author: "System",

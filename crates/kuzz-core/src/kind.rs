@@ -482,6 +482,10 @@ pub const KIND_THREAD_SUMMARY: u32 = 39005;
 pub const KIND_WINDOW_BOUNDS: u32 = 39006;
 /// NIP-CW thread-mode query-time bounds, bound to a normalized newest-first thread request.
 pub const KIND_THREAD_WINDOW_BOUNDS: u32 = 39007;
+/// Quote preview overlay: `e`/`d` tag = quoted event id, `p` = its author,
+/// content = `{excerpt, kind, created_at}`. Served for a quote of a message
+/// from before the reader joined (only shown inside the quote box).
+pub const KIND_QUOTE_PREVIEW: u32 = 39008;
 
 /// Workflow definition (parameterized replaceable, d=workflow_uuid).
 pub const KIND_WORKFLOW_DEF: u32 = 30620;
@@ -770,6 +774,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_THREAD_SUMMARY,
     KIND_WINDOW_BOUNDS,
     KIND_THREAD_WINDOW_BOUNDS,
+    KIND_QUOTE_PREVIEW,
     KIND_PRESENCE_UPDATE,
     KIND_TYPING_INDICATOR,
     KIND_HUDDLE_REACTION,
@@ -932,6 +937,7 @@ pub const fn is_relay_only_kind(kind: u32) -> bool {
             | KIND_THREAD_SUMMARY
             | KIND_WINDOW_BOUNDS
             | KIND_THREAD_WINDOW_BOUNDS
+            | KIND_QUOTE_PREVIEW
             | KIND_CHAT_STATE_PING
             | KIND_NEW_SIGNIN_NOTICE
     )

@@ -195,6 +195,7 @@ pub fn channel_info_from_event(
         goals_enabled: goals_enabled_from_event(event),
         picture: picture_from_event(event),
         group_chat: has_tag(event, "group_chat"),
+        history: history_from_event(event),
     })
 }
 
@@ -260,6 +261,7 @@ pub fn channel_detail_from_event(event: &Event) -> Result<ChannelDetailInfo, Str
         goals_enabled: goals_enabled_from_event(event),
         picture: picture_from_event(event),
         group_chat: has_tag(event, "group_chat"),
+        history: history_from_event(event),
     })
 }
 
@@ -268,6 +270,14 @@ fn picture_from_event(event: &Event) -> Option<String> {
     first_tag_value(event, "picture")
         .map(str::trim)
         .filter(|v| !v.is_empty())
+        .map(str::to_string)
+}
+
+/// Earlier-message visibility from kind:39000 `["history", value]`; only the
+/// two known values pass through.
+fn history_from_event(event: &Event) -> Option<String> {
+    first_tag_value(event, "history")
+        .filter(|v| *v == "all" || *v == "since_join")
         .map(str::to_string)
 }
 

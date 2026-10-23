@@ -19,6 +19,7 @@ import {
   getMinimumSearchQueryLength,
   MIN_SEARCH_QUERY_LENGTH,
   useSearchMessagesQuery,
+  useThreadNameSearchQuery,
 } from "@/features/search/hooks";
 import {
   compareGroupMatches,
@@ -37,6 +38,7 @@ import {
 import type { SearchResult } from "@/features/search/ui/SearchResultItem";
 import { useSearchHitThreads } from "@/features/search/useSearchHitThreads";
 import type { ChatListRow } from "@/features/chats/chatListState";
+import type { ChatStateBinding } from "@/shared/api/chatState";
 import type { Channel, SearchHit, UserSearchResult } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -116,6 +118,7 @@ export function useSearchResults({
   limit = 12,
   scopeChannelId,
   threadRows,
+  threadSearchBinding,
 }: {
   channelLabels?: Record<string, string>;
   channels: Channel[];
@@ -124,6 +127,12 @@ export function useSearchResults({
   scopeChannelId?: string | null;
   /** The relay's Chats list rows; their thread names are searched. */
   threadRows?: readonly ChatListRow[];
+  /**
+   * The account for the relay's thread-name search, which also finds closed
+   * and quiet threads the Chats list leaves out. Null when the relay keeps
+   * no chat state.
+   */
+  threadSearchBinding?: ChatStateBinding | null;
 }) {
   const [query, setQuery] = React.useState("");
   const [debouncedQuery, setDebouncedQuery] = React.useState("");
@@ -329,16 +338,23 @@ export function useSearchResults({
     () => channelMatches.map(({ channel }) => channel),
     [channelMatches],
   );
+  const threadNameSearch = useThreadNameSearchQuery(
+    ftsQuery,
+    threadSearchBinding,
+    enabled && !scopeChannelId,
+  );
+  const searchedThreadRows = threadNameSearch.data;
   const threadMatches = React.useMemo(() => {
     if (
       scopeChannelId ||
-      !threadRows ||
+      (!threadRows && !searchedThreadRows) ||
       ftsQuery.length < MIN_SEARCH_QUERY_LENGTH
     ) {
       return [];
     }
+    // Chats rows first: a thread in both keeps its Chats row.
     return findThreadNameMatches(
-      threadRows,
+      [...(threadRows ?? []), ...(searchedThreadRows ?? [])],
       ftsQuery.toLowerCase(),
       (channelId) => channelLookup.has(channelId),
     )
@@ -354,7 +370,7 @@ export function useSearchResults({
       }))
       .sort((a, b) => compareGroupMatches(a.match, b.match))
       .slice(0, 5);
-  }, [channelLookup, ftsQuery, scopeChannelId, threadRows]);
+  }, [channelLookup, ftsQuery, scopeChannelId, searchedThreadRows, threadRows]);
   const managedAgentPubkeys = React.useMemo(
     () =>
       new Set(

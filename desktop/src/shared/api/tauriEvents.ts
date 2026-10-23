@@ -12,3 +12,20 @@ export async function getEventsByIds(
   if (eventIds.length === 0) return [];
   return invokeTauri<RelayEvent[]>("get_events", { eventIds });
 }
+
+/**
+ * Relay-signed excerpt (kind:39008) of a quoted message the reader cannot
+ * fetch because it was sent before they joined, or null when the relay has
+ * none. `quotingId` is the visible message carrying the quote.
+ */
+export async function getQuotePreview(
+  channelId: string,
+  quotedId: string,
+  quotingId: string,
+): Promise<RelayEvent | null> {
+  return invokeTauri<RelayEvent | null>("get_quote_preview", {
+    channelId,
+    quotedId,
+    quotingId,
+  });
+}

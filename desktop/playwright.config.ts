@@ -29,6 +29,7 @@ export default defineConfig({
         "**/tooltip-semantics.spec.ts",
         "**/search-scope-screenshots.spec.ts",
         "**/search-thread-reply.spec.ts",
+        "**/search-thread-names.spec.ts",
         "**/onboarding-docked-cta-screenshots.spec.ts",
         "**/default-community-onboarding.spec.ts",
         "**/identity-key-help.spec.ts",
@@ -197,6 +198,7 @@ export default defineConfig({
       testMatch: [
         "**/agents.spec.ts",
         "**/agents-tabs-screenshots.spec.ts",
+        "**/external-connect-screenshots.spec.ts",
         "**/agent-availability.spec.ts",
         "**/agent-snapshot-recipient.spec.ts",
         "**/onboarding.spec.ts",

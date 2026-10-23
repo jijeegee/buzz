@@ -25,14 +25,17 @@ const VERIFIER_PREFIXES: &[&str] = &[
 ];
 
 /// Calls that verify a key signature, by exact name: the NIP-FI HTTP choke
-/// point, its NIP-98 closure, Blossom extraction, link proofs and helpers
-/// that verify for their callers.
+/// point, its NIP-98 closure, Blossom extraction, link proofs, agent
+/// registration and pairing claims, and helpers that verify for their
+/// callers.
 const VERIFIER_NAMES: &[&str] = &[
     "admit_nip_fi_http_on_state",
     "make_nip98_closure_for_admission",
     "extract_blossom_auth",
     "extract_blossom_read_proof",
     "validate_link_proof",
+    "verify_agent_register",
+    "verify_pair_claim",
     "authorize_nip98",
 ];
 
@@ -68,10 +71,28 @@ const KEY_EXCEPTIONS: &[(&str, &str, Why)] = &[
     ("api/admin/auth.rs", "authorize_nip98", Why::Helper),
     (
         "api/auth/agents.rs",
+        "register",
+        Why::Exempt(
+            "agent registration: the owner's signed-in device (Bearer + device proof) \
+             registers the agent key, whose signature proves possession; the key is the \
+             subject, not the caller",
+        ),
+    ),
+    (
+        "api/auth/agents.rs",
         "status",
         Why::Exempt(
             "reads key_admission itself and answers only an admitted caller, in log \
              mode too (stricter than admit_key); off returns no keys",
+        ),
+    ),
+    (
+        "api/auth/pairing.rs",
+        "claim",
+        Why::Exempt(
+            "pairing claim: the agent and device signatures prove possession of the keys \
+             being paired; the key is the subject, and the single-use code was issued to \
+             the owner's signed-in device (Bearer + device proof)",
         ),
     ),
     (

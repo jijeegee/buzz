@@ -245,8 +245,8 @@ pub(crate) fn spawn_key_refusal(record: &ManagedAgentRecord) -> Option<String> {
     }
     record.private_key_nsec.is_empty().then(|| {
         format!(
-            "agent {} has no private key available — the OS keyring may be unreachable. \
-             Refusing to start without an identity; retry once the keyring is reachable.",
+            "agent {} has no private key available on this computer, so it was not started. \
+             Try again in a moment; if it keeps happening, restart the app.",
             record.pubkey
         )
     })

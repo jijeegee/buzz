@@ -223,6 +223,27 @@ class _ThreadResultTile extends StatelessWidget {
         maxLines: 1,
         overflow: TextOverflow.ellipsis,
       ),
+      // A completed thread is still found by name; say so.
+      trailing: thread.closed
+          ? Container(
+              key: ValueKey('search-thread-done-${result.key}'),
+              padding: const EdgeInsets.symmetric(
+                horizontal: Grid.half + 2,
+                vertical: 3,
+              ),
+              decoration: BoxDecoration(
+                color: context.colors.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(Radii.sm),
+              ),
+              child: Text(
+                context.l10n.searchThreadDone,
+                style: context.textTheme.labelSmall?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            )
+          : null,
       onTap: () {
         onResultSelected();
         _openChatResult(context, result);

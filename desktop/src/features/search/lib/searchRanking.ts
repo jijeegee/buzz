@@ -7,16 +7,30 @@ import type { ChatListRow } from "@/features/chats/chatListState";
  */
 const THREAD_NAME_MAX_SCORE = 4;
 
-/** A named thread from the Chats list, as a search result. */
+/** A named thread from the Chats list or the relay's name search. */
 export type SearchThread = {
   /** Seconds; the thread's latest activity. */
   at: number;
   channelId: string;
   /** The relay's channel name; the app's own label wins when present. */
   channelName: string;
+  /** Closed (done); still found by name. */
+  closed: boolean;
   name: string;
   rootId: string;
 };
+
+/** The thread fields name matching reads (Chats rows and search rows). */
+export type ThreadNameRow = Pick<
+  ChatListRow,
+  | "at"
+  | "channel_id"
+  | "channel_name"
+  | "closed"
+  | "root_id"
+  | "thread_name"
+  | "type"
+>;
 
 /** One group, DM, or thread match, ranked by {@link compareGroupMatches}. */
 export type GroupMatch = {
@@ -43,12 +57,13 @@ export function compareGroupMatches(left: GroupMatch, right: GroupMatch) {
 }
 
 /**
- * Named threads in the Chats list whose name contains `lowerQuery`
- * ("검색" finds "채널 검색 및 초대"), with their match score. Threads in a
- * channel `isVisibleChannel` rejects are skipped.
+ * Named threads whose name contains `lowerQuery` ("검색" finds "채널 검색 및
+ * 초대"), with their match score. Threads in a channel `isVisibleChannel`
+ * rejects are skipped. A thread listed twice keeps its first row, so pass
+ * the Chats rows before the relay's search rows.
  */
 export function findThreadNameMatches(
-  rows: readonly ChatListRow[],
+  rows: readonly ThreadNameRow[],
   lowerQuery: string,
   isVisibleChannel: (channelId: string) => boolean,
 ): Array<{ score: number; thread: SearchThread }> {
@@ -71,6 +86,7 @@ export function findThreadNameMatches(
         at: row.at,
         channelId: row.channel_id,
         channelName: row.channel_name,
+        closed: row.closed === true,
         name,
         rootId,
       },

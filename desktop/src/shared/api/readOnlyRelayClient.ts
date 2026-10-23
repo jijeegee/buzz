@@ -12,6 +12,7 @@ import {
   type RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
 import { closeWebSocket } from "@/shared/api/relayWebSocketClose";
+import { isSignedOutRefusal } from "@/shared/api/remoteSignOut";
 import {
   activateRateLimitIfSignalled,
   waitForRateLimit,
@@ -42,6 +43,8 @@ export type ReadOnlyRelayClientOptions = {
   }) => Promise<RelayAuthFrame>;
   /** The relay closed the socket or it failed (not a `disconnect()` call). */
   onClose?: () => void;
+  /** The relay refused this account as signed out (AUTH or NOTICE). */
+  onSignedOutRefusal?: () => void;
 };
 
 type PendingPublish = {
@@ -348,6 +351,10 @@ export class ReadOnlyRelayClient {
     }
     if (type === "EOSE" && typeof rest[0] === "string") {
       this.handleEose(rest[0]);
+      return;
+    }
+    if (type === "NOTICE" && isSignedOutRefusal(rest[0])) {
+      this.options.onSignedOutRefusal?.();
     }
   }
 
@@ -393,6 +400,7 @@ export class ReadOnlyRelayClient {
       authRequest.resolve();
       return;
     }
+    if (isSignedOutRefusal(message)) this.options.onSignedOutRefusal?.();
 
     authRequest.reject(
       message
