@@ -40,6 +40,7 @@ import {
   useDeleteMessageMutation,
   useEditMessageMutation,
   useSendMessageMutation,
+  useRestoreStoredSends,
   useSendPreview,
   useToggleReactionMutation,
 } from "@/features/messages/hooks";
@@ -273,6 +274,10 @@ export function ChannelScreen({
     currentIdentity,
   );
   const previewSend = useSendPreview(activeChannel, currentIdentity);
+  useRestoreStoredSends(
+    activeChannel?.id ?? null,
+    sendMessageMutation.mutateAsync,
+  );
   const toggleReactionMutation = useToggleReactionMutation();
   const deleteMessageMutation = useDeleteMessageMutation(activeChannel);
   const editMessageMutation = useEditMessageMutation(activeChannel);

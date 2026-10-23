@@ -172,6 +172,13 @@ export function getDraftStoreScope(): string {
   return storageKey();
 }
 
+/** Relay + account scope for other per-workspace local state; null if none. */
+export function getDraftStorePersistScope(): string | null {
+  return currentPubkey && currentRelayScope
+    ? `${currentRelayScope}:${currentPubkey}`
+    : null;
+}
+
 function legacyStorageKey(): string {
   return `${LEGACY_DRAFT_STORE_KEY_PREFIX}:${currentPubkey}`;
 }
