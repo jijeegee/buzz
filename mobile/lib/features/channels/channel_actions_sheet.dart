@@ -35,6 +35,7 @@ import 'channel_mutes/channel_mutes_provider.dart';
 import 'channel_sections/channel_sections_provider.dart';
 import 'channel_stars/channel_stars_provider.dart';
 import 'channels_provider.dart';
+import 'leave_with_agents.dart';
 import 'manage_channel_sheet.dart';
 import 'members_sheet.dart';
 import 'room_goals_switch.dart';
@@ -137,6 +138,12 @@ class ChannelActionsSheet extends HookConsumerWidget {
     final lifecycleCapabilitiesUnavailable =
         membersAsync.hasError || agentOwnersAsync.hasError;
     final dmOther = dmOtherPerson(currentChannel, currentPubkey: currentPubkey);
+    final canLeave =
+        channel.isMember &&
+        (channel.isGroupChat || (!channel.isPersonChat && !channel.isArchived));
+    final leaveAgents = canLeave
+        ? watchAgentsToRemoveOnLeave(ref, channel.id)
+        : const <String>[];
     // Any DM participant may change the DM's goals switch.
     final isDmParticipant =
         currentChannel.isMember ||
@@ -365,16 +372,14 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   icon: LucideIcons.logOutDir,
                   label: context.l10n.channelLeaveChat,
                   destructive: true,
-                  onTap: () => _confirmAndRun(
+                  onTap: () => _confirmLeaveAndRun(
                     context,
                     ref,
                     title: context.l10n.channelLeaveChatTitle,
                     body: context.l10n.channelLeaveChatBody,
-                    confirmLabel: context.l10n.channelLeave,
                     errorMessage: context.l10n.channelLeaveChatError,
-                    action: () => ref
-                        .read(channelActionsProvider)
-                        .leaveChannel(channel.id),
+                    channelId: channel.id,
+                    agents: leaveAgents,
                   ),
                 ),
               ],
@@ -385,18 +390,16 @@ class ChannelActionsSheet extends HookConsumerWidget {
                     icon: LucideIcons.logOutDir,
                     label: context.l10n.channelLeaveGroup,
                     destructive: true,
-                    onTap: () => _confirmAndRun(
+                    onTap: () => _confirmLeaveAndRun(
                       context,
                       ref,
                       title: context.l10n.channelLeaveGroupTitle(
                         currentChannel.name,
                       ),
                       body: context.l10n.channelLeaveGroupBody,
-                      confirmLabel: context.l10n.channelLeave,
                       errorMessage: context.l10n.channelLeaveGroupError,
-                      action: () => ref
-                          .read(channelActionsProvider)
-                          .leaveChannel(channel.id),
+                      channelId: channel.id,
+                      agents: leaveAgents,
                     ),
                   ),
                 if (lifecycleCapabilitiesLoading)
@@ -628,6 +631,42 @@ Future<void> _confirmAndRun(
   if (confirmed != true) return;
   try {
     await action();
+    if (pageContext.mounted) Navigator.of(pageContext).pop(true);
+  } catch (error) {
+    if (!pageContext.mounted) return;
+    ScaffoldMessenger.of(
+      pageContext,
+    ).showSnackBar(SnackBar(content: Text(errorMessage)));
+  }
+}
+
+/// Confirms and runs a leave. With [agents] of mine in the room the dialog
+/// also offers to remove them first.
+Future<void> _confirmLeaveAndRun(
+  BuildContext sheetContext,
+  WidgetRef ref, {
+  required String title,
+  required String body,
+  required String channelId,
+  required List<String> agents,
+  required String errorMessage,
+}) async {
+  final pageContext = Navigator.of(sheetContext, rootNavigator: true).context;
+  final actions = ref.read(channelActionsProvider);
+  final choice = await showLeaveConfirmation(
+    context: pageContext,
+    title: title,
+    body: body,
+    agentCount: agents.length,
+  );
+  if (choice == null) return;
+  try {
+    await runLeave(
+      actions,
+      channelId: channelId,
+      choice: choice,
+      agents: agents,
+    );
     if (pageContext.mounted) Navigator.of(pageContext).pop(true);
   } catch (error) {
     if (!pageContext.mounted) return;

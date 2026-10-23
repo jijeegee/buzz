@@ -633,6 +633,178 @@ void main() {
     });
   });
 
+  group('earlier messages in Manage group', () {
+    late _FakeChannelActions actions;
+    Channel? updated;
+
+    Future<void> pumpSheet(
+      WidgetTester tester, {
+      required Channel channel,
+      required bool canEditDetails,
+    }) async {
+      updated = null;
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            currentPubkeyProvider.overrideWith((ref) => _currentPubkey),
+            channelCanvasProvider(channel.id).overrideWith(
+              (ref) async => const ChannelCanvas(
+                content: null,
+                updatedAt: null,
+                authorPubkey: null,
+              ),
+            ),
+            channelActionsProvider.overrideWith(
+              (ref) => actions = _FakeChannelActions(ref),
+            ),
+          ],
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: Scaffold(
+              body: ManageChannelSheet(
+                channel: channel,
+                canEditDetails: canEditDetails,
+                onChannelUpdated: (channel) => updated = channel,
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+    }
+
+    final historySwitch = find.byKey(const ValueKey('group-history-switch'));
+
+    testWidgets('owners switch it on and off with a history tag', (
+      tester,
+    ) async {
+      await pumpSheet(tester, channel: _channel(), canEditDetails: true);
+
+      expect(find.text('New members can see earlier messages'), findsOneWidget);
+      expect(tester.widget<SwitchListTile>(historySwitch).value, isFalse);
+
+      await tester.tap(historySwitch);
+      await tester.pumpAndSettle();
+      expect(actions.historyUpdates, [true]);
+      expect(updated?.historyAll, isTrue);
+      expect(tester.widget<SwitchListTile>(historySwitch).value, isTrue);
+
+      await tester.tap(historySwitch);
+      await tester.pumpAndSettle();
+      expect(actions.historyUpdates, [true, false]);
+      expect(updated?.historyAll, isFalse);
+    });
+
+    testWidgets('reads the current value from the group', (tester) async {
+      await pumpSheet(
+        tester,
+        channel: _channel().copyWith(historyAll: true),
+        canEditDetails: true,
+      );
+      expect(tester.widget<SwitchListTile>(historySwitch).value, isTrue);
+    });
+
+    testWidgets('members without owner or admin rights do not see it', (
+      tester,
+    ) async {
+      await pumpSheet(tester, channel: _channel(), canEditDetails: false);
+      expect(historySwitch, findsNothing);
+    });
+  });
+
+  group('leaving with my agents', () {
+    const agent = 'my-agent';
+    const otherAgent = 'their-agent';
+    late _FakeChannelActions actions;
+
+    List<ChannelMember> members({String myRole = 'member'}) => [
+      ChannelMember(
+        pubkey: _currentPubkey,
+        role: myRole,
+        joinedAt: DateTime(2025),
+      ),
+      ChannelMember(pubkey: 'owner', role: 'owner', joinedAt: DateTime(2025)),
+      ChannelMember(pubkey: agent, role: 'bot', joinedAt: DateTime(2025)),
+      ChannelMember(pubkey: otherAgent, role: 'bot', joinedAt: DateTime(2025)),
+    ];
+
+    Future<void> openLeave(
+      WidgetTester tester,
+      List<ChannelMember> roster,
+    ) async {
+      await tester.pumpWidget(
+        _app(
+          channel: _channel(),
+          loadMembers: () async => roster,
+          agentOwners: const AsyncValue.data({
+            agent: _currentPubkey,
+            otherAgent: 'someone-else',
+          }),
+          createChannelActions: (ref) => actions = _FakeChannelActions(ref),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('Leave group'));
+      await tester.pumpAndSettle();
+    }
+
+    testWidgets('offers removing only my agents, then leaves', (tester) async {
+      await openLeave(tester, members());
+
+      expect(find.text('Leave and remove my agent'), findsOneWidget);
+      expect(find.text('Leave only'), findsOneWidget);
+      expect(find.text('Cancel'), findsOneWidget);
+
+      await tester.tap(find.byKey(const ValueKey('leave-remove-agents')));
+      await tester.pumpAndSettle();
+      expect(actions.removedAgentsBeforeLeave, [
+        [agent],
+      ]);
+      expect(actions.leftChannelIds, ['channel-id']);
+    });
+
+    testWidgets('Leave only keeps my agents', (tester) async {
+      await openLeave(tester, members());
+      await tester.tap(find.byKey(const ValueKey('leave-only')));
+      await tester.pumpAndSettle();
+      expect(actions.removedAgentsBeforeLeave, isEmpty);
+      expect(actions.leftChannelIds, ['channel-id']);
+    });
+
+    testWidgets('Cancel does nothing', (tester) async {
+      await openLeave(tester, members());
+      await tester.tap(find.byKey(const ValueKey('leave-cancel')));
+      await tester.pumpAndSettle();
+      expect(actions.removedAgentsBeforeLeave, isEmpty);
+      expect(actions.leftChannelIds, isEmpty);
+    });
+
+    testWidgets('the only owner gets the plain confirmation', (tester) async {
+      await openLeave(
+        tester,
+        members(
+          myRole: 'owner',
+        ).where((member) => member.pubkey != 'owner').toList(),
+      );
+      expect(find.textContaining('remove my agents'), findsNothing);
+      await tester.tap(find.widgetWithText(FilledButton, 'Leave'));
+      await tester.pumpAndSettle();
+      expect(actions.removedAgentsBeforeLeave, isEmpty);
+      expect(actions.leftChannelIds, ['channel-id']);
+    });
+
+    testWidgets('without my agents the confirmation stays plain', (
+      tester,
+    ) async {
+      await openLeave(
+        tester,
+        members().where((member) => member.pubkey != agent).toList(),
+      );
+      expect(find.textContaining('remove my agents'), findsNothing);
+      expect(find.widgetWithText(FilledButton, 'Leave'), findsOneWidget);
+    });
+  });
+
   group('group photo in Manage group', () {
     const photoUrl = 'https://relay.example/media/photo.jpg';
     late _FakeChannelActions actions;
@@ -782,8 +954,10 @@ class _FakeChannelActions extends ChannelActions {
     bool? goalsEnabled,
     String? visibility,
     String? picture,
+    bool? historyAll,
   }) async {
     if (picture != null) pictureUpdates.add(picture);
+    if (historyAll != null) historyUpdates.add(historyAll);
     if (goalsEnabled != null) {
       goalsUpdates.add(goalsEnabled);
       final failure = goalsUpdateError;
@@ -794,12 +968,26 @@ class _FakeChannelActions extends ChannelActions {
 
   final List<bool> goalsUpdates = [];
   final List<String> pictureUpdates = [];
+  final List<bool> historyUpdates = [];
   Object? goalsUpdateError;
 
   String? unarchivedChannelId;
+  final List<String> leftChannelIds = [];
+  final List<List<String>> removedAgentsBeforeLeave = [];
 
   @override
-  Future<void> leaveChannel(String channelId) async {}
+  Future<void> leaveChannel(String channelId) async {
+    leftChannelIds.add(channelId);
+  }
+
+  @override
+  Future<void> removeAgentsAndLeave({
+    required String channelId,
+    required Iterable<String> agentPubkeys,
+  }) async {
+    removedAgentsBeforeLeave.add(agentPubkeys.toList());
+    leftChannelIds.add(channelId);
+  }
 
   @override
   Future<void> unarchiveChannel(String channelId) async {

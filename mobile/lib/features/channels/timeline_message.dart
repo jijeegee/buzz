@@ -18,6 +18,7 @@ enum SystemEventType {
   channelUnarchived,
   goalsChanged,
   pictureChanged,
+  historyChanged,
   huddleStarted,
   huddleEnded,
 }
@@ -35,6 +36,10 @@ class SystemEvent {
 
   /// `goals_changed`: the room's goals switch, `on` or `off`.
   final String? goals;
+
+  /// `history_changed`: whether new members see earlier messages, `all` or
+  /// `since_join`.
+  final String? history;
   final String? ephemeralChannelId;
 
   const SystemEvent({
@@ -45,6 +50,7 @@ class SystemEvent {
     this.purpose,
     this.picture,
     this.goals,
+    this.history,
     this.ephemeralChannelId,
   });
 
@@ -73,6 +79,7 @@ class SystemEvent {
       'channel_unarchived' => SystemEventType.channelUnarchived,
       'goals_changed' => SystemEventType.goalsChanged,
       'picture_changed' => SystemEventType.pictureChanged,
+      'history_changed' => SystemEventType.historyChanged,
       _ => null,
     };
 
@@ -85,6 +92,13 @@ class SystemEvent {
         goals != 'off') {
       return null;
     }
+    final history = _readString(json, 'history');
+    // A history row can only state "all" or "since_join".
+    if (type == SystemEventType.historyChanged &&
+        history != 'all' &&
+        history != 'since_join') {
+      return null;
+    }
 
     return SystemEvent(
       type: type,
@@ -94,6 +108,7 @@ class SystemEvent {
       purpose: _readString(json, 'purpose'),
       picture: _readString(json, 'picture'),
       goals: goals,
+      history: history,
     );
   }
 
@@ -170,6 +185,10 @@ class SystemEvent {
         picture?.trim().isNotEmpty ?? false
             ? l10n.systemPhotoChanged(actor, roomNoun)
             : l10n.systemPhotoRemoved(actor, roomNoun),
+      SystemEventType.historyChanged =>
+        history == 'all'
+            ? l10n.systemHistoryAll(actor)
+            : l10n.systemHistorySinceJoin(actor),
       SystemEventType.huddleStarted => l10n.systemHuddleStarted(actor),
       SystemEventType.huddleEnded => l10n.systemHuddleEnded(actor),
     };

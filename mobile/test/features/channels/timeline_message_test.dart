@@ -204,6 +204,31 @@ void main() {
       }
     });
 
+    test('parses an earlier-messages change and drops unknown values', () {
+      final event = SystemEvent.fromContent(
+        jsonEncode({
+          'type': 'history_changed',
+          'actor': 'pk1',
+          'history': 'all',
+        }),
+      );
+      expect(event?.type, SystemEventType.historyChanged);
+      expect(event?.history, 'all');
+      for (final history in [null, 'some']) {
+        expect(
+          SystemEvent.fromContent(
+            jsonEncode({
+              'type': 'history_changed',
+              'actor': 'pk1',
+              'history': history,
+            }),
+          ),
+          isNull,
+          reason: 'history: $history',
+        );
+      }
+    });
+
     test('returns null for unknown type', () {
       final event = SystemEvent.fromContent(
         jsonEncode({'type': 'unknown_type'}),
@@ -412,6 +437,22 @@ void main() {
         );
         expect(event.describe(resolve), 'Alice turned goals $goals');
       }
+    });
+
+    test('history_changed', () {
+      SystemEvent history(String value) => SystemEvent(
+        type: SystemEventType.historyChanged,
+        actorPubkey: 'pk1',
+        history: value,
+      );
+      expect(
+        history('all').describe(resolve),
+        'Alice let new members see earlier messages',
+      );
+      expect(
+        history('since_join').describe(resolve),
+        'Alice hid earlier messages from new members',
+      );
     });
 
     test('picture_changed', () {

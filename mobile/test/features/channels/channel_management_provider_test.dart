@@ -350,6 +350,37 @@ void main() {
       expect(merged.copyWith(name: 'renamed').goalsEnabled, isFalse);
       expect(ChannelDetails.fromChannel(merged).goalsEnabled, isFalse);
     });
+
+    test('history all lets new members see earlier messages', () {
+      expect(ChannelData.fromEvent(goalsMeta(const [])).historyAll, isFalse);
+      expect(
+        channelDetailsFromEvent(
+          goalsMeta(const [
+            ['history', 'since_join'],
+          ]),
+        ).historyAll,
+        isFalse,
+      );
+      final details = channelDetailsFromEvent(
+        goalsMeta(const [
+          ['history', 'all'],
+        ]),
+      );
+      expect(details.historyAll, isTrue);
+      final merged = Channel(
+        id: details.id,
+        name: 'goals',
+        channelType: 'stream',
+        visibility: 'open',
+        description: '',
+        createdBy: 'creator',
+        createdAt: DateTime.utc(2025),
+        memberCount: 1,
+      ).mergeDetails(details);
+      expect(merged.historyAll, isTrue);
+      expect(merged.copyWith(name: 'renamed').historyAll, isTrue);
+      expect(ChannelDetails.fromChannel(merged).historyAll, isTrue);
+    });
   });
 
   group('buildCreateChannelTags', () {
@@ -427,6 +458,23 @@ void main() {
         [
           ['h', 'channel-id'],
           ['goals', 'on'],
+        ],
+      );
+    });
+
+    test('earlier-messages setting is sent alone as a history tag', () {
+      expect(
+        buildUpdateChannelTags(channelId: 'channel-id', historyAll: true),
+        [
+          ['h', 'channel-id'],
+          ['history', 'all'],
+        ],
+      );
+      expect(
+        buildUpdateChannelTags(channelId: 'channel-id', historyAll: false),
+        [
+          ['h', 'channel-id'],
+          ['history', 'since_join'],
         ],
       );
     });
