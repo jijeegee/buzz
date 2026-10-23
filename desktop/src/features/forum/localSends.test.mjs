@@ -41,6 +41,7 @@ const { discardFailedSend, hasFailedSend, resetFailedSends, retryFailedSend } =
 const { isStoredSendInFlight, resetStoredSendSession, storedSends } =
   await import("../messages/lib/failedSendStore.ts");
 const { initDraftStore } = await import("../messages/lib/useDrafts.ts");
+const { sendTimeOfDrawnRow } = await import("../messages/hooks.ts");
 
 const CHANNEL = "11111111-1111-4111-8111-111111111111";
 const ME = "a".repeat(64);
@@ -535,4 +536,242 @@ test("deleting a just-sent post no fetch has returned yet removes its row", asyn
   );
   assert.deepEqual(localRows(queryClient), []);
   assert.deepEqual(shownPosts(queryClient, localRows(queryClient)), []);
+});
+
+/** Run `body` with the clock at `at` (ms), restoring it afterwards. */
+async function atTime(at, body) {
+  const realNow = Date.now;
+  Date.now = () => at;
+  try {
+    return await body();
+  } finally {
+    Date.now = realNow;
+  }
+}
+
+test("a send keeps its drawn second only while the backend still signs at it", () => {
+  assert.equal(sendTimeOfDrawnRow(1_000, 1_000), 1_000);
+  assert.equal(sendTimeOfDrawnRow(1_000, 1_110), 1_000);
+  assert.equal(sendTimeOfDrawnRow(1_000, 1_111), 1_111);
+  // A row drawn "in the future" (the clock went back) is signed now.
+  assert.equal(sendTimeOfDrawnRow(1_200, 1_100), 1_100);
+});
+
+test("Retry more than two minutes later redraws the row at the second it is signed", async () => {
+  const queryClient = newClient();
+  seedForum(queryClient);
+  sendHandler = () => Promise.reject(new Error("offline"));
+  const view = mount(queryClient);
+  const start = Date.now();
+  await atTime(start, async () => {
+    act(() => view.result.current.forumSend.send(post("late")));
+    await flush();
+  });
+  const [row] = localRows(queryClient);
+
+  await atTime(start + 200_000, () =>
+    act(async () => retryFailedSend(row.localKey)),
+  );
+  assert.equal(invocations.length, 2);
+  const [redrawn] = localRows(queryClient);
+  assert.equal(redrawn.localKey, row.localKey);
+  assert.equal(redrawn.failed, true);
+  assert.equal(redrawn.event.created_at, Math.floor((start + 200_000) / 1000));
+  // Row, signing time and disk copy all carry the new second.
+  assert.equal(invocations[1].createdAt, redrawn.event.created_at);
+  assert.equal(
+    storedSends(CHANNEL)[0].event.created_at,
+    redrawn.event.created_at,
+  );
+
+  // The relay's copy, signed then, is recognised: no stuck "Not sent" row.
+  act(() =>
+    seedForum(queryClient, [
+      fetchedPost("e9".padEnd(64, "0"), "late", redrawn.event.created_at),
+    ]),
+  );
+  assert.deepEqual(localRows(queryClient), []);
+  assert.equal(hasFailedSend(row.localKey), false);
+  assert.deepEqual(storedSends(CHANNEL), []);
+});
+
+test("Retry within two minutes keeps the row's second", async () => {
+  const queryClient = newClient();
+  seedForum(queryClient);
+  sendHandler = () => Promise.reject(new Error("offline"));
+  const view = mount(queryClient);
+  const start = Date.now();
+  await atTime(start, async () => {
+    act(() => view.result.current.forumSend.send(post("soon")));
+    await flush();
+  });
+  const [row] = localRows(queryClient);
+  await atTime(start + 60_000, () =>
+    act(async () => retryFailedSend(row.localKey)),
+  );
+  assert.equal(invocations[1].createdAt, row.event.created_at);
+  assert.equal(
+    localRows(queryClient)[0].event.created_at,
+    row.event.created_at,
+  );
+});
+
+function localReply(localKey, content, createdAt) {
+  return {
+    localKey,
+    channelId: CHANNEL,
+    parentEventId: POST,
+    event: {
+      id: localKey,
+      localKey,
+      pubkey: ME,
+      created_at: createdAt,
+      kind: KIND_COMMENT,
+      tags: [
+        ["h", CHANNEL],
+        ["e", POST, "", "reply"],
+      ],
+      content,
+      sig: "",
+      pending: true,
+    },
+    eventId: null,
+    failed: false,
+  };
+}
+
+test("replies read oldest first whatever order the relay returns them in", () => {
+  // The relay answers newest first.
+  const fetched = [
+    fetchedReply("r3".padEnd(64, "0"), "third", 300),
+    fetchedReply("r2".padEnd(64, "0"), "second", 200),
+    fetchedReply("r1".padEnd(64, "0"), "first", 100),
+  ];
+  assert.deepEqual(
+    mergeForumReplies(fetched, [], POST).map((reply) => reply.content),
+    ["first", "second", "third"],
+  );
+  assert.deepEqual(
+    mergeForumReplies(
+      fetched,
+      [
+        localReply("forum-local-late", "mine, latest", 400),
+        localReply("forum-local-mid", "mine, between", 250),
+        localReply("forum-local-tie", "mine, same second", 200),
+      ],
+      POST,
+    ).map((reply) => reply.content),
+    [
+      "first",
+      "second",
+      "mine, same second",
+      "mine, between",
+      "third",
+      "mine, latest",
+    ],
+  );
+});
+
+const sameReply = { ...post("same"), kind: KIND_COMMENT, parentEventId: POST };
+
+test("one copy settles only the acknowledged one of two identical replies of a second", async () => {
+  const queryClient = newClient();
+  seedForum(queryClient);
+  const gates = [deferred(), deferred()];
+  sendHandler = () => gates[invocations.length - 1].promise;
+  const view = mount(queryClient);
+  await atTime(Date.now(), async () => {
+    act(() => view.result.current.forumSend.send(sameReply));
+    act(() => view.result.current.forumSend.send(sameReply));
+    await flush();
+  });
+  const [first, second] = localRows(queryClient);
+  assert.equal(first.event.created_at, second.event.created_at);
+
+  const id = "f1".padEnd(64, "0");
+  await act(async () => gates[0].resolve(await accepted(invocations[0], id)));
+  act(() =>
+    seedForum(
+      queryClient,
+      [],
+      [fetchedReply(id, "same", first.event.created_at)],
+    ),
+  );
+  assert.deepEqual(
+    localRows(queryClient).map((row) => row.localKey),
+    [second.localKey],
+  );
+
+  // The second fails: the first's copy does not pass for it.
+  await act(async () => gates[1].reject(new Error("offline")));
+  assert.equal(localRows(queryClient)[0].failed, true);
+  assert.equal(hasFailedSend(second.localKey), true);
+  assert.equal(storedSends(CHANNEL).length, 1);
+  assert.deepEqual(
+    shownReplies(queryClient, localRows(queryClient)).map((reply) => [
+      reply.content,
+      reply.failed === true,
+    ]),
+    [
+      ["same", false],
+      ["same", true],
+    ],
+  );
+});
+
+test("one copy before either answer settles one of two identical replies", async () => {
+  const queryClient = newClient();
+  seedForum(queryClient);
+  const gates = [deferred(), deferred()];
+  sendHandler = () => gates[invocations.length - 1].promise;
+  const view = mount(queryClient);
+  await atTime(Date.now(), async () => {
+    act(() => view.result.current.forumSend.send(sameReply));
+    act(() => view.result.current.forumSend.send(sameReply));
+    await flush();
+  });
+  const [first, second] = localRows(queryClient);
+  const id = "f2".padEnd(64, "0");
+  const copy = [fetchedReply(id, "same", first.event.created_at)];
+  act(() => seedForum(queryClient, [], copy));
+  assert.equal(localRows(queryClient).length, 1);
+  // Later polls still leave one row for the one copy.
+  act(() => seedForum(queryClient, [], [...copy]));
+  assert.equal(localRows(queryClient).length, 1);
+
+  await act(async () => gates[0].resolve(await accepted(invocations[0], id)));
+  await act(async () => gates[1].reject(new Error("offline")));
+  const [left] = localRows(queryClient);
+  assert.equal(left.localKey, second.localKey);
+  assert.equal(left.failed, true);
+  assert.equal(hasFailedSend(second.localKey), true);
+  assert.equal(storedSends(CHANNEL).length, 1);
+});
+
+test("one loaded copy settles only one of two identical stored sends", async () => {
+  // Two identical sends of the same second, both left on disk.
+  const earlier = newClient();
+  seedForum(earlier);
+  sendHandler = () => Promise.reject(new Error("offline"));
+  const view = mount(earlier);
+  await atTime(Date.now(), async () => {
+    act(() => view.result.current.forumSend.send(sameReply));
+    act(() => view.result.current.forumSend.send(sameReply));
+    await flush();
+  });
+  view.unmount();
+  restart();
+  assert.equal(storedSends(CHANNEL).length, 2);
+  const createdAt = storedSends(CHANNEL)[0].event.created_at;
+  const queryClient = newClient();
+  seedForum(
+    queryClient,
+    [],
+    [fetchedReply("f3".padEnd(64, "0"), "same", createdAt)],
+  );
+  syncForumLocalSends(queryClient, CHANNEL, async () => {});
+  assert.equal(storedSends(CHANNEL).length, 1);
+  const rows = queryClient.getQueryData(["forum-local-sends", CHANNEL]);
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].failed, true);
 });

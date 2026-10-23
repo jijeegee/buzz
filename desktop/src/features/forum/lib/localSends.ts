@@ -205,23 +205,123 @@ export function fetchedForumEvents(
   return [...posts, ...threads];
 }
 
-/** Whether `fetched` holds the relay's copy of a local row. */
-function isFetched(send: ForumLocalSend, fetched: RelayEvent[]): boolean {
-  if (send.eventId) return fetched.some((event) => event.id === send.eventId);
-  const match = { ...send.event, pending: true };
-  return fetched.some((event) => isStoredSendCopy(match, event));
+/**
+ * A relay copy an own send was paired with, kept after its row goes so the
+ * copy cannot also count for an identical send of the same second.
+ */
+type ForumLocalClaim = { localKey: string; eventId: string };
+
+/** Enough for every own send of a session; the oldest go first. */
+const MAX_FORUM_LOCAL_CLAIMS = 500;
+
+function forumLocalClaimsKey(channelId: string) {
+  return ["forum-local-claims", channelId] as const;
 }
 
-/** Whether the relay's copy of an own send, as drawn, is already loaded. */
+function readForumLocalClaims(
+  queryClient: QueryClient,
+  channelId: string,
+): ForumLocalClaim[] {
+  return (
+    queryClient.getQueryData<ForumLocalClaim[]>(
+      forumLocalClaimsKey(channelId),
+    ) ?? []
+  );
+}
+
+function addForumLocalClaims(
+  queryClient: QueryClient,
+  channelId: string,
+  claims: ForumLocalClaim[],
+) {
+  if (claims.length === 0) return;
+  queryClient.setQueryData<ForumLocalClaim[]>(
+    forumLocalClaimsKey(channelId),
+    [...readForumLocalClaims(queryClient, channelId), ...claims].slice(
+      -MAX_FORUM_LOCAL_CLAIMS,
+    ),
+  );
+}
+
+/**
+ * Take the earliest copy of `drawn` in `fetched` that is not `taken`, and
+ * mark it taken.
+ */
+function takeForumCopy(
+  drawn: RelayEvent,
+  fetched: RelayEvent[],
+  taken: Set<string>,
+): RelayEvent | undefined {
+  const match = { ...drawn, pending: true };
+  let copy: RelayEvent | undefined;
+  for (const event of fetched) {
+    if (taken.has(event.id) || !isStoredSendCopy(match, event)) continue;
+    if (!copy || event.created_at < copy.created_at) copy = event;
+  }
+  if (copy) taken.add(copy.id);
+  return copy;
+}
+
+/**
+ * Pair own rows with their relay copies in `fetched`, one copy per row: an
+ * acknowledged row owns its event id, and a row still waiting takes, oldest
+ * first, a copy that no other row owns, took, or `claimed` already. Returns
+ * the copy's id by local key for every row whose copy is loaded.
+ */
+function matchForumLocalSends(
+  sends: ForumLocalSend[],
+  fetched: RelayEvent[],
+  claimed: ForumLocalClaim[],
+): Map<string, string> {
+  const matches = new Map<string, string>();
+  const taken = new Set(claimed.map((claim) => claim.eventId));
+  const fetchedIds = new Set(fetched.map((event) => event.id));
+  for (const send of sends) {
+    if (!send.eventId) continue;
+    taken.add(send.eventId);
+    if (fetchedIds.has(send.eventId)) {
+      matches.set(send.localKey, send.eventId);
+    }
+  }
+  const waiting = sends
+    .filter((send) => send.eventId === null)
+    .sort((a, b) => a.event.created_at - b.event.created_at);
+  for (const send of waiting) {
+    const copy = takeForumCopy(send.event, fetched, taken);
+    if (copy) matches.set(send.localKey, copy.id);
+  }
+  return matches;
+}
+
+/**
+ * Whether the relay's copy of an own send is already loaded, or was, and
+ * its row went for it. A copy paired with another own send does not count.
+ */
 export function hasForumCopy(
   queryClient: QueryClient,
   channelId: string,
-  drawn: RelayEvent,
+  localKey: string,
 ): boolean {
-  const match = { ...drawn, pending: true };
-  return fetchedForumEvents(queryClient, channelId).some((event) =>
-    isStoredSendCopy(match, event),
+  const claimed = readForumLocalClaims(queryClient, channelId);
+  if (claimed.some((claim) => claim.localKey === localKey)) return true;
+  return matchForumLocalSends(
+    readForumLocalSends(queryClient, channelId),
+    fetchedForumEvents(queryClient, channelId),
+    claimed,
+  ).has(localKey);
+}
+
+/** Whether `events` holds a copy of `drawn` no own send was paired with. */
+function hasUnclaimedCopy(
+  queryClient: QueryClient,
+  channelId: string,
+  drawn: RelayEvent,
+  events: RelayEvent[],
+): boolean {
+  const taken = new Set(
+    readForumLocalClaims(queryClient, channelId).map((claim) => claim.eventId),
   );
+  return takeForumCopy(drawn, events, taken) !== undefined;
 }
 
 function sendState(send: ForumLocalSend) {
@@ -262,14 +362,26 @@ function insertByTime<T extends { createdAt: number }>(
   return result;
 }
 
+/**
+ * Whether a row is still to be drawn beside `items`. A row whose copy came
+ * by its text is removed by `syncForumLocalSends`, which pairs rows with
+ * copies one to one; here only the acknowledged id is checked, so an
+ * identical send of the same second is never hidden by another's copy.
+ */
+function isUnlisted(send: ForumLocalSend, items: { eventId: string }[]) {
+  return (
+    send.eventId === null ||
+    !items.some((item) => item.eventId === send.eventId)
+  );
+}
+
 /** Fetched posts with own posts not yet among them, newest first. */
 export function mergeForumPosts(
   posts: ForumPost[],
   sends: ForumLocalSend[],
 ): ForumPost[] {
-  const fetched = posts.map(postEvent);
   const rows = sends
-    .filter((send) => send.parentEventId === null && !isFetched(send, fetched))
+    .filter((send) => send.parentEventId === null && isUnlisted(send, posts))
     .map(
       (send): ForumPost => ({
         eventId: send.eventId ?? send.localKey,
@@ -286,16 +398,20 @@ export function mergeForumPosts(
   return insertByTime(posts, rows, true);
 }
 
-/** Fetched replies with own replies to `postId` not yet among them. */
+/**
+ * Fetched replies with own replies to `postId` not yet among them, oldest
+ * first, as the thread reads top-down to its composer. The relay returns
+ * them newest first; a stable sort keeps its order within a second.
+ */
 export function mergeForumReplies(
   replies: ThreadReply[],
   sends: ForumLocalSend[],
   postId: string,
 ): ThreadReply[] {
-  const fetched = replies.map(replyEvent);
+  const ordered = [...replies].sort((a, b) => a.createdAt - b.createdAt);
   const rows = sends
     .filter(
-      (send) => send.parentEventId === postId && !isFetched(send, fetched),
+      (send) => send.parentEventId === postId && isUnlisted(send, replies),
     )
     .map(
       (send): ThreadReply => ({
@@ -312,7 +428,7 @@ export function mergeForumReplies(
         ...sendState(send),
       }),
     );
-  return insertByTime(replies, rows, false);
+  return insertByTime(ordered, rows, false);
 }
 
 function isForumKind(kind: number) {
@@ -334,8 +450,14 @@ export function syncForumLocalSends(
   relayCheck?: StoredSendRelayCheck,
 ) {
   const fetched = fetchedForumEvents(queryClient, channelId);
-  for (const send of readForumLocalSends(queryClient, channelId)) {
-    if (!isFetched(send, fetched)) continue;
+  const sends = readForumLocalSends(queryClient, channelId);
+  const claimed = readForumLocalClaims(queryClient, channelId);
+  const matches = matchForumLocalSends(sends, fetched, claimed);
+  const claims: ForumLocalClaim[] = [];
+  for (const send of sends) {
+    const eventId = matches.get(send.localKey);
+    if (!eventId) continue;
+    claims.push({ localKey: send.localKey, eventId });
     removeForumLocalSend(queryClient, channelId, send.localKey);
     if (!isStoredSendInFlight(send.localKey)) {
       // Also a failed row whose send landed after all (it timed out).
@@ -343,6 +465,12 @@ export function syncForumLocalSends(
       removeStoredSend(send.localKey);
     }
   }
+  // Copies paired above, or owned by a row, cannot count for a stored send.
+  const taken = new Set([
+    ...claimed.map((claim) => claim.eventId),
+    ...claims.map((claim) => claim.eventId),
+    ...sends.flatMap((send) => (send.eventId ? [send.eventId] : [])),
+  ]);
 
   // Wait for the posts list, as chat waits for its timeline, so a delivered
   // send is recognised before it could be drawn as failed.
@@ -351,7 +479,10 @@ export function syncForumLocalSends(
       queryKey: ["forum-posts", channelId],
     })
     .some(([, data]) => data !== undefined);
-  if (!hasPosts) return;
+  if (!hasPosts) {
+    addForumLocalClaims(queryClient, channelId, claims);
+    return;
+  }
 
   for (const stored of storedSends(channelId)) {
     const { localKey } = stored;
@@ -360,8 +491,9 @@ export function syncForumLocalSends(
     }
     // Drawn in this session already: its own flow owns Retry / Delete.
     if (findForumLocalSend(queryClient, channelId, localKey)) continue;
-    const match: RelayEvent = { ...stored.event, pending: true };
-    if (fetched.some((event) => isStoredSendCopy(match, event))) {
+    const copy = takeForumCopy(stored.event, fetched, taken);
+    if (copy) {
+      claims.push({ localKey, eventId: copy.id });
       forgetFailedSend(localKey);
       removeStoredSend(localKey);
       continue;
@@ -378,7 +510,7 @@ export function syncForumLocalSends(
             if (
               !relayCheck.isDisposed() &&
               !isStoredSendInFlight(localKey) &&
-              events.some((event) => isStoredSendCopy(match, event))
+              hasUnclaimedCopy(queryClient, channelId, stored.event, events)
             ) {
               removeStoredSend(localKey, scopeKey);
             }
@@ -432,7 +564,9 @@ export function syncForumLocalSends(
         relayCheck
           .lookup(stored)
           .then((events) => {
-            if (!events.some((event) => isStoredSendCopy(match, event))) {
+            if (
+              !hasUnclaimedCopy(queryClient, channelId, stored.event, events)
+            ) {
               return send();
             }
             discard();
@@ -442,4 +576,5 @@ export function syncForumLocalSends(
       discard,
     });
   }
+  addForumLocalClaims(queryClient, channelId, claims);
 }

@@ -1,4 +1,4 @@
-import { MessageSquare } from "lucide-react";
+import { AlertCircle, MessageSquare } from "lucide-react";
 import { useMemo } from "react";
 
 import {
@@ -29,6 +29,8 @@ type ForumPostCardProps = {
   isActive?: boolean;
   canDelete?: boolean;
   isDeleting?: boolean;
+  /** Own replies to this post the relay did not accept. */
+  failedReplyCount?: number;
   onClick: (post: ForumPost) => void;
   onDelete?: (eventId: string) => void;
 };
@@ -40,6 +42,7 @@ export function ForumPostCard({
   isActive,
   canDelete,
   isDeleting,
+  failedReplyCount = 0,
   onClick,
   onDelete,
 }: ForumPostCardProps) {
@@ -155,6 +158,18 @@ export function ForumPostCard({
           role="presentation"
         >
           <FailedSendActions localKey={post.localKey} />
+        </div>
+      ) : null}
+
+      {failedReplyCount > 0 ? (
+        <div
+          className="mt-3 flex items-center gap-1.5 text-xs text-destructive"
+          data-testid="forum-post-replies-not-sent"
+        >
+          <AlertCircle aria-hidden="true" className="h-3.5 w-3.5" />
+          <span>
+            {t("forum.postCard.repliesNotSent", { count: failedReplyCount })}
+          </span>
         </div>
       ) : null}
 

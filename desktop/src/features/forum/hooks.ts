@@ -5,6 +5,7 @@ import { getForumPosts, getForumThread } from "@/shared/api/forum";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import {
   lookupStoredSendOnRelay,
+  sendTimeOfDrawnRow,
   type StoredSendRelayCheck,
 } from "@/features/messages/hooks";
 import { registerFailedSend } from "@/features/messages/lib/failedSends";
@@ -12,7 +13,6 @@ import {
   removeStoredSend,
   saveStoredSend,
   settleStoredSend,
-  storedSends,
 } from "@/features/messages/lib/failedSendStore";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { deleteMessage, sendChannelMessage } from "@/shared/api/tauri";
@@ -204,15 +204,15 @@ export function useForumSend(pubkey: string | undefined) {
       ),
     onMutate: (variables) => {
       const { channelId, localKey, parentEventId } = variables;
-      const drawn =
-        findForumLocalSend(queryClient, channelId, localKey)?.event ??
-        (pubkey
-          ? buildForumLocalEvent(
-              variables,
-              pubkey,
-              Math.floor(Date.now() / 1000),
-            )
-          : null);
+      const now = Math.floor(Date.now() / 1000);
+      const shown = findForumLocalSend(queryClient, channelId, localKey)?.event;
+      // A Retry long after the row was drawn moves it to now: the backend
+      // signs it then, and its copy must match the row and the disk copy.
+      const drawn = shown
+        ? { ...shown, created_at: sendTimeOfDrawnRow(shown.created_at, now) }
+        : pubkey
+          ? buildForumLocalEvent(variables, pubkey, now)
+          : null;
       if (!drawn) return undefined;
       writeForumLocalSend(queryClient, {
         localKey,
@@ -261,13 +261,7 @@ export function useForumSend(pubkey: string | undefined) {
     },
     onError: (_error, variables, context) => {
       const { channelId, localKey } = variables;
-      // A row whose copy a poll already brought is gone; its disk copy
-      // still says how it was drawn.
-      const drawn =
-        findForumLocalSend(queryClient, channelId, localKey)?.event ??
-        storedSends(channelId).find((stored) => stored.localKey === localKey)
-          ?.event;
-      if (!context || (drawn && hasForumCopy(queryClient, channelId, drawn))) {
+      if (!context || hasForumCopy(queryClient, channelId, localKey)) {
         // Nothing was drawn, or it timed out after the relay stored it and
         // its copy is already shown.
         removeForumLocalSend(queryClient, channelId, localKey);

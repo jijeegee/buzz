@@ -334,6 +334,22 @@ export function removeOptimisticMessage(
 const STORED_SEND_MATCH_WINDOW_SECONDS = 120;
 
 /**
+ * The backend signs at a caller-chosen second only within two minutes of
+ * now (`is_recent_send_time`), and at the current second otherwise. A send
+ * of a row drawn longer ago than this is redrawn at the current second, so
+ * the second it is signed at is still the one drawn and its copy is still
+ * recognised. Kept under the backend's limit for the time the send takes.
+ */
+const RESEND_AT_DRAWN_TIME_SECONDS = 110;
+
+/** The second to draw and sign a send of a row drawn at `drawnAt`. */
+export function sendTimeOfDrawnRow(drawnAt: number, now: number): number {
+  return drawnAt <= now && now - drawnAt <= RESEND_AT_DRAWN_TIME_SECONDS
+    ? drawnAt
+    : now;
+}
+
+/**
  * Asks the relay whether a stored send landed after all (the app quit
  * between the relay storing it and its acknowledgement). Until it answers,
  * the send is not drawn, so a delivered message never shows as failed and
@@ -1190,7 +1206,8 @@ export function useSendMessageMutation(
         optimisticLocalKey,
       );
       // A previewed row is replaced in place: same id and time, so it never
-      // moves.
+      // moves. A Retry long after it was drawn moves it to now, the second
+      // the backend will sign it at.
       const previewed = optimisticLocalKey
         ? findOptimisticMessage(
             queryClient,
@@ -1199,7 +1216,13 @@ export function useSendMessageMutation(
           )
         : undefined;
       const drawn = previewed
-        ? { ...optimisticMessage, created_at: previewed.created_at }
+        ? {
+            ...optimisticMessage,
+            created_at: sendTimeOfDrawnRow(
+              previewed.created_at,
+              optimisticMessage.created_at,
+            ),
+          }
         : optimisticMessage;
       writeOptimisticMessage(queryClient, effectiveChannel.id, drawn);
       if (optimisticLocalKey) {

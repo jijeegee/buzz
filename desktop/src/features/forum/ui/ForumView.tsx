@@ -82,6 +82,19 @@ export function ForumView({
     () => mergeForumPosts(fetchedPosts ?? [], localSends),
     [fetchedPosts, localSends],
   );
+  // A failed reply shows only in its thread; its post card says so.
+  const failedReplyCounts = React.useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const send of localSends) {
+      if (send.failed && send.parentEventId) {
+        counts.set(
+          send.parentEventId,
+          (counts.get(send.parentEventId) ?? 0) + 1,
+        );
+      }
+    }
+    return counts;
+  }, [localSends]);
   const fetchedThread = threadQuery.data;
   const thread = React.useMemo(
     () =>
@@ -281,9 +294,11 @@ export function ForumView({
                     deletePostMutation.isPending &&
                     deletePostMutation.variables?.eventId === post.eventId
                   }
+                  failedReplyCount={failedReplyCounts.get(post.eventId) ?? 0}
                   onClick={() => {
-                    // Not on the relay yet: there is no thread to open.
-                    if (!post.pending) onSelectPost(post.eventId);
+                    // Own posts no fetch has returned yet: the relay may not
+                    // serve the thread, or not even hold the post.
+                    if (!post.localKey) onSelectPost(post.eventId);
                   }}
                   onDelete={(eventId) => {
                     deletePostMutation.mutate({ eventId });
