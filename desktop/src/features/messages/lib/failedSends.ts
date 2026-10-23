@@ -40,6 +40,11 @@ export function discardFailedSend(localKey: string) {
   entry.discard();
 }
 
+/** The row was delivered after all: drop its Retry / Delete. */
+export function forgetFailedSend(localKey: string) {
+  failedSends.delete(localKey);
+}
+
 export function resetFailedSends() {
   failedSends.clear();
 }

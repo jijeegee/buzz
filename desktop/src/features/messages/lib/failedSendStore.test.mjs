@@ -246,6 +246,7 @@ function relayCheck(lookup) {
       onSettled: () => {
         settled += 1;
       },
+      isDisposed: () => false,
     },
     settled: () => settled,
   };
@@ -370,4 +371,35 @@ test("a failed send older than the loaded messages is drawn at the bottom", () =
   const row = rows(queryClient).find((event) => event.id === "local-1");
   assert.equal(row?.failed, true);
   assert.equal(row?.content, "hi");
+});
+
+test("an earlier message with the same text does not count as delivered", () => {
+  const preview = store("local-1", "ok");
+  restart();
+  const queryClient = client([
+    relayEvent("earlier", preview.created_at - 30, "ok"),
+  ]);
+  restoreStoredSends(queryClient, CHANNEL, async () => {}, new Set());
+  assert.equal(storedSends(CHANNEL).length, 1);
+  assert.equal(hasFailedSend("local-1"), true);
+});
+
+test("a relay copy arriving later takes away the failed row and its Retry", () => {
+  const preview = store("local-1", "hi");
+  restart();
+  const queryClient = client();
+  restoreStoredSends(queryClient, CHANNEL, async () => {}, new Set());
+  assert.equal(hasFailedSend("local-1"), true);
+  // A refetch brings the relay's copy without adopting the failed row.
+  queryClient.setQueryData(channelMessagesKey(CHANNEL), (current) => [
+    ...current,
+    relayEvent("landed", preview.created_at, "hi"),
+  ]);
+  restoreStoredSends(queryClient, CHANNEL, async () => {}, new Set());
+  assert.equal(
+    rows(queryClient).some((event) => event.id === "local-1"),
+    false,
+  );
+  assert.equal(hasFailedSend("local-1"), false);
+  assert.deepEqual(storedSends(CHANNEL), []);
 });

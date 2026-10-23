@@ -41,6 +41,8 @@ const MAX_ENTRIES = 50;
 const savedKeys = new Map<string, string>();
 /** Sends awaiting the relay; never drawn as failed while still in flight. */
 const inFlightKeys = new Set<string>();
+/** Parsed entries per storage key; reads run on every timeline update. */
+const parsedEntries = new Map<string, StoredSend[]>();
 
 function storeKey(): string | null {
   const scope = getDraftStorePersistScope();
@@ -49,24 +51,34 @@ function storeKey(): string | null {
 
 function readAll(key: string | null): StoredSend[] {
   if (!key) return [];
+  const cached = parsedEntries.get(key);
+  if (cached) return cached;
+  let entries: StoredSend[] = [];
   try {
     const parsed: unknown = JSON.parse(localStorage.getItem(key) ?? "[]");
-    if (!Array.isArray(parsed)) return [];
-    const oldest = Math.floor(Date.now() / 1000) - MAX_AGE_SECONDS;
-    return (parsed as StoredSend[]).filter(
-      (stored) => stored.event?.created_at >= oldest,
-    );
-  } catch {
-    return [];
-  }
+    if (Array.isArray(parsed)) {
+      const oldest = Math.floor(Date.now() / 1000) - MAX_AGE_SECONDS;
+      entries = (parsed as StoredSend[]).filter(
+        (stored) => stored.event?.created_at >= oldest,
+      );
+    }
+  } catch {}
+  parsedEntries.set(key, entries);
+  return entries;
 }
 
 function writeAll(key: string, entries: StoredSend[]) {
+  parsedEntries.set(key, entries);
   if (entries.length === 0) {
     localStorage.removeItem(key);
     return;
   }
   setLocalStorageItemWithRecovery(key, JSON.stringify(entries));
+}
+
+/** The storage key for the current community and account, if any. */
+export function currentStoredSendKey(): string | null {
+  return storeKey();
 }
 
 /** Save a send as it leaves; it counts as in flight until settled. */
@@ -94,10 +106,13 @@ export function settleStoredSend(localKey: string) {
   inFlightKeys.delete(localKey);
 }
 
-/** The send was delivered or deleted: forget it. */
-export function removeStoredSend(localKey: string) {
+/**
+ * The send was delivered or deleted: forget it. `scopeKey` names the store a
+ * restored entry was read from, when the scope may have changed since.
+ */
+export function removeStoredSend(localKey: string, scopeKey?: string | null) {
   inFlightKeys.delete(localKey);
-  const key = savedKeys.get(localKey) ?? storeKey();
+  const key = scopeKey ?? savedKeys.get(localKey) ?? storeKey();
   savedKeys.delete(localKey);
   if (!key) return;
   const entries = readAll(key);
@@ -118,4 +133,5 @@ export function isStoredSendInFlight(localKey: string): boolean {
 export function resetStoredSendSession() {
   savedKeys.clear();
   inFlightKeys.clear();
+  parsedEntries.clear();
 }
