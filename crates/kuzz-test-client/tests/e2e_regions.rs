@@ -1793,3 +1793,50 @@ async fn a_profile_saved_in_jp_is_stored_in_kr_and_copied_back() {
         "the profile row was not copied back to jp"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_dm_opened_in_jp_keeps_its_command_in_the_room_and_its_notice_in_kr() {
+    let (a, b) = (Keys::generate(), Keys::generate());
+    let open = open_dm(&a, &b);
+    let (status, body) = post(&jp_url(), &a, &open).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+
+    // The command's own row is kept in jp, in the DM's room: a room-less
+    // row there is global data, written only in kr.
+    let in_room: bool = sqlx::query_scalar(
+        "SELECT channel_id IS NOT NULL FROM events WHERE id = decode($1, 'hex')",
+    )
+    .bind(open.id.to_hex())
+    .fetch_one(&region_db("jp").await)
+    .await
+    .expect("command row in jp");
+    assert!(in_room, "the DM open was stored room-less in jp");
+
+    // The relay's "added" notice to the other person is stored in kr and
+    // copied back to jp.
+    let notice = "SELECT EXISTS (SELECT 1 FROM events WHERE kind = 44100 \
+                    AND channel_id IS NULL \
+                    AND tags @> jsonb_build_array(jsonb_build_array('p', $1::text)))";
+    let mut in_kr = false;
+    for _ in 0..100 {
+        in_kr = sqlx::query_scalar(notice)
+            .bind(b.public_key().to_hex())
+            .fetch_one(&region_db("kr").await)
+            .await
+            .expect("kr notice");
+        if in_kr {
+            break;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    assert!(in_kr, "the membership notice was not stored in kr");
+    assert!(
+        jp_copy_shows(notice, &b.public_key().to_hex()).await,
+        "the membership notice was not copied back to jp"
+    );
+}

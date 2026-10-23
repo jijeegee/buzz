@@ -42,12 +42,10 @@ pub async fn handle_command(
 ) -> Result<IngestResult, IngestError> {
     // Ensure the authenticated user exists in the users table (foreign key requirement).
     // The old REST handlers did this via extract_auth_context; command executor must do it explicitly.
+    // In a region holding the global copy a missing row is made at the
+    // primary (S5-3b).
     let pubkey_bytes = auth.pubkey().to_bytes().to_vec();
-    match state
-        .db
-        .ensure_user(tenant.community(), &pubkey_bytes)
-        .await
-    {
+    match crate::region_global::ensure_user(tenant, state, &pubkey_bytes).await {
         Ok(true) => {
             metrics::counter!(
                 "kuzz_users_created_total",
@@ -326,6 +324,33 @@ async fn reserve_dm(
     }
 }
 
+/// Open the DM, as the room `dm_id` when it is new. A reserved DM can race
+/// with its own region creating it (a forwarded open, S4-6): the loser takes
+/// the winner's room.
+async fn open_dm_reserved(
+    tenant: &TenantContext,
+    state: &AppState,
+    all_refs: &[&[u8]],
+    self_bytes: &[u8],
+    dm_id: Option<Uuid>,
+) -> Result<(kuzz_db::channel::ChannelRecord, bool), IngestError> {
+    let opened = state
+        .db
+        .open_dm_with_id(tenant.community(), all_refs, self_bytes, dm_id)
+        .await;
+    match opened {
+        Ok(opened) => Ok(opened),
+        Err(e) => match dm_id {
+            Some(_) => state
+                .db
+                .open_dm_with_id(tenant.community(), all_refs, self_bytes, dm_id)
+                .await
+                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}"))),
+            None => Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
+        },
+    }
+}
+
 async fn handle_dm_open(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -372,8 +397,20 @@ async fn handle_dm_open(
         Err(home) => return Err(IngestError::WrongRegion(home)),
     };
 
+    // In a copy region the command's row goes in the DM's room (a room-less
+    // row is global data, S5-3b), so the room is made first: the row's
+    // insert holds the room's lock until commit, and adding the room's
+    // members takes the same lock. Opening again is idempotent, so a resend
+    // finds the room and then its duplicate row.
+    let opened_first = if state.config.global_copy {
+        Some(open_dm_reserved(tenant, state, &all_refs, &self_bytes, dm_id).await?)
+    } else {
+        None
+    };
+    let row_room = opened_first.as_ref().map(|(channel, _)| channel.id);
+
     // Persist the command event (idempotency) — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),
@@ -385,22 +422,10 @@ async fn handle_dm_open(
         PersistResult::Inserted(tx) => tx,
     };
 
-    // 4. Execute: open_dm. A reserved DM can race with its own region
-    // creating it (a forwarded open, S4-6): the loser takes the winner's room.
-    let opened = state
-        .db
-        .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
-        .await;
-    let (channel, was_created) = match opened {
-        Ok(opened) => opened,
-        Err(e) => match dm_id {
-            Some(_) => state
-                .db
-                .open_dm_with_id(tenant.community(), &all_refs, &self_bytes, dm_id)
-                .await
-                .map_err(|_| IngestError::Internal(format!("error: db open_dm: {e}")))?,
-            None => return Err(IngestError::Internal(format!("error: db open_dm: {e}"))),
-        },
+    // 4. Execute: open_dm.
+    let (channel, was_created) = match opened_first {
+        Some(opened) => opened,
+        None => open_dm_reserved(tenant, state, &all_refs, &self_bytes, dm_id).await?,
     };
 
     // Finalize the idempotency record after the separate mutation succeeds.
@@ -1154,6 +1179,33 @@ fn check_approver_spec(approver_spec: &str, requester_hex: &str) -> Result<(), I
     )))
 }
 
+/// Global regions (S5-3b): where an approval's command row is stored. A
+/// room-less row is global data, written only in the primary region; in a
+/// region holding the global copy the row goes in the workflow's room, which
+/// is this region's own. A workflow outside any room has nowhere local to
+/// keep the row there, so its approvals are refused.
+async fn approval_row_room(
+    tenant: &TenantContext,
+    state: &AppState,
+    approval: &kuzz_db::workflow::ApprovalRecord,
+) -> Result<Option<Uuid>, IngestError> {
+    if !state.config.global_copy {
+        return Ok(None);
+    }
+    let workflow = state
+        .db
+        .get_workflow(tenant.community(), approval.workflow_id)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db get_workflow: {e}")))?;
+    match workflow.channel_id {
+        Some(room) => Ok(Some(room)),
+        None => Err(IngestError::Rejected(
+            "unsupported: approvals of workflows outside rooms are not available in this region"
+                .into(),
+        )),
+    }
+}
+
 async fn handle_approval_grant(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -1198,7 +1250,8 @@ async fn handle_approval_grant(
     check_approver_spec(&approval.approver_spec, &self_hex)?;
 
     // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let row_room = approval_row_room(tenant, state, &approval).await?;
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),
@@ -1311,7 +1364,8 @@ async fn handle_approval_deny(
     check_approver_spec(&approval.approver_spec, &self_hex)?;
 
     // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let row_room = approval_row_room(tenant, state, &approval).await?;
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),

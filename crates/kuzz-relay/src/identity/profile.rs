@@ -218,7 +218,20 @@ async fn reconcile(
     principal: &PrincipalId,
     scope: Scope,
 ) -> bool {
-    match publish_profile_in_community(state, tenant, principal, scope).await {
+    // Global regions (S5-3b): profiles and users are global data, written
+    // only in the primary region; a region holding the global copy asks it.
+    let published = if state.config.global_copy {
+        let write = crate::region_global::GlobalWrite::PublishProfile {
+            principal: principal.to_hex(),
+            participant: matches!(scope, Scope::Participant),
+        };
+        crate::region_global::write_at_primary(state, tenant.community(), &write)
+            .await
+            .map(|answer| answer.created)
+    } else {
+        publish_profile_in_community(state, tenant, principal, scope).await
+    };
+    match published {
         Ok(_) => true,
         Err(error) => {
             metrics::counter!("kuzz_auth_profile_publish_failures_total").increment(1);

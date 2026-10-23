@@ -572,15 +572,14 @@ async fn deliver_one(
                     invalid_at,
                 }) => {
                     if generation == outcome.lease_generation {
-                        let _ = state
-                            .db
-                            .disable_push_endpoint(
-                                outcome.community,
-                                &outcome.author,
-                                &outcome.installation_id,
-                                generation,
-                            )
-                            .await;
+                        disable_endpoint(
+                            state,
+                            outcome.community,
+                            &outcome.author,
+                            &outcome.installation_id,
+                            generation,
+                        )
+                        .await;
                     }
                     warn!(wake=%outcome.id, ?invalid_at, "push endpoint permanently invalid");
                 }
@@ -657,6 +656,33 @@ async fn send_gateway_request(
         .body(body)
         .send()
         .await
+}
+
+/// Turn off an endpoint the push service reported gone. Push leases are
+/// global data (S5-1); a region holding the global copy asks the primary
+/// (S5-3b). Best effort, as before: the next 410 tries again.
+async fn disable_endpoint(
+    state: &AppState,
+    community: kuzz_core::tenant::CommunityId,
+    author: &[u8],
+    installation_id: &str,
+    generation: i64,
+) {
+    if !state.config.global_copy {
+        let _ = state
+            .db
+            .disable_push_endpoint(community, author, installation_id, generation)
+            .await;
+        return;
+    }
+    let write = crate::region_global::GlobalWrite::DisablePushEndpoint {
+        author: hex::encode(author),
+        installation_id: installation_id.to_owned(),
+        generation,
+    };
+    if let Err(e) = crate::region_global::write_at_primary(state, community, &write).await {
+        warn!("push endpoint disable at the primary failed: {e}");
+    }
 }
 
 fn record_delivery(outcome: &'static str) {
