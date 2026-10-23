@@ -422,13 +422,16 @@ pub async fn verify_floor_guard_behavior(pool: &PgPool) -> crate::Result<()> {
         .execute(&mut *tx)
         .await?;
 
-    // Scratch community satisfying the FK; the whole transaction rolls back.
-    let community = uuid::Uuid::new_v4();
-    sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
-        .bind(community)
-        .bind(format!("fence-verify-{}.invalid", community.simple()))
-        .execute(&mut *tx)
-        .await?;
+    // Scratch community satisfying the FK (a copied one in a global copy);
+    // the whole transaction rolls back.
+    let is_copy = crate::global_copy::is_global_copy_on(&mut tx).await?;
+    let community = crate::global_copy::probe_community_on(&mut tx, "fence-verify")
+        .await?
+        .ok_or_else(|| {
+            DbError::InvalidData(
+                "floor guard verification: the global copy holds no community yet".into(),
+            )
+        })?;
     let channel = uuid::Uuid::new_v4();
 
     let insert = |tx_id: [u8; 32], age_secs: i64, ch: Option<uuid::Uuid>| {
@@ -483,6 +486,12 @@ pub async fn verify_floor_guard_behavior(pool: &PgPool) -> crate::Result<()> {
         .await?;
 
     // 5. Old channel-NULL insert is exempt; flipping channel_id on must raise.
+    //    A global copy refuses room-less rows outright (they arrive only by
+    //    replication), so there is nothing to probe.
+    if is_copy {
+        tx.rollback().await?;
+        return Ok(());
+    }
     let null_id = rand_id();
     insert(null_id, old_age, None).execute(&mut *tx).await?;
     sqlx::query("SAVEPOINT floor_probe")

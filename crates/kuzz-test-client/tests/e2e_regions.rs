@@ -12,9 +12,9 @@
 //! cargo test -p kuzz-test-client --test e2e_regions -- --ignored --test-threads=1
 //! ```
 //!
-//! Regions do not copy their room directories to each other until stage S5.
-//! Since S4-6 a region asks the primary (kr) about a room it does not know;
-//! older tests still write the other region's directory row themselves.
+//! Since S5 jp's global tables (regions, the room directory, communities,
+//! accounts, room-less events) are a copy of kr's, the primary's: tests
+//! write global rows in kr and wait for jp's copy.
 
 use std::time::Duration;
 
@@ -67,19 +67,61 @@ fn message(keys: &Keys, room: &str, text: &str) -> Event {
         .unwrap()
 }
 
-/// Record in the jp database that `room` lives in kr.
+/// Wait until jp's copy of the directory knows `room` lives in kr.
 async fn tell_jp_room_lives_in_kr(room: &str) {
-    let url = std::env::var("REGION_JP_DATABASE_URL")
-        .unwrap_or_else(|_| "postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz".into());
-    let pool = sqlx::PgPool::connect(&url).await.expect("jp database");
-    sqlx::query(
-        "INSERT INTO room_directory (community_id, channel_id, home_region) \
-         SELECT id, $1::uuid, 'kr' FROM communities ON CONFLICT DO NOTHING",
-    )
-    .bind(room)
-    .execute(&pool)
-    .await
-    .expect("directory row");
+    let home = copied_directory_home(room).await;
+    if home.as_deref() != Some("kr") {
+        let in_kr: Option<String> = sqlx::query_scalar(
+            "SELECT home_region FROM room_directory WHERE channel_id = $1::uuid",
+        )
+        .bind(room)
+        .fetch_optional(&region_db("kr").await)
+        .await
+        .expect("kr directory");
+        let lag: Option<f64> = sqlx::query_scalar(
+            "SELECT EXTRACT(EPOCH FROM clock_timestamp() - beat_at)::float8 FROM global_heartbeat",
+        )
+        .fetch_optional(&region_db("jp").await)
+        .await
+        .expect("jp heartbeat");
+        panic!("jp's copy never learned room {room}: jp {home:?}, kr {in_kr:?}, jp lag {lag:?} s");
+    }
+}
+
+/// `room`'s home in jp's copy of the directory, waiting up to 30 s (a busy test machine) for it.
+async fn copied_directory_home(room: &str) -> Option<String> {
+    let jp = region_db("jp").await;
+    for _ in 0..300 {
+        let home: Option<String> = sqlx::query_scalar(
+            "SELECT home_region FROM room_directory WHERE channel_id = $1::uuid",
+        )
+        .bind(room)
+        .fetch_optional(&jp)
+        .await
+        .expect("directory row");
+        if home.is_some() {
+            return home;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    None
+}
+
+/// Wait up to 30 s until `sql` (one boolean) is true in jp's database.
+async fn jp_copy_shows(sql: &str, bind: &str) -> bool {
+    let jp = region_db("jp").await;
+    for _ in 0..300 {
+        let shown: bool = sqlx::query_scalar(sqlx::AssertSqlSafe(sql.to_owned()))
+            .bind(bind)
+            .fetch_one(&jp)
+            .await
+            .expect("copy query");
+        if shown {
+            return true;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    false
 }
 
 /// The next live event of `sub_id`, skipping other messages.
@@ -326,7 +368,16 @@ async fn rooms_are_served_only_by_their_home_region() {
         "kr did not list the jp room: {kr_chats}"
     );
     // A refused item is named by its place in the whole request.
+    // (a room only the directory knows: listed in kr, copied to jp)
     let stranger = uuid::Uuid::new_v4().to_string();
+    sqlx::query(
+        "INSERT INTO room_directory (community_id, channel_id, home_region) \
+         SELECT id, $1::uuid, 'kr' FROM communities ON CONFLICT DO NOTHING",
+    )
+    .bind(&stranger)
+    .execute(&region_db("kr").await)
+    .await
+    .expect("directory row");
     tell_jp_room_lives_in_kr(&stranger).await;
     let (status, refused) = query(
         &jp_url(),
@@ -904,7 +955,7 @@ async fn a_room_is_registered_at_the_primary_and_found_from_the_other_region() {
         "{body}"
     );
     assert!(body["channel_sequence"].as_i64().is_some(), "{body}");
-    assert_eq!(directory_home("jp", &kr_room).await.as_deref(), Some("kr"));
+    assert_eq!(copied_directory_home(&kr_room).await.as_deref(), Some("kr"));
     assert_eq!(room_rows("jp", &kr_room).await, 0);
 }
 
@@ -1199,8 +1250,8 @@ async fn a_moved_epoch_is_followed_once_and_kept() {
     let room = kr_room(&keys).await;
 
     // kr's directory says the room is at epoch 2 now (as after a move back);
-    // jp still has epoch 0. jp's forward is answered "wrong region" with the
-    // new epoch, follows it once, and the write lands in kr.
+    // jp's copy may still hold epoch 0. Either way jp's forward lands in kr
+    // once (on a stale epoch: "wrong region" with the new one, followed once).
     let kr = region_db("kr").await;
     sqlx::query(
         "INSERT INTO room_directory (community_id, channel_id, home_region, epoch) \
@@ -1226,25 +1277,38 @@ async fn a_link_down_fails_retryably_and_never_splits_the_room() {
     let keys = Keys::generate();
     let room = kr_room(&keys).await;
 
-    // jp loses kr: its address for kr points at nothing.
+    // jp loses kr: kr's address in the region list (written in kr, copied
+    // to jp) points at nothing.
     let jp = region_db("jp").await;
+    let kr = region_db("kr").await;
     let address: String = sqlx::query_scalar("SELECT connect_url FROM regions WHERE id = 'kr'")
-        .fetch_one(&jp)
+        .fetch_one(&kr)
         .await
         .expect("kr address");
-    sqlx::query("UPDATE regions SET connect_url = 'ws://127.0.0.1:9' WHERE id = 'kr'")
-        .execute(&jp)
-        .await
-        .expect("cut the link");
+    let set_address = |url: String| {
+        let kr = kr.clone();
+        async move {
+            sqlx::query("UPDATE regions SET connect_url = $1 WHERE id = 'kr'")
+                .bind(&url)
+                .execute(&kr)
+                .await
+                .expect("kr address");
+            assert!(
+                jp_copy_shows(
+                    "SELECT EXISTS (SELECT 1 FROM regions WHERE id = 'kr' AND connect_url = $1)",
+                    &url,
+                )
+                .await,
+                "jp's copy never got kr's address {url}"
+            );
+        }
+    };
+    set_address("ws://127.0.0.1:9".into()).await;
 
     let event = message(&keys, &room, "while the link is down");
     let (status, body) = post(&jp_url(), &keys, &event).await;
 
-    sqlx::query("UPDATE regions SET connect_url = $1 WHERE id = 'kr'")
-        .bind(&address)
-        .execute(&jp)
-        .await
-        .expect("restore the link");
+    set_address(address).await;
 
     // Not accepted, not "not found", and nothing written in jp.
     assert_ne!(body["accepted"], Value::Bool(true), "{status} {body}");
@@ -1269,6 +1333,125 @@ async fn a_link_down_fails_retryably_and_never_splits_the_room() {
         "{body}"
     );
     assert_eq!(kr_sequences(&room).await.len(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn global_tables_are_copied_from_the_primary() {
+    // The region list: jp was added in kr and knows itself from the copy.
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM regions WHERE id = $1 AND NOT is_primary \
+               AND link_pubkey IS NOT NULL)",
+            "jp",
+        )
+        .await
+    );
+
+    // A profile (a room-less event) saved in kr reaches jp's copy, and so
+    // does the profile row its side effect writes in kr.
+    let keys = Keys::generate();
+    let profile = EventBuilder::new(Kind::Metadata, r#"{"name":"copied"}"#)
+        .sign_with_keys(&keys)
+        .unwrap();
+    let (status, body) = post(&kr_url(), &keys, &profile).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM events WHERE id = decode($1, 'hex') \
+               AND channel_id IS NULL)",
+            &profile.id.to_hex(),
+        )
+        .await,
+        "the profile event was not copied"
+    );
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM users WHERE pubkey = decode($1, 'hex'))",
+            &keys.public_key().to_hex(),
+        )
+        .await,
+        "the profile row was not copied"
+    );
+
+    // Room messages stay in their home: a kr room's message is not copied.
+    let room = kr_room(&keys).await;
+    let (_, body) = post(&kr_url(), &keys, &message(&keys, &room, "stays in kr")).await;
+    assert_eq!(body["accepted"], Value::Bool(true), "{body}");
+    tokio::time::sleep(Duration::from_secs(1)).await;
+    let jp_rows: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE channel_id = $1::uuid")
+            .bind(&room)
+            .fetch_one(&region_db("jp").await)
+            .await
+            .expect("jp rows");
+    assert_eq!(jp_rows, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_copy_refuses_local_writes_and_keeps_copying() {
+    // A profile from kr, so jp's copy holds a user and a room-less event.
+    let keys = Keys::generate();
+    let profile = EventBuilder::new(Kind::Metadata, r#"{"name":"guarded"}"#)
+        .sign_with_keys(&keys)
+        .unwrap();
+    let (_, body) = post(&kr_url(), &keys, &profile).await;
+    assert_eq!(body["accepted"], Value::Bool(true), "{body}");
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM users WHERE pubkey = decode($1, 'hex'))",
+            &keys.public_key().to_hex(),
+        )
+        .await
+    );
+
+    let jp = region_db("jp").await;
+    let pubkey = keys.public_key().to_hex();
+    let id = profile.id.to_hex();
+    for sql in [
+        "INSERT INTO regions (id, connect_url) VALUES ('zz', 'ws://zz.test')".to_owned(),
+        "UPDATE regions SET connect_url = connect_url WHERE id = 'kr'".to_owned(),
+        "UPDATE communities SET host = host".to_owned(),
+        format!("DELETE FROM users WHERE pubkey = decode('{pubkey}', 'hex')"),
+        format!("UPDATE events SET deleted_at = now() WHERE id = decode('{id}', 'hex')"),
+    ] {
+        let error = sqlx::query(sqlx::AssertSqlSafe(sql.clone()))
+            .execute(&jp)
+            .await
+            .expect_err(&sql)
+            .to_string();
+        assert!(
+            error.contains("written in the primary region"),
+            "{sql}: {error}"
+        );
+    }
+
+    // Replication is not disturbed: a new room in kr still reaches jp.
+    let room = kr_room(&keys).await;
+    assert_eq!(copied_directory_home(&room).await.as_deref(), Some("kr"));
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn the_copy_lag_is_measured_in_jp() {
+    let metrics = reqwest::get("http://localhost:3062/metrics")
+        .await
+        .expect("jp metrics")
+        .text()
+        .await
+        .expect("metrics body");
+    let lag: f64 = metrics
+        .lines()
+        .find(|line| line.starts_with("kuzz_global_copy_lag_seconds"))
+        .and_then(|line| line.split_whitespace().last())
+        .and_then(|value| value.parse().ok())
+        .unwrap_or_else(|| panic!("no lag gauge in jp's metrics"));
+    assert!(lag < 5.0, "jp's copy is {lag} s behind");
 }
 
 #[tokio::test]

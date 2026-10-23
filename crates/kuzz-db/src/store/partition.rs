@@ -1587,6 +1587,23 @@ async fn create_month_partition(
     sqlx::query(sqlx::AssertSqlSafe(sql))
         .execute(&mut *transaction)
         .await?;
+    // A parent published for the global copy (S5) has the full replica
+    // identity; the new month must too, or updating its rows fails.
+    let full_identity: bool = sqlx::query_scalar(
+        "SELECT COALESCE((SELECT relreplident = 'f' FROM pg_catalog.pg_class \
+           WHERE oid = to_regclass(quote_ident(current_schema()) || '.' || quote_ident($1))), false)",
+    )
+    .bind(table)
+    .fetch_one(&mut *transaction)
+    .await?;
+    if full_identity {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "ALTER TABLE {} REPLICA IDENTITY FULL",
+            quote_identifier(&partition_name)
+        )))
+        .execute(&mut *transaction)
+        .await?;
+    }
     let row = sqlx::query(
         r#"
         SELECT child.relkind::text AS relation_kind,

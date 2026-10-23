@@ -23,13 +23,59 @@ At startup the relay:
 4. gives every room without a `room_directory` row, and every account
    without `principals.home_region`, the local region.
 
+## Global copy
+
+Global data is written only in the primary region and copied to every other
+region by Postgres logical replication (stage S5). The table lists live in
+`crates/kuzz-db/src/store/global_copy.rs`: every table is either copied or
+local, and a test fails when a new table is in neither list.
+
+- **Copied:** regions, the room directory, communities, members, invites,
+  bans, moderation, accounts and sign-in (principals, identities, devices,
+  sessions, tokens, bots, key backups), profiles (`users`), push leases, git
+  repository names, and the room-less rows of `events` (profiles, contact
+  lists, settings, agent records).
+- **Local:** rooms and their messages, blocks (S4-5b writes them in every
+  region at once), work queues and logs, `local_region`.
+
+| Setting | Default | Meaning |
+|---------|---------|---------|
+| `KUZZ_GLOBAL_COPY` | on for a region other than the primary with `KUZZ_REGION_LINK=on` | This database's global tables are a copy. `off` keeps a region's own global tables (development only). |
+
+The primary (with the link on) creates the publication `kuzz_global` at
+startup and gives `events` the full replica identity its row filter needs.
+It updates `global_heartbeat` every second.
+
+Adding a region:
+
+1. Its Postgres runs the same version; the primary's runs with
+   `wal_level=logical` and lets the new region's database connect for
+   replication.
+2. Start the new region's relay on an empty database. It migrates, then
+   waits.
+3. In the new database: `CREATE SUBSCRIPTION kuzz_global CONNECTION '…the
+   primary…' PUBLICATION kuzz_global`. The relay waits until the first copy
+   of every table is done.
+4. In the primary: `INSERT INTO regions (id, connect_url, link_pubkey)` with
+   the values the waiting relay logs. The row reaches the new region by the
+   copy, and the relay starts.
+
+From then on the relay refuses local writes to the copied tables (a trigger;
+replication itself is not affected) and exports
+`kuzz_global_copy_lag_seconds`, the age of the newest heartbeat it holds.
+A version that copies more tables needs `ALTER SUBSCRIPTION kuzz_global
+REFRESH PUBLICATION` in each region; the relay waits and says so until then.
+
+A migration that writes rows into a copied table must skip copies
+(`WHERE NOT kuzz_is_global_copy()`).
+
 ## What records ownership
 
 | Table / column | Scope | Written by |
 |----------------|-------|------------|
-| `regions` | deployment | each relay at startup |
+| `regions` | deployment, copied | the primary's relay at startup (its own row); other regions are added in the primary |
 | `local_region` | this database only, never copied | first relay start |
-| `room_directory` (`home_region`, `epoch`, DM `participant_hash`) | per community, to be shared between regions | trigger on `channels` insert; startup backfill |
+| `room_directory` (`home_region`, `epoch`, DM `participant_hash`) | per community, copied | trigger on `channels` insert; startup backfill |
 | `principals.home_region` | deployment | trigger on `principals` insert; startup backfill |
 | `principals.country` | deployment | OIDC sign-up, from `CF-IPCountry` via a trusted proxy only |
 

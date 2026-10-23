@@ -199,7 +199,8 @@ pub fn validate_plaintext(body: &LeasePlaintext, limits: &LeaseLimits<'_>) -> Re
     if body.generation == 0 || body.generation > MAX_SAFE_JSON_INTEGER {
         return Err("generation must be a positive safe integer".into());
     }
-    if body.origin != limits.expected_origin {
+    // A lease written for an alias of this service counts as the service.
+    if kuzz_core::tenant::canonical_service_url(&body.origin) != limits.expected_origin {
         return Err("origin mismatch".into());
     }
     check_string(&body.origin, limits.max_string_len)?;

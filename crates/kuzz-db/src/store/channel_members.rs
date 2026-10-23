@@ -106,16 +106,14 @@ pub async fn verify_channel_roster_fence_behavior(pool: &sqlx::PgPool) -> Result
     )
     .await?;
     let mut tx = sqlx::Transaction::begin(connection, None).await?;
-    let community_id = Uuid::new_v4();
+    let Some(community_id) =
+        crate::global_copy::probe_community_on(&mut tx, "roster-fence-verify").await?
+    else {
+        return Err(DbError::InvalidData(
+            "channel roster fence probe: the global copy holds no community yet".into(),
+        ));
+    };
     let channel_id = Uuid::new_v4();
-    sqlx::query("INSERT INTO communities (id, host) VALUES ($1, $2)")
-        .bind(community_id)
-        .bind(format!(
-            "roster-fence-verify-{}.invalid",
-            community_id.simple()
-        ))
-        .execute(&mut *tx)
-        .await?;
 
     let insert = |id: Vec<u8>, tags: serde_json::Value| {
         sqlx::query(

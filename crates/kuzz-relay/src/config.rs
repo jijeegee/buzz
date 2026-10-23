@@ -162,8 +162,13 @@ pub struct Config {
     /// independently so reader capacity can be tuned against the replica's
     /// headroom without touching the writer pool.
     pub db_read_pool_size: Option<u32>,
-    /// Public WebSocket URL of this relay, advertised in NIP-11.
+    /// Public WebSocket URL of this relay, advertised in NIP-11. Its host is
+    /// the service name every client signs with.
     pub relay_url: String,
+    /// Other hosts that serve the same service (`KUZZ_SERVICE_ALIASES`,
+    /// comma-separated authorities such as `kr.example.com`). Requests on an
+    /// alias bind to the `relay_url` community; empty by default.
+    pub service_aliases: Vec<String>,
     /// Public WebSocket URL of the dedicated device-pairing relay, when configured.
     pub pairing_relay_url: Option<String>,
     /// Maximum number of concurrent WebSocket connections.
@@ -373,6 +378,16 @@ pub struct Config {
     /// calls another region, as before.
     pub region_link: bool,
 
+    /// Global copy (`KUZZ_GLOBAL_COPY`, default on for a region other than
+    /// the primary with the link on; global regions stage S5).
+    ///
+    /// On: this database's global tables are a copy of the primary's, kept by
+    /// the `kuzz_global` subscription. The relay waits for the first copy,
+    /// then refuses local writes to them. In the primary with the link on,
+    /// the relay publishes them instead. Off in a non-primary region: the
+    /// region keeps its own global tables (development only).
+    pub global_copy: bool,
+
     /// This region's link key (`KUZZ_REGION_KEY`, hex or nsec), required when
     /// [`Config::region_link`] is on. One key per region: other regions know
     /// it by its public half in `regions.link_pubkey`.
@@ -547,6 +562,30 @@ fn rate_limit_config_from_env() -> Result<kuzz_auth::RateLimitConfig, ConfigErro
             defaults.agent_platform_messages_per_min,
         )?,
     })
+}
+
+/// Parse `KUZZ_SERVICE_ALIASES`: comma-separated bare authorities
+/// (`host[:port]`), each already in normalized form. The `RELAY_URL` host
+/// itself is dropped; duplicates collapse.
+fn parse_service_aliases(raw: Option<&str>, relay_url: &str) -> Result<Vec<String>, ConfigError> {
+    let service_host = kuzz_core::tenant::relay_url_authority(relay_url);
+    let mut aliases = Vec::new();
+    for entry in raw.unwrap_or("").split(',') {
+        let entry = entry.trim();
+        if entry.is_empty() {
+            continue;
+        }
+        let normalized = kuzz_core::tenant::validate_community_host(entry).ok();
+        let Some(normalized) = normalized.filter(|n| *n == entry.to_ascii_lowercase()) else {
+            return Err(ConfigError::InvalidValue(format!(
+                "KUZZ_SERVICE_ALIASES entry must be a bare normalized host[:port]: {entry:?}"
+            )));
+        };
+        if normalized != service_host && !aliases.contains(&normalized) {
+            aliases.push(normalized);
+        }
+    }
+    Ok(aliases)
 }
 
 fn parse_operator_api_origin(raw: &str) -> Result<String, ConfigError> {
@@ -828,6 +867,10 @@ impl Config {
 
         let relay_url =
             std::env::var("RELAY_URL").unwrap_or_else(|_| "ws://localhost:3000".to_string());
+        let service_aliases = parse_service_aliases(
+            std::env::var("KUZZ_SERVICE_ALIASES").ok().as_deref(),
+            &relay_url,
+        )?;
 
         let pairing_relay_url = std::env::var("KUZZ_PAIRING_RELAY_URL")
             .ok()
@@ -1352,6 +1395,16 @@ impl Config {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| relay_url.clone());
+        let global_copy = parse_bool(
+            "KUZZ_GLOBAL_COPY",
+            region_link && region_id != primary_region,
+        )?;
+        if global_copy && (!region_link || region_id == primary_region) {
+            return Err(ConfigError::InvalidValue(
+                "KUZZ_GLOBAL_COPY=on is for a region other than the primary, with KUZZ_REGION_LINK=on"
+                    .into(),
+            ));
+        }
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1549,6 +1602,7 @@ impl Config {
             db_pool_size,
             db_read_pool_size,
             relay_url,
+            service_aliases,
             pairing_relay_url,
             max_connections,
             ws_max_open_per_ip,
@@ -1590,6 +1644,7 @@ impl Config {
             resync_signal,
             side_effect_retry,
             region_link,
+            global_copy,
             region_key,
             community_id,
             ephemeral_ttl_override,
@@ -3126,5 +3181,39 @@ mod tests {
             assert!(enforce_auth_token_off_loopback(false, url), "{url}");
         }
         assert!(enforce_auth_token_off_loopback(true, "ws://localhost:3000"));
+    }
+}
+
+#[cfg(test)]
+mod service_alias_tests {
+    use super::parse_service_aliases;
+
+    #[test]
+    fn aliases_parse_and_drop_the_service_host() {
+        let aliases = parse_service_aliases(
+            Some(" kr.example.com, jp.example.com:8443,example.com,kr.example.com ,"),
+            "wss://example.com",
+        )
+        .unwrap();
+        assert_eq!(aliases, ["kr.example.com", "jp.example.com:8443"]);
+        assert!(parse_service_aliases(None, "wss://example.com")
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    fn aliases_reject_urls_and_unnormalized_hosts() {
+        for bad in [
+            "wss://kr.example.com",
+            "kr.example.com/path",
+            "kr.example.com.",
+            "kr.example.com:443",
+            "user@kr.example.com",
+        ] {
+            assert!(
+                parse_service_aliases(Some(bad), "wss://example.com").is_err(),
+                "{bad:?} should be rejected"
+            );
+        }
     }
 }

@@ -1279,6 +1279,8 @@ pub struct AppState {
     /// Membership and visibility changes, for the region streams of this pod
     /// (S4-5).
     pub room_access_changes: tokio::sync::broadcast::Sender<crate::region_stream::RoomAccessChange>,
+    /// How far this region's global copy is behind the primary (S5).
+    pub global_copy_lag: Arc<crate::global_copy::CopyLag>,
     /// Process-local generation advertised for non-mesh huddle liveness.
     ///
     /// A fresh value on every relay start lets desktop clients retire persisted
@@ -1571,6 +1573,7 @@ impl AppState {
             room_router,
             region_live: Arc::new(crate::region_live::RegionLive::default()),
             room_access_changes: tokio::sync::broadcast::channel(1024).0,
+            global_copy_lag: Arc::default(),
             huddle_liveness_generation: Uuid::new_v4(),
 
             local_event_ids: Arc::new(

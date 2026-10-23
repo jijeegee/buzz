@@ -3,8 +3,13 @@
 #
 # Starts docker-compose.regions.yml (Postgres and Redis per region, shared
 # MinIO), runs two relays from this checkout (kr primary on :3041, jp on
-# :3042), registers both regions in both databases, and runs
-# crates/kuzz-test-client/tests/e2e_regions.rs. Everything is torn down on exit.
+# :3042) and runs crates/kuzz-test-client/tests/e2e_regions.rs. Everything is
+# torn down on exit.
+#
+# Both regions serve one service: RELAY_URL is kr's address and each region's
+# own address is a service alias. jp's global tables are a copy of kr's (S5):
+# kr publishes them, jp's database subscribes, and jp is added as a region in
+# kr, the way an operator adds a region.
 #
 #   scripts/regions-two-region-test.sh            # build, run, tear down
 #   KEEP_STACK=1 scripts/regions-two-region-test.sh  # leave stack and relays up
@@ -55,7 +60,9 @@ start_relay() {
   local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6 link_key=$7
   env DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:${pg}/kuzz" \
     REDIS_URL="redis://127.0.0.1:${redis}" \
-    RELAY_URL="ws://localhost:${port}" \
+    RELAY_URL="${KR_URL}" \
+    KUZZ_SERVICE_ALIASES="localhost:${port}" \
+    KUZZ_REGION_CONNECT_URL="ws://localhost:${port}" \
     KUZZ_BIND_ADDR="127.0.0.1:${port}" \
     KUZZ_HEALTH_PORT="${health}" \
     KUZZ_METRICS_PORT="${metrics}" \
@@ -77,40 +84,47 @@ start_relay() {
   PIDS+=($!)
 }
 
-start_relay kr 3041 5491 6491 3051 3061 "${KR_LINK_KEY}"
-start_relay jp 3042 5492 6492 3052 3062 "${JP_LINK_KEY}"
-
-for url in http://localhost:3041/ http://localhost:3042/; do
-  for _ in $(seq 1 120); do
-    curl -s -o /dev/null "${url}" && break
+wait_up() {
+  for _ in $(seq 1 180); do
+    curl -s -o /dev/null "$1" && return 0
     sleep 1
   done
-  curl -s -o /dev/null "${url}" || { log "relay ${url} did not start; see ${LOG_DIR}"; exit 1; }
-done
-log "relays up"
-
-# Each region registers only itself; until S5 copies the region list, tell
-# both databases about both regions. No room has been routed yet, so the
-# relays' region caches are still empty.
-for service in postgres-kr postgres-jp; do
-  "${COMPOSE[@]}" exec -T "${service}" psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
-    "INSERT INTO regions (id, connect_url, is_primary) VALUES
-       ('kr', '${KR_URL}', true), ('jp', '${JP_URL}', false)
-     ON CONFLICT (id) DO NOTHING"
-done
-
-# Each relay recorded its own link key; give each database the other's.
-link_pubkey() {
-  "${COMPOSE[@]}" exec -T "postgres-$1" psql -qtA -U kuzz -d kuzz -c \
-    "SELECT link_pubkey FROM regions WHERE id = '$1'"
+  log "relay $1 did not start; see ${LOG_DIR}"
+  exit 1
 }
-KR_LINK_PUBKEY="$(link_pubkey kr | tr -d '[:space:]')"
-JP_LINK_PUBKEY="$(link_pubkey jp | tr -d '[:space:]')"
-[[ -n "${KR_LINK_PUBKEY}" && -n "${JP_LINK_PUBKEY}" ]] || { log "relays did not record link keys"; exit 1; }
-"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
-  "UPDATE regions SET link_pubkey = '${JP_LINK_PUBKEY}' WHERE id = 'jp'"
+
+# kr, the primary, migrates, registers itself and publishes the global tables.
+start_relay kr 3041 5491 6491 3051 3061 "${KR_LINK_KEY}"
+wait_up http://localhost:3041/
+log "kr up"
+
+# jp's relay migrates jp's database, then waits for the copy. Subscribe once
+# the tables exist.
+start_relay jp 3042 5492 6492 3052 3062 "${JP_LINK_KEY}"
+for _ in $(seq 1 120); do
+  "${COMPOSE[@]}" exec -T postgres-jp psql -qtA -U kuzz -d kuzz -c \
+    "SELECT 1 FROM pg_proc WHERE proname = 'kuzz_is_global_copy'" 2>/dev/null | grep -q 1 && break
+  sleep 1
+done
 "${COMPOSE[@]}" exec -T postgres-jp psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
-  "UPDATE regions SET link_pubkey = '${KR_LINK_PUBKEY}' WHERE id = 'kr'"
+  "CREATE SUBSCRIPTION kuzz_global
+     CONNECTION 'host=postgres-kr port=5432 user=kuzz password=kuzz_dev dbname=kuzz'
+     PUBLICATION kuzz_global"
+
+# Add jp in the primary with the link key jp's relay asks for.
+JP_LINK_PUBKEY=""
+for _ in $(seq 1 90); do
+  JP_LINK_PUBKEY="$(sed 's/\x1b\[[0-9;]*m//g' "${LOG_DIR}/relay-jp.log" \
+    | grep -oE 'link_pubkey"?[=:] ?"?[0-9a-f]{64}' | head -1 | grep -oE '[0-9a-f]{64}' || true)"
+  [[ -n "${JP_LINK_PUBKEY}" ]] && break
+  sleep 1
+done
+[[ -n "${JP_LINK_PUBKEY}" ]] || { log "jp did not ask to be added; see ${LOG_DIR}"; exit 1; }
+"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
+  "INSERT INTO regions (id, connect_url, is_primary, link_pubkey)
+   VALUES ('jp', '${JP_URL}', false, '${JP_LINK_PUBKEY}')"
+wait_up http://localhost:3042/
+log "relays up"
 
 log "running e2e_regions"
 REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \

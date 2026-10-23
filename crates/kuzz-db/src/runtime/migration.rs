@@ -512,6 +512,7 @@ mod postgres_tests {
             "regions",
             "local_region",
             "region_outbox",
+            "global_heartbeat",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -726,7 +727,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 85);
+        assert_eq!(migrations.len(), 86);
+        assert_eq!(migrations[85].version, 87);
+        assert!(migrations[85]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE global_heartbeat"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE global_heartbeat"));
         assert_eq!(migrations[84].version, 86);
         assert!(migrations[84]
             .sql
@@ -2273,7 +2281,9 @@ mod postgres_tests {
                 "media_references",
                 "media_uploads",
                 "thread_state",
+                "region_outbox",
                 "user_block_periods",
+                "user_block_versions",
                 "user_blocks",
             ]
             .map(str::to_owned),

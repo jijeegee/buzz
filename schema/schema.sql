@@ -2986,8 +2986,16 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 CREATE TABLE local_region (
     singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
     region_id TEXT NOT NULL REFERENCES regions(id),
-    claimed_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    claimed_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    -- Migration 0087: this database's global tables are a copy (S5).
+    global_copy BOOLEAN NOT NULL DEFAULT false
 );
+
+-- True when this database's global tables are a copy of the primary's.
+CREATE FUNCTION kuzz_is_global_copy() RETURNS BOOLEAN
+LANGUAGE sql STABLE AS $$
+    SELECT COALESCE((SELECT global_copy FROM local_region), false)
+$$;
 
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('local_region', 'the region this database belongs to; never tenant data');
@@ -3011,7 +3019,7 @@ LANGUAGE plpgsql AS $$
 DECLARE
     home TEXT;
 BEGIN
-    SELECT region_id INTO home FROM local_region;
+    SELECT region_id INTO home FROM local_region WHERE NOT global_copy;
     IF home IS NOT NULL THEN
         INSERT INTO room_directory (community_id, channel_id, home_region, participant_hash)
         VALUES (NEW.community_id, NEW.id, home, NEW.participant_hash)
@@ -3028,8 +3036,10 @@ FOR EACH ROW EXECUTE FUNCTION record_room_home();
 CREATE FUNCTION forget_room_home() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
 BEGIN
-    DELETE FROM room_directory
-     WHERE community_id = OLD.community_id AND channel_id = OLD.id;
+    IF NOT kuzz_is_global_copy() THEN
+        DELETE FROM room_directory
+         WHERE community_id = OLD.community_id AND channel_id = OLD.id;
+    END IF;
     RETURN NULL;
 END
 $$;
@@ -3100,3 +3110,30 @@ CREATE TABLE user_block_versions (
 );
 
 SELECT attach_community_write_fence('user_block_versions');
+
+-- ── Global copy (migration 0087) ─────────────────────────────────────────
+--
+-- Global tables are written in the primary region and copied to the others
+-- by logical replication (`kuzz_global`). The relay installs this guard on
+-- every copied table of a copy; the replication worker does not fire it.
+CREATE FUNCTION refuse_global_copy_write() RETURNS TRIGGER
+LANGUAGE plpgsql AS $$
+BEGIN
+    RAISE EXCEPTION 'global table % is written in the primary region; this database is a copy',
+        TG_TABLE_NAME
+        USING ERRCODE = 'read_only_sql_transaction';
+END
+$$;
+
+-- Updated by the primary every second; copied, so a region measures its lag.
+CREATE TABLE global_heartbeat (
+    singleton BOOLEAN PRIMARY KEY DEFAULT true CHECK (singleton),
+    beat_at TIMESTAMPTZ NOT NULL
+);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('global_heartbeat', 'the primary region''s copy heartbeat; never tenant data');
+
+-- Deleting a community also drops its undelivered region calls (S4-5 left
+-- region_outbox out of the deletion fence).
+SELECT attach_community_write_fence('region_outbox');
