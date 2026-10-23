@@ -1442,6 +1442,24 @@ async fn handle_agent_observer_event(
                     .is_agent_owner(conn.tenant.community(), &agent_bytes, &owner_bytes)
                     .await;
                 match result {
+                    // In a copy region an owner recorded a moment ago at the
+                    // primary may not be here yet: ask it, and keep only yes
+                    // answers so the copy's "no" is read again (S5-4).
+                    Ok(false) if state.config.global_copy => {
+                        let owned = crate::region_global_read::primary_confirms(
+                            &state,
+                            conn.tenant.community(),
+                            &crate::region_global_read::GlobalRead::AgentOwner {
+                                agent: route.agent.to_hex(),
+                                owner: route.owner.to_hex(),
+                            },
+                        )
+                        .await;
+                        if owned {
+                            state.observer_owner_cache.insert(cache_key, true);
+                        }
+                        owned
+                    }
                     Ok(v) => {
                         state.observer_owner_cache.insert(cache_key, v);
                         v

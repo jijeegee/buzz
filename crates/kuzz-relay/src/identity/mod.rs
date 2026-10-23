@@ -226,15 +226,20 @@ pub(crate) async fn verify_session_token(
         .filter(TokenKind::is_access)
         .ok_or(TokenRejection::InvalidToken)?;
     let hash = token.hash();
-    let record = state
-        .db
-        .lookup_access_token(&hash)
-        .await
-        .map_err(|error| {
-            tracing::warn!(%error, "access-token lookup failed; denying (fail-closed)");
-            TokenRejection::Unavailable
-        })?
-        .ok_or(TokenRejection::InvalidToken)?;
+    let record = state.db.lookup_access_token(&hash).await.map_err(|error| {
+        tracing::warn!(%error, "access-token lookup failed; denying (fail-closed)");
+        TokenRejection::Unavailable
+    })?;
+    // A copy region may not have a token minted a moment ago at the primary
+    // yet (S5-4): it waits for the copy when the primary knows the token.
+    let record = match record {
+        Some(record) => record,
+        None if state.config.global_copy => crate::region_global_read::wait_for_token(state, &hash)
+            .await
+            .map_err(|()| TokenRejection::Unavailable)?
+            .ok_or(TokenRejection::InvalidToken)?,
+        None => return Err(TokenRejection::InvalidToken),
+    };
     let prefix_matches = matches!(
         (kind, record.kind),
         (TokenKind::UserAccess, AccessTokenKind::User)

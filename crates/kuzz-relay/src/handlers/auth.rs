@@ -74,11 +74,7 @@ pub(crate) async fn community_ban_outcome(
         community: kuzz_core::CommunityId,
         key: &nostr::PublicKey,
     ) -> BanOutcome {
-        match state
-            .db
-            .moderation_restriction_state(community, key.as_bytes())
-            .await
-        {
+        match crate::region_global_read::restriction_state(state, community, key.as_bytes()).await {
             Ok(restriction) if restriction.banned => BanOutcome::Banned,
             Ok(_) => BanOutcome::Clear,
             Err(e) => {
@@ -435,10 +431,24 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             if state.config.pubkey_allowlist_enabled
                 && auth_ctx.auth_method == kuzz_auth::AuthMethod::Nip42
             {
-                let allowlist = state
+                let allowlist = match state
                     .db
                     .is_pubkey_allowed(conn.tenant.community(), pubkey.as_bytes())
-                    .await;
+                    .await
+                {
+                    // An entry added a moment ago at the primary (S5-4).
+                    Ok(false) if state.config.global_copy => {
+                        Ok(crate::region_global_read::primary_confirms(
+                            &state,
+                            conn.tenant.community(),
+                            &crate::region_global_read::GlobalRead::Allowed {
+                                pubkey: pubkey.to_hex(),
+                            },
+                        )
+                        .await)
+                    }
+                    other => other,
+                };
                 if let Err(e) = &allowlist {
                     warn!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), error = %e,
                               "allowlist DB lookup failed, denying (fail-closed)");

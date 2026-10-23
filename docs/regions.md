@@ -69,6 +69,27 @@ REFRESH PUBLICATION` in each region; the relay waits and says so until then.
 A migration that writes rows into a copied table must skip copies
 (`WHERE NOT kuzz_is_global_copy()`).
 
+### Reading the copy (stage S5-4)
+
+The copy trails the primary by about a second. When a check answers "no"
+from the copy, a region holding the copy asks the primary once
+(`/internal/region/global-read`). This applies to a token, a relay member,
+an allowlist entry and an agent's owner. A token the primary knows is then
+waited for in the copy (up to 5 s), because its row is read here. The
+primary's "no" is not remembered. If the primary cannot be asked, the
+copy's "no" stands.
+
+When the copy's lag is unknown or above `KUZZ_GLOBAL_COPY_MAX_LAG_SECS`
+(default 30), ban and membership checks that the copy allowed are asked of
+the primary. If the primary cannot answer, they are refused. Token
+revocations reach every region live and are not affected.
+
+These calls are bounded: at most 64 at once, none for 5 s after the
+primary failed one, and a token the primary did not know is not asked about
+again for 5 s. The lag is measured with the two regions' clocks, so keep
+them in sync (NTP); a copy region whose clock runs behind sees less lag than
+there is.
+
 ### Events outside rooms
 
 A region holding the copy forwards an event stored outside any room to the

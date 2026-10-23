@@ -388,6 +388,11 @@ pub struct Config {
     /// region keeps its own global tables (development only).
     pub global_copy: bool,
 
+    /// Lag above which a copy region no longer trusts its copy for bans and
+    /// removals (`KUZZ_GLOBAL_COPY_MAX_LAG_SECS`, default 30; stage S5-4):
+    /// those checks are then asked of the primary and fail closed.
+    pub global_copy_max_lag: Duration,
+
     /// This region's link key (`KUZZ_REGION_KEY`, hex or nsec), required when
     /// [`Config::region_link`] is on. One key per region: other regions know
     /// it by its public half in `regions.link_pubkey`.
@@ -1399,6 +1404,13 @@ impl Config {
             "KUZZ_GLOBAL_COPY",
             region_link && region_id != primary_region,
         )?;
+        let global_copy_max_lag = Duration::from_secs(
+            std::env::var("KUZZ_GLOBAL_COPY_MAX_LAG_SECS")
+                .ok()
+                .and_then(|value| value.parse::<u64>().ok())
+                .unwrap_or(30)
+                .max(1),
+        );
         if global_copy && (!region_link || region_id == primary_region) {
             return Err(ConfigError::InvalidValue(
                 "KUZZ_GLOBAL_COPY=on is for a region other than the primary, with KUZZ_REGION_LINK=on"
@@ -1645,6 +1657,7 @@ impl Config {
             side_effect_retry,
             region_link,
             global_copy,
+            global_copy_max_lag,
             region_key,
             community_id,
             ephemeral_ttl_override,

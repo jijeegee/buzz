@@ -171,6 +171,20 @@ pub mod relay_members {
         }
     }
 
+    /// [`read_membership`], checked with the primary in a copy region when
+    /// the copy says no or lags (S5-4).
+    async fn read_membership_global(
+        state: &AppState,
+        community: CommunityId,
+        pubkey_hex: &str,
+        writer: bool,
+    ) -> Result<bool, String> {
+        let here = read_membership(state, community, pubkey_hex, writer)
+            .await
+            .map_err(|e| format!("relay membership check failed: {e}"))?;
+        crate::region_global_read::relay_member(state, community, pubkey_hex, here).await
+    }
+
     async fn check_membership(
         state: &AppState,
         community: CommunityId,
@@ -184,9 +198,7 @@ pub mod relay_members {
         }
 
         let pubkey_hex = hex::encode(pubkey_bytes);
-        let is_member = read_membership(state, community, &pubkey_hex, writer)
-            .await
-            .map_err(|e| format!("relay membership check failed: {e}"))?;
+        let is_member = read_membership_global(state, community, &pubkey_hex, writer).await?;
         if is_member {
             return Ok(MembershipDecision::Member);
         }
@@ -207,9 +219,12 @@ pub mod relay_members {
                 ) {
                     Ok(owner_pubkey) => {
                         let owner_hex = owner_pubkey.to_hex();
-                        let owner_is_member = read_membership(state, community, &owner_hex, writer)
-                            .await
-                            .map_err(|e| format!("relay membership check (owner) failed: {e}"))?;
+                        let owner_is_member =
+                            read_membership_global(state, community, &owner_hex, writer)
+                                .await
+                                .map_err(|e| {
+                                    format!("relay membership check (owner) failed: {e}")
+                                })?;
                         if owner_is_member {
                             debug!(
                                 agent = %pubkey_hex,
