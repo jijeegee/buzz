@@ -826,6 +826,10 @@ impl QueuedNormalListenerEvent {
         });
     }
 
+    /// Steer or interrupt the scope's in-flight turn with this event. Returns
+    /// the scope and thread tags for the typing indicator when the event was
+    /// handed to the running turn natively: a turn the indicator does not
+    /// cover yet (an idle check) shows typing for it from then on.
     fn steer_or_interrupt(
         self,
         handling: MultipleEventHandling,
@@ -833,13 +837,12 @@ impl QueuedNormalListenerEvent {
         pool: &mut AgentPool,
         queue: &mut EventQueue,
         steer_ack_tx: &mpsc::UnboundedSender<SteerAckEvent>,
-    ) {
+    ) -> Option<(scope::SessionScope, ThreadTags)> {
         if !self.accepted || !queue.is_scope_in_flight(&self.scope) {
-            return;
+            return None;
         }
-        let Some(signal) = mode_gate_signal(handling, &self.effective_author, owner) else {
-            return;
-        };
+        let signal = mode_gate_signal(handling, &self.effective_author, owner)?;
+        let thread_tags = queue::routing_thread_tags(&self.event_for_steer, None);
         // Edits take the universal cancel+merge path: a native steer body does
         // not yet carry the edit's original-message routing, whereas a
         // requeued edit is re-dispatched as its own routed batch.
@@ -853,9 +856,11 @@ impl QueuedNormalListenerEvent {
                 self.prompt_tag_for_steer,
                 steer_ack_tx,
             );
-        if !native_attempted {
-            signal_in_flight_task_for_scope(pool, &self.scope, signal);
+        if native_attempted {
+            return Some((self.scope, thread_tags));
         }
+        signal_in_flight_task_for_scope(pool, &self.scope, signal);
+        None
     }
 }
 
@@ -2744,6 +2749,7 @@ fn idle_check_step(
 
 /// Book a returned turn for the idle pool sleep. An idle check's answer goes
 /// to the round; `IDLE` or no answer drops its scope from the next check. A
+/// check that took a steered channel message counts as a channel turn. A
 /// channel turn restarts the idle interval at its completion (upstream
 /// block/buzz #8149: a turn longer than the interval otherwise lets the pool
 /// sleep the moment it ends), marks its scope for the next check, and voids a
@@ -2764,14 +2770,19 @@ fn record_idle_activity(
             .idle_check_answer
             .take()
             .unwrap_or(pool::IdleCheckAnswer::NoAnswer);
-        if answer == pool::IdleCheckAnswer::Busy {
-            if let Some(round) = idle_check_round.as_mut() {
-                round.busy = true;
+        match answer {
+            pool::IdleCheckAnswer::Steered => {}
+            pool::IdleCheckAnswer::Busy => {
+                if let Some(round) = idle_check_round.as_mut() {
+                    round.busy = true;
+                }
+                return;
             }
-        } else {
-            idle_check_scopes.remove(scope);
+            pool::IdleCheckAnswer::Idle | pool::IdleCheckAnswer::NoAnswer => {
+                idle_check_scopes.remove(scope);
+                return;
+            }
         }
-        return;
     }
     *last_activity = tokio::time::Instant::now();
     idle_check_scopes.insert(scope.clone());
@@ -2795,11 +2806,16 @@ fn start_idle_checks(
         if session_scope_busy(pool, queue, &scope) {
             continue;
         }
-        let Some(agent) = pool.try_claim_scope_owner(&scope) else {
+        let Some(mut agent) = pool.try_claim_scope_owner(&scope) else {
             scopes.remove(&scope);
             continue;
         };
         queue.mark_scope_in_flight(scope.clone());
+        // The session may still be working when it is asked (the check then
+        // runs as long as that work), so a new message for the scope is
+        // steered in as in any turn instead of waiting for the check to end.
+        let (steer_tx, steer_rx) = tokio::sync::mpsc::channel::<pool::SteerRequest>(1);
+        agent.acp.install_steer_rx(steer_rx);
         let agent_index = agent.index;
         let turn_id = format!("{}{}", pool::IDLE_CHECK_TURN_PREFIX, Uuid::new_v4());
         let task_turn_id = turn_id.clone();
@@ -2818,7 +2834,7 @@ fn start_idle_checks(
                 turn_id,
                 recoverable_batch: None,
                 control_tx: None,
-                steer_tx: None,
+                steer_tx: Some(steer_tx),
                 successful_steer_deliveries: HashSet::new(),
             },
         );
@@ -4340,13 +4356,15 @@ async fn run_harness(
                             // retains its verified author, resolved scope, and
                             // event data through the optional steer/interrupt
                             // decision.
-                            queued.steer_or_interrupt(
+                            if let Some((scope, thread_tags)) = queued.steer_or_interrupt(
                                 config.multiple_event_handling,
                                 owner_cache.get(),
                                 &mut pool,
                                 &mut queue,
                                 &steer_ack_tx,
-                            );
+                            ) {
+                                typing_channels.entry(scope).or_insert(thread_tags);
+                            }
                             if pool_ready {
                                 for (scope, thread_tags) in
                                     dispatch_pending(&mut pool, &mut queue, &ctx, &mut last_activity, observer.as_ref())
@@ -12481,6 +12499,65 @@ mod error_outcome_emission_tests {
         assert!(round.as_ref().unwrap().busy);
         assert!(scopes.contains(&busy_scope));
         assert_eq!(last_activity, before, "an idle check is not activity");
+    }
+
+    /// A check that took a steered channel message was a turn for that
+    /// message: it renews the interval, keeps the scope and voids the round
+    /// like any channel turn, whatever its reply says.
+    #[tokio::test(start_paused = true)]
+    async fn idle_check_that_took_a_message_counts_as_a_channel_turn() {
+        let scope = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut last_activity = tokio::time::Instant::now();
+        tokio::time::advance(Duration::from_secs(60)).await;
+        let now = tokio::time::Instant::now();
+        let mut scopes = HashSet::new();
+        let mut round = Some(IdleCheckRound::default());
+        let check_id = format!("{}x", pool::IDLE_CHECK_TURN_PREFIX);
+        let mut result = idle_test_result(PromptSource::Channel(scope.clone()), &check_id).await;
+        result.agent.state.idle_check_answer = Some(pool::IdleCheckAnswer::Steered);
+        record_idle_activity(&mut result, &mut scopes, &mut round, &mut last_activity);
+
+        assert_eq!(last_activity, now);
+        assert!(scopes.contains(&scope));
+        assert!(round.is_none());
+    }
+
+    /// A message for a scope whose session is being asked an idle check is
+    /// steered into that turn. Without a steer sender it waited queued until
+    /// the check ended, which takes as long as the work the session is on.
+    #[tokio::test]
+    async fn message_during_an_idle_check_is_steered_into_it() {
+        let owned = scope::SessionScope::Conversation {
+            channel_id: Uuid::new_v4(),
+        };
+        let mut agent = dummy_agent(0).await;
+        let mut pool = AgentPool::from_slots(vec![None]);
+        bind_agent_scope_owner(&mut pool, &mut agent, owned.clone());
+        agent
+            .state
+            .sessions
+            .insert(owned.clone(), "sess-owned".into());
+        pool.return_agent(agent);
+        let mut queue = EventQueue::new(config::DedupMode::Queue);
+        let ctx = Arc::new(pool::tests::make_prompt_context_no_owner());
+        let mut scopes: HashSet<_> = [owned.clone()].into_iter().collect();
+        assert_eq!(
+            start_idle_checks(&mut pool, &mut queue, &ctx, &mut scopes, &HashSet::new()),
+            vec![owned.clone()]
+        );
+
+        let (ack_tx, _ack_rx) = tokio::sync::oneshot::channel::<pool::SteerAck>();
+        let steer = pool.send_steer(
+            &owned,
+            pool::SteerRequest {
+                prompt_blocks: vec!["new message".into()],
+                ack_tx,
+            },
+        );
+        assert!(steer.is_ok(), "steer refused: {steer:?}");
+        pool.join_set.abort_all();
     }
 
     /// Idle checks go only to a scope's owning worker; a scope whose session

@@ -3279,10 +3279,6 @@ pub async fn run_compact_task(
 /// idle check's result from a channel turn's.
 pub(crate) const IDLE_CHECK_TURN_PREFIX: &str = "idle-check-";
 
-/// An idle check with no output for this long counts as unanswered: the agent
-/// is stuck and the pool may sleep.
-pub(crate) const IDLE_CHECK_ANSWER_TIMEOUT: Duration = Duration::from_secs(15 * 60);
-
 /// Asked in a scope's live session before the idle pool sleep stops the
 /// worker: only the agent knows whether background work it started (a
 /// background agent or shell command) is still running, and the runner does
@@ -3300,6 +3296,9 @@ pub enum IdleCheckAnswer {
     Busy,
     /// No answer (stuck, failed or cancelled); the worker may stop.
     NoAnswer,
+    /// A new channel message was steered into the check, so it became a
+    /// turn for that message: the reply answers the message, not the check.
+    Steered,
 }
 
 /// Read an idle check reply. The answer is the last `BUSY` or `IDLE`
@@ -3349,15 +3348,20 @@ pub async fn run_idle_check_task(
         ),
         Some(session_id) => {
             agent.acp.set_capture_reply(true);
+            agent.acp.take_steer_written();
             let result = agent
                 .acp
                 .session_prompt_with_idle_timeout(
                     session_id,
                     IDLE_CHECK_PROMPT,
-                    IDLE_CHECK_ANSWER_TIMEOUT,
+                    // The turn's own silence limit: a check can take a
+                    // steered message and become that message's turn, and a
+                    // session that stays silent this long is stuck either way.
+                    ctx.idle_timeout,
                     ctx.max_turn_duration,
                 )
                 .await;
+            let steered = agent.acp.take_steer_written();
             let reply = agent.acp.take_reply_text();
             agent.acp.set_capture_reply(false);
             let (status, outcome, stop) =
@@ -3372,7 +3376,9 @@ pub async fn run_idle_check_task(
                 Some(stop),
             )
             .await;
-            let answer = if status == "completed" {
+            let answer = if steered {
+                IdleCheckAnswer::Steered
+            } else if status == "completed" {
                 parse_idle_check_answer(&reply)
             } else {
                 IdleCheckAnswer::NoAnswer
