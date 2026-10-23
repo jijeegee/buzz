@@ -536,10 +536,9 @@ export const ProjectGridCard = React.memo(function ProjectGridCard({
                 data-projects-text-priority="secondary"
               >
                 <span>
-                  {project.repositoryAddresses.length}{" "}
-                  {project.repositoryAddresses.length === 1
-                    ? "repository"
-                    : "repositories"}
+                  {t("projects.cards.repositoryCount", {
+                    count: project.repositoryAddresses.length,
+                  })}
                 </span>
                 <StatusPill status={project.status} />
                 <RepositoryUnavailableIndicator

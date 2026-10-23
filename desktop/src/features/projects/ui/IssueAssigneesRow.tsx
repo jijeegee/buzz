@@ -13,7 +13,7 @@ import { useUserSearchQuery } from "@/features/profile/hooks";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { UserSearchResult } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   Dialog,
@@ -38,13 +38,13 @@ function labelForPubkey(pubkey: string, profiles?: UserProfileLookup) {
   return (
     profile?.displayName?.trim() ||
     profile?.nip05Handle?.trim() ||
-    UNKNOWN_USER_LABEL
+    unknownUserLabel()
   );
 }
 
 function assigneeSearchLabel(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 
@@ -276,7 +276,9 @@ export function IssueAssigneesRow({
               )}
             </TooltipTrigger>
             <TooltipContent>
-              {canUnassign ? `Unassign ${label}` : `${label} — assigned`}
+              {canUnassign
+                ? t("projects.assignees.unassign", { name: label })
+                : t("projects.assignees.assignedTooltip", { name: label })}
             </TooltipContent>
           </Tooltip>
         );

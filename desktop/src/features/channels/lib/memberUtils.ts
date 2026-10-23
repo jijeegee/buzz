@@ -2,8 +2,8 @@ import type { ChannelMember } from "@/shared/api/types";
 import {
   canonicalNpub,
   normalizePubkey,
-  UNAVAILABLE_KEY_LABEL,
-  UNKNOWN_USER_LABEL,
+  unavailableKeyLabel,
+  unknownUserLabel,
 } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 
@@ -23,7 +23,7 @@ export function formatMemberName(
     return t("common.you");
   }
 
-  return member.displayName ?? UNKNOWN_USER_LABEL;
+  return member.displayName ?? unknownUserLabel();
 }
 
 /**
@@ -36,7 +36,7 @@ export function formatMemberName(
  */
 function memberNameSurface(member: ChannelMember): string {
   return (
-    member.displayName ?? canonicalNpub(member.pubkey) ?? UNAVAILABLE_KEY_LABEL
+    member.displayName ?? canonicalNpub(member.pubkey) ?? unavailableKeyLabel()
   );
 }
 

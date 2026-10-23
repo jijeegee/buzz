@@ -1,4 +1,4 @@
-import { useT } from "@/shared/i18n";
+import { type MessageKey, useT } from "@/shared/i18n";
 import type * as React from "react";
 
 import { GroupLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
@@ -12,11 +12,31 @@ export type ChannelIntroAction = {
   testId?: string;
 };
 
+/** Which "This is the beginning of the …" sentence the intro shows. */
+export type ChannelIntroKind =
+  | "chat"
+  | "welcome"
+  | "project"
+  | "privateEphemeral"
+  | "private"
+  | "ephemeral"
+  | "regular";
+
+const BEGINNING_KEYS: Record<ChannelIntroKind, MessageKey> = {
+  chat: "messages.intro.beginningOfChat",
+  welcome: "messages.intro.beginningOfWelcome",
+  project: "messages.intro.beginningOfProject",
+  privateEphemeral: "messages.intro.beginningOfPrivateEphemeral",
+  private: "messages.intro.beginningOfPrivate",
+  ephemeral: "messages.intro.beginningOfEphemeral",
+  regular: "messages.intro.beginningOfRegular",
+};
+
 export type ChannelIntro = {
   actions?: ChannelIntroAction[];
   /** Seeds the letter avatar color when no explicit icon is given. */
   channelId?: string;
-  channelKindLabel: string;
+  channelKind: ChannelIntroKind;
   channelName: string;
   description?: string | null;
   hideBeginning?: boolean;
@@ -43,6 +63,7 @@ export function ChannelIntroBlock({
   intro: ChannelIntro;
 }) {
   const t = useT();
+  const beginningKey = BEGINNING_KEYS[intro.channelKind];
   return (
     <div
       className={cn(
@@ -83,10 +104,9 @@ export function ChannelIntroBlock({
       <p className="mt-4 max-w-2xl truncate text-xl font-semibold leading-7 tracking-tight text-foreground">
         {intro.channelName}
       </p>
-      {intro.hideBeginning ? null : (
+      {intro.hideBeginning || !beginningKey ? null : (
         <p className="mt-1 max-w-2xl text-sm leading-5 text-muted-foreground">
-          {t("messages.intro.beginningOf", {
-            kind: intro.channelKindLabel,
+          {t(beginningKey, {
             b: (chunks) => (
               <span className="font-medium text-foreground">{chunks}</span>
             ),

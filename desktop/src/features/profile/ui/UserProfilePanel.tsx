@@ -77,7 +77,7 @@ import {
   resolveAgentInstruction,
   resolvePanelProfile,
   resolveProfileDisplayName,
-  UNKNOWN_USER_LABEL,
+  unknownUserLabel,
   type UserProfilePanelProps,
   useRetainedPersona,
 } from "@/features/profile/ui/UserProfilePanelUtils";
@@ -695,7 +695,7 @@ export function UserProfilePanel({
       return (
         ownerProfile?.nip05Handle?.trim() ||
         ownerProfile?.displayName?.trim() ||
-        UNKNOWN_USER_LABEL
+        unknownUserLabel()
       );
     }
 
@@ -707,7 +707,7 @@ export function UserProfilePanel({
     return (
       currentProfile?.nip05Handle?.trim() ||
       currentProfile?.displayName?.trim() ||
-      UNKNOWN_USER_LABEL
+      unknownUserLabel()
     );
   }, [
     currentProfileQuery.data,

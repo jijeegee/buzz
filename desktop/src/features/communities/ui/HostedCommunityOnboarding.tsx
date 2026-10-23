@@ -27,7 +27,7 @@ import { useCommunityOnboarding } from "@/features/onboarding/communityOnboardin
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useT } from "@/shared/i18n";
 import { safeNpub } from "@/shared/lib/nostrUtils";
-import { UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
+import { unavailableKeyLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Card } from "@/shared/ui/card";
 import { Input } from "@/shared/ui/input";
@@ -585,11 +585,11 @@ export function HostedCommunityOnboarding({
               </DialogDescription>
               <p className="mt-4 w-full break-all rounded-xl bg-[rgb(var(--kuzz-hosted-community-identity-bg)/0.5)] px-4 py-3 text-left font-mono text-xs text-foreground">
                 {t("communities.hosted.accountKey", {
-                  key: boundNpub ?? UNAVAILABLE_KEY_LABEL,
+                  key: boundNpub ?? unavailableKeyLabel(),
                 })}
                 <br />
                 {t("communities.hosted.deviceKey", {
-                  key: localNpub ?? UNAVAILABLE_KEY_LABEL,
+                  key: localNpub ?? unavailableKeyLabel(),
                 })}
               </p>
               {errorBox ? <div className="mt-5 w-full">{errorBox}</div> : null}

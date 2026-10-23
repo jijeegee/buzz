@@ -3,7 +3,7 @@ import type { ChannelWindowThreadSummary } from "@/features/messages/lib/channel
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { isBroadcastReply } from "@/features/messages/lib/threading";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { KIND_HUDDLE_STARTED } from "@/shared/constants/kinds";
 
 type ThreadPanelData = {
@@ -421,13 +421,13 @@ function buildRelayThreadSummary(
       .reverse()
       .map((pubkey) => ({
         id: pubkey,
-        // Unnamed participants fall back to `UNKNOWN_USER_LABEL` — the same
+        // Unnamed participants fall back to `unknownUserLabel()` — the same
         // label the client-assembled path derives via `resolveUserLabel` — so
         // a cold/relay-only facepile never surfaces key text. This `author` is
         // what `MessageThreadSummaryRow` binds to `UserAvatar`'s
         // `displayName` (the visible/accessible avatar label).
         author:
-          profiles?.[pubkey.toLowerCase()]?.displayName ?? UNKNOWN_USER_LABEL,
+          profiles?.[pubkey.toLowerCase()]?.displayName ?? unknownUserLabel(),
         avatarUrl: profiles?.[pubkey.toLowerCase()]?.avatarUrl ?? null,
         ...(profiles?.[pubkey.toLowerCase()]?.isAgent === true
           ? { isAgent: true }

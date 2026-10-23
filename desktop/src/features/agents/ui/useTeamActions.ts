@@ -383,7 +383,7 @@ export function useTeamActions(actions: ActionMessages) {
       }
     } catch (err) {
       setTeamSnapshotImportConfirmError(
-        err instanceof Error ? err.message : "Failed to import team snapshot.",
+        err instanceof Error ? err.message : t("agents.import.teamFailed"),
       );
     }
   }

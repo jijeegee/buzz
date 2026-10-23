@@ -7,7 +7,7 @@ import type {
 } from "@/features/projects/projectPullRequests.mjs";
 import { relativeTime } from "@/features/projects/lib/projectsViewHelpers";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { ProjectRichContent } from "./ProjectRichContent";
 import { useT } from "@/shared/i18n";
 
@@ -19,7 +19,7 @@ function commentAuthor(
   return (
     profile?.displayName?.trim() ||
     profile?.nip05Handle?.trim() ||
-    UNKNOWN_USER_LABEL
+    unknownUserLabel()
   );
 }
 

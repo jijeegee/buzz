@@ -9,10 +9,7 @@ import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext"
 import { Button } from "@/shared/ui/button";
 import { Markdown } from "@/shared/ui/markdown";
 import { Textarea } from "@/shared/ui/textarea";
-import {
-  isRelayUnreachableError,
-  RELAY_UNREACHABLE_SHORT,
-} from "@/shared/lib/relayError";
+import { isRelayUnreachableError } from "@/shared/lib/relayError";
 import {
   CANVAS_EXPECTED_REVISION_NONE,
   canvasConflictMessage,
@@ -134,7 +131,7 @@ export function ChannelCanvas({
         role="alert"
       >
         {isRelayUnreachableError(canvasQuery.error)
-          ? RELAY_UNREACHABLE_SHORT
+          ? t("common.relayUnreachable.short")
           : canvasQuery.error.message}
       </p>
     );
@@ -201,7 +198,7 @@ export function ChannelCanvas({
           role="status"
         >
           {isRelayUnreachableError(canvasQuery.error)
-            ? RELAY_UNREACHABLE_SHORT
+            ? t("common.relayUnreachable.short")
             : t("channels.canvas.refreshFailed")}
         </p>
       ) : null}

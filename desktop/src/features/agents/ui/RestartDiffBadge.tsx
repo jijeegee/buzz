@@ -6,18 +6,6 @@ import type { RestartDiffEntry, RestartChange } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import { useT } from "@/shared/i18n";
 
-// ── Auto-restart copy ─────────────────────────────────────────────────────────
-
-/**
- * Shared blurb strings for the auto-restart state. Exported so the Runtime-tab
- * banner can import the same constants — the two surfaces must never drift.
- */
-export const AUTO_RESTART_ON_BLURB =
-  "Configuration changed since this agent started. Kuzz can restart it automatically after ~3 minutes idle, or stop and respawn it to apply now.";
-
-export const AUTO_RESTART_OFF_BLURB =
-  "Configuration changed since this agent started. Automatic restart is off for this agent — stop and respawn it to apply the changes.";
-
 // ── Label helpers ─────────────────────────────────────────────────────────────
 
 /**

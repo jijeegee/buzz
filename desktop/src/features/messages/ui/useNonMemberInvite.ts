@@ -1,6 +1,5 @@
 import { t } from "@/shared/i18n";
 import * as React from "react";
-import { PRIVATE_CHANNEL_ADD_DENIED_MESSAGE } from "@/features/channels/lib/channelMemberAdmission";
 import type { MentionRevalidationOptions } from "@/features/messages/lib/agentMentionRevalidation";
 import type { ManagedAgent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
@@ -86,7 +85,7 @@ export function useNonMemberInvite({
     if (!draft || draft.sourceOwner !== currentOwner.current || active.current)
       return;
     if (!canInvite) {
-      setError(PRIVATE_CHANNEL_ADD_DENIED_MESSAGE);
+      setError(t("channels.members.addDenied"));
       return;
     }
     const attempt = new AbortController();

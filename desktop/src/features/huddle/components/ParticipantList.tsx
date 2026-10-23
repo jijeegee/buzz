@@ -11,7 +11,7 @@ import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import type { VoiceRegistryEntry } from "@/features/settings/ui/voiceSettingsLogic";
 import { invokeTauri } from "@/shared/api/tauri";
 import { cn } from "@/shared/lib/cn";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { ROUNDED_SQUIRCLE_PATH } from "@/shared/ui/AvatarClipPaths";
 import { Popover, PopoverContent, PopoverTrigger } from "@/shared/ui/popover";
@@ -117,7 +117,7 @@ function buildParticipantIdentities({
     const authoredName = profile?.displayName?.trim() || agent?.name?.trim();
     const displayName =
       authoredName ||
-      (isAgent ? translate("huddle.participants.agent") : UNKNOWN_USER_LABEL);
+      (isAgent ? translate("huddle.participants.agent") : unknownUserLabel());
     const speakerLevel =
       normalizedSpeakerLevels.get(normalizedPubkey) ??
       (activeSpeakerSet.has(normalizedPubkey) ? 0.55 : 0);

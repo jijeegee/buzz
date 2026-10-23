@@ -4,6 +4,7 @@ import {
   resolveUserLabel,
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
+import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/shared/ui/tooltip";
@@ -88,6 +89,7 @@ export function ProjectsOverviewPeople({
   people: string[];
   profiles?: UserProfileLookup;
 }) {
+  const t = useT();
   const containerRef = React.useRef<HTMLDivElement>(null);
   const [layout, setLayout] = React.useState({
     columns: Math.min(people.length, 48) || 1,
@@ -173,7 +175,7 @@ export function ProjectsOverviewPeople({
                 <TooltipContent>
                   {remainingLabels.length === 1
                     ? remainingLabels[0]
-                    : `${remaining} more`}
+                    : t("projects.overviewPeople.more", { count: remaining })}
                 </TooltipContent>
               </Tooltip>
             ) : null}

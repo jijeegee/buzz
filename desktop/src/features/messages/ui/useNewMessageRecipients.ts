@@ -25,7 +25,7 @@ import type {
   UserProfileSummary,
   UserSearchResult,
 } from "@/shared/api/types";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 
 /** Most people (excluding you) a new conversation can start with. */
 export const NEW_MESSAGE_RECIPIENT_LIMIT = MAX_NEW_CHAT_PEOPLE;
@@ -40,7 +40,7 @@ export type NewMessageRecipientCandidate = UserSearchResult & {
 
 export function formatRecipientName(user: UserSearchResult) {
   return (
-    user.displayName?.trim() || user.nip05Handle?.trim() || UNKNOWN_USER_LABEL
+    user.displayName?.trim() || user.nip05Handle?.trim() || unknownUserLabel()
   );
 }
 
