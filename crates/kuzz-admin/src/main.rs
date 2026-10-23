@@ -24,6 +24,7 @@ mod chat_backfill;
 mod deletions;
 mod key_backups;
 mod regions;
+mod rooms;
 mod storage_snapshot_startup;
 
 use std::future::Future;
@@ -156,6 +157,12 @@ enum Command {
         #[command(subcommand)]
         command: regions::RegionsCommand,
     },
+    /// Move a room to another region (global regions). Runs against the
+    /// primary region's database and both homes' databases.
+    Rooms {
+        #[command(subcommand)]
+        command: rooms::RoomsCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -228,6 +235,7 @@ async fn run(cli: Cli) -> Result<i32> {
         }
         Command::ReencryptKeyBackups => key_backups::run().await,
         Command::Regions { command } => regions::run(command).await,
+        Command::Rooms { command } => rooms::run(command).await,
     }
 }
 

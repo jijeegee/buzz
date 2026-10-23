@@ -563,6 +563,20 @@ pub enum IngestError {
     WrongRegion(crate::routing::RemoteHome),
 }
 
+/// Refusal for an event in a room frozen while it moves to another region
+/// (global regions S6-3). Retryable: the room takes events again in its new
+/// home within seconds to minutes.
+const ROOM_MOVING: &str = "error: this room is moving to another region; try again shortly";
+
+/// An event store failure: a frozen room's refusal, or `message`.
+fn stored_error(error: kuzz_db::DbError, message: String) -> IngestError {
+    if error.is_room_moving() {
+        IngestError::Internal(ROOM_MOVING.into())
+    } else {
+        IngestError::Internal(message)
+    }
+}
+
 /// Refuse a write to a room that another region serves.
 pub(crate) async fn ensure_room_here(
     state: &AppState,
@@ -3807,7 +3821,10 @@ async fn ingest_event_inner(
                 emoji,
             )
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?
         {
             kuzz_db::ReactionEventInsertOutcome::TargetMissing => {
                 return Err(IngestError::Rejected(
@@ -3919,7 +3936,10 @@ async fn ingest_event_inner(
             .db
             .replace_addressable_event(tenant.community(), &event, channel_id)
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?
     } else if is_parameterized_replaceable(kind_u32) {
         // NIP-33 parameterized replaceable — keyed by (kind, pubkey, d_tag).
         let d_tag = kuzz_db::event::extract_d_tag(&event).unwrap_or_default();
@@ -3934,7 +3954,10 @@ async fn ingest_event_inner(
             .db
             .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?
     } else if let Some(spec) = canvas_revision_spec.as_ref() {
         // Canvas write carrying an optimistic-concurrency precondition. Plain
         // canvas writes (no `expected-revision` tag) fall through to the generic
@@ -3952,7 +3975,10 @@ async fn ingest_event_inner(
             .db
             .insert_channel_head_checked(tenant.community(), &event, channel, precondition)
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?;
         match status {
             kuzz_db::ChannelHeadWriteStatus::RevisionMissing => {
                 return Err(IngestError::CanvasConflict(format!(
@@ -4006,7 +4032,10 @@ async fn ingest_event_inner(
                     kuzz_db::DbError::AuthEventRejected => {
                         IngestError::Rejected("invalid: AUTH events cannot be stored".into())
                     }
-                    other => IngestError::Internal(format!("error: database error: {other}")),
+                    other => {
+                        let message = format!("error: database error: {other}");
+                        stored_error(other, message)
+                    }
                 });
             }
         }

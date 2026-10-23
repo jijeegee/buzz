@@ -77,6 +77,8 @@ pub mod region;
 pub mod region_outbox;
 /// Replaceable-event persistence and coordinate locking.
 pub mod replaceable;
+/// Moving a room to another region (migration 0088).
+pub mod room_move;
 /// Durable completed snapshots from the isolated media-storage worker.
 pub mod side_effect_outbox;
 
@@ -135,3 +137,6 @@ mod side_effect_outbox_postgres_tests;
 
 #[cfg(test)]
 mod global_copy_postgres_tests;
+
+#[cfg(test)]
+mod room_move_postgres_tests;

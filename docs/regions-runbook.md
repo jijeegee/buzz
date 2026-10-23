@@ -90,6 +90,75 @@ When the service name changes (S1), change `communities.host` in the primary
 together with `RELAY_URL` in every region. Apps sign for the service name,
 so a mismatch refuses every sign-in.
 
+## Moving a room
+
+`kuzz-admin rooms move` moves one room to another region. Run it from a
+machine that reaches the primary's database and both homes' databases:
+
+```sh
+DATABASE_URL=<primary> \
+KUZZ_MOVE_FROM_DATABASE_URL=<old home> \
+KUZZ_MOVE_TO_DATABASE_URL=<new home> \
+KUZZ_MOVE_REDIS_URLS=<every region's Redis, comma-separated> \
+RELAY_URL=<service address> \
+kuzz-admin rooms move --channel <room id> --to jp
+```
+
+Before you start:
+- Both homes must be on the same migration. The command refuses otherwise.
+- The new home's database user must be a superuser. Rows are copied with
+  triggers off, so sequence numbers, read positions and unread counts stay
+  as they are.
+- Members of the room cannot send to it while it moves. Their apps get a
+  retryable error. A room of a few thousand messages moves in seconds.
+
+What it does, one JSON line per step:
+1. `frozen`: the old home refuses the room's events. Events already being
+   written finish first.
+2. It waits for the room's side effects, such as join messages, up to
+   `--wait-secs` (default 300). These may still write the relay's own
+   messages into the room. If they do not finish in time, the room is
+   unfrozen and the command stops. Check `event_side_effects` (see
+   [Turning stages off](#turning-stages-off)).
+3. `copied`: the rows go to the new home in one transaction. Every table's
+   rows are checked value for value against the old home, or nothing is kept.
+   The copy stays frozen and is marked as a move's copy.
+4. `checked`: message counts and order numbers are compared again. On a
+   mismatch, the copy is removed and the room is unfrozen.
+5. `switched`: the primary's directory homes the room in the new region.
+   The epoch goes up by one, so a write forwarded with the old epoch is
+   refused and retried. Relays may route to the old home for up to 30
+   seconds (route cache); the old home refuses those writes as frozen.
+6. `opened`, `moved_out`: the new home takes events. The old home keeps the
+   room frozen and read-only, and its workflows are disabled.
+7. `reconnect`: every relay drops the community's connections, so apps
+   reconnect and fill any gap from the new home.
+
+If the command stops, run it again: it continues from where things stand.
+Before `switched`, `--abort` removes the copy and unfreezes the old home.
+After `switched` there is no abort. Move the room back instead.
+
+Seven days later, remove the old home's rows. Point `DATABASE_URL` at the
+old home's database and run:
+
+```sh
+kuzz-admin rooms forget-moved --channel <room id>
+```
+
+It refuses a room that has not moved out, one that moved out less than
+`--kept-days` ago, and one the directory still homes there.
+
+**Limits.**
+- Some writes do not go through events: read positions, thread follows, and
+  room or workflow settings changed over HTTP. If one of these is made
+  between the copy and the reconnect, it stays in the old home only. Move
+  rooms when they are quiet, and don't change room settings during a move.
+- Media an event names is recorded just after the event. The command waits
+  5 seconds before copying for these records. A record later than that is
+  missing from the new home.
+- Ban enforcement queued for the room in the old home (`relay_admin_outbox`)
+  does not move. Run moves after pending enforcement has finished.
+
 ## Removing a region
 
 1. Move its rooms to other regions (S6-3/S6-4). `kuzz-admin regions list`

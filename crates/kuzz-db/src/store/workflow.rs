@@ -457,7 +457,8 @@ pub async fn list_enabled_channel_workflows(
     rows.into_iter().map(row_to_workflow_record).collect()
 }
 
-/// List all active, enabled workflows with a `schedule` trigger across all channels.
+/// List all active, enabled workflows with a `schedule` trigger across all channels,
+/// except those of rooms frozen for a move.
 ///
 /// Used by the cron scheduler. Filters by trigger type in SQL to avoid loading
 /// event-triggered workflows that the cron loop would immediately discard.
@@ -473,6 +474,13 @@ pub async fn list_all_enabled_workflows(pool: &PgPool) -> Result<Vec<WorkflowRec
           AND w.enabled = TRUE
           AND w.definition->'trigger'->>'on' = 'schedule'
           AND c.archived_at IS NULL
+          -- A room moving to another region (0088) runs its schedules
+          -- nowhere until its new home opens it.
+          AND NOT EXISTS (
+              SELECT 1 FROM channels ch
+              WHERE ch.community_id = w.community_id AND ch.id = w.channel_id
+                AND ch.moving_since IS NOT NULL
+          )
         ORDER BY w.created_at ASC
         LIMIT $1
         "#,

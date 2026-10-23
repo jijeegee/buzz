@@ -554,6 +554,55 @@ impl Db {
         tx.commit().await?;
         Ok(RegionRemoved { people_moved })
     }
+
+    /// Point a moved room's directory row at its new home `to` and bump its
+    /// epoch (global regions S6-4). Runs only in the primary region's
+    /// database, and only while the room is still homed in `from` at `epoch`:
+    /// a directory changed by anyone else since is refused. Returns the new
+    /// home.
+    #[datastore_span(name = "switch_room_home", system = "postgresql")]
+    pub async fn switch_room_home(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        from: &RoomHome,
+        to: &str,
+    ) -> Result<RoomHome> {
+        let mut tx = self.pool.begin().await?;
+        refuse_unless_primary(&mut tx).await?;
+        // The region cannot be removed until this commits.
+        let registered: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM regions WHERE id = $1 FOR SHARE)")
+                .bind(to)
+                .fetch_one(&mut *tx)
+                .await?;
+        if !registered {
+            return Err(DbError::NotFound(format!("region {to}")));
+        }
+        let epoch: Option<i32> = sqlx::query_scalar(
+            "UPDATE room_directory SET home_region = $5, epoch = epoch + 1 \
+              WHERE community_id = $1 AND channel_id = $2 AND home_region = $3 AND epoch = $4 \
+              RETURNING epoch",
+        )
+        .bind(community_id.as_uuid())
+        .bind(channel_id)
+        .bind(&from.region)
+        .bind(from.epoch)
+        .bind(to)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let Some(epoch) = epoch else {
+            return Err(DbError::InvalidData(format!(
+                "room {channel_id} is no longer in region {} at epoch {}; read its home again",
+                from.region, from.epoch
+            )));
+        };
+        tx.commit().await?;
+        Ok(RoomHome {
+            region: to.to_owned(),
+            epoch,
+        })
+    }
 }
 
 /// The primary region's id, or an error unless this database is the primary
