@@ -224,7 +224,10 @@ class _MetadataItemWidget extends HookWidget {
                   const SizedBox(width: Grid.half),
                   Expanded(
                     child: Text(
-                      '${item.title} (${item.sections.length} sections)',
+                      context.l10n.channelAgentActivitySectionCount(
+                        item.title,
+                        item.sections.length,
+                      ),
                       style: context.textTheme.labelMedium?.copyWith(
                         color: context.colors.onSurfaceVariant,
                         fontWeight: FontWeight.w600,

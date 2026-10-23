@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import 'channel_identity_names_provider.dart';
@@ -45,9 +46,9 @@ class ChannelTypingIndicator extends ConsumerWidget {
       for (final entry in entries) labels[entry.pubkey.toLowerCase()]!,
     ];
     final text = switch (names.length) {
-      1 => '${names[0]} is typing…',
-      2 => '${names[0]} and ${names[1]} are typing…',
-      _ => '${names[0]} and ${names.length - 1} others are typing…',
+      1 => context.l10n.channelTypingOne(names[0]),
+      2 => context.l10n.channelTypingTwo(names[0], names[1]),
+      _ => context.l10n.channelTypingMany(names[0], names.length - 1),
     };
     final visibleEntries = entries.take(3).toList();
     final avatarCount = visibleEntries.length;

@@ -246,16 +246,12 @@ class ThreadNameNotifier extends Notifier<ThreadNameState> {
       );
       final accepted = await session.publish(event);
       if (!_current(generation)) {
-        throw StateError(
-          'Connection changed. Reopen the thread to check the saved name.',
-        );
+        throw StateError(appL10n.threadNameConnectionChanged);
       }
       // Query relay truth as token-mode submissions may be re-signed.
       final stored = await session.queryRelay([_filter]);
       if (!_current(generation)) {
-        throw StateError(
-          'Connection changed. Reopen the thread to check the saved name.',
-        );
+        throw StateError(appL10n.threadNameConnectionChanged);
       }
       await _merge(generation, storage, stored.isEmpty ? [accepted] : stored);
       await storage.clearDraft(key);

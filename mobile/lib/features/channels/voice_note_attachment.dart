@@ -162,9 +162,7 @@ class VoiceNoteAttachment extends HookConsumerWidget {
             } catch (_) {
               if (context.mounted) {
                 ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(
-                    content: Text('음성 재생을 시작하지 못했습니다. 다시 시도해 주세요.'),
-                  ),
+                  SnackBar(content: Text(context.l10n.voiceNotePlayFailed)),
                 );
               }
             } finally {

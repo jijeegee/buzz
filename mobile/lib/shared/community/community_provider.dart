@@ -8,6 +8,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
+import '../l10n/l10n.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
@@ -303,7 +304,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         if (existingIndex >= 0) {
           final existing = current[existingIndex];
           if (existing.signedOut) {
-            throw StateError('Sign in to this community before changing it.');
+            throw StateError(appL10n.communitySignInBeforeChanging);
           }
           final updated = existing.copyWith(
             pubkey: community.pubkey,

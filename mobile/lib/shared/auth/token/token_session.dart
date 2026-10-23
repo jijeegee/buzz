@@ -507,9 +507,7 @@ class TokenSessionController {
       return false;
     } on WebAuthBusyException {
       if (_isCurrent(startGeneration)) {
-        _emit(
-          _settledState('Another sign-in is open. Finish or close it first.'),
-        );
+        _emit(_settledState(appL10n.tokenSessionSignInAlreadyOpen));
       }
       return false;
     } on OidcLoginException catch (error) {
@@ -522,7 +520,7 @@ class TokenSessionController {
       return false;
     } catch (_) {
       if (_isCurrent(startGeneration)) {
-        _emit(_settledState('Could not open the sign-in page. Try again.'));
+        _emit(_settledState(appL10n.tokenSessionOpenSignInFailed));
       }
       return false;
     }
@@ -660,9 +658,7 @@ class TokenSessionController {
       if (_isCurrent(generation)) {
         _emit(
           _state.withError(
-            errorMessage ??
-                'Signed out, but the saved sign-in could not be removed '
-                    'from this device.',
+            errorMessage ?? appL10n.tokenSessionSignedOutNotRemoved,
           ),
         );
       }

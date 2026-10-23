@@ -431,7 +431,7 @@ Future<void> _startMobileHuddleFromChannel({
     final ephemeralChannelId = session.ephemeralChannelId;
     if (ephemeralChannelId == null ||
         session.phase == HuddleSessionPhase.failed) {
-      throw StateError(session.error ?? 'Unable to start a new Huddle.');
+      throw StateError(session.error ?? context.l10n.huddleStartNewFailed);
     }
     _showMobileHuddleCall(
       context: context,
@@ -543,7 +543,7 @@ Future<void> _startReplacementHuddle({
     final ephemeralChannelId = session.ephemeralChannelId;
     if (ephemeralChannelId == null ||
         session.phase == HuddleSessionPhase.failed) {
-      throw StateError(session.error ?? 'Unable to start a new Huddle.');
+      throw StateError(session.error ?? context.l10n.huddleStartNewFailed);
     }
     ref.read(mobileHuddlePresentationProvider.notifier).showFullScreen();
     Navigator.of(context, rootNavigator: true).pushReplacement<void, void>(
@@ -715,7 +715,8 @@ class _MobileHuddleCallPage extends ConsumerWidget {
                     error: session.phase == HuddleSessionPhase.failed
                         ? unavailable
                               ? context.l10n.huddleUnavailable
-                              : session.error ?? context.l10n.huddleAudioFailedUnknown
+                              : session.error ??
+                                    context.l10n.huddleAudioFailedUnknown
                         : null,
                     profiles: profiles,
                     fallbackLabels: directoryDisplayNames,

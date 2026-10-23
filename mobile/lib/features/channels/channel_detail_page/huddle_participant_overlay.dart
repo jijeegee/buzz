@@ -312,7 +312,7 @@ class _HuddleParticipantRoster extends ConsumerWidget {
                   crossAxisAlignment: CrossAxisAlignment.stretch,
                   children: [
                     Text(
-                      '${pubkeys.length} more ${pubkeys.length == 1 ? 'person' : 'people'}',
+                      context.l10n.huddleMorePeople(pubkeys.length),
                       textAlign: TextAlign.center,
                       style: context.textTheme.titleMedium?.copyWith(
                         color: context.colors.onSurface,

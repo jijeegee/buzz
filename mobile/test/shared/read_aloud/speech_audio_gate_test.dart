@@ -188,7 +188,10 @@ void main() {
     await tester.pump();
     expect(player.toggles, 0);
     expect(gate.busy, false);
-    expect(find.text('음성 재생을 시작하지 못했습니다. 다시 시도해 주세요.'), findsOneWidget);
+    expect(
+      find.text("Couldn't play the voice message. Try again."),
+      findsOneWidget,
+    );
     expect(tester.takeException(), null);
     await tester.pumpWidget(const SizedBox.shrink());
   });

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/kuzz_theme.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/theme/message_typography.dart';
@@ -141,7 +142,7 @@ class ChatBubbleRow extends StatelessWidget {
             children: [
               if (edited)
                 Text(
-                  '(edited)',
+                  context.l10n.messageEditedMark,
                   style: chatTimestampTextStyle.copyWith(
                     color: metaColor,
                     fontStyle: FontStyle.italic,

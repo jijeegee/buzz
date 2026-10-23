@@ -312,6 +312,10 @@
   "@communityRemovalTryAgain": {
     "description": "Dialog button: retry signing this device out on the server, then remove the community. Short."
   },
+  "communitySignInBeforeChanging": "Sign in to this community before changing it.",
+  "@communitySignInBeforeChanging": {
+    "description": "Error when the user tries to change a community they are signed out of."
+  },
   "authSignOutFinishing": "Finishing sign-out…",
   "@authSignOutFinishing": {
     "description": "Status text on the signed-out screen while sign-out is still being completed."
@@ -449,6 +453,55 @@
   "tokenSessionRelayUnreachable": "Could not reach the relay. Try again.",
   "@tokenSessionRelayUnreachable": {
     "description": "Sign-in error when the server could not be reached. 'Relay' means the server."
+  },
+  "tokenSessionSignInAlreadyOpen": "Another sign-in is open. Finish or close it first.",
+  "@tokenSessionSignInAlreadyOpen": {
+    "description": "Sign-in screen, error when a sign-in browser page is already open."
+  },
+  "tokenSessionOpenSignInFailed": "Could not open the sign-in page. Try again.",
+  "@tokenSessionOpenSignInFailed": {
+    "description": "Sign-in screen, error when the sign-in browser page could not be opened."
+  },
+  "tokenSessionSignedOutNotRemoved": "Signed out, but the saved sign-in could not be removed from this device.",
+  "@tokenSessionSignedOutNotRemoved": {
+    "description": "Error after signing out when the saved sign-in could not be deleted from the phone."
+  },
+  "tokenSessionOidcUnexpectedCallback": "The sign-in response used an unexpected callback address. Try again.",
+  "@tokenSessionOidcUnexpectedCallback": {
+    "description": "Sign-in screen, error when the sign-in page returned to the app in an unexpected way."
+  },
+  "tokenSessionOidcAmbiguous": "The sign-in response contained ambiguous parameters. Try again.",
+  "@tokenSessionOidcAmbiguous": {
+    "description": "Sign-in screen, error when the sign-in page returned conflicting data."
+  },
+  "tokenSessionOidcMismatch": "The sign-in response did not match this request. Try again.",
+  "@tokenSessionOidcMismatch": {
+    "description": "Sign-in screen, error when the sign-in page answered a different sign-in attempt."
+  },
+  "tokenSessionOidcNoCode": "The sign-in response had no login code.",
+  "@tokenSessionOidcNoCode": {
+    "description": "Sign-in screen, error when the sign-in page returned without a login code."
+  },
+  "tokenSessionOidcCancelled": "Sign-in was cancelled at the provider.",
+  "@tokenSessionOidcCancelled": {
+    "description": "Sign-in screen, error when the user cancelled on the Google sign-in page."
+  },
+  "tokenSessionOidcAccountDisabled": "This account has been disabled on this relay.",
+  "@tokenSessionOidcAccountDisabled": {
+    "description": "Sign-in screen, error when the server has disabled this account. 'Relay' means the server."
+  },
+  "tokenSessionOidcNotVerified": "The provider could not verify this account.",
+  "@tokenSessionOidcNotVerified": {
+    "description": "Sign-in screen, error when Google could not verify the account."
+  },
+  "tokenSessionOidcFailed": "Sign-in failed ({code}). Try again.",
+  "@tokenSessionOidcFailed": {
+    "description": "Sign-in screen, general sign-in error; {code} is a technical error code.",
+    "placeholders": {
+      "code": {
+        "type": "String"
+      }
+    }
   },
   "accountUnnamedDevice": "Unnamed device",
   "@accountUnnamedDevice": {
@@ -1468,6 +1521,26 @@
   "@profileStatusQuick": {
     "description": "Set status sheet, heading above the list of ready-made statuses. Short."
   },
+  "profileStatusPresetMeeting": "In a meeting",
+  "@profileStatusPresetMeeting": {
+    "description": "Set status sheet, quick status choice. Filled into the status text when tapped. Short."
+  },
+  "profileStatusPresetCommuting": "Commuting",
+  "@profileStatusPresetCommuting": {
+    "description": "Set status sheet, quick status choice. Filled into the status text when tapped. Short."
+  },
+  "profileStatusPresetOutSick": "Out sick",
+  "@profileStatusPresetOutSick": {
+    "description": "Set status sheet, quick status choice. Filled into the status text when tapped. Short."
+  },
+  "profileStatusPresetVacationing": "Vacationing",
+  "@profileStatusPresetVacationing": {
+    "description": "Set status sheet, quick status choice. Filled into the status text when tapped. Short."
+  },
+  "profileStatusPresetRemote": "Working remotely",
+  "@profileStatusPresetRemote": {
+    "description": "Set status sheet, quick status choice. Filled into the status text when tapped. Short."
+  },
   "profileStatusClear": "Clear status",
   "@profileStatusClear": {
     "description": "Set status sheet, red row that removes the current status. Short."
@@ -2043,6 +2116,10 @@
   "inviteSignInAgainFirst": "Sign in to this community again first.",
   "@inviteSignInAgainFirst": {
     "description": "Invite join sheet, error when the saved sign-in for the community is no longer valid."
+  },
+  "inviteDifferentService": "This invite is for a different service.",
+  "@inviteDifferentService": {
+    "description": "Invite join sheet and invite link message, error when an invite link points to another server."
   },
   "inviteRecoverKeyFirst": "Recover your original signing key before joining.",
   "@inviteRecoverKeyFirst": {
@@ -4828,6 +4905,18 @@
   "@channelAgentActivityPlan": {
     "description": "Agent activity transcript, title of the agent's step plan. Short."
   },
+  "channelAgentActivitySectionCount": "{count, plural, other{{title} ({count} sections)}}",
+  "@channelAgentActivitySectionCount": {
+    "description": "Agent activity transcript, header of a collapsed prompt; {title} is the prompt's title, {count} the number of sections in it.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "channelListRetryPins": "Retry personal pins",
   "@channelListRetryPins": {
     "description": "Chat list, tooltip of the retry button next to the error about pinned chats."
@@ -5038,6 +5127,48 @@
   "channelStatusReconnecting": "Reconnecting",
   "@channelStatusReconnecting": {
     "description": "Screen-reader label / banner while reconnecting to the server. Short."
+  },
+  "channelTypingOne": "{name} is typing…",
+  "@channelTypingOne": {
+    "description": "Group chat, line under the messages while one person types; {name} is the person's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelTypingTwo": "{first} and {second} are typing…",
+  "@channelTypingTwo": {
+    "description": "Group chat, line under the messages while two people type; {first} and {second} are their names.",
+    "placeholders": {
+      "first": {
+        "type": "String"
+      },
+      "second": {
+        "type": "String"
+      }
+    }
+  },
+  "channelTypingMany": "{count, plural, one{{name} and {count} other are typing…} other{{name} and {count} others are typing…}}",
+  "@channelTypingMany": {
+    "description": "Group chat, line under the messages while three or more people type; {name} is the first person's name, {count} the number of others.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelDmMoreParticipants": "+{count} more",
+  "@channelDmMoreParticipants": {
+    "description": "Chat name made of participants' names, last item when there are more people than shown, e.g. 'Ann, Bo, Cy, +2 more'. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "channelStatusLoading": "Loading",
   "@channelStatusLoading": {
@@ -5705,6 +5836,32 @@
   "huddleStartNew": "Start a new Huddle",
   "@huddleStartNew": {
     "description": "Huddle screen, tooltip of the button that starts a new call when this one is no longer available."
+  },
+  "huddleStartNewFailed": "Unable to start a new Huddle.",
+  "@huddleStartNewFailed": {
+    "description": "Group chat, message shown when starting a new Huddle (voice call) failed."
+  },
+  "huddleJoinNewFailed": "Unable to join the new Huddle.",
+  "@huddleJoinNewFailed": {
+    "description": "Group chat, message shown when the user started a new Huddle (voice call) but could not join it."
+  },
+  "huddleAvatarPreparing": "{name} is preparing a response",
+  "@huddleAvatarPreparing": {
+    "description": "Huddle (voice call) screen, screen-reader label of the dots on an AI agent's picture while it prepares an answer; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "huddleMorePeople": "{count, plural, one{{count} more person} other{{count} more people}}",
+  "@huddleMorePeople": {
+    "description": "Huddle (voice call) screen, title of the list of participants that do not fit on screen.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
   },
   "huddleOpenSettings": "Open Settings",
   "@huddleOpenSettings": {
@@ -6469,6 +6626,15 @@
       }
     }
   },
+  "composeGallerySelectedCount": "{count} selected",
+  "@composeGallerySelectedCount": {
+    "description": "Photo picker in the composer, small text with how many photos are selected. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
   "composeSelectPhoto": "Select photo",
   "@composeSelectPhoto": {
     "description": "Composer photo picker, screen-reader label of a photo that is not picked. Short."
@@ -6488,6 +6654,15 @@
   "composeAutoMentionOff": "Don't automatically mention here",
   "@composeAutoMentionOff": {
     "description": "Mention picker, tooltip of the pin button of an agent that is mentioned automatically."
+  },
+  "composeAutoMentionOffNamed": "Don't automatically mention {name} here",
+  "@composeAutoMentionOffNamed": {
+    "description": "Composer, screen-reader label of the chip of an agent that is mentioned automatically; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
   },
   "composeAutoMentionOn": "Automatically mention",
   "@composeAutoMentionOn": {
@@ -7005,6 +7180,10 @@
   "@threadNameTooLongError": {
     "description": "Thread name dialog, error when the name is too long."
   },
+  "threadNameConnectionChanged": "Connection changed. Reopen the thread to check the saved name.",
+  "@threadNameConnectionChanged": {
+    "description": "Thread name dialog, error when the connection changed while saving the name."
+  },
   "voiceNotePause": "Pause voice note",
   "@voiceNotePause": {
     "description": "Voice message, tooltip of the pause button. Short."
@@ -7024,6 +7203,10 @@
   "voiceNotePlay": "Play voice note",
   "@voiceNotePlay": {
     "description": "Voice message, tooltip of the play button. Short."
+  },
+  "voiceNotePlayFailed": "Couldn't play the voice message. Try again.",
+  "@voiceNotePlayFailed": {
+    "description": "Voice message, short message at the bottom of the screen when playback could not start."
   },
   "voiceNoteUnavailable": "Voice note unavailable",
   "@voiceNoteUnavailable": {
@@ -7285,12 +7468,25 @@
   "@messageCodeCopied": {
     "description": "Snackbar after copying a code block from a message."
   },
+  "messageEditedMark": "(edited)",
+  "@messageEditedMark": {
+    "description": "Chat bubble, small grey italic mark next to the time of a message that was edited. Short."
+  },
   "mediaOpenItem": "Open {label}",
   "@mediaOpenItem": {
     "description": "Message image gallery, screen-reader label of an image; {label} is the image's description.",
     "placeholders": {
       "label": {
         "type": "String"
+      }
+    }
+  },
+  "mediaImageCount": "{count, plural, other{{count} images}}",
+  "@mediaImageCount": {
+    "description": "Message with several images, small text above the image row with how many there are. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
       }
     }
   },
@@ -7321,6 +7517,36 @@
   "composeMentionAgentTag": "agent",
   "@composeMentionAgentTag": {
     "description": "Mention picker, small lowercase tag next to an AI agent. Very short."
+  },
+  "composeMentionManagedBy": "managed by {owner}",
+  "@composeMentionManagedBy": {
+    "description": "Mention suggestions, small grey text under an AI agent; {owner} is the person who runs the agent. Short.",
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
+  "composeMentionManagedByYou": "managed by you",
+  "@composeMentionManagedByYou": {
+    "description": "Mention suggestions, small grey text under an AI agent the user runs. Short."
+  },
+  "composeMentionNotInGroup": "not in group",
+  "@composeMentionNotInGroup": {
+    "description": "Mention suggestions, small grey text under someone who is not a member of this group. Short."
+  },
+  "composeMentionManagedByNotInGroup": "managed by {owner} · not in group",
+  "@composeMentionManagedByNotInGroup": {
+    "description": "Mention suggestions, small grey text under an AI agent that is not in this group; {owner} is the person who runs it. Short.",
+    "placeholders": {
+      "owner": {
+        "type": "String"
+      }
+    }
+  },
+  "composeMentionManagedByYouNotInGroup": "managed by you · not in group",
+  "@composeMentionManagedByYouNotInGroup": {
+    "description": "Mention suggestions, small grey text under an AI agent the user runs that is not in this group. Short."
   },
   "composeMentionAdminTag": "admin",
   "@composeMentionAdminTag": {
