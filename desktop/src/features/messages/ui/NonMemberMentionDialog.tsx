@@ -9,7 +9,6 @@ import {
   AlertDialogTitle,
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
-import { PRIVATE_CHANNEL_ADD_DENIED_MESSAGE } from "@/features/channels/lib/channelMemberAdmission";
 
 type NonMemberMentionDialogProps = {
   /** False in a private channel the viewer doesn't own/administer. */
@@ -92,10 +91,10 @@ export function NonMemberMentionDialog({
               : onDoNothing
                 ? canInvite
                   ? t("messages.nonMember.inviteOrSend")
-                  : `${PRIVATE_CHANNEL_ADD_DENIED_MESSAGE} ${t("messages.nonMember.canStillSend")}`
+                  : `${t("channels.members.addDenied")} ${t("messages.nonMember.canStillSend")}`
                 : canInvite
                   ? t("messages.nonMember.inviteOrCancel")
-                  : PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
+                  : t("channels.members.addDenied")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {error ? (

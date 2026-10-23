@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/filter_chip_bar.dart';
@@ -56,13 +57,13 @@ class PulsePage extends HookConsumerWidget {
 
     return FrostedScaffold(
       resizeToAvoidBottomInset: true,
-      appBar: const FrostedAppBar(title: Text('Pulse')),
+      appBar: FrostedAppBar(title: Text(context.l10n.pulseTitle)),
       floatingActionButton: FloatingActionButton(
         heroTag: 'pulse-compose-fab',
         onPressed: () => Navigator.of(context).push(
           MaterialPageRoute<void>(builder: (_) => const ComposeNotePage()),
         ),
-        tooltip: 'New note',
+        tooltip: context.l10n.pulseNewNote,
         shape: const CircleBorder(),
         child: const Icon(LucideIcons.plus),
       ),
@@ -72,30 +73,30 @@ class PulsePage extends HookConsumerWidget {
           FilterChipBar<PulseTab>(
             selected: active.value,
             onSelected: (tab) => active.value = tab,
-            items: const [
+            items: [
               FilterChipItem(
                 id: PulseTab.everyone,
-                label: 'Everyone',
+                label: context.l10n.pulseTabEveryone,
                 icon: LucideIcons.radio,
               ),
               FilterChipItem(
                 id: PulseTab.following,
-                label: 'Following',
+                label: context.l10n.pulseTabFollowing,
                 icon: LucideIcons.users,
               ),
               FilterChipItem(
                 id: PulseTab.liked,
-                label: 'Liked',
+                label: context.l10n.pulseTabLiked,
                 icon: LucideIcons.heart,
               ),
               FilterChipItem(
                 id: PulseTab.agents,
-                label: 'Agents',
+                label: context.l10n.pulseTabAgents,
                 icon: LucideIcons.bot,
               ),
               FilterChipItem(
                 id: PulseTab.mine,
-                label: 'Mine',
+                label: context.l10n.pulseTabMine,
                 icon: LucideIcons.user,
               ),
             ],
@@ -161,13 +162,13 @@ class _PulseBody extends ConsumerWidget {
       error: (_, _) => _MessageListShell(
         child: _EmptyState(
           icon: LucideIcons.circleAlert,
-          message: 'Could not load Pulse. Pull to try again.',
+          message: context.l10n.pulseLoadError,
         ),
       ),
       data: (notes) {
         if (notes.isEmpty) {
           return _MessageListShell(
-            child: _EmptyState(message: _emptyMessage(tab)),
+            child: _EmptyState(message: _emptyMessage(context.l10n, tab)),
           );
         }
         // Everyone the timeline names — authors, reply targets and mentions
@@ -237,13 +238,12 @@ class _PulseBody extends ConsumerWidget {
     );
   }
 
-  String _emptyMessage(PulseTab tab) => switch (tab) {
-    PulseTab.everyone => 'No notes yet. Be the first pulse.',
-    PulseTab.following => 'Follow people to build your Pulse timeline.',
-    PulseTab.liked => 'Heart notes to save them here.',
-    PulseTab.agents =>
-      'No agent notes yet. Agents post here when they publish.',
-    PulseTab.mine => 'Your notes will show up here.',
+  String _emptyMessage(AppLocalizations l10n, PulseTab tab) => switch (tab) {
+    PulseTab.everyone => l10n.pulseEmptyEveryone,
+    PulseTab.following => l10n.pulseEmptyFollowing,
+    PulseTab.liked => l10n.pulseEmptyLiked,
+    PulseTab.agents => l10n.pulseEmptyAgents,
+    PulseTab.mine => l10n.pulseEmptyMine,
   };
 }
 

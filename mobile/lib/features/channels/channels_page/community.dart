@@ -12,7 +12,7 @@ class _CommunitySwitcherSheet extends HookConsumerWidget {
     return SafeArea(
       child: KuzzTitledSheetLayout(
         key: const Key('community-switcher-sheet'),
-        title: 'Switch Community',
+        title: context.l10n.channelCommunitySwitchTitle,
         titleKey: const Key('community-switcher-title'),
         showDragHandle: true,
         trailing: SizedBox(
@@ -26,22 +26,26 @@ class _CommunitySwitcherSheet extends HookConsumerWidget {
               padding: EdgeInsets.zero,
               tapTargetSize: MaterialTapTargetSize.shrinkWrap,
             ),
-            child: Text(isEditing.value ? 'Done' : 'Edit'),
+            child: Text(
+              isEditing.value
+                  ? context.l10n.commonDone
+                  : context.l10n.commonEdit,
+            ),
           ),
         ),
         child: communitiesAsync.when(
-          loading: () => const SizedBox(
+          loading: () => SizedBox(
             height: 120,
             child: Center(
               child: KuzzLoadingIndicator(
                 size: 40,
-                semanticLabel: 'Loading communities',
+                semanticLabel: context.l10n.channelCommunityLoading,
               ),
             ),
           ),
           error: (e, _) => Padding(
             padding: const EdgeInsets.all(Grid.xs),
-            child: Text('Error loading communities: $e'),
+            child: Text(context.l10n.channelCommunityLoadError('$e')),
           ),
           data: (communities) {
             final activeId = activeAsync.value?.id;
@@ -270,7 +274,9 @@ class _CommunityActionSwap extends StatelessWidget {
         child: isEditing
             ? IconButton(
                 key: ValueKey('community-switcher-remove-$communityId'),
-                tooltip: 'Remove $communityName from this device',
+                tooltip: context.l10n.channelCommunityRemoveTooltip(
+                  communityName,
+                ),
                 visualDensity: VisualDensity.compact,
                 onPressed: onRemove,
                 icon: Icon(
@@ -306,8 +312,8 @@ class _CommunitySelectionIndicator extends StatelessWidget {
   Widget build(BuildContext context) {
     return Semantics(
       label: isActive
-          ? '$communityName is the current community'
-          : 'Switch to $communityName',
+          ? context.l10n.channelCommunityCurrentLabel(communityName)
+          : context.l10n.channelCommunitySwitchToLabel(communityName),
       child: Container(
         width: 24,
         height: 24,
@@ -358,7 +364,7 @@ class _AddCommunityTile extends StatelessWidget {
             ),
             const SizedBox(width: Grid.xs),
             Text(
-              'Add Community',
+              context.l10n.channelCommunityAdd,
               style: context.textTheme.bodyLarge?.copyWith(
                 fontWeight: FontWeight.w500,
               ),
@@ -379,21 +385,22 @@ Future<void> _confirmRemoveCommunity(
   final confirmed = await showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog.adaptive(
-      title: const Text('Remove community from this device?'),
+      title: Text(context.l10n.channelCommunityRemoveTitle),
       content: Text(
-        'This removes “${community.name}” and its sign-in from this device. '
-        'Your account and memberships on the server aren’t deleted.'
-        '${!community.tokenAuth ? '\n\nIf this community isn’t connected to a Google account, you won’t be able to sign back in to it.' : ''}',
+        context.l10n.channelCommunityRemoveBody(community.name) +
+            (!community.tokenAuth
+                ? '\n\n${context.l10n.channelCommunityRemoveNoGoogle}'
+                : ''),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
           style: FilledButton.styleFrom(backgroundColor: context.colors.error),
-          child: const Text('Remove'),
+          child: Text(context.l10n.commonRemove),
         ),
       ],
     ),
@@ -402,6 +409,7 @@ Future<void> _confirmRemoveCommunity(
   if (confirmed != true || !context.mounted) return;
 
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   try {
     final removed = await removeCommunityWithRelaySignOut(
       context,
@@ -415,7 +423,7 @@ Future<void> _confirmRemoveCommunity(
     }
   } catch (e) {
     messenger.showSnackBar(
-      SnackBar(content: Text('Couldn’t remove the community: $e')),
+      SnackBar(content: Text(l10n.channelCommunityRemoveError('$e'))),
     );
   }
 }
@@ -461,7 +469,9 @@ class _CommunityHeaderTitle extends ConsumerWidget {
           child: Padding(
             padding: const EdgeInsets.only(left: Grid.xxs),
             child: Text(
-              title == null || title.isEmpty ? 'Community' : title,
+              title == null || title.isEmpty
+                  ? context.l10n.channelCommunityFallbackTitle
+                  : title,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: style,

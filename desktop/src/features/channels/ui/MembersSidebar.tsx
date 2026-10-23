@@ -22,10 +22,7 @@ import {
   compareMemberNames,
   formatMemberName,
 } from "@/features/channels/lib/memberUtils";
-import {
-  canAddChannelMembers,
-  PRIVATE_CHANNEL_ADD_DENIED_MESSAGE,
-} from "@/features/channels/lib/channelMemberAdmission";
+import { canAddChannelMembers } from "@/features/channels/lib/channelMemberAdmission";
 import {
   useFlattenedUserSearchResults,
   useInfiniteUserSearchQuery,
@@ -54,7 +51,7 @@ import {
 } from "@/shared/ui/dialog";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import { useFeedbackToasts } from "@/shared/hooks/useToastEffect";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import {
   MODAL_SEARCH_INPUT_CLASS,
   MODAL_SEARCH_SHELL_CLASS,
@@ -660,7 +657,7 @@ export function MembersSidebar({
         managedAgentRuntime={managedAgentRuntime}
         member={member}
         memberIsBot={memberIsBot}
-        memberAvatarLabel={member.displayName ?? UNKNOWN_USER_LABEL}
+        memberAvatarLabel={member.displayName ?? unknownUserLabel()}
         memberLabel={formatMemberName(member, currentPubkey)}
         moderationState={moderationStateByPubkey.get(
           normalizePubkey(member.pubkey),
@@ -770,7 +767,7 @@ export function MembersSidebar({
                 className="pt-2 text-sm text-muted-foreground"
                 data-testid="members-sidebar-add-denied"
               >
-                {PRIVATE_CHANNEL_ADD_DENIED_MESSAGE}
+                {t("channels.members.addDenied")}
               </p>
             ) : null}
           </DialogHeader>

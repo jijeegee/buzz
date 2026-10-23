@@ -8,7 +8,7 @@ import { signingKeyUiTestSeam } from "@/shared/lib/signingKeyUi";
 import {
   canonicalNpub,
   truncateNpub,
-  UNAVAILABLE_KEY_LABEL,
+  unavailableKeyLabel,
 } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
@@ -138,7 +138,7 @@ export function PubKey({
         data-testid={testId}
       >
         <span className="break-all font-mono text-xs">
-          {npub ?? UNAVAILABLE_KEY_LABEL}
+          {npub ?? unavailableKeyLabel()}
         </span>
         {npub && showKeyControls ? (
           <Popover>
@@ -166,7 +166,7 @@ export function PubKey({
   if (npub === null) {
     return (
       <span className={cn("font-mono", className)} data-testid={testId}>
-        {UNAVAILABLE_KEY_LABEL}
+        {unavailableKeyLabel()}
       </span>
     );
   }

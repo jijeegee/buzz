@@ -406,12 +406,15 @@ class _MarkdownEditingController extends TextEditingController {
       ChannelDeepLink(:final channelId) => (
         LucideIcons.users,
         _resolvedChannelName(channelId),
-        'Group ${_resolvedChannelName(channelId)}',
+        appL10n.composeLinkGroupLabel(_resolvedChannelName(channelId)),
       ),
       MessageDeepLink(:final channelId, :final messageId) => (
         LucideIcons.messageSquare,
         '${_resolvedChannelName(channelId)} · ${messageId.substring(0, 8)}',
-        'Message ${messageId.substring(0, 8)} in group ${_resolvedChannelName(channelId)}',
+        appL10n.composeLinkMessageLabel(
+          messageId.substring(0, 8),
+          _resolvedChannelName(channelId),
+        ),
       ),
       EntityDeepLink(:final type, :final repository, :final eventId) => (
         switch (type) {
@@ -423,10 +426,15 @@ class _MarkdownEditingController extends TextEditingController {
             ? repository
             : '$repository · ${eventId!.substring(0, 8)}',
         switch (type) {
-          'repo' => 'Repository $repository',
-          'pr' =>
-            'Pull request ${eventId!.substring(0, 8)} in repository $repository',
-          _ => 'Issue ${eventId!.substring(0, 8)} in repository $repository',
+          'repo' => appL10n.composeLinkRepoLabel(repository),
+          'pr' => appL10n.composeLinkPullRequestLabel(
+            eventId!.substring(0, 8),
+            repository,
+          ),
+          _ => appL10n.composeLinkIssueLabel(
+            eventId!.substring(0, 8),
+            repository,
+          ),
         },
       ),
       _ => null,
@@ -577,7 +585,7 @@ class _ComposerAgentMentionChip extends StatelessWidget {
     final fontSize = style.fontSize ?? 16;
 
     return Semantics(
-      label: 'Agent mention: $label',
+      label: context.l10n.composeAgentMentionLabel(label),
       excludeSemantics: true,
       child: Container(
         key: const ValueKey('composer-agent-mention-chip'),

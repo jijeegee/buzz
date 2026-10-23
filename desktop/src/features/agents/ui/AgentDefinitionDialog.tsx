@@ -703,7 +703,7 @@ export function AgentDefinitionDialog({
     : null;
   const runtimeWarning = runtimeWarningText ? (
     <p className="text-xs text-warning">
-      {runtimeWarningText} Visit Settings &gt; Agents to set it up.
+      {runtimeWarningText} {t("agents.runtimeWarning.visitSettings")}
     </p>
   ) : null;
   const advancedFieldsTransition = shouldReduceMotion

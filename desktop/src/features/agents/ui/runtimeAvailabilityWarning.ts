@@ -1,4 +1,5 @@
 import type { AcpRuntimeCatalogEntry } from "@/shared/api/types";
+import { t } from "@/shared/i18n";
 
 /**
  * Availability warning sentence for the agent-definition dialog.
@@ -20,13 +21,19 @@ export function runtimeAvailabilityWarning(
   switch (runtime.availability) {
     case "adapter_missing":
       return withHint(
-        `${runtime.label} CLI is installed but the ACP adapter is missing.`,
+        t("agents.runtimeWarning.adapterMissing", { runtime: runtime.label }),
       );
     case "adapter_outdated":
-      return `${runtime.label} ACP adapter is outdated — reinstall to continue.`;
+      return t("agents.runtimeWarning.adapterOutdated", {
+        runtime: runtime.label,
+      });
     default:
       return runtime.requiresExternalCli
-        ? withHint(`${runtime.label} CLI is missing.`)
-        : withHint(`${runtime.label} is not installed.`);
+        ? withHint(
+            t("agents.runtimeWarning.cliMissing", { runtime: runtime.label }),
+          )
+        : withHint(
+            t("agents.runtimeWarning.notInstalled", { runtime: runtime.label }),
+          );
   }
 }

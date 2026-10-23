@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/identity_names/identity_names.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/profile/user_cache_provider.dart';
@@ -101,7 +102,7 @@ class AgentActivityCard extends HookConsumerWidget {
                               borderRadius: BorderRadius.circular(Radii.sm),
                             ),
                             child: Text(
-                              'BOT',
+                              context.l10n.pulseBotBadge,
                               style: context.textTheme.labelSmall?.copyWith(
                                 color: context.colors.primary,
                                 fontWeight: FontWeight.w800,
@@ -112,7 +113,10 @@ class AgentActivityCard extends HookConsumerWidget {
                         ],
                       ),
                       Text(
-                        '${group.notes.length} update${group.notes.length == 1 ? '' : 's'} · ${formatPulseRelativeTime(group.latestAt)}',
+                        context.l10n.pulseAgentUpdates(
+                          group.notes.length,
+                          formatPulseRelativeTime(group.latestAt),
+                        ),
                         style: context.textTheme.labelSmall?.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),

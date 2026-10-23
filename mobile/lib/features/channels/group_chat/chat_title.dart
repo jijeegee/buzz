@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../../shared/identity_names/identity_names.dart';
 import '../../../shared/identity_names/identity_names_provider.dart';
+import '../../../shared/l10n/l10n.dart';
 import '../../../shared/relay/relay.dart';
 import '../../../shared/utils/string_utils.dart';
 import '../channel.dart';
@@ -11,7 +12,7 @@ import '../channel_names/channel_names_provider.dart';
 import '../dm_channel_labels.dart';
 
 /// Title of a group chat with nobody else in it.
-const emptyChatTitle = 'Empty chat';
+String get emptyChatTitle => appL10n.chatEmptyTitle;
 
 /// Members named in an unnamed group chat's title before "+N".
 const chatTitleMemberLimit = 3;
@@ -99,7 +100,7 @@ String channelTitle(
     );
   }
   final name = channel.name.trim();
-  return name.isEmpty ? 'Group' : name;
+  return name.isEmpty ? appL10n.chatGroupTitleFallback : name;
 }
 
 /// [channelTitle] with my private name and live profile names, loading the

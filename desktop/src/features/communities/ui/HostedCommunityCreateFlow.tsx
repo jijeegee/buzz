@@ -31,7 +31,7 @@ import { useIdentityQuery } from "@/shared/api/hooks";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
 import { safeNpub } from "@/shared/lib/nostrUtils";
-import { UNAVAILABLE_KEY_LABEL } from "@/shared/lib/pubkey";
+import { unavailableKeyLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 
@@ -368,12 +368,12 @@ export function HostedCommunityCreateFlow({
         <div className="rounded-xl bg-muted/40 px-4 py-3 font-mono text-xs text-muted-foreground">
           <p className="break-all">
             {t("communities.hosted.accountKey", {
-              key: boundNpub ?? UNAVAILABLE_KEY_LABEL,
+              key: boundNpub ?? unavailableKeyLabel(),
             })}
           </p>
           <p className="mt-1 break-all">
             {t("communities.hosted.deviceKey", {
-              key: localNpub ?? UNAVAILABLE_KEY_LABEL,
+              key: localNpub ?? unavailableKeyLabel(),
             })}
           </p>
         </div>

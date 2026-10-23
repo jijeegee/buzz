@@ -211,10 +211,14 @@ class _MorphingQuickActionsButton extends HookWidget {
                                           ((1 - _kMorphScale) *
                                               surfaceProgress),
                                       child: Tooltip(
-                                        message: 'Create or start conversation',
+                                        message: context
+                                            .l10n
+                                            .channelQuickActionsOpenLabel,
                                         child: Semantics(
                                           button: true,
-                                          label: 'Create or start conversation',
+                                          label: context
+                                              .l10n
+                                              .channelQuickActionsOpenLabel,
                                           expanded: open,
                                           child: InkWell(
                                             customBorder: const CircleBorder(),
@@ -264,28 +268,28 @@ class _QuickActionsMenu extends StatelessWidget {
         children: [
           _QuickActionItem(
             icon: LucideIcons.messagesSquare,
-            title: 'New message',
+            title: context.l10n.channelNewMessage,
             key: const Key('quick-action-new-dm-card'),
             onTap: () => onSelected(_QuickAction.newDm),
           ),
           const SizedBox(height: Grid.xxs),
           _QuickActionItem(
             icon: LucideIcons.users,
-            title: 'New group',
+            title: context.l10n.channelNewGroup,
             key: const Key('quick-action-create-channel-card'),
             onTap: () => onSelected(_QuickAction.createChannel),
           ),
           const SizedBox(height: Grid.xxs),
           _QuickActionItem(
             icon: LucideIcons.usersRound,
-            title: 'Find groups',
+            title: context.l10n.channelFindGroups,
             key: const Key('quick-action-browse-channels-card'),
             onTap: () => onSelected(_QuickAction.browseChannels),
           ),
           const SizedBox(height: Grid.xxs),
           _QuickActionItem(
             icon: LucideIcons.link,
-            title: 'Join with link',
+            title: context.l10n.channelJoinWithLink,
             key: const Key('quick-action-join-with-link-card'),
             onTap: () => onSelected(_QuickAction.joinWithLink),
           ),

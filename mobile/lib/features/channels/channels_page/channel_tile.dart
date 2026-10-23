@@ -96,7 +96,7 @@ class _ChannelTile extends ConsumerWidget {
               Icon(
                 LucideIcons.pin,
                 size: 14,
-                semanticLabel: 'Pinned',
+                semanticLabel: context.l10n.channelListPinned,
                 key: ValueKey('chat-pinned-${channel.id}'),
                 color: contentColor,
               ),
@@ -126,7 +126,7 @@ class _ChannelTile extends ConsumerWidget {
                     borderRadius: BorderRadius.circular(Radii.sm),
                   ),
                   child: Text(
-                    'Public',
+                    context.l10n.channelListPublicBadge,
                     style: context.textTheme.labelSmall?.copyWith(
                       color: context.colors.primary,
                       fontWeight: FontWeight.w600,

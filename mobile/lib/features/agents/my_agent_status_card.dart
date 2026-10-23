@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../profile/presence_cache_provider.dart';
 import 'my_agent_actions.dart';
@@ -48,7 +49,11 @@ class MyAgentStatusCard extends ConsumerWidget {
             onPressed: command == null
                 ? () => unawaited(stopMyAgent(context, ref, agent, name))
                 : null,
-            child: Text(command == MyAgentCommand.stop ? 'Stopping…' : 'Stop'),
+            child: Text(
+              command == MyAgentCommand.stop
+                  ? context.l10n.agentsStopping
+                  : context.l10n.agentsStop,
+            ),
           )
         : myAgentCanStart(agent, status)
         ? FilledButton(
@@ -57,7 +62,9 @@ class MyAgentStatusCard extends ConsumerWidget {
                 ? () => unawaited(startMyAgent(context, ref, agent, name))
                 : null,
             child: Text(
-              command == MyAgentCommand.start ? 'Starting…' : 'Start',
+              command == MyAgentCommand.start
+                  ? context.l10n.agentsStarting
+                  : context.l10n.agentsStart,
             ),
           )
         : null;

@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../shared/devices/agent_badge_widgets.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
@@ -1323,7 +1324,7 @@ class ThreadDetailPage extends HookConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('thread-ios-glass-back'),
                 icon: IosGlassNavigationIcon.back,
-                semanticLabel: 'Back',
+                semanticLabel: context.l10n.commonBack,
                 onPressed: () => Navigator.of(context).maybePop(),
                 width: iosGlassChannelHeaderLeadingWidth,
                 buttonCenterX: iosGlassChannelHeaderButtonCenterX,
@@ -1338,34 +1339,46 @@ class ThreadDetailPage extends HookConsumerWidget {
                 : 0,
           ),
           child: Text(
-            threadName == null || threadName.isEmpty ? 'Thread' : threadName,
+            threadName == null || threadName.isEmpty
+                ? context.l10n.threadTitleFallback
+                : threadName,
             key: const ValueKey('thread-app-bar-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
           ),
         ),
         actions: [
-          ThreadGroupButton(channelId: channelId, channelBelow: channelBelow),
-          if (goalsEnabled)
-            ThreadGoalsButton(
-              channelId: channelId,
-              threadRootId: effectiveRootId,
+          // Smaller buttons set closer together, so the thread name keeps
+          // more of the header.
+          IconButtonTheme(
+            data: IconButtonThemeData(style: threadHeaderButtonStyle),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                ThreadGroupButton(
+                  channelId: channelId,
+                  channelBelow: channelBelow,
+                ),
+                if (goalsEnabled)
+                  ThreadGoalsButton(
+                    channelId: channelId,
+                    threadRootId: effectiveRootId,
+                  ),
+                ThreadMoreMenu(
+                  channelId: channelId,
+                  rootId: effectiveRootId,
+                  closed: isThreadClosed(allReplies),
+                  canClose:
+                      isMember &&
+                      !isArchived &&
+                      !liveDeletionHidesHead &&
+                      threadHead.rootId == null,
+                  onRename: isMember && !isArchived && !liveDeletionHidesHead
+                      ? () => showThreadNameEditor(context, nameKey)
+                      : null,
+                ),
+              ],
             ),
-          if (isMember && !isArchived && !liveDeletionHidesHead)
-            IconButton(
-              tooltip: 'Edit thread name',
-              icon: const Icon(Icons.edit_outlined),
-              onPressed: () => showThreadNameEditor(context, nameKey),
-            ),
-          ThreadMoreMenu(
-            channelId: channelId,
-            rootId: effectiveRootId,
-            closed: isThreadClosed(allReplies),
-            canClose:
-                isMember &&
-                !isArchived &&
-                !liveDeletionHidesHead &&
-                threadHead.rootId == null,
           ),
         ],
         titleStyle: channelTitleTextStyle,
@@ -1495,7 +1508,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                           focusNode: composerFocusNode,
                           onFocusRestorerChanged: (restoreFocus) =>
                               restoreComposerFocus.value = restoreFocus,
-                          hintText: 'Reply in thread\u2026',
+                          hintText: context.l10n.threadComposerHint,
                           threadHeadId: threadHead.id,
                           rootId: effectiveRootId,
                           threadRootTags: threadHead.tags,

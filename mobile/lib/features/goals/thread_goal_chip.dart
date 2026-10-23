@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'goal_provider.dart';
 import 'thread_goals_page.dart';
@@ -21,25 +22,17 @@ class ThreadGoalsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final root = ref
-        .watch(goalTreeProvider(channelId))
-        .asData
-        ?.value
-        .tree
-        .root;
+    final root = ref.watch(goalTreeProvider(channelId)).asData?.value.tree.root;
     return IconButton(
       key: const ValueKey('thread-goals-button'),
       color: context.colors.primary,
-      tooltip: root?.title ?? 'Goals',
+      tooltip: root?.title ?? context.l10n.goalsTooltip,
       onPressed: () => showThreadGoalsPage(
         context: context,
         channelId: channelId,
         threadRootId: threadRootId,
       ),
-      icon: Icon(
-        root == null ? LucideIcons.target : LucideIcons.crosshair,
-        size: 22,
-      ),
+      icon: Icon(root == null ? LucideIcons.target : LucideIcons.crosshair),
     );
   }
 }

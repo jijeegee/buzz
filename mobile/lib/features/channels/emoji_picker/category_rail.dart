@@ -21,13 +21,23 @@ const _railHeight = 36.0;
 const _emojiSkinTonePrefsKey = 'kuzz.emoji-picker.skin-tone.v1';
 
 const _skinTones = [
-  (label: 'Default', color: Color(0xFFFFC93A)),
-  (label: 'Light', color: Color(0xFFFFDAB7)),
-  (label: 'Medium-light', color: Color(0xFFE7B98F)),
-  (label: 'Medium', color: Color(0xFFC88C61)),
-  (label: 'Medium-dark', color: Color(0xFFA46134)),
-  (label: 'Dark', color: Color(0xFF5D4437)),
+  Color(0xFFFFC93A),
+  Color(0xFFFFDAB7),
+  Color(0xFFE7B98F),
+  Color(0xFFC88C61),
+  Color(0xFFA46134),
+  Color(0xFF5D4437),
 ];
+
+/// Name of the skin tone at [index] of [_skinTones].
+String _skinToneLabel(AppLocalizations l10n, int index) => switch (index) {
+  1 => l10n.emojiSkinToneLight,
+  2 => l10n.emojiSkinToneMediumLight,
+  3 => l10n.emojiSkinToneMedium,
+  4 => l10n.emojiSkinToneMediumDark,
+  5 => l10n.emojiSkinToneDark,
+  _ => l10n.emojiSkinToneDefault,
+};
 
 int _validSkinTone(int? value) =>
     value != null && value >= 0 && value < _skinTones.length ? value : 0;
@@ -95,11 +105,11 @@ class _SkinToneSelector extends StatelessWidget {
     return PopupMenuButton<int>(
       key: const ValueKey('emoji-skin-tone-selector'),
       initialValue: value,
-      tooltip: 'Skin tone',
+      tooltip: context.l10n.emojiSkinTone,
       position: PopupMenuPosition.under,
       onSelected: onChanged,
       itemBuilder: (context) => [
-        for (final (index, tone) in _skinTones.indexed)
+        for (final (index, color) in _skinTones.indexed)
           PopupMenuItem<int>(
             key: ValueKey('emoji-skin-tone-$index'),
             value: index,
@@ -107,10 +117,10 @@ class _SkinToneSelector extends StatelessWidget {
               children: [
                 _SkinToneDot(
                   key: ValueKey('emoji-skin-tone-dot-$index'),
-                  color: tone.color,
+                  color: color,
                 ),
                 const SizedBox(width: Grid.xs),
-                Expanded(child: Text(tone.label)),
+                Expanded(child: Text(_skinToneLabel(context.l10n, index))),
                 if (index == value)
                   Icon(
                     LucideIcons.check,
@@ -123,11 +133,11 @@ class _SkinToneSelector extends StatelessWidget {
       ],
       child: Semantics(
         button: true,
-        label: 'Skin tone',
+        label: context.l10n.emojiSkinTone,
         child: Center(
           child: _SkinToneDot(
             key: const ValueKey('emoji-skin-tone-dot-selected'),
-            color: selected.color,
+            color: selected,
           ),
         ),
       ),

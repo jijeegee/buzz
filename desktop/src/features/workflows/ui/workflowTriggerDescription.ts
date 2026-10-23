@@ -1,5 +1,5 @@
 import { type MessageKey, t } from "@/shared/i18n";
-import { truncatePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { truncatePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { parseConditionExpressions } from "./workflowConditionExpression";
 import { triggerTypeLabel } from "./workflowFormTypes";
 import type { ParsedConditionExpression } from "./workflowConditionExpression";
@@ -50,7 +50,7 @@ function authorReference(
   if (authorLoading) return t("workflows.triggerDescription.loadingAuthor");
   // The trigger author is a pubkey identity; an unresolved author renders the
   // generic unknown-user label, never key text.
-  return authorLabel ?? UNKNOWN_USER_LABEL;
+  return authorLabel ?? unknownUserLabel();
 }
 
 function quotedValue(value: string): string {

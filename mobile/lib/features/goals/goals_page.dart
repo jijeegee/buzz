@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'goal_actions_sheet.dart';
 import 'goal_editing.dart';
@@ -37,14 +38,14 @@ class GoalsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final headAsync = ref.watch(goalTreeProvider(channelId));
     return Scaffold(
-      appBar: AppBar(title: Text('Goals · $channelName')),
+      appBar: AppBar(title: Text(context.l10n.goalsPageTitle(channelName))),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(goalTreeProvider(channelId).future),
         child: headAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => ListView(
             padding: const EdgeInsets.all(Grid.gutter),
-            children: [Text('Could not load goals: $error')],
+            children: [Text(context.l10n.goalsLoadError('$error'))],
           ),
           data: (head) => _GoalsBody(channelId: channelId, tree: head.tree),
         ),
@@ -68,17 +69,19 @@ class _GoalsBody extends ConsumerWidget {
         padding: const EdgeInsets.all(Grid.gutter),
         children: [
           Text(
-            'Give this conversation one top goal. Split it into smaller goals, '
-            'and agents working here will see where their work fits.',
+            context.l10n.goalsEmptyIntro,
             style: context.textTheme.bodyMedium,
           ),
           const SizedBox(height: Grid.twelve),
           FilledButton.icon(
             key: const ValueKey('goals-set-root'),
             icon: const Icon(LucideIcons.target, size: 18),
-            label: const Text('Set the goal'),
+            label: Text(context.l10n.goalsSetGoal),
             onPressed: () async {
-              final result = await editGoal(context, title: 'Layer 1 goal');
+              final result = await editGoal(
+                context,
+                title: context.l10n.goalsLayer1Goal,
+              );
               if (result == null || !context.mounted) return;
               await runGoalAction(
                 context,
@@ -129,7 +132,10 @@ class _GoalsBody extends ConsumerWidget {
                         color: context.colors.primary,
                       ),
                       const SizedBox(width: Grid.xs),
-                      Text('Layer 1 goal', style: context.textTheme.labelSmall),
+                      Text(
+                        context.l10n.goalsLayer1Goal,
+                        style: context.textTheme.labelSmall,
+                      ),
                     ],
                   ),
                   const SizedBox(height: Grid.xs),
@@ -143,7 +149,7 @@ class _GoalsBody extends ConsumerWidget {
                     ),
                     const SizedBox(height: Grid.xxs),
                     Text(
-                      '${progress.done} of ${progress.total} goals done',
+                      context.l10n.goalsProgress(progress.done, progress.total),
                       style: context.textTheme.bodySmall,
                     ),
                   ],
@@ -187,7 +193,7 @@ class _GoalsBody extends ConsumerWidget {
         TextButton.icon(
           key: const ValueKey('goals-add-layer2'),
           icon: const Icon(LucideIcons.plus, size: 18),
-          label: const Text('Add a layer 2 goal'),
+          label: Text(context.l10n.goalsAddLayerGoal(2)),
           onPressed: () => addChildGoal(
             context,
             ref,

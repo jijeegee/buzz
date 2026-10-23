@@ -4,7 +4,7 @@ import {
   type UserProfileLookup,
 } from "@/features/profile/lib/identity";
 import type { Channel } from "@/shared/api/types";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 
 export const DM_PARTICIPANT_PREVIEW_LIMIT = 3;
@@ -53,7 +53,7 @@ export function formatDmParticipantLabels(
     } else if (unnamed) {
       unnamed.count += 1;
     } else {
-      unnamed = { label: UNKNOWN_USER_LABEL, count: 1 };
+      unnamed = { label: unknownUserLabel(), count: 1 };
       entries.push(unnamed);
     }
   }

@@ -21,8 +21,12 @@ class _ReadOnlyNotice extends StatelessWidget {
       ),
       child: Text(
         channel.isArchived
-            ? 'This ${channel.isForum ? 'forum' : 'group'} is archived and read-only on mobile.'
-            : 'Join this ${channel.isForum ? 'forum' : 'group'} from Manage to participate.',
+            ? (channel.isForum
+                  ? context.l10n.channelForumArchivedBanner
+                  : context.l10n.channelGroupArchivedBanner)
+            : (channel.isForum
+                  ? context.l10n.channelForumJoinBanner
+                  : context.l10n.channelGroupJoinBanner),
         style: context.textTheme.bodySmall?.copyWith(
           color: context.colors.onSurfaceVariant,
         ),
@@ -66,9 +70,10 @@ class _MessageTimelineSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final semanticsLabel = switch (status) {
-      SessionStatus.connecting => 'Connecting',
-      SessionStatus.reconnecting => 'Reconnecting',
-      SessionStatus.connected || SessionStatus.disconnected => 'Loading',
+      SessionStatus.connecting => context.l10n.channelStatusConnecting,
+      SessionStatus.reconnecting => context.l10n.channelStatusReconnecting,
+      SessionStatus.connected ||
+      SessionStatus.disconnected => context.l10n.channelStatusLoading,
     };
     return Semantics(
       key: const Key('channel-detail-connection-skeleton'),
@@ -162,9 +167,10 @@ class _ForumConnectionSkeleton extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final semanticsLabel = switch (status) {
-      SessionStatus.connecting => 'Connecting',
-      SessionStatus.reconnecting => 'Reconnecting',
-      SessionStatus.connected || SessionStatus.disconnected => 'Loading',
+      SessionStatus.connecting => context.l10n.channelStatusConnecting,
+      SessionStatus.reconnecting => context.l10n.channelStatusReconnecting,
+      SessionStatus.connected ||
+      SessionStatus.disconnected => context.l10n.channelStatusLoading,
     };
     return Semantics(
       key: const Key('forum-connection-skeleton'),

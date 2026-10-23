@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../../shared/devices/agent_badge_widgets.dart';
+import '../../../shared/l10n/l10n.dart';
 import '../../../shared/theme/theme.dart';
 import '../../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../../shared/profile/user_cache_provider.dart';
@@ -104,7 +105,7 @@ class AgentActivitySheet extends HookConsumerWidget {
                   ),
                   const SizedBox(height: Grid.half),
                   Text(
-                    'Showing live activity from this point.',
+                    context.l10n.channelAgentActivityLiveFromHere,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -161,7 +162,9 @@ class _EmptyState extends StatelessWidget {
             Icon(LucideIcons.circleX, size: 24, color: context.colors.error),
             const SizedBox(height: Grid.xxs),
             Text(
-              'Error: ${errorMessage ?? 'Unknown error'}',
+              context.l10n.channelAgentActivityError(
+                errorMessage ?? context.l10n.channelAgentActivityUnknownError,
+              ),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.error,
               ),
@@ -175,7 +178,7 @@ class _EmptyState extends StatelessWidget {
     if (connection == ObserverConnectionState.idle) {
       return Center(
         child: Text(
-          'Not connected',
+          context.l10n.channelAgentActivityNotConnected,
           style: context.textTheme.bodySmall?.copyWith(
             color: context.colors.onSurfaceVariant,
           ),
@@ -191,11 +194,11 @@ class _EmptyState extends StatelessWidget {
           KuzzLoadingIndicator(
             size: 28,
             color: context.colors.onSurfaceVariant,
-            semanticLabel: 'Waiting for agent activity',
+            semanticLabel: context.l10n.channelAgentActivityWaitingLabel,
           ),
           const SizedBox(height: Grid.xxs),
           Text(
-            'Waiting for activity\u2026',
+            context.l10n.channelAgentActivityWaiting,
             style: context.textTheme.bodySmall?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -214,13 +217,22 @@ class _ConnectionBadge extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final (color, label) = switch (connection) {
-      ObserverConnectionState.idle => (context.colors.onSurfaceVariant, 'Idle'),
+      ObserverConnectionState.idle => (
+        context.colors.onSurfaceVariant,
+        context.l10n.channelAgentActivityStatusIdle,
+      ),
       ObserverConnectionState.connecting => (
         context.appColors.warning,
-        'Connecting',
+        context.l10n.channelAgentActivityStatusConnecting,
       ),
-      ObserverConnectionState.open => (context.appColors.success, 'Live'),
-      ObserverConnectionState.error => (context.colors.error, 'Error'),
+      ObserverConnectionState.open => (
+        context.appColors.success,
+        context.l10n.channelAgentActivityStatusLive,
+      ),
+      ObserverConnectionState.error => (
+        context.colors.error,
+        context.l10n.channelAgentActivityStatusError,
+      ),
     };
 
     return Container(

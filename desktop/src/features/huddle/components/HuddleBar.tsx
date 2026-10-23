@@ -34,7 +34,7 @@ import type { HuddleAgentVoiceSettings } from "./AgentVoiceMenu";
 import { MicControls, SpeakerControls } from "./MicControls";
 import { HuddleParticipantsControl } from "./ParticipantList";
 import { beginChannelMembershipWrite } from "@/shared/api/channelMembershipWrites";
-import { UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { t as translate, useT } from "@/shared/i18n";
 
 // Mirrors HuddleState in src-tauri/src/huddle/mod.rs.
@@ -100,7 +100,7 @@ function clampReactionName(name: string): string {
 }
 
 function fallbackNameForPubkey(pubkey?: string | null): string {
-  return pubkey ? UNKNOWN_USER_LABEL : translate("huddle.bar.someone");
+  return pubkey ? unknownUserLabel() : translate("huddle.bar.someone");
 }
 
 function parseHuddleReactionEvent(event: RelayEvent) {

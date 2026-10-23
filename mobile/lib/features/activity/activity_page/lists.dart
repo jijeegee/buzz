@@ -22,18 +22,18 @@ class _RemindersList extends ConsumerWidget {
     ];
 
     if (remindersAsync.isLoading && reminders.isEmpty) {
-      return const Center(
+      return Center(
         child: KuzzLoadingIndicator(
           size: 44,
-          semanticLabel: 'Loading reminders',
+          semanticLabel: context.l10n.activityLoadingReminders,
         ),
       );
     }
     if (reminders.isEmpty) {
-      return const _EmptySurface(
+      return _EmptySurface(
         icon: LucideIcons.clock,
-        message: 'No reminders',
-        detail: 'Reminders you set will show up here.',
+        message: context.l10n.activityNoReminders,
+        detail: context.l10n.activityNoRemindersDetail,
       );
     }
 
@@ -49,7 +49,8 @@ class _RemindersList extends ConsumerWidget {
           final due = reminder.isDue(now);
           final title = reminder.note?.trim().isNotEmpty == true
               ? reminder.note!.trim()
-              : reminder.target?.preview ?? 'Reminder';
+              : reminder.target?.preview ??
+                    context.l10n.activityReminderFallback;
           return ListTile(
             key: ValueKey('reminder-row-${reminder.id}'),
             leading: Icon(
@@ -63,8 +64,10 @@ class _RemindersList extends ConsumerWidget {
             subtitle: reminder.notBefore != null
                 ? Text(
                     due
-                        ? 'Due now'
-                        : 'Due ${_inboxTimestamp(reminder.notBefore!)}',
+                        ? context.l10n.activityReminderDueNow
+                        : context.l10n.activityReminderDue(
+                            _inboxTimestamp(reminder.notBefore!),
+                          ),
                   )
                 : null,
             onTap: () => onOpen(reminder),
@@ -99,10 +102,10 @@ class _DraftsList extends ConsumerWidget {
     final names = ref.watch(identityNameSourcesProvider);
     final privateNames = ref.watch(channelNamesProvider);
     if (drafts.isEmpty) {
-      return const _EmptySurface(
+      return _EmptySurface(
         icon: LucideIcons.filePen,
-        message: 'No drafts',
-        detail: 'Unsent messages you start composing will show up here.',
+        message: context.l10n.activityNoDrafts,
+        detail: context.l10n.activityNoDraftsDetail,
       );
     }
 
@@ -114,7 +117,7 @@ class _DraftsList extends ConsumerWidget {
         final draft = drafts[index];
         final channel = channelById[draft.channelId];
         final destination = channel == null
-            ? 'Unavailable group'
+            ? context.l10n.activityUnavailableGroup
             : channelTitle(
                 channel,
                 currentPubkey: myPubkey,
@@ -130,11 +133,13 @@ class _DraftsList extends ConsumerWidget {
           ),
           title: Text(draft.text, maxLines: 2, overflow: TextOverflow.ellipsis),
           subtitle: Text(
-            draft.threadHeadId != null ? 'Thread in $destination' : destination,
+            draft.threadHeadId != null
+                ? context.l10n.activityDraftThreadIn(destination)
+                : destination,
           ),
           trailing: IconButton(
             icon: const Icon(LucideIcons.trash2, size: 18),
-            tooltip: 'Delete draft',
+            tooltip: context.l10n.activityDeleteDraft,
             onPressed: () => onDelete(draft),
           ),
           onTap: () => onOpen(draft),

@@ -46,7 +46,7 @@ Future<void> _presentMessageReactionPopover({
     final reduceMotion = MediaQuery.disableAnimationsOf(context);
     final dialogRoute = RawDialogRoute<void>(
       barrierDismissible: true,
-      barrierLabel: 'Dismiss reaction picker',
+      barrierLabel: context.l10n.messageReactionPickerDismiss,
       barrierColor: Colors.transparent,
       transitionDuration: reduceMotion
           ? Duration.zero

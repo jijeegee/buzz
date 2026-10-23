@@ -1,5 +1,6 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import 'agent_settings.dart';
 import 'agent_settings_provider.dart';
@@ -170,11 +171,7 @@ List<MyAgentPreset> myAgentPresetsFrom({
 }
 
 /// "not used yet", "used by 1 agent", "used by 3 agents", like desktop.
-String presetUsageLabel(int count) => switch (count) {
-  0 => 'not used yet',
-  1 => 'used by 1 agent',
-  _ => 'used by $count agents',
-};
+String presetUsageLabel(int count) => appL10n.agentsPresetUsage(count);
 
 /// Desktop's built-in definitions (`builtin:fizz`) are never published, so
 /// their name comes from the id.

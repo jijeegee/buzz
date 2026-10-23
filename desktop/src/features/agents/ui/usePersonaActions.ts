@@ -426,7 +426,7 @@ export function usePersonaActions() {
       }
     } catch (err) {
       setSnapshotImportConfirmError(
-        err instanceof Error ? err.message : "Failed to import agent snapshot.",
+        err instanceof Error ? err.message : t("agents.import.agentFailed"),
       );
     }
   }

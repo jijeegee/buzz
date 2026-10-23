@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/lucide_star_icon.dart';
@@ -48,6 +49,7 @@ class PersonPage extends HookConsumerWidget {
     final hasAccount = ref.watch(accountOriginProvider) != null;
     final busy = useState(false);
     final opening = useState(false);
+    final l10n = context.l10n;
 
     useEffect(() {
       ref.read(userCacheProvider.notifier).preload([pk]);
@@ -75,12 +77,7 @@ class PersonPage extends HookConsumerWidget {
           ),
         );
       } catch (error) {
-        showError(
-          friendlyError(
-            error,
-            fallback: 'Couldn’t open the conversation. Try again.',
-          ),
-        );
+        showError(friendlyError(error, fallback: l10n.friendsOpenChatError));
       } finally {
         if (context.mounted) opening.value = false;
       }
@@ -101,9 +98,7 @@ class PersonPage extends HookConsumerWidget {
         showError(
           friendlyError(
             error,
-            fallback: removing
-                ? 'Couldn’t remove friend. Try again.'
-                : 'Couldn’t add friend. Try again.',
+            fallback: removing ? l10n.friendsRemoveError : l10n.friendsAddError,
           ),
         );
         return;
@@ -113,7 +108,9 @@ class PersonPage extends HookConsumerWidget {
       messenger.showSnackBar(
         SnackBar(
           content: Text(
-            removing ? 'Removed $who from friends' : 'Added $who to friends',
+            removing
+                ? l10n.friendsRemovedFriend(who)
+                : l10n.friendsAddedFriend(who),
           ),
         ),
       );
@@ -129,7 +126,7 @@ class PersonPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Profile')),
+      appBar: AppBar(title: Text(context.l10n.friendsProfileTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.all(Grid.gutter),
@@ -155,8 +152,8 @@ class PersonPage extends HookConsumerWidget {
                   IconButton(
                     key: const Key('person-favorite'),
                     tooltip: isFavorite
-                        ? 'Remove from favorites'
-                        : 'Add to favorites',
+                        ? context.l10n.friendsRemoveFromFavorites
+                        : context.l10n.friendsAddToFavorites,
                     isSelected: isFavorite,
                     onPressed: toggleFavorite,
                     icon: LucideStarIcon(
@@ -198,7 +195,7 @@ class PersonPage extends HookConsumerWidget {
                           ? null
                           : () => unawaited(message()),
                       icon: const Icon(LucideIcons.messageSquare, size: 18),
-                      label: const Text('Message'),
+                      label: Text(context.l10n.friendsMessage),
                     ),
                   ),
                   const SizedBox(width: Grid.xxs),
@@ -215,7 +212,11 @@ class PersonPage extends HookConsumerWidget {
                         isFriend ? LucideIcons.userMinus : LucideIcons.userPlus,
                         size: 18,
                       ),
-                      label: Text(isFriend ? 'Remove friend' : 'Add friend'),
+                      label: Text(
+                        isFriend
+                            ? context.l10n.friendsRemoveFriend
+                            : context.l10n.friendsAddFriend,
+                      ),
                     ),
                   ),
                 ],
@@ -231,7 +232,9 @@ class PersonPage extends HookConsumerWidget {
                     color: isBlocked ? null : context.colors.error,
                   ),
                   title: Text(
-                    isBlocked ? 'Unblock' : 'Block',
+                    isBlocked
+                        ? context.l10n.friendsUnblock
+                        : context.l10n.friendsBlock,
                     style: isBlocked
                         ? null
                         : TextStyle(color: context.colors.error),
@@ -252,7 +255,7 @@ class PersonPage extends HookConsumerWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(LucideIcons.flag, color: context.colors.error),
                 title: Text(
-                  'Report',
+                  context.l10n.friendsReport,
                   style: TextStyle(color: context.colors.error),
                 ),
                 onTap: () =>

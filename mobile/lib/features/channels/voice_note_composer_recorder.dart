@@ -8,6 +8,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/app_lifecycle_provider.dart';
 import '../../shared/theme/theme.dart';
 import 'voice_note_recording.dart';
@@ -85,7 +86,7 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
         }
       } catch (_) {
         if (context.mounted) {
-          error.value = 'Kuzz could not finish the voice note.';
+          error.value = context.l10n.voiceNoteFinishError;
           isStopping.value = false;
         }
       }
@@ -123,8 +124,7 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
           if (active) error.value = recordingError.message;
         } catch (_) {
           if (active) {
-            error.value =
-                'Kuzz could not start recording. Check microphone access.';
+            error.value = appL10n.voiceNoteStartError;
           }
         }
       }());
@@ -149,7 +149,7 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
       children: [
         _RecorderButton(
           key: const ValueKey('voice-note-recorder-close'),
-          tooltip: 'Discard voice note',
+          tooltip: context.l10n.voiceNoteDiscard,
           icon: LucideIcons.x,
           foreground: context.colors.onSurfaceVariant,
           background: context.colors.surface,
@@ -223,7 +223,7 @@ class VoiceNoteComposerRecorder extends HookConsumerWidget {
         const SizedBox(width: Grid.half),
         _RecorderButton(
           key: const ValueKey('voice-note-recorder-stop'),
-          tooltip: 'Stop recording',
+          tooltip: context.l10n.voiceNoteStopRecording,
           icon: LucideIcons.square,
           foreground: Colors.white,
           background: context.colors.error,

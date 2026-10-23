@@ -10,10 +10,7 @@ import { useUsersBatchQuery } from "@/features/profile/hooks";
 import type { CanvasRevision } from "@/shared/api/types";
 import { formatItemTimestamp } from "@/shared/lib/datetime";
 import { truncatePubkey } from "@/shared/lib/pubkey";
-import {
-  isRelayUnreachableError,
-  RELAY_UNREACHABLE_SHORT,
-} from "@/shared/lib/relayError";
+import { isRelayUnreachableError } from "@/shared/lib/relayError";
 import {
   CANVAS_EXPECTED_REVISION_NONE,
   canvasConflictMessage,
@@ -155,7 +152,7 @@ export function CanvasHistoryPanel({
         role="alert"
       >
         {isRelayUnreachableError(historyQuery.error)
-          ? RELAY_UNREACHABLE_SHORT
+          ? t("common.relayUnreachable.short")
           : historyQuery.error.message}
       </p>
     );
@@ -179,7 +176,7 @@ export function CanvasHistoryPanel({
           role="status"
         >
           {isRelayUnreachableError(historyQuery.error)
-            ? RELAY_UNREACHABLE_SHORT
+            ? t("common.relayUnreachable.short")
             : t("channels.canvasHistory.refreshFailed")}
         </p>
       ) : null}

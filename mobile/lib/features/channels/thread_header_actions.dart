@@ -6,6 +6,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/clipboard_utils.dart';
 import '../../shared/deeplink/deep_link.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import 'channel_detail_page.dart';
@@ -19,6 +20,15 @@ const threadClosedTag = 'kuzz:thread-closed';
 
 /// Reopen marker written by `kuzz threads reopen` and the desktop Reopen.
 const threadReopenedTag = 'kuzz:thread-reopened';
+
+/// The thread header's compact buttons: smaller icons, set closer together.
+final threadHeaderButtonStyle = IconButton.styleFrom(
+  iconSize: 20,
+  padding: const EdgeInsets.all(6),
+  minimumSize: const Size.square(34),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.compact,
+);
 
 const _threadClosedContent = '✅ Thread closed.';
 const _threadReopenedContent = 'Thread reopened.';
@@ -56,8 +66,8 @@ Future<void> sendThreadCloseMarker(
     );
 
 String threadCloseFailure(bool closing, Object error) => closing
-    ? 'Could not close the thread: $error'
-    : 'Could not reopen the thread: $error';
+    ? appL10n.threadCloseError('$error')
+    : appL10n.threadReopenError('$error');
 
 /// The thread header's group button: back to the group this thread is in.
 ///
@@ -78,7 +88,7 @@ class ThreadGroupButton extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     return IconButton(
       key: const ValueKey('thread-open-group'),
-      tooltip: 'Open group',
+      tooltip: context.l10n.threadOpenGroup,
       icon: const Icon(LucideIcons.messagesSquare),
       onPressed: () {
         final navigator = Navigator.of(context);
@@ -93,7 +103,7 @@ class ThreadGroupButton extends ConsumerWidget {
             .firstOrNull;
         if (channel == null) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text('This group is still loading.')),
+            SnackBar(content: Text(context.l10n.threadGroupStillLoading)),
           );
           return;
         }
@@ -109,8 +119,8 @@ class ThreadGroupButton extends ConsumerWidget {
   }
 }
 
-/// The thread header's `⋯` menu, matching the desktop thread header: follow,
-/// copy link, close or reopen, and mark as unread.
+/// The thread header's `⋯` menu, matching the desktop thread header: rename,
+/// follow, copy link, close or reopen, and mark as unread.
 class ThreadMoreMenu extends ConsumerWidget {
   const ThreadMoreMenu({
     super.key,
@@ -118,6 +128,7 @@ class ThreadMoreMenu extends ConsumerWidget {
     required this.rootId,
     required this.closed,
     required this.canClose,
+    this.onRename,
   });
 
   final String channelId;
@@ -129,15 +140,24 @@ class ThreadMoreMenu extends ConsumerWidget {
   /// Close and Reopen are offered to members of a live top-level thread.
   final bool canClose;
 
+  /// Renames the thread; `null` hides the item (not a member, archived or
+  /// deleted).
+  final VoidCallback? onRename;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final following = ref.watch(threadFollowsProvider).isFollowing(rootId);
     return PopupMenuButton<String>(
       key: const ValueKey('thread-more'),
-      tooltip: 'More thread actions',
+      tooltip: context.l10n.threadMoreActions,
       icon: const Icon(LucideIcons.ellipsis),
+      iconSize: 20,
+      padding: const EdgeInsets.all(6),
+      style: threadHeaderButtonStyle,
       onSelected: (action) async {
         switch (action) {
+          case 'rename':
+            onRename?.call();
           case 'follow':
             final notifier = ref.read(threadFollowsProvider.notifier);
             if (following) {
@@ -149,7 +169,7 @@ class ThreadMoreMenu extends ConsumerWidget {
             await copyToClipboard(
               context,
               buildMessageLink(channelId: channelId, messageId: rootId),
-              message: 'Link copied',
+              message: context.l10n.threadLinkCopied,
             );
           case 'close':
             final messenger = ScaffoldMessenger.maybeOf(context);
@@ -177,19 +197,27 @@ class ThreadMoreMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        if (onRename != null)
+          _item('rename', LucideIcons.pencil, context.l10n.threadEditName),
         _item(
           'follow',
           following ? LucideIcons.bellOff : LucideIcons.bellRing,
-          following ? 'Unfollow thread' : 'Follow thread',
+          following
+              ? context.l10n.messageUnfollowThread
+              : context.l10n.messageFollowThread,
         ),
-        _item('copy-link', LucideIcons.link2, 'Copy link'),
+        _item('copy-link', LucideIcons.link2, context.l10n.messageCopyLink),
         if (canClose)
           _item(
             'close',
             closed ? LucideIcons.rotateCcw : LucideIcons.circleCheck,
-            closed ? 'Reopen thread' : 'Close thread',
+            closed ? context.l10n.threadReopen : context.l10n.threadClose,
           ),
-        _item('mark-unread', LucideIcons.circleDot, 'Mark as unread'),
+        _item(
+          'mark-unread',
+          LucideIcons.circleDot,
+          context.l10n.threadMarkUnread,
+        ),
       ],
     );
   }

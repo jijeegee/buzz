@@ -26,6 +26,8 @@ use crate::state::AppState;
 pub(crate) enum BanOutcome {
     Clear,
     Banned,
+    /// The key, or its NIP-OA owner, is a deleted Google key account.
+    AccountDisabled,
     DbError,
 }
 
@@ -94,15 +96,36 @@ pub(crate) async fn community_ban_outcome(
     if outcome != BanOutcome::Clear {
         return outcome;
     }
-    match crate::api::relay_members::extract_nip_oa_owner(
+    let owner = crate::api::relay_members::extract_nip_oa_owner(
         pubkey.as_bytes(),
         auth_tag_json,
         signed_auth_created_at,
-    ) {
-        Some(owner) => lookup(state, community, &owner).await,
-        None => BanOutcome::Clear,
+    );
+    if let Some(owner) = owner {
+        let outcome = lookup(state, community, &owner).await;
+        if outcome != BanOutcome::Clear {
+            return outcome;
+        }
+    }
+    // A deleted Google key account signs with its own key, so no token
+    // check stops it: refuse the key and its agents here, in every
+    // device-admission mode.
+    let keys: Vec<[u8; 32]> = std::iter::once(pubkey)
+        .chain(owner)
+        .map(|key| key.to_bytes())
+        .collect();
+    match state.db.key_account_disabled(&keys).await {
+        Ok(true) => BanOutcome::AccountDisabled,
+        Ok(false) => BanOutcome::Clear,
+        Err(e) => {
+            warn!(pubkey = %pubkey.to_hex(), error = %e, "account-state DB lookup failed, denying (fail-closed)");
+            BanOutcome::DbError
+        }
     }
 }
+
+/// Denial for a deleted (or disabled) account's key or agent.
+pub(crate) const ACCOUNT_DISABLED_REASON: &str = "restricted: this account was deleted";
 
 fn ban_denial(outcome: BanOutcome) -> Option<(&'static str, &'static str, AuthOutcome)> {
     match outcome {
@@ -110,6 +133,11 @@ fn ban_denial(outcome: BanOutcome) -> Option<(&'static str, &'static str, AuthOu
         BanOutcome::Banned => Some((
             "banned",
             "blocked: you are banned from this community",
+            AuthOutcome::Banned,
+        )),
+        BanOutcome::AccountDisabled => Some((
+            "account_disabled",
+            ACCOUNT_DISABLED_REASON,
             AuthOutcome::Banned,
         )),
         BanOutcome::DbError => Some((

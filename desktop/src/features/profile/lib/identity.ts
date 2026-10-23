@@ -4,6 +4,7 @@ import {
   normalizePubkey,
   truncateNpub,
   UNKNOWN_USER_LABEL,
+  unknownUserLabel,
 } from "@/shared/lib/pubkey";
 
 export type UserProfileLookup = Record<string, UserProfileSummary>;
@@ -146,9 +147,9 @@ export function resolveKnownUserLabel(
   return null;
 }
 
-/** Visible label for `pubkey`; unnamed identities render `UNKNOWN_USER_LABEL`. */
+/** Visible label for `pubkey`; unnamed identities render `unknownUserLabel()`. */
 export function resolveUserLabel(input: ResolveUserLabelInput): string {
-  return resolveKnownUserLabel(input) ?? UNKNOWN_USER_LABEL;
+  return resolveKnownUserLabel(input) ?? unknownUserLabel();
 }
 
 /**
@@ -185,7 +186,7 @@ export function resolveUserSecondaryLabel(input: {
 
 /**
  * Label for an agent's owner: "you" when the current user owns it, otherwise
- * the owner's display name, NIP-05 handle, or `UNKNOWN_USER_LABEL`.
+ * the owner's display name, NIP-05 handle, or `unknownUserLabel()`.
  */
 export function formatOwnerLabel(
   ownerPubkey: string | null | undefined,
@@ -208,6 +209,6 @@ export function formatOwnerLabel(
   return (
     owner?.displayName?.trim() ||
     owner?.nip05Handle?.trim() ||
-    UNKNOWN_USER_LABEL
+    unknownUserLabel()
   );
 }

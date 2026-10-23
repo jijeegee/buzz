@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/l10n.dart';
 import 'timeline_message.dart';
 
 /// NIP-18 quote tag name: `["q", <event id>, <relay url or "">, <author>]`.
@@ -139,7 +140,7 @@ String quoteExcerpt(String content) {
       .replaceAll(RegExp(r'[`*_~>#|]'), ' ')
       .replaceAll(RegExp(r'\s+'), ' ')
       .trim();
-  if (normalized.isEmpty) return 'No message text';
+  if (normalized.isEmpty) return appL10n.messageQuoteNoText;
 
   final characters = normalized.runes.toList();
   if (characters.length <= _quoteExcerptMaxLength) return normalized;

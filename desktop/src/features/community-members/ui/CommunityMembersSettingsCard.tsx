@@ -20,7 +20,7 @@ import type {
   RelayMemberRole,
   UserProfileSummary,
 } from "@/shared/api/types";
-import { normalizePubkey, UNKNOWN_USER_LABEL } from "@/shared/lib/pubkey";
+import { normalizePubkey, unknownUserLabel } from "@/shared/lib/pubkey";
 import { Button } from "@/shared/ui/button";
 import {
   DropdownMenu,
@@ -43,7 +43,7 @@ function formatDisplayName(member: RelayMember, displayName?: string | null) {
   }
   return member.role === "owner"
     ? t("communityMembers.settings.communityOwner")
-    : UNKNOWN_USER_LABEL;
+    : unknownUserLabel();
 }
 
 const ROLE_KEYS: Record<RelayMemberRole, MessageKey> = {

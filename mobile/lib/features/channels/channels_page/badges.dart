@@ -28,20 +28,20 @@ class _ErrorView extends StatelessWidget {
 
   const _ErrorView({required this.error, required this.onRetry});
 
-  static String _userMessage(Object error) {
+  static String _userMessage(AppLocalizations l10n, Object error) {
     if (error is RelayException) {
       if (error.statusCode == 401) {
-        return 'Not authorized. Check your API token.';
+        return l10n.channelListErrorUnauthorized;
       }
       if (error.statusCode == 403) {
-        return 'Access denied.';
+        return l10n.channelListErrorForbidden;
       }
-      return 'Server error (${error.statusCode}). Try again later.';
+      return l10n.channelListErrorServer(error.statusCode);
     }
     if (error is SocketException) {
-      return 'Could not reach the relay server.';
+      return l10n.channelListErrorUnreachable;
     }
-    return 'Something went wrong. Check your connection.';
+    return l10n.channelListErrorGeneric;
   }
 
   @override
@@ -58,10 +58,13 @@ class _ErrorView extends StatelessWidget {
               color: context.colors.error,
             ),
             const SizedBox(height: Grid.xs),
-            Text('Could not load groups', style: context.textTheme.titleMedium),
+            Text(
+              context.l10n.channelListLoadError,
+              style: context.textTheme.titleMedium,
+            ),
             const SizedBox(height: Grid.xxs),
             Text(
-              _userMessage(error),
+              _userMessage(context.l10n, error),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -73,7 +76,7 @@ class _ErrorView extends StatelessWidget {
             FilledButton.icon(
               onPressed: onRetry,
               icon: const Icon(LucideIcons.refreshCw),
-              label: const Text('Retry'),
+              label: Text(context.l10n.commonRetry),
             ),
           ],
         ),

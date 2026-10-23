@@ -12,10 +12,6 @@
  */
 const RELAY_UNREACHABLE_PREFIX = "relay unreachable:";
 
-export const RELAY_UNREACHABLE_SHORT = "Couldn't connect.";
-export const RELAY_UNREACHABLE_MESSAGE =
-  "Couldn't connect. Check your internet connection.";
-
 /**
  * Returns true when `error` carries the stable Rust-layer prefix indicating
  * the relay is unreachable (network failure, VPN reauth needed, etc.).

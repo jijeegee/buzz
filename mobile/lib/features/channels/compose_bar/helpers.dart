@@ -373,6 +373,6 @@ void _sendTypingIndicator(
 /// frame, so [messenger] must be resolved before the send's first `await`.
 void _reportSendCancelledByCommunitySwitch(ScaffoldMessengerState? messenger) {
   messenger?.showSnackBar(
-    const SnackBar(content: Text('Message not sent: the community changed')),
+    SnackBar(content: Text(appL10n.composeCommunityChangedNotSent)),
   );
 }

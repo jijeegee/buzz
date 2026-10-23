@@ -91,7 +91,10 @@ export function QuickBotBar({ personas, pending, onAdd }: QuickBotBarProps) {
                 </button>
               </TooltipTrigger>
               <TooltipContent side="bottom" className="text-xs">
-                Add {instanceName} ({persona.displayName})
+                {t("channels.quickBots.addTooltip", {
+                  name: instanceName,
+                  persona: persona.displayName,
+                })}
               </TooltipContent>
             </Tooltip>
           );

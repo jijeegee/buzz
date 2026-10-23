@@ -17,8 +17,11 @@ class _TeamRow extends ConsumerWidget {
     final names = [for (final pubkey in team.agentPubkeys) ?agentName(pubkey)];
     final removed = team.agentPubkeys.length - names.length;
     final subtitle = [
-      if (names.isEmpty && removed == 0) 'No agents yet' else ...names,
-      if (removed > 0) '$removed removed',
+      if (names.isEmpty && removed == 0)
+        context.l10n.agentsTeamNoAgents
+      else
+        ...names,
+      if (removed > 0) context.l10n.agentsTeamRemoved(removed),
     ].join(' · ');
     return InkWell(
       onTap: () => unawaited(
@@ -107,7 +110,7 @@ class _TeamPresetRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final subtitle = memberNames.isEmpty
-        ? 'No presets'
+        ? context.l10n.agentsTeamNoPresets
         : memberNames.join(' · ');
     return Padding(
       padding: const EdgeInsets.symmetric(

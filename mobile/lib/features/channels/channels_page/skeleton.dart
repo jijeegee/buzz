@@ -44,9 +44,10 @@ class _ChannelsSkeleton extends StatelessWidget {
       widths.add(fallbackWidths[widths.length % fallbackWidths.length]);
     }
     final semanticsLabel = switch (status) {
-      SessionStatus.connecting => 'Connecting',
-      SessionStatus.reconnecting => 'Reconnecting',
-      SessionStatus.connected || SessionStatus.disconnected => 'Loading',
+      SessionStatus.connecting => context.l10n.channelStatusConnecting,
+      SessionStatus.reconnecting => context.l10n.channelStatusReconnecting,
+      SessionStatus.connected ||
+      SessionStatus.disconnected => context.l10n.channelStatusLoading,
     };
     return Semantics(
       key: const Key('channels-connection-skeleton'),

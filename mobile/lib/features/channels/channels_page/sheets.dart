@@ -14,19 +14,36 @@ class _CreateChannelMenuOption<T> {
   });
 }
 
-const _createChannelTtlOptions = [
-  _CreateChannelMenuOption(label: '30 minutes', value: 30 * 60),
-  _CreateChannelMenuOption(label: '1 hour', value: 60 * 60),
-  _CreateChannelMenuOption(label: '6 hours', value: 6 * 60 * 60),
-  _CreateChannelMenuOption(label: '12 hours', value: 12 * 60 * 60),
-  _CreateChannelMenuOption(label: '1 day', value: 24 * 60 * 60),
-  _CreateChannelMenuOption(label: '3 days', value: 3 * 24 * 60 * 60),
-  _CreateChannelMenuOption(
-    label: '7 days',
-    value: _defaultCreateChannelTtlSeconds,
-  ),
-  _CreateChannelMenuOption(label: '14 days', value: 14 * 24 * 60 * 60),
-  _CreateChannelMenuOption(label: '30 days', value: 30 * 24 * 60 * 60),
+const _createChannelTtlSeconds = [
+  30 * 60,
+  60 * 60,
+  6 * 60 * 60,
+  12 * 60 * 60,
+  24 * 60 * 60,
+  3 * 24 * 60 * 60,
+  _defaultCreateChannelTtlSeconds,
+  14 * 24 * 60 * 60,
+  30 * 24 * 60 * 60,
+];
+
+String _createChannelTtlLabel(AppLocalizations l10n, int seconds) {
+  if (seconds % (24 * 60 * 60) == 0) {
+    return l10n.channelCreateTtlDays(seconds ~/ (24 * 60 * 60));
+  }
+  if (seconds % (60 * 60) == 0) {
+    return l10n.channelCreateTtlHours(seconds ~/ (60 * 60));
+  }
+  return l10n.channelCreateTtlMinutes(seconds ~/ 60);
+}
+
+List<_CreateChannelMenuOption<int>> _createChannelTtlOptions(
+  AppLocalizations l10n,
+) => [
+  for (final seconds in _createChannelTtlSeconds)
+    _CreateChannelMenuOption(
+      label: _createChannelTtlLabel(l10n, seconds),
+      value: seconds,
+    ),
 ];
 
 class _CreateChannelSheet extends HookConsumerWidget {
@@ -45,7 +62,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
     final errorMessage = useState<String?>(null);
     useListenable(nameController);
 
-    final kindLabel = channelType == 'forum' ? 'forum' : 'group';
+    final ttlOptions = _createChannelTtlOptions(context.l10n);
     final canSubmit =
         nameController.text.trim().isNotEmpty && !isSubmitting.value;
 
@@ -91,7 +108,7 @@ class _CreateChannelSheet extends HookConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              _CreateChannelFieldLabel(label: 'Name'),
+              _CreateChannelFieldLabel(label: context.l10n.channelCreateName),
               const SizedBox(height: Grid.xxs),
               _CreateChannelFieldShell(
                 child: TextField(
@@ -104,8 +121,8 @@ class _CreateChannelSheet extends HookConsumerWidget {
                   textCapitalization: TextCapitalization.none,
                   decoration: InputDecoration(
                     hintText: channelType == 'forum'
-                        ? 'design-discussions'
-                        : 'release-notes',
+                        ? context.l10n.channelCreateForumNameHint
+                        : context.l10n.channelCreateGroupNameHint,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -123,8 +140,8 @@ class _CreateChannelSheet extends HookConsumerWidget {
                 ),
               ),
               const SizedBox(height: Grid.xs),
-              const _CreateChannelFieldLabel(
-                label: 'Description',
+              _CreateChannelFieldLabel(
+                label: context.l10n.channelCreateDescription,
                 optional: true,
               ),
               const SizedBox(height: Grid.xxs),
@@ -134,7 +151,9 @@ class _CreateChannelSheet extends HookConsumerWidget {
                   controller: descriptionController,
                   enabled: !isSubmitting.value,
                   decoration: InputDecoration(
-                    hintText: 'What this $kindLabel is for',
+                    hintText: channelType == 'forum'
+                        ? context.l10n.channelCreateForumDescriptionHint
+                        : context.l10n.channelCreateGroupDescriptionHint,
                     border: InputBorder.none,
                     enabledBorder: InputBorder.none,
                     focusedBorder: InputBorder.none,
@@ -156,17 +175,17 @@ class _CreateChannelSheet extends HookConsumerWidget {
               const SizedBox(height: Grid.sm),
               _CreateChannelRadioGroup<bool>(
                 enabled: !isSubmitting.value,
-                label: 'Group type',
+                label: context.l10n.channelCreateGroupType,
                 onSelected: (value) => temporary.value = value,
-                options: const [
+                options: [
                   _CreateChannelMenuOption(
-                    key: Key('create-channel-type-ongoing'),
-                    label: 'Ongoing',
+                    key: const Key('create-channel-type-ongoing'),
+                    label: context.l10n.channelCreateTypeOngoing,
                     value: false,
                   ),
                   _CreateChannelMenuOption(
-                    key: Key('create-channel-type-temporary'),
-                    label: 'Temporary',
+                    key: const Key('create-channel-type-temporary'),
+                    label: context.l10n.channelCreateTypeTemporary,
                     value: true,
                   ),
                 ],
@@ -177,11 +196,11 @@ class _CreateChannelSheet extends HookConsumerWidget {
                 _CreateChannelSettingMenu<int>(
                   controlKey: const Key('create-channel-ttl'),
                   enabled: !isSubmitting.value,
-                  label: 'Expires after',
+                  label: context.l10n.channelCreateExpiresAfter,
                   onSelected: (value) => ttlSeconds.value = value,
-                  options: _createChannelTtlOptions,
+                  options: ttlOptions,
                   value: ttlSeconds.value,
-                  valueLabel: _createChannelTtlOptions
+                  valueLabel: ttlOptions
                       .firstWhere((option) => option.value == ttlSeconds.value)
                       .label,
                 ),
@@ -189,17 +208,17 @@ class _CreateChannelSheet extends HookConsumerWidget {
               const SizedBox(height: Grid.sm),
               _CreateChannelRadioGroup<String>(
                 enabled: !isSubmitting.value,
-                label: 'Visibility',
+                label: context.l10n.channelCreateVisibility,
                 onSelected: (value) => visibility.value = value,
-                options: const [
+                options: [
                   _CreateChannelMenuOption(
-                    key: Key('create-channel-visibility-public'),
-                    label: 'Public',
+                    key: const Key('create-channel-visibility-public'),
+                    label: context.l10n.channelCreateVisibilityPublic,
                     value: 'open',
                   ),
                   _CreateChannelMenuOption(
-                    key: Key('create-channel-visibility-private'),
-                    label: 'Private',
+                    key: const Key('create-channel-visibility-private'),
+                    label: context.l10n.channelCreateVisibilityPrivate,
                     value: 'private',
                   ),
                 ],
@@ -236,7 +255,7 @@ class _CreateChannelFieldLabel extends StatelessWidget {
           TextSpan(text: label),
           if (optional)
             TextSpan(
-              text: '  Optional',
+              text: '  ${context.l10n.channelCreateOptional}',
               style: context.textTheme.labelSmall?.copyWith(
                 color: context.colors.onSurfaceVariant.withValues(alpha: 0.6),
                 fontWeight: FontWeight.w400,
@@ -382,7 +401,7 @@ class _CreateChannelSettingMenu<T> extends StatelessWidget {
         enabled: enabled,
         initialValue: value,
         onSelected: onSelected,
-        tooltip: '$label: $valueLabel',
+        tooltip: context.l10n.channelCreateMenuTooltip(label, valueLabel),
         itemBuilder: (context) => [
           for (final option in options)
             CheckedPopupMenuItem<T>(
@@ -610,7 +629,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
         return;
       }
       if (previewDirectoryActive) {
-        submitError.value = 'Preview only — mock people cannot be messaged.';
+        submitError.value = context.l10n.channelNewMessagePreviewOnly;
         return;
       }
 
@@ -638,7 +657,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
       } catch (error) {
         submitError.value = friendlyError(
           error,
-          fallback: 'Couldn’t start the conversation. Try again.',
+          fallback: context.l10n.channelNewMessageStartError,
         );
       } finally {
         isSubmitting.value = false;
@@ -748,7 +767,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                     vertical: Grid.half,
                                   ),
                                   child: Text(
-                                    'To:',
+                                    context.l10n.channelNewMessageTo,
                                     style: context.textTheme.bodyLarge
                                         ?.copyWith(fontWeight: FontWeight.w600),
                                   ),
@@ -794,7 +813,9 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                     decoration: InputDecoration(
                                       hintText: hasSelectedUsers
                                           ? null
-                                          : 'Search for a person',
+                                          : context
+                                                .l10n
+                                                .channelNewMessageSearchHint,
                                       border: InputBorder.none,
                                       enabledBorder: InputBorder.none,
                                       focusedBorder: InputBorder.none,
@@ -804,16 +825,17 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                             vertical: Grid.half,
                                           ),
                                       suffixIcon: isSubmitting.value
-                                          ? const Padding(
-                                              padding: EdgeInsets.all(
+                                          ? Padding(
+                                              padding: const EdgeInsets.all(
                                                 Grid.half,
                                               ),
                                               child: SizedBox.square(
                                                 dimension: 16,
                                                 child: KuzzLoadingIndicator(
                                                   size: 16,
-                                                  semanticLabel:
-                                                      'Creating conversation',
+                                                  semanticLabel: context
+                                                      .l10n
+                                                      .channelNewMessageCreating,
                                                 ),
                                               ),
                                             )
@@ -847,9 +869,9 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                   onSubmitted: (_) {
                     if (canSubmit) unawaited(submit());
                   },
-                  decoration: const InputDecoration(
-                    labelText: 'Chat name',
-                    hintText: 'Optional',
+                  decoration: InputDecoration(
+                    labelText: context.l10n.channelNewMessageChatName,
+                    hintText: context.l10n.channelCreateOptional,
                     counterText: '',
                   ),
                 ),
@@ -859,12 +881,13 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                 key: const Key('new-dm-results'),
                 builder: (context) {
                   if (selectedUsers.value.length >= groupChatCreateLimit) {
-                    return const SizedBox(
+                    return SizedBox(
                       height: 96,
                       child: Center(
                         child: Text(
-                          'A chat can start with up to '
-                          '$groupChatCreateLimit people.',
+                          context.l10n.channelNewMessageLimit(
+                            groupChatCreateLimit,
+                          ),
                         ),
                       ),
                     );
@@ -872,12 +895,12 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                   if (directoryAsync.isLoading &&
                           directoryAsync.asData == null ||
                       isSearchTransitionPending) {
-                    return const SizedBox(
+                    return SizedBox(
                       height: 280,
                       child: Center(
                         child: KuzzLoadingIndicator(
                           size: 44,
-                          semanticLabel: 'Loading people',
+                          semanticLabel: context.l10n.channelNewMessageLoading,
                         ),
                       ),
                     );
@@ -889,7 +912,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            const Text('Couldn’t load people. Try again.'),
+                            Text(context.l10n.channelNewMessageLoadError),
                             const SizedBox(height: Grid.half),
                             TextButton(
                               onPressed: () {
@@ -903,7 +926,7 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                                   );
                                 }
                               },
-                              child: const Text('Retry'),
+                              child: Text(context.l10n.commonRetry),
                             ),
                           ],
                         ),
@@ -918,8 +941,8 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                       child: Center(
                         child: Text(
                           normalizedQuery.isEmpty
-                              ? 'Add friends in the Friends tab to message them here.'
-                              : 'No matching people.',
+                              ? context.l10n.channelNewMessageNoFriends
+                              : context.l10n.channelNewMessageNoMatches,
                           textAlign: TextAlign.center,
                         ),
                       ),
@@ -959,22 +982,34 @@ class _NewDirectMessageSheet extends HookConsumerWidget {
                     children: [
                       if (friendResults.isNotEmpty) ...[
                         if (!previewDirectoryActive)
-                          header('friends', 'Friends'),
+                          header(
+                            'friends',
+                            context.l10n.channelNewMessageFriends,
+                          ),
                         for (final user in friendResults) tileFor(user),
                       ],
                       if (sharedResults.isNotEmpty ||
                           sharedPending ||
                           sharedFailed) ...[
-                        header('shared', 'In your groups'),
+                        header(
+                          'shared',
+                          context.l10n.channelNewMessageInYourGroups,
+                        ),
                         if (sharedPending)
-                          note('shared-loading', 'Searching…')
+                          note(
+                            'shared-loading',
+                            context.l10n.channelNewMessageSearching,
+                          )
                         else if (sharedFailed)
-                          note('shared-error', 'Couldn’t search your groups')
+                          note(
+                            'shared-error',
+                            context.l10n.channelNewMessageSharedError,
+                          )
                         else
                           for (final user in sharedResults) tileFor(user),
                       ],
                       if (agentResults.isNotEmpty) ...[
-                        header('agents', 'Agents'),
+                        header('agents', context.l10n.channelNewMessageAgents),
                         for (final user in agentResults) tileFor(user),
                       ],
                     ],
@@ -1028,7 +1063,7 @@ class _SelectedDmRecipientChip extends StatelessWidget {
             button: true,
             enabled: enabled,
             excludeSemantics: true,
-            label: 'Remove $label',
+            label: context.l10n.channelNewMessageRemoveRecipient(label),
             child: InkWell(
               customBorder: const StadiumBorder(),
               onTap: enabled ? onDeleted : null,

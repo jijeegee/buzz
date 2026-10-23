@@ -193,7 +193,7 @@ class _HuddleLoadingBee extends HookWidget {
         : 0.5 - (0.5 * cos(flapProgress * 4 * pi));
 
     return Semantics(
-      label: 'Joining Huddle',
+      label: context.l10n.huddleJoining,
       liveRegion: true,
       child: ExcludeSemantics(
         child: FlappingBee(

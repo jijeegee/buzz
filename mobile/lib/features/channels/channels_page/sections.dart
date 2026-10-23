@@ -97,7 +97,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: Grid.xs),
             Text(
-              'No conversations yet',
+              context.l10n.channelListNoConversations,
               style: context.textTheme.bodyLarge?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

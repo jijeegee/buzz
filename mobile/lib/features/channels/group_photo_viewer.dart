@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
 import 'media_viewer_page.dart';
 
 /// Makes a large group photo open full size in the image viewer.
@@ -25,11 +26,11 @@ class GroupPhotoViewerTap extends StatelessWidget {
       context,
       imageUrl: url,
       heroTag: Object(),
-      semanticLabel: 'Group photo',
+      semanticLabel: context.l10n.channelGroupPhoto,
     );
     return Semantics(
       button: true,
-      label: 'View group photo',
+      label: context.l10n.channelGroupPhotoView,
       onTap: open,
       excludeSemantics: true,
       child: GestureDetector(

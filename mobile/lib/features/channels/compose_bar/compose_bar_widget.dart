@@ -168,7 +168,9 @@ class ComposeBar extends HookConsumerWidget {
     }, [appView, focusNode, voiceNote.isPreparing]);
     final resolvedHint =
         hintText ??
-        (channelName.isNotEmpty ? 'Message $channelName' : 'Message\u2026');
+        (channelName.isNotEmpty
+            ? context.l10n.composeHintNamed(channelName)
+            : context.l10n.composeHint);
     useEffect(
       () {
         final target =
@@ -784,7 +786,7 @@ class ComposeBar extends HookConsumerWidget {
           if (image != null && context.mounted) {
             queueAttachment(image, _PendingAttachmentKind.image);
           } else if (context.mounted) {
-            uploadError.value = 'Unable to read pasted image';
+            uploadError.value = context.l10n.composePasteImageError;
           }
         } catch (error) {
           if (context.mounted) uploadError.value = _formatUploadError(error);
@@ -803,7 +805,7 @@ class ComposeBar extends HookConsumerWidget {
           items: [
             if (clipboardHasImage.value)
               IOSSystemContextMenuItemCustom(
-                title: 'Paste Image',
+                title: context.l10n.composePasteImage,
                 onPressed: pasteClipboardImage,
               ),
             ...SystemContextMenu.getDefaultItems(editableTextState),
@@ -817,7 +819,7 @@ class ComposeBar extends HookConsumerWidget {
         buttonItems.insert(
           0,
           ContextMenuButtonItem(
-            label: 'Paste Image',
+            label: context.l10n.composePasteImage,
             onPressed: pasteClipboardImage,
           ),
         );
@@ -831,7 +833,7 @@ class ComposeBar extends HookConsumerWidget {
     void uploadPastedImage(KeyboardInsertedContent content) {
       final bytes = content.data;
       if (bytes == null || bytes.isEmpty) {
-        uploadError.value = 'Unable to read pasted image';
+        uploadError.value = context.l10n.composePasteImageError;
         return;
       }
 
@@ -913,7 +915,7 @@ class ComposeBar extends HookConsumerWidget {
                     .read(mediaUploadServiceProvider)
                     .pickGalleryImages();
                 queueImages(photos);
-              }, errorMessage: 'Unable to open your photo library.'),
+              }, errorMessage: context.l10n.composePhotoLibraryOpenError),
               onVideo: () => chooseAttachment(() {
                 final service = ref.read(mediaUploadServiceProvider);
                 return pickThenQueue(

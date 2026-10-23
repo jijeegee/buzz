@@ -10,6 +10,7 @@ import {
 import { isTauri } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { invokeTauri } from "@/shared/api/tauri";
+import type { MessageKey } from "@/shared/i18n";
 import { isMacPlatform } from "@/shared/lib/platform";
 import { getStorageItem } from "@/shared/lib/safeStorage";
 import { createThemeVars, hexToHsl } from "./adaptive-theme";
@@ -42,17 +43,61 @@ const VIDEO_REVIEW_CHIP_BACKGROUND_ALPHAS = [0.15, 0.3] as const;
 const GLASS_VIBRANCY_MATERIAL = "sidebar";
 
 export const ACCENT_COLORS = [
-  { name: "Neutral", value: NEUTRAL_ACCENT },
-  { name: "Blue", value: "#3b82f6" },
-  { name: "Cyan", value: "#06b6d4" },
-  { name: "Green", value: "#22c55e" },
-  { name: "Orange", value: "#f97316" },
-  { name: "Red", value: "#ef4444" },
-  { name: "Pink", value: "#ec4899" },
-  { name: "Lilac", value: "#c0a2f1" },
-  { name: "Purple", value: "#a855f7" },
-  { name: "Indigo", value: "#6366f1" },
-] as const;
+  {
+    name: "Neutral",
+    labelKey: "settings.appearance.accentNeutral",
+    value: NEUTRAL_ACCENT,
+  },
+  {
+    name: "Blue",
+    labelKey: "settings.appearance.accentBlue",
+    value: "#3b82f6",
+  },
+  {
+    name: "Cyan",
+    labelKey: "settings.appearance.accentCyan",
+    value: "#06b6d4",
+  },
+  {
+    name: "Green",
+    labelKey: "settings.appearance.accentGreen",
+    value: "#22c55e",
+  },
+  {
+    name: "Orange",
+    labelKey: "settings.appearance.accentOrange",
+    value: "#f97316",
+  },
+  {
+    name: "Red",
+    labelKey: "settings.appearance.accentRed",
+    value: "#ef4444",
+  },
+  {
+    name: "Pink",
+    labelKey: "settings.appearance.accentPink",
+    value: "#ec4899",
+  },
+  {
+    name: "Lilac",
+    labelKey: "settings.appearance.accentLilac",
+    value: "#c0a2f1",
+  },
+  {
+    name: "Purple",
+    labelKey: "settings.appearance.accentPurple",
+    value: "#a855f7",
+  },
+  {
+    name: "Indigo",
+    labelKey: "settings.appearance.accentIndigo",
+    value: "#6366f1",
+  },
+] as const satisfies readonly {
+  name: string;
+  labelKey: MessageKey;
+  value: string;
+}[];
 
 const DEFAULT_ACCENT = "#3b82f6";
 

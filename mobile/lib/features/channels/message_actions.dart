@@ -16,6 +16,7 @@ import 'package:photo_manager/photo_manager.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/relay/relay.dart';
@@ -185,7 +186,7 @@ void showMessageActions({
                         key: const ValueKey('message-action-link-goal'),
                         contentPadding: EdgeInsets.zero,
                         leading: const Icon(LucideIcons.target),
-                        title: const Text('Link to goal'),
+                        title: Text(context.l10n.messageLinkToGoal),
                         onTap: () {
                           Navigator.of(sheetContext).pop();
                           showMessageGoalLink(
@@ -201,7 +202,7 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.copy),
-                      title: const Text('Copy text'),
+                      title: Text(context.l10n.messageCopyText),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         // Copy to clipboard
@@ -220,7 +221,7 @@ void showMessageActions({
                         color: sheetContext.colors.error,
                       ),
                       title: Text(
-                        'Report message',
+                        context.l10n.messageReport,
                         style: TextStyle(color: sheetContext.colors.error),
                       ),
                       onTap: () {
@@ -238,7 +239,7 @@ void showMessageActions({
                     ListTile(
                       contentPadding: EdgeInsets.zero,
                       leading: const Icon(LucideIcons.pencil),
-                      title: const Text('Edit message'),
+                      title: Text(context.l10n.messageEdit),
                       onTap: () {
                         Navigator.of(sheetContext).pop();
                         _showEditSheet(
@@ -256,7 +257,7 @@ void showMessageActions({
                         color: sheetContext.colors.error,
                       ),
                       title: Text(
-                        'Delete message',
+                        context.l10n.messageDelete,
                         style: TextStyle(color: sheetContext.colors.error),
                       ),
                       onTap: () {
@@ -317,7 +318,7 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.download),
-                title: const Text('Save image'),
+                title: Text(context.l10n.messageSaveImage),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   unawaited(_saveImage(context, ref, imageUrl));
@@ -326,7 +327,7 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.share2),
-                title: const Text('Share image'),
+                title: Text(context.l10n.messageShareImage),
                 onTap: () {
                   final renderBox = context.findRenderObject() as RenderBox?;
                   final shareOrigin = renderBox == null
@@ -346,13 +347,13 @@ void showImageActions({
               ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.link2),
-                title: const Text('Copy image link'),
+                title: Text(context.l10n.messageCopyImageLink),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   copyToClipboard(
                     context,
                     imageUrl,
-                    message: 'Image link copied',
+                    message: context.l10n.messageImageLinkCopied,
                   );
                 },
               ),
@@ -365,7 +366,7 @@ void showImageActions({
                     color: sheetContext.colors.error,
                   ),
                   title: Text(
-                    'Delete message',
+                    context.l10n.messageDelete,
                     style: TextStyle(color: sheetContext.colors.error),
                   ),
                   onTap: () {
@@ -453,6 +454,7 @@ Future<void> _saveImage(
   String imageUrl,
 ) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final l10n = context.l10n;
   try {
     final needsPhotoLibraryPermission =
         defaultTargetPlatform == TargetPlatform.iOS ||
@@ -475,12 +477,10 @@ Future<void> _saveImage(
     }
     final image = await _downloadImage(ref, imageUrl);
     await PhotoManager.editor.saveImage(image.bytes, filename: image.filename);
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('Image saved to Photos')),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(l10n.messageImageSaved)));
   } catch (_) {
     messenger?.showSnackBar(
-      const SnackBar(content: Text('Could not save image')),
+      SnackBar(content: Text(l10n.messageImageSaveError)),
     );
   }
 }
@@ -492,6 +492,7 @@ Future<void> _shareImage(
   Rect? shareOrigin,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final l10n = context.l10n;
   try {
     final image = await _downloadImage(ref, imageUrl);
     final directory = await getTemporaryDirectory();
@@ -504,7 +505,7 @@ Future<void> _shareImage(
     );
   } catch (_) {
     messenger?.showSnackBar(
-      const SnackBar(content: Text('Could not share image')),
+      SnackBar(content: Text(l10n.messageImageShareError)),
     );
   }
 }
@@ -544,7 +545,9 @@ class _MarkReadUnreadTile extends ConsumerWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(unread ? LucideIcons.mailCheck : LucideIcons.mailOpen),
-      title: Text(unread ? 'Mark read' : 'Mark unread'),
+      title: Text(
+        unread ? context.l10n.messageMarkRead : context.l10n.messageMarkUnread,
+      ),
       onTap: () {
         Navigator.of(context).pop();
         final notifier = ref.read(readStateProvider.notifier);
@@ -586,7 +589,11 @@ class _FollowThreadTile extends ConsumerWidget {
     return ListTile(
       contentPadding: EdgeInsets.zero,
       leading: Icon(following ? LucideIcons.bellOff : LucideIcons.bellRing),
-      title: Text(following ? 'Unfollow thread' : 'Follow thread'),
+      title: Text(
+        following
+            ? context.l10n.messageUnfollowThread
+            : context.l10n.messageFollowThread,
+      ),
       onTap: () {
         Navigator.of(context).pop();
         final notifier = ref.read(threadFollowsProvider.notifier);
@@ -634,7 +641,7 @@ class _FastActionsRow extends ConsumerWidget {
           canReplyInThread(threadDepthOf(message, messages)))
         _FastActionTile(
           icon: LucideIcons.messageSquareReply,
-          label: 'Reply in thread',
+          label: context.l10n.messageReplyInThread,
           onTap: () {
             Navigator.of(context).pop();
             Navigator.of(pageContext).push(
@@ -654,7 +661,7 @@ class _FastActionsRow extends ConsumerWidget {
       if (onQuote case final quote?)
         _FastActionTile(
           icon: LucideIcons.quote,
-          label: 'Quote',
+          label: context.l10n.messageQuote,
           onTap: () {
             Navigator.of(context).pop();
             quote();
@@ -662,20 +669,20 @@ class _FastActionsRow extends ConsumerWidget {
         ),
       _FastActionTile(
         icon: LucideIcons.link2,
-        label: 'Copy link',
+        label: context.l10n.messageCopyLink,
         onTap: () {
           Navigator.of(context).pop();
           copyToClipboard(
             pageContext,
             messageLinkFor(message: message, channelId: channelId),
-            message: 'Message link copied',
+            message: context.l10n.messageLinkCopied,
           );
         },
       ),
       if (canRemind)
         _FastActionTile(
           icon: LucideIcons.clock,
-          label: 'Remind me',
+          label: context.l10n.messageRemindMe,
           onTap: () {
             final rootContext = Navigator.of(
               context,
@@ -896,7 +903,7 @@ void _showEditSheet({
             autofocus: true,
             minLines: 1,
             maxLines: 5,
-            decoration: const InputDecoration(hintText: 'Edit message'),
+            decoration: InputDecoration(hintText: context.l10n.messageEdit),
           ),
           const SizedBox(height: Grid.xxs),
           Row(
@@ -904,7 +911,7 @@ void _showEditSheet({
             children: [
               TextButton(
                 onPressed: () => Navigator.of(sheetContext).pop(),
-                child: const Text('Cancel'),
+                child: Text(context.l10n.commonCancel),
               ),
               const SizedBox(width: Grid.half),
               FilledButton(
@@ -927,7 +934,7 @@ void _showEditSheet({
                       );
                   Navigator.of(sheetContext).pop();
                 },
-                child: const Text('Save'),
+                child: Text(context.l10n.commonSave),
               ),
             ],
           ),
@@ -947,17 +954,18 @@ void _confirmDelete({
   showKuzzDialog<void>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('Delete message'),
-      content: const Text('This cannot be undone.'),
+      title: Text(dialogContext.l10n.messageDelete),
+      content: Text(dialogContext.l10n.messageDeleteBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () async {
             Navigator.of(dialogContext).pop();
             final messenger = ScaffoldMessenger.of(context);
+            final l10n = context.l10n;
             try {
               await ref
                   .read(channelActionsProvider)
@@ -965,14 +973,14 @@ void _confirmDelete({
               onDeleted?.call();
             } catch (error) {
               messenger.showSnackBar(
-                SnackBar(content: Text('Failed to delete message: $error')),
+                SnackBar(content: Text(l10n.messageDeleteError('$error'))),
               );
             }
           },
           style: FilledButton.styleFrom(
             backgroundColor: dialogContext.colors.error,
           ),
-          child: const Text('Delete'),
+          child: Text(dialogContext.l10n.commonDelete),
         ),
       ],
     ),

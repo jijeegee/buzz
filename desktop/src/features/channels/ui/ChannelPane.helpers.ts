@@ -1,6 +1,7 @@
 import { getChannelDetail } from "@/features/channels/lib/channelDescription";
 import { isEphemeralChannel } from "@/features/channels/lib/ephemeralChannel";
 import type { TimelineMessage } from "@/features/messages/types";
+import type { ChannelIntroKind } from "@/features/messages/ui/ChannelIntroBlock";
 import type { TypingIndicatorEntry } from "@/features/messages/useChannelTyping";
 import type { Channel } from "@/shared/api/types";
 import { KIND_SYSTEM_MESSAGE } from "@/shared/constants/kinds";
@@ -36,27 +37,46 @@ export function shouldUseFocusIdleDrawer({
   );
 }
 
-export function getChannelIntroKind(
+/** Which intro sentence a group shows ("This is the beginning of the …"). */
+export function getChannelIntroKindId(
   channel: Channel,
   projectHome = false,
-): string {
+): Exclude<ChannelIntroKind, "chat" | "welcome"> {
   if (projectHome) {
-    return t("channels.intro.kindProject");
+    return "project";
   }
 
   const isPrivate = channel.visibility === "private";
   const isEphemeral = isEphemeralChannel(channel);
 
   if (isPrivate && isEphemeral) {
-    return t("channels.intro.kindPrivateEphemeral");
+    return "privateEphemeral";
   }
   if (isPrivate) {
-    return t("channels.intro.kindPrivate");
+    return "private";
   }
   if (isEphemeral) {
-    return t("channels.intro.kindEphemeral");
+    return "ephemeral";
   }
-  return t("channels.intro.kindRegular");
+  return "regular";
+}
+
+const CHANNEL_INTRO_KIND_LABEL_KEYS = {
+  project: "channels.intro.kindProject",
+  privateEphemeral: "channels.intro.kindPrivateEphemeral",
+  private: "channels.intro.kindPrivate",
+  ephemeral: "channels.intro.kindEphemeral",
+  regular: "channels.intro.kindRegular",
+} as const;
+
+/** Kind name on its own, e.g. "private group". */
+export function getChannelIntroKind(
+  channel: Channel,
+  projectHome = false,
+): string {
+  return t(
+    CHANNEL_INTRO_KIND_LABEL_KEYS[getChannelIntroKindId(channel, projectHome)],
+  );
 }
 
 export function getChannelIntroDescription(channel: Channel): string | null {

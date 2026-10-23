@@ -384,7 +384,7 @@ export function ConversationThread({
       {agentWorking.working ? (
         <div className="flex items-center gap-2 pl-11 text-sm text-muted-foreground">
           <Loader2 className="h-3.5 w-3.5 animate-spin" />
-          {agent.name} is working…
+          {t("projects.agentPrompt.working", { name: agent.name })}
         </div>
       ) : null}
       <div ref={bottomRef} />

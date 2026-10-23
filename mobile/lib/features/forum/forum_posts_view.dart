@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay_closed_policy.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -73,7 +74,7 @@ class ForumPostsView extends HookConsumerWidget {
                 ? FloatingActionButton(
                     heroTag: 'forum-fab',
                     onPressed: () => isComposing.value = true,
-                    tooltip: 'New post',
+                    tooltip: context.l10n.forumNewPost,
                     shape: const CircleBorder(),
                     child: const Icon(LucideIcons.plus),
                   )
@@ -83,17 +84,17 @@ class ForumPostsView extends HookConsumerWidget {
               skipLoadingOnRefresh: !postsAsync.hasError,
               loading: () => Padding(
                 padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-                child: const Center(
+                child: Center(
                   child: KuzzLoadingIndicator(
                     size: 44,
-                    semanticLabel: 'Loading posts',
+                    semanticLabel: context.l10n.forumLoadingPosts,
                   ),
                 ),
               ),
               error: (e, _) => Padding(
                 padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
                 child: LoadErrorView(
-                  message: 'Failed to load posts',
+                  message: context.l10n.forumLoadPostsError,
                   onRetry: () => ref.invalidate(forumPostsProvider(channel.id)),
                 ),
               ),
@@ -149,14 +150,14 @@ class ForumPostsView extends HookConsumerWidget {
               child: IconButton(
                 onPressed: () => isComposing.value = false,
                 icon: const Icon(LucideIcons.x, size: 18),
-                tooltip: 'Dismiss',
+                tooltip: context.l10n.forumDismiss,
                 visualDensity: VisualDensity.compact,
               ),
             ),
           ),
           ComposeBar(
             channelId: channel.id,
-            hintText: 'Write your post\u2026',
+            hintText: context.l10n.forumPostHint,
             onSend:
                 (
                   content,
@@ -213,7 +214,7 @@ class _EmptyState extends StatelessWidget {
             ),
             const SizedBox(height: Grid.xxs),
             Text(
-              'No posts yet',
+              context.l10n.forumNoPosts,
               style: context.textTheme.bodyLarge?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -221,10 +222,10 @@ class _EmptyState extends StatelessWidget {
             const SizedBox(height: Grid.half),
             Text(
               isArchived
-                  ? 'This forum is archived.'
+                  ? context.l10n.forumArchived
                   : isMember
-                  ? 'Start a discussion by creating the first post.'
-                  : 'Join this forum to create posts.',
+                  ? context.l10n.forumStartDiscussion
+                  : context.l10n.forumJoinToPost,
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),

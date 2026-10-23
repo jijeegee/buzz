@@ -14,7 +14,7 @@ import { openSettings } from "../helpers/settings";
 const CONFIRM_PHRASE = "wipe all my data";
 
 async function openSignOutDialog(page: Page) {
-  await openSettings(page, "profile");
+  await openSettings(page, "devices");
   const section = page.getByTestId("settings-signout");
   await section.scrollIntoViewIfNeeded();
   await expect(page.getByTestId("signout-open-dialog")).not.toBeVisible();

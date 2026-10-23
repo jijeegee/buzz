@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:gpt_markdown/gpt_markdown.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../../shared/l10n/l10n.dart';
 import '../../../shared/theme/theme.dart';
 import 'observer_models.dart';
 
@@ -37,7 +38,9 @@ class _MessageItemWidget extends StatelessWidget {
     final badgeColor = isAssistant
         ? context.colors.primary
         : context.colors.onSurfaceVariant;
-    final badgeLabel = isAssistant ? 'Assistant' : 'User';
+    final badgeLabel = isAssistant
+        ? context.l10n.channelAgentActivityAssistant
+        : context.l10n.channelAgentActivityUser;
 
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: Grid.half),
@@ -355,7 +358,7 @@ class _ToolItemWidget extends HookWidget {
                 child: Row(
                   children: [
                     Text(
-                      'Arguments',
+                      context.l10n.channelAgentActivityArguments,
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),
@@ -384,7 +387,7 @@ class _ToolItemWidget extends HookWidget {
                 child: Row(
                   children: [
                     Text(
-                      'Result',
+                      context.l10n.channelAgentActivityResult,
                       style: context.textTheme.labelSmall?.copyWith(
                         color: item.isError
                             ? context.colors.error
@@ -408,7 +411,7 @@ class _ToolItemWidget extends HookWidget {
                 const SizedBox(height: Grid.quarter),
                 _CodeBlock(
                   text: item.result.length > 2000
-                      ? '${item.result.substring(0, 2000)}\n\n\u2026 (truncated)'
+                      ? '${item.result.substring(0, 2000)}\n\n${context.l10n.channelAgentActivityTruncated}'
                       : item.result,
                   isError: item.isError,
                 ),
@@ -427,15 +430,31 @@ class _ToolItemWidget extends HookWidget {
   BuildContext context,
 ) {
   if (isError || status == ToolStatus.failed) {
-    return (context.colors.error, 'Error', LucideIcons.circleX);
+    return (
+      context.colors.error,
+      context.l10n.channelAgentActivityStatusError,
+      LucideIcons.circleX,
+    );
   }
   if (status == ToolStatus.completed) {
-    return (context.appColors.success, 'Done', LucideIcons.circleCheck);
+    return (
+      context.appColors.success,
+      context.l10n.channelAgentActivityToolDone,
+      LucideIcons.circleCheck,
+    );
   }
   if (status == ToolStatus.pending) {
-    return (context.colors.onSurfaceVariant, 'Pending', LucideIcons.circleDot);
+    return (
+      context.colors.onSurfaceVariant,
+      context.l10n.channelAgentActivityToolPending,
+      LucideIcons.circleDot,
+    );
   }
-  return (context.appColors.warning, 'Running', LucideIcons.clock3);
+  return (
+    context.appColors.warning,
+    context.l10n.channelAgentActivityToolRunning,
+    LucideIcons.clock3,
+  );
 }
 
 String _formatToolName(String toolName) {

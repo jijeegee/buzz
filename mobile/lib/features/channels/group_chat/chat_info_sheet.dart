@@ -10,6 +10,7 @@ import '../../../shared/theme/theme.dart';
 import '../../../shared/widgets/conversation_row_parts.dart';
 import '../../../shared/widgets/modal_presentation.dart';
 import '../../../shared/identity_names/identity_names_provider.dart';
+import '../../../shared/l10n/l10n.dart';
 import '../../profile/user_profile_sheet.dart';
 import '../add_members_sheet.dart';
 import '../channel.dart';
@@ -25,7 +26,7 @@ import 'chat_title.dart';
 const chatInfoSearchThreshold = 8;
 
 /// "1 person" / "N people".
-String chatPeopleLabel(int count) => count == 1 ? '1 person' : '$count people';
+String chatPeopleLabel(int count) => appL10n.chatInfoPeopleCount(count);
 
 /// Opens Chat info for a chat of people. Returns true when I left it, so
 /// the page showing the chat should close.
@@ -34,7 +35,7 @@ Future<bool?> showChatInfoSheet({
   required Channel channel,
 }) => showKuzzModalBottomSheet<bool>(
   context: context,
-  title: 'Chat info',
+  title: context.l10n.channelChatInfo,
   isScrollControlled: true,
   showDragHandle: true,
   constraints: BoxConstraints(
@@ -86,7 +87,7 @@ class ChatInfoSheet extends HookConsumerWidget {
     Future<void> addPeople() async {
       await showKuzzModalBottomSheet<bool>(
         context: context,
-        title: 'Add people',
+        title: context.l10n.channelAddPeople,
         isScrollControlled: true,
         showDragHandle: true,
         builder: (_) => AddChannelMembersSheet(
@@ -113,17 +114,17 @@ class ChatInfoSheet extends HookConsumerWidget {
       final confirmed = await showKuzzDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Leave this chat?'),
-          content: const Text('You’ll stop receiving messages from it.'),
+          title: Text(dialogContext.l10n.channelLeaveChatTitle),
+          content: Text(dialogContext.l10n.channelLeaveChatBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(dialogContext.l10n.commonCancel),
             ),
             FilledButton(
               key: const ValueKey('chat-info-leave-confirm'),
               onPressed: () => Navigator.of(dialogContext).pop(true),
-              child: const Text('Leave'),
+              child: Text(dialogContext.l10n.channelLeave),
             ),
           ],
         ),
@@ -135,7 +136,7 @@ class ChatInfoSheet extends HookConsumerWidget {
       } catch (_) {
         if (!context.mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Couldn’t leave the chat. Try again.')),
+          SnackBar(content: Text(context.l10n.chatInfoLeaveError)),
         );
       }
     }
@@ -178,14 +179,14 @@ class ChatInfoSheet extends HookConsumerWidget {
               key: const ValueKey('chat-info-add-people'),
               contentPadding: EdgeInsets.zero,
               leading: const Icon(LucideIcons.userPlus),
-              title: const Text('Add people'),
+              title: Text(context.l10n.channelAddPeople),
               onTap: addPeople,
             ),
           ListTile(
             key: const ValueKey('chat-info-rename'),
             contentPadding: EdgeInsets.zero,
             leading: const Icon(LucideIcons.pencil),
-            title: const Text('Rename for me'),
+            title: Text(context.l10n.chatInfoRenameForMe),
             onTap: rename,
           ),
           if (privateName != null)
@@ -193,7 +194,7 @@ class ChatInfoSheet extends HookConsumerWidget {
               key: const ValueKey('chat-info-restore-name'),
               contentPadding: EdgeInsets.zero,
               leading: const Icon(LucideIcons.undo2),
-              title: const Text('Restore name'),
+              title: Text(context.l10n.chatInfoRestoreName),
               onTap: () => ref
                   .read(channelNamesProvider.notifier)
                   .setName(channel.id, null),
@@ -201,7 +202,7 @@ class ChatInfoSheet extends HookConsumerWidget {
           SwitchListTile.adaptive(
             key: const ValueKey('chat-info-mute'),
             contentPadding: EdgeInsets.zero,
-            title: const Text('Mute notifications'),
+            title: Text(context.l10n.chatInfoMuteNotifications),
             value: isMuted,
             onChanged: (mute) {
               final notifier = ref.read(channelMutesProvider.notifier);
@@ -223,9 +224,9 @@ class ChatInfoSheet extends HookConsumerWidget {
             TextField(
               key: const ValueKey('chat-info-member-search'),
               onChanged: (value) => memberQuery.value = value,
-              decoration: const InputDecoration(
-                hintText: 'Search people',
-                prefixIcon: Icon(LucideIcons.search),
+              decoration: InputDecoration(
+                hintText: context.l10n.chatInfoSearchPeople,
+                prefixIcon: const Icon(LucideIcons.search),
               ),
             ),
           for (final pubkey in memberPubkeys)
@@ -238,7 +239,7 @@ class ChatInfoSheet extends HookConsumerWidget {
                 key: ValueKey('chat-info-member-$pubkey'),
                 pubkey: pubkey,
                 label: pubkey == me
-                    ? '${names.labelFor(pubkey)} (you)'
+                    ? context.l10n.chatInfoMemberYou(names.labelFor(pubkey))
                     : names.labelFor(pubkey),
               ),
           if (channel.isMember) ...[
@@ -248,7 +249,7 @@ class ChatInfoSheet extends HookConsumerWidget {
               contentPadding: EdgeInsets.zero,
               leading: Icon(LucideIcons.logOut, color: context.colors.error),
               title: Text(
-                'Leave chat',
+                context.l10n.channelLeaveChat,
                 style: TextStyle(color: context.colors.error),
               ),
               onTap: leave,
@@ -297,7 +298,7 @@ class _RenameDialog extends HookWidget {
     final controller = useTextEditingController(text: initial);
     void save() => Navigator.of(context).pop(controller.text);
     return AlertDialog(
-      title: const Text('Rename for me'),
+      title: Text(context.l10n.chatInfoRenameForMe),
       content: TextField(
         key: const ValueKey('chat-info-rename-field'),
         controller: controller,
@@ -305,20 +306,20 @@ class _RenameDialog extends HookWidget {
         maxLength: channelNameMaxLength,
         textInputAction: TextInputAction.done,
         onSubmitted: (_) => save(),
-        decoration: const InputDecoration(
-          helperText: 'Only you see this name.',
+        decoration: InputDecoration(
+          helperText: context.l10n.chatInfoRenameHelper,
           counterText: '',
         ),
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.commonCancel),
         ),
         FilledButton(
           key: const ValueKey('chat-info-rename-save'),
           onPressed: save,
-          child: const Text('Save'),
+          child: Text(context.l10n.commonSave),
         ),
       ],
     );

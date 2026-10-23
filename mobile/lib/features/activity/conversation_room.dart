@@ -1,4 +1,5 @@
 import '../../shared/identity_names/identity_names.dart';
+import '../../shared/l10n/l10n.dart';
 import '../channels/channel.dart';
 import '../channels/dm_channel_labels.dart';
 import 'inbox_item.dart';
@@ -98,6 +99,8 @@ String conversationRoomTitle(ConversationRoom room, {String? threadName}) =>
     switch (room) {
       DmConversationRoom(:final title) => title,
       ChannelConversationRoom(:final channelName) => channelName,
-      ThreadConversationRoom(:final channelName) =>
-        '$channelName › ${threadName ?? 'Thread'}',
+      ThreadConversationRoom(:final channelName) => appL10n.activityRoomThread(
+        channelName,
+        threadName ?? appL10n.activityThreadFallback,
+      ),
     };

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/grid.dart';
 import '../../shared/theme/message_typography.dart';
 import '../../shared/theme/theme_extensions.dart';
@@ -36,7 +37,7 @@ class LocalSendStatusMark extends ConsumerWidget {
       case LocalSendStatus.pending:
         return Semantics(
           container: true,
-          label: 'Sending',
+          label: context.l10n.messageSendPending,
           child: Icon(
             Icons.schedule,
             key: ValueKey('local-send-pending-$eventId'),
@@ -49,7 +50,7 @@ class LocalSendStatusMark extends ConsumerWidget {
         return Semantics(
           container: true,
           button: true,
-          label: 'Not sent. Tap to retry or delete',
+          label: context.l10n.messageSendFailedLabel,
           excludeSemantics: true,
           child: GestureDetector(
             key: ValueKey('local-send-failed-$eventId'),
@@ -70,7 +71,7 @@ class LocalSendStatusMark extends ConsumerWidget {
                 ),
                 const SizedBox(width: Grid.quarter),
                 Text(
-                  'Not sent',
+                  context.l10n.messageSendFailed,
                   maxLines: 1,
                   style: chatTimestampTextStyle.copyWith(color: color),
                 ),
@@ -109,7 +110,7 @@ void showFailedLocalMessageSheet({
               key: const ValueKey('local-send-retry'),
               contentPadding: EdgeInsets.zero,
               leading: const Icon(Icons.refresh),
-              title: const Text('Retry'),
+              title: Text(sheetContext.l10n.commonRetry),
               onTap: () {
                 Navigator.of(sheetContext).pop();
                 unawaited(
@@ -134,7 +135,7 @@ void showFailedLocalMessageSheet({
                 color: sheetContext.colors.error,
               ),
               title: Text(
-                'Delete',
+                sheetContext.l10n.commonDelete,
                 style: TextStyle(color: sheetContext.colors.error),
               ),
               onTap: () {
@@ -154,15 +155,17 @@ void showFailedLocalMessageSheet({
 String retryFailureMessage(Object error) {
   final text = error.toString();
   if (text.contains('another account')) {
-    return 'Message not sent: it was written by another account';
+    return appL10n.messageRetryOtherAccount;
   }
   if (text.contains('no signing key') ||
       text.contains('Invalid nsec') ||
       text.contains('no principal id')) {
-    return 'Message not sent: no signing key for this account';
+    return appL10n.messageRetryNoSigningKey;
   }
   if (text.contains('community changed')) {
-    return 'Message not sent: the community changed';
+    return appL10n.composeCommunityChangedNotSent;
   }
-  return 'Message not sent: ${text.replaceFirst(RegExp(r'^(Exception|Bad state): '), '')}';
+  return appL10n.messageRetryError(
+    text.replaceFirst(RegExp(r'^(Exception|Bad state): '), ''),
+  );
 }

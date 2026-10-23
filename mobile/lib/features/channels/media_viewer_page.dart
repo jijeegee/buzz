@@ -11,6 +11,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:video_player/video_player.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -591,8 +592,10 @@ class MediaImageViewerPage extends HookConsumerWidget {
                                           fit: BoxFit.contain,
                                           semanticLabel: image.semanticLabel,
                                           errorBuilder: (_, _, _) =>
-                                              const _MediaLoadFailure(
-                                                message: 'Failed to load image',
+                                              _MediaLoadFailure(
+                                                message: context
+                                                    .l10n
+                                                    .mediaImageLoadError,
                                                 icon: LucideIcons.imageOff,
                                               ),
                                         ),
@@ -651,7 +654,7 @@ class MediaImageViewerPage extends HookConsumerWidget {
                 child: SafeArea(
                   child: _MediaViewerCloseButton(
                     key: const ValueKey('message-media-image-viewer-close'),
-                    tooltip: 'Close image viewer',
+                    tooltip: context.l10n.mediaCloseImageViewer,
                     onPressed: () => unawaited(dismiss()),
                   ),
                 ),

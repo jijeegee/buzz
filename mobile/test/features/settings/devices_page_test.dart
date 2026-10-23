@@ -1,7 +1,6 @@
 import 'dart:convert';
 
 import 'package:kuzz/features/settings/devices_page.dart';
-import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/devices/agent_host_devices.dart';
 import 'package:kuzz/shared/devices/device_robot.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -16,8 +15,7 @@ late FakeOwnDeviceSession _session;
 
 Future<TokenSettingsHarness> _pumpDevices(
   WidgetTester tester, {
-  bool botTokens = true,
-  DevicesPagePart part = DevicesPagePart.devices,
+  bool agents = true,
 }) async {
   final h = TokenSettingsHarness();
   h.server.refreshResponses.add(
@@ -26,20 +24,13 @@ Future<TokenSettingsHarness> _pumpDevices(
   _session = FakeOwnDeviceSession();
   await h.pump(
     tester,
-    DevicesPage(origin: tokenOrigin, botTokens: botTokens, part: part),
+    DevicesPage(origin: tokenOrigin, agents: agents),
     overrides: [relaySessionProvider.overrideWith(() => _session)],
   );
   return h;
 }
 
 Future<void> _tapAndConfirm(WidgetTester tester, Key key) async {
-  if (key == const Key('devices-delete-account')) {
-    await tester.ensureVisible(
-      find.byKey(const Key('devices-account-deletion')),
-    );
-    await tester.tap(find.byKey(const Key('devices-account-deletion')));
-    await tester.pumpAndSettle();
-  }
   await tester.ensureVisible(find.byKey(key));
   await tester.tap(find.byKey(key));
   await frames(tester);
@@ -48,41 +39,23 @@ Future<void> _tapAndConfirm(WidgetTester tester, Key key) async {
 }
 
 void main() {
-  testWidgets('account deletion is hidden and cancellation does not delete', (
-    tester,
-  ) async {
-    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-    expect(find.byKey(const Key('devices-delete-account')), findsNothing);
-    await tester.ensureVisible(
-      find.byKey(const Key('devices-account-deletion')),
-    );
-    await tester.tap(find.byKey(const Key('devices-account-deletion')));
-    await tester.pumpAndSettle();
-    await tester.ensureVisible(find.byKey(const Key('devices-delete-account')));
-    await tester.tap(find.byKey(const Key('devices-delete-account')));
-    await frames(tester);
-    expect(h.account.calls('DELETE', '/auth/account'), isEmpty);
-    await tester.tap(find.text('Cancel'));
-    await frames(tester);
-    expect(h.account.calls('DELETE', '/auth/account'), isEmpty);
-    expect(await h.storage.loadAll(), hasLength(1));
-  });
-
-  testWidgets('bot token revocation can be left out', (tester) async {
-    await _pumpDevices(tester, botTokens: false, part: DevicesPagePart.account);
-
-    expect(find.byKey(const Key('devices-account-deletion')), findsOneWidget);
-    expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
-  });
-
-  testWidgets('Devices shows only devices; Security only account actions', (
+  testWidgets('Devices & security: devices and agents, not deletion', (
     tester,
   ) async {
     await _pumpDevices(tester);
+    expect(find.text('Devices & security'), findsOneWidget);
     expect(find.text('Test phone'), findsOneWidget);
     expect(find.byKey(const Key('devices-sign-out-others')), findsOneWidget);
-    expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
+    expect(find.byKey(const Key('devices-revoke-bots')), findsOneWidget);
     expect(find.byKey(const Key('devices-account-deletion')), findsNothing);
+  });
+
+  testWidgets('a Google key account is not offered disconnecting agents', (
+    tester,
+  ) async {
+    await _pumpDevices(tester, agents: false);
+    expect(find.byKey(const Key('devices-sign-out-others')), findsOneWidget);
+    expect(find.byKey(const Key('devices-revoke-bots')), findsNothing);
   });
 
   testWidgets('lists devices and marks this one', (tester) async {
@@ -271,87 +244,4 @@ void main() {
     expect(find.text('Old browser'), findsNothing);
     expect(find.text('Test phone'), findsOneWidget);
   });
-
-  testWidgets('revoke all bot tokens', (tester) async {
-    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-
-    await _tapAndConfirm(tester, const Key('devices-revoke-bots'));
-
-    expect(h.account.calls('POST', '/auth/bots/revoke-all'), hasLength(1));
-    expect(find.text('All bot tokens revoked'), findsOneWidget);
-  });
-
-  testWidgets('cancelling a confirmation sends nothing', (tester) async {
-    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-
-    await tester.ensureVisible(find.byKey(const Key('devices-revoke-bots')));
-    await tester.tap(find.byKey(const Key('devices-revoke-bots')));
-    await frames(tester);
-    await tester.tap(find.text('Cancel'));
-    await frames(tester);
-
-    expect(h.account.calls('POST', '/auth/bots/revoke-all'), isEmpty);
-  });
-
-  testWidgets('delete account: confirm, delete on relay, sign out locally', (
-    tester,
-  ) async {
-    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-
-    await _tapAndConfirm(tester, const Key('devices-delete-account'));
-
-    expect(h.account.calls('DELETE', '/auth/account'), hasLength(1));
-    // The relay already ended the session: no separate logout.
-    expect(
-      h.server.requests.where((r) => r.url.path == '/auth/logout'),
-      isEmpty,
-    );
-    expect(h.tokens.data, isEmpty);
-    expect(await h.storage.loadAll(), isEmpty);
-    expect(
-      h.container.read(authProvider).value?.status,
-      AuthStatus.unauthenticated,
-    );
-  });
-
-  testWidgets('a failed delete keeps the account and the community', (
-    tester,
-  ) async {
-    final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-    h.account.failures['/auth/account'] = (_) =>
-        jsonResponse({'error': 'relay unavailable'}, status: 503);
-
-    await _tapAndConfirm(tester, const Key('devices-delete-account'));
-
-    expect(find.textContaining('relay unavailable'), findsOneWidget);
-    expect(h.tokens.data[tokenOrigin], isNotNull);
-    expect(await h.storage.loadAll(), hasLength(1));
-  });
-
-  testWidgets(
-    'a deleted account whose local cleanup fails retries only the cleanup',
-    (tester) async {
-      final h = await _pumpDevices(tester, part: DevicesPagePart.account);
-      h.tokens.deleteError = StateError('keychain locked');
-
-      await _tapAndConfirm(tester, const Key('devices-delete-account'));
-
-      expect(h.account.calls('DELETE', '/auth/account'), hasLength(1));
-      expect(
-        find.byKey(const Key('devices-local-cleanup-error')),
-        findsOneWidget,
-      );
-      expect(find.textContaining('account was deleted'), findsOneWidget);
-      // The server side is done: deleting again is not offered.
-      expect(find.byKey(const Key('devices-delete-account')), findsNothing);
-
-      h.tokens.deleteError = null;
-      await tester.tap(find.byKey(const Key('devices-local-cleanup-retry')));
-      await frames(tester);
-
-      expect(h.account.calls('DELETE', '/auth/account'), hasLength(1));
-      expect(h.tokens.data, isEmpty);
-      expect(await h.storage.loadAll(), isEmpty);
-    },
-  );
 }

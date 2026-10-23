@@ -14,28 +14,27 @@ Future<void> showMessageGoalLink({
   required String? threadRootId,
 }) async {
   final messenger = ScaffoldMessenger.maybeOf(context);
+  final l10n = context.l10n;
   final container = ProviderScope.containerOf(context, listen: false);
   final GoalTree tree;
   try {
     tree = (await container.read(goalTreeProvider(channelId).future)).tree;
   } catch (error) {
     messenger?.showSnackBar(
-      SnackBar(content: Text('Could not load goals: $error')),
+      SnackBar(content: Text(l10n.goalsLoadError('$error'))),
     );
     return;
   }
   if (!context.mounted) return;
   if (tree.root == null) {
-    messenger?.showSnackBar(
-      const SnackBar(content: Text('This conversation has no goals yet.')),
-    );
+    messenger?.showSnackBar(SnackBar(content: Text(l10n.goalsNoGoalsYet)));
     return;
   }
   final linked = tree.forThread(messageId);
   final choice =
       await showKuzzModalBottomSheet<({String? goalId, GoalRow? createUnder})>(
         context: context,
-        title: 'Link to goal',
+        title: l10n.goalsLinkToGoal,
         isScrollControlled: true,
         builder: (sheetContext) => SafeArea(
           child: SingleChildScrollView(
@@ -61,7 +60,7 @@ Future<void> showMessageGoalLink({
                   TextButton.icon(
                     key: const ValueKey('message-goal-unlink'),
                     icon: const Icon(LucideIcons.unlink, size: 18),
-                    label: const Text('Unlink from goal'),
+                    label: Text(l10n.goalsUnlinkFromGoal),
                     onPressed: () => Navigator.pop(sheetContext, (
                       goalId: null,
                       createUnder: null,
@@ -84,8 +83,8 @@ Future<void> showMessageGoalLink({
     case (goalId: _, createUnder: final GoalRow parent):
       final result = await editGoal(
         context,
-        title: 'New layer ${parent.layer + 1} goal',
-        saveLabel: 'Add and link',
+        title: l10n.goalsNewLayerGoal(parent.layer + 1),
+        saveLabel: l10n.goalsAddAndLink,
       );
       if (result == null || !context.mounted) return;
       final id = newGoalId();

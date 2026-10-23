@@ -220,8 +220,10 @@ pub(super) async fn login_identity_mode(
             .execute(&mut *tx)
             .await?;
             // Self-deletion (purge scheduled) is undone by logging in again
-            // inside the purge window; an operator disable is not.
-            let self_deleted = disabled_at.is_some() && purge_after.is_some();
+            // inside the purge window; an operator disable is not, and
+            // neither is a self-deletion whose window has passed.
+            let self_deleted = disabled_at.is_some()
+                && purge_after.is_some_and(|purge_after| purge_after > Utc::now());
             if self_deleted {
                 sqlx::query(
                     "UPDATE principals SET disabled_at = NULL, purge_after = NULL WHERE id = $1",
@@ -541,6 +543,22 @@ impl crate::Db {
             avatar_url,
         )
         .await
+    }
+
+    /// Whether any of `pubkeys` is the key of a disabled (deleted or
+    /// operator-disabled) Google key account. Callers pass a signing key
+    /// and, for an agent, its proven NIP-OA owner.
+    #[datastore_span(name = "key_account_disabled", system = "postgresql")]
+    pub async fn key_account_disabled(&self, pubkeys: &[[u8; 32]]) -> Result<bool> {
+        let keys: Vec<&[u8]> = pubkeys.iter().map(|key| key.as_slice()).collect();
+        Ok(sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM account_key_backups b \
+               JOIN principals p ON p.id = b.account_id \
+              WHERE b.pubkey = ANY($1) AND p.disabled_at IS NOT NULL)",
+        )
+        .bind(keys)
+        .fetch_one(&self.pool)
+        .await?)
     }
 
     /// Fetch a principal row.

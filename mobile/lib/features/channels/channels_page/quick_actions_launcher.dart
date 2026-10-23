@@ -83,7 +83,7 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
         case _QuickAction.newDm:
           final opened = await showKuzzModalBottomSheet<Channel>(
             context: context,
-            title: 'New message',
+            title: context.l10n.channelNewMessage,
             constraints: _quickActionSheetConstraints(context),
             isScrollControlled: true,
             showDragHandle: true,
@@ -108,7 +108,7 @@ class ChannelQuickActionsLauncher extends HookConsumerWidget {
           Positioned.fill(
             child: Semantics(
               button: true,
-              label: 'Close quick actions',
+              label: context.l10n.channelQuickActionsClose,
               child: GestureDetector(
                 behavior: HitTestBehavior.opaque,
                 onTap: () => quickActionsOpen.value = false,
@@ -186,7 +186,7 @@ Future<void> _openChannelPage(BuildContext context, Channel channel) async {
 Future<void> _showNewGroupSheet(BuildContext context) async {
   final created = await showKuzzModalBottomSheet<Channel>(
     context: context,
-    title: 'New group',
+    title: context.l10n.channelNewGroup,
     constraints: _quickActionSheetConstraints(context),
     isScrollControlled: true,
     showDragHandle: true,
@@ -202,7 +202,7 @@ Future<void> _showNewGroupSheet(BuildContext context) async {
 Future<void> showBrowseChannelsSheet(BuildContext context) async {
   final result = await showKuzzModalBottomSheet<Object>(
     context: context,
-    title: 'Find groups',
+    title: context.l10n.channelFindGroups,
     constraints: _quickActionSheetConstraints(context),
     isScrollControlled: true,
     showDragHandle: true,
@@ -223,7 +223,7 @@ Future<Channel?> showNewMessageSheet(
   required String? currentPubkey,
 }) => showKuzzModalBottomSheet<Channel>(
   context: context,
-  title: 'New message',
+  title: context.l10n.channelNewMessage,
   constraints: _quickActionSheetConstraints(context),
   isScrollControlled: true,
   showDragHandle: true,

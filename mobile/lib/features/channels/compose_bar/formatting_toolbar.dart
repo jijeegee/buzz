@@ -13,27 +13,27 @@ class _FormattingToolbar extends StatelessWidget {
       children: [
         _FormatButton(
           icon: LucideIcons.bold,
-          tooltip: 'Bold',
+          tooltip: context.l10n.composeBold,
           onTap: () => onFormat('**'),
         ),
         _FormatButton(
           icon: LucideIcons.italic,
-          tooltip: 'Italic',
+          tooltip: context.l10n.composeItalic,
           onTap: () => onFormat('_'),
         ),
         _FormatButton(
           icon: LucideIcons.strikethrough,
-          tooltip: 'Strikethrough',
+          tooltip: context.l10n.composeStrikethrough,
           onTap: () => onFormat('~~'),
         ),
         _FormatButton(
           icon: LucideIcons.code,
-          tooltip: 'Code',
+          tooltip: context.l10n.composeCode,
           onTap: () => onFormat('`'),
         ),
         _FormatButton(
           icon: LucideIcons.squareCode,
-          tooltip: 'Code block',
+          tooltip: context.l10n.composeCodeBlock,
           onTap: () => onFormat('```\n', '\n```'),
         ),
       ],

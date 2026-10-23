@@ -746,7 +746,7 @@ export function AccentPickerContent({
             return (
               <button
                 aria-label={t("settings.appearance.useAccent", {
-                  name: color.name,
+                  name: t(color.labelKey),
                 })}
                 aria-pressed={isSelected}
                 className="relative h-9 w-9 shrink-0 rounded-full border border-border transition-transform duration-200 ease-out hover:scale-[1.15] focus-visible:scale-[1.15] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring motion-reduce:transform-none motion-reduce:transition-none"
@@ -754,7 +754,7 @@ export function AccentPickerContent({
                 key={color.value}
                 onClick={() => setAccentColor(color.value)}
                 style={{ backgroundColor: swatchColor }}
-                title={color.name}
+                title={t(color.labelKey)}
                 type="button"
               >
                 {isSelected ? (

@@ -98,9 +98,9 @@ class _MessageVideoPreview extends HookConsumerWidget {
                   MediaImage(
                     url: posterUrl,
                     fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) => const _MediaPreviewFallback(
+                    errorBuilder: (_, _, _) => _MediaPreviewFallback(
                       icon: LucideIcons.video,
-                      label: 'Video preview unavailable',
+                      label: context.l10n.mediaVideoPreviewUnavailable,
                     ),
                   )
                 else
@@ -109,9 +109,9 @@ class _MessageVideoPreview extends HookConsumerWidget {
                     builder: (context, snapshot) {
                       final frame = snapshot.data;
                       if (frame == null) {
-                        return const _MediaPreviewFallback(
+                        return _MediaPreviewFallback(
                           icon: LucideIcons.video,
-                          label: 'Video attachment',
+                          label: context.l10n.mediaVideoAttachment,
                         );
                       }
                       return ColoredBox(
@@ -147,7 +147,7 @@ class _MessageVideoPreview extends HookConsumerWidget {
                   right: Grid.xxs,
                   bottom: Grid.xxs,
                   child: Text(
-                    'Video',
+                    context.l10n.composeVideo,
                     style: context.textTheme.labelSmall?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.w600,

@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
@@ -61,7 +62,7 @@ const _searchActiveFieldRightInsetMin = 72.0;
 double _searchActiveFieldRightInset(BuildContext context) {
   final textPainter = TextPainter(
     text: TextSpan(
-      text: 'Cancel',
+      text: context.l10n.searchCancel,
       style: filterChipTextStyle.copyWith(fontWeight: FontWeight.w500),
     ),
     textScaler: MediaQuery.textScalerOf(context),
@@ -233,7 +234,7 @@ class SearchPage extends HookConsumerWidget {
             curve: Curves.easeOutCubic,
             opacity: showSearchTitle.value ? 1 : 0,
             child: Text(
-              'Search',
+              context.l10n.searchTitle,
               key: const ValueKey('search-header-title'),
               style: headerTitleStyle,
             ),
@@ -271,7 +272,7 @@ class SearchPage extends HookConsumerWidget {
                 ? Semantics(
                     key: const Key('search-cancel'),
                     button: true,
-                    label: 'Cancel search',
+                    label: context.l10n.searchCancelLabel,
                     child: GestureDetector(
                       behavior: HitTestBehavior.opaque,
                       onTap: () {
@@ -288,7 +289,7 @@ class SearchPage extends HookConsumerWidget {
                           ),
                           child: Center(
                             child: Text(
-                              'Cancel',
+                              context.l10n.searchCancel,
                               style: filterChipTextStyle.copyWith(
                                 color: context.colors.primary,
                                 fontWeight: FontWeight.w500,
@@ -328,7 +329,7 @@ class SearchPage extends HookConsumerWidget {
                 child: KuzzSearchField(
                   controller: textController,
                   focusNode: focusNode,
-                  hintText: 'Search messages, groups, and people',
+                  hintText: context.l10n.searchHint,
                   iconColor: searchPrimaryColor,
                   inputColor: searchPrimaryColor,
                   placeholderColor: searchPlaceholderColor,
@@ -385,7 +386,10 @@ class SearchPage extends HookConsumerWidget {
                               onSelected: (f) => activeFilter.value = f,
                               items: [
                                 for (final f in _SearchFilter.values)
-                                  FilterChipItem(id: f, label: f.label),
+                                  FilterChipItem(
+                                    id: f,
+                                    label: f.label(context.l10n),
+                                  ),
                               ],
                             ),
                           ),
@@ -471,7 +475,7 @@ class _SearchBody extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.xs),
               Text(
-                'Search messages, groups, and people',
+                context.l10n.searchHint,
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
@@ -510,9 +514,7 @@ class _SearchBody extends ConsumerWidget {
         if (!blockedPubkeys.contains(hit.pubkey.toLowerCase())) hit,
     ];
     final hasAnyResults =
-        !chats.isEmpty ||
-        userResults.isNotEmpty ||
-        messageResults.isNotEmpty;
+        !chats.isEmpty || userResults.isNotEmpty || messageResults.isNotEmpty;
     void recordResultSelection() =>
         ref.read(recentSearchesProvider.notifier).record(state.query);
 
@@ -524,7 +526,7 @@ class _SearchBody extends ConsumerWidget {
         ),
         child: Center(
           child: Text(
-            "No results for '${state.query}'",
+            context.l10n.searchNoResults(state.query),
             style: context.textTheme.bodyMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -544,7 +546,7 @@ class _SearchBody extends ConsumerWidget {
       children: [
         if (showChannels && chats.groups.isNotEmpty)
           _ChatsSection(
-            label: 'Groups',
+            label: context.l10n.searchSectionGroups,
             id: 'channels',
             results: chats.groups,
             currentPubkey: currentPubkey,
@@ -552,7 +554,7 @@ class _SearchBody extends ConsumerWidget {
           ),
         if (showPeople && chats.dms.isNotEmpty)
           _ChatsSection(
-            label: 'Direct messages',
+            label: context.l10n.searchSectionDirectMessages,
             id: 'dms',
             results: chats.dms,
             currentPubkey: currentPubkey,
@@ -570,12 +572,12 @@ class _SearchBody extends ConsumerWidget {
             onResultSelected: recordResultSelection,
           ),
         if (state.isLoading)
-          const Padding(
-            padding: EdgeInsets.all(Grid.sm),
+          Padding(
+            padding: const EdgeInsets.all(Grid.sm),
             child: Center(
               child: KuzzLoadingIndicator(
                 size: 36,
-                semanticLabel: 'Loading more search results',
+                semanticLabel: context.l10n.searchLoadingMore,
               ),
             ),
           ),
@@ -617,7 +619,7 @@ class _RecentSearches extends StatelessWidget {
             children: [
               Expanded(
                 child: Text(
-                  'Recent searches',
+                  context.l10n.searchRecent,
                   key: const Key('recent-searches-heading'),
                   style: activityContextTextStyle.copyWith(
                     color: context.colors.onSurfaceVariant,
@@ -628,7 +630,7 @@ class _RecentSearches extends StatelessWidget {
                 key: const Key('clear-recent-searches'),
                 onPressed: onClear,
                 child: Text(
-                  'Clear',
+                  context.l10n.searchClear,
                   style: activityContextTextStyle.copyWith(
                     color: context.colors.primary,
                   ),
@@ -680,10 +682,10 @@ class _RecentSearches extends StatelessWidget {
 }
 
 extension on _SearchFilter {
-  String get label => switch (this) {
-    _SearchFilter.all => 'All',
-    _SearchFilter.messages => 'Messages',
-    _SearchFilter.channels => 'Groups',
-    _SearchFilter.people => 'People',
+  String label(AppLocalizations l10n) => switch (this) {
+    _SearchFilter.all => l10n.searchFilterAll,
+    _SearchFilter.messages => l10n.searchFilterMessages,
+    _SearchFilter.channels => l10n.searchFilterGroups,
+    _SearchFilter.people => l10n.searchFilterPeople,
   };
 }

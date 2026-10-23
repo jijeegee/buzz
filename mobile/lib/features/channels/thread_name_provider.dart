@@ -6,6 +6,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 
@@ -18,10 +19,10 @@ String? threadNameError(String name) {
   if (name.runes.any(
     (r) => r < 32 || (r >= 127 && r <= 159) || r == 0x2028 || r == 0x2029,
   )) {
-    return 'Use a single line without control characters.';
+    return appL10n.threadNameControlCharsError;
   }
   if (threadNameWeight(name) > 40) {
-    return 'Up to 40 English or 20 Korean characters.';
+    return appL10n.threadNameTooLongError;
   }
   return null;
 }

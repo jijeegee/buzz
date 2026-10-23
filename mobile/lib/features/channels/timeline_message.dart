@@ -2,6 +2,7 @@ import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import 'channel_window.dart';
@@ -130,41 +131,53 @@ class SystemEvent {
     String roomNoun = 'group',
   }) {
     final actor = resolveLabel(actorPubkey);
+    final l10n = appL10n;
 
     return switch (type) {
       SystemEventType.memberJoined => () {
         if (actorPubkey != null && actorPubkey == targetPubkey) {
-          return '$actor joined the $roomNoun';
+          return l10n.systemMemberJoined(actor, roomNoun);
         }
         final target = resolveLabel(targetPubkey);
-        return '$target was added by $actor';
+        return l10n.systemMemberAddedBy(target, actor);
       }(),
-      SystemEventType.memberLeft => '$actor left the $roomNoun',
+      SystemEventType.memberLeft => l10n.systemMemberLeft(actor, roomNoun),
       SystemEventType.memberRemoved => () {
         final target = resolveLabel(targetPubkey);
-        return '$actor removed $target from the $roomNoun';
+        return l10n.systemMemberRemoved(actor, target, roomNoun);
       }(),
       SystemEventType.topicChanged =>
-        '$actor ${_describeTextFieldChange('topic', topic)}',
+        _isBlank(topic)
+            ? l10n.systemTopicCleared(actor)
+            : l10n.systemTopicChanged(actor, topic!.trim()),
       SystemEventType.purposeChanged =>
-        '$actor ${_describeTextFieldChange('purpose', purpose)}',
-      SystemEventType.channelCreated => '$actor created this $roomNoun',
-      SystemEventType.channelArchived => '$actor archived this $roomNoun',
-      SystemEventType.channelUnarchived => '$actor unarchived this $roomNoun',
-      SystemEventType.goalsChanged => '$actor turned goals $goals',
+        _isBlank(purpose)
+            ? l10n.systemPurposeCleared(actor)
+            : l10n.systemPurposeChanged(actor, purpose!.trim()),
+      SystemEventType.channelCreated => l10n.systemRoomCreated(actor, roomNoun),
+      SystemEventType.channelArchived => l10n.systemRoomArchived(
+        actor,
+        roomNoun,
+      ),
+      SystemEventType.channelUnarchived => l10n.systemRoomUnarchived(
+        actor,
+        roomNoun,
+      ),
+      SystemEventType.goalsChanged =>
+        goals == 'on' ? l10n.systemGoalsOn(actor) : l10n.systemGoalsOff(actor),
       // Mirrors desktop's SystemMessageRow `picture_changed` copy.
       SystemEventType.pictureChanged =>
         picture?.trim().isNotEmpty ?? false
-            ? '$actor changed the $roomNoun photo'
-            : '$actor removed the $roomNoun photo',
-      SystemEventType.huddleStarted => '$actor started a huddle',
-      SystemEventType.huddleEnded => '$actor ended the huddle',
+            ? l10n.systemPhotoChanged(actor, roomNoun)
+            : l10n.systemPhotoRemoved(actor, roomNoun),
+      SystemEventType.huddleStarted => l10n.systemHuddleStarted(actor),
+      SystemEventType.huddleEnded => l10n.systemHuddleEnded(actor),
     };
   }
 }
 
-/// Caption fragment for a channel topic or purpose change, e.g.
-/// `changed the topic to "Release planning"` or `cleared the topic`.
+/// Whether a topic or purpose change clears the field, so the caption reads
+/// `cleared the topic` rather than `changed the topic to "Release planning"`.
 ///
 /// A blank value means the field was cleared: the relay reports a clear as a
 /// `topic_changed` / `purpose_changed` event carrying an empty string, not as a
@@ -174,12 +187,9 @@ class SystemEvent {
 ///
 /// Mirrors `describeChannelTextFieldChange` in
 /// `desktop/src/features/messages/lib/systemEventCopy.ts`.
-String _describeTextFieldChange(String field, String? value) {
+bool _isBlank(String? value) {
   final trimmed = value?.trim();
-  if (trimmed == null || trimmed.isEmpty) {
-    return 'cleared the $field';
-  }
-  return 'changed the $field to "$trimmed"';
+  return trimmed == null || trimmed.isEmpty;
 }
 
 @immutable

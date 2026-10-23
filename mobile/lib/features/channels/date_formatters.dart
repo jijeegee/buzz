@@ -121,6 +121,20 @@ String formatThreadSummaryLastReplyTime(
   return l10n.timeOnDate(_shortMonthDayFormat.format(date));
 }
 
+/// Reply count on a thread summary row: "Replies" while the count is still
+/// loading, else "3 replies" or "20+ replies" when the count is a lower bound.
+String formatThreadSummaryReplyCount(
+  AppLocalizations l10n, {
+  required bool isCountPending,
+  required int replyCount,
+  required bool isLowerBound,
+}) {
+  if (isCountPending) return l10n.threadSummaryReplies;
+  return isLowerBound
+      ? l10n.threadSummaryReplyCountAtLeast(replyCount)
+      : l10n.threadSummaryReplyCount(replyCount);
+}
+
 /// Desktop-parity message clock time, e.g. "2:34 PM".
 ///
 /// Deliberately clock-only at every band, unlike desktop's message header,

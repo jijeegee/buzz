@@ -1,16 +1,17 @@
 part of '../activity_page.dart';
 
-const _filterLabels = <InboxFilter, String>{
-  InboxFilter.all: 'All',
-  InboxFilter.mention: 'Mentions',
-  InboxFilter.thread: 'Threads',
-  InboxFilter.conversations: 'Groups + Threads',
-  InboxFilter.needsAction: 'Needs Action',
-  InboxFilter.activity: 'Activity',
-  InboxFilter.agentActivity: 'Agents',
-  InboxFilter.reminders: 'Reminders',
-  InboxFilter.drafts: 'Drafts',
-};
+String _filterLabel(AppLocalizations l10n, InboxFilter filter) =>
+    switch (filter) {
+      InboxFilter.all => l10n.activityFilterAll,
+      InboxFilter.mention => l10n.activityFilterMentions,
+      InboxFilter.thread => l10n.activityFilterThreads,
+      InboxFilter.conversations => l10n.activityFilterConversations,
+      InboxFilter.needsAction => l10n.activityFilterNeedsAction,
+      InboxFilter.activity => l10n.activityFilterActivity,
+      InboxFilter.agentActivity => l10n.activityFilterAgents,
+      InboxFilter.reminders => l10n.activityFilterReminders,
+      InboxFilter.drafts => l10n.activityFilterDrafts,
+    };
 
 class _ActivityActionsPill extends StatelessWidget {
   final InboxFilter filter;
@@ -79,16 +80,16 @@ class _FilterMenuButton extends StatelessWidget {
             menuPadding: const EdgeInsets.symmetric(vertical: Grid.half),
             surfaceKey: const ValueKey('activity-filter-popover'),
             items: [
-              for (final entry in _filterLabels.entries)
+              for (final option in InboxFilter.values)
                 PopupMenuItem(
-                  value: entry.key,
+                  value: option,
                   height: Grid.xl,
                   padding: const EdgeInsets.symmetric(horizontal: Grid.twelve),
                   child: Row(
                     children: [
                       SizedBox(
                         width: Grid.sm,
-                        child: entry.key == filter
+                        child: option == filter
                             ? Icon(
                                 LucideIcons.check,
                                 size: 16,
@@ -98,7 +99,7 @@ class _FilterMenuButton extends StatelessWidget {
                       ),
                       Expanded(
                         child: Text(
-                          entry.value,
+                          _filterLabel(context.l10n, option),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.textTheme.labelLarge?.copyWith(
@@ -121,7 +122,7 @@ class _FilterMenuButton extends StatelessWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  _filterLabels[filter]!,
+                  _filterLabel(context.l10n, filter),
                   style: context.textTheme.labelLarge?.copyWith(
                     color: navigationPrimaryForeground(context),
                     fontWeight: FontWeight.w600,
@@ -162,7 +163,7 @@ class _InboxOptionsButton extends StatelessWidget {
     return Builder(
       builder: (buttonContext) => IconButton(
         key: const ValueKey('activity-options-menu'),
-        tooltip: 'Activity options',
+        tooltip: context.l10n.activityOptions,
         color: navigationPrimaryForeground(context),
         padding: const EdgeInsets.symmetric(horizontal: Grid.xxs),
         constraints: const BoxConstraints.tightFor(
@@ -182,7 +183,11 @@ class _InboxOptionsButton extends StatelessWidget {
                 child: Row(
                   children: [
                     Expanded(
-                      child: Text(unreadOnly ? 'Show all' : 'Show unread'),
+                      child: Text(
+                        unreadOnly
+                            ? context.l10n.activityShowAll
+                            : context.l10n.activityShowUnread,
+                      ),
                     ),
                     if (unreadOnly)
                       Icon(
@@ -198,7 +203,7 @@ class _InboxOptionsButton extends StatelessWidget {
                 enabled: unreadCount > 0,
                 child: Row(
                   children: [
-                    const Expanded(child: Text('Mark all as read')),
+                    Expanded(child: Text(context.l10n.activityMarkAllRead)),
                     if (unreadCount > 0)
                       Text(
                         '$unreadCount',

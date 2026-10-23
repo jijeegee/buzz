@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -61,9 +62,9 @@ class GroupPhotoField extends StatelessWidget {
                     color: Colors.black.withValues(alpha: 0.35),
                   ),
                   alignment: Alignment.center,
-                  child: const KuzzLoadingIndicator(
+                  child: KuzzLoadingIndicator(
                     size: 32,
-                    semanticLabel: 'Saving group photo',
+                    semanticLabel: context.l10n.channelGroupPhotoSaving,
                   ),
                 ),
             ],
@@ -77,7 +78,7 @@ class GroupPhotoField extends StatelessWidget {
             TextButton(
               key: const ValueKey('manage-channel-change-photo'),
               onPressed: isSaving ? null : onChange,
-              child: const Text('Change photo'),
+              child: Text(context.l10n.channelGroupPhotoChange),
             ),
             if (hasPicture)
               TextButton(
@@ -86,7 +87,7 @@ class GroupPhotoField extends StatelessWidget {
                 style: TextButton.styleFrom(
                   foregroundColor: context.colors.error,
                 ),
-                child: const Text('Remove photo'),
+                child: Text(context.l10n.channelGroupPhotoRemove),
               ),
           ],
         ),
