@@ -419,6 +419,32 @@ pub async fn call(
     room: Option<(Uuid, i32)>,
     principal: Option<EntryPrincipal>,
 ) -> Result<Value, CallError> {
+    call_within(
+        state,
+        target_region,
+        community_id,
+        path,
+        body,
+        room,
+        principal,
+        CALL_TIMEOUT,
+    )
+    .await
+}
+
+/// [`call`] with its own time limit instead of [`CALL_TIMEOUT`], for a
+/// background job whose answer takes longer (S6-2 media checks).
+#[allow(clippy::too_many_arguments)]
+pub async fn call_within(
+    state: &AppState,
+    target_region: &str,
+    community_id: Uuid,
+    path: &str,
+    body: &Value,
+    room: Option<(Uuid, i32)>,
+    principal: Option<EntryPrincipal>,
+    timeout: Duration,
+) -> Result<Value, CallError> {
     let keys = link_keys(state).ok_or(CallError::Off)?;
     let (connect_url, _) = state
         .db
@@ -449,6 +475,7 @@ pub async fn call(
         .post(&url)
         .header(axum::http::header::AUTHORIZATION, auth)
         .header(axum::http::header::CONTENT_TYPE, "application/json")
+        .timeout(timeout)
         .body(bytes)
         .send()
         .await;

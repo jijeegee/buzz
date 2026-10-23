@@ -167,6 +167,7 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/internal/region/global-event",
     "/internal/region/global-write",
     "/internal/region/global-read",
+    "/internal/region/media-in-use",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -462,6 +463,10 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                 .route(
                     crate::region_global::GLOBAL_WRITE_PATH,
                     post(crate::region_global::global_write),
+                )
+                .route(
+                    crate::region_media::MEDIA_IN_USE_PATH,
+                    post(crate::region_media::media_in_use),
                 )
                 .layer(RequestBodyLimitLayer::new(1024 * 1024))
                 .with_state(state.clone()),

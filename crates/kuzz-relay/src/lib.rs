@@ -87,6 +87,8 @@ pub mod region_stream;
 /// Calls between relays of different regions (entry attestations).
 pub mod region_link;
 pub mod region_live;
+/// Media cleanup across regions: which files a region's rooms use (S6-2).
+pub mod region_media;
 /// Logouts and disconnects across regions (S4-5).
 pub mod region_propagate;
 /// Sign-in state, replay marks and sign-in limits kept at the primary (S4-7).

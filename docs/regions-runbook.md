@@ -25,9 +25,13 @@ plus the rooms whose home it is.
 - **Name.** Give the region its own address, for example `jp.<service domain>`.
   - With Cloudflare, add a DNS record for it, proxied, pointing at the region's load balancer.
   - Apps reach a region only through the address in its `connect_url`. The service name the apps sign for does not change (stage S1).
-- **Media.** All regions share one bucket. While more than one region exists, the
-  cleanup of unused uploads pauses (`kuzz_media_gc_paused_total`) until
-  cleanup across regions is built (S6-2).
+- **Media.** All regions share one bucket. With more than one region, the
+  cleanup of unused uploads (`KUZZ_MEDIA_GC`) runs only in the primary, with
+  the link on, and asks every other region which files its rooms use. It pauses
+  elsewhere (`kuzz_media_gc_paused_total`). If a region does not answer, the
+  files in question are kept (`kuzz_media_gc_regions_unanswered_total`). A
+  region that is listed but not running, or not linked yet, stops all removals
+  until it answers or is removed.
 
 ## Adding a region
 

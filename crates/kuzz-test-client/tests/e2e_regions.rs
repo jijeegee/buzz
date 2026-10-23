@@ -1879,3 +1879,17 @@ async fn a_profile_saved_through_jp_reaches_jp_watchers_live() {
     let seen = live_event(&mut jp, "profiles").await;
     assert_eq!(seen.id, profile.id);
 }
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn jp_answers_media_checks_only_for_a_linked_region() {
+    // The media check (S6-2) is behind the region link like every internal
+    // route: only a linked region learns which files jp's rooms use.
+    let response = reqwest::Client::new()
+        .post(format!("{}/internal/region/media-in-use", http(&jp_url())))
+        .json(&serde_json::json!({ "hashes": [], "grace_cutoff": 0 }))
+        .send()
+        .await
+        .expect("media check");
+    assert_eq!(response.status().as_u16(), 401);
+}
