@@ -82,6 +82,23 @@ rows back. Dev header logins (`X-Pubkey`) cannot be vouched for and get the
 Jobs that write global data run only in the primary: the NIP-33 `d` tag
 backfill, the NIP-43 roster reconcile and the expired invite reaper.
 
+Global writes the relay makes itself while handling a room event or a
+sign-in also go to the primary:
+
+- **Relay-signed events outside rooms** (membership notices 44100/44101, the
+  hidden-DM snapshot 30622) are sent signed to `/internal/region/global-event`.
+  The primary accepts only events signed with the relay key (one key in every
+  region), stores them and tells its own subscribers; the sending region
+  tells its own at once.
+- **Typed writes** go to `/internal/region/global-write`: a missing user row
+  for a command's author, an agent's NIP-OA owner, the token profile (kind 0)
+  and turning off a push endpoint the push service reported gone. The region
+  skips the call when its copy already has the row.
+
+A command acting on a room (opening a DM, an approval) is stored in that
+room in a region holding the copy, instead of outside any room. Approvals of
+a workflow that has no room are refused there.
+
 ### Global writes over HTTP
 
 A region holding the copy sends HTTP requests that write global data to the

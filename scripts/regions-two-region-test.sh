@@ -137,4 +137,12 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
   REGION_KR_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz" \
   REGION_JP_LINK_KEY="${JP_LINK_KEY}" \
   cargo test -p kuzz-test-client --test e2e_regions -- --ignored --test-threads=1
+
+# The relay in jp must never write a global table itself (S5-3): its copy
+# guard would refuse it.
+if grep -q "is written in the primary region" "${LOG_DIR}/relay-jp.log"; then
+  log "jp's relay wrote global tables itself:"
+  grep "is written in the primary region" "${LOG_DIR}/relay-jp.log" | head -5
+  exit 1
+fi
 log "passed"

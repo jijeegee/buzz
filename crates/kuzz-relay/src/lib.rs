@@ -73,6 +73,8 @@ pub mod region_chats;
 pub mod region_directory;
 /// Writes forwarded to a room's home region.
 pub mod region_forward;
+/// Relay-made global writes sent to the primary region (S5-3b).
+pub mod region_global;
 /// Global-write HTTP routes served by the primary region (S5-2).
 pub mod region_http;
 /// Reads that span regions, merged (S4-3c).

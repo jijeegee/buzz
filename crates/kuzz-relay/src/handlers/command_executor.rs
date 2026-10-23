@@ -42,12 +42,10 @@ pub async fn handle_command(
 ) -> Result<IngestResult, IngestError> {
     // Ensure the authenticated user exists in the users table (foreign key requirement).
     // The old REST handlers did this via extract_auth_context; command executor must do it explicitly.
+    // In a region holding the global copy a missing row is made at the
+    // primary (S5-3b).
     let pubkey_bytes = auth.pubkey().to_bytes().to_vec();
-    match state
-        .db
-        .ensure_user(tenant.community(), &pubkey_bytes)
-        .await
-    {
+    match crate::region_global::ensure_user(tenant, state, &pubkey_bytes).await {
         Ok(true) => {
             metrics::counter!(
                 "kuzz_users_created_total",
@@ -326,6 +324,18 @@ async fn reserve_dm(
     }
 }
 
+/// Global regions (S5-3b): where a command acting on `room` is stored. A
+/// room-less row is global data, written only in the primary region; in a
+/// region holding the global copy the command is stored in the room it acts
+/// on, which is this region's own.
+fn command_row_room(state: &AppState, room: Option<Uuid>) -> Option<Uuid> {
+    if state.config.global_copy {
+        room
+    } else {
+        None
+    }
+}
+
 async fn handle_dm_open(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -373,7 +383,20 @@ async fn handle_dm_open(
     };
 
     // Persist the command event (idempotency) — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let row_room = match dm_id {
+        Some(id) => command_row_room(state, Some(id)),
+        None if state.config.global_copy => state
+            .db
+            .find_dm_by_participants(
+                tenant.community(),
+                &kuzz_db::dm::compute_participant_hash(&all_refs),
+            )
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: db find_dm: {e}")))?
+            .map(|dm| dm.id),
+        None => None,
+    };
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),
@@ -1154,6 +1177,31 @@ fn check_approver_spec(approver_spec: &str, requester_hex: &str) -> Result<(), I
     )))
 }
 
+/// [`command_row_room`] for an approval: its workflow's room. A workflow
+/// outside any room has nowhere local to keep the row in a copy region, so
+/// its approvals are refused there.
+async fn approval_row_room(
+    tenant: &TenantContext,
+    state: &AppState,
+    approval: &kuzz_db::workflow::ApprovalRecord,
+) -> Result<Option<Uuid>, IngestError> {
+    if !state.config.global_copy {
+        return Ok(None);
+    }
+    let workflow = state
+        .db
+        .get_workflow(tenant.community(), approval.workflow_id)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: db get_workflow: {e}")))?;
+    match workflow.channel_id {
+        Some(room) => Ok(Some(room)),
+        None => Err(IngestError::Rejected(
+            "unsupported: approvals of workflows outside rooms are not available in this region"
+                .into(),
+        )),
+    }
+}
+
 async fn handle_approval_grant(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -1198,7 +1246,8 @@ async fn handle_approval_grant(
     check_approver_spec(&approval.approver_spec, &self_hex)?;
 
     // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let row_room = approval_row_room(tenant, state, &approval).await?;
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),
@@ -1311,7 +1360,8 @@ async fn handle_approval_deny(
     check_approver_spec(&approval.approver_spec, &self_hex)?;
 
     // Persist the command event — returns open transaction
-    let tx = match persist_command_event(&state.db, tenant, event, None).await? {
+    let row_room = approval_row_room(tenant, state, &approval).await?;
+    let tx = match persist_command_event(&state.db, tenant, event, row_room).await? {
         PersistResult::Duplicate => {
             return Ok(IngestResult {
                 event_id: event.id.to_hex(),

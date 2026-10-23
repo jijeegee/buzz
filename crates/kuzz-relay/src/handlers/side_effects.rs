@@ -1170,14 +1170,11 @@ pub async fn emit_membership_notification(
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign membership notification: {e}"))?;
 
-    // Store with channel_id = None → globally scoped, reachable by global subscribers.
-    let (stored, was_inserted) = state
-        .db
-        .insert_event(tenant.community(), &event, None)
-        .await?;
-    if !was_inserted {
+    // Store with channel_id = None → globally scoped, reachable by global
+    // subscribers. In a copy region it is stored at the primary (S5-3b).
+    let Some(stored) = crate::region_global::store_relay_event(tenant, state, &event).await? else {
         return Ok(());
-    }
+    };
 
     // Fan-out only — skip search indexing and workflow evaluation. Publish through
     // Redis before local fan-out so agents connected to other relay pods receive
@@ -3855,11 +3852,9 @@ pub async fn publish_dm_visibility_snapshot(
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign kind:{KIND_DM_VISIBILITY}: {e}"))?;
 
-    let (stored, was_inserted) = state
-        .db
-        .replace_parameterized_event(tenant.community(), &event, &viewer_hex, None)
-        .await?;
-    if was_inserted {
+    // In a copy region the snapshot is stored at the primary (S5-3b).
+    let stored = crate::region_global::store_relay_event(tenant, state, &event).await?;
+    if let Some(stored) = stored {
         dispatch_persistent_event(
             tenant,
             state,

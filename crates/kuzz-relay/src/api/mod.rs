@@ -365,6 +365,69 @@ pub mod relay_members {
         agent: &nostr::PublicKey,
         owner: &nostr::PublicKey,
     ) -> bool {
+        let materialized = if state.config.global_copy {
+            materialize_at_primary(state, tenant, agent, owner).await
+        } else {
+            materialize_here(state, tenant, agent, owner).await
+        };
+        if materialized {
+            state
+                .author_type_cache
+                .insert((tenant.community(), agent.to_bytes().to_vec()), true);
+            state.observer_owner_cache.insert(
+                (
+                    tenant.community(),
+                    agent.to_bytes().to_vec(),
+                    owner.to_bytes().to_vec(),
+                ),
+                true,
+            );
+        }
+        materialized
+    }
+
+    /// Global regions (S5-3b): users are global data, written only in the
+    /// primary region. A region holding the global copy asks the primary
+    /// unless its copy already has the relationship.
+    async fn materialize_at_primary(
+        state: &AppState,
+        tenant: &TenantContext,
+        agent: &nostr::PublicKey,
+        owner: &nostr::PublicKey,
+    ) -> bool {
+        if let Ok(true) = state
+            .db
+            .is_agent_owner(tenant.community(), agent.as_bytes(), owner.as_bytes())
+            .await
+        {
+            return true;
+        }
+        let write = crate::region_global::GlobalWrite::SetAgentOwner {
+            agent: agent.to_hex(),
+            owner: owner.to_hex(),
+        };
+        match crate::region_global::write_at_primary(state, tenant.community(), &write).await {
+            Ok(answer) => {
+                if answer.created {
+                    // As below: this region's sockets the agent opened
+                    // without the owner reconnect with it attached.
+                    state.disconnect_unowned_agent_clusterwide(tenant, &agent.to_bytes());
+                }
+                answer.holds
+            }
+            Err(e) => {
+                tracing::warn!(error = %e, "failed to record agent_owner_pubkey at the primary");
+                false
+            }
+        }
+    }
+
+    async fn materialize_here(
+        state: &AppState,
+        tenant: &TenantContext,
+        agent: &nostr::PublicKey,
+        owner: &nostr::PublicKey,
+    ) -> bool {
         for (role, pubkey) in [("agent", agent), ("owner", owner)] {
             match state
                 .db
@@ -386,7 +449,7 @@ pub mod relay_members {
             }
         }
 
-        let materialized = match state
+        match state
             .db
             .set_agent_owner_for_authorization(
                 tenant.community(),
@@ -411,22 +474,7 @@ pub mod relay_members {
                 tracing::warn!(error = %e, "failed to backfill agent_owner_pubkey");
                 false
             }
-        };
-
-        if materialized {
-            state
-                .author_type_cache
-                .insert((tenant.community(), agent.to_bytes().to_vec()), true);
-            state.observer_owner_cache.insert(
-                (
-                    tenant.community(),
-                    agent.to_bytes().to_vec(),
-                    owner.to_bytes().to_vec(),
-                ),
-                true,
-            );
         }
-        materialized
     }
 
     #[cfg(test)]
