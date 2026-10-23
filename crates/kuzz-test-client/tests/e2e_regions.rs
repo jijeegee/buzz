@@ -1647,3 +1647,100 @@ async fn home_streams_a_watched_room_to_its_allowed_readers() {
     assert_eq!(frame["op"], "refused", "{frame}");
     assert_eq!(frame["reason"], "invalid: unknown room");
 }
+
+/// PKCE S256 challenge of `verifier`.
+fn pkce_challenge(verifier: &str) -> String {
+    use base64::Engine as _;
+    use sha2::Digest as _;
+    base64::engine::general_purpose::URL_SAFE_NO_PAD.encode(sha2::Sha256::digest(verifier))
+}
+
+fn query_param(location: &str, name: &str) -> Option<String> {
+    url::Url::parse(location)
+        .ok()?
+        .query_pairs()
+        .find(|(key, _)| key == name)
+        .map(|(_, value)| value.into_owned())
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_sign_up_in_jp_is_made_in_kr_and_lives_in_jp() {
+    // jp holds a copy of the accounts and may not write them: the sign-in
+    // steps sent to jp go to kr and the answers come back through jp.
+    const REDIRECT: &str = "http://127.0.0.1:9999/cb";
+    let client = reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .build()
+        .unwrap();
+    let jp = http(&jp_url());
+    let verifier = hex::encode(rand::random::<[u8; 32]>());
+    let state = verifier[..24].to_owned();
+    let mut start_url = url::Url::parse(&format!("{jp}/auth/oidc/google/start")).unwrap();
+    start_url.query_pairs_mut().extend_pairs([
+        ("state", state.as_str()),
+        ("code_challenge", pkce_challenge(&verifier).as_str()),
+        ("client", "cli"),
+        ("identity_mode", "token"),
+        ("redirect_uri", REDIRECT),
+        ("device_name", "e2e"),
+    ]);
+    let start = client.get(start_url).send().await.expect("start");
+    assert_eq!(start.status(), 302, "{:?}", start.text().await);
+
+    // The provider sends the browser back to the service's callback, which
+    // here is kr's address: the account's home still comes from where the
+    // sign-in began. The fake provider trusts any `fake:` code, so each run
+    // makes a new account.
+    let provider = start.headers()["location"].to_str().unwrap().to_owned();
+    let mut callback_url = url::Url::parse(&provider).expect("provider redirect");
+    let subject = format!("fake:{}@example.test", uuid::Uuid::new_v4().simple());
+    callback_url
+        .query_pairs_mut()
+        .clear()
+        .extend_pairs([("code", subject.as_str()), ("state", state.as_str())]);
+    let callback = client.get(callback_url).send().await.expect("callback");
+    assert_eq!(callback.status(), 302);
+    let location = callback.headers()["location"].to_str().unwrap().to_owned();
+    let code = query_param(&location, "code").unwrap_or_else(|| panic!("{location}"));
+
+    let complete = client
+        .post(format!("{jp}/auth/oidc/complete"))
+        .json(&serde_json::json!({"login_code": code, "code_verifier": verifier}))
+        .send()
+        .await
+        .expect("complete");
+    assert_eq!(complete.status(), 200);
+    let login: Value = complete.json().await.expect("tokens");
+    let principal = login["principal_id"]
+        .as_str()
+        .expect("principal")
+        .to_owned();
+    let access = login["access"].as_str().expect("access").to_owned();
+
+    // Made in kr, home jp, and copied back to jp.
+    let home: Option<String> =
+        sqlx::query_scalar("SELECT home_region FROM principals WHERE id = decode($1, 'hex')")
+            .bind(&principal)
+            .fetch_optional(&region_db("kr").await)
+            .await
+            .expect("kr principal");
+    assert_eq!(home.as_deref(), Some("jp"));
+    assert!(
+        jp_copy_shows(
+            "SELECT EXISTS (SELECT 1 FROM principals WHERE id = decode($1, 'hex') \
+               AND home_region = 'jp')",
+            &principal,
+        )
+        .await
+    );
+
+    // A signed-in request through jp is answered by kr.
+    let me = client
+        .get(format!("{jp}/auth/me"))
+        .bearer_auth(&access)
+        .send()
+        .await
+        .expect("me");
+    assert_eq!(me.status(), 200, "{:?}", me.text().await);
+}

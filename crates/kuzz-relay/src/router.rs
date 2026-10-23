@@ -163,6 +163,7 @@ const NIP_FI_EXEMPT_PREFIXES: &[&str] = &[
     "/internal/region/reserve-room",
     "/internal/region/room-home",
     "/internal/region/shared-state",
+    "/internal/region/http",
 ];
 
 /// Middleware: full offline assertion guard for NIP-FI protected paths.
@@ -446,6 +447,7 @@ pub fn build_router(state: Arc<AppState>) -> Router {
                     crate::region_shared::PATH,
                     post(crate::region_shared::shared_state),
                 )
+                .route(crate::region_http::PATH, post(crate::region_http::serve))
                 .layer(RequestBodyLimitLayer::new(1024 * 1024))
                 .with_state(state.clone()),
         );
@@ -512,6 +514,12 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .layer(middleware::from_fn_with_state(
             state.clone(),
             nip_fi_assertion_guard,
+        ))
+        // In a region holding the global copy, global writes go to the
+        // primary before any local check runs (S5-2).
+        .layer(middleware::from_fn_with_state(
+            state.clone(),
+            crate::region_http::forward,
         ))
         .layer(middleware::from_fn(track_metrics))
         .layer(http_trace_layer())

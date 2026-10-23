@@ -57,6 +57,7 @@ async fn owned_bot(
 /// `POST /auth/bots` `{display_name, host: "this_device" | "headless"}`.
 pub(super) async fn create(
     State(state): State<Arc<AppState>>,
+    extensions: axum::http::Extensions,
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
@@ -89,6 +90,8 @@ pub(super) async fn create(
     {
         Ok(bot) => {
             tracing::info!(owner = %binding.principal, bot = %bot, "auth.bot_created");
+            let home = super::oidc::forwarded_region(&extensions);
+            super::oidc::record_signup_home(&state, home.as_deref(), &bot).await;
             // A new bot is in no community yet; this reaches any the owner
             // pre-provisioned, and first AUTH reconciles the rest.
             crate::identity::profile::spawn_publish_everywhere(&state, bot);

@@ -67,6 +67,11 @@ struct PendingLogin {
     /// The client asks before an unknown identity becomes an account.
     #[serde(default)]
     confirm_signup: bool,
+    /// The region that forwarded `start` here (S5-2). The provider may send
+    /// the browser back to any region, so the account's home is taken from
+    /// where the sign-in began.
+    #[serde(default)]
+    entry_region: Option<String>,
 }
 
 /// One-time login code record stored between `callback` and `complete`.
@@ -298,6 +303,7 @@ pub(super) async fn start(
         install_id,
         nonce: nonce.clone(),
         confirm_signup,
+        entry_region: forwarded_region(&extensions),
     };
     let Ok(pending_json) = serde_json::to_string(&pending) else {
         return unavailable();
@@ -453,16 +459,20 @@ pub(super) async fn callback(
         }
         if login.created {
             tracing::info!(principal = %login.principal, "auth.account_created");
-            // Best effort: the country only seeds defaults later.
+            // Best effort: the country only seeds defaults later. A sign-up
+            // forwarded by another region carries the country it saw.
             let peer = extensions
                 .get::<axum::extract::ConnectInfo<std::net::SocketAddr>>()
                 .map(|info| info.0.ip());
-            if let Some(country) = state
-                .identity
-                .config()
-                .trusted_proxies
-                .country(peer, &headers)
-            {
+            let country = match extensions.get::<crate::region_http::ForwardedClient>() {
+                Some(forwarded) => forwarded.country.clone(),
+                None => state
+                    .identity
+                    .config()
+                    .trusted_proxies
+                    .country(peer, &headers),
+            };
+            if let Some(country) = country {
                 if let Err(error) = state
                     .db
                     .record_signup_country(&login.principal, &country)
@@ -471,6 +481,11 @@ pub(super) async fn callback(
                     tracing::warn!(%error, "could not record sign-up country");
                 }
             }
+            let home = pending
+                .entry_region
+                .clone()
+                .or_else(|| forwarded_region(&extensions));
+            record_signup_home(&state, home.as_deref(), &login.principal).await;
         }
         if pending.identity_mode == "token" {
             bootstrap_operator(&state, &login.principal, &identity).await;
@@ -786,6 +801,12 @@ pub(super) async fn signup(
     }
     if login.created {
         tracing::info!(principal = %login.principal, "auth.account_created");
+        record_signup_home(
+            &state,
+            forwarded_region(&extensions).as_deref(),
+            &login.principal,
+        )
+        .await;
     }
     finish_login(
         &state,
@@ -797,6 +818,29 @@ pub(super) async fn signup(
         signup.email.as_deref(),
     )
     .await
+}
+
+/// The region that forwarded this request here (S5-2), if any.
+pub(super) fn forwarded_region(extensions: &Extensions) -> Option<String> {
+    extensions
+        .get::<crate::region_http::ForwardedClient>()
+        .map(|forwarded| forwarded.entry_region.clone())
+}
+
+/// An account (or bot) created through a request another region forwarded
+/// here lives in that region (S5-2). Best effort, like the country: until it
+/// is set its home is the primary.
+pub(super) async fn record_signup_home(
+    state: &AppState,
+    region: Option<&str>,
+    principal: &PrincipalId,
+) {
+    let Some(region) = region else {
+        return;
+    };
+    if let Err(error) = state.db.set_principal_home(principal, region).await {
+        tracing::warn!(%error, "could not record the sign-up home region");
+    }
 }
 
 /// Open the session for `principal` and answer with its tokens (the end of

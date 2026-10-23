@@ -69,6 +69,29 @@ REFRESH PUBLICATION` in each region; the relay waits and says so until then.
 A migration that writes rows into a copied table must skip copies
 (`WHERE NOT kuzz_is_global_copy()`).
 
+### Global writes over HTTP
+
+A region holding the copy sends HTTP requests that write global data to the
+primary over the region link (`/internal/region/http`) and returns the
+primary's answer unchanged (status, cookies, redirects):
+
+- `/auth/*`, except `/auth/blocks*` (blocks are kept in every region) and
+  `/auth/people/*` (reads);
+- the admin API (`/api/admin/v1/*`) and the operator API (`/operator/*`);
+- `/api/invites`, `/api/invites/claim`, `/api/invites/accept-policy`.
+
+The region sends the client address and country it worked out from its own
+trusted proxies, so the primary's per-IP limits count the real client. An
+account or bot created through a forwarded request gets the forwarding
+region as its home region; for a Google sign-in, the region where it began,
+wherever the provider sends the browser back. If the primary cannot be
+reached these requests answer 503; chat does not take this path.
+
+The primary checks forwarded requests against its own settings, so every
+region uses the same public addresses: `AUTH_PUBLIC_URL` (the sign-in
+callback), the operator API origin and the admin host (one service name,
+stage S1).
+
 ## What records ownership
 
 | Table / column | Scope | Written by |
@@ -76,8 +99,8 @@ A migration that writes rows into a copied table must skip copies
 | `regions` | deployment, copied | the primary's relay at startup (its own row); other regions are added in the primary |
 | `local_region` | this database only, never copied | first relay start |
 | `room_directory` (`home_region`, `epoch`, DM `participant_hash`) | per community, copied | trigger on `channels` insert; startup backfill |
-| `principals.home_region` | deployment | trigger on `principals` insert; startup backfill |
-| `principals.country` | deployment | OIDC sign-up, from `CF-IPCountry` via a trusted proxy only |
+| `principals.home_region` | deployment | trigger on `principals` insert; the forwarding region for a forwarded sign-up (S5-2); startup backfill |
+| `principals.country` | deployment | OIDC sign-up, from `CF-IPCountry` via a trusted proxy only (the forwarding region's proxy for a forwarded sign-up) |
 
 Nothing reads these yet. The routing layer (stage S3) will send each room
 operation to its home region.
