@@ -9,7 +9,8 @@
 
 use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Mutex, PoisonError};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 pub(crate) use kuzz_device_key_pkg::DeviceKey;
@@ -53,6 +54,81 @@ static OPENING: Mutex<()> = Mutex::new(());
 static CLOCK: Mutex<Option<HashMap<String, i64>>> = Mutex::new(None);
 /// Origins whose server time was already asked for (answered or not).
 static TIME_ASKED: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
+
+/// Device key calls (opens, signatures) that outlived their wait and are
+/// still running. While any is, new calls go on without the key at once
+/// instead of piling more threads onto a hung TPM.
+static OVERDUE: AtomicUsize = AtomicUsize::new(0);
+
+/// One bounded device key call, shared by its waiter and its worker.
+#[derive(Clone)]
+struct Watch {
+    state: Arc<Mutex<(bool, bool)>>, // (waiter gave up, worker finished)
+    overdue: &'static AtomicUsize,
+}
+
+/// Held by the worker: marks the call finished when dropped (also on panic).
+struct Finished(Watch);
+
+impl Drop for Finished {
+    fn drop(&mut self) {
+        let mut state = self.0.state.lock().unwrap_or_else(PoisonError::into_inner);
+        state.1 = true;
+        if state.0 {
+            self.0.overdue.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+}
+
+impl Watch {
+    /// A new call, or `None` (with a warning) while an earlier one is stuck.
+    fn start(overdue: &'static AtomicUsize, what: &str) -> Option<Self> {
+        if overdue.load(Ordering::SeqCst) > 0 {
+            eprintln!("kuzz-desktop: warning: {what} skipped: the device key is still busy");
+            return None;
+        }
+        Some(Self {
+            state: Arc::new(Mutex::new((false, false))),
+            overdue,
+        })
+    }
+
+    fn finished_on_drop(&self) -> Finished {
+        Finished(self.clone())
+    }
+
+    /// The waiter stops waiting; until the worker ends, calls skip the key.
+    fn give_up(&self, what: &str) {
+        let mut state = self.state.lock().unwrap_or_else(PoisonError::into_inner);
+        if !state.1 && !state.0 {
+            state.0 = true;
+            self.overdue.fetch_add(1, Ordering::SeqCst);
+        }
+        eprintln!("kuzz-desktop: warning: {what} not done in time; going on without it");
+    }
+}
+
+/// Run `work` off the async runtime, waiting at most `limit`. `None` when it
+/// is late, failed to run, or an earlier call is still stuck.
+async fn within<T: Send + 'static>(
+    limit: Duration,
+    what: &str,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let watch = Watch::start(&OVERDUE, what)?;
+    let finished = watch.finished_on_drop();
+    let task = tokio::task::spawn_blocking(move || {
+        let _finished = finished;
+        work()
+    });
+    match tokio::time::timeout(limit, task).await {
+        Ok(done) => done.ok(),
+        Err(_) => {
+            watch.give_up(what);
+            None
+        }
+    }
+}
 
 fn slot() -> std::sync::MutexGuard<'static, Slot> {
     SLOT.lock().unwrap_or_else(PoisonError::into_inner)
@@ -135,13 +211,7 @@ pub(crate) async fn ensure_within(limit: Duration) -> Option<DeviceKey> {
     if cfg!(test) {
         return None;
     }
-    match tokio::time::timeout(limit, tokio::task::spawn_blocking(ensure)).await {
-        Ok(opened) => opened.ok().flatten(),
-        Err(_) => {
-            eprintln!("kuzz-desktop: warning: device key not ready in time; going on without it");
-            None
-        }
-    }
+    within(limit, "device key open", ensure).await.flatten()
 }
 
 /// The software fallback store (and TPM marker) every Kuzz app of this OS
@@ -200,12 +270,19 @@ pub(crate) fn tag_event_with(key: Option<&DeviceKey>, unsigned: UnsignedEvent) -
     let original = unsigned.clone();
     let kind = original.kind.as_u16();
     // On its own thread, so a TPM that hangs costs a caller at most
-    // USER_WAIT (the event then goes out as before).
+    // USER_WAIT (the event then goes out as before), and only the first
+    // caller: while that signature is stuck, events go out untagged at once.
+    let what = format!("device tag (kind {kind})");
+    let Some(watch) = Watch::start(&OVERDUE, &what) else {
+        return original;
+    };
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     let signer = key.clone();
+    let finished = watch.finished_on_drop();
     let spawned = std::thread::Builder::new()
         .name("kuzz-device-tag".into())
         .spawn(move || {
+            let _finished = finished;
             let _ = sender.send(signer.add_event_tag(unsigned));
         });
     if let Err(error) = spawned {
@@ -219,7 +296,7 @@ pub(crate) fn tag_event_with(key: Option<&DeviceKey>, unsigned: UnsignedEvent) -
             original
         }
         Err(_) => {
-            eprintln!("kuzz-desktop: warning: device tag not added in time (kind {kind})");
+            watch.give_up(&what);
             original
         }
     }
@@ -337,7 +414,7 @@ pub(crate) async fn header_proof(
 ) -> Option<String> {
     let key = key.clone();
     let ts = proof_now(origin);
-    let signing = tokio::task::spawn_blocking(move || {
+    let signing = within(USER_WAIT, "device proof", move || {
         key.header_proof_at(
             ts,
             request.purpose,
@@ -346,18 +423,10 @@ pub(crate) async fn header_proof(
             &request.body,
         )
     });
-    match tokio::time::timeout(USER_WAIT, signing).await {
-        Ok(Ok(Ok(proof))) => Some(proof),
-        Ok(Ok(Err(error))) => {
+    match signing.await? {
+        Ok(proof) => Some(proof),
+        Err(error) => {
             eprintln!("kuzz-desktop: warning: device proof not signed: {error}");
-            None
-        }
-        Ok(Err(error)) => {
-            eprintln!("kuzz-desktop: warning: device proof task failed: {error}");
-            None
-        }
-        Err(_) => {
-            eprintln!("kuzz-desktop: warning: device proof not signed in time");
             None
         }
     }
@@ -507,6 +576,25 @@ mod tests {
         // A relative or empty base is never used.
         assert_eq!(shared_store_dir_from(|_| Some("rel".into())), None);
         assert_eq!(shared_store_dir_from(|_| Some("".into())), None);
+    }
+
+    #[test]
+    fn a_stuck_call_makes_later_calls_skip_the_key_until_it_ends() {
+        static COUNT: AtomicUsize = AtomicUsize::new(0);
+        // Finished in time: nothing stays overdue.
+        let quick = Watch::start(&COUNT, "t").unwrap();
+        drop(quick.finished_on_drop());
+        quick.give_up("t");
+        assert_eq!(COUNT.load(Ordering::SeqCst), 0);
+        // Late: later calls skip until the stuck one ends.
+        let slow = Watch::start(&COUNT, "t").unwrap();
+        let worker = slow.finished_on_drop();
+        slow.give_up("t");
+        slow.give_up("t");
+        assert!(Watch::start(&COUNT, "t").is_none());
+        drop(worker);
+        assert_eq!(COUNT.load(Ordering::SeqCst), 0);
+        assert!(Watch::start(&COUNT, "t").is_some());
     }
 
     #[test]

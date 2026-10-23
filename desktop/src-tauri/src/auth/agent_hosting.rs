@@ -65,8 +65,48 @@ pub(crate) enum Hosting {
 static ATTEMPTED: Mutex<Option<HashSet<String>>> = Mutex::new(None);
 /// Serializes reads and writes of [`HOSTING_FILE`].
 static FILE_LOCK: Mutex<()> = Mutex::new(());
-/// `"{origin} {owner}"` with a restore retry loop running.
-static RESTORING: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+/// Restore retry loops running, per `"{origin} {owner}"`.
+static RESTORING: Mutex<Option<HashMap<String, RestoreLoop>>> = Mutex::new(None);
+
+/// A restore retry loop: when it stops, and who hears of a late restore.
+struct RestoreLoop {
+    deadline: Instant,
+    on_late: Option<OnLateRestore>,
+}
+
+/// Join the restore loop for `key`: start one (true), or give the running
+/// one this later sign-in's window and `on_late` (false). Pure.
+fn join_restore_loop(
+    loops: &mut HashMap<String, RestoreLoop>,
+    key: &str,
+    deadline: Instant,
+    on_late: OnLateRestore,
+) -> bool {
+    if let Some(running) = loops.get_mut(key) {
+        running.deadline = running.deadline.max(deadline);
+        running.on_late = Some(on_late);
+        return false;
+    }
+    let on_late = Some(on_late);
+    loops.insert(key.to_owned(), RestoreLoop { deadline, on_late });
+    true
+}
+
+/// Whether the loop for `key` stops before a try at `next` (then it is
+/// removed, in the same step, so a sign-in never joins a loop that ended).
+fn restore_loop_over(loops: &mut HashMap<String, RestoreLoop>, key: &str, next: Instant) -> bool {
+    let over = loops
+        .get(key)
+        .is_none_or(|running| next >= running.deadline);
+    if over {
+        loops.remove(key);
+    }
+    over
+}
+
+fn restoring() -> std::sync::MutexGuard<'static, Option<HashMap<String, RestoreLoop>>> {
+    RESTORING.lock().unwrap_or_else(PoisonError::into_inner)
+}
 /// When a restore outside a sign-in was last tried, per `"{origin} {owner}"`.
 static PENDING_TRIED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 
@@ -135,6 +175,7 @@ pub(crate) fn hosted_elsewhere<R: tauri::Runtime>(
     relay_url: &str,
     pubkey: &str,
 ) -> bool {
+    record_wrong_host_exits(app);
     data_dir(app).is_some_and(|dir| {
         hosting_in(&dir, &super::origin_for(relay_url), pubkey) == Some(Hosting::OtherDevice)
     })
@@ -152,7 +193,7 @@ pub(crate) fn start_gate<R: tauri::Runtime>(
     if record.bot_origin.is_some() {
         return Ok(());
     }
-    note_wrong_host_exit(app, record, relay_url);
+    record_wrong_host_exits(app);
     let origin = super::origin_for(relay_url);
     let elsewhere = data_dir(app)
         .is_some_and(|dir| hosting_in(&dir, &origin, &record.pubkey) == Some(Hosting::OtherDevice));
@@ -167,61 +208,48 @@ pub(crate) fn start_gate<R: tauri::Runtime>(
     Ok(())
 }
 
-/// `kuzz-acp`'s exit code when the relay says the agent is bound to another
-/// device (`403 wrong_host` on `/agents/{pubkey}/status`). Never restarted.
+/// `kuzz-acp`'s exit code (`EXIT_WRONG_HOST`) when the relay says the agent
+/// is bound to another device (`403 wrong_host` on `/agents/{pubkey}/status`).
+/// Never restarted from here.
 pub(crate) const WRONG_HOST_EXIT: i32 = 77;
 
-/// What `kuzz-acp` logs in that case (older builds exit 0 after it).
-const WRONG_HOST_LOG: &str = "this agent is bound to another device";
+/// `(pubkey, relay URL)` of agents that exited [`WRONG_HOST_EXIT`] and are
+/// not yet recorded as running on another device.
+static WRONG_HOST_EXITS: Mutex<Vec<(String, String)>> = Mutex::new(Vec::new());
 
-/// What the desktop appends to the log once it has taken that note.
-const WRONG_HOST_NOTED: &str = "kuzz-desktop: noted: this agent runs on another device";
-
-/// Whether the last run (exit code `exit`, log tail `log`) stopped on
-/// `wrong_host` and the desktop has not noted it yet. Pure.
-fn unnoted_wrong_host(exit: Option<i32>, log: &str) -> bool {
-    let last_run = log.rsplit_once("=== starting ").map_or(log, |(_, run)| run);
-    (exit == Some(WRONG_HOST_EXIT) || last_run.contains(WRONG_HOST_LOG))
-        && !last_run.contains(WRONG_HOST_NOTED)
+/// Note an agent's exit (called once per exit, where the app handle may not
+/// be at hand); a [`WRONG_HOST_EXIT`] is recorded on the next list or start.
+pub(crate) fn note_exit(pubkey: &str, relay_url: &str, code: Option<i32>) {
+    if code == Some(WRONG_HOST_EXIT) {
+        WRONG_HOST_EXITS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .push((pubkey.to_owned(), relay_url.to_owned()));
+    }
 }
 
-/// After `kuzz-acp` stayed down because the relay bound the agent to another
-/// device (exit [`WRONG_HOST_EXIT`], or exit 0 with the log line from older
-/// builds), record it as running there: the list shows "Runs on another
-/// device" and starts are refused until the relay says it moved back. The
-/// note is taken once per run, so a later move back is not undone.
-pub(crate) fn note_wrong_host_exit<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-    record: &ManagedAgentRecord,
-    relay_url: &str,
-) {
-    if record.bot_origin.is_some() || !matches!(record.last_exit_code, Some(0 | WRONG_HOST_EXIT)) {
+/// Record the noted [`WRONG_HOST_EXIT`]s as running on another device: the
+/// list shows "Runs on another device" and starts are refused until the
+/// relay says the agent moved back.
+fn record_wrong_host_exits<R: tauri::Runtime>(app: &AppHandle<R>) {
+    let exits = std::mem::take(
+        &mut *WRONG_HOST_EXITS
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner),
+    );
+    if exits.is_empty() {
         return;
     }
     let Some(dir) = data_dir(app) else {
         return;
     };
-    let Ok(key) =
-        crate::managed_agents::ManagedAgentRuntimeKey::new(record.pubkey.clone(), relay_url)
-    else {
-        return;
-    };
-    let Ok(path) = crate::managed_agents::managed_agent_runtime_log_path(app, &key) else {
-        return;
-    };
-    let Ok(tail) = crate::managed_agents::read_log_tail(&path, 200) else {
-        return;
-    };
-    if !unnoted_wrong_host(record.last_exit_code, &tail) {
-        return;
-    }
-    let origin = super::origin_for(relay_url);
-    if set_hosting_in(&dir, &origin, &record.pubkey, Some(Hosting::OtherDevice)).is_ok() {
-        eprintln!(
-            "kuzz-desktop: agents: {} is bound to another device; not restarting it",
-            record.pubkey
-        );
-        let _ = crate::managed_agents::append_log_marker(&path, WRONG_HOST_NOTED);
+    for (pubkey, relay_url) in exits {
+        let origin = super::origin_for(&relay_url);
+        if set_hosting_in(&dir, &origin, &pubkey, Some(Hosting::OtherDevice)).is_ok() {
+            eprintln!(
+                "kuzz-desktop: agents: {pubkey} is bound to another device; not restarting it"
+            );
+        }
     }
 }
 
@@ -514,37 +542,42 @@ pub(crate) async fn restore_after_sign_in(
         return;
     }
     let key = format!("{origin} {}", owner.to_hex());
-    {
-        let mut restoring = RESTORING.lock().unwrap_or_else(PoisonError::into_inner);
-        if !restoring
-            .get_or_insert_with(HashSet::new)
-            .insert(key.clone())
-        {
-            return;
-        }
+    let started = {
+        let mut loops = restoring();
+        join_restore_loop(
+            loops.get_or_insert_with(HashMap::new),
+            &key,
+            deadline,
+            on_late,
+        )
+    };
+    if !started {
+        return; // The running loop now retries for this sign-in too.
     }
     let app = app.clone();
     let origin = origin.to_owned();
     tauri::async_runtime::spawn(async move {
-        let mut on_late = Some(on_late);
         let mut delay = Duration::from_secs(5);
-        while Instant::now() + delay < deadline {
+        loop {
+            let next = Instant::now() + delay;
+            if restore_loop_over(restoring().get_or_insert_with(HashMap::new), &key, next) {
+                break;
+            }
             tokio::time::sleep(delay).await;
             if let Ok(Restore::Done(restored)) =
                 tokio::time::timeout(RESTORE_TRY_LIMIT, restore_once(&app, &origin, &owner)).await
             {
-                if let (false, Some(on_late)) = (restored.is_empty(), on_late.take()) {
+                let running = restoring().get_or_insert_with(HashMap::new).remove(&key);
+                if let (false, Some(on_late)) = (
+                    restored.is_empty(),
+                    running.and_then(|running| running.on_late),
+                ) {
                     on_late(restored);
                 }
                 break;
             }
             delay = (delay * 2).min(Duration::from_secs(60));
         }
-        RESTORING
-            .lock()
-            .unwrap_or_else(PoisonError::into_inner)
-            .get_or_insert_with(HashSet::new)
-            .remove(&key);
     });
 }
 
@@ -592,11 +625,9 @@ pub(crate) fn spawn_restore_pending<R: tauri::Runtime>(app: &AppHandle<R>) {
         }
         for (origin, owner) in wanted {
             let key = format!("{origin} {}", owner.to_hex());
-            if RESTORING
-                .lock()
-                .unwrap_or_else(PoisonError::into_inner)
-                .get_or_insert_with(HashSet::new)
-                .contains(&key)
+            if restoring()
+                .get_or_insert_with(HashMap::new)
+                .contains_key(&key)
             {
                 continue;
             }
@@ -767,19 +798,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn a_wrong_host_stop_is_noted_once_and_only_for_the_last_run() {
-        let stopped = "=== starting a (pk) at t ===\nERROR kuzz_acp: not starting: \
-                       this agent is bound to another device (wrong_host)\n";
-        let quiet = "=== starting a (pk) at t ===\nexited\n";
-        assert!(unnoted_wrong_host(Some(0), stopped));
-        assert!(unnoted_wrong_host(Some(WRONG_HOST_EXIT), quiet));
-        assert!(!unnoted_wrong_host(Some(0), quiet));
-        let noted = format!("{stopped}{WRONG_HOST_NOTED}\n");
-        assert!(!unnoted_wrong_host(Some(WRONG_HOST_EXIT), &noted));
-        assert!(!unnoted_wrong_host(
-            Some(0),
-            &format!("{stopped}=== starting a (pk) at t2 ===\nrunning\n")
+    fn a_later_sign_in_extends_the_running_restore_loop() {
+        use std::sync::atomic::{AtomicU8, Ordering};
+        static HEARD: AtomicU8 = AtomicU8::new(0);
+        let mut loops = HashMap::new();
+        let now = Instant::now();
+        let first = now + Duration::from_secs(10);
+        let later = now + Duration::from_secs(100);
+        assert!(join_restore_loop(
+            &mut loops,
+            "k",
+            first,
+            Box::new(|_| {
+                HEARD.store(1, Ordering::SeqCst);
+            })
         ));
+        assert!(!join_restore_loop(
+            &mut loops,
+            "k",
+            later,
+            Box::new(|_| {
+                HEARD.store(2, Ordering::SeqCst);
+            })
+        ));
+        assert!(!restore_loop_over(
+            &mut loops,
+            "k",
+            first + Duration::from_secs(1)
+        ));
+        let on_late = loops
+            .remove("k")
+            .and_then(|running| running.on_late)
+            .unwrap();
+        on_late(Vec::new());
+        assert_eq!(HEARD.load(Ordering::SeqCst), 2);
+        loops.insert(
+            "k".to_owned(),
+            RestoreLoop {
+                deadline: first,
+                on_late: None,
+            },
+        );
+        assert!(restore_loop_over(&mut loops, "k", first));
+        assert!(loops.is_empty());
+        assert!(restore_loop_over(&mut loops, "k", now));
     }
 
     #[test]

@@ -77,12 +77,11 @@ async fn proxy_handler(AxumState(state): AxumState<ProxyState>, req: Request) ->
     };
 
     // Re-mint and retry once on an auth failure (401 missing_evidence or 403
-    // evidence_rejected). Under NIP-FI strict mode a read token expires after
-    // 60s, so a long video range-request stream will exhaust its token mid-flight.
-    // Single retry; if the fresh token also fails, propagate the error to the caller.
-    let resp = if (resp.status() == reqwest::StatusCode::UNAUTHORIZED
-        || resp.status() == reqwest::StatusCode::FORBIDDEN)
-        && has_range
+    // evidence_rejected): a read token expires after 60s (long range-request
+    // streams), and a reused header can be refused. Single retry with a fresh
+    // token (dropping the reused one); a second failure goes to the caller.
+    let resp = if resp.status() == reqwest::StatusCode::UNAUTHORIZED
+        || resp.status() == reqwest::StatusCode::FORBIDDEN
     {
         if let Some(fresh_auth) = mint_fresh_media_get_auth(&app_state, &base_url) {
             let mut retry = state
@@ -231,14 +230,13 @@ pub async fn handle_kuzz_media(
 
     let result = upstream.send().await;
 
-    // Re-mint and retry once on auth failure (401/403) for range requests.
-    // Under NIP-FI strict mode a read token expires after 60s, exhausting
-    // mid-stream. Single retry with a fresh token; propagate on second failure.
+    // Re-mint and retry once on auth failure (401/403): a read token expires
+    // after 60s, and a reused header can be refused. Single retry with a fresh
+    // token (dropping the reused one); propagate on second failure.
     let result = match result {
         Ok(resp)
-            if (resp.status() == reqwest::StatusCode::UNAUTHORIZED
-                || resp.status() == reqwest::StatusCode::FORBIDDEN)
-                && has_range =>
+            if resp.status() == reqwest::StatusCode::UNAUTHORIZED
+                || resp.status() == reqwest::StatusCode::FORBIDDEN =>
         {
             if let Some(fresh_auth) = mint_fresh_media_get_auth(&state, &base) {
                 let mut retry = state

@@ -83,6 +83,8 @@ pub fn sync_managed_agent_processes(
         // kuzz-acp exit 78 = its bot token is unusable (token mode): queue it
         // for the auth watchdog to reissue and restart, within its cap.
         crate::auth::bots::note_exit(&key.pubkey, &key.relay_url, status.code());
+        // Exit 77: bound to another device; parked, never restarted here.
+        crate::auth::agent_hosting::note_exit(&key.pubkey, &key.relay_url, status.code());
 
         if let Some(record) = records
             .iter_mut()

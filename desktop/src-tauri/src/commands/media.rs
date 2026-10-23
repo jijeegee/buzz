@@ -302,12 +302,13 @@ pub(crate) fn detect_and_validate_mime(body: &[u8]) -> Result<String, String> {
 /// a 401 or 403 from the server (expired/rejected token), using a single fresh mint+retry.
 pub(crate) const MEDIA_GET_AUTH_EXPIRY_SECS: u64 = 60;
 
-/// A cached read header is reused until this long before it expires.
-const MEDIA_GET_AUTH_REUSE_MARGIN_SECS: u64 = 15;
+/// A signed read header is reused for at most this long: well inside its
+/// lifetime, so a server clock running ahead does not see it expired.
+const MEDIA_GET_AUTH_CACHE_SECS: u64 = 30;
 
-/// Signed `t=get` headers per `"{user pubkey} {server}"` with their expiry,
-/// reused while a device key signs them (one device signature per server
-/// and minute rather than per media read, as on Android).
+/// Device-tagged `t=get` headers per `"{user pubkey} {server}"` with the
+/// time they were signed (one device signature per server and half minute
+/// rather than per media read, as on Android).
 static MEDIA_GET_AUTH_CACHE: std::sync::Mutex<
     Option<std::collections::HashMap<String, (String, u64)>>,
 > = std::sync::Mutex::new(None);
@@ -320,14 +321,16 @@ fn reusable_get_auth(
 ) -> Option<String> {
     cache
         .get(key)
-        .filter(|(_, expires_at)| now + MEDIA_GET_AUTH_REUSE_MARGIN_SECS < *expires_at)
+        .filter(|(_, signed_at)| {
+            (*signed_at..*signed_at + MEDIA_GET_AUTH_CACHE_SECS).contains(&now)
+        })
         .map(|(header, _)| header.clone())
 }
 
-/// [`sign_blossom_get_auth_header`] for media reads, reusing a header
-/// signed with the device key until shortly before it expires. Without a
-/// device key every read is signed afresh, as before. `fresh` skips (and
-/// replaces) the cached header, for a retry after the server refused one.
+/// [`sign_blossom_get_auth_header`] for media reads, reusing a device-tagged
+/// header for up to [`MEDIA_GET_AUTH_CACHE_SECS`]. Without a device key (or
+/// a tag) every read is signed afresh, as before. `fresh` (a retry after the
+/// server refused a header) drops the cached one and signs a new one.
 fn cached_get_auth_header(keys: &Keys, base_url: &str, fresh: bool) -> Result<String, String> {
     if crate::device_key::current().is_none() {
         return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
@@ -342,18 +345,27 @@ fn cached_get_auth_header(keys: &Keys, base_url: &str, fresh: bool) -> Result<St
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     };
-    if !fresh {
-        if let Some(header) = lock()
-            .as_ref()
-            .and_then(|cache| reusable_get_auth(cache, &key, now))
-        {
-            return Ok(header);
-        }
+    if fresh {
+        lock().get_or_insert_with(Default::default).remove(&key);
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
     }
-    let header = sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS)?;
-    lock()
-        .get_or_insert_with(Default::default)
-        .insert(key, (header.clone(), now + MEDIA_GET_AUTH_EXPIRY_SECS));
+    if let Some(header) = lock()
+        .as_ref()
+        .and_then(|cache| reusable_get_auth(cache, &key, now))
+    {
+        return Ok(header);
+    }
+    let event = sign_blossom_get_auth_event(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS)?;
+    let header = blossom_header(&event);
+    let tagged = event
+        .tags
+        .iter()
+        .any(|tag| tag.as_slice().first().map(String::as_str) == Some("device"));
+    if tagged {
+        lock()
+            .get_or_insert_with(Default::default)
+            .insert(key, (header.clone(), now));
+    }
     Ok(header)
 }
 
@@ -370,6 +382,15 @@ pub(crate) fn sign_blossom_get_auth_header(
     base_url: &str,
     expiry_secs: u64,
 ) -> Result<String, String> {
+    sign_blossom_get_auth_event(keys, base_url, expiry_secs).map(|event| blossom_header(&event))
+}
+
+/// The signed event behind [`sign_blossom_get_auth_header`].
+fn sign_blossom_get_auth_event(
+    keys: &Keys,
+    base_url: &str,
+    expiry_secs: u64,
+) -> Result<nostr::Event, String> {
     let server = extract_server_authority(base_url).ok_or_else(|| {
         eprintln!("kuzz-desktop: cannot derive server authority from relay URL");
         "Couldn't load media.".to_string()
@@ -381,14 +402,18 @@ pub(crate) fn sign_blossom_get_auth_header(
             .map_err(|e| e.to_string())?,
         Tag::parse(vec!["server".to_string(), server]).map_err(|e| e.to_string())?,
     ];
-    let event = crate::device_key::sign_auth_event(
+    crate::device_key::sign_auth_event(
         EventBuilder::new(Kind::from(24242), "Get kuzz-media").tags(tags),
         keys,
-    )?;
-    Ok(format!(
+    )
+}
+
+/// `Authorization` value for a signed Blossom event.
+fn blossom_header(event: &nostr::Event) -> String {
+    format!(
         "Nostr {}",
         URL_SAFE_NO_PAD.encode(event.as_json().as_bytes())
-    ))
+    )
 }
 
 /// Mint a `t=get` Authorization header value for a relay media fetch, or
@@ -1028,14 +1053,15 @@ mod tests {
     }
 
     #[test]
-    fn cached_read_headers_are_reused_until_shortly_before_expiry() {
+    fn cached_read_headers_are_reused_for_at_most_thirty_seconds() {
         let mut cache = std::collections::HashMap::new();
-        cache.insert("me relay".to_owned(), ("Nostr abc".to_owned(), 1_060));
+        cache.insert("me relay".to_owned(), ("Nostr abc".to_owned(), 1_000));
         assert_eq!(
-            reusable_get_auth(&cache, "me relay", 1_000).as_deref(),
+            reusable_get_auth(&cache, "me relay", 1_029).as_deref(),
             Some("Nostr abc")
         );
-        assert_eq!(reusable_get_auth(&cache, "me relay", 1_045), None);
+        assert_eq!(reusable_get_auth(&cache, "me relay", 1_030), None);
+        assert_eq!(reusable_get_auth(&cache, "me relay", 999), None);
         assert_eq!(reusable_get_auth(&cache, "me other", 1_000), None);
     }
 
