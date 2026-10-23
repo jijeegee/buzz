@@ -1,13 +1,16 @@
-//! A copy region whose copy is behind (global regions S5-4): what the copy
-//! lacks is checked with the primary.
+//! A copy region whose copy is behind (global regions S5-4, S5-5): what the
+//! copy lacks is checked with the primary, and security checks fail closed
+//! when the copy lags and the primary cannot answer.
 //!
 //! These tests stop jp's copy for a while, so they run apart from
 //! `e2e_regions`, one at a time, after it
 //! (`scripts/regions-two-region-test.sh`). jp runs with
-//! `KUZZ_GLOBAL_COPY_MAX_LAG_SECS=3`.
+//! `KUZZ_GLOBAL_COPY_MAX_LAG_SECS=3`, and a second jp relay on the same
+//! database admits relay members only (`REGION_JP_MEMBERS_URL`).
 
 use std::time::Duration;
 
+use kuzz_test_client::KuzzTestClient;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use serde_json::Value;
 
@@ -17,6 +20,10 @@ fn kr_url() -> String {
 
 fn jp_url() -> String {
     std::env::var("REGION_JP_URL").unwrap_or_else(|_| "ws://localhost:3042".into())
+}
+
+fn jp_members_url() -> String {
+    std::env::var("REGION_JP_MEMBERS_URL").unwrap_or_else(|_| "ws://localhost:3043".into())
 }
 
 fn http(url: &str) -> String {
@@ -111,8 +118,9 @@ fn query_param(location: &str, name: &str) -> Option<String> {
         .map(|(_, value)| value.into_owned())
 }
 
-/// Sign up through jp (made in kr, S5-2); the new access token.
-async fn sign_up_through_jp() -> String {
+/// Sign up through jp (made in kr, S5-2); the sign-in answer with the
+/// `access` and `refresh` tokens.
+async fn sign_up_through_jp() -> Value {
     const REDIRECT: &str = "http://127.0.0.1:9999/cb";
     let client = reqwest::Client::builder()
         .redirect(reqwest::redirect::Policy::none())
@@ -150,8 +158,57 @@ async fn sign_up_through_jp() -> String {
         .await
         .expect("complete");
     assert_eq!(complete.status(), 200);
-    let login: Value = complete.json().await.expect("tokens");
-    login["access"].as_str().expect("access").to_owned()
+    complete.json().await.expect("tokens")
+}
+
+/// jp's own answer to a token (blocks are kept in every region, so jp checks
+/// the token itself): whether it accepted it, with the status and body.
+async fn jp_accepts_token(access: &str) -> (bool, u16, String) {
+    let blocks = reqwest::Client::new()
+        .get(format!("{}/auth/blocks", http(&jp_url())))
+        .bearer_auth(access)
+        .send()
+        .await
+        .expect("blocks");
+    let status = blocks.status().as_u16();
+    let body = blocks.text().await.unwrap_or_default();
+    // A token-only account may have no messaging key yet (403); either way
+    // jp accepted the token.
+    let accepted = status == 200 || (status == 403 && body.contains("messaging key"));
+    (accepted, status, body)
+}
+
+/// The deployment community (the same in both regions).
+async fn community() -> uuid::Uuid {
+    sqlx::query_scalar("SELECT id FROM communities WHERE host = 'localhost:3041'")
+        .fetch_one(&region_db("kr").await)
+        .await
+        .expect("kr community")
+}
+
+/// Point kr's address in the region list at `url` (written in kr) and wait
+/// for jp's copy to have it.
+async fn set_kr_address(url: &str) {
+    sqlx::query("UPDATE regions SET connect_url = $1 WHERE id = 'kr'")
+        .bind(url)
+        .execute(&region_db("kr").await)
+        .await
+        .expect("kr address");
+    let jp = region_db("jp").await;
+    for _ in 0..100 {
+        let copied: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM regions WHERE id = 'kr' AND connect_url = $1)",
+        )
+        .bind(url)
+        .fetch_one(&jp)
+        .await
+        .expect("jp regions");
+        if copied {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+    panic!("jp's copy never got kr's address {url}");
 }
 
 #[tokio::test]
@@ -162,25 +219,16 @@ async fn a_token_minted_while_the_copy_waits_is_admitted_in_jp() {
     // waits for the copy instead of refusing it.
     jp_copy(false).await;
     let _back = CopyBack;
-    let access = sign_up_through_jp().await;
+    let login = sign_up_through_jp().await;
+    let access = login["access"].as_str().expect("access").to_owned();
     let restart = tokio::spawn(async {
         tokio::time::sleep(Duration::from_millis(1500)).await;
         jp_copy(true).await;
     });
-    // Blocks are kept in every region: jp checks the token itself.
-    let blocks = reqwest::Client::new()
-        .get(format!("{}/auth/blocks", http(&jp_url())))
-        .bearer_auth(&access)
-        .send()
-        .await
-        .expect("blocks");
-    let status = blocks.status().as_u16();
-    let body = blocks.text().await.unwrap_or_default();
+    let (accepted, status, body) = jp_accepts_token(&access).await;
     restart.await.expect("copy restarted");
-    // A token-only account may have no messaging key yet (403); either way
-    // jp accepted the token.
     assert!(
-        status == 200 || (status == 403 && body.contains("messaging key")),
+        accepted,
         "jp refused a token kr had minted: {status} {body}"
     );
 }
@@ -208,11 +256,7 @@ async fn a_ban_made_while_the_copy_lags_is_enforced_in_jp() {
     jp_copy(false).await;
     let _back = CopyBack;
     let kr = region_db("kr").await;
-    let community: uuid::Uuid =
-        sqlx::query_scalar("SELECT id FROM communities WHERE host = 'localhost:3041'")
-            .fetch_one(&kr)
-            .await
-            .expect("kr community");
+    let community = community().await;
     sqlx::query(
         "INSERT INTO community_bans (community_id, pubkey, banned, actor_pubkey) \
          VALUES ($1, $2, true, $2) \
@@ -252,4 +296,152 @@ async fn kr_answers_reads_only_for_a_linked_region() {
         .await
         .expect("read");
     assert_eq!(response.status().as_u16(), 401);
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_member_added_in_kr_is_admitted_in_jp_at_once() {
+    // The members-only relay in jp refuses a stranger.
+    let stranger = Keys::generate();
+    assert!(
+        KuzzTestClient::connect(&jp_members_url(), &stranger)
+            .await
+            .is_err(),
+        "the members-only jp relay admitted a stranger"
+    );
+
+    // A member added in kr while jp's copy waits: jp asks kr.
+    jp_copy(false).await;
+    let _back = CopyBack;
+    let member = Keys::generate();
+    sqlx::query("INSERT INTO relay_members (community_id, pubkey, role) VALUES ($1, $2, 'member')")
+        .bind(community().await)
+        .bind(member.public_key().to_hex())
+        .execute(&region_db("kr").await)
+        .await
+        .expect("member in kr");
+    let copied: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM relay_members WHERE pubkey = $1)")
+            .bind(member.public_key().to_hex())
+            .fetch_one(&region_db("jp").await)
+            .await
+            .expect("jp members");
+    assert!(!copied, "the stopped copy brought the member");
+    let admitted = KuzzTestClient::connect(&jp_members_url(), &member).await;
+    assert!(
+        admitted.is_ok(),
+        "jp refused a member added in kr: {:?}",
+        admitted.err()
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_refresh_through_jp_while_the_copy_waits_gives_a_token_jp_accepts() {
+    let login = sign_up_through_jp().await;
+    let refresh = login["refresh"].as_str().expect("refresh").to_owned();
+
+    // Refresh runs at kr (S5-2); the new token is not in jp's copy yet.
+    jp_copy(false).await;
+    let _back = CopyBack;
+    let refreshed = reqwest::Client::new()
+        .post(format!("{}/auth/refresh", http(&jp_url())))
+        .json(&serde_json::json!({ "refresh": refresh }))
+        .send()
+        .await
+        .expect("refresh");
+    assert_eq!(refreshed.status().as_u16(), 200);
+    let tokens: Value = refreshed.json().await.expect("tokens");
+    let access = tokens["access"].as_str().expect("access").to_owned();
+    assert_ne!(Some(access.as_str()), login["access"].as_str());
+
+    let restart = tokio::spawn(async {
+        tokio::time::sleep(Duration::from_millis(1500)).await;
+        jp_copy(true).await;
+    });
+    let (accepted, status, body) = jp_accepts_token(&access).await;
+    restart.await.expect("copy restarted");
+    assert!(accepted, "jp refused a refreshed token: {status} {body}");
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_room_made_in_kr_while_the_copy_waits_is_reached_from_jp() {
+    // jp's copy of the room directory does not have the room: jp asks the
+    // primary where it lives (S4-6) and forwards the write there.
+    jp_copy(false).await;
+    let _back = CopyBack;
+    let keys = Keys::generate();
+    let room = uuid::Uuid::new_v4().to_string();
+    let (status, body) = post(&kr_url(), &keys, &create_room(&keys, &room)).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    let event = message(&keys, &room, "through jp");
+    let (status, body) = post(&jp_url(), &keys, &event).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+    let in_kr: bool =
+        sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM events WHERE id = decode($1, 'hex'))")
+            .bind(event.id.to_hex())
+            .fetch_one(&region_db("kr").await)
+            .await
+            .expect("kr events");
+    assert!(in_kr, "the message did not reach kr");
+}
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_lagging_jp_that_cannot_reach_kr_refuses_writes() {
+    let keys = Keys::generate();
+    let room = uuid::Uuid::new_v4().to_string();
+    let (status, body) = post(&jp_url(), &keys, &create_room(&keys, &room)).await;
+    assert_eq!(
+        (status, &body["accepted"]),
+        (200, &Value::Bool(true)),
+        "{body}"
+    );
+
+    // kr becomes unreachable from jp, then jp's copy stops and falls behind
+    // the limit: jp can neither trust its copy nor ask kr about bans.
+    let kr = region_db("kr").await;
+    let address: String = sqlx::query_scalar("SELECT connect_url FROM regions WHERE id = 'kr'")
+        .fetch_one(&kr)
+        .await
+        .expect("kr address");
+    set_kr_address("ws://127.0.0.1:9").await;
+    jp_copy(false).await;
+    tokio::time::sleep(Duration::from_secs(5)).await;
+    let event = message(&keys, &room, "while jp cannot check bans");
+    let (status, body) = post(&jp_url(), &keys, &event).await;
+
+    // Back to normal before asserting, so a failure leaves the stack usable.
+    jp_copy(true).await;
+    set_kr_address(&address).await;
+
+    assert_ne!(
+        body["accepted"],
+        Value::Bool(true),
+        "a lagging jp accepted a write it could not check: {status} {body}"
+    );
+    assert!(
+        !body.to_string().contains("banned"),
+        "refused as banned, not as unchecked: {body}"
+    );
+    // The app's retry goes through once jp can check again (after a failed
+    // call jp waits 5 s before asking kr again).
+    let mut last = (0, Value::Null);
+    for _ in 0..30 {
+        last = post(&jp_url(), &keys, &event).await;
+        if last.1["accepted"] == Value::Bool(true) {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(500)).await;
+    }
+    panic!("jp still refused the retry: {} {}", last.0, last.1);
 }
