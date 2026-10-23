@@ -32,10 +32,7 @@ class ThreadGoalsButton extends ConsumerWidget {
         channelId: channelId,
         threadRootId: threadRootId,
       ),
-      icon: Icon(
-        root == null ? LucideIcons.target : LucideIcons.crosshair,
-        size: 22,
-      ),
+      icon: Icon(root == null ? LucideIcons.target : LucideIcons.crosshair),
     );
   }
 }

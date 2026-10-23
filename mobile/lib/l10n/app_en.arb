@@ -6202,7 +6202,7 @@
   },
   "threadEditName": "Edit thread name",
   "@threadEditName": {
-    "description": "Thread page, tooltip of the button that renames the thread. Short."
+    "description": "Thread page, item of the header ⋯ menu that renames the thread. Short."
   },
   "threadComposerHint": "Reply in thread…",
   "@threadComposerHint": {

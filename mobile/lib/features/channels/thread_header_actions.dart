@@ -21,6 +21,15 @@ const threadClosedTag = 'kuzz:thread-closed';
 /// Reopen marker written by `kuzz threads reopen` and the desktop Reopen.
 const threadReopenedTag = 'kuzz:thread-reopened';
 
+/// The thread header's compact buttons: smaller icons, set closer together.
+final threadHeaderButtonStyle = IconButton.styleFrom(
+  iconSize: 20,
+  padding: const EdgeInsets.all(6),
+  minimumSize: const Size.square(34),
+  tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+  visualDensity: VisualDensity.compact,
+);
+
 const _threadClosedContent = '✅ Thread closed.';
 const _threadReopenedContent = 'Thread reopened.';
 
@@ -110,8 +119,8 @@ class ThreadGroupButton extends ConsumerWidget {
   }
 }
 
-/// The thread header's `⋯` menu, matching the desktop thread header: follow,
-/// copy link, close or reopen, and mark as unread.
+/// The thread header's `⋯` menu, matching the desktop thread header: rename,
+/// follow, copy link, close or reopen, and mark as unread.
 class ThreadMoreMenu extends ConsumerWidget {
   const ThreadMoreMenu({
     super.key,
@@ -119,6 +128,7 @@ class ThreadMoreMenu extends ConsumerWidget {
     required this.rootId,
     required this.closed,
     required this.canClose,
+    this.onRename,
   });
 
   final String channelId;
@@ -130,6 +140,10 @@ class ThreadMoreMenu extends ConsumerWidget {
   /// Close and Reopen are offered to members of a live top-level thread.
   final bool canClose;
 
+  /// Renames the thread; `null` hides the item (not a member, archived or
+  /// deleted).
+  final VoidCallback? onRename;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final following = ref.watch(threadFollowsProvider).isFollowing(rootId);
@@ -137,8 +151,13 @@ class ThreadMoreMenu extends ConsumerWidget {
       key: const ValueKey('thread-more'),
       tooltip: context.l10n.threadMoreActions,
       icon: const Icon(LucideIcons.ellipsis),
+      iconSize: 20,
+      padding: const EdgeInsets.all(6),
+      style: threadHeaderButtonStyle,
       onSelected: (action) async {
         switch (action) {
+          case 'rename':
+            onRename?.call();
           case 'follow':
             final notifier = ref.read(threadFollowsProvider.notifier);
             if (following) {
@@ -178,6 +197,8 @@ class ThreadMoreMenu extends ConsumerWidget {
         }
       },
       itemBuilder: (_) => [
+        if (onRename != null)
+          _item('rename', LucideIcons.pencil, context.l10n.threadEditName),
         _item(
           'follow',
           following ? LucideIcons.bellOff : LucideIcons.bellRing,
