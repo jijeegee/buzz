@@ -481,6 +481,9 @@ async fn chat_list(
     })))
 }
 
+/// Pages of the agent's chat list read per request in the owner view.
+const AGENT_LIST_MAX_PAGES: usize = 5;
+
 /// Read-only owner view: the DMs and group chats of `agent` that `owner` is
 /// not in. Only the agent's owner may ask. The agent's own read state is
 /// stripped; the owner has none for these rooms.
@@ -508,22 +511,39 @@ async fn agent_chat_list(
         .get_accessible_channel_ids_cached(tenant.community(), &owner_bytes)
         .await
         .map_err(|e| internal_error(&format!("channel access lookup: {e}")))?;
-    let page = state
-        .db
-        .chat_list(tenant.community(), agent, &query)
-        .await
-        .map_err(|e| internal_error(&format!("chat list: {e}")))?;
-    let next = page
-        .rows
-        .last()
-        .filter(|_| page.has_more)
-        .map(|row| json!({ "at_us": row.at.timestamp_micros(), "key": row.key }));
-    let rows: Vec<Value> = page
-        .rows
-        .into_iter()
-        .filter(|row| owner_view_row(row, &owner_rooms))
-        .map(|row| owner_view_json(row_json(row, &owner_bytes)))
-        .collect();
+    // Regular channels are filtered out after the query, so keep reading
+    // pages until this one is full (bounded) instead of handing back a short
+    // or empty page with a cursor.
+    let mut rows: Vec<Value> = Vec::new();
+    let mut next = None;
+    for _ in 0..AGENT_LIST_MAX_PAGES {
+        let page = state
+            .db
+            .chat_list(tenant.community(), agent, &query)
+            .await
+            .map_err(|e| internal_error(&format!("chat list: {e}")))?;
+        let cursor = page
+            .rows
+            .last()
+            .filter(|_| page.has_more)
+            .map(|row| ChatListCursor {
+                at: row.at,
+                key: row.key.clone(),
+            });
+        rows.extend(
+            page.rows
+                .into_iter()
+                .filter(|row| owner_view_row(row, &owner_rooms))
+                .map(|row| owner_view_json(row_json(row, &owner_bytes))),
+        );
+        next = cursor
+            .as_ref()
+            .map(|c| json!({ "at_us": c.at.timestamp_micros(), "key": c.key }));
+        match cursor {
+            Some(cursor) if rows.len() < query.limit as usize => query.before = Some(cursor),
+            _ => break,
+        }
+    }
     Ok(Json(json!({
         "chat_list": 1,
         "as_agent": agent.to_hex(),
@@ -537,9 +557,10 @@ fn owner_view_row(row: &ChatListRow, owner_rooms: &[Uuid]) -> bool {
     (row.channel_type == "dm" || row.group_chat) && !owner_rooms.contains(&row.channel_id)
 }
 
-/// Drop the agent's read position; the owner sees new activity by `last_seq`.
+/// Drop the agent's read and follow state; the owner sees new activity by
+/// `last_seq`.
 fn owner_view_json(mut value: Value) -> Value {
-    for key in ["read_seq", "unread_mark"] {
+    for key in ["read_seq", "unread_mark", "follow_state"] {
         value[key] = Value::Null;
     }
     for key in ["unread", "unread_mentions"] {
