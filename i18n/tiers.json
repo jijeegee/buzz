@@ -40,13 +40,13 @@
       "text": "\\b(relay|nostr|pubkey|npub|nsec|sidecar|ACP|MCP|JSON|websocket|RPC|CLI|SSH|stdout|stderr|runtime|harness|NIP-\\d+|PID|env var|API key)\\b"
     },
     { "tier": 1, "maxWords": 3 },
+    { "tier": 1, "keys": ["desktop:goals.", "desktop:channels.goals.", "mobile:goals"] },
     {
       "tier": 3,
       "keys": [
         "desktop:agents.",
         "desktop:projects.",
         "desktop:workflows.",
-        "desktop:goals.",
         "desktop:pulse.",
         "desktop:channels.agentSession.",
         "desktop:channels.addBot.",
@@ -58,7 +58,6 @@
         "desktop:channels.canvas.",
         "desktop:channels.canvasHistory.",
         "desktop:channels.browser.",
-        "desktop:channels.goals.",
         "desktop:channels.workflows.",
         "desktop:messages.agent",
         "desktop:messages.autoRoute.",
@@ -82,7 +81,6 @@
         "desktop:ui.videoReview.",
         "desktop:ui.codeBlock.",
         "mobile:agent",
-        "mobile:goals",
         "mobile:pulse",
         "mobile:bee"
       ]

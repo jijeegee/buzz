@@ -15,9 +15,10 @@ from the first round (Oct 2026).
    (Korean is not done further than the others), so the owner can see how
    much is left with `node i18n/scripts/i18n.mjs status`.
    - Tier 1: every label of 3 words or fewer, server text, and the
-     screens people use daily (chats, groups, friends, settings, ...).
+     screens people use daily (chats, groups, friends, settings, goals,
+     ...). Goals moved here from tier 3 on 2026-10-23 (owner: used daily).
    - Tier 2: the rest of the everyday screens (the default).
-   - Tier 3: agent, project, workflow and goal screens.
+   - Tier 3: agent, project and workflow screens.
    - Exception (owner-approved 2026-10-23): `languages` in `tiers.json`
      opens more tiers for single languages. ko/ja/zh-Hans/zh-Hant are at
      tier 3 because a full translation from before tiers could be reused
