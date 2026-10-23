@@ -8,9 +8,8 @@
 //! signature, is a warning on stderr: the request goes out exactly as it did
 //! before, and the relay decides (it refuses only under `enforce`).
 //!
-//! TODO(device-keys): `kuzz pair` (external pairing, A4) and a long-lived
-//! `kuzz messages watch` connection do not exist yet; when they land, sign
-//! their auth with [`process_signer`] the same way.
+//! `kuzz pair` creates the key like a login (it signs the claim with it), and
+//! `kuzz messages watch` tags its long-lived socket's AUTH like any other.
 
 use std::sync::atomic::{AtomicI64, Ordering};
 
