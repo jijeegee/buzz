@@ -7,194 +7,154 @@ import {
   TEXT,
 } from "./useMentionSendFlow.test-support.mjs";
 
-for (const stage of ["prepare", "inventory", "add"]) {
-  test(`dismiss during delayed ${stage} cannot add further or send, retains draft`, async () => {
-    const s = await setup();
-    const gate = deferred();
-    s.control[stage] = gate;
-    if (stage === "inventory") {
-      s.query.data = undefined;
-      s.rerender();
-    }
-    await s.invite();
-    assert.equal(s.result.current.nonMemberPromptProps.isInvitePending, true);
-    s.dismiss();
-    assert.equal(s.result.current.nonMemberPromptProps.open, false);
-    await s.finish(gate);
-    assert.equal(s.events("add").length, stage === "add" ? 1 : 0);
-    assert.equal(s.events("SEND").length, 0);
-    assert.equal(s.options.contentRef.current, TEXT);
+// Start an ordinary send without awaiting it. The `control.publish` /
+// `control.prepare` gates (or a pending upload) hold it in flight.
+async function start(s, input = {}) {
+  let promise;
+  await s.act(async () => {
+    s.options.contentRef.current = input.trimmed ?? TEXT;
+    promise = s.result.current.sendMessageWithMentionFlow({
+      capturedChannelId: "general",
+      pendingImeta: [],
+      trimmed: TEXT,
+      recoveryDraftKey: s.options.effectiveDraftKey,
+      queuedAttachments: s.control.attachments ?? [],
+      ...input,
+    });
   });
+  return { promise };
 }
-for (const action of ["navigation", "unmount", "replacement"]) {
-  test(`delayed add ${action} invalidates late completion`, async () => {
-    const s = await setup();
-    const gate = deferred();
-    s.control.add = gate;
-    await s.invite();
-    assert.equal(s.events("add").length, 1);
-    if (action === "navigation") {
-      s.options.channelId = "random";
-      s.rerender();
-    }
-    if (action === "unmount") s.unmount();
-    if (action === "replacement") await s.prompt("@RemoteScout replacement");
-    await s.finish(gate);
-    assert.equal(s.events("SEND").length, 0);
-    if (action === "replacement") {
-      s.control.add = null;
-      await s.invite();
-      assert.equal(s.events("SEND").length, 1);
-      assert.equal(s.events("SEND")[0][1], "@RemoteScout replacement");
-    }
-  });
-}
-test("normal Invite survives promotion/render and synchronous double click sends exactly once", async () => {
+
+// Kuzz never adds anyone to a room on send: a mention goes out as written.
+test("mentioning a non-member person publishes immediately with them as a recipient", async () => {
+  const s = await setup();
+  const human = "d".repeat(64);
+  s.options.mentions.memberPubkeys = new Set(["a".repeat(64)]);
+  s.options.mentions.extractMentionPubkeys = () => [human];
+  s.options.mentions.isAgentPubkey = () => false;
+  s.control.currentRefs = [
+    { displayName: "Alice", pubkey: human, isAgent: false },
+  ];
+  s.rerender();
+  await s.prompt("@Alice hello");
+  assert.equal(s.result.current.nonMemberPromptProps.open, false);
+  assert.equal(s.events("add").length, 0);
+  assert.equal(s.events("SEND").length, 1);
+  assert.equal(s.events("SEND")[0][1], "@Alice hello");
+  assert.deepEqual(Array.from(s.events("SEND")[0][2]), [human]);
+  assert.equal(s.result.current.isPreparingMentionSend, false);
+});
+
+test("synchronous double send survives render and publishes exactly once", async () => {
   const s = await setup();
   const gate = deferred();
   s.control.publish = gate;
+  const input = {
+    capturedChannelId: "general",
+    pendingImeta: [],
+    trimmed: TEXT,
+    recoveryDraftKey: "general",
+  };
+  let first;
+  let second;
   await s.act(async () => {
-    s.result.current.nonMemberPromptProps.onInvite();
-    s.result.current.nonMemberPromptProps.onInvite();
+    first = s.result.current.sendMessageWithMentionFlow(input);
+    second = s.result.current.sendMessageWithMentionFlow(input);
   });
-  assert.equal(s.events("add").length, 1);
   assert.equal(s.events("publish").length, 1);
-  assert.equal(s.result.current.nonMemberPromptProps.open, false);
-  s.rerender(); // clearing the prompt is NOT cancellation
-  await s.finish(gate);
+  s.rerender(); // a render is NOT cancellation
+  await s.act(async () => {
+    gate.resolve();
+    await first;
+    await second;
+  });
   assert.equal(s.events("SEND").length, 1);
   assert.deepEqual(Array.from(s.events("SEND")[0][2]), [KEY]);
   assert.equal(s.events("SEND")[0][4], "general");
   assert.equal(s.result.current.isPreparingMentionSend, false);
 });
-for (const action of ["dismissal", "navigation", "unmount"]) {
-  test(`signal remains live through final validation: ${action} restores recoverable draft, no send`, async () => {
-    const s = await setup();
-    const gate = deferred();
-    s.control.publish = gate;
-    await s.invite();
-    assert.equal(s.events("publish").length, 1);
-    assert.equal(s.options.contentRef.current, "");
-    if (action === "dismissal") s.dismiss();
-    if (action === "navigation") {
-      s.options.channelId = "random";
-      s.rerender();
-    }
-    if (action === "unmount") s.unmount();
-    await s.finish(gate);
-    assert.equal(s.events("SEND").length, 0);
-    assert.equal(s.events("persist")[0][2], TEXT);
-    assert.deepEqual(s.events("persist")[0][6], s.refs);
-    if (action === "dismissal") {
-      assert.equal(s.options.contentRef.current, TEXT);
-      assert.deepEqual(s.events("restore-refs")[0][1], s.refs);
-    }
-  });
-}
-test("late cancelled failure cannot reset a newer pending attempt", async () => {
-  const s = await setup();
-  const old = deferred();
-  s.control.add = old;
-  await s.invite();
-  s.dismiss();
-  await s.prompt();
-  const current = deferred();
-  s.control.add = current;
-  await s.invite();
-  old.reject(new Error("obsolete add failure"));
-  await s.flush();
-  assert.equal(s.result.current.nonMemberPromptProps.isInvitePending, true);
-  assert.equal(s.result.current.nonMemberPromptProps.error, null);
-  await s.finish(current);
-  assert.equal(s.events("SEND").length, 1);
-});
-test("reference-only supersedes preparation and emits no triggering recipient", async () => {
-  const s = await setup();
-  const old = deferred();
-  s.control.prepare = old;
-  await s.invite();
-  s.control.prepare = null;
-  await s.act(async () => s.result.current.nonMemberPromptProps.onDoNothing());
-  await s.finish(old);
-  assert.equal(s.events("add").length, 0);
-  assert.equal(s.events("SEND").length, 1);
-  assert.deepEqual(Array.from(s.events("SEND")[0][2]), []);
-});
 
-// Readiness is a nested continuation owned by completeSend. Cancelling while
-// policy preparation is pending must also stop a subsequent local attachment.
 test("sending to a local agent does not rewrite its channel access first", async () => {
   const s = await setup();
   s.query.data = [{ pubkey: KEY, name: "LocalScout", status: "running" }];
   s.rerender();
-  await s.invite();
+  await s.prompt();
+  assert.equal(s.events("SEND").length, 1);
   assert.equal(s.events("local-policy").length, 0);
 });
 
-// Real draft lifecycle + real send/Invite hooks share one reused StrictMode host.
+// Real draft lifecycle + real send hooks share one reused StrictMode host.
 // The editor and storage adapter are mocked; draft leave/restore ordering is not.
-for (const stage of ["add", "publish"]) {
-  for (const incoming of [TEXT, "unrelated thread B draft"]) {
-    test(`same-channel ${stage}: incoming ${incoming === TEXT ? "same-text" : "different-text"} draft and exact refs survive`, async () => {
-      const s = await setup({ lifecycle: true });
-      const otherRefs = [
-        { displayName: "RemoteScout", pubkey: "c".repeat(64), isAgent: true },
-      ];
-      s.store.set("thread:b", {
-        content: incoming,
-        channelId: "general",
-        pendingImeta: [],
-        spoileredAttachmentUrls: [],
-        mentionRefs: otherRefs,
-      });
-      const gate = deferred();
-      s.control[stage] = gate;
-      await s.invite();
-      s.navigate("thread:b");
-      assert.equal(s.result.current.nonMemberPromptProps.open, false);
-      assert.equal(s.result.current.isPreparingMentionSend, false);
-      assert.equal(s.options.contentRef.current, incoming);
-      assert.deepEqual(s.control.currentRefs, otherRefs);
-      // Recovery must be available on return BEFORE the network responds.
-      s.navigate("thread:a");
-      assert.equal(s.options.contentRef.current, TEXT);
-      assert.deepEqual(s.control.currentRefs, s.refs);
-      s.edit(TEXT, otherRefs); // identical visible text is a new exact selection
-      s.navigate("thread:b");
-      await s.finish(gate);
-      assert.equal(s.events("SEND").length, 0);
-      assert.equal(s.options.contentRef.current, incoming);
-      assert.deepEqual(s.control.currentRefs, otherRefs);
-      assert.deepEqual(s.store.get("thread:a").mentionRefs, otherRefs);
-      assert.deepEqual(s.store.get("thread:b").mentionRefs, otherRefs);
+for (const incoming of [TEXT, "unrelated thread B draft"]) {
+  test(`same-channel publish: incoming ${incoming === TEXT ? "same-text" : "different-text"} draft and exact refs survive`, async () => {
+    const s = await setup({ lifecycle: true });
+    const otherRefs = [
+      { displayName: "RemoteScout", pubkey: "c".repeat(64), isAgent: true },
+    ];
+    s.store.set("thread:b", {
+      content: incoming,
+      channelId: "general",
+      pendingImeta: [],
+      spoileredAttachmentUrls: [],
+      mentionRefs: otherRefs,
     });
-  }
+    const gate = deferred();
+    s.control.publish = gate;
+    const { promise } = await start(s);
+    s.navigate("thread:b");
+    assert.equal(s.result.current.nonMemberPromptProps.open, false);
+    assert.equal(s.options.contentRef.current, incoming);
+    assert.deepEqual(s.control.currentRefs, otherRefs);
+    // The in-flight send owns no recovery yet: A shows its optimistic empty.
+    s.navigate("thread:a");
+    assert.equal(s.options.contentRef.current, "");
+    s.edit(TEXT, otherRefs); // identical visible text is a new exact selection
+    s.navigate("thread:b");
+    await s.act(async () => {
+      gate.reject(new Error("publish failed"));
+      await promise;
+    });
+    assert.equal(s.events("SEND").length, 0);
+    assert.equal(s.options.contentRef.current, incoming);
+    assert.deepEqual(s.control.currentRefs, otherRefs);
+    assert.deepEqual(s.store.get("thread:a").mentionRefs, otherRefs);
+    assert.deepEqual(s.store.get("thread:b").mentionRefs, otherRefs);
+  });
 }
-test("late validation completion cannot restore over an authored empty draft or reset a newer send", async () => {
+
+test("late failure cannot restore over an authored empty draft or reset a newer send", async () => {
   const s = await setup({ lifecycle: true });
   const old = deferred();
   s.control.publish = old;
-  await s.invite();
+  const oldSend = await start(s);
   s.edit("new text");
   s.edit("");
-  s.dismiss();
   assert.equal(s.options.contentRef.current, "");
+  s.remount(); // a new composer has its own send latch
+  s.control.currentRefs = s.refs;
   const current = deferred();
   s.control.publish = current;
-  await s.prompt();
-  await s.invite();
-  await s.finish(old);
+  const newSend = await start(s);
+  assert.equal(s.events("publish").length, 2);
+  await s.act(async () => {
+    old.reject(new Error("old publish failed"));
+    await oldSend.promise;
+  });
   assert.equal(s.result.current.isPreparingMentionSend, true);
   assert.equal(s.events("SEND").length, 0);
-  await s.finish(current);
+  assert.equal(s.options.contentRef.current, "");
+  await s.act(async () => {
+    current.resolve();
+    await newSend.promise;
+  });
   assert.equal(s.events("SEND").length, 1);
+  assert.equal(s.result.current.isPreparingMentionSend, false);
 });
-test("cancelled media continuation preserves refs and cannot overwrite an unrelated stored draft", async () => {
+
+test("failed media continuation preserves refs and cannot overwrite an unrelated stored draft", async () => {
   const s = await setup({ lifecycle: true });
-  s.dismiss();
   s.control.attachments = [{ id: "file", file: {}, spoilered: false }];
-  await s.prompt();
-  await s.invite();
+  const { promise } = await start(s);
   assert.ok(s.control.uploadCallbacks);
   const other = {
     content: "new saved draft",
@@ -204,21 +164,19 @@ test("cancelled media continuation preserves refs and cannot overwrite an unrela
     mentionRefs: [],
   };
   s.store.set("thread:a", other);
-  s.dismiss();
+  await s.act(async () => {
+    s.control.uploadCallbacks.onError(new Error("upload failed"));
+    await promise;
+  });
+  assert.equal(s.events("SEND").length, 0);
   assert.equal(s.options.contentRef.current, TEXT);
   assert.deepEqual(s.control.currentRefs, s.refs);
-  assert.equal(s.store.get("thread:a").content, other.content);
-  await s.act(async () =>
-    s.control.uploadCallbacks.onComplete([], new AbortController().signal),
-  );
-  assert.equal(s.events("SEND").length, 0);
   assert.equal(s.store.get("thread:a").content, other.content);
 });
 
 for (const action of ["unchanged", "navigate", "edit"]) {
   test(`delayed persona reuse binds the captured draft, not a later selection: ${action}`, async () => {
     const s = await setup({ lifecycle: true });
-    s.dismiss();
     const text = "@Fizz hello";
     const personaRefs = [{ displayName: "Fizz", pubkey: KEY, isAgent: true }];
     const otherRefs = [{ ...personaRefs[0], pubkey: "c".repeat(64) }];
@@ -282,17 +240,14 @@ for (const action of ["unchanged", "navigate", "edit"]) {
 
 // Independent reviewer reproduction, plus storage/queued-file boundaries.
 for (const media of [false, true]) {
-  for (const action of ["dismiss", "navigate", "unmount"]) {
-    test(`authored edit-clear before ${action} stays deleted (queued media: ${media})`, async () => {
+  for (const action of ["stay", "navigate", "unmount"]) {
+    test(`authored edit-clear before ${action} stays deleted after late failure (queued media: ${media})`, async () => {
       const s = await setup({ lifecycle: true });
       const gate = deferred();
       s.control.publish = gate;
-      if (media) {
-        s.dismiss();
+      if (media)
         s.control.attachments = [{ id: "file", file: {}, spoilered: false }];
-        await s.prompt();
-      }
-      await s.invite();
+      const { promise } = await start(s);
       let upload;
       if (media) {
         await s.act(async () => {
@@ -309,7 +264,6 @@ for (const media of [false, true]) {
       const recoveryWrites = s.events("save-queue").length;
       if (action === "navigate") s.navigate("thread:b");
       else if (action === "unmount") s.unmount();
-      else s.dismiss();
       assert.equal(s.store.has("thread:a"), false);
       if (action === "navigate") {
         s.edit(TEXT, [{ ...s.refs[0], pubkey: "c".repeat(64) }]);
@@ -319,8 +273,11 @@ for (const media of [false, true]) {
         s.edit("new A after return", []);
         s.navigate("thread:b");
       }
-      await s.finish(gate);
-      if (upload) await upload;
+      await s.act(async () => {
+        gate.reject(new Error("publish failed"));
+        await promise;
+        if (upload) await upload;
+      });
       assert.equal(s.events("SEND").length, 0);
       assert.equal(s.events("save-queue").length, recoveryWrites);
       if (action === "navigate") {
@@ -328,7 +285,10 @@ for (const media of [false, true]) {
         assert.equal(s.control.currentRefs[0].pubkey, "c".repeat(64));
         assert.equal(s.store.get("thread:a").content, "new A after return");
         assert.deepEqual(s.store.get("thread:a").mentionRefs, []);
-      } else assert.equal(s.store.has("thread:a"), false);
+      } else {
+        assert.equal(s.store.has("thread:a"), false);
+        if (action === "stay") assert.equal(s.options.contentRef.current, "");
+      }
     });
   }
 }
@@ -346,19 +306,25 @@ for (const incoming of [TEXT, "different B text"]) {
       });
       const gate = deferred();
       s.control.publish = gate;
-      await s.invite();
+      const { promise } = await start(s);
       if (edit !== "untouched")
         s.edit(edit === "new-text" ? "new A text" : TEXT, otherRefs);
       s.navigate("thread:b");
       const saved = s.store.get("thread:a");
-      assert.equal(saved.content, edit === "new-text" ? "new A text" : TEXT);
-      assert.deepEqual(
-        saved.mentionRefs,
-        edit === "untouched" ? s.refs : otherRefs,
-      );
+      if (edit !== "untouched") {
+        assert.equal(saved.content, edit === "new-text" ? "new A text" : TEXT);
+        assert.deepEqual(saved.mentionRefs, otherRefs);
+      }
       s.edit("B edit during old await", []);
-      await s.finish(gate);
-      assert.equal(s.store.get("thread:a"), saved);
+      await s.act(async () => {
+        gate.reject(new Error("publish failed"));
+        await promise;
+      });
+      if (edit === "untouched") {
+        // Only the untouched source is owed its failed send back.
+        assert.equal(s.store.get("thread:a").content, TEXT);
+        assert.deepEqual(s.store.get("thread:a").mentionRefs, s.refs);
+      } else assert.deepEqual(s.store.get("thread:a"), saved);
       assert.equal(s.options.contentRef.current, "B edit during old await");
       assert.equal(s.control.currentRefs.length, 0);
       assert.equal(s.events("SEND").length, 0);
@@ -369,8 +335,6 @@ for (const incoming of [TEXT, "different B text"]) {
 for (const action of ["untouched", "deleted", "superseded"]) {
   test(`ordinary send preflight recovery respects source authority on unmount: ${action}`, async () => {
     const s = await setup({ lifecycle: true });
-    s.dismiss();
-    s.options.mentions.memberPubkeys = new Set([KEY]);
     // The agent inventory read is the first await of an ordinary send.
     const gate = deferred();
     s.control.inventory = gate;
@@ -414,8 +378,6 @@ for (const action of ["untouched", "deleted", "superseded"]) {
 for (const authored of [false, true]) {
   test(`sent-draft cleanup consults exited source visit, not B revision (authored: ${authored})`, async () => {
     const s = await setup({ lifecycle: true });
-    s.dismiss();
-    s.options.mentions.memberPubkeys = new Set([KEY]);
     s.options.drafts.markDraftSent = (...args) =>
       s.calls.push(["mark-sent", ...args]);
     const gate = deferred();
@@ -462,8 +424,6 @@ for (const authored of [false, true]) {
 
 test("ordinary send may clean its untouched source even if navigation preceded optimistic clear", async () => {
   const s = await setup({ lifecycle: true });
-  s.dismiss();
-  s.options.mentions.memberPubkeys = new Set([KEY]);
   s.options.drafts.markDraftSent = (...args) =>
     s.calls.push(["mark-sent", ...args]);
   const gate = deferred();
@@ -497,21 +457,21 @@ test("ordinary send may clean its untouched source even if navigation preceded o
 });
 
 for (const upload of [false, true]) {
-  test(`publication failure remains visible and recoverable after invitation${upload ? " with media" : ""}`, async () => {
+  test(`publication failure remains visible and recoverable${upload ? " with media" : ""}`, async () => {
     const s = await setup();
     s.options.onSendRef.current = async () => {
       throw new Error("relay rejected publication");
     };
-    if (upload) {
-      s.control.attachments = [{ id: "queued-file", file: {} }];
-      await s.prompt();
-    }
-    await s.invite();
-    if (upload) {
-      await s.act(async () =>
-        s.control.uploadCallbacks.onComplete([], new AbortController().signal),
-      );
-    }
+    if (upload) s.control.attachments = [{ id: "queued-file", file: {} }];
+    const { promise } = await start(s);
+    await s.act(async () => {
+      if (upload)
+        await s.control.uploadCallbacks.onComplete(
+          [],
+          new AbortController().signal,
+        );
+      await promise;
+    });
     assert.equal(s.options.contentRef.current, TEXT);
     assert.deepEqual(s.events("error"), [
       ["error", "Message failed to send: relay rejected publication"],
@@ -524,7 +484,6 @@ for (const upload of [false, true]) {
 // consumes a snapshot; this await must instead fence the maps before reading.
 test("settled paste supplies exact recipient and recovery refs before preparation", async () => {
   const s = await setup({ lifecycle: true });
-  s.dismiss();
   const gate = deferred();
   const pastedRefs = [
     { displayName: "RemoteScout", pubkey: "c".repeat(64), isAgent: true },
@@ -546,14 +505,13 @@ test("settled paste supplies exact recipient and recovery refs before preparatio
   });
   await s.finish(gate);
   await sending;
-  await s.invite();
+  assert.equal(s.events("SEND").length, 1);
   assert.deepEqual(Array.from(s.events("SEND")[0][2]), [pastedRefs[0].pubkey]);
 });
 
 for (const action of ["edit", "delete", "navigation", "return", "unmount"]) {
   test(`paste settlement after ${action} cannot read another draft or publish`, async () => {
     const s = await setup({ lifecycle: true });
-    s.dismiss();
     const gate = deferred();
     s.options.mentions.settlePendingMentionBindings = () => gate.promise;
     s.rerender();
