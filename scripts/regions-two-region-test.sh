@@ -53,8 +53,12 @@ log "starting stack"
 
 log "building relay"
 cargo build -p kuzz-relay --features dev
+cargo build -p kuzz-admin
 BIN="${TARGET}/debug/kuzz-relay"
+ADMIN="${TARGET}/debug/kuzz-admin"
 [[ -x "${BIN}" || -x "${BIN}.exe" ]] || { log "no relay binary at ${BIN}"; exit 1; }
+KR_DB="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz"
+JP_DB="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz"
 mkdir -p "${LOG_DIR}"
 
 # start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port> <link key> [log name]
@@ -128,10 +132,18 @@ for _ in $(seq 1 90); do
   sleep 1
 done
 [[ -n "${JP_LINK_PUBKEY}" ]] || { log "jp did not ask to be added; see ${LOG_DIR}"; exit 1; }
-"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
-  "INSERT INTO regions (id, connect_url, is_primary, link_pubkey)
-   VALUES ('jp', '${JP_URL}', false, '${JP_LINK_PUBKEY}')"
+# The operator command (S6-1) adds jp at the primary.
+DATABASE_URL="${KR_DB}" "${ADMIN}" regions add --id jp --connect-url "${JP_URL}" \
+  --link-pubkey "${JP_LINK_PUBKEY}"
 wait_up http://localhost:3042/
+# The list shows both regions, and jp's copy refuses to change the list.
+DATABASE_URL="${KR_DB}" "${ADMIN}" regions list | tee "${LOG_DIR}/regions-list.txt"
+grep -qE '^jp +' "${LOG_DIR}/regions-list.txt" || { log "regions list lacks jp"; exit 1; }
+if DATABASE_URL="${JP_DB}" "${ADMIN}" regions add --id sg --connect-url ws://localhost:3044 \
+  --link-pubkey "${JP_LINK_PUBKEY}" 2>"${LOG_DIR}/regions-add-in-jp.txt"; then
+  log "jp's copy accepted a region change"; exit 1
+fi
+grep -q "not the primary" "${LOG_DIR}/regions-add-in-jp.txt" || { log "unexpected refusal:"; cat "${LOG_DIR}/regions-add-in-jp.txt"; exit 1; }
 
 # A second relay in jp, on the same database, that admits relay members only
 # (S5-5). The owner is required by that setting; any valid key will do.
