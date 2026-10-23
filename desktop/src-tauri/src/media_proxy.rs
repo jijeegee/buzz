@@ -11,7 +11,7 @@ use tauri::{http, Manager};
 use tokio::net::TcpListener;
 
 use crate::app_state::AppState;
-use crate::commands::media::mint_media_get_auth;
+use crate::commands::media::{mint_fresh_media_get_auth, mint_media_get_auth};
 use crate::relay;
 
 /// Defense-in-depth cap: refuse to buffer responses larger than this into RAM.
@@ -84,7 +84,7 @@ async fn proxy_handler(AxumState(state): AxumState<ProxyState>, req: Request) ->
         || resp.status() == reqwest::StatusCode::FORBIDDEN)
         && has_range
     {
-        if let Some(fresh_auth) = mint_media_get_auth(&app_state, &base_url) {
+        if let Some(fresh_auth) = mint_fresh_media_get_auth(&app_state, &base_url) {
             let mut retry = state
                 .client
                 .get(&upstream_url)
@@ -240,7 +240,7 @@ pub async fn handle_kuzz_media(
                 || resp.status() == reqwest::StatusCode::FORBIDDEN)
                 && has_range =>
         {
-            if let Some(fresh_auth) = mint_media_get_auth(&state, &base) {
+            if let Some(fresh_auth) = mint_fresh_media_get_auth(&state, &base) {
                 let mut retry = state
                     .http_client
                     .get(&upstream_url)

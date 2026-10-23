@@ -187,6 +187,10 @@ pub fn build_managed_agent_summary<R: tauri::Runtime>(
     // green light as long as any pair anywhere is alive.
     let pair_key = workspace_pair_key(app, record);
     let pair_runtime = pair_key.as_ref().and_then(|key| runtimes.get(key));
+    if let (Some(key), None) = (&pair_key, pair_runtime) {
+        // kuzz-acp stays down for a key bound to another device.
+        crate::auth::agent_hosting::note_wrong_host_exit(app, record, &key.relay_url);
+    }
 
     let (status, pid, log_path) = if record.backend != BackendKind::Local {
         // Two-axis status model for remote agents:
@@ -573,6 +577,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     live_routing_roles: &[(String, super::channel_routing::RoutingRole)],
 ) -> Result<crate::managed_agents::ManagedAgentProcess, String> {
     admitted.covers(relay_url)?;
+    // A key that left at a sign-out: say so plainly and try to bring it back.
+    crate::auth::agent_hosting::key_away_gate(app, record, relay_url)?;
     if let Some(error) = spawn_key_refusal(record) {
         return Err(error);
     }

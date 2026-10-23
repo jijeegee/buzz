@@ -2000,12 +2000,10 @@ pub async fn create_auth_event_as<R: tauri::Runtime>(
             Tag::parse(vec!["challenge", &challenge])
                 .map_err(|error| format!("challenge tag failed: {error}"))?,
         ];
-        crate::device_key::sign_auth_event(
-            EventBuilder::new(Kind::Custom(22242), "").tags(tags),
-            &keys,
-        )
-        .map(|event| event.as_json())
-        .map_err(|error| format!("sign failed: {error}"))
+        let builder = EventBuilder::new(Kind::Custom(22242), "").tags(tags);
+        crate::device_key::sign_auth_event(builder, &keys)
+            .map(|event| event.as_json())
+            .map_err(|error| format!("sign failed: {error}"))
     })
     .await
     .map_err(|e| format!("spawn_blocking failed: {e}"))?

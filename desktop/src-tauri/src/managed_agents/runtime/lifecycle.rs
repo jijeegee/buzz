@@ -93,6 +93,12 @@ pub fn sync_managed_agent_processes(
             record.last_exit_code = status.code();
             let log_err = if status.success() {
                 None
+            } else if status.code() == Some(crate::auth::agent_hosting::WRONG_HOST_EXIT) {
+                // Parked: runs on another device; never restarted from here.
+                Some(super::super::storage::AgentLogError {
+                    message: crate::auth::agent_hosting::OTHER_DEVICE_REFUSAL.to_owned(),
+                    code: None,
+                })
             } else {
                 Some(
                     super::super::meaningful_agent_error_from_log(&runtime.log_path)

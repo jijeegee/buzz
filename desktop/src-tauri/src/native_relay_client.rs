@@ -512,7 +512,9 @@ async fn connect_with(
 }
 
 /// NIP-42 like [`NostrWsConnection::connect_authenticated`] (same tags and
-/// timeouts), with this device's `device` tag on the AUTH event.
+/// timeouts), with this device's `device` tag on the AUTH event. Frames that
+/// arrive before the AUTH OK are kept and handed on in order, as the crate's
+/// own handshake does.
 async fn connect_with_device_tag(
     relay_url: &str,
     keys: &Keys,
@@ -521,19 +523,23 @@ async fn connect_with_device_tag(
     use kuzz_ws_client_pkg::connection::{AUTH_CHALLENGE_TIMEOUT_SECS, AUTH_OK_TIMEOUT_SECS};
     use kuzz_ws_client_pkg::WsClientError;
     let mut conn = NostrWsConnection::connect(relay_url).await?;
+    let mut early = Vec::new();
     let deadline = tokio::time::Instant::now() + Duration::from_secs(AUTH_CHALLENGE_TIMEOUT_SECS);
     let challenge = loop {
         let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
         if remaining.is_zero() {
             return Err(WsClientError::NoAuthChallenge);
         }
-        if let RelayMessage::Auth { challenge } = conn.next_event(remaining).await? {
-            if challenge.len() > 1024 {
-                return Err(WsClientError::AuthFailed(
-                    "challenge exceeds 1024 bytes".into(),
-                ));
+        match conn.next_event(remaining).await? {
+            RelayMessage::Auth { challenge } => {
+                if challenge.len() > 1024 {
+                    return Err(WsClientError::AuthFailed(
+                        "challenge exceeds 1024 bytes".into(),
+                    ));
+                }
+                break challenge;
             }
-            break challenge;
+            other => early.push(other),
         }
     };
     let url = nostr::RelayUrl::parse(relay_url).map_err(|e| WsClientError::Url(e.to_string()))?;
@@ -551,14 +557,17 @@ async fn connect_with_device_tag(
         if remaining.is_zero() {
             return Err(WsClientError::Timeout);
         }
-        if let RelayMessage::Ok(ok) = conn.next_event(remaining).await? {
-            if ok.event_id == event_id {
-                return if ok.accepted {
-                    Ok(conn)
-                } else {
-                    Err(WsClientError::AuthFailed(ok.message))
-                };
+        match conn.next_event(remaining).await? {
+            RelayMessage::Ok(ok) if ok.event_id == event_id => {
+                if !ok.accepted {
+                    return Err(WsClientError::AuthFailed(ok.message));
+                }
+                for message in early {
+                    conn.requeue(message);
+                }
+                return Ok(conn);
             }
+            other => early.push(other),
         }
     }
 }

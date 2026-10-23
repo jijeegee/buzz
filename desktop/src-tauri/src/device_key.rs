@@ -13,7 +13,7 @@ use std::sync::{Mutex, PoisonError};
 use std::time::{Duration, Instant};
 
 pub(crate) use kuzz_device_key_pkg::DeviceKey;
-use kuzz_device_key_pkg::{SoftwareKeyStore, DEVICE_KEY_SCOPE};
+use kuzz_device_key_pkg::{FileStore, DEVICE_KEY_SCOPE};
 use nostr::{EventBuilder, Keys, UnsignedEvent};
 
 /// Header carrying a request's device proof.
@@ -26,6 +26,12 @@ const TAGGED_KINDS: [u16; 3] = [22242, 27235, 24242];
 
 /// Retry opening a failed key no sooner than this.
 const OPEN_RETRY: Duration = Duration::from_secs(30);
+/// Longest wait between background retries of a failed open.
+const OPEN_RETRY_MAX: Duration = Duration::from_secs(600);
+
+/// Longest a user action (sign-in, a request) waits for the device key or
+/// one device signature; past it, it goes on as if there were no key.
+pub(crate) const USER_WAIT: Duration = Duration::from_secs(2);
 
 /// Clock offsets below this are treated as no offset (mobile: 30 s).
 const CLOCK_SKEW_THRESHOLD: i64 = 30;
@@ -34,35 +40,40 @@ const CLOCK_SKEW_THRESHOLD: i64 = 30;
 struct Slot {
     key: Option<DeviceKey>,
     failed_at: Option<Instant>,
-    data_dir: Option<PathBuf>,
 }
 
 static SLOT: Mutex<Slot> = Mutex::new(Slot {
     key: None,
     failed_at: None,
-    data_dir: None,
 });
 
 /// Serializes key creation so two callers never race `open_or_create`.
 static OPENING: Mutex<()> = Mutex::new(());
 
 static CLOCK: Mutex<Option<HashMap<String, i64>>> = Mutex::new(None);
+/// Origins whose server time was already asked for (answered or not).
+static TIME_ASKED: Mutex<Option<std::collections::HashSet<String>>> = Mutex::new(None);
 
 fn slot() -> std::sync::MutexGuard<'static, Slot> {
     SLOT.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Remember where a file store would live and open (or create) the device
-/// key in the background, so the first signer does not wait for the TPM.
-pub(crate) fn init(data_dir: Option<PathBuf>) {
-    slot().data_dir = data_dir;
+/// Open (or create) the device key in the background, so the first signer
+/// does not wait for the TPM. A failed open is retried in the background
+/// (after [`OPEN_RETRY`], then less often); `on_ready` runs once it is open.
+pub(crate) fn init(on_ready: impl FnOnce() + Send + 'static) {
     if cfg!(test) {
         return;
     }
     let _ = std::thread::Builder::new()
         .name("kuzz-device-key".into())
-        .spawn(|| {
-            let _ = ensure();
+        .spawn(move || {
+            let mut wait = OPEN_RETRY;
+            while ensure().is_none() {
+                std::thread::sleep(wait);
+                wait = (wait * 2).min(OPEN_RETRY_MAX);
+            }
+            on_ready();
         });
 }
 
@@ -84,7 +95,7 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
         return Some(key);
     }
     let _opening = OPENING.lock().unwrap_or_else(PoisonError::into_inner);
-    let data_dir = {
+    {
         let slot = slot();
         if let Some(key) = &slot.key {
             return Some(key.clone());
@@ -92,17 +103,13 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
         if slot.failed_at.is_some_and(|at| at.elapsed() < OPEN_RETRY) {
             return None;
         }
-        slot.data_dir.clone()
+    }
+    let Some(dir) = shared_store_dir() else {
+        eprintln!("kuzz-desktop: warning: device key unavailable: no local data directory");
+        slot().failed_at = Some(Instant::now());
+        return None;
     };
-    let store = match store(data_dir) {
-        Some(store) => store,
-        None => {
-            eprintln!("kuzz-desktop: device key unavailable: no key store");
-            slot().failed_at = Some(Instant::now());
-            return None;
-        }
-    };
-    match DeviceKey::open_or_create(DEVICE_KEY_SCOPE, store.as_ref()) {
+    match DeviceKey::open_or_create(DEVICE_KEY_SCOPE, &FileStore::new(dir)) {
         Ok(key) => {
             eprintln!("kuzz-desktop: device key ready ({})", key.kind().as_wire());
             let mut slot = slot();
@@ -118,111 +125,51 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
     }
 }
 
-/// [`ensure`] off the async runtime.
-pub(crate) async fn ensure_async() -> Option<DeviceKey> {
+/// [`ensure`] off the async runtime, waiting at most `limit` (a TPM that
+/// hangs, or a startup open holding the lock). `None` with a warning when
+/// the key is not ready in time; the open goes on in the background.
+pub(crate) async fn ensure_within(limit: Duration) -> Option<DeviceKey> {
     if let Some(key) = current() {
         return Some(key);
     }
     if cfg!(test) {
         return None;
     }
-    tokio::task::spawn_blocking(ensure).await.ok().flatten()
-}
-
-#[cfg(feature = "system-keyring")]
-fn store(_data_dir: Option<PathBuf>) -> Option<Box<dyn SoftwareKeyStore + Send>> {
-    Some(Box::new(KeyringDeviceStore {
-        service: crate::app_state::keyring_service().to_owned(),
-    }))
-}
-
-#[cfg(not(feature = "system-keyring"))]
-fn store(data_dir: Option<PathBuf>) -> Option<Box<dyn SoftwareKeyStore + Send>> {
-    data_dir.map(|dir| {
-        Box::new(kuzz_device_key_pkg::FileStore::new(dir.join("device-key")))
-            as Box<dyn SoftwareKeyStore + Send>
-    })
-}
-
-/// Device key secrets and TPM markers in the OS keyring: one entry per
-/// scope (`device-key:<scope>`, value hex), never the shared secret blob
-/// (the Windows credential blob is near its 2560-byte limit).
-#[cfg(feature = "system-keyring")]
-pub(crate) struct KeyringDeviceStore {
-    service: String,
-}
-
-#[cfg(feature = "system-keyring")]
-impl KeyringDeviceStore {
-    fn entry(&self, scope: &str) -> kuzz_device_key_pkg::Result<keyring::Entry> {
-        keyring::Entry::new(&self.service, &format!("device-key:{scope}")).map_err(store_error)
-    }
-}
-
-#[cfg(feature = "system-keyring")]
-fn store_error(error: keyring::Error) -> kuzz_device_key_pkg::DeviceKeyError {
-    kuzz_device_key_pkg::DeviceKeyError::Store(error.to_string())
-}
-
-#[cfg(feature = "system-keyring")]
-impl SoftwareKeyStore for KeyringDeviceStore {
-    fn load(
-        &self,
-        scope: &str,
-    ) -> kuzz_device_key_pkg::Result<Option<kuzz_device_key_pkg::SoftwareSecret>> {
-        match self.entry(scope)?.get_password() {
-            Ok(stored) => {
-                let stored = zeroize::Zeroizing::new(stored);
-                decode_secret(stored.trim()).map(Some)
-            }
-            Err(keyring::Error::NoEntry) => Ok(None),
-            Err(error) => Err(store_error(error)),
-        }
-    }
-
-    fn store_new(
-        &self,
-        scope: &str,
-        secret: &kuzz_device_key_pkg::SoftwareSecret,
-    ) -> kuzz_device_key_pkg::Result<kuzz_device_key_pkg::StoreOutcome> {
-        use kuzz_device_key_pkg::StoreOutcome;
-        if let Some(existing) = self.load(scope)? {
-            return Ok(StoreOutcome::Existing(existing));
-        }
-        let encoded = zeroize::Zeroizing::new(hex::encode(secret.expose_secret()));
-        self.entry(scope)?
-            .set_password(&encoded)
-            .map_err(store_error)?;
-        // No atomic create-if-absent in OS keyrings: read back, and follow
-        // a racing creator that wrote last.
-        match self.load(scope)? {
-            Some(stored) if stored.expose_secret() == secret.expose_secret() => {
-                Ok(StoreOutcome::Stored)
-            }
-            Some(stored) => Ok(StoreOutcome::Existing(stored)),
-            None => Err(kuzz_device_key_pkg::DeviceKeyError::Store(
-                "device key entry vanished after write".into(),
-            )),
-        }
-    }
-
-    fn delete(&self, scope: &str) -> kuzz_device_key_pkg::Result<()> {
-        match self.entry(scope)?.delete_credential() {
-            Ok(()) | Err(keyring::Error::NoEntry) => Ok(()),
-            Err(error) => Err(store_error(error)),
+    match tokio::time::timeout(limit, tokio::task::spawn_blocking(ensure)).await {
+        Ok(opened) => opened.ok().flatten(),
+        Err(_) => {
+            eprintln!("kuzz-desktop: warning: device key not ready in time; going on without it");
+            None
         }
     }
 }
 
-#[cfg(feature = "system-keyring")]
-fn decode_secret(stored: &str) -> kuzz_device_key_pkg::Result<kuzz_device_key_pkg::SoftwareSecret> {
-    let mut bytes = [0u8; 32];
-    hex::decode_to_slice(stored, &mut bytes).map_err(|_| {
-        kuzz_device_key_pkg::DeviceKeyError::Store("device key entry is malformed".into())
-    })?;
-    let secret = kuzz_device_key_pkg::SoftwareSecret::new(bytes);
-    zeroize::Zeroize::zeroize(&mut bytes);
-    Ok(secret)
+/// The software fallback store (and TPM marker) every Kuzz app of this OS
+/// user shares with the CLI and `kuzz-acp`: `<local data dir>/kuzz/device-keys`
+/// (`%LOCALAPPDATA%` on Windows, `~/Library/Application Support` on macOS,
+/// `$XDG_DATA_HOME` or `~/.local/share` elsewhere). Same rule as
+/// `kuzz_token_broker::device::default_store_dir`, so one machine has one
+/// device key.
+pub(crate) fn shared_store_dir() -> Option<PathBuf> {
+    shared_store_dir_from(|name| std::env::var_os(name))
+}
+
+/// [`shared_store_dir`] reading variables through `var`. Pure.
+fn shared_store_dir_from(var: impl Fn(&str) -> Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let var = |name: &str| {
+        var(name)
+            .filter(|value| !value.is_empty())
+            .map(PathBuf::from)
+            .filter(|path| path.is_absolute())
+    };
+    let base = if cfg!(windows) {
+        var("LOCALAPPDATA")
+    } else if cfg!(target_os = "macos") {
+        var("HOME").map(|home| home.join("Library").join("Application Support"))
+    } else {
+        var("XDG_DATA_HOME").or_else(|| var("HOME").map(|home| home.join(".local").join("share")))
+    };
+    base.map(|base| base.join("kuzz").join("device-keys"))
 }
 
 /// Run a short blocking call (a TPM signature, ~13 ms) from sync code that
@@ -251,13 +198,28 @@ pub(crate) fn tag_event_with(key: Option<&DeviceKey>, unsigned: UnsignedEvent) -
         return unsigned;
     }
     let original = unsigned.clone();
-    match run_blocking(|| key.add_event_tag(unsigned)) {
-        Ok(tagged) => tagged,
-        Err(error) => {
-            eprintln!(
-                "kuzz-desktop: warning: device tag not added (kind {}): {error}",
-                original.kind.as_u16()
-            );
+    let kind = original.kind.as_u16();
+    // On its own thread, so a TPM that hangs costs a caller at most
+    // USER_WAIT (the event then goes out as before).
+    let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+    let signer = key.clone();
+    let spawned = std::thread::Builder::new()
+        .name("kuzz-device-tag".into())
+        .spawn(move || {
+            let _ = sender.send(signer.add_event_tag(unsigned));
+        });
+    if let Err(error) = spawned {
+        eprintln!("kuzz-desktop: warning: device tag not added (kind {kind}): {error}");
+        return original;
+    }
+    match run_blocking(|| receiver.recv_timeout(USER_WAIT)) {
+        Ok(Ok(tagged)) => tagged,
+        Ok(Err(error)) => {
+            eprintln!("kuzz-desktop: warning: device tag not added (kind {kind}): {error}");
+            original
+        }
+        Err(_) => {
+            eprintln!("kuzz-desktop: warning: device tag not added in time (kind {kind})");
             original
         }
     }
@@ -283,6 +245,25 @@ pub(crate) fn sign_auth_event_with(
 /// The relay origin (`scheme://host[:port]`) of `url`, the clock key.
 pub(crate) fn origin_of(url: &url::Url) -> String {
     url.origin().ascii_serialization()
+}
+
+/// [`origin_of`] for a configured origin string (any path or trailing
+/// slash dropped), so every clock lookup uses one spelling.
+pub(crate) fn normalize_origin(origin: &str) -> String {
+    match url::Url::parse(origin) {
+        Ok(url) => origin_of(&url),
+        Err(_) => origin.trim_end_matches('/').to_ascii_lowercase(),
+    }
+}
+
+/// Whether the relay's time at `origin` has never been asked for this run;
+/// marks it asked. One ask per origin, answered or not.
+pub(crate) fn first_time_ask(origin: &str) -> bool {
+    TIME_ASKED
+        .lock()
+        .unwrap_or_else(PoisonError::into_inner)
+        .get_or_insert_with(Default::default)
+        .insert(normalize_origin(origin))
 }
 
 fn clock() -> std::sync::MutexGuard<'static, Option<HashMap<String, i64>>> {
@@ -317,20 +298,24 @@ fn note_offset(origin: &str, raw: i64) -> bool {
     };
     let mut clock = clock();
     let map = clock.get_or_insert_with(HashMap::new);
-    map.insert(origin.to_owned(), offset) != Some(offset)
+    map.insert(normalize_origin(origin), offset) != Some(offset)
 }
 
 /// Whether the relay's time at `origin` is known.
 pub(crate) fn has_server_time(origin: &str) -> bool {
-    clock().as_ref().is_some_and(|map| map.contains_key(origin))
+    let origin = normalize_origin(origin);
+    clock()
+        .as_ref()
+        .is_some_and(|map| map.contains_key(&origin))
 }
 
 /// Unix time for proofs sent to `origin`: local time corrected by the
 /// relay's clock when they differ by 30 s or more.
 pub(crate) fn proof_now(origin: &str) -> i64 {
+    let origin = normalize_origin(origin);
     let offset = clock()
         .as_ref()
-        .and_then(|map| map.get(origin).copied())
+        .and_then(|map| map.get(&origin).copied())
         .unwrap_or(0);
     unix_now() + offset
 }
@@ -352,7 +337,7 @@ pub(crate) async fn header_proof(
 ) -> Option<String> {
     let key = key.clone();
     let ts = proof_now(origin);
-    let signed = tokio::task::spawn_blocking(move || {
+    let signing = tokio::task::spawn_blocking(move || {
         key.header_proof_at(
             ts,
             request.purpose,
@@ -360,16 +345,19 @@ pub(crate) async fn header_proof(
             request.token.as_deref().map(String::as_str),
             &request.body,
         )
-    })
-    .await;
-    match signed {
-        Ok(Ok(proof)) => Some(proof),
-        Ok(Err(error)) => {
+    });
+    match tokio::time::timeout(USER_WAIT, signing).await {
+        Ok(Ok(Ok(proof))) => Some(proof),
+        Ok(Ok(Err(error))) => {
             eprintln!("kuzz-desktop: warning: device proof not signed: {error}");
             None
         }
-        Err(error) => {
+        Ok(Err(error)) => {
             eprintln!("kuzz-desktop: warning: device proof task failed: {error}");
+            None
+        }
+        Err(_) => {
+            eprintln!("kuzz-desktop: warning: device proof not signed in time");
             None
         }
     }
@@ -489,6 +477,48 @@ mod tests {
         assert!(note_offset(origin, 120));
         assert!(!note_offset(origin, 120));
         assert!((proof_now(origin) - unix_now() - 120).abs() <= 1);
+    }
+
+    #[test]
+    fn the_store_is_the_one_the_cli_and_runner_use() {
+        let base = if cfg!(windows) {
+            r"C:\Users\u\AppData\Local"
+        } else {
+            "/home/u/.data"
+        };
+        let var = |name: &str| {
+            let wanted = if cfg!(windows) {
+                "LOCALAPPDATA"
+            } else if cfg!(target_os = "macos") {
+                "HOME"
+            } else {
+                "XDG_DATA_HOME"
+            };
+            (name == wanted).then(|| std::ffi::OsString::from(base))
+        };
+        let mut expected = PathBuf::from(base);
+        if cfg!(target_os = "macos") {
+            expected = expected.join("Library").join("Application Support");
+        }
+        assert_eq!(
+            shared_store_dir_from(var),
+            Some(expected.join("kuzz").join("device-keys"))
+        );
+        // A relative or empty base is never used.
+        assert_eq!(shared_store_dir_from(|_| Some("rel".into())), None);
+        assert_eq!(shared_store_dir_from(|_| Some("".into())), None);
+    }
+
+    #[test]
+    fn clock_and_time_asks_use_one_origin_spelling() {
+        assert_eq!(
+            normalize_origin("https://Norm-Test.example/"),
+            "https://norm-test.example"
+        );
+        note_offset("https://norm-test.example/some/path", 300);
+        assert!(has_server_time("https://NORM-TEST.example"));
+        assert!(first_time_ask("https://ask-test.example/"));
+        assert!(!first_time_ask("https://ask-test.example"));
     }
 
     #[test]

@@ -297,7 +297,18 @@ pub fn run() {
             // memberships, DMs, and relay identity.
             let state = app_handle.state::<AppState>();
             // This install's device key, opened (or made) in the background.
-            crate::device_key::init(app_handle.path().app_data_dir().ok());
+            {
+                // Once the device key is open (now or after a retry), keys
+                // of this device's agents still away may come back.
+                let ready_app = app_handle.clone();
+                crate::device_key::init(move || {
+                    tauri::async_runtime::spawn(async move {
+                        // Let the saved sign-ins come back first.
+                        tokio::time::sleep(std::time::Duration::from_secs(15)).await;
+                        crate::auth::agent_hosting::spawn_restore_pending(&ready_app);
+                    });
+                });
+            }
             // Accounts on this computer: rebuild or migrate the list and refill
             // the active-account copy before the identity is read from it.
             if let Ok(data_dir) = app_handle.path().app_data_dir() {

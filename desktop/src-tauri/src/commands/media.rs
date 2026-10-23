@@ -302,6 +302,61 @@ pub(crate) fn detect_and_validate_mime(body: &[u8]) -> Result<String, String> {
 /// a 401 or 403 from the server (expired/rejected token), using a single fresh mint+retry.
 pub(crate) const MEDIA_GET_AUTH_EXPIRY_SECS: u64 = 60;
 
+/// A cached read header is reused until this long before it expires.
+const MEDIA_GET_AUTH_REUSE_MARGIN_SECS: u64 = 15;
+
+/// Signed `t=get` headers per `"{user pubkey} {server}"` with their expiry,
+/// reused while a device key signs them (one device signature per server
+/// and minute rather than per media read, as on Android).
+static MEDIA_GET_AUTH_CACHE: std::sync::Mutex<
+    Option<std::collections::HashMap<String, (String, u64)>>,
+> = std::sync::Mutex::new(None);
+
+/// The cached header for `key` when it is still good at `now`. Pure.
+fn reusable_get_auth(
+    cache: &std::collections::HashMap<String, (String, u64)>,
+    key: &str,
+    now: u64,
+) -> Option<String> {
+    cache
+        .get(key)
+        .filter(|(_, expires_at)| now + MEDIA_GET_AUTH_REUSE_MARGIN_SECS < *expires_at)
+        .map(|(header, _)| header.clone())
+}
+
+/// [`sign_blossom_get_auth_header`] for media reads, reusing a header
+/// signed with the device key until shortly before it expires. Without a
+/// device key every read is signed afresh, as before. `fresh` skips (and
+/// replaces) the cached header, for a retry after the server refused one.
+fn cached_get_auth_header(keys: &Keys, base_url: &str, fresh: bool) -> Result<String, String> {
+    if crate::device_key::current().is_none() {
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
+    }
+    let Some(server) = extract_server_authority(base_url) else {
+        return sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS);
+    };
+    let key = format!("{} {server}", keys.public_key().to_hex());
+    let now = Timestamp::now().as_secs();
+    let lock = || {
+        MEDIA_GET_AUTH_CACHE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    };
+    if !fresh {
+        if let Some(header) = lock()
+            .as_ref()
+            .and_then(|cache| reusable_get_auth(cache, &key, now))
+        {
+            return Ok(header);
+        }
+    }
+    let header = sign_blossom_get_auth_header(keys, base_url, MEDIA_GET_AUTH_EXPIRY_SECS)?;
+    lock()
+        .get_or_insert_with(Default::default)
+        .insert(key, (header.clone(), now + MEDIA_GET_AUTH_EXPIRY_SECS));
+    Ok(header)
+}
+
 /// Sign a Blossom (BUD-01) `t=get` authorization event, server-scoped to the
 /// relay's authority, and return the full `Authorization` header value.
 ///
@@ -347,6 +402,16 @@ pub(crate) fn sign_blossom_get_auth_header(
 /// constructed from (or validated against) the app's own relay base URL —
 /// never to third-party origins, where the bearer token would leak.
 pub(crate) fn mint_media_get_auth(state: &AppState, base_url: &str) -> Option<String> {
+    mint_media_get_auth_with(state, base_url, false)
+}
+
+/// [`mint_media_get_auth`] signed afresh (never a cached header), for the
+/// single retry after the server refused a read.
+pub(crate) fn mint_fresh_media_get_auth(state: &AppState, base_url: &str) -> Option<String> {
+    mint_media_get_auth_with(state, base_url, true)
+}
+
+fn mint_media_get_auth_with(state: &AppState, base_url: &str, fresh: bool) -> Option<String> {
     let credential = match state.user_credential() {
         Ok(credential) => credential,
         Err(e) => {
@@ -354,7 +419,11 @@ pub(crate) fn mint_media_get_auth(state: &AppState, base_url: &str) -> Option<St
             return None;
         }
     };
-    match media_get_auth_header(&credential, base_url) {
+    let header = match &credential {
+        UserCredential::Keys(keys) => cached_get_auth_header(keys, base_url, fresh),
+        UserCredential::Token { .. } => media_get_auth_header(&credential, base_url),
+    };
+    match header {
         Ok(header) => Some(header),
         Err(e) => {
             eprintln!("kuzz-desktop: media get auth signing failed (unsigned request): {e}");
@@ -956,6 +1025,18 @@ mod tests {
         let now = Timestamp::now().as_secs();
         // Token expiry must be within the 60s NIP-FI window.
         assert!(expiration > now && expiration <= now + 60);
+    }
+
+    #[test]
+    fn cached_read_headers_are_reused_until_shortly_before_expiry() {
+        let mut cache = std::collections::HashMap::new();
+        cache.insert("me relay".to_owned(), ("Nostr abc".to_owned(), 1_060));
+        assert_eq!(
+            reusable_get_auth(&cache, "me relay", 1_000).as_deref(),
+            Some("Nostr abc")
+        );
+        assert_eq!(reusable_get_auth(&cache, "me relay", 1_045), None);
+        assert_eq!(reusable_get_auth(&cache, "me other", 1_000), None);
     }
 
     #[test]

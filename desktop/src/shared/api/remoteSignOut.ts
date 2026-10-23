@@ -25,3 +25,8 @@ export function checkRemoteSignOut(account?: string, relayUrl?: string): void {
     // A failed check changes nothing; the next refusal asks again.
   });
 }
+
+/** [`checkRemoteSignOut`] for the active account when `message` says "signed out". */
+export function noteSignedOutRefusal(message: unknown): void {
+  if (isSignedOutRefusal(message)) checkRemoteSignOut();
+}

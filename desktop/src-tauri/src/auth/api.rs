@@ -345,10 +345,11 @@ fn proof_parts(request: &reqwest::Request) -> Option<ProofParts> {
 }
 
 /// Learn the relay's clock (`x-kuzz-server-time`) before a sign-in proof,
-/// once per origin: an unauthenticated `/auth/me` answers 401 with the
-/// header. Failures leave the local clock in use.
+/// at most once per origin and run (answered or not): an unauthenticated
+/// `/auth/me` answers 401 with the header. Failures leave the local clock in
+/// use; a stale proof then restarts the sign-in once.
 pub(crate) async fn sync_server_time(client: &reqwest::Client, origin: &str) {
-    if crate::device_key::has_server_time(origin) {
+    if crate::device_key::has_server_time(origin) || !crate::device_key::first_time_ask(origin) {
         return;
     }
     let _ = send(client.get(format!("{origin}/auth/me"))).await;
