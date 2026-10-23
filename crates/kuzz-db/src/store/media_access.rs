@@ -144,7 +144,19 @@ impl Db {
                                         WHERE cm.community_id = $1
                                           AND cm.channel_id = r.channel_id
                                           AND cm.pubkey = $3
-                                          AND cm.removed_at IS NULL))))
+                                          AND cm.removed_at IS NULL)
+                                    -- Read-only owner view: the owner of an
+                                    -- agent in a DM or group chat.
+                                    OR ((c.channel_type = 'dm' OR c.group_chat)
+                                        AND EXISTS (
+                                        SELECT 1 FROM channel_members cm
+                                        JOIN users au
+                                          ON au.community_id = cm.community_id
+                                         AND au.pubkey = cm.pubkey
+                                        WHERE cm.community_id = $1
+                                          AND cm.channel_id = r.channel_id
+                                          AND cm.removed_at IS NULL
+                                          AND au.agent_owner_pubkey = $3)))))
                       -- A message from before the reader's join does not
                       -- grant the file (since_join rooms).
                       AND NOT channel_event_before_join($1, r.channel_id,

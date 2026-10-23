@@ -93,29 +93,53 @@ pub(super) async fn query_batch<'a>(
     reader: &nostr::PublicKey,
     requests: impl IntoIterator<Item = &'a Request>,
 ) -> Result<Vec<Value>, Error> {
-    let accessible = state
-        .db
-        .get_accessible_channel_ids(tenant.community(), &reader.to_bytes())
-        .await
-        .map_err(|e| database_error("access", e))?;
+    let requests: Vec<&Request> = requests.into_iter().collect();
+    let accessible = access_set(state, tenant, reader, &requests, "access").await?;
     let mut budget = Budget::default();
     let mut events = Vec::new();
-    for request in requests {
+    for request in &requests {
         if accessible.contains(&request.channel) {
             events.extend(query(state, tenant, reader, request, &accessible, &mut budget).await?);
         }
     }
-    let current = state
-        .db
-        .get_accessible_channel_ids(tenant.community(), &reader.to_bytes())
-        .await
-        .map_err(|e| database_error("final access", e))?;
+    let current = access_set(state, tenant, reader, &requests, "final access").await?;
     // Grants can expose auxiliary events omitted from the original closure;
     // revocations can invalidate earlier windows or their cross-channel aux.
     if accessible.iter().collect::<HashSet<_>>() != current.iter().collect::<HashSet<_>>() {
         return Err(unavailable("thread authorization changed; retry query"));
     }
     Ok(events)
+}
+
+/// The reader's channels plus any requested DM or group chat they may read as
+/// the owner of an agent in it (read-only owner view).
+async fn access_set(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    requests: &[&Request],
+    context: &'static str,
+) -> Result<Vec<uuid::Uuid>, Error> {
+    let reader_bytes = reader.to_bytes();
+    let mut accessible = state
+        .db
+        .get_accessible_channel_ids(tenant.community(), &reader_bytes)
+        .await
+        .map_err(|e| database_error(context, e))?;
+    for request in requests {
+        if accessible.contains(&request.channel) {
+            continue;
+        }
+        if state
+            .db
+            .can_read_via_owned_agent(tenant.community(), request.channel, &reader_bytes)
+            .await
+            .map_err(|e| database_error(context, e))?
+        {
+            accessible.push(request.channel);
+        }
+    }
+    Ok(accessible)
 }
 
 async fn query(
