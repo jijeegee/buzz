@@ -20,6 +20,9 @@
 //!   "state": ..}`.
 //! - `{"chat_import": 1, "reads": [..], "follows": [..]}`: a new app's
 //!   first-run upload of device-local state; see the `import` module.
+//! - `{"thread_search": 1, "q": "..", "limit": 20}` → `{"thread_search": 1,
+//!   "rows": [..]}`: threads in the reader's rooms by name, closed and quiet
+//!   ones included; see the `thread_search` module.
 //!
 //! After a change, the reader's own devices get a kind:24210 chat-state ping.
 //!
@@ -44,10 +47,11 @@ use kuzz_db::chat_user_state::{
 use serde_json::{json, Map, Value};
 use uuid::Uuid;
 
-use super::{api_error, internal_error};
+use super::{api_error, db_read_error, internal_error};
 use crate::state::AppState;
 
 mod import;
+mod thread_search;
 
 type QueryError = (StatusCode, Json<Value>);
 
@@ -65,14 +69,16 @@ pub(super) enum Envelope {
     MarkRead,
     ThreadFollow,
     ChatImport,
+    ThreadSearch,
 }
 
 impl Envelope {
-    const ALL: [Self; 4] = [
+    const ALL: [Self; 5] = [
         Self::ChatList,
         Self::MarkRead,
         Self::ThreadFollow,
         Self::ChatImport,
+        Self::ThreadSearch,
     ];
 
     fn key(self) -> &'static str {
@@ -81,6 +87,7 @@ impl Envelope {
             Self::MarkRead => "mark_read",
             Self::ThreadFollow => "thread_follow",
             Self::ChatImport => "chat_import",
+            Self::ThreadSearch => "thread_search",
         }
     }
 }
@@ -422,7 +429,33 @@ pub(super) async fn query(
             }
             Ok(Json(import::response(&request, &outcome)))
         }
+        Envelope::ThreadSearch => thread_search(state, tenant, reader, filters).await,
     }
+}
+
+async fn thread_search(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    filters: &[Value],
+) -> Result<Json<Value>, QueryError> {
+    let request = thread_search::parse(filters)?;
+    let accessible = state
+        .get_accessible_channel_ids_cached(tenant.community(), &reader.to_bytes())
+        .await
+        .map_err(|e| internal_error(&format!("channel access lookup: {e}")))?;
+    let rows = state
+        .db
+        .thread_search(tenant.community(), reader, &request.query, request.limit)
+        .await
+        .map_err(|e| db_read_error("thread_search", &e))?;
+    let rows: Vec<Value> = rows
+        .into_iter()
+        // Membership is the source; access is re-checked as defense in depth.
+        .filter(|row| accessible.contains(&row.channel_id))
+        .map(thread_search::row_json)
+        .collect();
+    Ok(Json(json!({ "thread_search": 1, "rows": rows })))
 }
 
 async fn chat_list(
@@ -482,6 +515,10 @@ mod tests {
         assert_eq!(
             requested(&[json!({"chat_import": 1})]),
             Some(Envelope::ChatImport)
+        );
+        assert_eq!(
+            requested(&[json!({"thread_search": 1, "q": "x"})]),
+            Some(Envelope::ThreadSearch)
         );
         assert_eq!(requested(&[json!({"kinds": [9]})]), None);
     }
@@ -815,6 +852,7 @@ mod postgres_tests {
             json!({"mark_read": 1, "items": [{"channel": room}]}),
             json!({"thread_follow": 1, "root": "ab".repeat(32), "state": "followed"}),
             json!({"chat_import": 1, "reads": [{"channel": room, "at": 1}]}),
+            json!({"thread_search": 1, "q": "plan"}),
             // Even malformed requests: the switch is checked first.
             json!({"mark_read": 1}),
         ] {
@@ -994,6 +1032,68 @@ mod postgres_tests {
             row(&body, &root.id.to_hex()).expect("pinned")["closed"],
             true
         );
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn thread_search_finds_closed_threads_only_for_members() {
+        let f = Fixture::new(true).await;
+        let (reader, other, outsider) = (Keys::generate(), Keys::generate(), Keys::generate());
+        let room = f.room(&other, &[&reader]).await;
+        let root = f.sign(room, &other, 100, Vec::new());
+        f.publish(&root, &other).await;
+        let name = EventBuilder::new(Kind::Custom(40009), "Quarterly launch review")
+            .tags([
+                Tag::parse(["h", &room.to_string()]).expect("h"),
+                Tag::parse(["e", &root.id.to_hex()]).expect("e"),
+            ])
+            .custom_created_at(Timestamp::from(Timestamp::now().as_secs() - 100))
+            .sign_with_keys(&other)
+            .expect("name");
+        f.state
+            .db
+            .insert_event(f.community, &name, Some(room))
+            .await
+            .expect("thread name");
+        let close = f.sign(
+            room,
+            &other,
+            102,
+            vec![
+                Tag::parse(["e", &root.id.to_hex(), "", "reply"]).expect("e"),
+                Tag::parse([kuzz_db::chat_state::THREAD_CLOSED_TAG, &root.id.to_hex()])
+                    .expect("close tag"),
+            ],
+        );
+        f.publish(&close, &other).await;
+
+        // Closed: the Chats list leaves it out, search still finds it.
+        let (_, body) = f.query(&reader, json!({"chat_list": 1})).await;
+        assert!(row(&body, &root.id.to_hex()).is_none(), "{body}");
+        let (status, body) = f
+            .query(&reader, json!({"thread_search": 1, "q": "LAUNCH"}))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["thread_search"], 1);
+        let hit = row(&body, &root.id.to_hex()).expect("closed thread found");
+        assert_eq!(hit["type"], "thread");
+        assert_eq!(hit["root_id"], root.id.to_hex());
+        assert_eq!(hit["channel_id"], room.to_string());
+        assert_eq!(hit["thread_name"], "Quarterly launch review");
+        assert_eq!(hit["closed"], true);
+        assert_eq!(hit["match"], 2);
+
+        // Someone outside the private room sees nothing.
+        let (status, body) = f
+            .query(&outsider, json!({"thread_search": 1, "q": "launch"}))
+            .await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        assert_eq!(body["rows"], json!([]));
+
+        let (status, _) = f
+            .query(&reader, json!({"thread_search": 1, "q": " "}))
+            .await;
+        assert_eq!(status, StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

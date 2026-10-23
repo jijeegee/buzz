@@ -747,6 +747,7 @@ pub fn run() {
             get_thread_windows,
             get_inbox_summary,
             get_chat_list,
+            search_thread_names,
             chat_mark_read,
             chat_thread_follow,
             chat_import,
