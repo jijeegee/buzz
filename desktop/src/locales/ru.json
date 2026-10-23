@@ -2258,7 +2258,6 @@
   "forum.thread.replyCount": "{count, plural, one {# ответ} few {# ответа} many {# ответов} other {# ответа}}",
   "forum.view.postPlaceholder": "Напишите пост...",
   "forum.view.emptyTitle": "Пока нет постов",
-  "forum.mentions.inviteFailed": "Не удалось пригласить участников.",
   "groups.genericError": "Что-то пошло не так. Попробуйте снова.",
   "groups.publicAddress.taken": "Этот адрес занят.",
   "groups.publicAddress.invalid": "От 3 до 32 символов: a-z, 0-9 и _.",

@@ -1,6 +1,7 @@
 {
   "current": 1,
-  "about": "Which text is translated in which release round. Rules are tried in order; the first match gives the tier (keys = id prefixes like desktop:settings.harnesses., text = regex on the English, maxWords = at most this many visible words). skip = stays English (admin and developer screens).",
+  "languages": { "ko": 3, "ja": 3, "zh-Hans": 3, "zh-Hant": 3 },
+  "about": "Which text is translated in which release round. Rules are tried in order; the first match gives the tier (keys = id prefixes like desktop:settings.harnesses., text = regex on the English, maxWords = at most this many visible words). skip = stays English (admin and developer screens). languages = per-language override of current (ko/ja/zh reuse an earlier full translation).",
   "rules": [
     { "tier": 1, "keys": ["relay:"] },
     {

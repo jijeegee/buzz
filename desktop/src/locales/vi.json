@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, other {# trả lời}}",
   "forum.view.postPlaceholder": "Viết bài...",
   "forum.view.emptyTitle": "Chưa có bài viết",
-  "forum.mentions.inviteFailed": "Không thể mời thành viên.",
   "groups.genericError": "Đã xảy ra lỗi. Hãy thử lại.",
   "groups.publicAddress.taken": "Địa chỉ này đã được dùng.",
   "groups.publicAddress.invalid": "Dùng 3-32 ký tự: a-z, 0-9 và _.",

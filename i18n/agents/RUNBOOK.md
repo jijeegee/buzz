@@ -18,6 +18,11 @@ from the first round (Oct 2026).
      screens people use daily (chats, groups, friends, settings, ...).
    - Tier 2: the rest of the everyday screens (the default).
    - Tier 3: agent, project, workflow and goal screens.
+   - Exception (owner-approved 2026-10-23): `languages` in `tiers.json`
+     opens more tiers for single languages. ko/ja/zh-Hans/zh-Hant are at
+     tier 3 because a full translation from before tiers could be reused
+     (`prepare` puts it in `suggestion`; apply the suggestions as they are,
+     then send only rejects to a fix agent).
    - `skip`: admin and developer screens and technical text. Never
      translated; it stays English.
 3. **Product words never vary.** `i18n/glossary/terms.json` lists the

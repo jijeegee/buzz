@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, one {# yanıt} other {# yanıt}}",
   "forum.view.postPlaceholder": "Gönderinizi yazın...",
   "forum.view.emptyTitle": "Henüz gönderi yok",
-  "forum.mentions.inviteFailed": "Üyeler davet edilemedi.",
   "groups.genericError": "Bir hata oluştu. Tekrar deneyin.",
   "groups.publicAddress.taken": "Bu adres alınmış.",
   "groups.publicAddress.invalid": "3-32 karakter kullanın: a-z, 0-9 ve _.",

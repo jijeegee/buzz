@@ -2259,7 +2259,6 @@
   "forum.thread.replyCount": "{count, plural, other {# balasan}}",
   "forum.view.postPlaceholder": "Tulis postingan Anda...",
   "forum.view.emptyTitle": "Belum ada postingan",
-  "forum.mentions.inviteFailed": "Tidak dapat mengundang anggota.",
   "groups.genericError": "Terjadi kesalahan. Coba lagi.",
   "groups.publicAddress.taken": "Alamat ini sudah dipakai.",
   "groups.publicAddress.invalid": "Gunakan 3-32 karakter: a-z, 0-9, dan _.",
