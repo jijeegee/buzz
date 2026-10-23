@@ -27,7 +27,7 @@ import {
 import { usePairingSession } from "./usePairingSession";
 
 /**
- * "Connect external agent": one `kuzz pair <code>` command to paste on the
+ * "Connect external agent": one `kuzz pair --relay <url> <code>` command to paste on the
  * other computer, its ten-minute countdown, and the connected notice once
  * the first claim arrives (no approve step).
  */

@@ -2,7 +2,7 @@
 //! §14.7, PR C2; no Approve step since 10-23).
 //!
 //! - "Connect external agent": [`start_agent_pairing`] asks the relay for a
-//!   one-use, ten-minute `kuzz pair <code>` command; the screen polls
+//!   one-use, ten-minute `kuzz pair --relay <url> <code>` command; the screen polls
 //!   [`list_agent_pairings`] until the first valid claim connects.
 //! - Hermes on this computer: [`connect_hermes`] pairs in one click. It
 //!   claims a new pairing with the account's Hermes agent key (made once,
@@ -47,7 +47,8 @@ static FILE_LOCK: Mutex<()> = Mutex::new(());
 #[serde(rename_all = "camelCase")]
 pub struct PairingStartView {
     pairing_id: String,
-    /// `kuzz pair <code>`, shown so the owner can copy it.
+    /// `kuzz pair --relay <url> <code>` as the relay gave it, shown so the
+    /// owner can copy it.
     command: String,
     expires_at: String,
     expires_in: i64,

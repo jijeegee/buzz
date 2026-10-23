@@ -2,13 +2,13 @@ import { invokeTauri } from "@/shared/api/tauri";
 
 /**
  * External agent pairing (device-bound keys, PR C2). The app shows a one-use,
- * ten-minute `kuzz pair <code>` command; the first valid claim on another
+ * ten-minute `kuzz pair --relay <url> <code>` command; the first valid claim on another
  * computer connects that agent at once. Disconnecting signs that computer
  * out and forgets its Hermes key (`disconnectExternalDevice`). Only for
  * accounts signed in with Google.
  */
 
-/** A new code, as `kuzz pair <code>`. */
+/** A new code; `command` is shown exactly as the relay gave it. */
 export type PairingStart = {
   pairingId: string;
   command: string;

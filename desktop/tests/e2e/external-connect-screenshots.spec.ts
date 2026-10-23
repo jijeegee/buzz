@@ -129,7 +129,8 @@ async function installExternalConnectBridge(page: Page) {
               state.expiresAt = new Date(Date.now() + 582_000).toISOString();
               return {
                 pairingId: "p1",
-                command: "kuzz pair 7QKF-M2XD-9RTB-H4WN-C8PJ-ZL6V-3EYA",
+                command:
+                  "kuzz pair --relay wss://gateway.kuzz.app 7QKF-M2XD-9RTB-H4WN-C8PJ-ZL6V-3EYA",
                 expiresAt: state.expiresAt,
                 expiresIn: 582,
               };
@@ -256,7 +257,9 @@ test.describe("Connect external agent (C2)", () => {
     const dialog = page.getByTestId("connect-external-agent-dialog");
     await expect(
       dialog.getByTestId("connect-external-agent-command"),
-    ).toHaveText("kuzz pair 7QKF-M2XD-9RTB-H4WN-C8PJ-ZL6V-3EYA");
+    ).toHaveText(
+      "kuzz pair --relay wss://gateway.kuzz.app 7QKF-M2XD-9RTB-H4WN-C8PJ-ZL6V-3EYA",
+    );
     await expect(
       dialog.getByTestId("connect-external-agent-countdown"),
     ).toContainText(/Expires in 9:[34]\d/);
