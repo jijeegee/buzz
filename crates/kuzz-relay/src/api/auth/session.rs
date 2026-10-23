@@ -20,7 +20,7 @@ use super::{
     json_object, not_found, optional_string, rate_limit, unavailable, validate_avatar_url,
     validate_device_name, validate_display_name,
 };
-use crate::identity::{kv, publish_key_revocation, publish_revocations};
+use crate::identity::{client_version, kv, publish_key_revocation, publish_revocations};
 use crate::state::AppState;
 
 /// Refresh replay cache lifetime (plan §3.6): a retry of the same refresh
@@ -82,6 +82,36 @@ async fn cached_rotation(
     }
 }
 
+/// The minimum-version gate for a refresh. A request that names no app is
+/// judged by its device's client kind, looked up only when a desktop or
+/// mobile minimum could refuse it; the web cookie path is the web app.
+async fn refresh_version_gate(
+    state: &AppState,
+    headers: &HeaderMap,
+    old_hash: &[u8; 32],
+    web: bool,
+) -> Result<(), Response> {
+    let Some(manifest) = crate::api::app_update::load().await else {
+        return Ok(());
+    };
+    let declared = client_version::declared(headers);
+    let client = if web {
+        Some("web".to_owned())
+    } else if client_version::names_app(declared)
+        || !(client_version::gates_unnamed(&manifest, "desktop")
+            || client_version::gates_unnamed(&manifest, "mobile"))
+    {
+        None
+    } else {
+        match state.db.refresh_device_platform(old_hash).await {
+            Ok(platform) => platform,
+            Err(error) => return Err(internal("refresh_device_platform", &error)),
+        }
+    };
+    client_version::check(&manifest, declared, client.as_deref())
+        .map_err(|min| client_version::update_required_response(&min))
+}
+
 /// `POST /auth/refresh` `{refresh}` (or the web `kuzz_refresh` cookie).
 ///
 /// Order (plan §3.6): replay cache → DB rotation. A consumed token presented
@@ -128,6 +158,11 @@ pub(super) async fn refresh(
     if let Err(response) =
         crate::identity::device::check_refresh_proof(&state, &headers, &old_hash).await
     {
+        return response;
+    }
+    // Before rotation, so a refused app keeps its refresh token and is let
+    // back in once updated.
+    if let Err(response) = refresh_version_gate(&state, &headers, &old_hash, web).await {
         return response;
     }
     let refresh_ttl = state.identity.config().refresh_ttl.as_secs();
@@ -433,6 +468,8 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "device_id": binding.device_id,
         "bot": bot,
         "operator": binding.is_operator,
+        // Always 1 until message keys can be replaced; clients compare it.
+        "key_generation": 1,
     }))
     .into_response()
 }

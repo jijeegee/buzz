@@ -36,6 +36,57 @@ Future<String?> appIdentityHeader() async {
   return '$platform/${await appVersion()}';
 }
 
+/// Header naming this app and version on every `/auth/*` call
+/// (`android/0.6.2`). The relay refuses sign-in and session refresh below
+/// its minimum version with `426 update_required`.
+const appClientHeader = 'X-Kuzz-Client';
+
+/// Relay error code (and sign-in callback `error`) for a build below the
+/// minimum version.
+const updateRequiredCode = 'update_required';
+
+/// Value of [appClientHeader] for this build, or `null` off Android/iOS or
+/// when the version cannot be read.
+Future<String?> appClientId() async {
+  final app = Platform.isAndroid
+      ? 'android'
+      : Platform.isIOS
+      ? 'ios'
+      : null;
+  if (app == null) return null;
+  try {
+    return '$app/${await appVersion()}';
+  } catch (error) {
+    debugPrint('[AppUpdate] version unavailable: $error');
+    return null;
+  }
+}
+
+/// HTTP client that names this build on `/auth/*` calls ([appClientHeader])
+/// and turns the relay's `426` refusal into the full-screen update
+/// ([updateRequiredSignal]). The response itself is passed on unchanged, and
+/// nothing is signed out: the stored session works again after updating.
+class AppClientHeaderClient extends http.BaseClient {
+  AppClientHeaderClient(this._inner, {Future<String?> Function()? clientId})
+    : _clientId = clientId ?? appClientId;
+
+  final http.Client _inner;
+  final Future<String?> Function() _clientId;
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    if (!request.url.path.startsWith('/auth/')) return _inner.send(request);
+    final id = await _clientId();
+    if (id != null) request.headers[appClientHeader] = id;
+    final response = await _inner.send(request);
+    if (response.statusCode == 426) updateRequiredSignal.value++;
+    return response;
+  }
+
+  @override
+  void close() => _inner.close();
+}
+
 /// Raised by the relay socket when the relay refused this build (HTTP 426).
 /// [AppUpdateNotifier] listens and turns it into the full-screen update.
 final updateRequiredSignal = ValueNotifier<int>(0);

@@ -10,6 +10,44 @@ use zeroize::Zeroizing;
 /// Per-request deadline for `/auth/*` calls.
 pub(crate) const AUTH_REQUEST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(20);
 
+/// Header naming this app and version on every `/auth/*` call; the relay
+/// refuses sign-in and refresh below the platform's manifest `min_version`.
+pub(crate) const CLIENT_HEADER: &str = "x-kuzz-client";
+
+/// This build's [`CLIENT_HEADER`] value (also the `kuzz_client` start
+/// query): the updater platform and version, e.g. `windows-x86_64/0.6.2`,
+/// the same value the WebSocket upgrade sends as `X-Kuzz-App`.
+pub(crate) fn client_id() -> String {
+    crate::native_websocket::app_identity()
+}
+/// Relay error code: this build is below the minimum version.
+pub(crate) const UPDATE_REQUIRED: &str = "update_required";
+
+static UPDATE_REQUIRED_SEEN: std::sync::atomic::AtomicBool =
+    std::sync::atomic::AtomicBool::new(false);
+type UpdateRequiredHook = Box<dyn Fn() + Send + Sync>;
+static UPDATE_REQUIRED_HOOK: std::sync::OnceLock<UpdateRequiredHook> = std::sync::OnceLock::new();
+
+/// Run `hook` (show the "Update Kuzz" screen) whenever the relay says this
+/// build is too old. Set once at startup.
+pub(crate) fn set_update_required_hook(hook: impl Fn() + Send + Sync + 'static) {
+    let _ = UPDATE_REQUIRED_HOOK.set(Box::new(hook));
+}
+
+/// The relay refused this build as too old. Nothing is signed out: the
+/// stored session works again once the app is updated.
+pub(crate) fn note_update_required() {
+    UPDATE_REQUIRED_SEEN.store(true, std::sync::atomic::Ordering::Relaxed);
+    if let Some(hook) = UPDATE_REQUIRED_HOOK.get() {
+        hook();
+    }
+}
+
+/// Whether the relay refused this build during this run.
+pub(crate) fn update_required_seen() -> bool {
+    UPDATE_REQUIRED_SEEN.load(std::sync::atomic::Ordering::Relaxed)
+}
+
 /// A token field deserialized straight into zeroizing memory.
 #[derive(Clone)]
 pub(crate) struct SecretField(pub Zeroizing<String>);
@@ -226,6 +264,9 @@ async fn error_from(response: reqwest::Response) -> ApiError {
     if body.as_ref().and_then(|b| b.error.as_ref()).is_none() {
         eprintln!("kuzz-desktop: auth API returned {status} without an error message");
     }
+    if body.as_ref().and_then(|b| b.code.as_deref()) == Some(UPDATE_REQUIRED) {
+        note_update_required();
+    }
     ApiError {
         status: Some(status),
         code: body.as_ref().and_then(|b| b.code.clone()),
@@ -237,7 +278,12 @@ async fn error_from(response: reqwest::Response) -> ApiError {
 
 async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, ApiError> {
     let (client, request) = request.timeout(AUTH_REQUEST_TIMEOUT).build_split();
-    let request = request.map_err(|e| ApiError::network(&e))?;
+    let mut request = request.map_err(|e| ApiError::network(&e))?;
+    if request.url().path().starts_with("/auth/") {
+        if let Ok(value) = reqwest::header::HeaderValue::from_str(&client_id()) {
+            request.headers_mut().insert(CLIENT_HEADER, value);
+        }
+    }
     let origin = crate::device_key::origin_of(request.url());
     let proof = proof_parts(&request);
     let key = proof.as_ref().and_then(|_| crate::device_key::current());
@@ -468,6 +514,7 @@ pub(crate) fn start_url(
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("client", "desktop")
+        .append_pair("kuzz_client", &client_id())
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("device_name", device_name);
     if let Some(install_id) = install_id {
@@ -1074,6 +1121,8 @@ mod tests {
         assert!(url.contains("redirect_uri=http%3A%2F%2F127.0.0.1%3A5555%2Fcb"));
         assert!(url.contains("device_name=My+Mac"));
         assert!(url.contains("install_id=5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c"));
+        // The browser cannot send X-Kuzz-Client; the start URL carries it.
+        assert!(url.contains(&format!("kuzz_client={}", client_id().replace('/', "%2F"))));
     }
 
     #[test]

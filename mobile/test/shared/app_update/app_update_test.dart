@@ -3,6 +3,8 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:http/http.dart' as http;
+import 'package:http/testing.dart';
 import 'package:kuzz/shared/app_update/app_update.dart';
 import 'package:kuzz/shared/app_update/app_update_gate.dart';
 import 'package:kuzz/shared/relay/relay_socket.dart';
@@ -73,6 +75,35 @@ void main() {
     );
     expect(isUpdateRequiredRefusal(StateError('426')), isFalse);
   });
+
+  test(
+    'auth calls name the build and a 426 raises the update signal',
+    () async {
+      final seen = <String, String?>{};
+      final client = AppClientHeaderClient(
+        MockClient((request) async {
+          seen[request.url.path] = request.headers[appClientHeader];
+          return request.url.path == '/auth/refresh'
+              ? http.Response('{"code":"update_required"}', 426)
+              : http.Response('{}', 200);
+        }),
+        clientId: () async => 'android/0.6.2',
+      );
+      final before = updateRequiredSignal.value;
+      final ok = await client.get(Uri.parse('https://relay.example/auth/me'));
+      expect(ok.statusCode, 200);
+      expect(updateRequiredSignal.value, before);
+      await client.get(Uri.parse('https://relay.example/'));
+      final refused = await client.post(
+        Uri.parse('https://relay.example/auth/refresh'),
+      );
+      expect(refused.statusCode, 426, reason: 'the caller still sees the 426');
+      expect(updateRequiredSignal.value, before + 1);
+      expect(seen['/auth/me'], 'android/0.6.2');
+      expect(seen['/auth/refresh'], 'android/0.6.2');
+      expect(seen['/'], isNull, reason: 'only account calls are named');
+    },
+  );
 
   test('a relay refusing the build raises the update signal', () async {
     final server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);

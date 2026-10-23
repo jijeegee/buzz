@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../app_update/app_update.dart';
 import '../../l10n/l10n.dart';
 import 'auth_api.dart';
 import 'mobile_callback.dart';
@@ -79,6 +80,7 @@ Future<LoginGrant> _runOidcLoginOnce({
   // Learn the relay clock while the user is in the browser.
   final clock = device == null ? Future<void>.value() : api.syncClock();
   final redirectUri = Uri.parse('$callbackScheme://auth/cb');
+  final kuzzClient = await appClientId();
   final callback = await launcher.authenticate(
     url: api.startUri(
       provider: provider,
@@ -89,6 +91,7 @@ Future<LoginGrant> _runOidcLoginOnce({
       installId: installId,
       identityMode: identityMode,
       devicePubkey: device?.publicKeyHex,
+      kuzzClient: kuzzClient,
     ),
     callbackUrlScheme: callbackScheme,
   );
@@ -125,6 +128,8 @@ Future<LoginGrant> _runOidcLoginOnce({
   }
   final error = params['error'];
   if (error != null) {
+    // Too old to sign in: show the full-screen update.
+    if (error == updateRequiredCode) updateRequiredSignal.value++;
     throw OidcLoginException(_describeError(error), code: error);
   }
   final code = params['code'];

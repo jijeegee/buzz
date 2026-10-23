@@ -25,7 +25,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 
 use super::{auth_error, bad_request, internal, json_object, rate_limit_client, unavailable};
-use crate::identity::kv;
+use crate::identity::{client_version, kv};
 use crate::state::AppState;
 
 /// Pending-login lifetime (`state` → callback).
@@ -138,6 +138,9 @@ struct StartQuery {
     device_pubkey: Option<String>,
     /// `confirm`: ask before creating an account (key-backup logins only).
     signup: Option<String>,
+    /// `<app>/<version>`: the `X-Kuzz-Client` value of an app whose browser
+    /// cannot send the header.
+    kuzz_client: Option<String>,
 }
 
 fn token_identity_mode() -> String {
@@ -284,6 +287,18 @@ pub(super) async fn start(
     else {
         return bad_request("redirect_uri is not allowed for this client");
     };
+    // Too old to sign in: back to the app, which shows "Update Kuzz".
+    let declared = client_version::declared(&headers).or(query.kuzz_client.as_deref());
+    if let Err(min) = client_version::check_current(declared, Some(client.as_str())).await {
+        return client_redirect(
+            &redirect_uri,
+            &[
+                ("error", client_version::UPDATE_REQUIRED),
+                ("min_version", &min),
+                ("state", &client_state),
+            ],
+        );
+    }
     let device_name = match query.device_name {
         Some(name) if name.chars().count() <= 64 && !name.chars().any(char::is_control) => {
             if name.trim().is_empty() {
@@ -638,6 +653,9 @@ pub(super) async fn complete(
             "PKCE verification failed",
         );
     }
+    if let Err(response) = version_gate(&headers, &record.client).await {
+        return response;
+    }
     if record.signup.is_some() {
         return signup_needed(&state, record).await;
     }
@@ -667,6 +685,15 @@ pub(super) async fn complete(
         record.email.as_deref(),
     )
     .await
+}
+
+/// Refuse an app below its minimum version (`client`: the kind named at
+/// `start`). The login code or ticket is already spent; after updating the
+/// user signs in again.
+async fn version_gate(headers: &HeaderMap, client: &str) -> Result<(), Response> {
+    client_version::check_current(client_version::declared(headers), Some(client))
+        .await
+        .map_err(|min| client_version::update_required_response(&min))
 }
 
 /// `complete` for an identity with no account yet: nothing is created; the
@@ -768,6 +795,9 @@ pub(super) async fn signup(
             "invalid_grant",
             "PKCE verification failed",
         );
+    }
+    if let Err(response) = version_gate(&headers, &ticket.client).await {
+        return response;
     }
     let device_key = match crate::identity::device::login_device_key(
         &state,

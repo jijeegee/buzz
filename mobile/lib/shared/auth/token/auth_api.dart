@@ -119,6 +119,7 @@ class AuthApi {
     String? installId,
     String identityMode = 'token',
     String? devicePubkey,
+    String? kuzzClient,
   }) {
     final name = deviceName?.trim();
     return Uri.parse(
@@ -133,6 +134,8 @@ class AuthApi {
         if (name != null && name.isNotEmpty) 'device_name': name,
         if (installId != null && installId.isNotEmpty) 'install_id': installId,
         'device_pubkey': ?devicePubkey,
+        // The browser cannot send X-Kuzz-Client; the relay reads it here.
+        'kuzz_client': ?kuzzClient,
       },
     );
   }

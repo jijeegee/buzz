@@ -264,6 +264,21 @@ pub(super) async fn refresh_device_key(
     Ok(row.map(|(key,)| key))
 }
 
+/// The client kind (`devices.platform`: `desktop`, `mobile`, `cli`, `web`)
+/// of the device a refresh token belongs to; `None` for an unknown token.
+pub(super) async fn refresh_device_platform(
+    pool: &PgPool,
+    refresh_hash: &[u8; 32],
+) -> Result<Option<String>> {
+    let platform: Option<String> = sqlx::query_scalar(
+        "SELECT d.platform FROM refresh_tokens rt          JOIN sessions s ON s.id = rt.session_id          JOIN devices d ON d.id = s.device_id          WHERE rt.token_hash = $1",
+    )
+    .bind(refresh_hash.as_slice())
+    .fetch_optional(pool)
+    .await?;
+    Ok(platform)
+}
+
 /// Present refresh token `old_hash`; rotate it on success.
 ///
 /// Ordering (plan §3.6): the caller consults its 10 s replay cache *before*
@@ -617,6 +632,13 @@ impl crate::Db {
         refresh_hash: &[u8; 32],
     ) -> Result<Option<Option<Vec<u8>>>> {
         refresh_device_key(&self.pool, refresh_hash).await
+    }
+
+    /// The client kind of the device behind a refresh token (`None`:
+    /// unknown token).
+    #[datastore_span(name = "refresh_device_platform", system = "postgresql")]
+    pub async fn refresh_device_platform(&self, refresh_hash: &[u8; 32]) -> Result<Option<String>> {
+        refresh_device_platform(&self.pool, refresh_hash).await
     }
 
     /// Rotate a refresh token (or detect its reuse). A token consumed less

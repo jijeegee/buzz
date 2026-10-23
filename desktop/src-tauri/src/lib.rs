@@ -251,6 +251,14 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             macos_notifications::init(&app_handle)?;
 
+            // The relay refusing this build as too old shows "Update Kuzz".
+            {
+                let handle = app_handle.clone();
+                auth::api::set_update_required_hook(move || {
+                    let _ = handle.emit(native_websocket::UPDATE_REQUIRED, ());
+                });
+            }
+
             // Initialise the no-redirect admin HTTP client singleton before any
             // admin command can be invoked. Must run before setup completes.
             commands::admin::client::init_admin_client()?;
@@ -682,6 +690,7 @@ pub fn run() {
             build_observer_control_event,
             create_auth_event,
             auth::commands::get_token_auth_status,
+            auth::commands::auth_update_required,
             auth::commands::login_with_google,
             auth::commands::own_agent_pubkeys,
             auth::accounts::list_accounts,

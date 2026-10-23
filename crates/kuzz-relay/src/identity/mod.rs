@@ -20,6 +20,7 @@ pub(crate) mod admission;
 #[cfg(test)]
 mod admission_routes;
 pub mod client_ip;
+pub mod client_version;
 pub mod config;
 pub mod device;
 pub(crate) mod key_sockets;

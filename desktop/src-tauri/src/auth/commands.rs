@@ -165,6 +165,13 @@ async fn support_for(state: &AppState, origin: &str) -> Option<Vec<String>> {
     }
 }
 
+/// Whether the relay refused this build as too old during this run (the
+/// "Update Kuzz" screen may have mounted after the event).
+#[tauri::command]
+pub fn auth_update_required() -> bool {
+    api::update_required_seen()
+}
+
 /// Report (and, on first call per community, restore) the token-auth state of
 /// the current community. Restores a keyring session by refreshing it.
 #[tauri::command]
@@ -355,7 +362,14 @@ async fn login_inner(
                 let code = listener
                     .wait_for_code(&oauth_state, LOGIN_TIMEOUT)
                     .await
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| {
+                        let refused =
+                            super::loopback::LoopbackError::Denied(api::UPDATE_REQUIRED.into());
+                        if e == refused {
+                            api::note_update_required();
+                        }
+                        e.to_string()
+                    })?;
                 Ok((providers, pkce, backup, code))
             })
             .await?;

@@ -8,7 +8,9 @@
 //!
 //! Errors are `{"error": <message>, "code": <code>}`; 401 codes are
 //! `invalid_token | token_expired | token_revoked | refresh_reused |
-//! principal_disabled`, plus 409 `token_superseded`.
+//! principal_disabled`, plus 409 `token_superseded`. Sign-in and refresh
+//! answer 426 `update_required` (with `min_version`) to an app below its
+//! platform's app update manifest `min_version` (`identity::client_version`).
 
 // Handlers return axum's `Response` as the error type (as `nip_fi_http.rs`
 // does); boxing it would only add an allocation per rejection.
