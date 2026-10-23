@@ -362,15 +362,6 @@ async fn custody_rejects_cross_account_restore_bad_proof_replay_and_token_bot_ad
             .status(),
         401
     );
-    assert_eq!(
-        inst.delete("/auth/account")
-            .bearer_auth(&owner.access)
-            .send()
-            .await
-            .unwrap()
-            .status(),
-        401
-    );
 }
 
 #[tokio::test]
@@ -775,7 +766,10 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     assert_eq!(body["display_name"], "Test User");
     assert!(body.get("access").is_none() && body.get("refresh").is_none());
     let token = body["signup_token"].as_str().unwrap().to_owned();
-    assert!(!account_exists(&inst, &subject).await, "nothing created yet");
+    assert!(
+        !account_exists(&inst, &subject).await,
+        "nothing created yet"
+    );
 
     // A wrong verifier consumes the ticket and creates nothing.
     let response = inst
@@ -797,8 +791,7 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     // "Use a different account" = the ticket is dropped: still nothing.
     // Starting again and confirming creates the account and signs in.
     let install_id = uuid::Uuid::new_v4().to_string();
-    let (verifier, response) =
-        key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
+    let (verifier, response) = key_login_flow(&inst, &provider_code, true, Some(&install_id)).await;
     let body: Value = response.json().await.unwrap();
     let token = body["signup_token"].as_str().unwrap().to_owned();
     let response = inst
@@ -816,9 +809,18 @@ async fn confirmed_signup_creates_the_account_only_after_the_client_confirms() {
     let access = body["access"].as_str().unwrap().to_owned();
     assert!(body["refresh"].is_string());
     assert!(account_exists(&inst, &subject).await);
-    let me = inst.get("/auth/me").bearer_auth(&access).send().await.unwrap();
+    let me = inst
+        .get("/auth/me")
+        .bearer_auth(&access)
+        .send()
+        .await
+        .unwrap();
     assert_eq!(me.status(), 200);
-    assert_eq!(install_devices(&inst, &install_id).await, 1, "signup keeps the install id");
+    assert_eq!(
+        install_devices(&inst, &install_id).await,
+        1,
+        "signup keeps the install id"
+    );
 
     // An existing account signs straight in, flag or not, and the same
     // install reuses the device the confirmed signup registered.
@@ -951,4 +953,144 @@ async fn key_accounts_block_and_are_found_by_their_messaging_key() {
         .await
         .unwrap();
     assert_eq!(response.status(), 400);
+}
+
+/// NIP-42 AUTH that must be accepted; returns the open socket.
+async fn open_key_socket(inst: &Instance, key: &nostr::Keys, auth_tag: Option<&str>) -> Ws {
+    let mut request = format!("ws://{}/", inst.addr)
+        .into_client_request()
+        .unwrap();
+    request
+        .headers_mut()
+        .insert("host", inst.host.parse().unwrap());
+    let (mut ws, _) = tokio_tungstenite::connect_async(request).await.unwrap();
+    let challenge = next_json(&mut ws).await;
+    let mut tags = vec![
+        nostr::Tag::parse(["relay", &format!("ws://{}", inst.host)]).unwrap(),
+        nostr::Tag::parse(["challenge", challenge[1].as_str().unwrap()]).unwrap(),
+    ];
+    if let Some(tag) = auth_tag {
+        tags.push(nostr::Tag::parse(serde_json::from_str::<Vec<String>>(tag).unwrap()).unwrap());
+    }
+    let event = nostr::EventBuilder::new(nostr::Kind::Authentication, "")
+        .tags(tags)
+        .sign_with_keys(key)
+        .unwrap();
+    send(&mut ws, json!(["AUTH", event])).await;
+    let ok = next_ok(&mut ws).await;
+    assert_eq!(ok[2], true, "{ok}");
+    ws
+}
+
+/// Google callback for an existing account; returns the client redirect.
+async fn key_callback(inst: &Instance, subject: &str) -> String {
+    reset_login_limits(inst).await;
+    let verifier = verifier();
+    let state = &verifier[..24];
+    let challenge = kuzz_auth::token::pkce_s256_challenge(&verifier);
+    let response = inst
+        .get_with(
+            "/auth/oidc/google/start",
+            &[
+                ("state", state),
+                ("code_challenge", &challenge),
+                ("client", "desktop"),
+                ("redirect_uri", REDIRECT_URI),
+                ("identity_mode", "key_backup"),
+            ],
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 302);
+    let response = inst
+        .get_with(
+            "/auth/oidc/google/callback",
+            &[("state", state), ("code", subject)],
+        )
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(response.status(), 302);
+    response.headers()["location"].to_str().unwrap().to_owned()
+}
+
+#[tokio::test]
+#[ignore = "requires isolated Postgres + Redis with current migrations"]
+async fn deleted_key_account_and_its_agents_are_refused_until_restored_in_window() {
+    let inst = custody_instance().await;
+    let subject = uuid::Uuid::new_v4().to_string();
+    let login = key_login(&inst, &subject).await;
+    let key = nostr::Keys::generate();
+    let signed = proof(&inst, &login, &key).await;
+    assert_eq!(initialize(&inst, &login, &key, &signed).await.status(), 200);
+    let agent = nostr::Keys::generate();
+    let agent_auth = kuzz_sdk::nip_oa::compute_auth_tag(&key, &agent.public_key(), "").unwrap();
+    let note = |keys: &nostr::Keys| {
+        nostr::EventBuilder::text_note(uuid::Uuid::new_v4().to_string())
+            .sign_with_keys(keys)
+            .unwrap()
+    };
+    assert_signed_submit(&inst, &key, &note(&key), None).await;
+    assert_signed_submit(&inst, &agent, &note(&agent), Some(&agent_auth)).await;
+    let mut owner_ws = open_key_socket(&inst, &key, None).await;
+    let mut agent_ws = open_key_socket(&inst, &agent, Some(&agent_auth)).await;
+
+    // Deleting closes the account's and its agents' open sockets...
+    let deleted = inst
+        .delete("/auth/account")
+        .bearer_auth(&login.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+    wait_closed(&mut owner_ws, Duration::from_secs(10)).await;
+    wait_closed(&mut agent_ws, Duration::from_secs(10)).await;
+
+    // ...and refuses both keys afterwards, over HTTP and WebSocket.
+    for (keys, auth) in [(&key, None), (&agent, Some(agent_auth.as_str()))] {
+        let response = signed_post(&inst, keys, "/events", json!(note(keys)), auth).await;
+        assert_eq!(response.status(), 403);
+        let tag = auth
+            .map(|tag| vec![serde_json::from_str::<Vec<String>>(tag).unwrap()])
+            .unwrap_or_default();
+        let (accepted, reason) = super::device_http::ws_auth_with(&inst, keys, tag, None).await;
+        assert!(!accepted);
+        assert!(reason.contains("deleted"), "{reason}");
+    }
+
+    // Logging in inside the 30-day window restores the account.
+    let restored = key_login(&inst, &subject).await;
+    assert_eq!(restored.principal, login.principal);
+    assert_signed_submit(&inst, &key, &note(&key), None).await;
+    assert_signed_submit(&inst, &agent, &note(&agent), Some(&agent_auth)).await;
+
+    // Once the window has passed, logging in no longer restores it.
+    let deleted = inst
+        .delete("/auth/account")
+        .bearer_auth(&restored.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(deleted.status(), 204);
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    sqlx::query("UPDATE principals SET purge_after = now() - interval '1 second' WHERE id = $1")
+        .bind(
+            PrincipalId::from_hex(&login.principal)
+                .unwrap()
+                .as_bytes()
+                .as_slice(),
+        )
+        .execute(&pool)
+        .await
+        .unwrap();
+    let location = key_callback(&inst, &subject).await;
+    assert_eq!(
+        query_param(&location, "error").as_deref(),
+        Some("principal_disabled")
+    );
+    let response = signed_post(&inst, &key, "/events", json!(note(&key)), None).await;
+    assert_eq!(response.status(), 403);
 }

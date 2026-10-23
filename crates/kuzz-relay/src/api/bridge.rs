@@ -207,6 +207,13 @@ pub(crate) async fn verify_bridge_bearer(
                 )
                 .into_response())
             }
+            crate::handlers::auth::BanOutcome::AccountDisabled => {
+                return Err(api_error(
+                    StatusCode::FORBIDDEN,
+                    crate::handlers::auth::ACCOUNT_DISABLED_REASON,
+                )
+                .into_response())
+            }
             crate::handlers::auth::BanOutcome::DbError => {
                 return Err(api_error(
                     StatusCode::INTERNAL_SERVER_ERROR,

@@ -369,6 +369,16 @@ async fn initial_auth(token: TokenSecret, conn: Arc<ConnectionState>, state: Arc
                 );
                 return;
             }
+            BanOutcome::AccountDisabled => {
+                deny(
+                    &conn,
+                    AuthOutcome::Banned,
+                    "account_disabled",
+                    crate::handlers::auth::ACCOUNT_DISABLED_REASON,
+                    true,
+                );
+                return;
+            }
             BanOutcome::DbError => {
                 deny(
                     &conn,
