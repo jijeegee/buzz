@@ -380,6 +380,10 @@ pub struct AcpClient {
     /// outside of a goose-native turn — the read loop's steer arm is
     /// disabled in that case.
     steer_rx: Option<tokio::sync::mpsc::Receiver<crate::pool::SteerRequest>>,
+    /// Set when a steer from `steer_rx` (a new channel message) is written
+    /// into the running turn; read and cleared by
+    /// [`take_steer_written`](Self::take_steer_written).
+    steer_written: bool,
     /// Usage tracker for goose/kuzz-agent's cumulative notification format.
     goose_usage: UsageTracker,
     /// Per-turn prompt-response usage and Claude's optional cumulative cost.
@@ -836,6 +840,7 @@ impl AcpClient {
             resume_session_supported: false,
             load_session_supported: false,
             steer_rx: None,
+            steer_written: false,
             goose_usage: UsageTracker::default(),
             standard_usage: StandardUsageTracker::default(),
             standard_adapter,
@@ -1387,6 +1392,13 @@ impl AcpClient {
     /// Idempotent — safe to call when `steer_rx` is already `None`.
     pub fn clear_steer_rx(&mut self) {
         self.steer_rx = None;
+    }
+
+    /// Whether a new channel message was steered into a turn since the last
+    /// call. Idle checks use it: a check that took a message became a turn
+    /// for that message, so its reply is not a `BUSY`/`IDLE` answer.
+    pub fn take_steer_written(&mut self) -> bool {
+        std::mem::take(&mut self.steer_written)
     }
 
     /// Returns `true` if no steer receiver is currently installed.
@@ -2115,6 +2127,7 @@ impl AcpClient {
                             match self.write_ndjson(&msg).await {
                                 Ok(()) => {
                                     pending_steer = Some((id, transport, req.ack_tx));
+                                    self.steer_written = true;
                                 }
                                 Err(e) => {
                                     tracing::warn!(
@@ -4775,6 +4788,10 @@ Start-Sleep -Seconds 1"#;
             crate::pool::SteerAck::Err(crate::pool::SteerError::ExpectedRunIdMissing) => {}
             other => panic!("expected SteerAck::Err(ExpectedRunIdMissing), got {other:?}"),
         }
+        assert!(
+            !client.take_steer_written(),
+            "a steer that wrote nothing is not reported as written"
+        );
     }
 
     /// Steer with `active_run_id` set writes the JSON-RPC request and
@@ -4849,6 +4866,8 @@ Start-Sleep -Seconds 1"#;
             crate::pool::SteerAck::Success { .. } => {}
             other => panic!("expected SteerAck::Success, got {other:?}"),
         }
+        assert!(client.take_steer_written(), "the written steer is reported");
+        assert!(!client.take_steer_written(), "taking it clears it");
     }
 
     /// Steer-success renewal keeps the turn alive past the original hard
