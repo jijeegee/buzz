@@ -700,7 +700,7 @@ class _MoreThreadsRow extends StatelessWidget {
         ],
       ],
     );
-    const padding = EdgeInsets.fromLTRB(
+    const padding = EdgeInsetsDirectional.fromSTEB(
       Grid.gutter +
           _threadIndent +
           activityAvatarSize +

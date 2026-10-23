@@ -1333,8 +1333,8 @@ class ThreadDetailPage extends HookConsumerWidget {
             : null,
         iconColor: context.colors.primary,
         title: Padding(
-          padding: EdgeInsets.only(
-            left: usesNativeIosGlassBackButton
+          padding: EdgeInsetsDirectional.only(
+            start: usesNativeIosGlassBackButton
                 ? iosGlassChannelHeaderTitleSpacing
                 : 0,
           ),

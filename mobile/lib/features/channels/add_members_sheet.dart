@@ -212,7 +212,7 @@ class AddChannelMembersSheet extends HookConsumerWidget {
               if (selectedUsers.value.isNotEmpty) ...[
                 const SizedBox(height: Grid.xxs),
                 Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: Wrap(
                     spacing: Grid.half,
                     runSpacing: Grid.half,

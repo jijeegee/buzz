@@ -31,8 +31,8 @@ class ComposerQuoteChip extends ConsumerWidget {
             border: Border.all(color: context.colors.outlineVariant),
           ),
           child: Padding(
-            padding: const EdgeInsets.only(
-              left: Grid.twelve,
+            padding: const EdgeInsetsDirectional.only(
+              start: Grid.twelve,
               top: Grid.xxs,
               bottom: Grid.xxs,
             ),

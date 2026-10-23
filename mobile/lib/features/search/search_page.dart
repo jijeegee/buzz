@@ -308,11 +308,11 @@ class SearchPage extends HookConsumerWidget {
         bottom: Stack(
           clipBehavior: Clip.none,
           children: [
-            AnimatedPositioned(
+            AnimatedPositionedDirectional(
               duration: reduceMotion ? Duration.zero : _searchFieldMoveDuration,
               curve: Curves.easeInOutCubic,
-              left: Grid.gutter,
-              right: isSearchEditing.value
+              start: Grid.gutter,
+              end: isSearchEditing.value
                   ? searchActiveFieldRightInset
                   : Grid.gutter,
               top: isSearchEditing.value
@@ -609,7 +609,7 @@ class _RecentSearches extends StatelessWidget {
       ),
       children: [
         Padding(
-          padding: const EdgeInsets.fromLTRB(
+          padding: const EdgeInsetsDirectional.fromSTEB(
             Grid.gutter,
             Grid.xs,
             Grid.xxs,
@@ -667,7 +667,7 @@ class _RecentSearches extends StatelessWidget {
                       ),
                     ),
                     Icon(
-                      LucideIcons.chevronRight,
+                      LucideIcons.chevronRightDir,
                       size: 16,
                       color: context.colors.onSurfaceVariant,
                     ),

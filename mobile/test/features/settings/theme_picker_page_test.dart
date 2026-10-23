@@ -620,10 +620,10 @@ void main() {
       );
 
       Duration paginationDuration() => tester
-          .widgetList<AnimatedPositioned>(
+          .widgetList<AnimatedPositionedDirectional>(
             find.descendant(
               of: find.byKey(const ValueKey('theme-preview-scrubber')),
-              matching: find.byType(AnimatedPositioned),
+              matching: find.byType(AnimatedPositionedDirectional),
             ),
           )
           .first

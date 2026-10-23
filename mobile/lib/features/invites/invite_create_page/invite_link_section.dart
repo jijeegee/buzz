@@ -248,7 +248,7 @@ class _InviteRowChevron extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Icon(
-      LucideIcons.chevronRight,
+      LucideIcons.chevronRightDir,
       size: 18,
       color: context.colors.onSurfaceVariant,
     );

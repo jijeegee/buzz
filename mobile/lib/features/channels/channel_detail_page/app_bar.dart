@@ -229,9 +229,9 @@ class _MembersButton extends ConsumerWidget {
         children: [
           const Icon(LucideIcons.users, size: 22),
           if (hasWorkingBot)
-            Positioned(
+            PositionedDirectional(
               top: -2,
-              right: -2,
+              end: -2,
               child: Container(
                 width: 8,
                 height: 8,

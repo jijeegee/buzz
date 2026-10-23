@@ -139,8 +139,8 @@ class _EnabledReadAloudMessage extends HookConsumerWidget {
         key: ValueKey('read-aloud-message-$messageId'),
         decoration: BoxDecoration(
           border: active
-              ? Border(
-                  left: BorderSide(width: 2, color: context.colors.primary),
+              ? BorderDirectional(
+                  start: BorderSide(width: 2, color: context.colors.primary),
                 )
               : null,
         ),

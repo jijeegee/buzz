@@ -566,7 +566,10 @@ class _ReplyRow extends ConsumerWidget {
             ],
           ),
           Padding(
-            padding: const EdgeInsets.only(left: 32, top: Grid.half),
+            padding: const EdgeInsetsDirectional.only(
+              start: 32,
+              top: Grid.half,
+            ),
             child: MessageContent(
               content: reply.content,
               mentionNames: mentionNames,

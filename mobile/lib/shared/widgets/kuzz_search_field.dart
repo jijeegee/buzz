@@ -105,7 +105,7 @@ class KuzzSearchField extends StatelessWidget {
       children: [
         Positioned.fill(
           child: Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: SizedBox(
               width: double.infinity,
               child: TextField(
@@ -126,11 +126,11 @@ class KuzzSearchField extends StatelessWidget {
                   enabledBorder: InputBorder.none,
                   focusedBorder: InputBorder.none,
                   isDense: true,
-                  contentPadding: EdgeInsets.only(
-                    left: isEditing
+                  contentPadding: EdgeInsetsDirectional.only(
+                    start: isEditing
                         ? _searchCompactTextInset
                         : _searchIdleTextInset,
-                    right: Grid.xxs,
+                    end: Grid.xxs,
                     top: isEditing ? Grid.xxs : 0,
                     bottom: isEditing ? Grid.xxs : 0,
                   ),
@@ -148,9 +148,11 @@ class KuzzSearchField extends StatelessWidget {
         ),
         IgnorePointer(
           child: Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: Padding(
-              padding: const EdgeInsets.only(left: _searchIdleIconInset),
+              padding: const EdgeInsetsDirectional.only(
+                start: _searchIdleIconInset,
+              ),
               child: AnimatedScale(
                 duration: reduceMotion ? Duration.zero : motionDuration,
                 curve: Curves.easeInOutCubic,

@@ -75,7 +75,10 @@ class AppListCard extends StatelessWidget {
         children: [
           if (label != null)
             Padding(
-              padding: const EdgeInsets.only(left: Grid.half, bottom: Grid.xxs),
+              padding: const EdgeInsetsDirectional.only(
+                start: Grid.half,
+                bottom: Grid.xxs,
+              ),
               child: Text(
                 label!,
                 style: context.textTheme.labelMedium?.copyWith(
@@ -86,7 +89,10 @@ class AppListCard extends StatelessWidget {
             ),
           if (description != null)
             Padding(
-              padding: const EdgeInsets.only(left: Grid.half, bottom: Grid.xxs),
+              padding: const EdgeInsetsDirectional.only(
+                start: Grid.half,
+                bottom: Grid.xxs,
+              ),
               child: Text(
                 description!,
                 style: context.textTheme.bodySmall?.copyWith(

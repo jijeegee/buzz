@@ -144,9 +144,9 @@ class ForumPostsView extends HookConsumerWidget {
         ),
         if (isComposing.value) ...[
           Align(
-            alignment: Alignment.centerRight,
+            alignment: AlignmentDirectional.centerEnd,
             child: Padding(
-              padding: const EdgeInsets.only(right: Grid.xxs),
+              padding: const EdgeInsetsDirectional.only(end: Grid.xxs),
               child: IconButton(
                 onPressed: () => isComposing.value = false,
                 icon: const Icon(LucideIcons.x, size: 18),

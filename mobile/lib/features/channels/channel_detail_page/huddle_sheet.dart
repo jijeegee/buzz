@@ -327,8 +327,8 @@ class _HuddleJoinSurface extends ConsumerWidget {
     };
 
     return Padding(
-      padding: const EdgeInsets.only(
-        left: messageAvatarSize + messageAvatarContentGap,
+      padding: const EdgeInsetsDirectional.only(
+        start: messageAvatarSize + messageAvatarContentGap,
         top: Grid.xxs,
       ),
       child: Container(

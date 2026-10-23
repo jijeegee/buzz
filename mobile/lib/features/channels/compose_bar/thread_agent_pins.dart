@@ -385,7 +385,7 @@ class _ThreadAgentPinChips extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
         children: [
           Padding(
-            padding: const EdgeInsets.only(right: Grid.xxs),
+            padding: const EdgeInsetsDirectional.only(end: Grid.xxs),
             child: Icon(
               LucideIcons.atSign,
               size: 14,
@@ -394,7 +394,7 @@ class _ThreadAgentPinChips extends StatelessWidget {
           ),
           for (final agent in agents)
             Padding(
-              padding: const EdgeInsets.only(right: Grid.xxs),
+              padding: const EdgeInsetsDirectional.only(end: Grid.xxs),
               child: Semantics(
                 button: true,
                 label: context.l10n.composeAutoMentionOffNamed(agent.label),

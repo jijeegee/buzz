@@ -8,7 +8,7 @@ import '../../shared/theme/theme_extensions.dart';
 import 'date_formatters.dart';
 
 /// Widest an own bubble may grow, as a share of the row. Leaves room for the
-/// time and the speaker button on the left.
+/// time and the speaker button on its inner side (left in left-to-right).
 const chatOwnBubbleWidthFactor = 0.80;
 
 /// Widest another person's (or agent's) bubble may grow, as a share of the
@@ -19,8 +19,9 @@ const chatOtherBubbleWidthFactor = 0.89;
 /// Vertical padding inside a bubble.
 const chatBubbleVerticalPadding = 10.0;
 
-/// Timeline gutters, KakaoTalk-tight: the avatar column hugs the left edge and
-/// own bubbles stop a little short of the right edge.
+/// Timeline gutters, KakaoTalk-tight: the avatar column hugs the start edge
+/// and own bubbles stop a little short of the end edge. Applied as
+/// start/end, so right-to-left layouts mirror them.
 const chatListLeftInset = 8.0;
 const chatListRightInset = 12.0;
 
@@ -73,6 +74,9 @@ class ChatBubbleColors {
 
 /// One timeline message laid out as a chat bubble.
 ///
+/// Sides below are for left-to-right; right-to-left layouts mirror them, so
+/// own messages sit on the left there (as Telegram does in Arabic).
+///
 /// The signed-in user's own messages ([isOwn]) sit on the right with no
 /// avatar or name. Everyone else, including agents the user owns, sits on the
 /// left behind [leading] (the avatar, or an empty avatar-width slot), with the
@@ -119,11 +123,11 @@ class ChatBubbleRow extends StatelessWidget {
       key: bubbleKey,
       decoration: BoxDecoration(
         color: isOwn ? colors.own : colors.other,
-        borderRadius: BorderRadius.only(
-          topLeft: _bubbleRadius,
-          topRight: _bubbleRadius,
-          bottomLeft: isOwn ? _bubbleRadius : _bubbleTailRadius,
-          bottomRight: isOwn ? _bubbleTailRadius : _bubbleRadius,
+        borderRadius: BorderRadiusDirectional.only(
+          topStart: _bubbleRadius,
+          topEnd: _bubbleRadius,
+          bottomStart: isOwn ? _bubbleRadius : _bubbleTailRadius,
+          bottomEnd: isOwn ? _bubbleTailRadius : _bubbleRadius,
         ),
         boxShadow: isOwn ? null : colors.otherShadow,
       ),
@@ -224,7 +228,7 @@ class ChatBubbleRow extends StatelessWidget {
   }
 }
 
-/// Paints [status] just left of [child] (or of an empty anchor) without
+/// Paints [status] just before [child] (left of it in left-to-right) without
 /// adding to the row's width. Taps on it reach the row underneath.
 class _OverhangingStatus extends StatelessWidget {
   final Widget status;
@@ -234,17 +238,18 @@ class _OverhangingStatus extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final rtl = Directionality.of(context) == TextDirection.rtl;
     return Stack(
       clipBehavior: Clip.none,
       children: [
         child ?? const SizedBox.shrink(),
-        Positioned(
-          left: 0,
+        PositionedDirectional(
+          start: 0,
           bottom: 0,
           child: FractionalTranslation(
-            translation: const Offset(-1, 0),
+            translation: Offset(rtl ? 1 : -1, 0),
             child: Padding(
-              padding: const EdgeInsets.only(right: Grid.half),
+              padding: const EdgeInsetsDirectional.only(end: Grid.half),
               child: status,
             ),
           ),

@@ -387,7 +387,9 @@ class _ReactionDetailSheet extends HookConsumerWidget {
                   children: [
                     for (final reaction in reactions)
                       Padding(
-                        padding: const EdgeInsets.only(right: Grid.half),
+                        padding: const EdgeInsetsDirectional.only(
+                          end: Grid.half,
+                        ),
                         child: ChoiceChip(
                           label: Row(
                             mainAxisSize: MainAxisSize.min,

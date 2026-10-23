@@ -1103,15 +1103,15 @@ class _MessageList extends HookConsumerWidget {
                 itemScrollController: itemScrollController,
                 itemPositionsListener: itemPositionsListener,
                 reverse: true,
-                padding: EdgeInsets.only(
-                  left: chatListLeftInset,
-                  right: chatListRightInset,
+                padding: EdgeInsetsDirectional.only(
+                  start: chatListLeftInset,
+                  end: chatListRightInset,
                   top: frostedAppBarHeight(
                     context,
                     titleContentHeight: appBarTitleContentHeight,
                   ),
                   bottom: timelineBottomInset,
-                ),
+                ).resolve(Directionality.of(context)),
                 itemCount:
                     displayEntries.length + (isLoadingOlder.value ? 1 : 0),
                 itemBuilder: (context, index) {

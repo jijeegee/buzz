@@ -110,7 +110,7 @@ class AppListRow extends StatelessWidget {
                 ),
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
-                textAlign: TextAlign.right,
+                textAlign: TextAlign.end,
               ),
             ),
           ],

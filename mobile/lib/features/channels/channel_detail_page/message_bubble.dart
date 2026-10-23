@@ -356,15 +356,15 @@ class _MessageBubble extends HookConsumerWidget {
               ),
               if (message.reactions.isNotEmpty)
                 Padding(
-                  padding: EdgeInsets.only(
-                    left: isOwnMessage
+                  padding: EdgeInsetsDirectional.only(
+                    start: isOwnMessage
                         ? 0
                         : messageAvatarSize + messageAvatarContentGap,
                   ),
                   child: Align(
                     alignment: isOwnMessage
-                        ? Alignment.centerRight
-                        : Alignment.centerLeft,
+                        ? AlignmentDirectional.centerEnd
+                        : AlignmentDirectional.centerStart,
                     child: ReactionRow(
                       messageId: message.id,
                       channelId: currentChannelId,

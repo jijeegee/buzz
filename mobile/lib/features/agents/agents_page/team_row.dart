@@ -76,7 +76,9 @@ class _TeamRow extends ConsumerWidget {
             for (final pubkey in team.agentPubkeys.take(6))
               if (agentName(pubkey) != null)
                 Padding(
-                  padding: const EdgeInsets.only(left: Grid.quarter),
+                  padding: const EdgeInsetsDirectional.only(
+                    start: Grid.quarter,
+                  ),
                   child: MyAgentStatusDot(
                     key: ValueKey('agents-team-dot-${team.id}-$pubkey'),
                     status: myAgentStatus(presence[pubkey]),
@@ -84,7 +86,7 @@ class _TeamRow extends ConsumerWidget {
                 ),
             const SizedBox(width: Grid.quarter),
             Icon(
-              LucideIcons.chevronRight,
+              LucideIcons.chevronRightDir,
               size: 18,
               color: context.colors.onSurfaceVariant,
             ),

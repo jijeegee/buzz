@@ -311,7 +311,7 @@ class _PublicGroupTile extends HookConsumerWidget {
         ),
         if (actionError.value case final error?)
           Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: Text(
               error,
               key: Key('browse-channel-error-${group.id}'),

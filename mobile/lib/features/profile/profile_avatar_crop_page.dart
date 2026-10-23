@@ -112,9 +112,9 @@ class ProfileAvatarCropPage extends HookWidget {
         ),
         leadingWidth: 120,
         leading: Padding(
-          padding: const EdgeInsets.only(left: Grid.gutter),
+          padding: const EdgeInsetsDirectional.only(start: Grid.gutter),
           child: Align(
-            alignment: Alignment.centerLeft,
+            alignment: AlignmentDirectional.centerStart,
             child: _CropHeaderButton(
               label: context.l10n.commonCancel,
               onPressed: isCropping.value ? null : () => Navigator.pop(context),
@@ -123,7 +123,7 @@ class ProfileAvatarCropPage extends HookWidget {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: Grid.gutter),
+            padding: const EdgeInsetsDirectional.only(end: Grid.gutter),
             child: _CropHeaderButton(
               key: const ValueKey('avatar-crop-use-photo'),
               label: context.l10n.commonSave,

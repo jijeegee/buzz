@@ -61,11 +61,14 @@ class KuzzSheetHeader extends StatelessWidget {
                 ),
               ),
             Align(
-              alignment: Alignment.bottomRight,
+              alignment: AlignmentDirectional.bottomEnd,
               child: trailing ?? const _SheetCloseButton(),
             ),
             if (leading case final leading?)
-              Align(alignment: Alignment.bottomLeft, child: leading),
+              Align(
+                alignment: AlignmentDirectional.bottomStart,
+                child: leading,
+              ),
           ],
         ),
       ),

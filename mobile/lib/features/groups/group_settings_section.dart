@@ -76,7 +76,7 @@ class GroupSettingsCard extends HookConsumerWidget {
     final canSeeLink = canManage || policy != 'admins';
     final l10n = context.l10n;
     final chevron = Icon(
-      LucideIcons.chevronRight,
+      LucideIcons.chevronRightDir,
       size: 18,
       color: context.colors.onSurfaceVariant,
     );
@@ -330,7 +330,9 @@ class PublicAddressSheet extends HookConsumerWidget {
               child: Row(
                 children: [
                   Padding(
-                    padding: const EdgeInsets.only(left: Grid.twelve),
+                    padding: const EdgeInsetsDirectional.only(
+                      start: Grid.twelve,
+                    ),
                     child: Text(
                       prefix,
                       style: context.textTheme.bodyLarge?.copyWith(

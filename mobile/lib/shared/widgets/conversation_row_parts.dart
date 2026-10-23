@@ -149,8 +149,8 @@ class ConversationLetterAvatar extends StatelessWidget {
             child: _photoOrLetter(letterSize),
           ),
           if (badgeIcon != null)
-            Positioned(
-              right: -2,
+            PositionedDirectional(
+              end: -2,
               bottom: -2,
               child: Container(
                 key: isPrivate && !isThread
@@ -233,15 +233,15 @@ class ConversationAvatarPair extends StatelessWidget {
       child: Stack(
         clipBehavior: Clip.none,
         children: [
-          Positioned(
-            left: -conversationPairOverhang,
+          PositionedDirectional(
+            start: -conversationPairOverhang,
             top: top,
             width: conversationPairCircleSize,
             height: conversationPairCircleSize,
             child: back,
           ),
-          Positioned(
-            left:
+          PositionedDirectional(
+            start:
                 conversationPairWidth -
                 conversationPairOverhang -
                 conversationPairCircleSize -
@@ -292,9 +292,9 @@ class ConversationThreadAvatar extends StatelessWidget {
   Widget build(BuildContext context) {
     final picture = channelPicture?.trim();
     final letter = Container(
-      alignment: Alignment.centerLeft,
+      alignment: AlignmentDirectional.centerStart,
       // Clear of the front circle's ring (which starts at 16).
-      padding: const EdgeInsets.only(left: 6),
+      padding: const EdgeInsetsDirectional.only(start: 6),
       child: Text(
         conversationInitial(channelLabel),
         style: const TextStyle(

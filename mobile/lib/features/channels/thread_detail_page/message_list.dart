@@ -112,12 +112,12 @@ class _ThreadMessageList extends StatelessWidget {
           // open starts at the newest reply without first painting the head,
           // and a short thread stacks up from the composer.
           reverse: true,
-          padding: EdgeInsets.only(
-            left: chatListLeftInset,
-            right: chatListRightInset,
+          padding: EdgeInsetsDirectional.only(
+            start: chatListLeftInset,
+            end: chatListRightInset,
             top: frostedAppBarHeight(context),
             bottom: Grid.xs + bottomInset,
-          ),
+          ).resolve(Directionality.of(context)),
           itemCount: replies.length + 1,
           itemBuilder: (context, index) => _trackActiveThreadScrollPosition(
             _buildItem(context, index),

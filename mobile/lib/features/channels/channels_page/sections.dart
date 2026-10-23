@@ -46,9 +46,9 @@ class _ChannelSection extends StatelessWidget {
             children: [
               if (channels.isEmpty)
                 Padding(
-                  padding: const EdgeInsets.only(
-                    left: _kChannelLabelInset,
-                    right: _kChannelSectionInset,
+                  padding: const EdgeInsetsDirectional.only(
+                    start: _kChannelLabelInset,
+                    end: _kChannelSectionInset,
                     top: Grid.half,
                     bottom: Grid.half,
                   ),
@@ -158,7 +158,7 @@ class _SectionHeader extends StatelessWidget {
             SizedBox(
               width: _kChannelLeadingWidth,
               child: Align(
-                alignment: Alignment.centerLeft,
+                alignment: AlignmentDirectional.centerStart,
                 child: Icon(icon, size: _kChannelIconSize, color: sectionColor),
               ),
             ),

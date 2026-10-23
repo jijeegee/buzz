@@ -334,8 +334,11 @@ void main() {
     final iconScale = tester.widget<AnimatedScale>(
       find.ancestor(of: movingIcon, matching: find.byType(AnimatedScale)),
     );
-    final movingField = tester.widget<AnimatedPositioned>(
-      find.ancestor(of: movingIcon, matching: find.byType(AnimatedPositioned)),
+    final movingField = tester.widget<AnimatedPositionedDirectional>(
+      find.ancestor(
+        of: movingIcon,
+        matching: find.byType(AnimatedPositionedDirectional),
+      ),
     );
     expect(iconScale.scale, lessThan(1));
     expect(movingField.top, Grid.half);

@@ -77,7 +77,7 @@ class ComposeNotePage extends HookConsumerWidget {
         ),
         actions: [
           Padding(
-            padding: const EdgeInsets.only(right: Grid.xxs),
+            padding: const EdgeInsetsDirectional.only(end: Grid.xxs),
             child: FilledButton(
               onPressed: hasText && !isSending.value ? submit : null,
               style: FilledButton.styleFrom(
@@ -257,7 +257,7 @@ class _ReplyContext extends ConsumerWidget {
                       constraints: const BoxConstraints(maxHeight: 132),
                       child: ClipRect(
                         child: Align(
-                          alignment: Alignment.topLeft,
+                          alignment: AlignmentDirectional.topStart,
                           heightFactor: 1,
                           child: MessageContent(
                             content: note.content,

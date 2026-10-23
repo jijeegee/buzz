@@ -132,8 +132,8 @@ class DeviceRobotAvatarBadge extends StatelessWidget {
       clipBehavior: Clip.none,
       children: [
         child,
-        Positioned(
-          right: -badgeSize * 0.25,
+        PositionedDirectional(
+          end: -badgeSize * 0.25,
           bottom: -badgeSize * 0.25,
           child: Container(
             key: ValueKey('device-robot-badge-${variant.tag}'),

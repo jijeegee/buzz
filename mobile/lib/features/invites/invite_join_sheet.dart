@@ -214,7 +214,9 @@ class InviteJoinSheet extends ConsumerWidget {
                             ),
                           )
                         : Icon(
-                            needsSignIn ? LucideIcons.logIn : LucideIcons.check,
+                            needsSignIn
+                                ? LucideIcons.logInDir
+                                : LucideIcons.check,
                           ),
                     label: Text(primaryLabel),
                   ),

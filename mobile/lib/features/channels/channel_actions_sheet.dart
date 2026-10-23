@@ -362,7 +362,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
               if (channel.isGroupChat && channel.isMember) ...[
                 const SheetDivider(),
                 _ActionTile(
-                  icon: LucideIcons.logOut,
+                  icon: LucideIcons.logOutDir,
                   label: context.l10n.channelLeaveChat,
                   destructive: true,
                   onTap: () => _confirmAndRun(
@@ -382,7 +382,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 const SheetDivider(),
                 if (channel.isMember && !channel.isArchived)
                   _ActionTile(
-                    icon: LucideIcons.logOut,
+                    icon: LucideIcons.logOutDir,
                     label: context.l10n.channelLeaveGroup,
                     destructive: true,
                     onTap: () => _confirmAndRun(

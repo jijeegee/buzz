@@ -262,7 +262,7 @@ class _AttachmentSurfacePanel extends HookWidget {
             : baseColor;
 
         return Align(
-          alignment: Alignment.topLeft,
+          alignment: AlignmentDirectional.topStart,
           heightFactor: 1,
           child: SizedBox(
             width: width,
@@ -279,8 +279,8 @@ class _AttachmentSurfacePanel extends HookWidget {
               child: Stack(
                 clipBehavior: Clip.hardEdge,
                 children: [
-                  Positioned(
-                    left: 0,
+                  PositionedDirectional(
+                    start: 0,
                     top: 0,
                     width: _attachmentMenuWidth,
                     height: menuLayout.height,
@@ -299,8 +299,8 @@ class _AttachmentSurfacePanel extends HookWidget {
                       ),
                     ),
                   ),
-                  Positioned(
-                    left: 0,
+                  PositionedDirectional(
+                    start: 0,
                     top: 0,
                     width: expandedWidth,
                     height: expandedHeight,
@@ -752,9 +752,9 @@ class _AttachmentStrip extends StatelessWidget {
                             ),
                           ),
                   ),
-                  Positioned(
+                  PositionedDirectional(
                     top: Grid.quarter,
-                    right: Grid.quarter,
+                    end: Grid.quarter,
                     child: SizedBox(
                       width: 24,
                       height: 24,

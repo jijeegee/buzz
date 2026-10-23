@@ -293,7 +293,7 @@ class _ChannelSuggestions extends StatelessWidget {
               leading: SizedBox.square(
                 dimension: 36,
                 child: Align(
-                  alignment: Alignment.centerLeft,
+                  alignment: AlignmentDirectional.centerStart,
                   child: GroupAvatar(
                     channel: channel,
                     size: 24,

@@ -361,8 +361,11 @@ class _FloatingTabBar extends StatelessWidget {
         .clamp(0, destinationCount - 1)
         .toInt();
     final selectedAlignment = destinationCount <= 1
-        ? Alignment.center
-        : Alignment(-1 + (2 * safeSelectedIndex / (destinationCount - 1)), 0);
+        ? AlignmentDirectional.center
+        : AlignmentDirectional(
+            -1 + (2 * safeSelectedIndex / (destinationCount - 1)),
+            0,
+          );
 
     final destinationWidth = _floatingTabDestinationWidth(
       MediaQuery.sizeOf(context).width,
@@ -535,15 +538,18 @@ class _FloatingTabDestination extends StatelessWidget {
                       ),
                     ),
                     if (showUnreadBadge)
-                      Positioned(
+                      PositionedDirectional(
                         top: 0,
-                        right: 0,
+                        end: 0,
                         child: AnimatedScale(
                           key: ValueKey(
                             '${destination.id}-tab-unread-dot-scale',
                           ),
                           scale: selected ? 0 : 1,
-                          alignment: const Alignment(-0.5, 0.5),
+                          alignment: const AlignmentDirectional(
+                            -0.5,
+                            0.5,
+                          ).resolve(Directionality.of(context)),
                           duration: reducedMotion
                               ? Duration.zero
                               : HomePage._tabUnreadBadgeDuration,

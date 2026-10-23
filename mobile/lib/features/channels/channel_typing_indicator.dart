@@ -82,8 +82,8 @@ class ChannelTypingIndicator extends ConsumerWidget {
               child: Stack(
                 children: [
                   for (var i = 0; i < avatarCount; i++)
-                    Positioned(
-                      left: i * 14.0,
+                    PositionedDirectional(
+                      start: i * 14.0,
                       child: SmallAvatar(
                         pubkey: visibleEntries[i].pubkey,
                         userCache: userCache,
