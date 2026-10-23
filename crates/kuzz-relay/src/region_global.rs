@@ -51,7 +51,8 @@ enum RelayStore {
 }
 
 /// The store rule for a relay-made room-less event; `None` for any other
-/// kind, or a replaceable one without its `d` tag.
+/// kind. A replaceable one without a `d` tag uses `""`, as the store does
+/// (NIP-33).
 fn relay_store(event: &Event) -> Option<RelayStore> {
     match u32::from(event.kind.as_u16()) {
         kuzz_core::kind::KIND_MEMBER_ADDED_NOTIFICATION
@@ -456,7 +457,7 @@ mod tests {
         let no_d = nostr::EventBuilder::new(nostr::Kind::Custom(30622), "")
             .sign_with_keys(&keys)
             .unwrap();
-        assert_eq!(relay_store(&no_d), None);
+        assert_eq!(relay_store(&no_d), Some(RelayStore::Replace(String::new())));
         let profile = nostr::EventBuilder::new(nostr::Kind::Metadata, "{}")
             .sign_with_keys(&keys)
             .unwrap();
