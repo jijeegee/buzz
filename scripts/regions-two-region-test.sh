@@ -57,10 +57,12 @@ BIN="${TARGET}/debug/kuzz-relay"
 [[ -x "${BIN}" || -x "${BIN}.exe" ]] || { log "no relay binary at ${BIN}"; exit 1; }
 mkdir -p "${LOG_DIR}"
 
-# start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port> <link key>
+# start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port> <link key> [log name]
+# RELAY_EXTRA_ENV adds settings for one relay.
+RELAY_EXTRA_ENV=()
 start_relay() {
-  local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6 link_key=$7
-  env DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:${pg}/kuzz" \
+  local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6 link_key=$7 name=${8:-$1}
+  env "${RELAY_EXTRA_ENV[@]}" DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:${pg}/kuzz" \
     REDIS_URL="redis://127.0.0.1:${redis}" \
     RELAY_URL="${KR_URL}" \
     KUZZ_SERVICE_ALIASES="localhost:${port}" \
@@ -86,7 +88,7 @@ start_relay() {
     KUZZ_CHAT_STATE_WRITES=on \
     KUZZ_PUBSUB_SEQ_ENVELOPE=true \
     KUZZ_GLOBAL_COPY_MAX_LAG_SECS=3 \
-    "${BIN}" >"${LOG_DIR}/relay-${region}.log" 2>&1 &
+    "${BIN}" >"${LOG_DIR}/relay-${name}.log" 2>&1 &
   PIDS+=($!)
 }
 
@@ -130,6 +132,14 @@ done
   "INSERT INTO regions (id, connect_url, is_primary, link_pubkey)
    VALUES ('jp', '${JP_URL}', false, '${JP_LINK_PUBKEY}')"
 wait_up http://localhost:3042/
+
+# A second relay in jp, on the same database, that admits relay members only
+# (S5-5). The owner is required by that setting; any valid key will do.
+RELAY_EXTRA_ENV=(KUZZ_REQUIRE_RELAY_MEMBERSHIP=true
+  RELAY_OWNER_PUBKEY=79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)
+start_relay jp 3043 5492 6492 3053 3063 "${JP_LINK_KEY}" jp-members
+RELAY_EXTRA_ENV=()
+wait_up http://localhost:3043/
 log "relays up"
 
 log "running e2e_regions"
@@ -144,13 +154,14 @@ log "running e2e_regions_lag"
 REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
   REGION_JP_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz" \
   REGION_KR_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz" \
+  REGION_JP_MEMBERS_URL=ws://localhost:3043 \
   cargo test -p kuzz-test-client --test e2e_regions_lag -- --ignored --test-threads=1
 
 # The relay in jp must never write a global table itself (S5-3): its copy
 # guard would refuse it.
-if grep -q "is written in the primary region" "${LOG_DIR}/relay-jp.log"; then
+if grep -q "is written in the primary region" "${LOG_DIR}"/relay-jp*.log; then
   log "jp's relay wrote global tables itself:"
-  grep "is written in the primary region" "${LOG_DIR}/relay-jp.log" | head -5
+  grep "is written in the primary region" "${LOG_DIR}"/relay-jp*.log | head -5
   exit 1
 fi
 log "passed"
