@@ -172,6 +172,20 @@ def _auth_tag_owner(tag: str) -> Optional[str]:
     return normalize_pubkey(data[1]) if isinstance(data, list) and len(data) > 1 else None
 
 
+def _hermes_home() -> Optional[Path]:
+    try:
+        from hermes_constants import get_hermes_home
+
+        return Path(get_hermes_home())
+    except Exception:
+        return None
+
+
+def _child_env(add: Optional[Dict[str, str]] = None) -> Dict[str, str]:
+    """``kuzz_cli.child_env`` with the no-login session file under this profile's Hermes home."""
+    return kuzz_cli.child_env(add=add, home=_hermes_home())
+
+
 @dataclass(frozen=True)
 class Identity:
     mode: str  # "paired" | "legacy"
@@ -197,7 +211,7 @@ async def _cli_json(cli: Sequence[str], args: List[str], env: Dict[str, str]) ->
 async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity]:
     """Paired identity if the CLI reports an owner, else legacy raw-key mode if configured, else None."""
     configured_owner = normalize_pubkey(_setting(("KUZZ_OWNER_PUBKEY",), extra, "owner"))
-    me = await _cli_json(cli, ["auth", "whoami"], kuzz_cli.child_env())
+    me = await _cli_json(cli, ["auth", "whoami"], _child_env())
     # A paired CLI answers {"mode": "paired", "pubkey", "owner", ...}; owner may be null until the relay says.
     if isinstance(me, dict) and me.get("mode") == "paired" and normalize_pubkey(me.get("pubkey")):
         return Identity(
@@ -212,7 +226,7 @@ async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity
     relay = _relay_url(extra)
     if relay:
         add.update(KUZZ_RELAY_URL=relay, BUZZ_RELAY_URL=relay)
-    me = await _cli_json(cli, ["auth", "whoami"], kuzz_cli.child_env(add=add))
+    me = await _cli_json(cli, ["auth", "whoami"], _child_env(add=add))
     self_pubkey = normalize_pubkey(me.get("pubkey")) if isinstance(me, dict) else None
     return Identity("legacy", add, self_pubkey or "", configured_owner or _auth_tag_owner(tag))
 
@@ -300,7 +314,7 @@ class BuzzAdapter(BasePlatformAdapter):
         self._extra["group_allow_from"] = list(allowed)
 
     def _env(self) -> Dict[str, str]:
-        return kuzz_cli.child_env(add=self._identity.env_add if self._identity else None)
+        return _child_env(add=self._identity.env_add if self._identity else None)
 
     async def _run(self, args: List[str], input_text: Optional[str] = None) -> Tuple[int, str, str]:
         try:
@@ -669,7 +683,9 @@ class BuzzAdapter(BasePlatformAdapter):
             return SendResult(success=False, error="Message too long to edit")
         rc, out, err = await self._run(["messages", "edit", "--event", str(message_id), f"--content={content}"])
         if rc != 0:
-            return SendResult(success=False, error=kuzz_cli.cli_error_message(err, rc), retryable=rc == 2)
+            return SendResult(
+                success=False, error=kuzz_cli.cli_error_message(err, rc), retryable=kuzz_cli.cli_error_retryable(err)
+            )
         data = _json_dict(out)
         if data.get("event_id"):
             self._channel(str(chat_id))["seen"].put(str(data["event_id"]))
@@ -761,7 +777,7 @@ async def _standalone_send(
     thread = thread_id if thread_id and _reply_to_mode(pconfig, extra) != "off" else None
     files = [str(m[0] if isinstance(m, (list, tuple)) and m else m) for m in media_files or []]
     outcome = await kuzz_cli.send_message(
-        [cli_path], target, message, thread=thread, files=files, env=kuzz_cli.child_env(add=identity.env_add)
+        [cli_path], target, message, thread=thread, files=files, env=_child_env(add=identity.env_add)
     )
     if outcome.event_id is None:
         return {"error": f"Buzz standalone send failed: {outcome.error}"}

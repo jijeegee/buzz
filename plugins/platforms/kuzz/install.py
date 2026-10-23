@@ -28,6 +28,7 @@ import os
 import shutil
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import List, Optional
 
@@ -37,7 +38,7 @@ INSTALL_DIR = "buzz"
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "adapter.py", "kuzz_cli.py")
 
 sys.path.insert(0, str(HERE))
-from kuzz_cli import find_kuzz, normalize_pubkey  # noqa: E402  (stdlib-only module)
+from kuzz_cli import find_kuzz, is_runnable, normalize_pubkey, which_program  # noqa: E402  (stdlib-only)
 
 
 def default_hermes_home() -> Path:
@@ -51,7 +52,9 @@ def default_hermes_home() -> Path:
 
 
 def copy_plugin(hermes_home: Path) -> Path:
-    """Replace <hermes_home>/plugins/buzz with a fresh copy of PLUGIN_FILES."""
+    """Replace <hermes_home>/plugins/buzz with a fresh copy of PLUGIN_FILES. An existing folder
+    is moved to <hermes_home>/plugin-backups/buzz-<UTC time>/ (outside plugins/, so Hermes does
+    not load it), never deleted."""
     plugins = hermes_home / "plugins"
     target = plugins / INSTALL_DIR
     staging = plugins / f".{INSTALL_DIR}.installing"
@@ -60,39 +63,57 @@ def copy_plugin(hermes_home: Path) -> Path:
     staging.mkdir()
     for name in PLUGIN_FILES:
         shutil.copy2(HERE / name, staging / name)
-    shutil.rmtree(target, ignore_errors=True)
+    if target.exists():
+        backups = hermes_home / "plugin-backups"
+        backups.mkdir(parents=True, exist_ok=True)
+        stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+        backup = backups / f"{INSTALL_DIR}-{stamp}"
+        n = 1
+        while backup.exists():
+            n += 1
+            backup = backups / f"{INSTALL_DIR}-{stamp}-{n}"
+        target.rename(backup)
+        print(f"Moved the previous {target} to {backup}")
     staging.rename(target)
     return target
 
 
 def set_env_values(env_file: Path, values: dict) -> None:
-    """Upsert KEY=value lines in a dotenv file, leaving every other line untouched."""
-    lines: List[str] = []
+    """Upsert KEY=value lines in a dotenv file. Every line that sets a key is updated (a later
+    duplicate would otherwise win); other lines and the file's line endings are kept."""
+    text = ""
     if env_file.exists():
-        lines = env_file.read_text(encoding="utf-8").splitlines()
-    pending = dict(values)
+        with open(env_file, encoding="utf-8", newline="") as fh:
+            text = fh.read()
+    newline = "\r\n" if "\r\n" in text else "\n"
+    lines = text.splitlines()
+    seen = set()
     for i, line in enumerate(lines):
-        key = line.split("=", 1)[0].strip()
+        head, sep, _value = line.partition("=")
+        key = head.strip()
+        prefix = ""
         if key.startswith("export "):
-            key = key[len("export "):].strip()
-        if key in pending:
-            lines[i] = f"{key}={pending.pop(key)}"
-    lines += [f"{key}={value}" for key, value in pending.items()]
+            prefix, key = "export ", key[len("export "):].strip()
+        if sep and key in values:
+            lines[i] = f"{prefix}{key}={values[key]}"
+            seen.add(key)
+    lines += [f"{key}={value}" for key, value in values.items() if key not in seen]
     env_file.parent.mkdir(parents=True, exist_ok=True)
-    with open(env_file, "w", encoding="utf-8", newline="\n") as fh:
-        fh.write("\n".join(lines) + "\n")
+    with open(env_file, "w", encoding="utf-8", newline="") as fh:
+        fh.write(newline.join(lines) + newline)
 
 
 def find_hermes(hermes_home: Path) -> Optional[str]:
-    found = shutil.which("hermes")
-    if found:
+    """The ``hermes`` launcher; on Windows only ``hermes.exe`` (a .cmd/.bat is never run)."""
+    found = which_program("hermes")
+    if found and is_runnable(found):
         return found
+    name = "hermes.exe" if os.name == "nt" else "hermes"
     for folder in (hermes_home / "bin", hermes_home / "hermes-agent" / "venv" / "Scripts",
                    hermes_home / "hermes-agent" / "venv" / "bin"):
-        for name in ("hermes.exe", "hermes.cmd", "hermes"):
-            candidate = folder / name
-            if candidate.is_file():
-                return str(candidate)
+        candidate = folder / name
+        if is_runnable(str(candidate)):
+            return str(candidate)
     return None
 
 
@@ -103,7 +124,7 @@ def find_installed_kuzz() -> str:
     if root.name == "kuzz" and root.parent.name == "share":  # <prefix>/share/kuzz -> <prefix>/bin/kuzz
         candidates.append(root.parent.parent / "bin" / "kuzz")
     for candidate in candidates:
-        if candidate.is_file():
+        if is_runnable(str(candidate)):
             return str(candidate)
     return find_kuzz()
 

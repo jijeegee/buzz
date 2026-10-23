@@ -9,6 +9,9 @@ whole contract between Kuzz and an agent that Kuzz did not start itself:
 | `kuzz messages watch` | Receive messages: one JSON object per line on stdout. |
 | `kuzz messages send` | Send a message or a thread reply. |
 
+A *relay* is the Kuzz server that the app and its agents connect to; `<url>`
+below is its address.
+
 An agent needs nothing else: no key handling, no WebSocket client, no Nostr
 library. If it can start a process, read lines and write to stdin, it can join.
 The [Hermes plugin](#hermes-agent) is one implementation of this contract.
@@ -169,10 +172,15 @@ On failure a command prints a JSON object on stderr, for example
 |---|---|
 | 0 | Success |
 | 1 | Usage error or not found |
-| 2 | Network error, or delivery unknown; retrying is reasonable |
+| 2 | Network error, or delivery unknown; follow the `retryable` field |
 | 3 | Authentication: not paired, signed out or disconnected |
 | 4 | Other error |
 | 5 | Conflict |
+
+Retry only when the JSON says `"retryable":true`. Exit code 2 alone is not
+enough: it also means "delivery unknown" (the message may have arrived), which
+is never retryable, so resending could post it twice. If the agent itself
+gives up on a command after a timeout, treat that as delivery unknown too.
 
 ## Security model
 
@@ -280,12 +288,15 @@ hermes gateway restart
 `install.py` does three things, which any installer can repeat:
 
 1. Copies `plugin.yaml`, `__init__.py`, `adapter.py` and `kuzz_cli.py` into
-   `$HERMES_HOME/plugins/buzz/`. Nothing else is needed at run time.
+   `$HERMES_HOME/plugins/buzz/`. Nothing else is needed at run time. An
+   existing folder there is moved to `$HERMES_HOME/plugin-backups/buzz-<UTC
+   time>/` first, not deleted.
 2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path`, else the
    `kuzz` in the installer's own root, else `kuzz` on `PATH` or the desktop
    app's copy. This outranks an older `BUZZ_CLI_PATH` that points at a Buzz
    CLI without `watch`. It also sets `KUZZ_OWNER_PUBKEY` when `--owner` is
-   given.
+   given. Every line that sets one of these keys is updated, and the file
+   keeps its line endings.
 3. Adds `buzz-platform` to `plugins.enabled` (and removes it from
    `plugins.disabled`) through `hermes config get` / `hermes config set`.
 
@@ -337,12 +348,21 @@ except in a secondary Hermes profile, where `extra` does.
 | `BUZZ_REACTION_ONLY_USERS` | `reaction_only_users` | empty | People who get only a seen reaction when they mention the agent. |
 | `KUZZ_CLI_PATH`, then `BUZZ_CLI_PATH` | `cli_path` | see above | Path to the CLI. |
 
-`BUZZ_RELAY_URL` only matters for the legacy key and the cursor file. The
+`BUZZ_RELAY_URL` only matters for the legacy key and the cursor file. If
+`KUZZ_RELAY_URL` is set, it must be the relay this computer was paired with:
+the CLI uses the pairing only for that relay. The
 `watch` command replaces `BUZZ_TRANSPORT` and `BUZZ_POLL_INTERVAL`, so they
 are ignored. `KUZZ_ALLOW_ALL_USERS` and `BUZZ_ALLOW_ALL_USERS` have no effect,
 and the plugin removes them, together with any raw key or token variables,
-from the environment of every `kuzz` process it starts (the legacy key is
-added back explicitly, and only in legacy mode).
+the token and device broker variables (`KUZZ_DEVICE_BROKER_URL`,
+`KUZZ_DEVICE_BROKER_SECRET`) and `KUZZ_DISABLE_STORED_SESSION` (which would
+also hide the pairing), from the environment of every `kuzz` process it starts
+(the legacy key is added back explicitly, and only in legacy mode). The
+session file it points `KUZZ_SESSION_FILE` at is
+`$HERMES_HOME/buzz/kuzz-no-login/session.json`, which nothing creates. On
+Windows the plugin and `install.py` run only a real `.exe` for `kuzz`, `buzz`
+and `hermes`, never a `.cmd` or `.bat`, because `cmd.exe` would re-parse the
+arguments.
 
 `kuzz messages edit` takes the new text as an argument, not on standard input.
 The plugin therefore refuses edits longer than 24,000 characters (the Windows

@@ -5,6 +5,7 @@ Stdlib only; run with `python -m unittest discover -s plugins/platforms/kuzz/tes
 
 import asyncio
 import json
+import os
 import tempfile
 import time
 import unittest
@@ -75,7 +76,9 @@ class EnvAndRedactionTest(unittest.TestCase):
     def test_child_env_strips_allow_all_and_credentials(self):
         base = {name: "x" for name in kuzz_cli.STRIPPED_ENV}
         base.update(PATH="/bin", KUZZ_RELAY_URL="wss://relay", KUZZ_DEVICE_KEY_REF="ref")
-        env = kuzz_cli.child_env(base)
+        home = Path(tempfile.gettempdir()) / "hermes-home-test"
+        env = kuzz_cli.child_env(base, home=home)
+        session_file = str(home / "buzz" / "kuzz-no-login" / "session.json")
         self.assertEqual(
             env,
             {
@@ -83,11 +86,12 @@ class EnvAndRedactionTest(unittest.TestCase):
                 "KUZZ_RELAY_URL": "wss://relay",
                 "KUZZ_DEVICE_KEY_REF": "ref",
                 # A person's `kuzz auth login` must never outrank the paired agent.
-                "KUZZ_SESSION_FILE": kuzz_cli.NO_LOGIN_SESSION_FILE,
+                "KUZZ_SESSION_FILE": session_file,
             },
         )
-        self.assertFalse(Path(kuzz_cli.NO_LOGIN_SESSION_FILE).exists())
-        for name in ("KUZZ_ALLOW_ALL_USERS", "BUZZ_ALLOW_ALL_USERS", "KUZZ_TOKEN_BROKER_SECRET"):
+        self.assertFalse(Path(session_file).exists())
+        for name in ("KUZZ_ALLOW_ALL_USERS", "BUZZ_ALLOW_ALL_USERS", "KUZZ_TOKEN_BROKER_SECRET",
+                     "KUZZ_DEVICE_BROKER_URL", "KUZZ_DEVICE_BROKER_SECRET", "KUZZ_DISABLE_STORED_SESSION"):
             self.assertIn(name, kuzz_cli.STRIPPED_ENV)
 
     def test_redact(self):
@@ -96,6 +100,23 @@ class EnvAndRedactionTest(unittest.TestCase):
         for secret in ("nsec1qqqqqqqqqqqqqqqq", "abc.def", "K7Q2-SECRET"):
             self.assertNotIn(secret, out)
         self.assertLessEqual(len(out), 500)
+
+    def test_redact_pair_command_and_hex(self):
+        code = "ABCdef0123456789_-xyzQ"
+        out = kuzz_cli.redact(f"run: kuzz pair --relay https://r.example {code}\nnext")
+        self.assertNotIn(code, out)
+        self.assertIn("--relay https://r.example [redacted]", out)
+        out = kuzz_cli.redact(f"kuzz.exe pair {code} --relay=wss://r --hermes")
+        self.assertNotIn(code, out)
+        out = kuzz_cli.redact("key " + "ab" * 32 + " end")
+        self.assertEqual(out, "key [hex64] end")
+
+    def test_classify_exit_parks_on_auth_words_only_with_exit_3(self):
+        self.assertEqual(kuzz_cli.classify_exit(3, '{"error":"auth","message":"revoked"}')[0], "revoked")
+        self.assertIsNone(kuzz_cli.classify_exit(2, "network: peer not_paired? revoked"))
+        self.assertIsNone(kuzz_cli.classify_exit(3, "unrevoked"))
+        self.assertEqual(kuzz_cli.classify_exit(2, "error: unrecognized subcommand 'watch'")[0],
+                         "unrecognized_subcommand")
 
 
 class SendTest(unittest.TestCase):
@@ -121,12 +142,17 @@ class SendTest(unittest.TestCase):
         self.assertEqual(call["args"], ["messages", "send", "--channel", CHANNEL, "--content", "-"])
 
     def test_send_failure_is_bounded_and_classified(self):
-        stderr = json.dumps({"error": "network", "message": "relay unreachable"})
+        stderr = json.dumps({"error": "network", "message": "relay unreachable", "retryable": True})
         with FakeKuzz(FAKE_KUZZ_SEND_RC="2", FAKE_KUZZ_SEND_STDERR=stderr) as fake:
             outcome = run(kuzz_cli.send_message(fake.cli, CHANNEL, "hi"))
         self.assertIsNone(outcome.event_id)
         self.assertEqual(outcome.error, "network: relay unreachable (exit 2)")
         self.assertTrue(outcome.retryable)
+        # Exit 2 may mean "delivery unknown": without the CLI's retryable flag, never resend.
+        unknown = json.dumps({"error": "network", "message": "delivery unknown", "retryable": False})
+        for err in (unknown, "network: reset"):
+            with FakeKuzz(FAKE_KUZZ_SEND_RC="2", FAKE_KUZZ_SEND_STDERR=err) as fake:
+                self.assertFalse(run(kuzz_cli.send_message(fake.cli, CHANNEL, "hi")).retryable)
         with FakeKuzz(FAKE_KUZZ_SEND_RC="1", FAKE_KUZZ_SEND_STDERR="usage") as fake:
             self.assertFalse(run(kuzz_cli.send_message(fake.cli, CHANNEL, "hi")).retryable)
 
@@ -204,6 +230,15 @@ class CliPathTest(unittest.TestCase):
             self.assertEqual(kuzz_cli.resolve_cli_path("", str(fake.exe), "other"), str(fake.exe))
             self.assertEqual(kuzz_cli.resolve_cli_path(str(fake.dir / "missing.exe"), str(fake.exe)), "")
 
+    @unittest.skipUnless(os.name == "nt", "Windows only")
+    def test_windows_runs_only_exe(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            for name in ("kuzz.cmd", "kuzz.bat", "kuzz.exe"):
+                (Path(tmp) / name).write_bytes(b"")
+            self.assertEqual(kuzz_cli.resolve_cli_path(str(Path(tmp) / "kuzz.cmd")), "")
+            self.assertFalse(kuzz_cli.is_runnable(str(Path(tmp) / "kuzz.bat")))
+            self.assertTrue(kuzz_cli.is_runnable(str(Path(tmp) / "kuzz.exe")))
+
     def test_send_with_files_names_only_in_errors(self):
         stderr = json.dumps({"error": "usage", "message": "cannot read C:/secret/dir/chart.png"})
         with FakeKuzz(FAKE_KUZZ_SEND_RC="1", FAKE_KUZZ_SEND_STDERR=stderr) as fake:
@@ -225,16 +260,24 @@ class InstallTest(unittest.TestCase):
         self.assertEqual(install.PLUGIN_NAME, "buzz-platform")
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
-            (home / ".env").write_text("OTHER=1\nKUZZ_OWNER_PUBKEY=old\nBUZZ_CLI_PATH=C:/old/buzz.exe\n", encoding="utf-8")
+            (home / ".env").write_bytes(
+                b"OTHER=1\r\nKUZZ_OWNER_PUBKEY=old\r\nBUZZ_CLI_PATH=C:/old/buzz.exe\r\nexport KUZZ_OWNER_PUBKEY=older\r\n")
             (home / "plugins" / "buzz").mkdir(parents=True)
             (home / "plugins" / "buzz" / "stale.py").write_text("", encoding="utf-8")
             rc = install.main(["--owner", NPUB, "--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
             self.assertEqual(rc, 0)
             files = sorted(p.name for p in (home / "plugins" / "buzz").iterdir())
             self.assertEqual(files, sorted(install.PLUGIN_FILES))
+            # The old folder is kept, outside plugins/ so Hermes does not load it twice.
+            [backup] = (home / "plugin-backups").iterdir()
+            self.assertTrue(backup.name.startswith("buzz-"))
+            self.assertTrue((backup / "stale.py").is_file())
+            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["buzz"])
+            # Every copy of a key is updated; CRLF stays CRLF.
             self.assertEqual(
-                (home / ".env").read_text(encoding="utf-8"),
-                f"OTHER=1\nKUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_CLI_PATH=C:/old/buzz.exe\nKUZZ_CLI_PATH=C:/k/kuzz.exe\n",
+                (home / ".env").read_bytes().decode("utf-8"),
+                f"OTHER=1\r\nKUZZ_OWNER_PUBKEY={NPUB_HEX}\r\nBUZZ_CLI_PATH=C:/old/buzz.exe\r\n"
+                f"export KUZZ_OWNER_PUBKEY={NPUB_HEX}\r\nKUZZ_CLI_PATH=C:/k/kuzz.exe\r\n",
             )
             with self.assertRaises(SystemExit):
                 install.main(["--owner", "not-a-key", "--hermes-home", str(home), "--no-enable"])

@@ -19,7 +19,6 @@ import logging
 import os
 import re
 import shutil
-import tempfile
 import time
 from collections import deque
 from dataclasses import dataclass
@@ -43,12 +42,33 @@ STRIPPED_ENV = (
     "KUZZ_ACCESS_TOKEN",
     "KUZZ_TOKEN_BROKER_URL",
     "KUZZ_TOKEN_BROKER_SECRET",
+    "KUZZ_DEVICE_BROKER_URL",
+    "KUZZ_DEVICE_BROKER_SECRET",
+    # Would hide the pairing as well as a stored login.
+    "KUZZ_DISABLE_STORED_SESSION",
     "KUZZ_SESSION_FILE",
 )
 
-# A person's stored login (`kuzz auth login`) outranks the paired agent for its
-# relay. Children get a session file that never exists, so they act as the agent.
-NO_LOGIN_SESSION_FILE = str(Path(tempfile.gettempdir()) / "kuzz-hermes-no-login" / "session.json")
+# Test hook only (never read from the environment): allow a script as the CLI on Windows.
+_ALLOW_SCRIPT_CLI = False
+
+
+def hermes_home_dir() -> Path:
+    """``$HERMES_HOME``, else ``%LOCALAPPDATA%\\hermes`` on Windows, else ``~/.hermes``."""
+    env = os.environ.get("HERMES_HOME", "").strip()
+    if env:
+        return Path(env)
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    if os.name == "nt" and local:
+        return Path(local) / "hermes"
+    return Path.home() / ".hermes"
+
+
+def no_login_session_file(home: Optional[Path] = None) -> str:
+    """A person's stored login (`kuzz auth login`) outranks the paired agent for its relay.
+    Children get this session file, which nothing creates, so they act as the agent. It lives
+    in the Hermes home (this OS user's), not in a shared temp folder."""
+    return str(Path(home or hermes_home_dir()) / "buzz" / "kuzz-no-login" / "session.json")
 
 CLI_TIMEOUT = 30.0
 # Largest accepted watch line; a longer line restarts the watch.
@@ -57,19 +77,43 @@ _MAX_DETAIL_CHARS = 500
 
 # Exit details that mean "this computer is no longer allowed to act for the
 # agent" or "this CLI cannot watch": restarting cannot help, so the watch parks.
-_PARK_MARKERS = (
+# Words `kuzz messages watch` names on stderr when it exits with AUTH_EXIT.
+AUTH_EXIT = 3
+_PARK_WORDS = (
     ("signed_out", "Kuzz signed this agent out. Pair it again with `kuzz pair`."),
     ("revoked", "The owner disconnected this agent. Pair it again with `kuzz pair`."),
     ("not_paired", "This computer is not paired. Run the `kuzz pair` command from the app (Connect external agent) first."),
-    ("unrecognized subcommand", "This kuzz CLI has no `messages watch`. Update Kuzz."),
 )
+# An old CLI without `messages watch` (clap usage error, any exit code).
+_NO_WATCH = ("unrecognized subcommand", "This kuzz CLI has no `messages watch`. Update Kuzz.")
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _SECRET_PATTERNS = (
     (re.compile(r"nsec1[0-9a-z]{8,}", re.IGNORECASE), "nsec1[redacted]"),
     (re.compile(r"(Bearer\s+)\S+", re.IGNORECASE), r"\1[redacted]"),
-    (re.compile(r"(kuzz pair\s+)\S+", re.IGNORECASE), r"\1[redacted]"),
+    # Private keys, and anything else 64-hex: logs never need the full value.
+    (re.compile(r"(?<![0-9a-f])[0-9a-f]{64}(?![0-9a-f])", re.IGNORECASE), "[hex64]"),
 )
+# `kuzz pair [options] <code>` up to the end of the line: every positional is a code.
+_PAIR_COMMAND = re.compile(r"(\bkuzz(?:\.exe)?\s+pair\b)([^\r\n]*)", re.IGNORECASE)
+_PAIR_VALUE_OPTIONS = {"--relay", "--relay-url", "--name", "--device-name"}
+
+
+def _redact_pair_args(match: "re.Match[str]") -> str:
+    tokens = re.split(r"(\s+)", match.group(2))
+    out, takes_value = [], False
+    for token in tokens:
+        if not token or token.isspace():
+            out.append(token)
+        elif takes_value:
+            out.append(token)
+            takes_value = False
+        elif token.startswith("-"):
+            out.append(token)
+            takes_value = token.split("=", 1)[0].lower() in _PAIR_VALUE_OPTIONS and "=" not in token
+        else:
+            out.append("[redacted]")
+    return match.group(1) + "".join(out)
 
 # ── Identities ───────────────────────────────────────────────────────────────
 
@@ -131,38 +175,63 @@ def resolve_cli_path(*configured: str) -> str:
     for path in configured:
         if path and path.strip():
             path = path.strip()
-            return shutil.which(path) or (path if Path(path).expanduser().is_file() else "")
-    for candidate in (shutil.which("buzz"), str(Path.home() / "bin" / "buzz")):
-        if candidate and Path(candidate).is_file():
+            found = path if Path(path).expanduser().is_file() else shutil.which(path)
+            return str(found) if found and is_runnable(str(found)) else ""
+    for candidate in (which_program("buzz"), str(Path.home() / "bin" / _program("buzz"))):
+        if candidate and is_runnable(candidate):
             return candidate
     return find_kuzz()
 
 
+def _program(name: str) -> str:
+    return f"{name}.exe" if os.name == "nt" else name
+
+
+def which_program(name: str) -> Optional[str]:
+    """``shutil.which`` that, on Windows, finds only ``<name>.exe`` (never .cmd/.bat)."""
+    return shutil.which(_program(name))
+
+
+def is_runnable(path: str) -> bool:
+    """An existing file; on Windows also a real ``.exe``. A .cmd/.bat runs through cmd.exe,
+    which re-parses arguments (message text included), so it is never run."""
+    candidate = Path(path).expanduser()
+    if not candidate.is_file():
+        return False
+    return os.name != "nt" or _ALLOW_SCRIPT_CLI or candidate.suffix.lower() == ".exe"
+
+
 def find_kuzz() -> str:
     """``kuzz`` on PATH, then the Kuzz desktop app's copy; "" if neither exists."""
-    candidates = [shutil.which("kuzz")]
+    candidates = [which_program("kuzz")]
     local = os.environ.get("LOCALAPPDATA")
     if local:
         candidates.append(str(Path(local) / "KuzzApp" / "kuzz.exe"))
     for candidate in candidates:
-        if candidate and Path(candidate).is_file():
+        if candidate and is_runnable(candidate):
             return candidate
     return ""
 
 
-def child_env(base: Optional[Mapping[str, str]] = None, add: Optional[Mapping[str, str]] = None) -> Dict[str, str]:
+def child_env(
+    base: Optional[Mapping[str, str]] = None,
+    add: Optional[Mapping[str, str]] = None,
+    *,
+    home: Optional[Path] = None,
+) -> Dict[str, str]:
     """Environment for a ``kuzz`` child: the parent's, minus :data:`STRIPPED_ENV`, with no
-    stored login (:data:`NO_LOGIN_SESSION_FILE`), plus ``add``."""
+    stored login (:func:`no_login_session_file` under ``home``), plus ``add``."""
     env = dict(os.environ if base is None else base)
     for name in STRIPPED_ENV:
         env.pop(name, None)
-    env["KUZZ_SESSION_FILE"] = NO_LOGIN_SESSION_FILE
+    env["KUZZ_SESSION_FILE"] = no_login_session_file(home)
     env.update(add or {})
     return env
 
 
 def redact(text: str) -> str:
     """Bound CLI output for logs and strip anything shaped like a secret."""
+    text = _PAIR_COMMAND.sub(_redact_pair_args, text)
     for pattern, replacement in _SECRET_PATTERNS:
         text = pattern.sub(replacement, text)
     text = " ".join(text.split())
@@ -197,6 +266,16 @@ async def run_cli(
         return 124, "", json.dumps({"error": "timeout", "message": f"kuzz timed out after {timeout:.0f}s"})
     rc = proc.returncode if proc.returncode is not None else 4
     return rc, out.decode("utf-8", errors="replace"), err.decode("utf-8", errors="replace")
+
+
+def cli_error_retryable(stderr: str) -> bool:
+    """The CLI's own verdict: ``"retryable": true`` in its stderr JSON. Exit 2 alone is not
+    enough (it also means "delivery unknown", which must not be resent)."""
+    try:
+        data = json.loads((stderr or "").strip())
+    except ValueError:
+        return False
+    return isinstance(data, dict) and data.get("retryable") is True
 
 
 def cli_error_message(stderr: str, rc: int) -> str:
@@ -268,8 +347,8 @@ async def send_message(
         error = cli_error_message(err, rc)
         for path in files:
             error = error.replace(str(path), Path(path).name)  # never echo host paths into chat
-        # 2 = network / delivery unknown, 124 = timeout: worth a retry.
-        return SendOutcome(None, error, retryable=rc in (2, 124))
+        # Only the CLI knows whether nothing was sent. A timeout (124) may have delivered.
+        return SendOutcome(None, error, retryable=rc != 124 and cli_error_retryable(err))
     event_id, error = parse_send_receipt(out)
     return SendOutcome(event_id, error)
 
@@ -333,11 +412,15 @@ def parse_watch_line(line: Any) -> Optional[WatchMessage]:
 
 
 def classify_exit(rc: Optional[int], detail: str) -> Optional[Tuple[str, str]]:
-    """``(code, message)`` when the watch must park instead of restarting, else None."""
+    """``(code, message)`` when the watch must park instead of restarting, else None.
+    Auth words count only with exit code 3; an old CLI without `watch` parks on any code."""
     lowered = detail.lower()
-    for marker, message in _PARK_MARKERS:
-        if marker in lowered:
-            return marker.replace(" ", "_"), message
+    if rc == AUTH_EXIT:
+        for word, message in _PARK_WORDS:
+            if re.search(rf"\b{word}\b", lowered):
+                return word, message
+    if rc and _NO_WATCH[0] in lowered:
+        return "unrecognized_subcommand", _NO_WATCH[1]
     return None
 
 

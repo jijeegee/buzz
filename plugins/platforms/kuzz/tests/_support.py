@@ -56,15 +56,21 @@ class FakeKuzz:
         for key, value in env.items():
             values[key] = value if isinstance(value, str) else json.dumps(value)
         self._patch = mock.patch.dict(os.environ, values)
+        from kuzz import kuzz_cli
+
+        # The fake CLI is a .cmd on Windows, which the plugin otherwise refuses to run.
+        self._script_patch = mock.patch.object(kuzz_cli, "_ALLOW_SCRIPT_CLI", True)
 
     def __enter__(self):
         self._patch.start()
+        self._script_patch.start()
         # A clean slate: none of the developer's own Buzz/Kuzz settings may leak into a test.
         for name in [k for k in os.environ if k.startswith(("BUZZ_", "KUZZ_")) and k not in self._patch.values]:
             del os.environ[name]
         return self
 
     def __exit__(self, *exc):
+        self._script_patch.stop()
         self._patch.stop()
         self._tmp.cleanup()
 
