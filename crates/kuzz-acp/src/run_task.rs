@@ -217,6 +217,19 @@ pub(crate) async fn run() -> i32 {
             return emit(terminal, 1);
         }
     }
+    // Device-bound keys (plan §6): sign with this machine's device key and
+    // lend it to the adapter through the device broker (key mode only).
+    if let Ok(keys) = config.keys.secret_keys("device signing") {
+        if let Some(key) = crate::device::init().await {
+            if let Err(error) =
+                crate::device::start_global(key.clone(), keys.public_key(), &config.relay_url).await
+            {
+                tracing::warn!(
+                    "device broker failed to start; the adapter signs without it: {error}"
+                );
+            }
+        }
+    }
     // Keep signing material alive until execution has drained and reaped the adapter.
     let runtime = match AgentRuntime::prepare(config) {
         Ok(environment) => environment,

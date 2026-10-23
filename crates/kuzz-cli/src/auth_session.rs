@@ -451,12 +451,30 @@ pub async fn post_refresh(
     relay_url: &str,
     refresh: &Secret,
 ) -> Result<IssuedTokens, RefreshError> {
-    let resp = http
-        .post(format!("{relay_url}/auth/refresh"))
-        .json(&serde_json::json!({ "refresh": refresh.expose() }))
-        .send()
-        .await
-        .map_err(|e| RefreshError::Transient(CliError::Network(e)))?;
+    let url = format!("{relay_url}/auth/refresh");
+    let body = serde_json::to_vec(&serde_json::json!({ "refresh": refresh.expose() }))
+        .map_err(|e| RefreshError::Transient(CliError::Other(e.to_string())))?;
+    // The refresh proof binds the refresh token and the body (A1b).
+    let device = crate::device::process_signer().await;
+    let proof = crate::device::request_proof(
+        device.as_ref(),
+        crate::device::PURPOSE_REFRESH,
+        "POST",
+        &url,
+        refresh.expose(),
+        &body,
+    )
+    .await;
+    let resp = crate::device::with_proof(
+        http.post(&url)
+            .header("Content-Type", "application/json")
+            .body(body),
+        proof,
+    )
+    .send()
+    .await
+    .map_err(|e| RefreshError::Transient(CliError::Network(e)))?;
+    crate::device::note_server_time(resp.headers());
     let status = resp.status().as_u16();
     let body = resp
         .text()

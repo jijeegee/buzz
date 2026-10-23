@@ -458,7 +458,9 @@ impl RestClient {
     ///
     /// Returns the `Authorization: Nostr <base64>` header value (without the
     /// `Nostr ` prefix — caller must prepend it or use `nip98_header`).
-    fn sign_nip98(
+    /// Carries this machine's `device` tag when the harness opened its
+    /// device key (device-bound keys plan §6).
+    async fn sign_nip98(
         &self,
         method: &str,
         url: &str,
@@ -487,8 +489,11 @@ impl RestClient {
             .keys
             .secret_keys("NIP-98")
             .map_err(|e| RelayError::Http(e.to_string()))?;
-        let event = EventBuilder::new(Kind::HttpAuth, "")
+        let unsigned = EventBuilder::new(Kind::HttpAuth, "")
             .tags(tags)
+            .build(keys.public_key());
+        let event = crate::device::tag(unsigned)
+            .await
             .sign_with_keys(keys)
             .map_err(|e| RelayError::Http(format!("NIP-98 sign error: {e}")))?;
         let event_json = serde_json::to_string(&event)
@@ -498,7 +503,7 @@ impl RestClient {
 
     /// Build the full `Authorization` header value: `Nostr <base64>` in key
     /// mode, `Bearer <current bot token>` in token mode.
-    fn nip98_header(
+    async fn nip98_header(
         &self,
         method: &str,
         url: &str,
@@ -507,7 +512,10 @@ impl RestClient {
         if let Some(token) = self.keys.bot_token() {
             return Ok(token.bearer_header().to_string());
         }
-        Ok(format!("Nostr {}", self.sign_nip98(method, url, body)?))
+        Ok(format!(
+            "Nostr {}",
+            self.sign_nip98(method, url, body).await?
+        ))
     }
 
     /// Retry helper: executes `build_request` up to 4 times (1 attempt + 3 retries)
@@ -577,20 +585,26 @@ impl RestClient {
         let body_owned = body_bytes.to_vec();
         let auth_tag_header = self.auth_tag_json.clone();
         self.request_with_retry("POST", path, || {
-            // NIP-98 is re-signed each attempt (fresh created_at).
-            // sign_nip98 is infallible in practice (key is always valid).
-            let auth = self
-                .nip98_header("POST", &url, Some(&body_owned))
-                .unwrap_or_default();
-            let mut req = self
-                .http
-                .post(&url)
-                .header("Authorization", auth)
-                .header("Content-Type", "application/json");
-            if let Some(ref tag) = auth_tag_header {
-                req = req.header("x-auth-tag", tag);
+            let url = url.clone();
+            let body_owned = body_owned.clone();
+            let auth_tag_header = auth_tag_header.clone();
+            async move {
+                // NIP-98 is re-signed each attempt (fresh created_at).
+                // sign_nip98 is infallible in practice (key is always valid).
+                let auth = self
+                    .nip98_header("POST", &url, Some(&body_owned))
+                    .await
+                    .unwrap_or_default();
+                let mut req = self
+                    .http
+                    .post(&url)
+                    .header("Authorization", auth)
+                    .header("Content-Type", "application/json");
+                if let Some(ref tag) = auth_tag_header {
+                    req = req.header("x-auth-tag", tag);
+                }
+                req.body(body_owned).send().await
             }
-            req.body(body_owned.clone()).send()
         })
         .await
     }
@@ -3901,6 +3915,8 @@ fn handle_token_auth_ok(state: &mut BgState, accepted: bool, message: &str) -> b
 ///
 /// If `auth_tag` is provided (NIP-OA owner attestation), it is included in the
 /// AUTH event so the relay can use it for membership delegation fallback.
+/// The event carries this machine's `device` tag when the harness opened its
+/// device key (device-bound keys plan §6).
 async fn send_auth_response(
     ws: &mut WsStream,
     challenge: &str,
@@ -3925,10 +3941,14 @@ async fn send_auth_response(
         ];
         EventBuilder::new(nostr::Kind::Authentication, "")
             .tags(tags)
-            .sign_with_keys(keys)?
+            .build(keys.public_key())
     } else {
-        EventBuilder::auth(challenge, relay_nostr_url).sign_with_keys(keys)?
+        EventBuilder::auth(challenge, relay_nostr_url).build(keys.public_key())
     };
+    let auth_event = crate::device::tag(auth_event)
+        .await
+        .sign_with_keys(keys)
+        .map_err(|e| RelayError::AuthFailed(format!("AUTH sign error: {e}")))?;
 
     let auth_msg = serde_json::to_string(&json!(["AUTH", auth_event]))?;
     ws_send_timeout(ws, Message::Text(auth_msg.into()), WS_SEND_TIMEOUT_SECS).await?;

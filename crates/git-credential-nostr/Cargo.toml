@@ -19,3 +19,9 @@ nostr      = { workspace = true }
 serde_json = { workspace = true }
 zeroize    = { workspace = true }
 base64     = "0.22"
+# Device-bound keys: this machine's `device` tag on the NIP-98 event
+kuzz-token-broker = { workspace = true }
+
+[dev-dependencies]
+kuzz-auth = { workspace = true }
+tempfile  = "3"

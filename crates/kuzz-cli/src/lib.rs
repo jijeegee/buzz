@@ -3,6 +3,7 @@ mod auth_loopback;
 pub mod auth_session;
 mod client;
 mod commands;
+pub mod device;
 mod error;
 mod help_tree;
 mod links;

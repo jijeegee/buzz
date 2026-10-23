@@ -86,5 +86,7 @@ nix = { version = "0.31", default-features = false, features = ["signal", "user"
 
 [dev-dependencies]
 axum = { workspace = true }
+# Verifies device tags the way the relay does
+kuzz-auth = { workspace = true }
 tokio = { workspace = true, features = ["test-util"] }
 httparse = "1"

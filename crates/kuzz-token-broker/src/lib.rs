@@ -18,6 +18,8 @@
 //! at most [`MAX_RESPONSE_BYTES`]. The client side ([`fetch_from_broker`]) is
 //! std-only and talks plain HTTP/1.1 to a loopback address only.
 
+pub mod device;
+
 use std::io::{Read, Write};
 use std::net::{IpAddr, SocketAddr, TcpStream};
 use std::time::Duration;
@@ -267,6 +269,14 @@ pub fn fetch_with_retry(
 }
 
 fn parse_http_response(raw: &[u8]) -> Result<BrokerResponse, BrokerError> {
+    let body = http_ok_body(raw)?;
+    serde_json::from_slice(body)
+        .map_err(|_| BrokerError::InvalidResponse("body is not a token JSON object".into()))
+}
+
+/// The body of a `200` HTTP/1.x response; any other status is
+/// [`BrokerError::Status`].
+fn http_ok_body(raw: &[u8]) -> Result<&[u8], BrokerError> {
     let invalid = |m: &str| BrokerError::InvalidResponse(m.to_owned());
     let split = raw
         .windows(4)
@@ -286,8 +296,7 @@ fn parse_http_response(raw: &[u8]) -> Result<BrokerResponse, BrokerError> {
     if status != 200 {
         return Err(BrokerError::Status(status));
     }
-    let body = &raw[split + 4..];
-    serde_json::from_slice(body).map_err(|_| invalid("body is not a token JSON object"))
+    Ok(&raw[split + 4..])
 }
 
 /// Server side: whether `authorization` (the raw header value) carries

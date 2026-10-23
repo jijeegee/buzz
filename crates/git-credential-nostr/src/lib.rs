@@ -8,9 +8,10 @@
 use std::io::{self, BufRead, Write};
 
 use base64::Engine as _;
+use kuzz_token_broker::device::{tag_or_unchanged, DeviceSigner};
 use nostr::nips::nip98::{HttpData, HttpMethod};
 use nostr::types::Url;
-use nostr::{EventBuilder, Keys, Tag};
+use nostr::{EventBuilder, Keys, Tag, UnsignedEvent};
 use zeroize::Zeroize;
 
 fn git_config(key: &str) -> Option<String> {
@@ -102,6 +103,17 @@ struct CredRequest {
     host: Option<String>,
     path: Option<String>,
     wwwauth: Option<String>,
+}
+
+/// `unsigned` with this machine's `device` tag (device-bound keys plan §6),
+/// or unchanged with a warning on stderr when it cannot be tagged: the
+/// credential then is exactly what it was before, and the relay decides.
+fn device_tagged(signer: Option<&DeviceSigner>, unsigned: UnsignedEvent) -> UnsignedEvent {
+    let (event, error) = tag_or_unchanged(signer, unsigned);
+    if let Some(error) = error {
+        eprintln!("warning: {error}; sending without the device signature");
+    }
+    event
 }
 
 fn parse_stdin() -> CredRequest {
@@ -237,7 +249,12 @@ pub fn run() -> i32 {
         Some(tag) => builder.tag(tag),
         None => builder,
     };
-    let event = match builder.sign_with_keys(&keys) {
+    let (device, warning) = DeviceSigner::from_env();
+    if let Some(warning) = warning {
+        eprintln!("warning: {warning}; sending without the device signature");
+    }
+    let unsigned = device_tagged(device.as_ref(), builder.build(keys.public_key()));
+    let event = match unsigned.sign_with_keys(&keys) {
         Ok(e) => e,
         Err(e) => {
             eprintln!("error: failed to sign NIP-98 event: {e}");
@@ -263,4 +280,53 @@ pub fn run() -> i32 {
     println!();
     let _ = io::stdout().flush();
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kuzz_token_broker::device::DeviceKey;
+
+    fn http_auth_event() -> (Keys, UnsignedEvent) {
+        let keys = Keys::generate();
+        let url = Url::parse("https://relay.example/git/o/r.git").unwrap();
+        let unsigned =
+            EventBuilder::http_auth(HttpData::new(url, HttpMethod::GET)).build(keys.public_key());
+        (keys, unsigned)
+    }
+
+    #[test]
+    fn nip98_credential_carries_a_verifiable_device_tag() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = DeviceKey::open_or_create_file(&dir.path().join("device.key")).unwrap();
+        let (keys, unsigned) = http_auth_event();
+        let event = device_tagged(Some(&DeviceSigner::Key(key.clone())), unsigned)
+            .sign_with_keys(&keys)
+            .unwrap();
+        event.verify().unwrap();
+        let device = kuzz_auth::device_proof::verify_event_device_tag(&event).unwrap();
+        assert_eq!(device, Some(key.pubkey()));
+    }
+
+    #[test]
+    fn without_a_device_signer_the_event_is_unchanged() {
+        let (keys, unsigned) = http_auth_event();
+        let before = unsigned.tags.clone();
+        let event = device_tagged(None, unsigned).sign_with_keys(&keys).unwrap();
+        assert_eq!(event.tags, before);
+    }
+
+    #[test]
+    fn an_unreachable_broker_falls_back_to_the_untagged_event() {
+        let (keys, unsigned) = http_auth_event();
+        let broker = DeviceSigner::Broker {
+            url: "http://127.0.0.1:1".into(),
+            secret: kuzz_token_broker::Secret::new("s".into()),
+        };
+        let event = device_tagged(Some(&broker), unsigned)
+            .sign_with_keys(&keys)
+            .unwrap();
+        event.verify().unwrap();
+        assert!(event.tags.iter().all(|tag| tag.as_slice()[0] != "device"));
+    }
 }

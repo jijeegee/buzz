@@ -1,4 +1,4 @@
-use nostr::{Event, EventBuilder, Keys, RelayUrl, Tag};
+use nostr::{Event, EventBuilder, Keys, PublicKey, RelayUrl, Tag, UnsignedEvent};
 use serde_json::Value;
 
 use crate::error::WsClientError;
@@ -166,6 +166,54 @@ pub fn parse_relay_message(text: &str) -> Result<RelayMessage, WsClientError> {
     }
 }
 
+/// Adds this device's `device` tag to an unsigned auth event (device-bound
+/// keys), or returns the event unchanged when it cannot (no key, a signing
+/// failure: the caller then sends what it sent before). It may block on a
+/// TPM signature, so the client calls it on a blocking thread.
+pub type DeviceTagger = std::sync::Arc<dyn Fn(UnsignedEvent) -> UnsignedEvent + Send + Sync>;
+
+/// The unsigned NIP-42 AUTH event for `challenge`, with the optional NIP-OA
+/// auth tag, for `pubkey` to sign.
+pub fn unsigned_auth_event(
+    challenge: &str,
+    relay_url: &str,
+    pubkey: PublicKey,
+    auth_tag: Option<&Tag>,
+) -> Result<UnsignedEvent, WsClientError> {
+    let url = RelayUrl::parse(relay_url).map_err(|e| WsClientError::Url(e.to_string()))?;
+    let builder = EventBuilder::auth(challenge, url);
+    let builder = if let Some(tag) = auth_tag {
+        builder.tags([tag.clone()])
+    } else {
+        builder
+    };
+    Ok(builder.build(pubkey))
+}
+
+/// `unsigned` with `device`'s tag, run on a blocking thread. Without a
+/// tagger, or when the tagging task fails, `unsigned` comes back unchanged.
+pub async fn apply_device_tag(
+    device: Option<&DeviceTagger>,
+    unsigned: UnsignedEvent,
+) -> UnsignedEvent {
+    let Some(device) = device else {
+        return unsigned;
+    };
+    let tagger = std::sync::Arc::clone(device);
+    let fallback = unsigned.clone();
+    match tokio::task::spawn_blocking(move || tagger(unsigned)).await {
+        Ok(mut tagged) => {
+            // The id covers the tags: let the signer recompute it.
+            tagged.id = None;
+            tagged
+        }
+        Err(error) => {
+            tracing::warn!("device tag task failed: {error}; sending without it");
+            fallback
+        }
+    }
+}
+
 /// Builds a NIP-42 AUTH event, optionally injecting a NIP-OA auth tag.
 ///
 /// The `auth_tag` parameter allows callers to attach a workspace-scoped
@@ -177,14 +225,51 @@ pub fn build_auth_event(
     keys: &Keys,
     auth_tag: Option<&Tag>,
 ) -> Result<Event, WsClientError> {
-    let url = RelayUrl::parse(relay_url).map_err(|e| WsClientError::Url(e.to_string()))?;
-    let builder = EventBuilder::auth(challenge, url);
-    let builder = if let Some(tag) = auth_tag {
-        builder.tags([tag.clone()])
-    } else {
-        builder
-    };
-    builder
+    unsigned_auth_event(challenge, relay_url, keys.public_key(), auth_tag)?
         .sign_with_keys(keys)
         .map_err(|e| WsClientError::EventBuilder(e.to_string()))
+}
+
+#[cfg(test)]
+mod device_tag_tests {
+    use super::*;
+
+    fn unsigned(keys: &Keys) -> UnsignedEvent {
+        unsigned_auth_event("c1", "wss://relay.example", keys.public_key(), None).unwrap()
+    }
+
+    #[tokio::test]
+    async fn the_tagger_adds_its_tag_before_the_signature() {
+        let keys = Keys::generate();
+        let tagger: DeviceTagger = std::sync::Arc::new(|mut event: UnsignedEvent| {
+            event
+                .tags
+                .push(Tag::parse(["device", "02ab", "cd"]).unwrap());
+            event
+        });
+        let event = apply_device_tag(Some(&tagger), unsigned(&keys))
+            .await
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert!(event.verify().is_ok());
+        assert!(event
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().map(String::as_str) == Some("device")));
+    }
+
+    #[tokio::test]
+    async fn no_tagger_or_a_panicking_one_sends_the_event_as_before() {
+        let keys = Keys::generate();
+        let plain = unsigned(&keys);
+        assert_eq!(apply_device_tag(None, plain.clone()).await.tags, plain.tags);
+        let panics: DeviceTagger = std::sync::Arc::new(|_| panic!("tpm gone"));
+        assert_eq!(
+            apply_device_tag(Some(&panics), plain.clone()).await.tags,
+            plain.tags
+        );
+        // The unsigned builder matches what build_auth_event signs.
+        let signed = build_auth_event("c1", "wss://relay.example", &keys, None).unwrap();
+        assert_eq!(signed.tags, plain.tags);
+    }
 }
