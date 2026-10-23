@@ -142,6 +142,16 @@ export function sortEvents(events: RelayEvent[]) {
  * than per-client — an un-unwrapped consumer drops batched frames silently
  * instead of failing.
  */
+/** A relay text frame as a non-empty JSON array, or `null`. */
+export function parseRelayFrame(payload: string): unknown[] | null {
+  try {
+    const data: unknown = JSON.parse(payload);
+    return Array.isArray(data) && data.length > 0 ? data : null;
+  } catch {
+    return null;
+  }
+}
+
 export function toRelayFrames(message: unknown): unknown[] {
   return Array.isArray(message) ? message : [message];
 }

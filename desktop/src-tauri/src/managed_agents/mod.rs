@@ -44,10 +44,11 @@ mod relay_mesh;
 mod repos;
 pub(crate) use owners::{
     account_uses_persona, active_owner_hex, agent_owner_hex, apply_account_activation,
-    builtin_copy, definition_visible, ensure_definition_owners, ensure_owner_signed_in,
-    migrate_owners, move_account_agents, owned_by_viewer, record_agent_owner,
-    record_missing_owners, set_builtin_inactive, spawn_owner_hex, token_account_owners,
-    token_account_principal, visible_owner_hex, FILE_NAME as AGENT_OWNERS_FILE,
+    attested_owner_hex, builtin_copy, definition_visible, ensure_definition_owners,
+    ensure_owner_signed_in, migrate_owners, move_account_agents, owned_by_viewer,
+    record_agent_owner, record_missing_owners, set_builtin_inactive, spawn_owner_hex,
+    token_account_owners, token_account_principal, visible_owner_hex,
+    FILE_NAME as AGENT_OWNERS_FILE,
 };
 mod restore;
 pub mod retention;

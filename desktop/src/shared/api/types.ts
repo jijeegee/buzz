@@ -406,6 +406,8 @@ export type ManagedAgent = {
    * reads it after an in-dialog runtime switch. `null` = adapter default.
    */
   effortLevel: string | null;
+  /** Runs on another of the owner's devices: listed, not started here. */
+  hostedElsewhere?: boolean;
 };
 
 /** Inbound author gate mode. Mirrors kuzz-acp's --respond-to CLI flag. */

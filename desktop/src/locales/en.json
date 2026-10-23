@@ -11975,6 +11975,18 @@
   "@meshCompute.usage.idleYet": {
     "description": "Settings > Share compute status: sharing is on and nobody has used it yet."
   },
+  "accounts.newSignIn.title": "New sign-in: {device}",
+  "@accounts.newSignIn.title": {
+    "description": "Sidebar card title when the account was just signed in on another device. {device} is that device's name. Short."
+  },
+  "accounts.newSignIn.action": "Not you? Sign out that device",
+  "@accounts.newSignIn.action": {
+    "description": "Sidebar new sign-in card: link to the devices settings where the user can sign that device out. Short."
+  },
+  "accounts.newSignIn.dismiss": "Dismiss new sign-in notice",
+  "@accounts.newSignIn.dismiss": {
+    "description": "Sidebar new sign-in card: accessible label of the close button."
+  },
   "accounts.switcher.label": "Accounts",
   "@accounts.switcher.label": {
     "description": "Profile menu, screen-reader name of the list of accounts on this computer. Short."
@@ -24062,6 +24074,10 @@
   "agents.row.managedRemotely": "Managed remotely",
   "@agents.row.managedRemotely": {
     "description": "Agent row (agent details list): process status. Short."
+  },
+  "agents.row.hostedElsewhere": "Runs on another device",
+  "@agents.row.hostedElsewhere": {
+    "description": "Agent row (agent details list): process status when the agent runs on another of the user's devices and is not started here. Short."
   },
   "agents.row.manage": "Manage",
   "@agents.row.manage": {

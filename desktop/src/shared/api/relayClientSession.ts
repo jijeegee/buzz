@@ -12,6 +12,7 @@ import {
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
+  parseRelayFrame,
   toRelayFrames,
   type ConnectionState,
   type LiveSubscriptionReadiness,
@@ -66,6 +67,7 @@ import {
   STALL_IDLE_TIMEOUT_MS,
 } from "@/shared/api/relayClientTimings";
 import { closeWebSocket } from "@/shared/api/relayWebSocketClose";
+import { noteSignedOutRefusal } from "@/shared/api/remoteSignOut";
 import {
   armRelayAuthentication,
   AuthOkTracker,
@@ -891,17 +893,8 @@ export class RelayClient {
       return;
     }
 
-    let data: unknown;
-    try {
-      data = JSON.parse(payload);
-    } catch {
-      return;
-    }
-
-    if (!Array.isArray(data) || data.length === 0) {
-      return;
-    }
-
+    const data = parseRelayFrame(payload);
+    if (!data) return;
     const [type, ...rest] = data;
     if (type === "AUTH" && typeof rest[0] === "string") {
       await this.handleAuthChallenge(rest[0], generation);
@@ -950,6 +943,7 @@ export class RelayClient {
     if (type === "NOTICE" && typeof rest[0] === "string") {
       // Connection-scoped back-pressure — arm the gate until it expires.
       activateRateLimitIfSignalled(rest[0]);
+      noteSignedOutRefusal(rest[0]);
     }
   }
 
@@ -1017,6 +1011,7 @@ export class RelayClient {
       const authRequest = this.authRequest;
       this.authRequest = null;
 
+      if (!success) noteSignedOutRefusal(message); // Confirmed with the server.
       // Decision table lives in relayAuthPolicy.ts.
       const decision = this.authOkTracker.record(success, message);
       if (decision === "authenticated") {

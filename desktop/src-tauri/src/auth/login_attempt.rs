@@ -74,6 +74,20 @@ impl LoginAttempt {
     }
 }
 
+impl LoginAttempt {
+    /// Go back to the browser phase (a sign-in restarted after the relay
+    /// refused a stale device proof): cancellable again. `false` when the
+    /// attempt is no longer the pending one.
+    pub(crate) fn reopen(&mut self) -> bool {
+        let mut slot = self.control.lock().unwrap_or_else(PoisonError::into_inner);
+        let Some(pending) = slot.as_mut().filter(|p| p.id == self.id) else {
+            return false;
+        };
+        pending.completing = false;
+        true
+    }
+}
+
 impl Drop for LoginAttempt {
     fn drop(&mut self) {
         let mut slot = self.control.lock().unwrap_or_else(PoisonError::into_inner);

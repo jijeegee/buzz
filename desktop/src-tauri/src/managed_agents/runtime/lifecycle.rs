@@ -83,6 +83,8 @@ pub fn sync_managed_agent_processes(
         // kuzz-acp exit 78 = its bot token is unusable (token mode): queue it
         // for the auth watchdog to reissue and restart, within its cap.
         crate::auth::bots::note_exit(&key.pubkey, &key.relay_url, status.code());
+        // Exit 77: bound to another device; parked, never restarted here.
+        crate::auth::agent_hosting::note_exit(&key.pubkey, &key.relay_url, status.code());
 
         if let Some(record) = records
             .iter_mut()
@@ -93,6 +95,12 @@ pub fn sync_managed_agent_processes(
             record.last_exit_code = status.code();
             let log_err = if status.success() {
                 None
+            } else if status.code() == Some(crate::auth::agent_hosting::WRONG_HOST_EXIT) {
+                // Parked: runs on another device; never restarted from here.
+                Some(super::super::storage::AgentLogError {
+                    message: crate::auth::agent_hosting::OTHER_DEVICE_REFUSAL.to_owned(),
+                    code: None,
+                })
             } else {
                 Some(
                     super::super::meaningful_agent_error_from_log(&runtime.log_path)

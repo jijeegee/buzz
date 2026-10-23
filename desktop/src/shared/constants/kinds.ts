@@ -38,6 +38,8 @@ export const KIND_TYPING_INDICATOR = 20002;
 export const KIND_PRESENCE_UPDATE = 20001;
 /** Relay-signed, empty "your chat state changed, refetch" ping to your own devices. */
 export const KIND_CHAT_STATE_PING = 24210;
+/** Relay-signed, ephemeral "New sign-in: <device>" notice to the account's devices. */
+export const KIND_NEW_SIGNIN_NOTICE = 24211;
 export const KIND_HUDDLE_REACTION = 24810;
 export const KIND_HUDDLE_STARTED = 48100;
 export const KIND_HUDDLE_PARTICIPANT_JOINED = 48101;

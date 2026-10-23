@@ -160,6 +160,13 @@ impl NostrWsConnection {
         self.recv_one(timeout_dur).await
     }
 
+    /// Puts `msg` back behind any already queued messages, so
+    /// [`Self::next_event`] returns it later in arrival order (for callers
+    /// that read frames during their own handshake).
+    pub fn requeue(&mut self, msg: RelayMessage) {
+        self.buffer.push_back(msg);
+    }
+
     /// Closes the WebSocket connection gracefully.
     pub async fn disconnect(mut self) -> Result<(), WsClientError> {
         self.ws.close(None).await?;
