@@ -1,11 +1,32 @@
 import { expect, type Page, test } from "@playwright/test";
 
 import { waitForAnimations } from "../helpers/animations";
-import { installMockBridge } from "../helpers/bridge";
+import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
 const SHOTS =
   process.env.KUZZ_C2_SHOTS_DIR ?? "test-results/external-connect-screenshots";
 const AGENT = "a1".repeat(32);
+
+/** This computer's agents, as in the mockup. */
+const LOCAL_AGENTS = {
+  managedAgents: [
+    {
+      pubkey: TEST_IDENTITIES.alice.pubkey,
+      name: "Fizz",
+      status: "running" as const,
+    },
+    {
+      pubkey: TEST_IDENTITIES.bob.pubkey,
+      name: "Fizz 2",
+      status: "stopped" as const,
+    },
+    {
+      pubkey: TEST_IDENTITIES.tyler.pubkey,
+      name: "Opus",
+      status: "running" as const,
+    },
+  ],
+};
 
 /**
  * Token sign-in, devices, pairing and Hermes answers at the native boundary,
@@ -115,6 +136,37 @@ async function installExternalConnectBridge(page: Page) {
               return state.expiresAt ? [pairing()] : [];
             case "get_hermes_status":
               return { found: state.hermesFound, agents: [] };
+            case "get_user_profile": {
+              // The external agent's own kind:0 profile.
+              const { pubkey } = (args ?? {}) as { pubkey?: string };
+              if (pubkey?.toLowerCase() === agent) {
+                return {
+                  pubkey: agent,
+                  display_name: "Hermes",
+                  avatar_url: null,
+                  about: null,
+                  nip05_handle: null,
+                  owner_pubkey: null,
+                  has_profile_event: true,
+                };
+              }
+              return invoke(command, args);
+            }
+            case "get_presence": {
+              const { pubkeys } = args as { pubkeys: string[] };
+              const others = pubkeys.filter((p) => p.toLowerCase() !== agent);
+              const base = (
+                others.length > 0
+                  ? await invoke(command, {
+                      ...(args as object),
+                      pubkeys: others,
+                    })
+                  : {}
+              ) as Record<string, string>;
+              return pubkeys.some((p) => p.toLowerCase() === agent)
+                ? { ...base, [agent]: "online" }
+                : base;
+            }
             case "get_identity": {
               const identity = (await invoke(command, args)) as {
                 pubkey: string;
@@ -164,7 +216,7 @@ async function installExternalConnectBridge(page: Page) {
     },
     { agent: AGENT },
   );
-  await installMockBridge(page);
+  await installMockBridge(page, LOCAL_AGENTS);
 }
 
 async function gotoAgents(page: Page) {
@@ -235,8 +287,22 @@ test.describe("Connect external agent (C2)", () => {
     const group = page.getByTestId("agents-external-device-ext-1");
     await expect(group).toContainText("office-laptop");
     await expect(group).toContainText("1 connected agent");
+    await expect(group).toContainText("Hermes");
+    await expect(
+      group.getByTestId(`external-agent-${AGENT}-status`),
+    ).toHaveText("Running");
+    // The left list has the paired computer too.
+    const listSection = page.getByTestId("agents-external-ext-1");
+    await expect(listSection).toContainText("office-laptop");
+    await expect(listSection).toContainText("Hermes");
     await waitForAnimations(page);
     await page.screenshot({ path: `${SHOTS}/1d_connected.png` });
+
+    await group.getByTestId(`external-agent-add-to-channel-${AGENT}`).click();
+    await expect(page.getByRole("dialog")).toContainText("Hermes");
+    await waitForAnimations(page);
+    await page.screenshot({ path: `${SHOTS}/1d_add_to_channel.png` });
+    await page.keyboard.press("Escape");
 
     await group.getByTestId(`external-agent-disconnect-${AGENT}`).click();
     await expect(

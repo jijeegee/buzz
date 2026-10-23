@@ -2,6 +2,9 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
+import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
+import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
+import { useAgentAvailabilityLookup } from "@/features/agents/lib/useAgentAvailability";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { connectHermes } from "@/shared/api/agentPairing";
 import { revokeAuthDevice } from "@/shared/api/tokenAuth";
@@ -18,8 +21,13 @@ import {
 } from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
 import {
+  AddAgentToChannelDialog,
+  type ExternalChannelAgent,
+} from "../ui/AddAgentToChannelDialog";
+import {
   AGENT_TILE_GRID_CLASS,
   AgentTile,
+  type AgentTileStatus,
   DeviceHeading,
 } from "../ui/AgentTile";
 import type { ExternalAgent, ExternalAgentGroup } from "./pairingLogic";
@@ -50,6 +58,15 @@ export function ExternalAgentsSection({
     null,
   );
   const [busy, setBusy] = React.useState(false);
+  const [adding, setAdding] = React.useState<ExternalChannelAgent | null>(null);
+  const pubkeys = React.useMemo(
+    () => groups.flatMap((group) => group.agents.map((agent) => agent.pubkey)),
+    [groups],
+  );
+  // The same presence the other agents' cards use.
+  const { getAvailability } = useAgentAvailabilityLookup(pubkeys, {
+    enabled: pubkeys.length > 0,
+  });
 
   async function disconnect(group: ExternalAgentGroup) {
     setBusy(true);
@@ -93,8 +110,10 @@ export function ExternalAgentsSection({
                 agent={agent}
                 busy={busy}
                 deviceName={group.deviceName}
+                getAvailability={getAvailability}
                 hermesPubkeys={hermesPubkeys}
                 key={agent?.pubkey ?? "unknown"}
+                onAddToChannel={setAdding}
                 onDisconnect={() => setConfirming(group)}
               />
             ))}
@@ -137,6 +156,23 @@ export function ExternalAgentsSection({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {adding ? (
+        <AddAgentToChannelDialog
+          agent={adding}
+          onAddedExternal={(channel) =>
+            toast.success(
+              t("agents.actions.addedToGroup", {
+                name: adding.name,
+                group: channel.name,
+              }),
+            )
+          }
+          onOpenChange={(open) => {
+            if (!open) setAdding(null);
+          }}
+          open
+        />
+      ) : null}
     </>
   );
 }
@@ -145,14 +181,18 @@ function ExternalAgentTile({
   agent,
   busy,
   deviceName,
+  getAvailability,
   hermesPubkeys,
+  onAddToChannel,
   onDisconnect,
 }: {
   /** `null`: a paired computer whose agent this app has not seen. */
   agent: ExternalAgent | null;
   busy: boolean;
   deviceName: string;
+  getAvailability: AgentAvailabilityReader;
   hermesPubkeys: ReadonlySet<string>;
+  onAddToChannel: (agent: ExternalChannelAgent) => void;
   onDisconnect: () => void;
 }) {
   const t = useT();
@@ -160,25 +200,50 @@ function ExternalAgentTile({
   const name = useExternalAgentName(pubkey, hermesPubkeys);
   const profile = useUserProfileQuery(pubkey ?? undefined).data;
   const at = formatConnectedAt(agent?.connectedAt ?? null);
+  const availability = pubkey ? getAvailability(pubkey) : undefined;
+  const online = availability === "online" || availability === "away";
+  const working = useAgentWorking(online ? pubkey : null).working;
+  // No presence yet: no pill rather than a guess.
+  const status: AgentTileStatus | undefined =
+    availability === undefined
+      ? undefined
+      : online
+        ? working
+          ? "working"
+          : "running"
+        : "offline";
   return (
     <AgentTile
       avatarUrl={profile?.avatarUrl}
       buttons={
-        <Button
-          className="text-destructive hover:text-destructive"
-          data-testid={`external-agent-disconnect-${pubkey ?? deviceName}`}
-          disabled={busy}
-          onClick={onDisconnect}
-          size="xs"
-          variant="outline"
-        >
-          {t("agents.external.disconnect")}
-        </Button>
+        <>
+          {pubkey ? (
+            <Button
+              data-testid={`external-agent-add-to-channel-${pubkey}`}
+              onClick={() => onAddToChannel({ kind: "external", pubkey, name })}
+              size="xs"
+              variant="outline"
+            >
+              {t("agents.myAgents.addToGroup")}
+            </Button>
+          ) : null}
+          <Button
+            className="text-destructive hover:text-destructive"
+            data-testid={`external-agent-disconnect-${pubkey ?? deviceName}`}
+            disabled={busy}
+            onClick={onDisconnect}
+            size="xs"
+            variant="outline"
+          >
+            {t("agents.external.disconnect")}
+          </Button>
+        </>
       }
       dataTestId={`external-agent-${pubkey ?? deviceName}`}
       description={at ? t("agents.external.connectedOn", { time: at }) : null}
       label={name}
       openLabel={t("agents.external.disconnectNamed", { name })}
+      status={status}
       subtitle={deviceName}
       onOpen={onDisconnect}
     />

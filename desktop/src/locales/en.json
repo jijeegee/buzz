@@ -23607,6 +23607,10 @@
   "@agents.tile.error": {
     "description": "Agents page, agent card: status pill. Short."
   },
+  "agents.tile.offline": "Offline",
+  "@agents.tile.offline": {
+    "description": "Agents page, agent card: status pill of an agent running on another computer that is not online now. Short."
+  },
   "agents.edit.customCommand": "Custom command",
   "@agents.edit.customCommand": {
     "description": "Edit agent dialog (one running agent): harness option to type a command. Short."
