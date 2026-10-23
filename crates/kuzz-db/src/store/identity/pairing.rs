@@ -113,6 +113,8 @@ pub enum ClaimPairing {
         pairing_id: Uuid,
         /// The external device.
         device_id: Uuid,
+        /// The owner's account key (its key-backup pubkey).
+        owner_pubkey: [u8; 32],
     },
     /// The code was used already.
     Used,
@@ -276,6 +278,16 @@ impl Db {
         if matches!(key, KeyUse::InUse) {
             return Ok(ClaimPairing::KeyInUse);
         }
+        // Pairing starts only on key-backup accounts, and backups are never
+        // dropped; a missing one fails closed before anything is written.
+        let owner_pubkey: Option<Vec<u8>> =
+            sqlx::query_scalar("SELECT pubkey FROM account_key_backups WHERE account_id = $1")
+                .bind(owner_bytes.as_slice())
+                .fetch_optional(&mut *tx)
+                .await?;
+        let owner_pubkey: [u8; 32] = owner_pubkey
+            .and_then(|key| key.try_into().ok())
+            .ok_or_else(|| DbError::InvalidData("pairing owner has no account key".into()))?;
         // One external device per computer and owner; a revoked one is
         // never revived (a new row is made instead).
         let existing: Option<Uuid> = sqlx::query_scalar(
@@ -353,6 +365,7 @@ impl Db {
         Ok(ClaimPairing::Connected {
             pairing_id: pairing.id,
             device_id,
+            owner_pubkey,
         })
     }
 

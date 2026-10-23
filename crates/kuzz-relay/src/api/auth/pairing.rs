@@ -1,14 +1,17 @@
 //! External agent pairing (device-bound keys plan §14.7, PR A4).
 //!
 //! 1. The owner presses "Connect external agent": the app calls
-//!    `POST /auth/pairing/start` and shows `kuzz pair <code>`. The code is
-//!    128 random bits, works once and expires after ten minutes.
+//!    `POST /auth/pairing/start` and shows
+//!    `kuzz pair --relay <relay> <code>`. The relay is this deployment's
+//!    configured public URL (`RELAY_URL`), never the request's Host. The code
+//!    is 128 random bits, works once and expires after ten minutes.
 //! 2. On the other computer the agent calls `POST /pair/claim` (no account
 //!    session) with the code, its key, that computer's device key and both
 //!    keys' signatures over [`kuzz_auth::pairing::pair_claim_message`]. The
 //!    first valid claim connects at once (no approval step): the computer
 //!    becomes an `external` device of the owner and the agent key is bound
-//!    to it. Any later claim of the code is refused (`code_used`).
+//!    to it. The reply names the owner's account key (`owner_pubkey`). Any
+//!    later claim of the code is refused (`code_used`).
 //! 3. The app lists `GET /auth/pairing` ("<agent> on <device> connected",
 //!    with the claim time). The owner disconnects the computer with the
 //!    device revoke call (`DELETE /auth/devices/{device_id}`).
@@ -74,6 +77,11 @@ fn rfc3339(at: DateTime<Utc>) -> String {
     at.to_rfc3339_opts(chrono::SecondsFormat::Secs, true)
 }
 
+/// The command the owner runs on the other computer.
+fn pair_command(relay_url: &str, code: &str) -> String {
+    format!("kuzz pair --relay {relay_url} {code}")
+}
+
 /// A pairing's state as clients see it.
 fn view_state(pairing: &PairingRecord) -> &'static str {
     match pairing.state {
@@ -112,7 +120,8 @@ pub(super) async fn start(State(state): State<Arc<AppState>>, headers: HeaderMap
     {
         Ok(StartPairing::Started { id, expires_at }) => axum::Json(json!({
             "pairing_id": id,
-            "command": format!("kuzz pair {code}"),
+            "command": pair_command(&state.config.relay_url, &code),
+            "relay_url": state.config.relay_url,
             "code": code,
             "expires_at": rfc3339(expires_at),
             "expires_in": PAIRING_TTL_SECS,
@@ -258,6 +267,7 @@ pub(super) async fn claim(
         ClaimPairing::Connected {
             pairing_id,
             device_id,
+            owner_pubkey,
         } => {
             // A refusal cached before the pairing must not outlive it.
             state.identity.admissions.evict_key(&agent_bytes);
@@ -266,6 +276,7 @@ pub(super) async fn claim(
                 "pairing_id": pairing_id,
                 "state": "connected",
                 "device_id": device_id,
+                "owner_pubkey": hex::encode(owner_pubkey),
                 "version": PAIRING_API_VERSION,
             }))
             .into_response()
@@ -298,4 +309,17 @@ fn invalid_code() -> Response {
         "invalid_code",
         "this pairing code is unknown or expired",
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::pair_command;
+
+    #[test]
+    fn the_command_names_the_relay_before_the_code() {
+        assert_eq!(
+            pair_command("wss://relay.example", "abc_DEF-123"),
+            "kuzz pair --relay wss://relay.example abc_DEF-123"
+        );
+    }
 }

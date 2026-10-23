@@ -137,11 +137,14 @@ async fn a_claim_connects_the_agent_to_its_computer_only() {
     let ClaimPairing::Connected {
         pairing_id,
         device_id,
+        owner_pubkey,
     } = claim(&db, &code, &agent, &remote).await
     else {
         panic!("claim");
     };
     assert_eq!(pairing_id, id);
+    // The agent learns whose account key it now works for.
+    assert_eq!(owner_pubkey, owner_key);
     assert_eq!(
         device_row(&db, device_id).await,
         ("external".into(), "external".into(), false)

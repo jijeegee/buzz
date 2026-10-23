@@ -82,7 +82,11 @@ async fn start(inst: &Instance, who: &Owner) -> (String, String) {
     let (status, body) = call(inst, who, "POST", "/auth/pairing/start", None).await;
     assert_eq!(status, 200, "{body}");
     let code = body["code"].as_str().unwrap().to_owned();
-    assert_eq!(body["command"], format!("kuzz pair {code}"));
+    // The configured public relay, never the request's Host.
+    let relay = &inst.state.config.relay_url;
+    assert!(!relay.contains(&inst.host), "{relay}");
+    assert_eq!(body["relay_url"], json!(relay));
+    assert_eq!(body["command"], format!("kuzz pair --relay {relay} {code}"));
     assert_eq!(body["expires_in"], 600);
     (body["pairing_id"].as_str().unwrap().to_owned(), code)
 }
@@ -136,6 +140,8 @@ async fn a_claimed_code_connects_the_agent_on_its_computer_only() {
         (body["pairing_id"].as_str(), &body["state"]),
         (Some(id.as_str()), &json!("connected"))
     );
+    // The agent learns whose account key it now works for.
+    assert_eq!(body["owner_pubkey"], json!(pc.keys.public_key().to_hex()));
     let external_device: uuid::Uuid = body["device_id"].as_str().unwrap().parse().unwrap();
     // The owner's list: "<agent> on <device> connected", with the time.
     let listed = list(&inst, &pc).await;
