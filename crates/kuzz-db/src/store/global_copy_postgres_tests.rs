@@ -19,6 +19,17 @@ async fn pool() -> PgPool {
     pool
 }
 
+/// A transaction holding this file's lock: publishing and guarding take
+/// table locks in different orders, so these tests run one at a time.
+async fn begin(pool: &PgPool) -> Transaction<'static, Postgres> {
+    let mut tx = pool.begin().await.expect("begin");
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended('kuzz_global_copy_tests', 0))")
+        .execute(&mut *tx)
+        .await
+        .expect("test lock");
+    tx
+}
+
 /// Run `sql` inside a savepoint; the error message if it failed.
 async fn attempt(tx: &mut Transaction<'_, Postgres>, sql: &str) -> Option<String> {
     sqlx::query("SAVEPOINT attempt")
@@ -89,7 +100,7 @@ async fn every_table_is_copied_or_local_and_copied_tables_have_keys() {
 #[ignore = "requires Postgres"]
 async fn the_primary_publishes_global_tables_and_room_less_events() {
     let pool = pool().await;
-    let mut tx = pool.begin().await.expect("begin");
+    let mut tx = begin(&pool).await;
     sqlx::query("UPDATE local_region SET global_copy = false")
         .execute(&mut *tx)
         .await
@@ -143,7 +154,7 @@ async fn the_primary_publishes_global_tables_and_room_less_events() {
 #[ignore = "requires Postgres"]
 async fn a_copy_refuses_local_writes_to_global_tables_only() {
     let pool = pool().await;
-    let mut tx = pool.begin().await.expect("begin");
+    let mut tx = begin(&pool).await;
     for sql in [
         "DELETE FROM local_region",
         "INSERT INTO regions (id, connect_url, is_primary) VALUES ('t5', 'wss://t5.test', false) \
@@ -162,6 +173,20 @@ async fn a_copy_refuses_local_writes_to_global_tables_only() {
         .await
         .expect("flag");
     assert!(is_copy);
+
+    // Copied room-less events are announced to the relays (S5-3c): the
+    // trigger fires while the copy is applied, on every events partition.
+    let live: Vec<String> = sqlx::query_scalar(
+        "SELECT tgenabled::text FROM pg_trigger WHERE tgname = 'kuzz_global_copy_live'",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .expect("live trigger");
+    assert!(live.len() > 1, "on events and its partitions: {live:?}");
+    assert!(
+        live.iter().all(|mode| mode == "A"),
+        "fires always: {live:?}"
+    );
 
     let refused = |error: Option<String>| {
         let error = error.expect("refused");

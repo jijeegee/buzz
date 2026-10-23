@@ -88,12 +88,20 @@ sign-in also go to the primary:
 - **Relay-signed events outside rooms** (membership notices 44100/44101, the
   hidden-DM snapshot 30622) are sent signed to `/internal/region/global-event`.
   The primary accepts only events signed with the relay key (one key in every
-  region), stores them and tells its own subscribers; the sending region
-  tells its own at once.
+  region), stores them and tells its own subscribers.
 - **Typed writes** go to `/internal/region/global-write`: a missing user row
   for a command's author, an agent's NIP-OA owner, the token profile (kind 0)
   and turning off a push endpoint the push service reported gone. The region
   skips the call when its copy already has the row.
+
+Every room-less event stored at the primary reaches a copy region's live
+subscribers when the copy brings it (about a second later): in a copy
+database a trigger on room-less `events` rows fires while the copy is
+applied and sends `pg_notify` on `kuzz_global_event`; each relay pod listens
+and sends the event to its own connections. A notification sent while a pod
+reconnects to its database is not replayed; apps find the event on their
+next query. Short-lived (ephemeral) room-less events, which are never
+stored, still come over the region stream (S4-4c).
 
 A command acting on a room (opening a DM, an approval) is stored in that
 room in a region holding the copy, instead of outside any room. Approvals of

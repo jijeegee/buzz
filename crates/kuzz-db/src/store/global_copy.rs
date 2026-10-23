@@ -142,6 +142,12 @@ pub const LOCAL_TABLES: &[&str] = &[
 /// Name of the guard triggers on copied tables.
 const GUARD: &str = "kuzz_global_copy_guard";
 
+/// Notification channel a copy's database tells its relays on when the copy
+/// brings a room-less event (S5-3c): payload `<community>:<event id hex>`.
+pub const LIVE_CHANNEL: &str = "kuzz_global_event";
+/// The trigger that sends it.
+const LIVE_TRIGGER: &str = "kuzz_global_copy_live";
+
 /// How far a copy's subscription has come.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct CopyProgress {
@@ -414,6 +420,30 @@ pub(crate) async fn guard_global_copy_on(connection: &mut PgConnection) -> Resul
             "CREATE OR REPLACE TRIGGER {GUARD}_delete BEFORE DELETE ON events \
              FOR EACH ROW WHEN (OLD.channel_id IS NULL) EXECUTE FUNCTION refuse_global_copy_write()"
         ),
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(&mut *connection)
+            .await?;
+    }
+    // Tell this region's relays about copied room-less events so they reach
+    // live subscribers here. The copy is applied with
+    // `session_replication_role = replica`, so the trigger is set to fire
+    // always; local room-less writes are refused above, so only the copy
+    // fires it.
+    for sql in [
+        format!(
+            "CREATE OR REPLACE FUNCTION {LIVE_TRIGGER}() RETURNS TRIGGER \
+             LANGUAGE plpgsql AS $$ BEGIN \
+             PERFORM pg_notify('{LIVE_CHANNEL}', \
+             NEW.community_id::text || ':' || encode(NEW.id, 'hex')); \
+             RETURN NULL; END $$"
+        ),
+        format!(
+            "CREATE OR REPLACE TRIGGER {LIVE_TRIGGER} AFTER INSERT ON events \
+             FOR EACH ROW WHEN (NEW.channel_id IS NULL AND NEW.deleted_at IS NULL) \
+             EXECUTE FUNCTION {LIVE_TRIGGER}()"
+        ),
+        format!("ALTER TABLE events ENABLE ALWAYS TRIGGER {LIVE_TRIGGER}"),
     ] {
         sqlx::query(sqlx::AssertSqlSafe(sql))
             .execute(&mut *connection)
