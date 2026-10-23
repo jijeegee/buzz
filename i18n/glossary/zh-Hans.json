@@ -1,17 +1,49 @@
 {
   "Chat": "聊天",
-  "Channel": "频道",
+  "Group": [
+    "群组",
+    "群"
+  ],
+  "Channel": "群组",
   "Thread": "话题",
   "Agent": "智能体",
-  "Goal": "目标",
-  "Inbox": "通知",
   "Friend": "好友",
+  "Community": "社区",
+  "Member": "成员",
+  "Owner": "所有者",
+  "Admin": "管理员",
+  "Moderator": "管理员",
+  "Message": "消息",
+  "Direct message": "私信",
+  "Goal": "目标",
   "Project": "项目",
+  "Workflow": "工作流",
+  "Task": "任务",
+  "Team": "团队",
+  "Huddle": [
+    "语音通话",
+    "通话"
+  ],
+  "Forum": "论坛",
+  "Post": "帖子",
+  "Inbox": "通知",
+  "Reminder": "提醒",
   "Mention": "提及",
   "Reply": "回复",
-  "Huddle": "语音通话",
-  "Community": "社区",
+  "Reaction": "回应",
   "Pin": "置顶",
   "Mute": "免打扰",
-  "Invite": "邀请"
+  "Invite": "邀请",
+  "Invite link": "邀请链接",
+  "Profile": [
+    "个人资料",
+    "资料"
+  ],
+  "Account": "账号",
+  "Device": "设备",
+  "Notification": "通知",
+  "Draft": "草稿",
+  "Archive": "归档",
+  "Settings": "设置",
+  "Voice message": "语音消息"
 }

@@ -1,17 +1,52 @@
 {
   "Chat": "Chat",
-  "Channel": "Kanal",
+  "Group": "Gruppe",
+  "Channel": "Gruppe",
   "Thread": "Thread",
   "Agent": "Agent",
-  "Goal": "Ziel",
-  "Inbox": "Benachrichtigungen",
   "Friend": "Freund",
-  "Project": "Projekt",
-  "Mention": "Erwähnung",
-  "Reply": "Antworten",
-  "Huddle": "Sprachanruf",
   "Community": "Community",
+  "Member": "Mitglied",
+  "Owner": "Eigentümer",
+  "Admin": "Admin",
+  "Moderator": "Moderator",
+  "Message": "Nachricht",
+  "Direct message": "Direktnachricht",
+  "Goal": "Ziel",
+  "Project": "Projekt",
+  "Workflow": "Workflow",
+  "Task": "Aufgabe",
+  "Team": "Team",
+  "Huddle": "Sprachanruf",
+  "Forum": [
+    "Forum",
+    "Foren"
+  ],
+  "Post": "Beitrag",
+  "Inbox": "Posteingang",
+  "Reminder": "Erinnerung",
+  "Mention": [
+    "Erwähnung",
+    "erwähn"
+  ],
+  "Reply": "Antworten",
+  "Reaction": "Reaktion",
   "Pin": "Anheften",
   "Mute": "Stummschalten",
-  "Invite": "Einladen"
+  "Invite": "Einladen",
+  "Invite link": "Einladungslink",
+  "Profile": "Profil",
+  "Account": [
+    "Konto",
+    "Konten"
+  ],
+  "Device": "Gerät",
+  "Notification": "Benachrichtigung",
+  "Draft": [
+    "Entwurf",
+    "Entwürf"
+  ],
+  "Archive": "Archivieren",
+  "Settings": "Einstellungen",
+  "Voice message": "Sprachnachricht"
 }

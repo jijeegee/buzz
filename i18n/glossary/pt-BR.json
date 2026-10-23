@@ -1,17 +1,83 @@
 {
   "Chat": "Conversa",
-  "Channel": "Canal",
+  "Group": "Grupo",
+  "Channel": "Grupo",
   "Thread": "Tópico",
   "Agent": "Agente",
-  "Goal": "Meta",
-  "Inbox": "Notificações",
-  "Friend": "Amigo",
-  "Project": "Projeto",
-  "Mention": "Menção",
-  "Reply": "Responder",
-  "Huddle": "Chamada de voz",
+  "Friend": [
+    "Amigo",
+    "amig"
+  ],
   "Community": "Comunidade",
+  "Member": "Membro",
+  "Owner": [
+    "Proprietário",
+    "propriet"
+  ],
+  "Admin": [
+    "Administrador",
+    "admin"
+  ],
+  "Moderator": "Moderador",
+  "Message": "Mensagem",
+  "Direct message": [
+    "Mensagem direta",
+    "mensagens diretas"
+  ],
+  "Goal": "Objetivo",
+  "Project": "Projeto",
+  "Workflow": [
+    "Fluxo de trabalho",
+    "fluxo"
+  ],
+  "Task": "Tarefa",
+  "Team": "Equipe",
+  "Huddle": [
+    "Chamada de voz",
+    "chamadas de voz"
+  ],
+  "Forum": [
+    "Fórum",
+    "fóru"
+  ],
+  "Post": "Publicação",
+  "Inbox": "Caixa de entrada",
+  "Reminder": "Lembrete",
+  "Mention": [
+    "Menção",
+    "menç",
+    "mencion"
+  ],
+  "Reply": "Responder",
+  "Reaction": [
+    "Reação",
+    "reações"
+  ],
   "Pin": "Fixar",
   "Mute": "Silenciar",
-  "Invite": "Convidar"
+  "Invite": "Convidar",
+  "Invite link": [
+    "Link de convite",
+    "links de convite"
+  ],
+  "Profile": [
+    "Perfil",
+    "perfi"
+  ],
+  "Account": "Conta",
+  "Device": "Dispositivo",
+  "Notification": [
+    "Notificação",
+    "notificaç"
+  ],
+  "Draft": "Rascunho",
+  "Archive": "Arquivar",
+  "Settings": [
+    "Configurações",
+    "configuraç"
+  ],
+  "Voice message": [
+    "Mensagem de voz",
+    "mensagens de voz"
+  ]
 }

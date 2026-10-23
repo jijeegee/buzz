@@ -1,17 +1,102 @@
 {
   "Chat": "Chat",
-  "Channel": "Canale",
+  "Group": [
+    "Gruppo",
+    "grupp"
+  ],
+  "Channel": "Gruppo",
   "Thread": "Thread",
-  "Agent": "Agente",
-  "Goal": "Obiettivo",
-  "Inbox": "Notifiche",
-  "Friend": "Amico",
-  "Project": "Progetto",
-  "Mention": "Menzione",
-  "Reply": "Rispondi",
-  "Huddle": "Chiamata vocale",
+  "Agent": [
+    "Agente",
+    "agent"
+  ],
+  "Friend": [
+    "Amico",
+    "amic"
+  ],
   "Community": "Community",
+  "Member": [
+    "Membro",
+    "membr"
+  ],
+  "Owner": [
+    "Proprietario",
+    "proprietari"
+  ],
+  "Admin": [
+    "Amministratore",
+    "amministrat",
+    "admin"
+  ],
+  "Moderator": [
+    "Moderatore",
+    "moderat"
+  ],
+  "Message": "Messaggio",
+  "Direct message": [
+    "Messaggio diretto",
+    "messaggi diretti"
+  ],
+  "Goal": [
+    "Obiettivo",
+    "obiettiv"
+  ],
+  "Project": [
+    "Progetto",
+    "progett"
+  ],
+  "Workflow": [
+    "Flusso di lavoro",
+    "flussi di lavoro"
+  ],
+  "Task": "Attività",
+  "Team": "Team",
+  "Huddle": [
+    "Chiamata vocale",
+    "chiamate vocali"
+  ],
+  "Forum": "Forum",
+  "Post": "Post",
+  "Inbox": "Posta in arrivo",
+  "Reminder": "Promemoria",
+  "Mention": [
+    "Menzione",
+    "menzion"
+  ],
+  "Reply": "Rispondi",
+  "Reaction": [
+    "Reazione",
+    "reazion"
+  ],
   "Pin": "Fissa",
   "Mute": "Silenzia",
-  "Invite": "Invita"
+  "Invite": "Invita",
+  "Invite link": [
+    "Link d'invito",
+    "link di invito",
+    "link d’invito"
+  ],
+  "Profile": [
+    "Profilo",
+    "profil"
+  ],
+  "Account": "Account",
+  "Device": [
+    "Dispositivo",
+    "dispositiv"
+  ],
+  "Notification": [
+    "Notifica",
+    "notific"
+  ],
+  "Draft": [
+    "Bozza",
+    "bozz"
+  ],
+  "Archive": "Archivia",
+  "Settings": "Impostazioni",
+  "Voice message": [
+    "Messaggio vocale",
+    "messaggi vocali"
+  ]
 }

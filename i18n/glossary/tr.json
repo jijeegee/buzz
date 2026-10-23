@@ -1,17 +1,77 @@
 {
-  "Chat": "Sohbet",
-  "Channel": "Kanal",
-  "Thread": "Mesaj dizisi",
-  "Agent": "Ajan",
-  "Goal": "Hedef",
-  "Inbox": "Bildirimler",
-  "Friend": "Arkadaş",
-  "Project": "Proje",
-  "Mention": "Bahsetme",
-  "Reply": "Yanıtla",
-  "Huddle": "Sesli arama",
-  "Community": "Topluluk",
-  "Pin": "Sabitle",
-  "Mute": "Sessize al",
-  "Invite": "Davet et"
+  "Chat": "sohbet",
+  "Group": [
+    "grup",
+    "grub"
+  ],
+  "Channel": "grup",
+  "Thread": [
+    "mesaj dizisi",
+    "mesaj dizi"
+  ],
+  "Agent": "ajan",
+  "Friend": "arkadaş",
+  "Community": [
+    "topluluk",
+    "topluluğ"
+  ],
+  "Member": "üye",
+  "Owner": [
+    "sahip",
+    "sahib"
+  ],
+  "Admin": "yönetici",
+  "Moderator": "moderatör",
+  "Message": "mesaj",
+  "Direct message": "özel mesaj",
+  "Goal": "hedef",
+  "Project": "proje",
+  "Workflow": [
+    "iş akışı",
+    "akış"
+  ],
+  "Task": "görev",
+  "Team": "ekip",
+  "Huddle": "sesli arama",
+  "Forum": "forum",
+  "Post": "gönderi",
+  "Inbox": [
+    "gelen kutusu",
+    "gelen kutu"
+  ],
+  "Reminder": [
+    "hatırlatıcı",
+    "hatırlat"
+  ],
+  "Mention": [
+    "bahsetme",
+    "bahset",
+    "bahsed"
+  ],
+  "Reply": "yanıtla",
+  "Reaction": "tepki",
+  "Pin": "sabitle",
+  "Mute": "sessize al",
+  "Invite": "davet et",
+  "Invite link": [
+    "davet bağlantısı",
+    "davet bağlantı"
+  ],
+  "Profile": "profil",
+  "Account": [
+    "hesap",
+    "hesab"
+  ],
+  "Device": "cihaz",
+  "Notification": "bildirim",
+  "Draft": [
+    "taslak",
+    "taslağ"
+  ],
+  "Archive": "arşivle",
+  "Settings": [
+    "ayarlar",
+    "ayar"
+  ],
+  "Voice message": "sesli mesaj"
 }

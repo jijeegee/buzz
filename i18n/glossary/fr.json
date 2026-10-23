@@ -1,17 +1,63 @@
 {
   "Chat": "Discussion",
-  "Channel": "Canal",
-  "Thread": "Fil",
+  "Group": "Groupe",
+  "Channel": "Groupe",
+  "Thread": [
+    "Fil de discussion",
+    "fils de discussion"
+  ],
   "Agent": "Agent",
-  "Goal": "Objectif",
-  "Inbox": "Notifications",
   "Friend": "Ami",
+  "Community": "Communauté",
+  "Member": "Membre",
+  "Owner": "Propriétaire",
+  "Admin": [
+    "Administrateur",
+    "admin"
+  ],
+  "Moderator": [
+    "Modérateur",
+    "modérat"
+  ],
+  "Message": "Message",
+  "Direct message": [
+    "Message privé",
+    "messages privés"
+  ],
+  "Goal": "Objectif",
   "Project": "Projet",
+  "Workflow": "Flux de travail",
+  "Task": "Tâche",
+  "Team": "Équipe",
+  "Huddle": [
+    "Appel vocal",
+    "appels vocaux"
+  ],
+  "Forum": "Forum",
+  "Post": "Publication",
+  "Inbox": "Boîte de réception",
+  "Reminder": "Rappel",
   "Mention": "Mention",
   "Reply": "Répondre",
-  "Huddle": "Appel vocal",
-  "Community": "Communauté",
+  "Reaction": "Réaction",
   "Pin": "Épingler",
   "Mute": "Sourdine",
-  "Invite": "Inviter"
+  "Invite": "Inviter",
+  "Invite link": [
+    "Lien d'invitation",
+    "liens d'invitation",
+    "lien d’invitation",
+    "liens d’invitation"
+  ],
+  "Profile": "Profil",
+  "Account": "Compte",
+  "Device": "Appareil",
+  "Notification": "Notification",
+  "Draft": "Brouillon",
+  "Archive": "Archiver",
+  "Settings": "Paramètres",
+  "Voice message": [
+    "Message vocal",
+    "messages vocaux"
+  ]
 }
