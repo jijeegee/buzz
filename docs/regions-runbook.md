@@ -15,11 +15,13 @@ plus the rooms whose home it is.
     `max_replication_slots` and `max_wal_senders` for one more region.
 - **Network.** The new region's database can reach the primary's database
   over TLS.
-  - Use a replication role that can only `SELECT` the published tables.
+  - Use a role with the `REPLICATION` attribute and `SELECT` on the
+    published tables only.
   - Allow it in the primary's `pg_hba.conf`, for that address only.
 - **Keys.**
   - `KUZZ_RELAY_PRIVATE_KEY` is the **same** in every region. It is the relay's identity, and apps check events it signs.
-  - `KUZZ_REGION_KEY` is **new** for each region (its link key). Never reuse one.
+  - `KUZZ_REGION_KEY` is **new** for each region (its link key). Never reuse one;
+    `regions add` refuses a key another region has.
 - **Name.** Give the region its own address, for example `jp.<service domain>`.
   - With Cloudflare, add a DNS record for it, proxied, pointing at the region's load balancer.
   - Apps reach a region only through the address in its `connect_url`. The service name the apps sign for does not change (stage S1).
@@ -41,8 +43,10 @@ plus the rooms whose home it is.
    | `KUZZ_COMMUNITY_ID` | the same as in the primary |
    | `KUZZ_RELAY_PRIVATE_KEY` | the same as in the primary |
    | `RELAY_URL` | the same service name as in the primary |
+   | `KUZZ_AUTO_MIGRATE` | `true` (or run `kuzz-admin migrate` first) |
 
    `KUZZ_GLOBAL_COPY` turns on by itself. The relay migrates the database and then waits.
+   The subscription in step 2 needs the tables, so migrate before it.
 
 2. **Subscribe to the copy** in the new region's database:
 
@@ -86,12 +90,13 @@ so a mismatch refuses every sign-in.
 
 1. Move its rooms to other regions (S6-3/S6-4). `kuzz-admin regions list`
    shows how many rooms each region holds.
-2. `kuzz-admin regions remove --id jp` at the primary. It refuses while any
+2. Stop the region's relays. Its apps reconnect through other addresses.
+3. `kuzz-admin regions remove --id jp` at the primary. It refuses while any
    room's home is the region, and homes the region's accounts in the primary.
-3. Stop the region's relay, then in its database
-   `DROP SUBSCRIPTION kuzz_global`. That frees the primary's replication slot;
-   a slot left behind keeps WAL on the primary until its disk fills.
-4. Remove the region's DNS record.
+4. In the region's database, `DROP SUBSCRIPTION kuzz_global`. That frees the
+   primary's replication slot; a slot left behind keeps WAL on the primary
+   until its disk fills.
+5. Remove the region's DNS record.
 
 ## Region commands refuse outside the primary
 

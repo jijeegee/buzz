@@ -57,6 +57,7 @@ cargo build -p kuzz-admin
 BIN="${TARGET}/debug/kuzz-relay"
 ADMIN="${TARGET}/debug/kuzz-admin"
 [[ -x "${BIN}" || -x "${BIN}.exe" ]] || { log "no relay binary at ${BIN}"; exit 1; }
+[[ -x "${ADMIN}" || -x "${ADMIN}.exe" ]] || { log "no kuzz-admin binary at ${ADMIN}"; exit 1; }
 KR_DB="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz"
 JP_DB="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz"
 mkdir -p "${LOG_DIR}"

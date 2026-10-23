@@ -443,6 +443,18 @@ impl Db {
     ) -> Result<RegionAdded> {
         let mut tx = self.pool.begin().await?;
         refuse_unless_primary(&mut tx).await?;
+        let shared: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM regions WHERE link_pubkey = $2 AND id <> $1)",
+        )
+        .bind(id)
+        .bind(link_pubkey)
+        .fetch_one(&mut *tx)
+        .await?;
+        if shared {
+            return Err(DbError::InvalidData(
+                "another region already uses this link key; give each region its own".into(),
+            ));
+        }
         let existing = sqlx::query(
             "SELECT connect_url, is_primary, link_pubkey FROM regions WHERE id = $1 FOR UPDATE",
         )
@@ -499,6 +511,12 @@ impl Db {
     pub async fn remove_region(&self, id: &str) -> Result<RegionRemoved> {
         let mut tx = self.pool.begin().await?;
         let primary = refuse_unless_primary(&mut tx).await?;
+        // No room or account may be homed in the region between the count and
+        // the delete (rooms are reserved here, in the primary). The mode
+        // conflicts with itself, so two removals queue instead of deadlocking.
+        sqlx::query("LOCK TABLE room_directory, principals IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await?;
         if primary == id {
             return Err(DbError::InvalidData(format!(
                 "region {id} is the primary and cannot be removed"
@@ -913,6 +931,11 @@ mod postgres_tests {
         assert!(db.add_region("JP!", "wss://x.example", &key).await.is_err());
         assert!(db
             .add_region("sg", "wss://sg.example", "short")
+            .await
+            .is_err());
+        // Each region has its own link key.
+        assert!(db
+            .add_region("sg", "wss://sg.example", &new_key)
             .await
             .is_err());
 
