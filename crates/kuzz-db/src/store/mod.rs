@@ -73,6 +73,8 @@ pub mod relay_operators;
 pub mod reminder;
 /// Deployment regions (migration 0078).
 pub mod region;
+/// Handing the primary role to another region (S6-5).
+pub mod primary_handover;
 /// Region propagation outbox (migration 0085).
 pub mod region_outbox;
 /// Replaceable-event persistence and coordinate locking.

@@ -41,6 +41,8 @@ services:
 
   postgres-jp:
     <<: *postgres
+    # jp becomes the primary in the handover test (S6-5).
+    command: ["postgres", "-c", "wal_level=logical"]
     ports:
       - "127.0.0.1:5492:5432"
 

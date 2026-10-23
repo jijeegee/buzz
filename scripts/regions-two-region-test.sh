@@ -63,8 +63,9 @@ JP_DB="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz"
 mkdir -p "${LOG_DIR}"
 
 # start_relay <region> <port> <postgres port> <redis port> <health port> <metrics port> <link key> [log name]
-# RELAY_EXTRA_ENV adds settings for one relay.
+# RELAY_EXTRA_ENV adds settings for one relay; PRIMARY is the primary region.
 RELAY_EXTRA_ENV=()
+PRIMARY=kr
 start_relay() {
   local region=$1 port=$2 pg=$3 redis=$4 health=$5 metrics=$6 link_key=$7 name=${8:-$1}
   env "${RELAY_EXTRA_ENV[@]}" DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:${pg}/kuzz" \
@@ -77,7 +78,7 @@ start_relay() {
     KUZZ_METRICS_PORT="${metrics}" \
     KUZZ_AUTO_MIGRATE=true \
     KUZZ_REGION_ID="${region}" \
-    KUZZ_PRIMARY_REGION=kr \
+    KUZZ_PRIMARY_REGION="${PRIMARY}" \
     KUZZ_REGION_LINK=on \
     KUZZ_REGION_KEY="${link_key}" \
     KUZZ_COMMUNITY_ID="${COMMUNITY_ID}" \
@@ -122,7 +123,8 @@ done
 "${COMPOSE[@]}" exec -T postgres-jp psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
   "CREATE SUBSCRIPTION kuzz_global
      CONNECTION 'host=postgres-kr port=5432 user=kuzz password=kuzz_dev dbname=kuzz'
-     PUBLICATION kuzz_global"
+     PUBLICATION kuzz_global
+     WITH (slot_name = 'kuzz_global_jp')"
 
 # Add jp in the primary with the link key jp's relay asks for.
 JP_LINK_PUBKEY=""
@@ -173,6 +175,73 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
 # Room moves (S6-3, S6-4) run last: they move rooms between the regions.
 log "running e2e_regions_move"
 REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}"   REGION_JP_DATABASE_URL="${JP_DB}" REGION_KR_DATABASE_URL="${KR_DB}"   REGION_ADMIN_BIN="${ADMIN}"   REGION_REDIS_URLS=redis://127.0.0.1:6491,redis://127.0.0.1:6492   cargo test -p kuzz-test-client --test e2e_regions_move -- --ignored --test-threads=1
+
+# Hand the primary to jp (S6-5), restart every relay with the new primary
+# and check both regions still work.
+JP_CONNINFO="host=postgres-jp port=5432 user=kuzz password=kuzz_dev dbname=kuzz"
+hand_over() {
+  DATABASE_URL="${KR_DB}" KUZZ_HANDOVER_TO_DATABASE_URL="${JP_DB}" "${ADMIN}" primary hand-over \
+    --to jp --publisher-conninfo "${JP_CONNINFO}" "$@"
+}
+
+# A handover that cannot catch up stops with global writes frozen, and
+# --abort undoes it. jp's copy is held behind a lock while kr changes a
+# global table.
+log "aborting a handover that cannot catch up"
+"${COMPOSE[@]}" exec -T postgres-jp psql -q -U kuzz -d kuzz -c \
+  "BEGIN; LOCK TABLE communities IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(40); COMMIT;" \
+  >/dev/null 2>&1 &
+LOCK_PID=$!
+sleep 2
+"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
+  "UPDATE communities SET host = host"
+if hand_over --wait-secs 5 >"${LOG_DIR}/handover-stuck.txt" 2>&1; then
+  log "a handover that could not catch up finished"; cat "${LOG_DIR}/handover-stuck.txt"; exit 1
+fi
+grep -q "did not catch up" "${LOG_DIR}/handover-stuck.txt" \
+  || { log "unexpected handover failure:"; cat "${LOG_DIR}/handover-stuck.txt"; exit 1; }
+hand_over --abort | tee "${LOG_DIR}/handover-abort.txt"
+grep -q '"step":"aborted"' "${LOG_DIR}/handover-abort.txt" || { log "abort failed"; exit 1; }
+"${COMPOSE[@]}" exec -T postgres-kr psql -qtA -U kuzz -d kuzz -c \
+  "SELECT global_copy FROM local_region" | grep -qx f || { log "kr stayed frozen"; exit 1; }
+wait "${LOCK_PID}" || true
+
+log "handing the primary to jp"
+hand_over | tee "${LOG_DIR}/handover.txt"
+grep -q '"step":"done"' "${LOG_DIR}/handover.txt" || { log "handover did not finish"; exit 1; }
+# Running it again changes nothing.
+hand_over | tee "${LOG_DIR}/handover-again.txt"
+grep -q '"step":"done"' "${LOG_DIR}/handover-again.txt" || { log "rerun failed"; exit 1; }
+if grep -qE '"step":"(frozen|promoted|subscribed)"' "${LOG_DIR}/handover-again.txt"; then
+  log "the rerun did a step again"; exit 1
+fi
+for pid in "${PIDS[@]}"; do kill "${pid}" 2>/dev/null || true; done
+for port in 3041 3042 3043; do
+  for _ in $(seq 1 60); do
+    curl -s -o /dev/null "http://localhost:${port}/" || break
+    sleep 1
+  done
+done
+PIDS=()
+PRIMARY=jp
+start_relay jp 3042 5492 6492 3052 3062 "${JP_LINK_KEY}" jp-primary
+wait_up http://localhost:3042/
+start_relay kr 3041 5491 6491 3051 3061 "${KR_LINK_KEY}" kr-copy
+wait_up http://localhost:3041/
+RELAY_EXTRA_ENV=(KUZZ_REQUIRE_RELAY_MEMBERSHIP=true
+  RELAY_OWNER_PUBKEY=79be667ef9dcbbac55a06295ce870b07029bfcdb2dce28d959f2815b16f81798)
+start_relay jp 3043 5492 6492 3053 3063 "${JP_LINK_KEY}" jp-members-primary
+RELAY_EXTRA_ENV=()
+wait_up http://localhost:3043/
+DATABASE_URL="${JP_DB}" "${ADMIN}" primary check | tee "${LOG_DIR}/primary-check-jp.txt"
+DATABASE_URL="${KR_DB}" "${ADMIN}" primary check | tee "${LOG_DIR}/primary-check-kr.txt"
+grep -q '"role": "primary"' "${LOG_DIR}/primary-check-jp.txt" || { log "jp is not the primary"; exit 1; }
+grep -q '"role": "copy"' "${LOG_DIR}/primary-check-kr.txt" || { log "kr is not a copy"; exit 1; }
+
+log "running e2e_regions_handover"
+REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
+  REGION_JP_DATABASE_URL="${JP_DB}" REGION_KR_DATABASE_URL="${KR_DB}" \
+  cargo test -p kuzz-test-client --test e2e_regions_handover -- --ignored --test-threads=1
 
 # The relay in jp must never write a global table itself (S5-3): its copy
 # guard would refuse it.

@@ -140,13 +140,13 @@ pub const LOCAL_TABLES: &[&str] = &[
 ];
 
 /// Name of the guard triggers on copied tables.
-const GUARD: &str = "kuzz_global_copy_guard";
+pub(crate) const GUARD: &str = "kuzz_global_copy_guard";
 
 /// Notification channel a copy's database tells its relays on when the copy
 /// brings a room-less event (S5-3c): payload `<community>:<event id hex>`.
 pub const LIVE_CHANNEL: &str = "kuzz_global_event";
 /// The trigger that sends it.
-const LIVE_TRIGGER: &str = "kuzz_global_copy_live";
+pub(crate) const LIVE_TRIGGER: &str = "kuzz_global_copy_live";
 
 /// How far a copy's subscription has come.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -292,6 +292,13 @@ pub(crate) async fn publish_global_copy_on(connection: &mut PgConnection) -> Res
                 .into(),
         ));
     }
+    publish_tables_on(connection).await
+}
+
+/// Create or refresh the publication, without checking that this database
+/// is not a copy: a handover publishes in the new primary while it is still
+/// guarded, before any replication slot is created for it.
+pub(crate) async fn publish_tables_on(connection: &mut PgConnection) -> Result<()> {
     let lacking: Vec<String> = sqlx::query_scalar(
         "SELECT t.relid::regclass::text FROM pg_partition_tree('events') t \
            JOIN pg_class c ON c.oid = t.relid \
