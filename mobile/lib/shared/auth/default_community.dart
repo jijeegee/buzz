@@ -65,8 +65,8 @@ const _kuzzRelayUrl = _KuzzRelayUrlDefine(
   String.fromEnvironment('KUZZ_RELAY_URL'),
 );
 
-/// Copy shown when an invite targets any other server.
-const differentServiceInviteMessage = 'This invite is for a different service.';
+/// Copy shown when an invite targets any other server. Translated on read.
+String get differentServiceInviteMessage => appL10n.inviteDifferentService;
 
 /// Error for any attempt to add, select or sign in to another server.
 String get differentServerMessage => appL10n.authDifferentServer;

@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/community/community_provider.dart';
 import '../../shared/huddle/huddle.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_management_provider.dart';
 
@@ -173,7 +174,7 @@ final class MobileHuddleController extends Notifier<bool> {
       _ensureCurrent(generation);
       final session = ref.read(huddleSessionProvider);
       if (session.phase == HuddleSessionPhase.failed) {
-        throw StateError(session.error ?? 'Unable to join the new Huddle.');
+        throw StateError(session.error ?? appL10n.huddleJoinNewFailed);
       }
       _admissionToken = _HuddleAdmissionToken(admissionEpoch, backingChannelId);
     } catch (_) {
@@ -493,7 +494,7 @@ final class MobileHuddleController extends Notifier<bool> {
     if (config.tokenAuth) {
       final tokens = ref.read(relayAccessTokensProvider);
       if (tokens == null) {
-        throw StateError('Sign in to this community to join the Huddle.');
+        throw StateError(appL10n.huddleSignInRequired);
       }
       return HuddleConnectionParameters(
         relayWebSocketUrl: config.wsUrl,

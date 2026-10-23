@@ -193,7 +193,7 @@ class _RecentPhotoGalleryPicker extends HookConsumerWidget {
                   Padding(
                     padding: const EdgeInsets.only(right: Grid.half),
                     child: Text(
-                      '$selectedCount selected',
+                      context.l10n.composeGallerySelectedCount(selectedCount),
                       style: context.textTheme.labelMedium?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),

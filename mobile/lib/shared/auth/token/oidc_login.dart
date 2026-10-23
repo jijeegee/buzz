@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import '../../l10n/l10n.dart';
 import 'auth_api.dart';
 import 'mobile_callback.dart';
 import 'pkce.dart';
@@ -97,8 +98,8 @@ Future<LoginGrant> _runOidcLoginOnce({
       // iOS appends a bare `#` to the ASWebAuthenticationSession callback,
       // so only a fragment carrying data is rejected.
       callback.fragment.isNotEmpty) {
-    throw const OidcLoginException(
-      'The sign-in response used an unexpected callback address. Try again.',
+    throw OidcLoginException(
+      appL10n.tokenSessionOidcUnexpectedCallback,
       code: 'invalid_callback',
     );
   }
@@ -108,8 +109,8 @@ Future<LoginGrant> _runOidcLoginOnce({
     'code',
     'error',
   ].any((key) => (callback.queryParametersAll[key]?.length ?? 0) > 1)) {
-    throw const OidcLoginException(
-      'The sign-in response contained ambiguous parameters. Try again.',
+    throw OidcLoginException(
+      appL10n.tokenSessionOidcAmbiguous,
       code: 'invalid_callback',
     );
   }
@@ -117,8 +118,8 @@ Future<LoginGrant> _runOidcLoginOnce({
   // State first: an unsolicited callback (forged code *or* forged error)
   // must not be acted on at all.
   if (params['state'] != pkce.state) {
-    throw const OidcLoginException(
-      'The sign-in response did not match this request. Try again.',
+    throw OidcLoginException(
+      appL10n.tokenSessionOidcMismatch,
       code: 'state_mismatch',
     );
   }
@@ -128,8 +129,8 @@ Future<LoginGrant> _runOidcLoginOnce({
   }
   final code = params['code'];
   if (code == null || code.isEmpty) {
-    throw const OidcLoginException(
-      'The sign-in response had no login code.',
+    throw OidcLoginException(
+      appL10n.tokenSessionOidcNoCode,
       code: 'missing_code',
     );
   }
@@ -142,8 +143,8 @@ Future<LoginGrant> _runOidcLoginOnce({
 }
 
 String _describeError(String code) => switch (code) {
-  'access_denied' => 'Sign-in was cancelled at the provider.',
-  'principal_disabled' => 'This account has been disabled on this relay.',
-  'login_failed' => 'The provider could not verify this account.',
-  _ => 'Sign-in failed ($code). Try again.',
+  'access_denied' => appL10n.tokenSessionOidcCancelled,
+  'principal_disabled' => appL10n.tokenSessionOidcAccountDisabled,
+  'login_failed' => appL10n.tokenSessionOidcNotVerified,
+  _ => appL10n.tokenSessionOidcFailed(code),
 };

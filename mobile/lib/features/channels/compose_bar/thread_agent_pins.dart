@@ -397,7 +397,7 @@ class _ThreadAgentPinChips extends StatelessWidget {
               padding: const EdgeInsets.only(right: Grid.xxs),
               child: Semantics(
                 button: true,
-                label: "Don't automatically mention ${agent.label} here",
+                label: context.l10n.composeAutoMentionOffNamed(agent.label),
                 excludeSemantics: true,
                 child: InputChip(
                   key: ValueKey('composer-address-lock-${agent.pubkey}'),

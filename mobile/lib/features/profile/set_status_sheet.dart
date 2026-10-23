@@ -22,12 +22,12 @@ import 'user_status_provider.dart';
 const _emojiWellSize = 48.0;
 const _emojiGlyphSize = 28.0;
 
-const _statusPresets = [
-  (text: 'In a meeting', emoji: '\u{1F5E3}\u{FE0F}'),
-  (text: 'Commuting', emoji: '\u{1F68C}'),
-  (text: 'Out sick', emoji: '\u{1F912}'),
-  (text: 'Vacationing', emoji: '\u{1F3D6}\u{FE0F}'),
-  (text: 'Working remotely', emoji: '\u{1F3E0}'),
+List<({String text, String emoji})> _statusPresets(AppLocalizations l10n) => [
+  (text: l10n.profileStatusPresetMeeting, emoji: '\u{1F5E3}\u{FE0F}'),
+  (text: l10n.profileStatusPresetCommuting, emoji: '\u{1F68C}'),
+  (text: l10n.profileStatusPresetOutSick, emoji: '\u{1F912}'),
+  (text: l10n.profileStatusPresetVacationing, emoji: '\u{1F3D6}\u{FE0F}'),
+  (text: l10n.profileStatusPresetRemote, emoji: '\u{1F3E0}'),
 ];
 
 enum _StatusDuration {
@@ -223,7 +223,7 @@ class _SetStatusSheet extends HookConsumerWidget {
               AppListCard(
                 label: context.l10n.profileStatusQuick,
                 children: [
-                  for (final preset in _statusPresets)
+                  for (final preset in _statusPresets(context.l10n))
                     AppListRowRaw(
                       leading: SizedBox(
                         width: 22,

@@ -1,4 +1,5 @@
 import '../../shared/identity_names/identity_names.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/utils/string_utils.dart';
 import 'channel.dart';
 
@@ -19,7 +20,7 @@ String formatDmParticipantDisplayName(List<String> displayNames) {
   final visible = displayNames.take(_dmParticipantPreviewLimit).toList();
   final hiddenCount = displayNames.length - visible.length;
   return hiddenCount > 0
-      ? [...visible, '+$hiddenCount more'].join(', ')
+      ? [...visible, appL10n.channelDmMoreParticipants(hiddenCount)].join(', ')
       : visible.join(', ');
 }
 

@@ -135,7 +135,7 @@ class _MessageImageCarousel extends HookConsumerWidget {
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            '${items.length} images',
+            context.l10n.mediaImageCount(items.length),
             key: const ValueKey('message-media-carousel-count'),
             style: context.textTheme.labelMedium?.copyWith(
               color: context.colors.onSurfaceVariant,

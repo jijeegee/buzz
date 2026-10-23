@@ -217,7 +217,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
           }
         } else if (inviteState.differentService) {
           messenger?.showSnackBar(
-            const SnackBar(content: Text(differentServiceInviteMessage)),
+            SnackBar(content: Text(appL10n.inviteDifferentService)),
           );
         } else if (status == InviteJoinStatus.switchedExisting) {
           messenger?.showSnackBar(

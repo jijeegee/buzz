@@ -175,13 +175,24 @@ abstract final class _MentionSuggestionInfo {
     final notInChannel = !isDmChannel && !candidate.isMember;
     final isAdmin = !candidate.isAgent && candidate.role == 'admin';
 
+    // The user's own agents read "managed by you" as one phrase.
+    final ownedByMe =
+        candidate.isAgent &&
+        candidate.ownerPubkey != null &&
+        currentPubkey != null &&
+        candidate.ownerPubkey!.toLowerCase() == currentPubkey.toLowerCase();
+    final l10n = context.l10n;
     final String? detail;
     if (ownerLabel != null && notInChannel) {
-      detail = 'managed by $ownerLabel \u00b7 not in group';
+      detail = ownedByMe
+          ? l10n.composeMentionManagedByYouNotInGroup
+          : l10n.composeMentionManagedByNotInGroup(ownerLabel);
     } else if (ownerLabel != null) {
-      detail = 'managed by $ownerLabel';
+      detail = ownedByMe
+          ? l10n.composeMentionManagedByYou
+          : l10n.composeMentionManagedBy(ownerLabel);
     } else if (notInChannel) {
-      detail = 'not in group';
+      detail = l10n.composeMentionNotInGroup;
     } else {
       detail = null;
     }
