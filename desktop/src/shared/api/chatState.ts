@@ -101,6 +101,24 @@ export function getChatListPage(
 }
 
 /**
+ * Owner view: one page of `agent`'s DMs and group chats that the signed-in
+ * owner is not in. Read-only; rows carry no read state.
+ */
+export function getAgentChatListPage(
+  binding: ChatStateBinding,
+  agent: string,
+  before: ChatListCursor | null,
+  limit: number,
+): Promise<ChatListPage> {
+  return invokeTauri<ChatListPage>("get_agent_chat_list", {
+    agent,
+    before,
+    binding,
+    limit,
+  });
+}
+
+/**
  * Store read positions (the relay only moves them forward) and set every
  * item's unread mark to `unreadMark`.
  */

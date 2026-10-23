@@ -103,7 +103,7 @@ type AgentListSection = {
   items: AgentListItem[];
 };
 
-const PROFILE_KEYS = ["profile"] as const;
+const PROFILE_KEYS = ["profile", "viewAs"] as const;
 
 function agentItem(agent: ManagedAgent): AgentListItem {
   return {
@@ -251,6 +251,8 @@ export function AgentsSidebarList({
   const needle = filter.trim().toLowerCase();
   const isSelected = (item: AgentListItem) =>
     openDmPeer === item.pubkey ||
+    // The owner view of this agent's chats (any chat, not only its DM).
+    (openChannelId !== null && values.viewAs?.toLowerCase() === item.pubkey) ||
     (onAgentsPage && values.profile?.toLowerCase() === item.pubkey);
   const openDm = async (item: AgentListItem) => {
     try {

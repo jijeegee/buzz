@@ -19,6 +19,9 @@ import {
   useInboxThreadViewMode,
 } from "@/features/channels/lib/threadViewModePreference";
 import { useInboxPanelOpen } from "@/features/home/lib/inboxPanelPreference";
+import { OwnerViewLayout } from "@/features/agents/ownerView/OwnerViewLayout";
+
+const AGENT_PUBKEY_RE = /^[0-9a-f]{64}$/i;
 
 type ChannelRouteSearch = {
   agentSession?: string;
@@ -37,6 +40,8 @@ type ChannelRouteSearch = {
   profileView?: ProfilePanelView;
   thread?: string;
   threadRootId?: string;
+  /** Owner view: an agent of mine whose chats I am reading. */
+  viewAs?: string;
 };
 
 function nonEmptyString(value: unknown): string | undefined {
@@ -57,6 +62,7 @@ function validateChannelSearch(
     profileView: parseProfilePanelView(search.profileView) ?? undefined,
     thread: nonEmptyString(search.thread),
     threadRootId: nonEmptyString(search.threadRootId),
+    viewAs: nonEmptyString(search.viewAs),
   };
 }
 
@@ -86,6 +92,44 @@ function ChannelRouteComponent() {
         : null,
     [inboxPanelOpen, inboxThreadViewMode],
   );
+
+  const ownerViewAgent =
+    search.viewAs && AGENT_PUBKEY_RE.test(search.viewAs) && !isHuddleTranscript
+      ? search.viewAs.toLowerCase()
+      : null;
+  if (ownerViewAgent) {
+    // Owner view: my agent's chats without me, read-only.
+    return (
+      <div
+        className="flex min-h-0 min-w-0 flex-1 overflow-hidden"
+        data-testid="channel-route-layout"
+      >
+        <OwnerViewLayout
+          agentPubkey={ownerViewAgent}
+          channelId={channelId}
+          openRootId={search.thread ?? null}
+          renderChat={(chat) => (
+            <React.Suspense
+              fallback={<ViewLoadingFallback includeHeader kind="channel" />}
+            >
+              <ChannelRouteScreen
+                autoSendDraftKey={null}
+                channelId={channelId}
+                ownerView={chat}
+                searchHighlight={searchHighlight}
+                selectedPostId={null}
+                targetMessageId={search.messageId ?? null}
+                targetReplyId={null}
+                targetThreadRootId={
+                  search.threadRootId ?? search.thread ?? null
+                }
+              />
+            </React.Suspense>
+          )}
+        />
+      </div>
+    );
+  }
 
   const channelScreen = (
     <React.Suspense
