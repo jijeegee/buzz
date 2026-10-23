@@ -145,6 +145,12 @@ pub fn parse_expires_at(value: Option<&serde_json::Value>) -> Option<i64> {
     }
 }
 
+/// Header naming this build on `/auth/*` calls (`acp/<version>`); the relay
+/// gates `acp` only when its minimum-version setting lists it.
+const CLIENT_HEADER: &str = "x-kuzz-client";
+/// This build's [`CLIENT_HEADER`] value.
+const CLIENT_ID: &str = concat!("acp/", env!("CARGO_PKG_VERSION"));
+
 /// One `POST /auth/token/exchange` with `token`.
 pub async fn exchange_once(
     http: &reqwest::Client,
@@ -153,6 +159,7 @@ pub async fn exchange_once(
 ) -> Result<(String, i64), Failure> {
     let response = http
         .post(format!("{base_url}/auth/token/exchange"))
+        .header(CLIENT_HEADER, CLIENT_ID)
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
         .header(reqwest::header::CONTENT_TYPE, "application/json")
         .body("{}")
@@ -188,6 +195,7 @@ async fn me_once(
 ) -> Result<TokenPrincipal, Failure> {
     let response = http
         .get(format!("{base_url}/auth/me"))
+        .header(CLIENT_HEADER, CLIENT_ID)
         .header(reqwest::header::AUTHORIZATION, format!("Bearer {token}"))
         .send()
         .await

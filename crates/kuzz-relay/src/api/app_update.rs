@@ -32,6 +32,9 @@
 //!   `X-Kuzz-App: <platform>/<version>` below that platform's `min_version` is
 //!   refused with `426 Upgrade Required` when `enforce_on_connect` is true.
 //!   Clients that send no header (older apps, agents, CLI) are never refused.
+//! - Sign-in and `/auth/refresh`: the same `min_version` is enforced whether
+//!   or not `enforce_on_connect` is set, with `426 update_required` (see
+//!   `identity::client_version`; apps send `X-Kuzz-Client`).
 
 use std::cmp::Ordering;
 use std::collections::HashMap;

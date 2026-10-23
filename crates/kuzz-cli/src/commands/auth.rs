@@ -519,6 +519,7 @@ pub fn start_url(
         .append_pair("state", state)
         .append_pair("code_challenge", challenge)
         .append_pair("client", "cli")
+        .append_pair("kuzz_client", crate::client::CLIENT_ID)
         .append_pair("identity_mode", "token")
         .append_pair("redirect_uri", redirect_uri)
         .append_pair("device_name", device_name);

@@ -37,6 +37,14 @@ void main() {
         'device_name': 'Pixel 9',
         'install_id': '5f0c6b1e-2a4d-4c8e-9b7a-1d2e3f4a5b6c',
       });
+      final named = api.startUri(
+        provider: 'google',
+        state: 's' * 32,
+        codeChallenge: 'c' * 43,
+        redirectUri: kuzzMobileRedirectUri,
+        kuzzClient: 'android/0.6.2',
+      );
+      expect(named.queryParameters['kuzz_client'], 'android/0.6.2');
     });
 
     test('InstallIdStore creates one id and keeps it', () async {

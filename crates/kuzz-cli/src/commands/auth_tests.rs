@@ -1013,6 +1013,8 @@ fn start_url_encodes_every_parameter() {
     assert_eq!(q["redirect_uri"], "http://127.0.0.1:5000/cb");
     assert_eq!(q["device_name"], "my host & co");
     assert_eq!(q["client"], "cli");
+    assert_eq!(q["kuzz_client"], crate::client::CLIENT_ID);
+    assert!(crate::client::CLIENT_ID.starts_with("cli/"));
     assert_eq!(q.get("identity_mode").map(String::as_str), Some("token"));
 }
 

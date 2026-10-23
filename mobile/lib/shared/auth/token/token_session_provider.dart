@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../../app_update/app_update.dart';
 import '../../community/community_provider.dart';
 import '../../device_key/device_key.dart';
 import '../../device_key/device_proof_client.dart';
@@ -15,9 +16,10 @@ import 'token_session.dart';
 import 'web_auth_launcher.dart';
 
 /// HTTP client for `/auth/*` and NIP-11 detection. Account calls carry this
-/// install's device proof ([DeviceProofClient]). Override in tests.
+/// install's device proof ([DeviceProofClient]) and name this build
+/// ([AppClientHeaderClient]). Override in tests.
 final authHttpClientProvider = Provider<http.Client>((ref) {
-  final client = DeviceProofClient(http.Client());
+  final client = AppClientHeaderClient(DeviceProofClient(http.Client()));
   ref.onDispose(client.close);
   return client;
 });

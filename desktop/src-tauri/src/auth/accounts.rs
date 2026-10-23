@@ -1333,7 +1333,9 @@ impl InactiveSessions {
                     "kuzz-desktop: accounts: background session of {} on {origin} ended ({code})",
                     &pubkey.to_hex()[..8]
                 );
-                if let Some(ended) = ended.filter(|_| super::refresh::ends_sign_in(&code)) {
+                if code == super::api::UPDATE_REQUIRED {
+                    // Kept signed in: the updated app restores this session.
+                } else if let Some(ended) = ended.filter(|_| super::refresh::ends_sign_in(&code)) {
                     ended(origin, Some(pubkey), code);
                 } else if let Some(dir) = data_dir {
                     if let Err(error) = mark_needs_login(shared_secrets(), &dir, &origin, &pubkey) {

@@ -280,7 +280,11 @@ async fn refresh_locked(
         Err(RefreshFailure::Terminal(code)) => {
             if auth.replace_if(origin, generation, OriginAuth::NeedsLogin(code.clone())) {
                 auth.clear_pending_refresh(origin);
-                let _ = store.delete(origin);
+                // Too old a build: keep the refresh token (the relay did not
+                // spend it) so the updated app signs straight back in.
+                if code != api::UPDATE_REQUIRED {
+                    let _ = store.delete(origin);
+                }
             }
             Err(RefreshFailure::Terminal(code))
         }
@@ -925,6 +929,54 @@ mod tests {
             auth.get(&origin),
             Some((_, OriginAuth::NeedsLogin(code))) if code == "refresh_reused"
         ));
+    }
+
+    /// A build below the relay's minimum version: refused at refresh with
+    /// `update_required`. The request named this build, the refresh token
+    /// stays in the keyring (the updated app signs straight back in) and the
+    /// "Update Kuzz" screen is told.
+    #[tokio::test]
+    async fn update_required_keeps_keyring_and_names_the_build() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = vec![0u8; 8192];
+            let n = stream.read(&mut buf).await.unwrap_or(0);
+            let body = r#"{"error":"too old","code":"update_required","min_version":"9.0.0"}"#;
+            let reply = format!(
+                "HTTP/1.1 426 X\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(reply.as_bytes()).await;
+            String::from_utf8_lossy(&buf[..n]).to_lowercase()
+        });
+        let auth = super::super::TokenAuthState::default();
+        let store = MemStore::default();
+        store.store(&origin, "bzr_old").unwrap();
+        let generation = auth.set(&origin, OriginAuth::Restoring);
+        let result = refresh_now(
+            &auth,
+            &reqwest::Client::new(),
+            &origin,
+            generation,
+            &store,
+            None,
+        )
+        .await;
+        assert_eq!(
+            result.map(|_| ()),
+            Err(RefreshFailure::Terminal(api::UPDATE_REQUIRED.into()))
+        );
+        assert_eq!(store.load(&origin).unwrap().as_deref(), Some("bzr_old"));
+        assert!(!ends_sign_in(api::UPDATE_REQUIRED));
+        assert!(api::update_required_seen());
+        let head = server.await.unwrap();
+        assert!(
+            head.contains(&format!("x-kuzz-client: {}", api::client_id())),
+            "{head}"
+        );
+        assert!(api::client_id().ends_with(concat!("/", env!("CARGO_PKG_VERSION"))));
     }
 
     #[tokio::test]

@@ -2,7 +2,7 @@ import { useState, useRef, useCallback, useEffect } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
-import { isAutoUpdateSupported } from "@/shared/api/tauri";
+import { invokeTauri, isAutoUpdateSupported } from "@/shared/api/tauri";
 import { getIdentity } from "@/shared/api/tauriIdentity";
 
 export type UpdateStatus =
@@ -33,8 +33,9 @@ const BACKGROUND_BLOCKED_STATES = new Set<UpdateStatus["state"]>([
 ]);
 
 /**
- * Emitted by the native websocket when the relay refuses this build as below
- * the minimum supported version (`426 update-required`).
+ * Emitted when the relay refuses this build as below the minimum supported
+ * version: the native websocket (`426 update-required`) or a sign-in or
+ * session refresh (`update_required`).
  */
 const UPDATE_REQUIRED_EVENT = "update-required";
 
@@ -253,10 +254,20 @@ export function useUpdater() {
   }, [checkForUpdateInBackground, closeUpdate]);
 
   useEffect(() => {
-    const unlisten = listen(UPDATE_REQUIRED_EVENT, () => {
+    const onRefused = () => {
       setRequired(true);
       void runUpdateCheck({ background: false });
-    });
+    };
+    const unlisten = listen(UPDATE_REQUIRED_EVENT, onRefused);
+    // Sign-in or a session refresh may have been refused (`update_required`)
+    // before this listener existed.
+    void invokeTauri<boolean>("auth_update_required")
+      .then((refused) => {
+        if (refused) onRefused();
+      })
+      .catch(() => {
+        // No native backend (browser preview): only the event applies.
+      });
     return () => {
       void unlisten.then((stop) => stop());
     };

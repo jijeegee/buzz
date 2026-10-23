@@ -564,8 +564,19 @@ pub const TERMINAL_TOKEN_CODES: [&str; 4] = [
     "principal_disabled",
 ];
 
+/// `X-Kuzz-Client` value naming this CLI build to the relay, which can
+/// refuse sign-in and refresh below a minimum version (only when `cli` is
+/// listed there).
+pub(crate) const CLIENT_ID: &str = concat!("cli/", env!("CARGO_PKG_VERSION"));
+
 pub(crate) fn build_http() -> Result<reqwest::Client, CliError> {
+    let mut headers = reqwest::header::HeaderMap::new();
+    headers.insert(
+        "x-kuzz-client",
+        reqwest::header::HeaderValue::from_static(CLIENT_ID),
+    );
     reqwest::Client::builder()
+        .default_headers(headers)
         .timeout(env_duration_secs("KUZZ_TIMEOUT_SECS", 30))
         .connect_timeout(env_duration_secs("KUZZ_CONNECT_TIMEOUT_SECS", 15))
         .build()
