@@ -292,6 +292,13 @@ pub(crate) async fn publish_global_copy_on(connection: &mut PgConnection) -> Res
                 .into(),
         ));
     }
+    publish_tables_on(connection).await
+}
+
+/// Create or refresh the publication, without checking that this database
+/// is not a copy: a handover publishes in the new primary while it is still
+/// guarded, before any replication slot is created for it.
+pub(crate) async fn publish_tables_on(connection: &mut PgConnection) -> Result<()> {
     let lacking: Vec<String> = sqlx::query_scalar(
         "SELECT t.relid::regclass::text FROM pg_partition_tree('events') t \
            JOIN pg_class c ON c.oid = t.relid \

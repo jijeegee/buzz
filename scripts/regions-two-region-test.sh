@@ -178,11 +178,43 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}"   REGION_JP_DATABASE_URL="${
 
 # Hand the primary to jp (S6-5), restart every relay with the new primary
 # and check both regions still work.
+JP_CONNINFO="host=postgres-jp port=5432 user=kuzz password=kuzz_dev dbname=kuzz"
+hand_over() {
+  DATABASE_URL="${KR_DB}" KUZZ_HANDOVER_TO_DATABASE_URL="${JP_DB}" "${ADMIN}" primary hand-over \
+    --to jp --publisher-conninfo "${JP_CONNINFO}" "$@"
+}
+
+# A handover that cannot catch up stops with global writes frozen, and
+# --abort undoes it. jp's copy is held behind a lock while kr changes a
+# global table.
+log "aborting a handover that cannot catch up"
+"${COMPOSE[@]}" exec -T postgres-jp psql -q -U kuzz -d kuzz -c \
+  "BEGIN; LOCK TABLE communities IN ACCESS EXCLUSIVE MODE; SELECT pg_sleep(40); COMMIT;" \
+  >/dev/null 2>&1 &
+LOCK_PID=$!
+sleep 2
+"${COMPOSE[@]}" exec -T postgres-kr psql -q -v ON_ERROR_STOP=1 -U kuzz -d kuzz -c \
+  "UPDATE communities SET host = host"
+if hand_over --wait-secs 5 >"${LOG_DIR}/handover-stuck.txt" 2>&1; then
+  log "a handover that could not catch up finished"; cat "${LOG_DIR}/handover-stuck.txt"; exit 1
+fi
+grep -q "did not catch up" "${LOG_DIR}/handover-stuck.txt" \
+  || { log "unexpected handover failure:"; cat "${LOG_DIR}/handover-stuck.txt"; exit 1; }
+hand_over --abort | tee "${LOG_DIR}/handover-abort.txt"
+grep -q '"step":"aborted"' "${LOG_DIR}/handover-abort.txt" || { log "abort failed"; exit 1; }
+"${COMPOSE[@]}" exec -T postgres-kr psql -qtA -U kuzz -d kuzz -c \
+  "SELECT global_copy FROM local_region" | grep -qx f || { log "kr stayed frozen"; exit 1; }
+wait "${LOCK_PID}" || true
+
 log "handing the primary to jp"
-DATABASE_URL="${KR_DB}" KUZZ_HANDOVER_TO_DATABASE_URL="${JP_DB}" "${ADMIN}" primary hand-over \
-  --to jp --publisher-conninfo "host=postgres-jp port=5432 user=kuzz password=kuzz_dev dbname=kuzz" \
-  | tee "${LOG_DIR}/handover.txt"
+hand_over | tee "${LOG_DIR}/handover.txt"
 grep -q '"step":"done"' "${LOG_DIR}/handover.txt" || { log "handover did not finish"; exit 1; }
+# Running it again changes nothing.
+hand_over | tee "${LOG_DIR}/handover-again.txt"
+grep -q '"step":"done"' "${LOG_DIR}/handover-again.txt" || { log "rerun failed"; exit 1; }
+if grep -qE '"step":"(frozen|promoted|subscribed)"' "${LOG_DIR}/handover-again.txt"; then
+  log "the rerun did a step again"; exit 1
+fi
 for pid in "${PIDS[@]}"; do kill "${pid}" 2>/dev/null || true; done
 for port in 3041 3042 3043; do
   for _ in $(seq 1 60); do

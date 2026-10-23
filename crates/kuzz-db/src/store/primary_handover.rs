@@ -6,20 +6,30 @@
 //!    then on its global tables refuse local writes.
 //! 2. Every subscriber of its publication catches up to the old primary's WAL
 //!    position at that moment ([`Db::slots_behind`]).
-//! 3. The new primary leaves its subscription ([`Db::leave_global_copy`]),
-//!    drops its guards ([`Db::unguard_global_copy`]) and publishes.
+//! 3. The new primary leaves its subscription ([`Db::leave_global_copy`]).
+//!    Still guarded, it publishes ([`Db::publish_for_handover`]) and creates
+//!    a replication slot for every other region ([`Db::ensure_slot`]); only
+//!    then does it drop its guards ([`Db::unguard_global_copy`]). Every
+//!    global change it makes from then on is kept in those slots.
 //! 4. Every other region, the old primary included, subscribes to the new
-//!    primary without copying again ([`Db::subscribe_global_copy`]): nothing
-//!    global changed since it caught up.
+//!    primary through its slot, without copying again
+//!    ([`Db::subscribe_global_copy`]): nothing global changed since it caught
+//!    up, except what its slot holds.
 //! 5. The new primary marks itself the primary in `regions`
 //!    ([`Db::mark_primary_region`]). The change reaches every region through
 //!    the new subscriptions.
+//! 6. The old primary drops its slots ([`Db::drop_global_slots`]) and its
+//!    publication.
 //!
 //! The relays then restart with the new `KUZZ_PRIMARY_REGION`.
 
 use sqlx::Row;
 
-use super::global_copy::{COPIED_TABLES, GUARD, LIVE_TRIGGER, PUBLICATION, SUBSCRIPTION};
+use std::time::Duration;
+
+use super::global_copy::{
+    publish_tables_on, COPIED_TABLES, GUARD, LIVE_TRIGGER, PUBLICATION, SUBSCRIPTION,
+};
 use crate::error::{DbError, Result};
 use crate::Db;
 
@@ -133,6 +143,38 @@ impl Db {
         .transpose()
     }
 
+    /// Whether this database subscribes to the global copy through exactly
+    /// `conninfo`.
+    pub async fn subscribes_to(&self, conninfo: &str) -> Result<bool> {
+        Ok(sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM pg_subscription s \
+               JOIN pg_database d ON d.oid = s.subdbid \
+              WHERE d.datname = current_database() AND s.subname = $1 \
+                AND s.subenabled AND s.subslotname IS NOT NULL AND s.subconninfo = $2)",
+        )
+        .bind(SUBSCRIPTION)
+        .bind(conninfo)
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
+    /// Enable this database's subscription to the global copy if it is
+    /// disabled.
+    pub async fn enable_global_copy(&self) -> Result<()> {
+        if self
+            .global_subscription()
+            .await?
+            .is_some_and(|subscription| !subscription.enabled)
+        {
+            sqlx::query(sqlx::AssertSqlSafe(format!(
+                "ALTER SUBSCRIPTION {SUBSCRIPTION} ENABLE"
+            )))
+            .execute(&self.pool)
+            .await?;
+        }
+        Ok(())
+    }
+
     /// Whether this database publishes the global copy.
     pub async fn publishes_global_copy(&self) -> Result<bool> {
         Ok(
@@ -145,7 +187,8 @@ impl Db {
 
     /// Drop this database's subscription, keeping its slot in the
     /// publisher (the publisher may be unreachable from here; remove the slot
-    /// there with [`Db::drop_slot`]). Returns the slot it used, if any.
+    /// there with [`Db::drop_global_slots`]). Returns the slot it used, if
+    /// any. Safe to run again after it stopped half way.
     pub async fn leave_global_copy(&self) -> Result<Option<String>> {
         let Some(subscription) = self.global_subscription().await? else {
             return Ok(None);
@@ -164,27 +207,83 @@ impl Db {
         Ok(subscription.slot)
     }
 
-    /// Remove a replication slot nobody uses any more. Returns whether it
-    /// existed.
-    pub async fn drop_slot(&self, slot: &str) -> Result<bool> {
-        let active: Option<bool> =
-            sqlx::query_scalar("SELECT active FROM pg_replication_slots WHERE slot_name = $1")
-                .bind(slot)
-                .fetch_optional(&self.pool)
-                .await?;
-        match active {
-            None => Ok(false),
-            Some(true) => Err(DbError::InvalidData(format!(
-                "replication slot {slot} is still in use; nothing was removed"
-            ))),
-            Some(false) => {
-                sqlx::query("SELECT pg_drop_replication_slot($1)")
-                    .bind(slot)
-                    .execute(&self.pool)
-                    .await?;
-                Ok(true)
+    /// Create the logical replication slot `slot` in this database unless
+    /// it exists. A subscription made later through it gets every change
+    /// from now on.
+    pub async fn ensure_slot(&self, slot: &str) -> Result<()> {
+        sqlx::query(
+            "SELECT pg_create_logical_replication_slot($1, 'pgoutput') \
+              WHERE NOT EXISTS (SELECT 1 FROM pg_replication_slots WHERE slot_name = $1)",
+        )
+        .bind(slot)
+        .execute(&self.pool)
+        .await?;
+        Ok(())
+    }
+
+    /// Drop every global copy slot in this database (`kuzz_global` and
+    /// `kuzz_global_<region>`), once no subscriber uses it; waits up to
+    /// `wait` for subscribers that are still disconnecting. Returns the slots
+    /// dropped.
+    pub async fn drop_global_slots(&self, wait: Duration) -> Result<Vec<String>> {
+        let deadline = tokio::time::Instant::now() + wait;
+        let mut dropped = Vec::new();
+        loop {
+            let slots: Vec<(String, bool)> = sqlx::query_as(
+                "SELECT slot_name::text, active FROM pg_replication_slots \
+                  WHERE slot_type = 'logical' AND database = current_database() \
+                    AND (slot_name = $1 OR slot_name LIKE $2) \
+                  ORDER BY slot_name",
+            )
+            .bind(SUBSCRIPTION)
+            .bind(format!("{SUBSCRIPTION}\\_%"))
+            .fetch_all(&self.pool)
+            .await?;
+            let mut in_use = Vec::new();
+            for (slot, active) in slots {
+                if active {
+                    in_use.push(slot);
+                    continue;
+                }
+                // Ignore a race with a subscriber connecting again: the
+                // next round sees it active.
+                let removed = sqlx::query(
+                    "SELECT pg_drop_replication_slot(slot_name) FROM pg_replication_slots \
+                      WHERE slot_name = $1 AND NOT active",
+                )
+                .bind(&slot)
+                .execute(&self.pool)
+                .await;
+                match removed {
+                    Ok(_) => dropped.push(slot),
+                    Err(_) => in_use.push(slot),
+                }
             }
+            if in_use.is_empty() {
+                return Ok(dropped);
+            }
+            if tokio::time::Instant::now() >= deadline {
+                return Err(DbError::InvalidData(format!(
+                    "replication slots {in_use:?} are still in use; a region still copies from \
+                     this database"
+                )));
+            }
+            tokio::time::sleep(Duration::from_secs(1)).await;
         }
+    }
+
+    /// Publish the global copy in a database that is still guarded as a
+    /// copy (a handover's new primary, after it left its subscription).
+    pub async fn publish_for_handover(&self) -> Result<()> {
+        if self.global_subscription().await?.is_some() {
+            return Err(DbError::InvalidData(
+                "this database still subscribes to the global copy; leave it first".into(),
+            ));
+        }
+        let mut tx = self.pool.begin().await?;
+        publish_tables_on(&mut tx).await?;
+        tx.commit().await?;
+        Ok(())
     }
 
     /// Stop publishing the global copy (the old primary, once every region
@@ -239,7 +338,8 @@ impl Db {
     /// Subscribe this database to the global copy published at `conninfo`
     /// (a libpq connection string the database server itself can use),
     /// without copying the tables again: this database must already hold
-    /// everything the publisher has. The slot is named after `region`.
+    /// everything the publisher had when the slot was made. The slot, named
+    /// after `region`, must exist in the publisher ([`Db::ensure_slot`]).
     pub async fn subscribe_global_copy(&self, conninfo: &str, region: &str) -> Result<()> {
         let slot = slot_name(region)?;
         let quoted: String = sqlx::query_scalar("SELECT quote_literal($1)")
@@ -248,7 +348,7 @@ impl Db {
             .await?;
         sqlx::query(sqlx::AssertSqlSafe(format!(
             "CREATE SUBSCRIPTION {SUBSCRIPTION} CONNECTION {quoted} PUBLICATION {PUBLICATION} \
-             WITH (copy_data = false, slot_name = '{slot}')"
+             WITH (copy_data = false, create_slot = false, slot_name = '{slot}')"
         )))
         .execute(&self.pool)
         .await?;

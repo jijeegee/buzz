@@ -12,7 +12,6 @@ use std::time::Duration;
 
 use anyhow::{anyhow, bail, Context, Result};
 use clap::Subcommand;
-use kuzz_db::primary_handover::publisher_of;
 use kuzz_db::{Db, DbConfig};
 
 /// Primary region commands.
@@ -203,10 +202,25 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
             .local_region()
             .await?
             .ok_or_else(|| anyhow!("a copy database belongs to no region"))?;
-        if region == from || region == to {
+        if region == from || region == to || copy_regions.contains(&region) {
             bail!("list region {region}'s database only once");
         }
         copy_regions.push(region);
+    }
+    // Every region must follow the new primary: one left out would lose its
+    // copy when the old primary stops publishing.
+    let missing: Vec<String> = old
+        .list_regions()
+        .await?
+        .into_iter()
+        .map(|region| region.id)
+        .filter(|id| *id != from && *id != to && !copy_regions.contains(id))
+        .collect();
+    if !missing.is_empty() {
+        bail!(
+            "regions {missing:?} are not in KUZZ_HANDOVER_COPY_DATABASE_URLS; every region must \
+             follow the new primary"
+        );
     }
     step(
         "regions",
@@ -214,7 +228,11 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
     );
 
     let stage = stage(&new, to).await?;
-    let new_copies = new.global_subscription().await?.is_some();
+    let subscription = new.global_subscription().await?;
+    // Still copying from the old primary: its subscription has its slot
+    // there. One without a slot was being left by an earlier run, past the
+    // point of no return.
+    let new_copies = subscription.as_ref().is_some_and(|s| s.slot.is_some());
     // The old primary, frozen by an earlier run: guarded, copying nothing.
     let old_frozen = old.is_global_copy().await? && old.global_subscription().await?.is_none();
     if stage == Stage::NotPromoted && old.is_global_copy().await? && !old_frozen {
@@ -222,10 +240,16 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
             "DATABASE_URL is region {from}'s, a copy; point it at the current primary's database"
         );
     }
+    // A disabled subscription (stopped by an operator, or by an earlier run
+    // that was leaving) copies again: it must catch up first.
+    if stage == Stage::NotPromoted && new_copies {
+        new.enable_global_copy().await?;
+    }
     if abort {
         if stage != Stage::NotPromoted || !new_copies {
             bail!(
-                "region {to} has already left the copy; finish the handover, then hand the                  primary back instead of aborting"
+                "region {to} has already started leaving the copy; finish the handover, then \
+                 hand the primary back instead of aborting"
             );
         }
         old.unguard_global_copy().await?;
@@ -233,8 +257,11 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
         return Ok(());
     }
 
-    if stage == Stage::NotPromoted && !new_copies && !old_frozen {
+    if stage == Stage::NotPromoted && subscription.is_none() && !old_frozen {
         bail!("region {to} has no subscription to the global copy; it cannot hold everything");
+    }
+    if stage == Stage::NotPromoted && subscription.is_some() && !new_copies && !old_frozen {
+        bail!("region {to}'s subscription has no slot; recreate it and let it catch up first");
     }
     if stage == Stage::NotPromoted && new_copies {
         // 1. No more global writes in the old primary.
@@ -267,23 +294,34 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
             tokio::time::sleep(Duration::from_secs(1)).await;
         }
         step("caught_up", serde_json::json!({}));
-
-        // 3. The new primary stops copying.
-        if let Some(slot) = new.leave_global_copy().await? {
-            old.drop_slot(&slot).await?;
-        }
     }
+    let followers: Vec<&String> = std::iter::once(&from).chain(&copy_regions).collect();
     if stage == Stage::NotPromoted {
-        // ... and publishes.
+        // 3. The new primary stops copying. Its slot in the old primary goes
+        // with the old primary's other slots at the end.
+        new.leave_global_copy().await?;
+        // Still guarded, it publishes and makes a slot for every other
+        // region, so the global changes it takes once unguarded all reach
+        // them.
+        new.publish_for_handover().await?;
+        // Slots left from an earlier time it was the primary would replay
+        // old changes; while it is guarded, none holds anything new.
+        new.drop_global_slots(wait).await?;
+        for region in &followers {
+            new.ensure_slot(&kuzz_db::primary_handover::slot_name(region)?)
+                .await?;
+        }
         new.unguard_global_copy().await?;
-        new.publish_global_copy().await?;
         step("promoted", serde_json::json!({ "region": to }));
     }
 
     if stage != Stage::Done {
         // 4. Every other region copies from the new primary.
-        for (db, region) in std::iter::once((&old, &from)).chain(copies.iter().zip(&copy_regions)) {
-            follow(db, &old, conninfo, region).await?;
+        for (db, region) in std::iter::once(&old)
+            .chain(&copies)
+            .zip(followers.iter().copied())
+        {
+            follow(db, &new, conninfo, region).await?;
             step("subscribed", serde_json::json!({ "region": region }));
         }
         // 5. The new primary is the one `regions` marks.
@@ -291,7 +329,13 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
         new.beat_global_copy().await?;
         step("marked", serde_json::json!({ "primary": to }));
     }
+    // 6. The old primary keeps nothing for subscribers.
+    let dropped = old.drop_global_slots(wait).await?;
     old.unpublish_global_copy().await?;
+    step(
+        "unpublished",
+        serde_json::json!({ "slots_dropped": dropped }),
+    );
 
     step(
         "done",
@@ -302,19 +346,18 @@ async fn hand_over(to: &str, conninfo: &str, wait: Duration, abort: bool) -> Res
     Ok(())
 }
 
-/// Point `db`'s subscription at the new primary, unless it already is.
-async fn follow(db: &Db, old: &Db, conninfo: &str, region: &str) -> Result<()> {
-    let slot = kuzz_db::primary_handover::slot_name(region)?;
-    if let Some(subscription) = db.global_subscription().await? {
-        if subscription.slot.as_deref() == Some(slot.as_str())
-            && subscription.publisher == publisher_of(conninfo)
-        {
-            return Ok(());
-        }
-        if let Some(old_slot) = db.leave_global_copy().await? {
-            old.drop_slot(&old_slot).await?;
-        }
+/// Point `db`'s subscription at the new primary through the region's slot
+/// there, unless it already is.
+async fn follow(db: &Db, new: &Db, conninfo: &str, region: &str) -> Result<()> {
+    if db.subscribes_to(conninfo).await? {
+        return Ok(());
     }
+    // Leaving keeps the slot it used: one in the old primary goes at the
+    // end, and one in the new primary is used again below, so nothing it
+    // holds is lost.
+    db.leave_global_copy().await?;
+    let slot = kuzz_db::primary_handover::slot_name(region)?;
+    new.ensure_slot(&slot).await?;
     db.subscribe_global_copy(conninfo, region).await?;
     Ok(())
 }

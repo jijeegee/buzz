@@ -190,7 +190,9 @@ kuzz-admin primary hand-over --to jp \
 ```
 
 `--publisher-conninfo` is what the other regions' database servers use to
-reach jp's database, as in `CREATE SUBSCRIPTION`.
+reach jp's database, as in `CREATE SUBSCRIPTION`. List every other region in
+`KUZZ_HANDOVER_COPY_DATABASE_URLS`; the command refuses to start if `regions`
+has one that is not listed.
 
 It prints one JSON line per step:
 1. `frozen`: the old primary refuses global writes from now on. Sign-ups,
@@ -198,30 +200,39 @@ It prints one JSON line per step:
    existing rooms keep working.
 2. `caught_up`: every region has the old primary's last global change.
    `--wait-secs` (default 120) bounds the wait.
-3. `promoted`: jp leaves its copy and publishes the lists.
+3. `promoted`: jp leaves its copy. Still guarded, it publishes the lists and
+   makes a replication slot for every other region; then it drops its guards.
+   Every global change it takes from then on waits in those slots.
 4. `subscribed`, once per region: the old primary and every other region
-   copy from jp, each with its own slot, without copying again.
+   copy from jp through its slot (`kuzz_global_<region>`), without copying
+   again.
 5. `marked`: jp is the primary in `regions`.
-6. `done`: the old primary stops publishing.
+6. `unpublished`: the old primary drops its slots and stops publishing.
+7. `done`.
 
 Then restart every relay with `KUZZ_PRIMARY_REGION=jp`, jp's first. A relay
 left on the old setting fails to start or keeps waiting for a copy.
 
 **If it stops.** Each step checks where things stand first, so running the
-same command again continues. Before `promoted`, `--abort` undoes the handover:
-the old primary takes global writes again. After it, finish the handover; to
-go back, hand the primary back the same way.
+same command again, with the same `--publisher-conninfo`, continues. Until jp
+starts leaving its copy (step 3), `--abort` undoes the handover: the old
+primary takes global writes again. After that, finish the handover; to go
+back, hand the primary back the same way.
 
 **Check** with `kuzz-admin primary check` in each region's database: jp shows
-`"role": "primary"` and no `subscribers_behind`, the others `"role": "copy"`
-with a `copy_lag_seconds` near 1, and every region lists jp as the primary.
+`"role": "primary"`, the others `"role": "copy"` with a `copy_lag_seconds`
+near 1, and every region lists jp as the primary. `subscribers_behind` in jp
+lists slots that have not confirmed jp's current WAL position; on a busy
+primary small `behind_bytes` are normal, while an inactive slot or one that
+keeps growing is a region that stopped copying.
 
 **Limits.**
 - Planned handovers only: the old primary's database must answer. If it is
   lost, promote a copy by hand (its lists are as fresh as its lag) and expect
   global changes since then to be missing.
 - Global writes stop from `frozen` until the relays restart; plan a quiet
-  time. Room messages are not affected.
+  time. Room messages are not affected. A room deleted in that time keeps
+  its row in the room directory.
 
 ## Removing a region
 
