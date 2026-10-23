@@ -2,45 +2,45 @@
 //! §14.7, PR C2; no Approve step since 10-23).
 //!
 //! - "Connect external agent": [`start_agent_pairing`] asks the relay for a
-//!   one-use, ten-minute `kuzz pair --relay <url> <code>` command; the screen polls
-//!   [`list_agent_pairings`] until the first valid claim connects.
-//! - Hermes on this computer: [`connect_hermes`] pairs in one click. It
-//!   claims a new pairing with the account's Hermes agent key (made once,
-//!   then reused) and this computer's device key, through the same
-//!   `POST /pair/claim` an external computer uses. Offered only when the
-//!   `kuzz pair --hermes` installer is on this computer (PR E).
-//! - [`disconnect_external_device`] signs a paired computer out and forgets
-//!   any Hermes key bound to it. Signing an account out here forgets its
-//!   Hermes keys too ([`watch_accounts`]).
+//!   one-use, ten-minute `kuzz pair --relay <url> <code>` command; the screen
+//!   polls [`list_agent_pairings`] until the first valid claim connects.
+//! - Hermes on this computer: [`connect_hermes`] makes a code the same way
+//!   and runs the bundled `kuzz pair --hermes --relay <url> <code>`. The CLI
+//!   makes and keeps the agent key, signs with this computer's device key,
+//!   saves the pairing and installs the Hermes plugin; the app keeps no
+//!   agent key and then reads the pairing list like the connect screen.
+//!   Offered only when Hermes, a `kuzz` with `--hermes` and the plugin files
+//!   are all on this computer ([`hermes_installer`]).
+//! - [`disconnect_external_device`] signs a paired computer out.
 //!
 //! Codes, commands and keys are never logged.
 
 use std::ffi::OsString;
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
 use std::time::Duration;
 
-use nostr::Keys;
-use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Listener as _, Manager};
+use serde::Serialize;
+use tauri::{AppHandle, Manager};
 use zeroize::Zeroizing;
 
-use super::accounts::{AccountState, Registry, ANY_ORIGIN};
 use super::api;
 use crate::app_state::AppState;
 
-/// Hermes agents this app paired, with their keys. Only the current user can
-/// open it ([`super::private_file`]).
-const HERMES_FILE: &str = "hermes-agents.json";
+/// The Hermes agent keys older builds kept in the app data folder; removed
+/// at start (the `kuzz` CLI keeps Hermes keys now).
+const LEGACY_HERMES_FILE: &str = "hermes-agents.json";
 /// Longest a local pairing waits for the device key to open.
 const DEVICE_WAIT: Duration = Duration::from_secs(3);
-/// Longest the installer's `--help` probe and install may take.
-const HOOK_PROBE_LIMIT: Duration = Duration::from_secs(5);
-const HOOK_RUN_LIMIT: Duration = Duration::from_secs(60);
-/// The relay's refusal for an agent key bound already: the key stays.
-const KEY_IN_USE: &str = "key_in_use";
-
-static FILE_LOCK: Mutex<()> = Mutex::new(());
+/// Longest the `kuzz pair --help` probe may take.
+const HELP_PROBE_LIMIT: Duration = Duration::from_secs(5);
+/// Longest `kuzz pair --hermes` (claim and plugin install) may take.
+const HERMES_PAIR_LIMIT: Duration = Duration::from_secs(180);
+/// Where `kuzz pair --hermes` finds the plugin installer under each of its
+/// install roots (`crates/kuzz-cli/src/pairing.rs`, `HERMES_INSTALLER`).
+const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
+/// Inherited variables that would change what `kuzz pair` does: another
+/// agent key to bind, or pairing switched off.
+const CLEARED_ENV: [&str; 2] = ["KUZZ_PRIVATE_KEY", "KUZZ_DISABLE_STORED_SESSION"];
 
 /// What the connect screen shows for a new code.
 #[derive(Debug, Serialize)]
@@ -54,42 +54,24 @@ pub struct PairingStartView {
     expires_in: i64,
 }
 
-/// Whether Hermes is on this computer, whether this app can connect it, and
-/// the Hermes agents this app paired for the active account.
+/// Whether Hermes is on this computer and whether this app can connect it.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HermesStatus {
     found: bool,
-    /// The `kuzz pair --hermes` installer is here too.
+    /// The bundled `kuzz` offers `pair --hermes` and the plugin files are
+    /// where it looks for them.
     can_connect: bool,
-    agents: Vec<HermesAgentView>,
 }
 
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct HermesAgentView {
-    agent_pubkey: String,
-    device_id: Option<String>,
-}
-
-/// A Hermes agent paired on this computer.
+/// A Hermes pairing run by this app: its code's pairing id, and whether
+/// `kuzz pair --hermes` finished without an error. The pairing list tells
+/// whether it connected.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct HermesConnected {
-    agent_pubkey: String,
-    device_id: String,
-    device_name: Option<String>,
-}
-
-/// One stored Hermes agent. `device_id` is set once the claim connected.
-#[derive(Clone, Serialize, Deserialize)]
-struct HermesRecord {
-    origin: String,
-    owner: String,
-    agent_pubkey: String,
-    secret_key: String,
-    #[serde(default)]
-    device_id: Option<String>,
+pub struct HermesPairingRun {
+    pairing_id: String,
+    finished: bool,
 }
 
 fn api_error(error: api::ApiError) -> String {
@@ -104,14 +86,7 @@ fn api_error(error: api::ApiError) -> String {
     }
 }
 
-/// Whether a failed claim was a definite refusal that bound nothing, so a
-/// key made for it may go: a 4xx answer other than "key already in use".
-/// 5xx and lost answers may have connected. Pure.
-fn refused_for_good(error: &api::ApiError) -> bool {
-    matches!(error.status, Some(400..=499)) && error.code.as_deref() != Some(KEY_IN_USE)
-}
-
-/// `kuzz pair <code>` and its expiry, for the connect screen.
+/// `kuzz pair --relay <url> <code>` and its expiry, for the connect screen.
 #[tauri::command]
 pub async fn start_agent_pairing(app: AppHandle) -> Result<PairingStartView, String> {
     let state = app.state::<AppState>();
@@ -141,8 +116,7 @@ pub async fn list_agent_pairings(app: AppHandle) -> Result<Vec<api::PairingInfo>
         .map_err(api_error)
 }
 
-/// Sign a paired computer out (`DELETE /auth/devices/{id}`) and forget the
-/// Hermes key bound to it, if any.
+/// Sign a paired computer out (`DELETE /auth/devices/{id}`).
 #[tauri::command]
 pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Result<(), String> {
     let state = app.state::<AppState>();
@@ -150,222 +124,92 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
     let session = super::commands::fresh_session(&state, &origin).await?;
     api::revoke_device(&state.http_client, &origin, &session.access, &device_id)
         .await
-        .map_err(api_error)?;
-    if let Some(dir) = data_dir(&app) {
-        update_hermes(&dir, |records| {
-            records.retain(|record| {
-                !(record.origin == origin && record.device_id.as_deref() == Some(&device_id))
-            });
-        })?;
-    }
-    Ok(())
+        .map_err(api_error)
 }
 
-/// Whether Hermes is installed here, whether it can be connected, and its
-/// agents this app paired. A pairing whose answer was lost is checked with
-/// the relay first, so a connected one is not offered again.
+/// Whether Hermes is installed here and whether it can be connected.
 #[tauri::command]
-pub async fn get_hermes_status(app: AppHandle) -> Result<HermesStatus, String> {
-    let state = app.state::<AppState>();
-    let origin = state.current_auth_origin();
-    let owner = state.token_auth.signing_pubkey(&origin);
-    let (found, can_connect) = tokio::task::spawn_blocking(|| {
+pub async fn get_hermes_status() -> HermesStatus {
+    tokio::task::spawn_blocking(|| {
         let found = hermes_home().is_some();
-        (found, found && hermes_installer().is_some())
+        HermesStatus {
+            found,
+            can_connect: found && hermes_installer().is_some(),
+        }
     })
     .await
-    .unwrap_or((false, false));
-    let (Some(owner), Some(dir)) = (owner, data_dir(&app)) else {
-        return Ok(HermesStatus {
-            found,
-            can_connect,
-            agents: Vec::new(),
-        });
-    };
-    let owner = owner.to_hex();
-    prune_signed_out(&dir);
-    if record_for(&dir, &origin, &owner)?.is_some_and(|record| record.device_id.is_none()) {
-        if let Ok(session) = super::commands::fresh_session(&state, &origin).await {
-            if let Ok(pairings) =
-                api::pairing_list(&state.http_client, &origin, &session.access).await
-            {
-                settle_lost_claim(&dir, &origin, &owner, &pairings)?;
-            }
-        }
-    }
-    Ok(HermesStatus {
-        found,
-        can_connect,
-        agents: hermes_agents_in(&dir, &origin, &owner)?,
+    .unwrap_or(HermesStatus {
+        found: false,
+        can_connect: false,
     })
 }
 
-/// Pair Hermes on this computer in one step: the account's Hermes agent key
-/// (made the first time), a new code, and the claim with this computer's
-/// device key. Already connected: nothing new is made.
+/// Pair Hermes on this computer: a new code, then the bundled
+/// `kuzz pair --hermes --relay <url> <code>`, which claims it and installs
+/// the plugin. Returns once the CLI is done; the caller reads the pairing
+/// list for the result.
 #[tauri::command]
-pub async fn connect_hermes(app: AppHandle) -> Result<HermesConnected, String> {
-    let (home, installer) = tokio::task::spawn_blocking(|| {
-        let home = hermes_home()?;
-        Some((home, hermes_installer()?))
-    })
-    .await
-    .ok()
-    .flatten()
-    .ok_or("Hermes can't be connected from this app yet.")?;
+pub async fn connect_hermes(app: AppHandle) -> Result<HermesPairingRun, String> {
+    let kuzz = tokio::task::spawn_blocking(|| hermes_home().and_then(|_| hermes_installer()))
+        .await
+        .ok()
+        .flatten()
+        .ok_or("Hermes can't be connected from this app yet.")?;
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let owner = state
-        .token_auth
-        .signing_pubkey(&origin)
-        .ok_or("Sign in with Google to connect Hermes.")?
-        .to_hex();
-    let dir = data_dir(&app).ok_or("This computer has no app data folder.")?;
     let session = super::commands::fresh_session(&state, &origin).await?;
-    let devices = api::list_devices(&state.http_client, &origin, &session.access)
-        .await
-        .map_err(api_error)?;
-    let device_name = devices
-        .iter()
-        .find(|device| device.current)
-        .map(|device| device.name.clone());
-
-    // The key made before, if any: a lost answer may have connected it.
-    let mut existing = record_for(&dir, &origin, &owner)?;
-    if existing
-        .as_ref()
-        .is_some_and(|record| record.device_id.is_none())
-    {
-        let pairings = api::pairing_list(&state.http_client, &origin, &session.access)
-            .await
-            .map_err(api_error)?;
-        settle_lost_claim(&dir, &origin, &owner, &pairings)?;
-        existing = record_for(&dir, &origin, &owner)?;
-    }
-    if let Some(record) = &existing {
-        if let Some(device_id) = record
-            .device_id
-            .as_ref()
-            .filter(|id| devices.iter().any(|device| &device.id == *id))
-        {
-            return Ok(HermesConnected {
-                agent_pubkey: record.agent_pubkey.clone(),
-                device_id: device_id.clone(),
-                device_name,
-            });
-        }
-    }
-
-    let device = crate::device_key::ensure_within(DEVICE_WAIT)
-        .await
-        .ok_or("This computer is not ready to connect agents yet. Try again in a moment.")?;
-    let agent = match &existing {
-        Some(record) => Keys::parse(&record.secret_key)
-            .map_err(|_| "The saved Hermes key is damaged. Disconnect Hermes and try again.")?,
-        None => Keys::generate(),
-    };
-    let agent_pubkey = agent.public_key().to_hex();
+    let _ = crate::device_key::ensure_within(DEVICE_WAIT).await;
     let started = api::pairing_start(&state.http_client, &origin, &session.access)
         .await
         .map_err(api_error)?;
-    let body = {
-        let code = started.code.0.clone();
-        let agent = agent.clone();
-        let device_name = device_name.clone();
-        tokio::time::timeout(
-            crate::device_key::USER_WAIT,
-            tokio::task::spawn_blocking(move || {
-                claim_body(&code, &agent, &device, device_name.as_deref())
-            }),
-        )
-        .await
-        .map_err(|_| "This computer took too long to sign. Try again.".to_string())?
-        .map_err(|_| "This computer could not sign. Try again.".to_string())??
-    };
-    // Keep the key before the claim binds it, so a connected agent is never
-    // left without its key here. A reused key drops its old computer.
-    let record = HermesRecord {
-        origin: origin.clone(),
-        owner: owner.clone(),
-        agent_pubkey: agent_pubkey.clone(),
-        secret_key: agent.secret_key().to_secret_hex(),
-        device_id: None,
-    };
-    update_hermes(&dir, |records| {
-        records.retain(|old| !(old.origin == origin && old.owner == owner));
-        records.push(record);
-    })?;
-    match api::pair_claim(&state.http_client, &origin, &body).await {
-        Ok(device_id) => {
-            if let Err(error) = set_hermes_device_in(&dir, &origin, &agent_pubkey, &device_id) {
-                eprintln!("kuzz-desktop: hermes: connection not recorded: {error}");
-            }
-            let relay = crate::relay::relay_ws_url_with_override(&state);
-            let secret = Zeroizing::new(agent.secret_key().to_secret_hex());
-            tauri::async_runtime::spawn(hermes_plugin_hook(installer, home, relay, secret));
-            Ok(HermesConnected {
-                agent_pubkey,
-                device_id,
-                device_name,
-            })
+    let relay = started
+        .relay_url
+        .clone()
+        .filter(|relay| !relay.trim().is_empty())
+        .unwrap_or_else(|| origin.clone());
+    let code = Zeroizing::new(started.code.to_string());
+    let finished = tokio::task::spawn_blocking(move || {
+        let mut pair = std::process::Command::new(&kuzz);
+        pair.args(hermes_pair_args(&relay, &code));
+        for name in CLEARED_ENV {
+            pair.env_remove(name);
         }
-        Err(error) => {
-            // Only a definite refusal bound nothing; after a 5xx or a lost
-            // answer the key stays, and the next check asks the relay.
-            if refused_for_good(&error) {
-                let _ = forget_hermes_in(&dir, &origin, &agent_pubkey);
-            }
-            Err(api_error(error))
-        }
-    }
+        crate::managed_agents::output_with_timeout(pair, HERMES_PAIR_LIMIT)
+            .is_some_and(|output| output.status.success())
+    })
+    .await
+    .unwrap_or(false);
+    eprintln!("kuzz-desktop: hermes: kuzz pair finished (ok: {finished})");
+    Ok(HermesPairingRun {
+        pairing_id: started.pairing_id,
+        finished,
+    })
 }
 
-/// The `/pair/claim` body: the agent (BIP-340 over SHA-256) and the device
-/// (ECDSA P-256) both sign [`kuzz_auth_pkg::pairing::pair_claim_message`].
-/// Blocks on the device key (TPM).
-fn claim_body(
-    code: &str,
-    agent: &Keys,
-    device: &crate::device_key::DeviceKey,
-    device_name: Option<&str>,
-) -> Result<serde_json::Value, String> {
-    use kuzz_auth_pkg::pairing::{pair_claim_message, pair_code_hash};
-    use nostr::hashes::{sha256::Hash as Sha256Hash, Hash as _};
-
-    let agent_hex = agent.public_key().to_hex();
-    let device_hex = device.pubkey().to_hex();
-    let message = pair_claim_message(&pair_code_hash(code), &agent_hex, &device_hex);
-    let digest = Sha256Hash::hash(message.as_bytes());
-    let agent_signature = agent.sign_schnorr(&nostr::secp256k1::Message::from_digest(
-        digest.to_byte_array(),
-    ));
-    let device_signature = device
-        .sign(message.as_bytes())
-        .map_err(|_| "This computer could not sign. Try again.".to_string())?;
-    let mut body = serde_json::json!({
-        "code": code,
-        "agent_pubkey": agent_hex,
-        "agent_signature": agent_signature.to_string(),
-        "device_pubkey": device_hex,
-        "device_signature": hex::encode(device_signature),
-        "device_key_kind": device.kind().as_wire(),
-    });
-    if let (Some(name), Some(object)) = (device_name, body.as_object_mut()) {
-        object.insert("device_name".into(), name.into());
-    }
-    Ok(body)
+/// The `kuzz` argv for a Hermes pairing (no shell). Pure.
+fn hermes_pair_args(relay: &str, code: &str) -> Vec<OsString> {
+    ["pair", "--hermes", "--relay", relay, code]
+        .into_iter()
+        .map(OsString::from)
+        .collect()
 }
 
-/// Hermes's home on this computer: `$HERMES_HOME`, else
-/// `%LOCALAPPDATA%\hermes`, when that folder exists.
+/// Hermes's home on this computer, when that folder exists: `$HERMES_HOME`,
+/// else `%LOCALAPPDATA%\hermes` on Windows, else `~/.hermes` (where
+/// `kuzz pair --hermes` installs).
 pub(crate) fn hermes_home() -> Option<PathBuf> {
-    hermes_home_from(|name| std::env::var_os(name), Path::is_dir)
+    hermes_home_from(
+        |name| std::env::var_os(name),
+        dirs::home_dir().as_deref(),
+        Path::is_dir,
+    )
 }
 
-/// [`hermes_home`] reading variables through `var` and folders through
-/// `is_dir`. Pure.
+/// [`hermes_home`] reading variables through `var`, the user's home from
+/// `home`, and folders through `is_dir`. Pure.
 fn hermes_home_from(
     var: impl Fn(&str) -> Option<OsString>,
+    home: Option<&Path>,
     is_dir: impl Fn(&Path) -> bool,
 ) -> Option<PathBuf> {
     let absolute = |name: &str| {
@@ -374,24 +218,64 @@ fn hermes_home_from(
             .map(PathBuf::from)
             .filter(|path| path.is_absolute())
     };
-    [
-        absolute("HERMES_HOME"),
-        absolute("LOCALAPPDATA").map(|base| base.join("hermes")),
-    ]
-    .into_iter()
-    .flatten()
-    .find(|path| is_dir(path))
+    let fallback = if cfg!(windows) {
+        absolute("LOCALAPPDATA").map(|base| base.join("hermes"))
+    } else {
+        home.map(|home| home.join(".hermes"))
+    };
+    [absolute("HERMES_HOME"), fallback]
+        .into_iter()
+        .flatten()
+        .find(|path| is_dir(path))
 }
 
-/// The `kuzz` that installs the Hermes plugin: one whose `pair --help`
-/// lists `--hermes` (PR E). `None` until then, so Hermes is not offered.
-/// Blocks for at most [`HOOK_PROBE_LIMIT`].
+/// The bundled `kuzz`, when it offers `pair --hermes` and the Hermes plugin
+/// installer is in one of its install roots. Blocks for at most
+/// [`HELP_PROBE_LIMIT`].
 fn hermes_installer() -> Option<PathBuf> {
-    let kuzz = crate::managed_agents::resolve_command("kuzz")?;
+    let kuzz = bundled_kuzz()?;
+    let data = dirs::data_local_dir();
+    let has_plugin = hermes_plugin_roots(&kuzz, data.as_deref())
+        .into_iter()
+        .any(|root| root.join(HERMES_INSTALLER).is_file());
+    if !has_plugin {
+        return None;
+    }
     let mut probe = std::process::Command::new(&kuzz);
     probe.args(["pair", "--help"]);
-    let help = crate::managed_agents::output_with_timeout(probe, HOOK_PROBE_LIMIT)?;
+    let help = crate::managed_agents::output_with_timeout(probe, HELP_PROBE_LIMIT)?;
     lists_hermes_flag(&String::from_utf8_lossy(&help.stdout)).then_some(kuzz)
+}
+
+/// The `kuzz` shipped next to this app (in development builds, the one the
+/// agents resolve, usually the workspace build).
+fn bundled_kuzz() -> Option<PathBuf> {
+    let name = format!("kuzz{}", std::env::consts::EXE_SUFFIX);
+    let beside = std::env::current_exe()
+        .ok()
+        .and_then(|exe| exe.parent().map(|dir| dir.join(&name)))
+        .filter(|path| path.is_file());
+    if beside.is_some() || !cfg!(debug_assertions) {
+        return beside;
+    }
+    crate::managed_agents::resolve_command("kuzz")
+}
+
+/// Where `kuzz` at `kuzz` looks for `plugins/`, as its
+/// `hermes_installer_roots`: its own folder, `<prefix>/share/kuzz` beside a
+/// `<prefix>/bin`, and `<local data>/kuzz`. Pure.
+fn hermes_plugin_roots(kuzz: &Path, local_data: Option<&Path>) -> Vec<PathBuf> {
+    let mut roots = Vec::new();
+    if let Some(dir) = kuzz.parent() {
+        roots.push(dir.to_path_buf());
+        if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
+            roots.push(prefix.join("share").join("kuzz"));
+        }
+    }
+    if let Some(data) = local_data {
+        roots.push(data.join("kuzz"));
+    }
+    roots
 }
 
 /// Whether `kuzz pair --help` output offers `--hermes`. Pure.
@@ -400,193 +284,21 @@ fn lists_hermes_flag(help: &str) -> bool {
         .any(|word| word == "--hermes")
 }
 
-/// Install the Hermes Kuzz plugin with `kuzz pair --hermes` (PR E), the agent
-/// key in the environment (never as an argument). Logs only whether it
-/// worked.
-async fn hermes_plugin_hook(
-    installer: PathBuf,
-    home: PathBuf,
-    relay: String,
-    secret: Zeroizing<String>,
-) {
-    let ran = tokio::task::spawn_blocking(move || {
-        let mut install = std::process::Command::new(&installer);
-        install
-            .args(["pair", "--hermes"])
-            .env("HERMES_HOME", &home)
-            .env("KUZZ_RELAY_URL", &relay)
-            .env("KUZZ_PRIVATE_KEY", secret.as_str());
-        crate::managed_agents::output_with_timeout(install, HOOK_RUN_LIMIT)
-            .map(|output| output.status.success())
-    })
-    .await
-    .ok()
-    .flatten();
-    eprintln!(
-        "kuzz-desktop: hermes: plugin install finished (ok: {})",
-        ran.unwrap_or(false)
-    );
-}
-
-/// Forget the Hermes keys of accounts signed out of (or removed from) this
-/// computer whenever the account list changes.
-pub(crate) fn watch_accounts(app: &AppHandle) {
-    let handle = app.clone();
-    app.listen_any(super::ACCOUNTS_CHANGED_EVENT, move |_| {
-        if let Some(dir) = data_dir(&handle) {
-            tauri::async_runtime::spawn_blocking(move || prune_signed_out(&dir));
-        }
-    });
-}
-
-/// Drop the Hermes records whose account is no longer signed in here.
-/// Nothing changes when the account list cannot be read.
-fn prune_signed_out(dir: &Path) {
-    let Ok(Some(registry)) = super::accounts::load_registry(dir) else {
+/// Delete the Hermes agent keys older builds of this app kept, once at
+/// start. Their agents stay paired until disconnected.
+pub(crate) fn remove_legacy_hermes_keys<R: tauri::Runtime>(app: &AppHandle<R>) {
+    let Ok(dir) = app.path().app_data_dir() else {
         return;
     };
-    let result = update_hermes_if(dir, |records| {
-        let before = records.len();
-        records.retain(|record| still_signed_in(&registry, &record.origin, &record.owner));
-        records.len() != before
-    });
-    if let Err(error) = result {
-        eprintln!("kuzz-desktop: hermes: signed-out keys not removed: {error}");
+    tauri::async_runtime::spawn_blocking(move || remove_legacy_hermes_file(&dir));
+}
+
+fn remove_legacy_hermes_file(dir: &Path) {
+    match std::fs::remove_file(dir.join(LEGACY_HERMES_FILE)) {
+        Ok(()) => eprintln!("kuzz-desktop: hermes: removed the old Hermes key file"),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => eprintln!("kuzz-desktop: hermes: old Hermes key file not removed: {error}"),
     }
-}
-
-/// Whether `owner` is still signed in to `origin` here (an ended session
-/// waiting for a new sign-in counts; a sign-out or removal does not). Pure.
-fn still_signed_in(registry: &Registry, origin: &str, owner: &str) -> bool {
-    registry.accounts.iter().any(|account| {
-        account.pubkey.eq_ignore_ascii_case(owner)
-            && (account.origin == origin || account.origin == ANY_ORIGIN)
-            && matches!(
-                account.state,
-                AccountState::SignedIn | AccountState::NeedsLogin
-            )
-    })
-}
-
-/// A claim whose answer was lost: if the relay lists it connected, record
-/// its computer.
-fn settle_lost_claim(
-    dir: &Path,
-    origin: &str,
-    owner: &str,
-    pairings: &[api::PairingInfo],
-) -> Result<(), String> {
-    update_hermes_if(dir, |records| {
-        let mut changed = false;
-        for record in records
-            .iter_mut()
-            .filter(|r| r.origin == origin && r.owner == owner && r.device_id.is_none())
-        {
-            let connected = pairings.iter().find(|pairing| {
-                pairing.state == "connected"
-                    && pairing
-                        .agent_pubkey
-                        .as_deref()
-                        .is_some_and(|agent| agent.eq_ignore_ascii_case(&record.agent_pubkey))
-            });
-            if let Some(device_id) = connected.and_then(|pairing| pairing.device_id.clone()) {
-                record.device_id = Some(device_id);
-                changed = true;
-            }
-        }
-        changed
-    })
-}
-
-fn data_dir<R: tauri::Runtime>(app: &AppHandle<R>) -> Option<PathBuf> {
-    app.path().app_data_dir().ok()
-}
-
-fn hermes_path(dir: &Path) -> PathBuf {
-    dir.join(HERMES_FILE)
-}
-
-/// The stored records; none when the file does not exist yet. Any other
-/// read or parse failure is an error, so nothing overwrites the file.
-fn read_hermes(dir: &Path) -> Result<Vec<HermesRecord>, String> {
-    let bytes = match std::fs::read(hermes_path(dir)) {
-        Ok(bytes) => Zeroizing::new(bytes),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
-        Err(error) => return Err(format!("Hermes agents unreadable: {error}")),
-    };
-    serde_json::from_slice(&bytes).map_err(|_| "Hermes agents file is damaged.".to_string())
-}
-
-fn write_hermes(dir: &Path, records: &[HermesRecord]) -> Result<(), String> {
-    std::fs::create_dir_all(dir).map_err(|e| format!("create app data folder: {e}"))?;
-    let json = Zeroizing::new(
-        serde_json::to_vec_pretty(records).map_err(|e| format!("encode Hermes agents: {e}"))?,
-    );
-    super::private_file::write_owner_only(&hermes_path(dir), &json)
-}
-
-/// Read, change and write the records under one lock. `change` returns
-/// whether it changed anything; unchanged records are not written.
-fn update_hermes_if(
-    dir: &Path,
-    change: impl FnOnce(&mut Vec<HermesRecord>) -> bool,
-) -> Result<(), String> {
-    let _lock = FILE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    let mut records = read_hermes(dir)?;
-    if change(&mut records) {
-        write_hermes(dir, &records)?;
-    }
-    Ok(())
-}
-
-fn update_hermes(dir: &Path, change: impl FnOnce(&mut Vec<HermesRecord>)) -> Result<(), String> {
-    update_hermes_if(dir, |records| {
-        change(records);
-        true
-    })
-}
-
-fn set_hermes_device_in(
-    dir: &Path,
-    origin: &str,
-    agent: &str,
-    device_id: &str,
-) -> Result<(), String> {
-    update_hermes(dir, |records| {
-        for record in records.iter_mut() {
-            if record.origin == origin && record.agent_pubkey == agent {
-                record.device_id = Some(device_id.to_owned());
-            }
-        }
-    })
-}
-
-fn forget_hermes_in(dir: &Path, origin: &str, agent: &str) -> Result<(), String> {
-    update_hermes(dir, |records| {
-        records.retain(|record| !(record.origin == origin && record.agent_pubkey == agent));
-    })
-}
-
-/// `owner`'s Hermes record on `origin`, if one was made.
-fn record_for(dir: &Path, origin: &str, owner: &str) -> Result<Option<HermesRecord>, String> {
-    let _lock = FILE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    Ok(read_hermes(dir)?
-        .into_iter()
-        .rev()
-        .find(|record| record.origin == origin && record.owner == owner))
-}
-
-/// `owner`'s Hermes agents on `origin` (no keys).
-fn hermes_agents_in(dir: &Path, origin: &str, owner: &str) -> Result<Vec<HermesAgentView>, String> {
-    let _lock = FILE_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-    Ok(read_hermes(dir)?
-        .into_iter()
-        .filter(|record| record.origin == origin && record.owner == owner)
-        .map(|record| HermesAgentView {
-            agent_pubkey: record.agent_pubkey,
-            device_id: record.device_id,
-        })
-        .collect())
 }
 
 #[cfg(test)]

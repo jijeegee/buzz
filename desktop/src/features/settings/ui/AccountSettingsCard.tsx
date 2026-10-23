@@ -52,8 +52,7 @@ import {
 import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
 import {
   refreshExternalAgents,
-  useExternalConnectAvailable,
-  useHermesStatusQuery,
+  useExternalAgentGroups,
 } from "@/features/agents/externalConnect/useExternalAgents";
 import { disconnectExternalDevice } from "@/shared/api/agentPairing";
 import { AccountDeviceRow } from "./AccountDeviceRow";
@@ -600,12 +599,7 @@ function SignedInDevices({
 
   const disabled = busy !== null;
   const queryClient = useQueryClient();
-  const hermes = useHermesStatusQuery(useExternalConnectAvailable());
-  const hermesDevices = new Set(
-    (hermes.data?.agents ?? []).flatMap((agent) =>
-      agent.deviceId ? [agent.deviceId] : [],
-    ),
-  );
+  const hermesDevices = useExternalAgentGroups().hermesDeviceIds;
   // Reached from a "New sign-in" notice: mark that device, found by name
   // once when the list loads and then kept by id. Seeing this view uses the
   // notice up; leaving it clears the mark.

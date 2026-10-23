@@ -289,3 +289,28 @@ test("remembered: merged once per agent and computer, disconnected ones dropped"
   assert.deepEqual(parseRemembered("{"), []);
   assert.deepEqual(parseRemembered(null), []);
 });
+
+test("remembered: a Hermes card connection stays marked Hermes", () => {
+  const hermes = {
+    agentPubkey: AGENT,
+    deviceId: "d1",
+    connectedAt: "2026-10-23T05:32:00Z",
+    hermes: true,
+  };
+  // The relay's list (unmarked) does not drop the mark.
+  assert.deepEqual(mergeRemembered([hermes], [connected]), [hermes]);
+  assert.deepEqual(parseRemembered(JSON.stringify([hermes])), [hermes]);
+  // Only `true` marks it.
+  assert.deepEqual(
+    parseRemembered(JSON.stringify([{ ...hermes, hermes: "yes" }])),
+    [
+      {
+        agentPubkey: AGENT,
+        deviceId: "d1",
+        connectedAt: "2026-10-23T05:32:00Z",
+      },
+    ],
+  );
+  // A disconnected Hermes computer is forgotten with it.
+  assert.deepEqual(mergeRemembered([hermes], [], new Set(["d9"])), []);
+});

@@ -125,6 +125,8 @@ export type RememberedPairing = {
   agentPubkey: string;
   deviceId: string;
   connectedAt: string | null;
+  /** Connected by this app's Hermes card. */
+  hermes?: true;
 };
 
 export type ExternalAgent = {
@@ -170,9 +172,12 @@ export function mergeRemembered(
     if (liveDeviceIds && !liveDeviceIds.has(entry.deviceId)) continue;
     const key = `${entry.deviceId}|${entry.agentPubkey}`;
     const known = byKey.get(key);
+    const hermes = known?.hermes === true || entry.hermes === true;
     byKey.set(key, {
-      ...entry,
+      agentPubkey: entry.agentPubkey,
+      deviceId: entry.deviceId,
       connectedAt: known?.connectedAt ?? entry.connectedAt,
+      ...(hermes ? { hermes: true as const } : {}),
     });
   }
   return [...byKey.values()];
@@ -223,7 +228,7 @@ export function parseRemembered(raw: string | null): RememberedPairing[] {
   if (!Array.isArray(value)) return [];
   return value.flatMap((item) => {
     if (typeof item !== "object" || item === null) return [];
-    const { agentPubkey, deviceId, connectedAt } = item as Record<
+    const { agentPubkey, deviceId, connectedAt, hermes } = item as Record<
       string,
       unknown
     >;
@@ -234,6 +239,7 @@ export function parseRemembered(raw: string | null): RememberedPairing[] {
         agentPubkey,
         deviceId,
         connectedAt: typeof connectedAt === "string" ? connectedAt : null,
+        ...(hermes === true ? { hermes: true as const } : {}),
       },
     ];
   });

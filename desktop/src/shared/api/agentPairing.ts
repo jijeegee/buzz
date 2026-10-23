@@ -4,8 +4,7 @@ import { invokeTauri } from "@/shared/api/tauri";
  * External agent pairing (device-bound keys, PR C2). The app shows a one-use,
  * ten-minute `kuzz pair --relay <url> <code>` command; the first valid claim on another
  * computer connects that agent at once. Disconnecting signs that computer
- * out and forgets its Hermes key (`disconnectExternalDevice`). Only for
- * accounts signed in with Google.
+ * out (`disconnectExternalDevice`). Only for accounts signed in with Google.
  */
 
 /** A new code; `command` is shown exactly as the relay gave it. */
@@ -30,26 +29,23 @@ export type AgentPairing = {
   expiresAt: string;
 };
 
-export type HermesAgent = {
-  agentPubkey: string;
-  deviceId: string | null;
-};
-
 /**
- * Whether Hermes is on this computer, whether this app can connect it (the
- * `kuzz pair --hermes` installer is here too), and the Hermes agents paired
- * here.
+ * Whether Hermes is on this computer, and whether this app can connect it
+ * (its bundled `kuzz` offers `pair --hermes` and has the plugin files).
  */
 export type HermesStatus = {
   found: boolean;
   canConnect: boolean;
-  agents: HermesAgent[];
 };
 
-export type HermesConnected = {
-  agentPubkey: string;
-  deviceId: string;
-  deviceName: string | null;
+/**
+ * One run of the bundled `kuzz pair --hermes` on a new code. `finished`:
+ * the CLI ended without an error. The pairing list says whether it
+ * connected.
+ */
+export type HermesPairingRun = {
+  pairingId: string;
+  finished: boolean;
 };
 
 export function startAgentPairing(): Promise<PairingStart> {
@@ -64,11 +60,11 @@ export function getHermesStatus(): Promise<HermesStatus> {
   return invokeTauri<HermesStatus>("get_hermes_status");
 }
 
-export function connectHermes(): Promise<HermesConnected> {
-  return invokeTauri<HermesConnected>("connect_hermes");
+export function connectHermes(): Promise<HermesPairingRun> {
+  return invokeTauri<HermesPairingRun>("connect_hermes");
 }
 
-/** Sign a paired computer out and forget its Hermes key, if any. */
+/** Sign a paired computer out. */
 export function disconnectExternalDevice(deviceId: string): Promise<void> {
   return invokeTauri<void>("disconnect_external_device", { deviceId });
 }
