@@ -63,7 +63,7 @@ export function useChatsRailNavigation({
   selectedThreadRootId: string | null;
   selectedView: string;
   sidebarChannels: readonly { id: string }[];
-}): () => void {
+}): (options?: { replace?: boolean }) => void {
   // A fresh start lands on Chats (the first sidebar chat), once per launch.
   React.useEffect(() => {
     if (landingDone || !channelsLoaded) return;
@@ -97,18 +97,26 @@ export function useChatsRailNavigation({
       };
     }
   }, [selectedChannelId, selectedThreadRootId, selectedView]);
-  return React.useCallback(() => {
-    setSidebarListTab("chats");
-    if (selectedView === "channel") return;
-    const last = lastRef.current;
-    const target = resolveChatsRailTarget(
-      last?.channelId ?? null,
-      sidebarChannels.map((channel) => channel.id),
-    );
-    if (!target) return;
-    // Back to the thread that was open there, not just its channel.
-    const thread =
-      last?.channelId === target ? (last.threadRootId ?? undefined) : undefined;
-    void goChannel(target, thread ? { thread } : undefined);
-  }, [goChannel, selectedView, sidebarChannels]);
+  return React.useCallback(
+    (options?: { replace?: boolean }) => {
+      setSidebarListTab("chats");
+      if (selectedView === "channel") return;
+      const last = lastRef.current;
+      const target = resolveChatsRailTarget(
+        last?.channelId ?? null,
+        sidebarChannels.map((channel) => channel.id),
+      );
+      if (!target) return;
+      // Back to the thread that was open there, not just its channel.
+      const thread =
+        last?.channelId === target
+          ? (last.threadRootId ?? undefined)
+          : undefined;
+      void goChannel(target, {
+        ...(thread ? { thread } : {}),
+        ...(options?.replace === true ? { replace: true } : {}),
+      });
+    },
+    [goChannel, selectedView, sidebarChannels],
+  );
 }

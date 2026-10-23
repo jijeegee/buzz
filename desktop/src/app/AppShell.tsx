@@ -45,6 +45,7 @@ import {
   useHomeFeedNotifications,
   useHomeFeedNotificationState,
 } from "@/features/notifications/hooks";
+import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
 import { PreventSleepProvider } from "@/features/agents/usePreventSleep";
 import { requestOpenCreateAgent } from "@/features/agents/openCreateAgentEvent";
 import { useAgentsDataRefresh } from "@/features/agents/lib/useAgentsDataRefresh";
@@ -390,14 +391,26 @@ export function AppShell() {
     sidebarChannels,
   });
   const sidebarListTab = useSidebarListTab();
-  // A screen opened by route (a link, search, back) shows its own list.
-  // A fresh launch starts on the Activity route but shows Chats.
+  // Home is Chats: whatever still lands on the home route (an account
+  // switch, a deleted or hidden chat, a shortcut) opens the last chat
+  // instead of the hidden Inbox. A fresh launch is handled by the landing.
+  const channelsLoaded =
+    channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0;
   React.useEffect(() => {
+    if (selectedView !== "home" || settingsOpen || !channelsLoaded) return;
+    if (isFreshStartLandingPending() || hasPendingWelcomeChannel()) return;
+    handleSelectChats({ replace: true });
+  }, [channelsLoaded, handleSelectChats, selectedView, settingsOpen]);
+  // A screen opened by route (a link, search, back) shows its own list.
+  // Settings also reads as the home view, but it keeps the list it was
+  // opened over.
+  React.useEffect(() => {
+    if (settingsOpen) return;
     const tab = listTabForView(selectedView);
     if (!tab) return;
     if (tab === "activity" && isFreshStartLandingPending()) return;
     setSidebarListTab(tab);
-  }, [selectedView]);
+  }, [selectedView, settingsOpen]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
@@ -906,7 +919,7 @@ export function AppShell() {
                 // Rail tabs switch only the left list; the main pane keeps
                 // what it shows until an item in that list is opened.
                 onSelectAgents={() => setSidebarListTab("agents")}
-                onSelectChats={handleSelectChats}
+                onSelectChats={() => handleSelectChats()}
                 onSelectPeople={() => setSidebarListTab("people")}
                 onSelectProjects={() => setSidebarListTab("projects")}
                 onSelectWorkflows={() => void goWorkflows()}

@@ -90,8 +90,9 @@ export function listTabForView(view: string): SidebarListTab | null {
     case "projects":
     case "pulse":
       return view;
+    // Home is Chats; the Inbox is hidden.
     case "home":
-      return "activity";
+      return "chats";
     default:
       return null;
   }
