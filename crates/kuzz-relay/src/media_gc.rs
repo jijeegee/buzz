@@ -28,13 +28,14 @@
 //! deployment prefix, so another deployment's sidecars are invisible here.
 //!
 //! Regions share one bucket, but each region's database only knows the
-//! messages of the rooms it serves. So the cleanup pauses (removes and
-//! restores nothing) unless this database is the only registered region, or
-//! no region is registered yet: with a second region it would remove files
-//! that region's rooms still use. Cleanup across regions needs every region's
-//! references (global regions S4).
+//! messages of the rooms it serves. With more than one region the cleanup
+//! runs only in the primary, with the region link on, and asks every other
+//! region which files its rooms use ([`crate::region_media`], global regions
+//! S6-2): a file is unused only when no region uses it, and a region that
+//! does not answer keeps every file in question. Elsewhere it pauses
+//! (removes and restores nothing).
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::time::Duration;
 
 use kuzz_core::tenant::TenantContext;
@@ -45,6 +46,29 @@ use kuzz_media::MediaStorage;
 use tracing::{error, info, warn};
 
 use crate::state::AppState;
+
+/// The other regions, asked which files their rooms use (S6-2).
+pub trait OtherRegions: Sync {
+    /// The files among `hashes` that another region's rooms use in
+    /// `community`; `Err` when a region does not answer.
+    fn in_use_elsewhere(
+        &self,
+        community: CommunityId,
+        hashes: &[String],
+        grace_cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> impl std::future::Future<Output = Result<HashSet<String>, String>> + Send;
+}
+
+impl OtherRegions for AppState {
+    async fn in_use_elsewhere(
+        &self,
+        community: CommunityId,
+        hashes: &[String],
+        grace_cutoff: chrono::DateTime<chrono::Utc>,
+    ) -> Result<HashSet<String>, String> {
+        crate::region_media::in_use_elsewhere(self, community, hashes, grace_cutoff).await
+    }
+}
 
 /// Advisory lock key that keeps the cleanup on one relay at a time.
 const MEDIA_GC_LOCK_KEY: i64 = 0x4255_5A5A_4D47_4321;
@@ -152,7 +176,7 @@ pub fn spawn(state: std::sync::Arc<AppState>) {
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
         loop {
             interval.tick().await;
-            match region_pause(&state.db).await {
+            match region_pause(&state).await {
                 Ok(None) => {}
                 Ok(Some(reason)) => {
                     warn!(reason, "media cleanup paused");
@@ -165,7 +189,14 @@ pub fn spawn(state: std::sync::Arc<AppState>) {
                     continue;
                 }
             }
-            if let Err(e) = run_once(&state.db, &state.media_storage, settings).await {
+            if let Err(e) = run_once(
+                &state.db,
+                &state.media_storage,
+                settings,
+                Some(state.as_ref()),
+            )
+            .await
+            {
                 error!(error = %e, "media cleanup run failed");
             }
         }
@@ -174,15 +205,20 @@ pub fn spawn(state: std::sync::Arc<AppState>) {
 
 /// Why the cleanup must not run now, read fresh each run (see the module
 /// docs), or `None` when it may.
-async fn region_pause(db: &Db) -> anyhow::Result<Option<String>> {
-    let local = db.local_region().await?;
-    let regions = db.list_regions().await?;
-    Ok(region_pause_reason(local.as_deref(), &regions))
+async fn region_pause(state: &AppState) -> anyhow::Result<Option<String>> {
+    let local = state.db.local_region().await?;
+    let regions = state.db.list_regions().await?;
+    Ok(region_pause_reason(
+        local.as_deref(),
+        &regions,
+        state.config.region_link,
+    ))
 }
 
 fn region_pause_reason(
     local: Option<&str>,
     regions: &[kuzz_db::region::RegionRecord],
+    link: bool,
 ) -> Option<String> {
     match regions {
         [] => None,
@@ -192,19 +228,36 @@ fn region_pause_reason(
             local.unwrap_or_default(),
             only.id
         )),
-        _ => Some(format!(
-            "{} regions are registered; cleanup across regions is not built yet",
+        _ if !link => Some(format!(
+            "{} regions are registered and the region link is off; other regions cannot be asked",
             regions.len()
         )),
+        _ => {
+            let primary = regions.iter().find(|region| region.is_primary);
+            match (local, primary) {
+                (Some(local), Some(primary)) if local == primary.id => None,
+                (_, Some(primary)) => Some(format!(
+                    "{} regions are registered; the cleanup runs in the primary region {}",
+                    regions.len(),
+                    primary.id
+                )),
+                (_, None) => Some(format!(
+                    "{} regions are registered and none is the primary",
+                    regions.len()
+                )),
+            }
+        }
     }
 }
 
 /// One cleanup pass, if this relay wins the lock: the trash first, then every
-/// community's files.
-pub async fn run_once(
+/// community's files. With `regions`, files are also checked with every other
+/// region (S6-2); without, only this database is asked.
+pub async fn run_once<R: OtherRegions>(
     db: &Db,
     storage: &MediaStorage,
     settings: GcSettings,
+    regions: Option<&R>,
 ) -> anyhow::Result<Option<GcReport>> {
     let Some(_leader) = db.try_lock_usage_metrics(MEDIA_GC_LOCK_KEY).await? else {
         return Ok(None);
@@ -215,7 +268,9 @@ pub async fn run_once(
     }
     for community in db.all_community_ids().await? {
         let community = CommunityId::from_uuid(community);
-        if let Err(e) = clean_community(db, storage, settings, community, &mut report).await {
+        if let Err(e) =
+            clean_community(db, storage, settings, regions, community, &mut report).await
+        {
             warn!(%community, error = %e, "media cleanup skipped a community");
         }
     }
@@ -233,10 +288,11 @@ pub async fn run_once(
     Ok(Some(report))
 }
 
-async fn clean_community(
+async fn clean_community<R: OtherRegions>(
     db: &Db,
     storage: &MediaStorage,
     settings: GcSettings,
+    regions: Option<&R>,
     community: CommunityId,
     report: &mut GcReport,
 ) -> anyhow::Result<()> {
@@ -246,9 +302,28 @@ async fn clean_community(
     let tenant = TenantContext::resolved(community, String::new());
 
     for batch in shas.chunks(MAX_CLEANUP_HASHES_PER_CALL) {
-        let in_use = db
+        let mut in_use = db
             .media_hashes_in_use(community, batch, grace_cutoff)
             .await?;
+        if let Some(others) = regions {
+            let unused_here: Vec<String> = batch
+                .iter()
+                .filter(|sha| !in_use.contains(sha))
+                .cloned()
+                .collect();
+            match others
+                .in_use_elsewhere(community, &unused_here, grace_cutoff)
+                .await
+            {
+                Ok(elsewhere) => in_use.extend(elsewhere),
+                Err(error) => {
+                    // Every file in question is kept.
+                    warn!(%community, error, "media cleanup: a region did not answer; batch kept");
+                    metrics::counter!("kuzz_media_gc_regions_unanswered_total").increment(1);
+                    continue;
+                }
+            }
+        }
         let mut old_unused = Vec::new();
         for sha in batch.iter().filter(|sha| !in_use.contains(sha)) {
             // The sidecar's first-upload time covers files uploaded before
@@ -270,24 +345,53 @@ async fn clean_community(
                 info!(%community, sha, size = meta.size, "media cleanup (dry-run): would remove");
                 continue;
             }
-            remove_unused(db, storage, &tenant, sha, meta, grace_cutoff, report).await?;
+            remove_unused(
+                db,
+                storage,
+                regions,
+                &tenant,
+                sha,
+                meta,
+                grace_cutoff,
+                report,
+            )
+            .await?;
         }
     }
     Ok(())
 }
 
-/// Whether one file is in use, checked right before acting on it.
-async fn still_in_use(
+/// Whether one file is in use, checked right before acting on it. A region
+/// that does not answer counts as using it.
+async fn still_in_use<R: OtherRegions>(
     db: &Db,
+    regions: Option<&R>,
     community: CommunityId,
     sha: &str,
     grace_cutoff: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<bool> {
     let hashes = [sha.to_owned()];
-    Ok(!db
+    if !db
         .media_hashes_in_use(community, &hashes, grace_cutoff)
         .await?
-        .is_empty())
+        .is_empty()
+    {
+        return Ok(true);
+    }
+    let Some(others) = regions else {
+        return Ok(false);
+    };
+    match others
+        .in_use_elsewhere(community, &hashes, grace_cutoff)
+        .await
+    {
+        Ok(elsewhere) => Ok(!elsewhere.is_empty()),
+        Err(error) => {
+            warn!(%community, sha, error, "media cleanup: a region did not answer; kept");
+            metrics::counter!("kuzz_media_gc_regions_unanswered_total").increment(1);
+            Ok(true)
+        }
+    }
 }
 
 /// Every blob hash with a sidecar in `community`.
@@ -329,9 +433,11 @@ fn is_sha256_hex(value: &str) -> bool {
 
 /// Remove `community`'s copy of an unused file, and trash the shared bytes
 /// when no community has the file any more.
-async fn remove_unused(
+#[allow(clippy::too_many_arguments)]
+async fn remove_unused<R: OtherRegions>(
     db: &Db,
     storage: &MediaStorage,
+    regions: Option<&R>,
     tenant: &TenantContext,
     sha: &str,
     meta: &kuzz_media::BlobMeta,
@@ -341,7 +447,7 @@ async fn remove_unused(
     let community = tenant.community();
     // Checked per file right before acting: a message or upload may have
     // arrived since the batch check.
-    if still_in_use(db, community, sha, grace_cutoff).await? {
+    if still_in_use(db, regions, community, sha, grace_cutoff).await? {
         return Ok(());
     }
     // Bytes first: if the run stops part way, the sidecar is still there, so
@@ -366,7 +472,7 @@ async fn remove_unused(
 
     // An upload or message that landed while the bytes moved keeps the file:
     // put the sidecar and bytes back.
-    if still_in_use(db, community, sha, grace_cutoff).await? {
+    if still_in_use(db, regions, community, sha, grace_cutoff).await? {
         storage.put_sidecar(tenant, sha, meta).await?;
         for (key, trash) in &trashed {
             if !exists(storage, key).await? {
@@ -512,19 +618,29 @@ mod tests {
     }
 
     #[test]
-    fn cleanup_runs_only_with_a_single_region() {
+    fn cleanup_runs_alone_or_in_the_primary_with_the_link() {
         let region = |id: &str, is_primary: bool| kuzz_db::region::RegionRecord {
             id: id.to_owned(),
             connect_url: format!("wss://{id}.test"),
             is_primary,
         };
-        assert_eq!(region_pause_reason(None, &[]), None);
-        assert_eq!(region_pause_reason(Some("kr"), &[region("kr", true)]), None);
-        assert_eq!(region_pause_reason(None, &[region("kr", true)]), None);
-        assert!(region_pause_reason(Some("jp"), &[region("kr", true)]).is_some());
+        for link in [false, true] {
+            assert_eq!(region_pause_reason(None, &[], link), None);
+            assert_eq!(
+                region_pause_reason(Some("kr"), &[region("kr", true)], link),
+                None
+            );
+            assert_eq!(region_pause_reason(None, &[region("kr", true)], link), None);
+            assert!(region_pause_reason(Some("jp"), &[region("kr", true)], link).is_some());
+        }
         let two = [region("kr", true), region("jp", false)];
-        assert!(region_pause_reason(Some("kr"), &two).is_some());
-        assert!(region_pause_reason(Some("jp"), &two).is_some());
+        // Several regions: only the primary, and only when it can ask the others.
+        assert_eq!(region_pause_reason(Some("kr"), &two, true), None);
+        assert!(region_pause_reason(Some("kr"), &two, false).is_some());
+        assert!(region_pause_reason(Some("jp"), &two, true).is_some());
+        assert!(region_pause_reason(None, &two, true).is_some());
+        let no_primary = [region("kr", false), region("jp", false)];
+        assert!(region_pause_reason(Some("kr"), &no_primary, true).is_some());
     }
 
     #[test]
@@ -665,7 +781,7 @@ mod tests {
         let sidecar = |c: CommunityId, sha: &str| MediaStorage::sidecar_key(c, sha);
 
         let dry = GcSettings::from_values(Some("dry-run"), None, None);
-        let report = run_once(&db, &storage, dry)
+        let report = run_once(&db, &storage, dry, None::<&AppState>)
             .await
             .expect("dry run")
             .expect("leader");
@@ -680,7 +796,7 @@ mod tests {
         );
 
         let on = GcSettings::from_values(Some("on"), None, None);
-        run_once(&db, &storage, on)
+        run_once(&db, &storage, on, None::<&AppState>)
             .await
             .expect("run")
             .expect("leader");
@@ -717,7 +833,7 @@ mod tests {
             chrono::Utc::now().timestamp(),
         )
         .await;
-        let report = run_once(&db, &storage, on)
+        let report = run_once(&db, &storage, on, None::<&AppState>)
             .await
             .expect("run")
             .expect("leader");
@@ -751,13 +867,105 @@ mod tests {
                 .await
                 .expect("drop sidecar");
         }
-        let report = run_once(&db, &storage, on)
+        let report = run_once(&db, &storage, on, None::<&AppState>)
             .await
             .expect("run")
             .expect("leader");
         assert!(report.purged >= 1, "{report:?}");
         assert!(!exists(stale).await, "old trash deleted");
         assert!(exists(recent).await, "recent trash kept");
+    }
+
+    /// Another region, as the cleanup in the primary sees it.
+    struct FakeRegion {
+        uses: HashSet<String>,
+        answers: bool,
+    }
+
+    impl OtherRegions for FakeRegion {
+        async fn in_use_elsewhere(
+            &self,
+            _community: CommunityId,
+            hashes: &[String],
+            _grace_cutoff: chrono::DateTime<chrono::Utc>,
+        ) -> Result<HashSet<String>, String> {
+            if !self.answers {
+                return Err("no answer".into());
+            }
+            Ok(hashes
+                .iter()
+                .filter(|sha| self.uses.contains(*sha))
+                .cloned()
+                .collect())
+        }
+    }
+
+    /// Needs the same as the test above.
+    #[tokio::test]
+    #[ignore = "requires Postgres and MinIO"]
+    async fn files_another_region_uses_are_kept() {
+        let mut config = crate::config::Config::for_test();
+        config.media.s3_bucket = std::env::var("KUZZ_TEST_S3_BUCKET").expect("test bucket");
+        config.media.s3_addressing_style = kuzz_media::config::S3AddressingStyle::Path;
+        let storage = MediaStorage::new(&config.media).expect("storage");
+        let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+            .await
+            .expect("test database");
+        let db = Db::from_pool(pool);
+        let community = db
+            .ensure_configured_community(&format!("gc-r-{}.test", Uuid::new_v4().simple()))
+            .await
+            .expect("community")
+            .id;
+        let sha = || -> String {
+            rand::random::<[u8; 32]>()
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        let old = chrono::Utc::now().timestamp() - 30 * 86_400;
+        let (used_elsewhere, unused, kept_unanswered) = (sha(), sha(), sha());
+        for sha in [&used_elsewhere, &unused, &kept_unanswered] {
+            storage
+                .put(&format!("{sha}.png"), b"png", "image/png")
+                .await
+                .expect("blob");
+            put_sidecar_only(&storage, community, sha, old).await;
+        }
+        let exists = |key: String| {
+            let storage = &storage;
+            async move { storage.head(&key).await.expect("head") }
+        };
+        let sidecar = |sha: &str| MediaStorage::sidecar_key(community, sha);
+        let on = GcSettings::from_values(Some("on"), None, None);
+
+        // A region that does not answer keeps every file in question.
+        let silent = FakeRegion {
+            uses: HashSet::new(),
+            answers: false,
+        };
+        run_once(&db, &storage, on, Some(&silent))
+            .await
+            .expect("run")
+            .expect("leader");
+        for sha in [&used_elsewhere, &unused, &kept_unanswered] {
+            assert!(exists(sidecar(sha)).await, "removed without an answer");
+            assert!(exists(format!("{sha}.png")).await);
+        }
+
+        // Unused here: removed only when the other region does not use it.
+        let jp = FakeRegion {
+            uses: [used_elsewhere.clone(), kept_unanswered.clone()].into(),
+            answers: true,
+        };
+        run_once(&db, &storage, on, Some(&jp))
+            .await
+            .expect("run")
+            .expect("leader");
+        assert!(exists(sidecar(&used_elsewhere)).await);
+        assert!(exists(format!("{used_elsewhere}.png")).await);
+        assert!(!exists(sidecar(&unused)).await);
+        assert!(!exists(format!("{unused}.png")).await);
     }
 
     async fn put_sidecar_only(
