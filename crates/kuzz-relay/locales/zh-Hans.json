@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "感谢你向 {community} 提交举报。你的举报已审核并已处理。",
+  "moderation.reportResolved.dismissed": "感谢你向 {community} 提交举报。你的举报已审核，未采取任何措施。",
+  "moderation.reportResolved.escalated": "感谢你向 {community} 提交举报。你的举报已提交进一步审核。",
+  "moderation.reportResolved.other": "感谢你向 {community} 提交举报。你的举报已审核。",
+  "moderation.contentActioned": "{community} 的管理员对你的内容采取了措施。",
+  "moderation.banned": "你已被 {community} 封禁。",
+  "moderation.timedOut": "你在 {community} 被禁言至 {until}。",
+  "moderation.timedOutNoEnd": "你在 {community} 被禁言。",
+  "moderation.reason": "原因：{reason}",
+  "groups.landing.title": "Kuzz 上的 {name}",
+  "groups.landing.members": "{count, plural, other {# 位成员}}",
+  "groups.landing.open": "在 Kuzz 中打开",
+  "groups.landing.noApp": "还没有 Kuzz？请联系分享此链接的人。",
+  "groups.landing.notFoundTitle": "链接不存在",
+  "groups.landing.notFoundHeading": "此链接无效",
+  "groups.landing.notFoundHint": "链接可能已被重置，或群组已不存在。请向分享者索取新链接。",
+  "groups.landing.rateLimitedTitle": "请稍后再试",
+  "groups.landing.rateLimitedHeading": "请求过多",
+  "groups.landing.rateLimitedHint": "请一分钟后再试。"
+}

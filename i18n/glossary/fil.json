@@ -1,0 +1,17 @@
+{
+  "Chat": "Chat",
+  "Channel": "Channel",
+  "Thread": "Thread",
+  "Agent": "Agent",
+  "Goal": "Layunin",
+  "Inbox": "Mga Notification",
+  "Friend": "Kaibigan",
+  "Project": "Proyekto",
+  "Mention": "Mention",
+  "Reply": "Sumagot",
+  "Huddle": "Voice call",
+  "Community": "Komunidad",
+  "Pin": "I-pin",
+  "Mute": "I-mute",
+  "Invite": "Mag-imbita"
+}

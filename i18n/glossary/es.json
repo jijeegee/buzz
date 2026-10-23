@@ -1,0 +1,17 @@
+{
+  "Chat": "Chat",
+  "Channel": "Canal",
+  "Thread": "Hilo",
+  "Agent": "Agente",
+  "Goal": "Objetivo",
+  "Inbox": "Notificaciones",
+  "Friend": "Amigo",
+  "Project": "Proyecto",
+  "Mention": "Mención",
+  "Reply": "Responder",
+  "Huddle": "Llamada de voz",
+  "Community": "Comunidad",
+  "Pin": "Fijar",
+  "Mute": "Silenciar",
+  "Invite": "Invitar"
+}

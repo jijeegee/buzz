@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "感謝你向 {community} 提出檢舉。你的檢舉已經過審查並已處理。",
+  "moderation.reportResolved.dismissed": "感謝你向 {community} 提出檢舉。你的檢舉已經過審查，未採取任何處置。",
+  "moderation.reportResolved.escalated": "感謝你向 {community} 提出檢舉。你的檢舉已轉交進一步審查。",
+  "moderation.reportResolved.other": "感謝你向 {community} 提出檢舉。你的檢舉已經過審查。",
+  "moderation.contentActioned": "{community} 的管理員已對你的內容採取處置。",
+  "moderation.banned": "你已被 {community} 封鎖。",
+  "moderation.timedOut": "你在 {community} 已被暫時禁言，直到 {until}。",
+  "moderation.timedOutNoEnd": "你在 {community} 已被暫時禁言。",
+  "moderation.reason": "原因：{reason}",
+  "groups.landing.title": "Kuzz 上的 {name}",
+  "groups.landing.members": "{count, plural, other {# 位成員}}",
+  "groups.landing.open": "在 Kuzz 中開啟",
+  "groups.landing.noApp": "還沒有 Kuzz 嗎？請向分享這個連結的人詢問。",
+  "groups.landing.notFoundTitle": "找不到連結",
+  "groups.landing.notFoundHeading": "這個連結已失效",
+  "groups.landing.notFoundHint": "連結可能已重設，或群組已不存在。請向分享的人索取新連結。",
+  "groups.landing.rateLimitedTitle": "請稍後再試",
+  "groups.landing.rateLimitedHeading": "要求次數過多",
+  "groups.landing.rateLimitedHint": "請在一分鐘後再試。"
+}

@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "{community}への報告ありがとうございます。報告内容を確認し、対応しました。",
+  "moderation.reportResolved.dismissed": "{community}への報告ありがとうございます。報告内容を確認しましたが、対応は不要と判断されました。",
+  "moderation.reportResolved.escalated": "{community}への報告ありがとうございます。報告内容はさらに詳しく確認するため引き継がれました。",
+  "moderation.reportResolved.other": "{community}への報告ありがとうございます。報告内容を確認しました。",
+  "moderation.contentActioned": "{community}のモデレーターがあなたのコンテンツに対応しました。",
+  "moderation.banned": "{community}から追放されました。",
+  "moderation.timedOut": "{community}で{until}まで投稿が制限されています。",
+  "moderation.timedOutNoEnd": "{community}で投稿が一時的に制限されています。",
+  "moderation.reason": "理由: {reason}",
+  "groups.landing.title": "Kuzzの{name}",
+  "groups.landing.members": "{count, plural, one {メンバー#人} other {メンバー#人}}",
+  "groups.landing.open": "Kuzzで開く",
+  "groups.landing.noApp": "Kuzzをお持ちでない場合は、このリンクを共有した人に聞いてください。",
+  "groups.landing.notFoundTitle": "リンクが見つかりません",
+  "groups.landing.notFoundHeading": "このリンクは無効です",
+  "groups.landing.notFoundHint": "リンクがリセットされたか、グループが存在しない可能性があります。共有した人に新しいリンクを依頼してください。",
+  "groups.landing.rateLimitedTitle": "しばらくしてからお試しください",
+  "groups.landing.rateLimitedHeading": "リクエストが多すぎます",
+  "groups.landing.rateLimitedHint": "1分ほどしてからもう一度お試しください。"
+}
