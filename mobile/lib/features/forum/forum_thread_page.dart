@@ -48,9 +48,23 @@ class ForumThreadPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final threadAsync = ref.watch(
-      forumThreadProvider((channelId: channelId, eventId: postEventId)),
-    );
+    final threadProvider = forumThreadProvider((
+      channelId: channelId,
+      eventId: postEventId,
+    ));
+    final threadAsync = ref.watch(threadProvider);
+    // A fetched thread confirms the own sends it contains.
+    ref.listen(threadProvider, (_, next) {
+      if (next case AsyncData(:final value)) {
+        ref.read(forumAcceptedSendsProvider(channelId).notifier).confirmFetched(
+          [
+            value.post.eventId,
+            for (final reply in value.replies) reply.eventId,
+          ],
+        );
+      }
+    });
+    void retry() => ref.invalidate(threadProvider);
 
     // Periodic refresh (every 10s, matching desktop). A settled deadline
     // pauses polling; reopening the thread is the explicit retry.
@@ -98,35 +112,47 @@ class ForumThreadPage extends HookConsumerWidget {
             ),
         ],
       ),
-      body: threadAsync.when(
-        // A retry from an error shows loading, not the stale error and its Retry.
-        skipLoadingOnRefresh: !threadAsync.hasError,
-        loading: () => Padding(
-          padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-          child: Center(
-            child: KuzzLoadingIndicator(
-              size: 44,
-              semanticLabel: context.l10n.forumLoadingThread,
-            ),
-          ),
-        ),
-        error: (e, _) => Padding(
-          padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-          child: LoadErrorView(
-            message: context.l10n.forumLoadThreadError,
-            onRetry: () => ref.invalidate(
-              forumThreadProvider((channelId: channelId, eventId: postEventId)),
-            ),
-          ),
-        ),
-        data: (thread) => _ThreadContent(
+      // A thread loaded earlier and own replies (with their Retry and
+      // Delete) stay through a failed or retrying refresh, under a line
+      // saying so.
+      body: switch (threadAsync) {
+        AsyncValue(hasError: true, value: final thread?) => _ThreadContent(
           thread: thread,
           channelId: channelId,
           currentPubkey: currentPubkey,
           isMember: isMember,
           isArchived: isArchived,
+          onLoadRetry: retry,
         ),
-      ),
+        _ => threadAsync.when(
+          // A retry from an error shows loading, not the stale error and its
+          // Retry.
+          skipLoadingOnRefresh: !threadAsync.hasError,
+          loading: () => Padding(
+            padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
+            child: Center(
+              child: KuzzLoadingIndicator(
+                size: 44,
+                semanticLabel: context.l10n.forumLoadingThread,
+              ),
+            ),
+          ),
+          error: (e, _) => Padding(
+            padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
+            child: LoadErrorView(
+              message: context.l10n.forumLoadThreadError,
+              onRetry: retry,
+            ),
+          ),
+          data: (thread) => _ThreadContent(
+            thread: thread,
+            channelId: channelId,
+            currentPubkey: currentPubkey,
+            isMember: isMember,
+            isArchived: isArchived,
+          ),
+        ),
+      },
     );
   }
 
@@ -222,12 +248,16 @@ class _ThreadContent extends HookConsumerWidget {
   final bool isMember;
   final bool isArchived;
 
+  /// Set when the latest refresh failed: shows its error above the thread.
+  final VoidCallback? onLoadRetry;
+
   const _ThreadContent({
     required this.thread,
     required this.channelId,
     required this.currentPubkey,
     required this.isMember,
     required this.isArchived,
+    this.onLoadRetry,
   });
 
   @override
@@ -273,6 +303,11 @@ class _ThreadContent extends HookConsumerWidget {
               bottom: Grid.xs,
             ),
             children: [
+              if (onLoadRetry case final retry?)
+                LoadErrorBanner(
+                  message: context.l10n.forumLoadThreadError,
+                  onRetry: retry,
+                ),
               _OriginalPost(post: post),
 
               Padding(

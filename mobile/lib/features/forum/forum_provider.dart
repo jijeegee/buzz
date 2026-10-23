@@ -209,6 +209,8 @@ Future<void> deleteForumEvent(
 }) async {
   final actions = ref.read(channelActionsProvider);
   await actions.deleteMessage(channelId: channelId, eventId: eventId);
+  // A deleted send no fetched list will contain is no longer held.
+  ref.read(forumAcceptedSendsProvider(channelId).notifier).release({eventId});
   ref.invalidate(forumPostsProvider(channelId));
   if (rootEventId != null) {
     ref.invalidate(

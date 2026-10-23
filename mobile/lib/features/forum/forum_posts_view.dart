@@ -64,6 +64,63 @@ class ForumPostsView extends HookConsumerWidget {
       return timer.cancel;
     }, [channel.id]);
 
+    // A fetched list confirms the own sends it contains.
+    ref.listen(forumPostsProvider(channel.id), (_, next) {
+      if (next case AsyncData(:final value)) {
+        ref
+            .read(forumAcceptedSendsProvider(channel.id).notifier)
+            .confirmFetched([for (final post in value.posts) post.eventId]);
+      }
+    });
+    // The last fetched list (kept through a failed refresh) with own sends.
+    final shownPosts = withLocalForumPosts(
+      postsAsync.value?.posts ?? const [],
+      localSends,
+    );
+    void retry() => ref.invalidate(forumPostsProvider(channel.id));
+
+    Widget postsList(List<ForumPost> posts, {bool loadFailed = false}) {
+      final header = loadFailed ? 1 : 0;
+      return BeeRefreshIndicator(
+        onRefresh: () async {
+          ref.invalidate(forumPostsProvider(channel.id));
+          await ref.read(forumPostsProvider(channel.id).future);
+        },
+        child: ListView.separated(
+          padding: EdgeInsets.only(
+            top: frostedAppBarHeight(context),
+            left: Grid.gutter,
+            right: Grid.gutter,
+            bottom: Grid.xs,
+          ),
+          itemCount: header + posts.length,
+          separatorBuilder: (_, _) => const SizedBox(height: Grid.xxs),
+          itemBuilder: (context, index) {
+            if (index < header) {
+              return LoadErrorBanner(
+                message: context.l10n.forumLoadPostsError,
+                onRetry: retry,
+                padding: EdgeInsets.zero,
+              );
+            }
+            final post = posts[index - header];
+            return ForumPostCard(
+              post: post,
+              currentPubkey: currentPubkey,
+              onTap: () => _openThread(context, post),
+              onDelete: (eventId) async {
+                await deleteForumEvent(
+                  ref,
+                  channelId: channel.id,
+                  eventId: eventId,
+                );
+              },
+            );
+          },
+        ),
+      );
+    }
+
     final canPost = channel.isMember && !channel.isArchived;
 
     return Column(
@@ -81,67 +138,42 @@ class ForumPostsView extends HookConsumerWidget {
                     child: const Icon(LucideIcons.plus),
                   )
                 : null,
-            body: postsAsync.when(
-              // A retry from an error shows loading, not the stale error and its Retry.
-              skipLoadingOnRefresh: !postsAsync.hasError,
-              loading: () => Padding(
-                padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-                child: Center(
-                  child: KuzzLoadingIndicator(
-                    size: 44,
-                    semanticLabel: context.l10n.forumLoadingPosts,
-                  ),
-                ),
-              ),
-              error: (e, _) => Padding(
-                padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-                child: LoadErrorView(
-                  message: context.l10n.forumLoadPostsError,
-                  onRetry: () => ref.invalidate(forumPostsProvider(channel.id)),
-                ),
-              ),
-              data: (response) {
-                final posts = withLocalForumPosts(response.posts, localSends);
-                if (posts.isEmpty) {
-                  return _EmptyState(
-                    isMember: channel.isMember,
-                    isArchived: channel.isArchived,
-                  );
-                }
-                return BeeRefreshIndicator(
-                  onRefresh: () async {
-                    ref.invalidate(forumPostsProvider(channel.id));
-                    await ref.read(forumPostsProvider(channel.id).future);
-                  },
-                  child: ListView.separated(
-                    padding: EdgeInsets.only(
-                      top: frostedAppBarHeight(context),
-                      left: Grid.gutter,
-                      right: Grid.gutter,
-                      bottom: Grid.xs,
+            // Rows loaded earlier and own sends (with their Retry and Delete)
+            // stay through a failed or retrying refresh, under a line saying
+            // so. Only with nothing to show does the error take the page.
+            body: postsAsync.hasError && shownPosts.isNotEmpty
+                ? postsList(shownPosts, loadFailed: true)
+                : postsAsync.when(
+                    // A retry from an error shows loading, not the stale error
+                    // and its Retry.
+                    skipLoadingOnRefresh: !postsAsync.hasError,
+                    loading: () => Padding(
+                      padding: EdgeInsets.only(
+                        top: frostedAppBarHeight(context),
+                      ),
+                      child: Center(
+                        child: KuzzLoadingIndicator(
+                          size: 44,
+                          semanticLabel: context.l10n.forumLoadingPosts,
+                        ),
+                      ),
                     ),
-                    itemCount: posts.length,
-                    separatorBuilder: (_, _) =>
-                        const SizedBox(height: Grid.xxs),
-                    itemBuilder: (context, index) {
-                      final post = posts[index];
-                      return ForumPostCard(
-                        post: post,
-                        currentPubkey: currentPubkey,
-                        onTap: () => _openThread(context, post),
-                        onDelete: (eventId) async {
-                          await deleteForumEvent(
-                            ref,
-                            channelId: channel.id,
-                            eventId: eventId,
-                          );
-                        },
-                      );
-                    },
+                    error: (e, _) => Padding(
+                      padding: EdgeInsets.only(
+                        top: frostedAppBarHeight(context),
+                      ),
+                      child: LoadErrorView(
+                        message: context.l10n.forumLoadPostsError,
+                        onRetry: retry,
+                      ),
+                    ),
+                    data: (_) => shownPosts.isEmpty
+                        ? _EmptyState(
+                            isMember: channel.isMember,
+                            isArchived: channel.isArchived,
+                          )
+                        : postsList(shownPosts),
                   ),
-                );
-              },
-            ),
           ),
         ),
         if (isComposing.value) ...[

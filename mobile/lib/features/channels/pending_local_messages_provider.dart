@@ -3,6 +3,8 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'local_send_store.dart';
 
+const _maxDroppedIds = 50;
+
 /// Signed local messages whose publish has not yet been corroborated by an
 /// authoritative relay EVENT or query result.
 ///
@@ -14,6 +16,11 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
   final _storeKeys = <String, String>{};
   final _readStoreKeys = <String>{};
   final _unverified = <String>{};
+
+  /// Sends recently dropped unsent (deleted, or replaced by a re-signed
+  /// retry), oldest first. Listeners ask right after a send leaves, so only
+  /// the last few are kept.
+  final _dropped = <String>{};
 
   PendingLocalMessagesNotifier(this.channelId);
 
@@ -29,9 +36,16 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
     store.put(key, event);
   }
 
-  NostrEvent? take(String eventId) {
+  /// Removes [eventId], recording it as [dropped] unsent rather than
+  /// accepted by the relay.
+  NostrEvent? take(String eventId, {bool dropped = false}) {
     final event = state[eventId];
     if (event == null) return null;
+    if (dropped) {
+      // Recorded before the state change its listeners react to.
+      _dropped.add(eventId);
+      if (_dropped.length > _maxDroppedIds) _dropped.remove(_dropped.first);
+    }
     final next = {...state}..remove(eventId);
     state = next;
     _forget({eventId});
@@ -72,6 +86,9 @@ class PendingLocalMessagesNotifier extends Notifier<Map<String, NostrEvent>> {
       _unverified.addAll(eventIds.where(state.containsKey));
 
   bool isUnverified(String eventId) => _unverified.contains(eventId);
+
+  /// Whether [eventId] recently left by [take] with `dropped`.
+  bool wasDropped(String eventId) => _dropped.contains(eventId);
 
   void markVerified(String eventId) => _unverified.remove(eventId);
 

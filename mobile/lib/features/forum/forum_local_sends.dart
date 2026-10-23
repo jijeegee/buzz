@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
-import '../channels/failed_local_messages_provider.dart';
 import '../channels/pending_local_messages_provider.dart';
 import 'forum_models.dart';
 import 'forum_provider.dart';
@@ -11,74 +10,143 @@ import 'forum_provider.dart';
 bool _isForumSend(NostrEvent event) =>
     event.kind == EventKind.forumPost || event.kind == EventKind.forumComment;
 
-/// Own forum sends the relay has accepted, kept on screen until the forum
-/// list or thread fetched after the acceptance has answered.
+/// The post a forum send is listed under: null for a post (the posts list),
+/// else the thread root a reply answers.
+String? _listRootOf(NostrEvent event) => event.kind == EventKind.forumComment
+    ? event.threadReference.parentId
+    : null;
+
+/// Own forum sends the relay has accepted, kept on screen until a fetched
+/// forum list or thread contains them.
 ///
 /// A send waits in [pendingLocalMessagesProvider] (clock, or "Not sent" for
 /// retry and delete) like a channel message. The forum lists, though, are
 /// relay queries rather than a live timeline: once the relay accepts a send,
 /// or echoes it, its pending entry goes and the row would vanish until a
-/// refetch includes it. Every forum send leaving pending without having
-/// failed is held here and its list refetched; the hold ends when that
-/// refetch settles. A failed send leaves only by delete or by a re-signed
-/// retry (which adds its own new entry), so it is not held.
+/// refetch includes it. Every forum send leaving pending other than by being
+/// dropped (delete, or a re-signed retry replacing it) is held here while a
+/// loaded list that lacks it refetches. The hold ends when a fetched list
+/// contains it, or when that refetch succeeds without it (the relay no longer
+/// lists it); a failed refetch keeps it.
+///
+/// Fetched lists also confirm the pending sends they contain, so a send the
+/// relay stored but never acknowledged stops showing "Not sent".
 class ForumAcceptedSendsNotifier extends Notifier<Map<String, NostrEvent>> {
   final String channelId;
 
-  /// Failed sends still pending; a send leaving pending from here was
-  /// deleted or replaced, not accepted.
-  final _failed = <String>{};
+  /// Lists to refetch at the end of this microtask, keyed by
+  /// [_listRootOf], each with the holds its refetch answers.
+  Map<String?, Set<String>>? _refetches;
 
   ForumAcceptedSendsNotifier(this.channelId);
 
   @override
   Map<String, NostrEvent> build() {
-    ref.listen(failedLocalMessagesProvider(channelId), (_, failed) {
-      final pending = ref.read(pendingLocalMessagesProvider(channelId));
-      // A mark cleared while the send is still pending is a retry. A mark
-      // dropped with its pending entry is settled by the listener below,
-      // whichever of the two runs first.
-      _failed
-        ..removeWhere((id) => !failed.contains(id) && pending.containsKey(id))
-        ..addAll(failed);
-    }, fireImmediately: true);
-    ref.listen(pendingLocalMessagesProvider(channelId), (previous, next) {
+    final pendingProvider = pendingLocalMessagesProvider(channelId);
+    ref.listen(pendingProvider, (previous, next) {
+      final pending = ref.read(pendingProvider.notifier);
       for (final event in previous?.values ?? const <NostrEvent>[]) {
-        if (next.containsKey(event.id)) continue;
-        if (_failed.remove(event.id)) continue;
+        if (next.containsKey(event.id) || pending.wasDropped(event.id)) {
+          continue;
+        }
         if (_isForumSend(event)) _hold(event);
       }
     });
     return const {};
   }
 
-  void _hold(NostrEvent event) {
-    state = {...state, event.id: event};
-    // The posts list is refreshed for replies too, as a reply always did.
-    final posts = forumPostsProvider(channelId);
-    ref.invalidate(posts);
-    final parentId = event.kind == EventKind.forumComment
-        ? event.threadReference.parentId
-        : null;
-    final Future<Object?> refetch;
-    if (parentId == null) {
-      refetch = ref.read(posts.future);
-    } else {
-      final thread = forumThreadProvider((
-        channelId: channelId,
-        eventId: parentId,
-      ));
-      ref.invalidate(thread);
-      refetch = ref.read(thread.future);
-    }
-    // A failed refetch shows its own error; the hold never outlives it.
-    unawaited(
-      refetch.then<void>((_) {}, onError: (_) {}).whenComplete(() {
-        if (!ref.mounted || !state.containsKey(event.id)) return;
-        state = {...state}..remove(event.id);
-      }),
-    );
+  /// Takes in a forum list or thread the relay just returned: its pending
+  /// sends are confirmed (failed mark and stored copy included), and its
+  /// held sends are released.
+  void confirmFetched(Iterable<String> eventIds) {
+    final ids = eventIds.toSet();
+    ref.read(pendingLocalMessagesProvider(channelId).notifier).confirm(ids);
+    release(ids);
   }
+
+  /// Ends the holds on [eventIds], e.g. once they are deleted.
+  void release(Set<String> eventIds) {
+    if (!state.keys.any(eventIds.contains)) return;
+    state = {
+      for (final entry in state.entries)
+        if (!eventIds.contains(entry.key)) entry.key: entry.value,
+    };
+  }
+
+  void _hold(NostrEvent event) {
+    final rootId = _listRootOf(event);
+    final listed = _loadedIds(rootId);
+    if (listed?.contains(event.id) ?? false) return;
+    // The posts list is refreshed for replies too, as a reply always did.
+    if (rootId != null) _queueRefetch(null);
+    // A list nothing has loaded fetches the send when it is opened.
+    if (listed == null) return;
+    state = {...state, event.id: event};
+    _queueRefetch(rootId).add(event.id);
+  }
+
+  /// Ids in the loaded list for [rootId], or null when it isn't loaded.
+  Set<String>? _loadedIds(String? rootId) {
+    if (rootId == null) {
+      final posts = forumPostsProvider(channelId);
+      if (!ref.exists(posts)) return null;
+      return {...?ref.read(posts).value?.posts.map((post) => post.eventId)};
+    }
+    final thread = _thread(rootId);
+    if (!ref.exists(thread)) return null;
+    return {...?ref.read(thread).value?.replies.map((reply) => reply.eventId)};
+  }
+
+  /// The holds [rootId]'s refetch answers; N sends leaving in one go cause
+  /// one refetch per list.
+  Set<String> _queueRefetch(String? rootId) {
+    var refetches = _refetches;
+    if (refetches == null) {
+      refetches = _refetches = {};
+      scheduleMicrotask(_refetch);
+    }
+    return refetches.putIfAbsent(rootId, () => {});
+  }
+
+  void _refetch() {
+    final refetches = _refetches;
+    _refetches = null;
+    if (refetches == null || !ref.mounted) return;
+    for (final MapEntry(key: rootId, value: held) in refetches.entries) {
+      final Future<Iterable<String>> fetched;
+      if (rootId == null) {
+        final posts = forumPostsProvider(channelId);
+        if (!ref.exists(posts)) continue;
+        ref.invalidate(posts);
+        fetched = ref
+            .read(posts.future)
+            .then((response) => response.posts.map((post) => post.eventId));
+      } else {
+        final thread = _thread(rootId);
+        if (!ref.exists(thread)) continue;
+        ref.invalidate(thread);
+        fetched = ref
+            .read(thread.future)
+            .then(
+              (response) => [
+                response.post.eventId,
+                for (final reply in response.replies) reply.eventId,
+              ],
+            );
+      }
+      // A failed refetch shows its own error and keeps the holds.
+      unawaited(
+        fetched.then<void>((ids) {
+          if (!ref.mounted) return;
+          confirmFetched(ids);
+          release(held);
+        }, onError: (_) {}),
+      );
+    }
+  }
+
+  FutureProvider<ForumThreadResponse> _thread(String rootId) =>
+      forumThreadProvider((channelId: channelId, eventId: rootId));
 }
 
 final forumAcceptedSendsProvider =

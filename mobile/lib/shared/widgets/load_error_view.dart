@@ -46,3 +46,51 @@ class LoadErrorView extends StatelessWidget {
     );
   }
 }
+
+/// One-line load failure above content that is still shown, e.g. a list
+/// whose refresh failed, with the same Retry as [LoadErrorView].
+class LoadErrorBanner extends StatelessWidget {
+  final String message;
+  final VoidCallback onRetry;
+  final EdgeInsetsGeometry padding;
+
+  const LoadErrorBanner({
+    super.key,
+    required this.message,
+    required this.onRetry,
+    this.padding = const EdgeInsets.symmetric(
+      horizontal: Grid.gutter,
+      vertical: Grid.half,
+    ),
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: padding,
+      child: Row(
+        children: [
+          Icon(
+            LucideIcons.triangleAlert,
+            size: 16,
+            color: context.colors.error,
+          ),
+          const SizedBox(width: Grid.xxs),
+          Expanded(
+            child: Text(
+              message,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+          ),
+          TextButton(
+            key: const ValueKey('load-error-banner-retry'),
+            onPressed: onRetry,
+            child: Text(context.l10n.loadErrorRetry),
+          ),
+        ],
+      ),
+    );
+  }
+}

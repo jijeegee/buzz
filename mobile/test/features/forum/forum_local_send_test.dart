@@ -369,6 +369,169 @@ void main() {
     await close(tester, container);
   });
 
+  testWidgets('own rows and their Retry stay when a list refresh fails', (
+    tester,
+  ) async {
+    final root = _post('root', createdAt: 1000);
+    final (container, session) =
+        await tester.runAsync(() => openForum(relayEvents: [root])) ??
+        (null, null);
+    await tester.pumpWidget(postsView(container!));
+    await tester.pump();
+
+    unawaited(
+      ForumEventDelivery.capture(
+        container,
+      ).createPost(channelId: _channelId, content: 'offline post'),
+    );
+    final event = await session!.nextPublish;
+    session.reject();
+    await tester.pumpAndSettle();
+    expect(find.text('Not sent'), findsOne);
+
+    session.listError = Exception('offline');
+    container.invalidate(forumPostsProvider(_channelId));
+    await tester.pump();
+    await tester.pump();
+    expect(container.read(forumPostsProvider(_channelId)).hasError, isTrue);
+    expect(find.byKey(const ValueKey('load-error-retry')), findsNothing);
+    expect(find.text('Failed to load posts'), findsOne);
+    expect(find.text('root post'), findsOne);
+    expect(find.text('offline post'), findsOne);
+    await tapFailedMark(tester, event.id);
+    expect(find.text('Retry'), findsWidgets);
+    expect(find.text('Delete'), findsOne);
+    await tester.tap(find.text('Delete'));
+    await tester.pumpAndSettle();
+    expect(find.text('offline post'), findsNothing);
+
+    // The thread page keeps its loaded thread and own replies the same way.
+    session.listError = null;
+    await tester.pumpWidget(threadPage(container, root.id));
+    await tester.pumpAndSettle();
+    unawaited(
+      ForumEventDelivery.capture(container).createReply(
+        channelId: _channelId,
+        parentEventId: root.id,
+        content: 'offline reply',
+      ),
+    );
+    await session.nextPublish;
+    session.reject();
+    await tester.pumpAndSettle();
+    session.listError = Exception('offline');
+    container.invalidate(
+      forumThreadProvider((channelId: _channelId, eventId: root.id)),
+    );
+    await tester.pump();
+    await tester.pump();
+    expect(find.text('Failed to load thread'), findsOne);
+    expect(find.text('root post'), findsOne);
+    expect(find.text('offline reply'), findsOne);
+    expect(find.text('Not sent'), findsOne);
+    session.listError = null;
+    await close(tester, container);
+  });
+
+  testWidgets('a list with a "Not sent" post confirms it as sent', (
+    tester,
+  ) async {
+    final (container, session) =
+        await tester.runAsync(openForum) ?? (null, null);
+    await tester.pumpWidget(postsView(container!));
+    await tester.pump();
+
+    unawaited(
+      ForumEventDelivery.capture(
+        container,
+      ).createPost(channelId: _channelId, content: 'stored anyway'),
+    );
+    final event = await session!.nextPublish;
+    // The relay stores it, but its OK is lost.
+    session.relayEvents.add(event);
+    session.reject();
+    await tester.pumpAndSettle();
+    expect(find.text('Not sent'), findsOne);
+    expect(_storedIds(prefs), [event.id]);
+
+    // The next poll lists it: no retry, so no second copy, is needed.
+    container.invalidate(forumPostsProvider(_channelId));
+    await tester.pumpAndSettle();
+    expect(find.text('stored anyway'), findsOne);
+    expect(find.text('Not sent'), findsNothing);
+    expect(container.read(pendingLocalMessagesProvider(_channelId)), isEmpty);
+    expect(container.read(failedLocalMessagesProvider(_channelId)), isEmpty);
+    expect(_storedIds(prefs), isEmpty);
+    await close(tester, container);
+  });
+
+  testWidgets('a "Not sent" post whose echo arrives stays until listed', (
+    tester,
+  ) async {
+    final (container, session) =
+        await tester.runAsync(openForum) ?? (null, null);
+    await tester.pumpWidget(postsView(container!));
+    await tester.pump();
+
+    unawaited(
+      ForumEventDelivery.capture(
+        container,
+      ).createPost(channelId: _channelId, content: 'late echo'),
+    );
+    final event = await session!.nextPublish;
+    session.reject();
+    await tester.pumpAndSettle();
+    expect(find.text('Not sent'), findsOne);
+
+    // The relay had it after all: its echo confirms the failed send while
+    // the refetch that lists it is still out.
+    final refetch = session.park = Completer<void>();
+    session.relayEvents.add(event);
+    session.emit(event);
+    await tester.pump();
+    expect(container.read(pendingLocalMessagesProvider(_channelId)), isEmpty);
+    expect(container.read(forumAcceptedSendsProvider(_channelId)).keys, [
+      event.id,
+    ]);
+    expect(find.text('late echo'), findsOne);
+    expect(find.text('Not sent'), findsNothing);
+
+    refetch.complete();
+    await tester.pumpAndSettle();
+    expect(find.text('late echo'), findsOne);
+    expect(container.read(forumAcceptedSendsProvider(_channelId)), isEmpty);
+    await close(tester, container);
+  });
+
+  testWidgets('an accepted reply refetches no thread that is not loaded', (
+    tester,
+  ) async {
+    final root = _post('root', createdAt: 1000);
+    final (container, session) =
+        await tester.runAsync(() => openForum(relayEvents: [root])) ??
+        (null, null);
+    await tester.pumpWidget(postsView(container!));
+    await tester.pump();
+
+    final send = ForumEventDelivery.capture(container).createReply(
+      channelId: _channelId,
+      parentEventId: root.id,
+      content: 'unseen reply',
+    );
+    final reply = await session!.nextPublish;
+    session.relayEvents.add(reply);
+    session.accept();
+    await send;
+    await tester.pumpAndSettle();
+    final thread = forumThreadProvider((
+      channelId: _channelId,
+      eventId: root.id,
+    ));
+    expect(container.exists(thread), isFalse);
+    expect(container.read(forumAcceptedSendsProvider(_channelId)), isEmpty);
+    await close(tester, container);
+  });
+
   group('merging local sends into fetched lists', () {
     test('posts keep newest first and skip ones already fetched', () {
       final fetched = [
@@ -476,6 +639,9 @@ class _FakeProfileNotifier extends ProfileNotifier {
 class _ForumSession extends RelaySessionNotifier {
   final relayEvents = <NostrEvent>[];
   Completer<void>? park;
+
+  /// Thrown by forum list and thread queries while set.
+  Object? listError;
   final _listeners = <void Function(NostrEvent)>[];
   final _subscribed = Completer<void>();
   final _announced = <Completer<NostrEvent>>[];
@@ -535,6 +701,7 @@ class _ForumSession extends RelaySessionNotifier {
             filter.tags.containsKey('#e'));
     if (isForumList) {
       if (park case final park?) await park.future;
+      if (listError case final error?) throw error;
     }
     return _matching(filter);
   }
