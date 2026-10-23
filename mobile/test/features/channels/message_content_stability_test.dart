@@ -1,3 +1,4 @@
+import 'package:kuzz/features/channels/channel_hash_links.dart';
 import 'package:kuzz/features/channels/message_content.dart';
 import 'package:kuzz/features/channels/media_viewer_page.dart';
 import 'package:kuzz/shared/custom_emoji/custom_emoji.dart';
@@ -180,6 +181,7 @@ void main() {
       await tester.tap(find.text('sample'));
       expect(fixture.tappedId, 'channel-two');
     },
+    skip: !kChannelHashLinksEnabled,
   );
 
   testWidgets(

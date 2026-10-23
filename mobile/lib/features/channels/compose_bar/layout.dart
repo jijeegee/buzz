@@ -215,10 +215,11 @@ class _ComposeBarLayout extends HookWidget {
                                   icon: LucideIcons.atSign,
                                   onTap: onMention,
                                 ),
-                                _ComposeAction(
-                                  icon: LucideIcons.users,
-                                  onTap: onChannel,
-                                ),
+                                if (kChannelHashLinksEnabled)
+                                  _ComposeAction(
+                                    icon: LucideIcons.users,
+                                    onTap: onChannel,
+                                  ),
                                 _ComposeAction(
                                   icon: LucideIcons.smilePlus,
                                   onTap: onEmoji,

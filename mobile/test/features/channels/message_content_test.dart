@@ -12,6 +12,7 @@ import 'package:just_audio/just_audio.dart' as audio;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_hash_links.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/message_content.dart';
 import 'package:kuzz/features/channels/media_viewer_page.dart';
@@ -2698,7 +2699,7 @@ Photos
         expect(find.byIcon(LucideIcons.hash), findsNothing);
         expect(find.text('general'), findsOneWidget);
         expect(find.text('#general'), findsNothing);
-      });
+      }, skip: !kChannelHashLinksEnabled);
 
       testWidgets('channel tap callback fires', (tester) async {
         String? tappedId;
@@ -2714,49 +2715,51 @@ Photos
 
         await tester.tap(find.text('general'));
         expect(tappedId, 'ch-id-1');
-      });
+      }, skip: !kChannelHashLinksEnabled);
 
-      testWidgets('resolved #channel defaults to in-app navigation', (
-        tester,
-      ) async {
-        final channels = Future.value([
-          Channel(
-            id: '580ca78b-9dae-46f3-8854-bd671853ba32',
-            name: 'general',
-            channelType: 'stream',
-            visibility: 'open',
-            description: '',
-            createdBy: 'creator',
-            createdAt: DateTime(2026),
-            memberCount: 1,
-            isMember: true,
-          ),
-        ]);
-        await tester.pumpWidget(
-          _testable(
-            const MessageContent(content: 'See #general'),
-            overrides: [
-              channelsProvider.overrideWith(
-                () => _TestChannelsNotifier(channels),
-              ),
-            ],
-          ),
-        );
-        await tester.pumpAndSettle();
+      testWidgets(
+        'resolved #channel defaults to in-app navigation',
+        (tester) async {
+          final channels = Future.value([
+            Channel(
+              id: '580ca78b-9dae-46f3-8854-bd671853ba32',
+              name: 'general',
+              channelType: 'stream',
+              visibility: 'open',
+              description: '',
+              createdBy: 'creator',
+              createdAt: DateTime(2026),
+              memberCount: 1,
+              isMember: true,
+            ),
+          ]);
+          await tester.pumpWidget(
+            _testable(
+              const MessageContent(content: 'See #general'),
+              overrides: [
+                channelsProvider.overrideWith(
+                  () => _TestChannelsNotifier(channels),
+                ),
+              ],
+            ),
+          );
+          await tester.pumpAndSettle();
 
-        await tester.tap(find.text('general'));
-        await tester.pump();
+          await tester.tap(find.text('general'));
+          await tester.pump();
 
-        final container = ProviderScope.containerOf(
-          tester.element(find.byType(MessageContent)),
-        );
-        expect(
-          container.read(pendingDeepLinkProvider),
-          const ChannelDeepLink(
-            channelId: '580ca78b-9dae-46f3-8854-bd671853ba32',
-          ),
-        );
-      });
+          final container = ProviderScope.containerOf(
+            tester.element(find.byType(MessageContent)),
+          );
+          expect(
+            container.read(pendingDeepLinkProvider),
+            const ChannelDeepLink(
+              channelId: '580ca78b-9dae-46f3-8854-bd671853ba32',
+            ),
+          );
+        },
+        skip: !kChannelHashLinksEnabled,
+      );
 
       testWidgets('unknown channel renders without tap', (tester) async {
         await tester.pumpWidget(
@@ -2768,7 +2771,26 @@ Photos
         expect(find.byIcon(LucideIcons.users), findsOneWidget);
         expect(find.text('unknown'), findsOneWidget);
         expect(find.text('#unknown'), findsNothing);
-      });
+      }, skip: !kChannelHashLinksEnabled);
+
+      testWidgets(
+        '#name stays plain text while group links are off',
+        (tester) async {
+          await tester.pumpWidget(
+            _testable(
+              const MessageContent(
+                content: 'Issue #123 and #general',
+                channelNames: {'general': 'ch-id-1'},
+              ),
+            ),
+          );
+
+          expect(find.byKey(const ValueKey('group-pill-avatar')), findsNothing);
+          expect(find.byIcon(LucideIcons.users), findsNothing);
+          expect(_allRichText(tester), contains('Issue #123 and #general'));
+        },
+        skip: kChannelHashLinksEnabled,
+      );
 
       testWidgets('does not treat URL fragments as channel links', (
         tester,

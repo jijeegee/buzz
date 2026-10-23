@@ -366,7 +366,7 @@ class ComposeBar extends HookConsumerWidget {
         }
 
         // Channel autocomplete detection — only when no @mention is active.
-        if (mentionQuery.value == null) {
+        if (kChannelHashLinksEnabled && mentionQuery.value == null) {
           final hashPos = findTrigger(text, cursor, '#');
           if (hashPos != null) {
             channelQuery.value = text
