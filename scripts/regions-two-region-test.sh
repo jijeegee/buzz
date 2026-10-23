@@ -85,6 +85,7 @@ start_relay() {
     INVITE_SIGNING_SECRET="${INVITE_SECRET}" \
     KUZZ_CHAT_STATE_WRITES=on \
     KUZZ_PUBSUB_SEQ_ENVELOPE=true \
+    KUZZ_GLOBAL_COPY_MAX_LAG_SECS=3 \
     "${BIN}" >"${LOG_DIR}/relay-${region}.log" 2>&1 &
   PIDS+=($!)
 }
@@ -137,6 +138,13 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
   REGION_KR_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz" \
   REGION_JP_LINK_KEY="${JP_LINK_KEY}" \
   cargo test -p kuzz-test-client --test e2e_regions -- --ignored --test-threads=1
+
+# These stop jp's copy for a while, so they run after the others (S5-4).
+log "running e2e_regions_lag"
+REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
+  REGION_JP_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5492/kuzz" \
+  REGION_KR_DATABASE_URL="postgres://kuzz:kuzz_dev@127.0.0.1:5491/kuzz" \
+  cargo test -p kuzz-test-client --test e2e_regions_lag -- --ignored --test-threads=1
 
 # The relay in jp must never write a global table itself (S5-3): its copy
 # guard would refuse it.

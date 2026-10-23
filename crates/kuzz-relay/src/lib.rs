@@ -77,6 +77,8 @@ pub mod region_forward;
 pub mod region_global;
 /// Live delivery of copied room-less events in a copy region (S5-3c).
 pub mod region_global_live;
+/// Reads a copy region checks with the primary region (S5-4).
+pub mod region_global_read;
 /// Global-write HTTP routes served by the primary region (S5-2).
 pub mod region_http;
 /// Reads that span regions, merged (S4-3c).

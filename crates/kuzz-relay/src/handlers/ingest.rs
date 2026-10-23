@@ -2622,15 +2622,14 @@ pub(crate) async fn enforce_write_restriction(
     kind: u32,
     pubkey: &nostr::PublicKey,
 ) -> Result<(), IngestError> {
-    let restriction = state
-        .db
-        .moderation_restriction_state(tenant.community(), pubkey.as_bytes())
-        .await
-        .map_err(|e| {
-            IngestError::Internal(format!(
-                "error: internal error checking restriction state: {e}"
-            ))
-        })?;
+    let restriction =
+        crate::region_global_read::restriction_state(state, tenant.community(), pubkey.as_bytes())
+            .await
+            .map_err(|e| {
+                IngestError::Internal(format!(
+                    "error: internal error checking restriction state: {e}"
+                ))
+            })?;
     write_restriction_denial(kind, &restriction, Utc::now()).map_or(Ok(()), Err)
 }
 
