@@ -198,6 +198,7 @@ export default defineConfig({
       testMatch: [
         "**/agents.spec.ts",
         "**/agents-tabs-screenshots.spec.ts",
+        "**/external-connect-screenshots.spec.ts",
         "**/agent-availability.spec.ts",
         "**/agent-snapshot-recipient.spec.ts",
         "**/onboarding.spec.ts",

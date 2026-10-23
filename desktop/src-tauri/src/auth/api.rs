@@ -607,6 +607,84 @@ pub(crate) async fn register_agent(
     Ok(registered.result)
 }
 
+/// `POST /auth/pairing/start`: a one-use external agent pairing code. The
+/// code and the command holding it stay in zeroizing memory.
+#[derive(Deserialize)]
+pub(crate) struct PairingStarted {
+    pub pairing_id: String,
+    pub command: SecretField,
+    pub code: SecretField,
+    pub expires_at: String,
+    pub expires_in: i64,
+}
+
+/// One row of `GET /auth/pairing`.
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+#[serde(rename_all(serialize = "camelCase"))]
+pub(crate) struct PairingInfo {
+    pub id: String,
+    /// `waiting`, `connected` or `expired`.
+    pub state: String,
+    #[serde(default)]
+    pub agent_pubkey: Option<String>,
+    #[serde(default)]
+    pub device_name: Option<String>,
+    #[serde(default)]
+    pub device_id: Option<String>,
+    pub created_at: String,
+    #[serde(default)]
+    pub claimed_at: Option<String>,
+    pub expires_at: String,
+}
+
+/// `POST /auth/pairing/start`.
+pub(crate) async fn pairing_start(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<PairingStarted, ApiError> {
+    send_json(
+        client
+            .post(format!("{origin}/auth/pairing/start"))
+            .header("Authorization", bearer(access)),
+    )
+    .await
+}
+
+/// `GET /auth/pairing`: this account's pairings of the last day.
+pub(crate) async fn pairing_list(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<Vec<PairingInfo>, ApiError> {
+    #[derive(Deserialize)]
+    struct Pairings {
+        pairings: Vec<PairingInfo>,
+    }
+    let list: Pairings = send_json(
+        client
+            .get(format!("{origin}/auth/pairing"))
+            .header("Authorization", bearer(access)),
+    )
+    .await?;
+    Ok(list.pairings)
+}
+
+/// `POST /pair/claim` (no account session). Returns the paired device id.
+pub(crate) async fn pair_claim(
+    client: &reqwest::Client,
+    origin: &str,
+    body: &serde_json::Value,
+) -> Result<String, ApiError> {
+    #[derive(Deserialize)]
+    struct Claimed {
+        device_id: String,
+    }
+    let claimed: Claimed =
+        send_json(client.post(format!("{origin}/pair/claim")).json(body)).await?;
+    Ok(claimed.device_id)
+}
+
 /// One agent key copy of `GET /auth/agents/keys` (hex secret).
 #[derive(Deserialize)]
 pub(crate) struct AgentKeyCopy {

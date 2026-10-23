@@ -11279,6 +11279,10 @@
   "@settings.device.rename": {
     "description": "Settings > Devices, screen-reader label of the pencil button; {name} is the device name."
   },
+  "settings.device.new": "New",
+  "@settings.device.new": {
+    "description": "Settings > Devices: badge on the device a new sign-in notice was about. Short."
+  },
   "settings.device.newName": "New name for {name}",
   "@settings.device.newName": {
     "description": "Settings > Devices, screen-reader label of the rename text field; {name} is the current device name."
@@ -11290,6 +11294,22 @@
   "settings.device.signOut": "Sign out",
   "@settings.device.signOut": {
     "description": "Settings > Devices, button that signs out one device. Short."
+  },
+  "settings.device.hermesOn": "Hermes on {device}",
+  "@settings.device.hermesOn": {
+    "description": "Settings > Devices: name of the row for the Hermes agent connected on a computer; {device} is the computer name. Hermes is a product name."
+  },
+  "settings.device.disconnect": "Disconnect",
+  "@settings.device.disconnect": {
+    "description": "Settings > Devices, button that disconnects an external agent's computer (signs it out). Short."
+  },
+  "settings.device.disconnectNamed": "Disconnect {name}",
+  "@settings.device.disconnectNamed": {
+    "description": "Settings > Devices, screen-reader label of an external agent row's Disconnect button; {name} is the row name."
+  },
+  "settings.device.disconnectFailed": "Disconnect failed.",
+  "@settings.device.disconnectFailed": {
+    "description": "Settings > Devices: error when disconnecting an external agent's computer fails."
   },
   "settings.robotPicker.change": "Change robot for {name}",
   "@settings.robotPicker.change": {
@@ -23603,6 +23623,10 @@
   "@agents.tile.error": {
     "description": "Agents page, agent card: status pill. Short."
   },
+  "agents.tile.offline": "Offline",
+  "@agents.tile.offline": {
+    "description": "Agents page, agent card: status pill of an agent running on another computer that is not online now. Short."
+  },
   "agents.edit.customCommand": "Custom command",
   "@agents.edit.customCommand": {
     "description": "Edit agent dialog (one running agent): harness option to type a command. Short."
@@ -24346,6 +24370,134 @@
   "agents.modelPicker.restartToApply": "restart to apply",
   "@agents.modelPicker.restartToApply": {
     "description": "Model picker on the agent profile: small note next to the picker. Short, lowercase."
+  },
+  "agents.external.connectButton": "Connect external agent",
+  "@agents.external.connectButton": {
+    "description": "Agents page header: button that opens the screen to connect an agent running on another computer. Short."
+  },
+  "agents.external.title": "Connect external agent",
+  "@agents.external.title": {
+    "description": "Connect external agent screen: title. Short."
+  },
+  "agents.external.description": "Use an agent that runs on another computer as one of your agents.",
+  "@agents.external.description": {
+    "description": "Connect external agent screen: one-line explanation under the title."
+  },
+  "agents.external.pasteLabel": "Paste this on the other computer",
+  "@agents.external.pasteLabel": {
+    "description": "Connect external agent screen: label above the one-line command to copy. Short."
+  },
+  "agents.external.copyLabel": "Copy command",
+  "@agents.external.copyLabel": {
+    "description": "Connect external agent screen: accessible label of the copy button next to the command. Short."
+  },
+  "agents.external.expiresIn": "Works once. Expires in {time}",
+  "@agents.external.expiresIn": {
+    "description": "Connect external agent screen: under the command. {time} is a countdown like 9:42 (minutes:seconds). Short."
+  },
+  "agents.external.waiting": "Waiting for the other computer…",
+  "@agents.external.waiting": {
+    "description": "Connect external agent screen: shown while nobody has used the command yet. Short."
+  },
+  "agents.external.making": "Making a code…",
+  "@agents.external.making": {
+    "description": "Connect external agent screen: shown while the command is being created. Short."
+  },
+  "agents.external.newCode": "New code",
+  "@agents.external.newCode": {
+    "description": "Connect external agent screen: button that replaces the command with a new one. Short."
+  },
+  "agents.external.tryAgain": "Try again",
+  "@agents.external.tryAgain": {
+    "description": "Connect external agent screen: button after making the command failed. Short."
+  },
+  "agents.external.startFailed": "Couldn't make a code. Try again.",
+  "@agents.external.startFailed": {
+    "description": "Connect external agent screen: error when the command could not be created."
+  },
+  "agents.external.connected": "{agent} on {device} connected",
+  "@agents.external.connected": {
+    "description": "Connect external agent screen: notice when an agent used the command. {agent} is the agent's name, {device} the other computer's name. Short."
+  },
+  "agents.external.connectedAt": "Connected at {time}",
+  "@agents.external.connectedAt": {
+    "description": "Connect external agent screen: time the agent connected, under the connected notice. {time} is a date and time. Short."
+  },
+  "agents.external.usedLabel": "Used code",
+  "@agents.external.usedLabel": {
+    "description": "Connect external agent screen: label above the struck-through command after it was used or expired. Short."
+  },
+  "agents.external.used": "This code was already used. Make a new code to connect another agent.",
+  "@agents.external.used": {
+    "description": "Connect external agent screen: under the used command; a command works only once."
+  },
+  "agents.external.expired": "This code expired. Make a new code.",
+  "@agents.external.expired": {
+    "description": "Connect external agent screen: notice when the 10 minutes passed before anyone used the command."
+  },
+  "agents.external.otherComputer": "another computer",
+  "@agents.external.otherComputer": {
+    "description": "Connect external agent screen: stands in for {device} when the other computer has no name. Lowercase, short."
+  },
+  "agents.external.thisComputer": "this computer",
+  "@agents.external.thisComputer": {
+    "description": "Hermes connected message: stands in for {device} when this computer's name is unknown. Lowercase, short."
+  },
+  "agents.external.agentFallback": "External agent",
+  "@agents.external.agentFallback": {
+    "description": "Agents page: name of a connected external agent whose name is unknown. Short."
+  },
+  "agents.external.agentCount": "{count, plural, one {# connected agent} other {# connected agents}}",
+  "@agents.external.agentCount": {
+    "description": "Agents page: count next to another computer's name, for agents connected with a command. Short."
+  },
+  "agents.external.connectedOn": "Connected {time}",
+  "@agents.external.connectedOn": {
+    "description": "Agents page: external agent card line. {time} is a date and time like Oct 23, 14:32. Short."
+  },
+  "agents.external.connectedToast": "{agent} on {device} is connected.",
+  "@agents.external.connectedToast": {
+    "description": "Agents page: toast after an external agent connected. {agent} is the agent's name, {device} the computer's name."
+  },
+  "agents.external.disconnect": "Disconnect",
+  "@agents.external.disconnect": {
+    "description": "Agents page: button on an external agent card that cuts off that computer. Short."
+  },
+  "agents.external.disconnectNamed": "Disconnect {name}",
+  "@agents.external.disconnectNamed": {
+    "description": "Agents page: accessible label of an external agent card. {name} is the agent's name. Short."
+  },
+  "agents.external.disconnectTitle": "Disconnect {device}?",
+  "@agents.external.disconnectTitle": {
+    "description": "Disconnect confirmation title. {device} is the other computer's name. Short."
+  },
+  "agents.external.disconnectDescription": "Agents on {device} stop working with your account. To use them again, connect them with a new code.",
+  "@agents.external.disconnectDescription": {
+    "description": "Disconnect confirmation text. {device} is the other computer's name."
+  },
+  "agents.external.disconnected": "{device} is disconnected.",
+  "@agents.external.disconnected": {
+    "description": "Toast after disconnecting another computer's agents. {device} is that computer's name."
+  },
+  "agents.external.disconnectFailed": "Couldn't disconnect. Try again.",
+  "@agents.external.disconnectFailed": {
+    "description": "Toast when disconnecting another computer's agents failed."
+  },
+  "agents.external.hermesFound": "Hermes found on this computer",
+  "@agents.external.hermesFound": {
+    "description": "Agents page: card shown when the Hermes agent app is installed on this computer. Hermes is a product name. Short."
+  },
+  "agents.external.hermesConnect": "Connect",
+  "@agents.external.hermesConnect": {
+    "description": "Agents page Hermes card: button that connects Hermes in one step. Short."
+  },
+  "agents.external.hermesConnecting": "Connecting…",
+  "@agents.external.hermesConnecting": {
+    "description": "Agents page Hermes card: button text while connecting. Short."
+  },
+  "agents.external.hermesFailed": "Couldn't connect Hermes. Try again.",
+  "@agents.external.hermesFailed": {
+    "description": "Agents page Hermes card: error toast. Hermes is a product name."
   },
   "agents.myAgents.agentCount": "{count, plural, one {# agent} other {# agents}}",
   "@agents.myAgents.agentCount": {

@@ -6,12 +6,18 @@ import { cn } from "@/shared/lib/cn";
 import { DropdownMenuTrigger } from "@/shared/ui/dropdown-menu";
 import { useT, type MessageKey } from "@/shared/i18n";
 
-export type AgentTileStatus = "working" | "running" | "stopped" | "error";
+export type AgentTileStatus =
+  | "working"
+  | "running"
+  | "stopped"
+  | "offline"
+  | "error";
 
 const STATUS_LABEL: Record<AgentTileStatus, MessageKey> = {
   working: "agents.tile.working",
   running: "agents.tile.running",
   stopped: "agents.tile.stopped",
+  offline: "agents.tile.offline",
   error: "agents.tile.error",
 };
 
@@ -19,6 +25,7 @@ const STATUS_CLASS: Record<AgentTileStatus, string> = {
   working: "bg-amber-500/15 text-amber-700 dark:text-amber-400",
   running: "bg-emerald-500/15 text-emerald-700 dark:text-emerald-400",
   stopped: "bg-muted text-muted-foreground",
+  offline: "bg-muted text-muted-foreground",
   error: "bg-destructive/15 text-destructive",
 };
 

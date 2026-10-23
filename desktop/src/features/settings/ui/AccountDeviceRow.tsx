@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
 import { normalizeDeviceId } from "@/shared/api/ownerDevices";
 import { type AuthDevice, renameAuthDevice } from "@/shared/api/tokenAuth";
 import { type MessageKey, useT } from "@/shared/i18n";
@@ -21,12 +22,16 @@ const DEVICE_NAME_MAX = 64;
 
 /**
  * One signed-in device: its robot (the owner can pick another), a renamable
- * name, and (for other devices) a remote sign-out. `run` serializes actions
- * and reports their errors.
+ * name, and (for other devices) a remote sign-out. A computer paired for an
+ * external agent reads "Disconnect" instead, and "Hermes on <device>" when
+ * this app connected Hermes there. `run` serializes actions and reports
+ * their errors.
  */
 export function AccountDeviceRow({
   device,
   disabled,
+  isNew = false,
+  hermes = false,
   run,
   onChanged,
   onSignOut,
@@ -34,6 +39,10 @@ export function AccountDeviceRow({
 }: {
   device: AuthDevice;
   disabled: boolean;
+  /** The device a "New sign-in" notice was about. */
+  isNew?: boolean;
+  /** The Hermes agent this app connected is on this device. */
+  hermes?: boolean;
   /** `label` is the message shown if the action fails without its own error. */
   run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
   onChanged: () => Promise<void>;
@@ -51,6 +60,10 @@ export function AccountDeviceRow({
   );
   const [draft, setDraft] = React.useState<string | null>(null);
   const trimmed = draft?.trim() ?? "";
+  const external = device.platform === EXTERNAL_PLATFORM;
+  const label = hermes
+    ? t("settings.device.hermesOn", { device: device.name })
+    : device.name;
 
   const save = () => {
     if (draft === null) return;
@@ -67,7 +80,14 @@ export function AccountDeviceRow({
   };
 
   return (
-    <li className="flex items-center justify-between gap-3">
+    <li
+      className={
+        isNew
+          ? "-mx-2 flex items-center justify-between gap-3 rounded-lg border border-border/80 bg-muted/40 px-2 py-1"
+          : "flex items-center justify-between gap-3"
+      }
+      data-new-sign-in={isNew ? "true" : undefined}
+    >
       <span className="flex min-w-0 flex-1 items-center gap-2 text-sm">
         <DeviceRobotPicker
           deviceId={device.id}
@@ -88,7 +108,15 @@ export function AccountDeviceRow({
         {draft === null ? (
           <>
             <span className="min-w-0 truncate">
-              {device.name}
+              {label}
+              {isNew ? (
+                <span
+                  className="ml-1.5 rounded-full bg-foreground px-1.5 py-0.5 align-middle text-2xs font-semibold text-background"
+                  data-testid="device-new-badge"
+                >
+                  {t("settings.device.new")}
+                </span>
+              ) : null}
               <span className="text-muted-foreground/70">
                 {" "}
                 {t(
@@ -155,14 +183,22 @@ export function AccountDeviceRow({
       </span>
       {device.current || draft !== null ? null : (
         <Button
-          aria-label={t("settings.device.signOutNamed", { name: device.name })}
+          aria-label={t(
+            external
+              ? "settings.device.disconnectNamed"
+              : "settings.device.signOutNamed",
+            { name: label },
+          )}
+          data-testid={external ? `device-disconnect-${device.id}` : undefined}
           disabled={disabled}
           onClick={onSignOut}
           size="sm"
           type="button"
           variant="outline"
         >
-          {t("settings.device.signOut")}
+          {t(
+            external ? "settings.device.disconnect" : "settings.device.signOut",
+          )}
         </Button>
       )}
     </li>
