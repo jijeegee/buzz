@@ -1193,6 +1193,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     if state.config.global_copy {
         let lag_state = Arc::clone(&state);
         tokio::spawn(async move { kuzz_relay::global_copy::run_lag_monitor(lag_state).await });
+        // Copied room-less events reach this region's live subscribers (S5-3c).
+        let live_state = Arc::clone(&state);
+        tokio::spawn(async move { kuzz_relay::region_global_live::run(live_state).await });
     }
 
     // Region propagation worker: delivers logouts and disconnects to the

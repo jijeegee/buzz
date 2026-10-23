@@ -547,6 +547,12 @@ async fn resync_room(state: Arc<AppState>, community: CommunityId, room: Uuid) {
 /// Deliver a room-less event the home sent to the local subscribers of the
 /// readers it allowed.
 fn deliver_global(state: &AppState, community: CommunityId, event: nostr::Event, to: &[String]) {
+    // A copy region tells its subscribers of every stored room-less event
+    // when the copy brings it (S5-3c); only short-lived ones, which are
+    // never stored, still come this way.
+    if state.config.global_copy && !event.kind.is_ephemeral() {
+        return;
+    }
     let allowed: HashSet<Vec<u8>> = to.iter().filter_map(|hex| hex::decode(hex).ok()).collect();
     let stored = StoredEvent::new(event, None);
     let matches: Vec<_> = state

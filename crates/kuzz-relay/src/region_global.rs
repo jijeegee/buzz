@@ -10,8 +10,9 @@
 //!   hidden-DM snapshot): [`store_relay_event`] sends the signed event to the
 //!   primary (`POST /internal/region/global-event`). The primary checks it
 //!   carries the relay's own signature, stores it with the same insert or
-//!   replace rule and publishes it to its own subscribers. The entry region
-//!   then sends it to its own subscribers at once; the copy brings the row.
+//!   replace rule and publishes it to its own subscribers. The copy brings
+//!   the row back, and with it the event to this region's subscribers
+//!   ([`crate::region_global_live`]).
 //! - **Typed writes** ([`GlobalWrite`]): a user row, an agent's owner, a
 //!   token profile. The entry checks its copy first and skips the call when
 //!   the row is already there; otherwise one call to the primary
@@ -135,9 +136,10 @@ async fn call_primary(
 }
 
 /// Store a relay-signed room-less event: locally, or at the primary in a
-/// copy region. Returns the stored event when it was new (the caller fans
-/// it out to this region's subscribers) and `None` for a duplicate or a
-/// superseded replacement.
+/// copy region. Returns the stored event when it was new here (the caller
+/// fans it out to this region's subscribers) and `None` for a duplicate, a
+/// superseded replacement, or one stored at the primary: the copy brings
+/// that one back and tells this region's subscribers then (S5-3c), once.
 pub async fn store_relay_event(
     tenant: &TenantContext,
     state: &AppState,
@@ -152,12 +154,8 @@ pub async fn store_relay_event(
     let body = serde_json::to_value(RelayEventCall {
         event: event.clone(),
     })?;
-    let answer = call_primary(state, tenant.community(), GLOBAL_EVENT_PATH, &body).await?;
-    let inserted = answer
-        .get("inserted")
-        .and_then(Value::as_bool)
-        .unwrap_or(false);
-    Ok(inserted.then(|| StoredEvent::new(event.clone(), None)))
+    call_primary(state, tenant.community(), GLOBAL_EVENT_PATH, &body).await?;
+    Ok(None)
 }
 
 async fn store_here(

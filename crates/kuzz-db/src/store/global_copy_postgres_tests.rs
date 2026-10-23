@@ -163,6 +163,17 @@ async fn a_copy_refuses_local_writes_to_global_tables_only() {
         .expect("flag");
     assert!(is_copy);
 
+    // Copied room-less events are announced to the relays (S5-3c): the
+    // trigger fires while the copy is applied, on every events partition.
+    let live: Vec<String> = sqlx::query_scalar(
+        "SELECT tgenabled::text FROM pg_trigger WHERE tgname = 'kuzz_global_copy_live'",
+    )
+    .fetch_all(&mut *tx)
+    .await
+    .expect("live trigger");
+    assert!(live.len() > 1, "on events and its partitions: {live:?}");
+    assert!(live.iter().all(|mode| mode == "A"), "fires always: {live:?}");
+
     let refused = |error: Option<String>| {
         let error = error.expect("refused");
         assert!(error.contains("written in the primary region"), "{error}");

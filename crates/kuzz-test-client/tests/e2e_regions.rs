@@ -1840,3 +1840,42 @@ async fn a_dm_opened_in_jp_keeps_its_command_in_the_room_and_its_notice_in_kr() 
         "the membership notice was not copied back to jp"
     );
 }
+
+#[tokio::test]
+#[ignore = "requires two region relays (scripts/regions-two-region-test.sh)"]
+async fn a_profile_saved_through_jp_reaches_jp_watchers_live() {
+    // Someone in jp watches a person's profile.
+    let (person, watcher) = (Keys::generate(), Keys::generate());
+    let mut jp = KuzzTestClient::connect(&jp_url(), &watcher)
+        .await
+        .expect("jp connect");
+    let profiles = Filter::new()
+        .kind(Kind::Metadata)
+        .author(person.public_key())
+        .limit(0);
+    jp.subscribe("profiles", vec![profiles]).await.expect("req");
+    jp.collect_until_eose("profiles", Duration::from_secs(5))
+        .await
+        .expect("eose");
+
+    // The person saves it through jp: stored in kr, copied back, and told to
+    // the watcher in jp as the copy brings it.
+    let profile = EventBuilder::new(Kind::Metadata, r#"{"name":"live from kr"}"#)
+        .sign_with_keys(&person)
+        .unwrap();
+    let url = format!("{}/events", http(&jp_url()));
+    let body = serde_json::to_vec(&profile).unwrap();
+    let (_, header) = nip98_post(&person, &url, &body);
+    let response = reqwest::Client::new()
+        .post(&url)
+        .header("Authorization", header)
+        .header("Content-Type", "application/json")
+        .body(body)
+        .send()
+        .await
+        .expect("profile write");
+    assert_eq!(response.status().as_u16(), 200);
+
+    let seen = live_event(&mut jp, "profiles").await;
+    assert_eq!(seen.id, profile.id);
+}
