@@ -3600,7 +3600,7 @@
   "messages.threadName.set": "스레드 이름 설정",
   "messages.threadName.retry": "다시 불러오기",
   "messages.threadName.title": "스레드 이름",
-  "messages.threadName.description": "이 그룹의 모든 사람에게 보여요. 영문 40자 또는 한글 20자까지 입력할 수 있어요. 비워 두면 이름이 삭제돼요.",
+  "messages.threadName.description": "이 그룹의 모든 사람에게 보여요. 비워 두면 이름이 삭제돼요.",
   "messages.threadName.saving": "저장 중…",
   "messages.send.notSent": "전송 안 됨",
   "messages.send.sending": "전송 중",

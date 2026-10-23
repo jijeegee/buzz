@@ -52,7 +52,7 @@ pub enum ThreadsCmd {
         /// Top-level message that becomes the thread root (64-char hex)
         #[arg(long, value_name = "EVENT_ID")]
         from: String,
-        /// Shared task/thread title (up to 40 English or 20 Korean characters)
+        /// Shared task/thread title (up to 40; Korean, Chinese, Japanese and emoji count 2)
         #[arg(long)]
         title: String,
         /// Kickoff details (use '-' to read from stdin)
@@ -614,7 +614,7 @@ mod tests {
         }
         for title in ["a".repeat(41), "가".repeat(21), "가a".repeat(14)] {
             let error = validate_title(&title).unwrap_err().to_string();
-            assert!(error.contains("40 English or 20 Korean"));
+            assert!(error.contains("longer than 40"));
             assert!(error.contains("--brief"));
         }
     }
@@ -633,7 +633,7 @@ mod tests {
         let error = start(&client, "invalid", "invalid", &"가".repeat(21), None, None)
             .await
             .unwrap_err();
-        assert!(error.to_string().contains("40 English or 20 Korean"));
+        assert!(error.to_string().contains("longer than 40"));
     }
 
     #[test]

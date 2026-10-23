@@ -2909,7 +2909,7 @@
   "messages.threadName.set": "Dai un nome al thread",
   "messages.threadName.retry": "Riprova nome",
   "messages.threadName.title": "Nome del thread",
-  "messages.threadName.description": "Visibile a tutti in questo gruppo. Fino a 40 caratteri in inglese o 20 in coreano. Lascia vuoto per rimuovere il nome.",
+  "messages.threadName.description": "Visibile a tutti in questo gruppo. Lascia vuoto per rimuovere il nome.",
   "messages.threadName.saving": "Salvataggio…",
   "messages.send.notSent": "Non inviato",
   "messages.send.sending": "Invio in corso",

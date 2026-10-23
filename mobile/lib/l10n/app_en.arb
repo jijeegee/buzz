@@ -7315,9 +7315,9 @@
   "@threadNameTitle": {
     "description": "Thread name dialog title. Short."
   },
-  "threadNameBody": "Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.",
+  "threadNameBody": "Visible to everyone in this group. Leave empty to remove the name.",
   "@threadNameBody": {
-    "description": "Thread name dialog, explanation. The limit counts Korean characters double."
+    "description": "Thread name dialog, explanation. A used / 40 counter shows the length limit separately."
   },
   "threadNameLabel": "Name",
   "@threadNameLabel": {
@@ -7327,7 +7327,7 @@
   "@threadNameControlCharsError": {
     "description": "Thread name dialog, error for line breaks or control characters in the name."
   },
-  "threadNameTooLongError": "Up to 40 English or 20 Korean characters.",
+  "threadNameTooLongError": "Name is too long.",
   "@threadNameTooLongError": {
     "description": "Thread name dialog, error when the name is too long."
   },

@@ -3,11 +3,17 @@ import { KIND_THREAD_NAME } from "@/shared/constants/kinds";
 
 export const MAX_THREAD_NAME_WEIGHT = 40;
 
+/** Twitter-style weight; must match kuzz-core `thread_name_weight`. */
 export function threadNameWeight(name: string): number {
-  return Array.from(name).reduce(
-    (weight, char) => weight + (char.charCodeAt(0) <= 127 ? 1 : 2),
-    0,
-  );
+  return Array.from(name).reduce((weight, char) => {
+    const c = char.codePointAt(0) ?? 0;
+    const single =
+      c <= 0x10ff ||
+      (c >= 0x2000 && c <= 0x200d) ||
+      (c >= 0x2010 && c <= 0x201f) ||
+      (c >= 0x2032 && c <= 0x2037);
+    return weight + (single ? 1 : 2);
+  }, 0);
 }
 
 export function isValidThreadName(name: string): boolean {

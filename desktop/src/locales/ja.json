@@ -3599,7 +3599,7 @@
   "messages.threadName.set": "スレッド名を設定",
   "messages.threadName.retry": "再読み込み",
   "messages.threadName.title": "スレッド名",
-  "messages.threadName.description": "このグループの全員に表示されます。英語40文字または韓国語20文字まで。空欄にすると名前を削除します。",
+  "messages.threadName.description": "このグループの全員に表示されます。空欄にすると名前を削除します。",
   "messages.threadName.saving": "保存中…",
   "messages.send.notSent": "未送信",
   "messages.send.sending": "送信中",

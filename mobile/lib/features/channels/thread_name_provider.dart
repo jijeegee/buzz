@@ -12,11 +12,21 @@ import '../../shared/theme/theme_provider.dart';
 
 typedef ThreadNameKey = ({String channelId, String headId});
 
-/// Maximum name weight: ASCII characters cost one, other characters two.
+/// Maximum name weight; see [threadNameWeight].
 const maxThreadNameWeight = 40;
 
-int threadNameWeight(String name) =>
-    name.runes.fold(0, (weight, rune) => weight + (rune < 128 ? 1 : 2));
+/// Twitter-style weight; must match kuzz-core `thread_name_weight`.
+int threadNameWeight(String name) => name.runes.fold(
+  0,
+  (weight, r) =>
+      weight +
+      (r <= 0x10FF ||
+              (r >= 0x2000 && r <= 0x200D) ||
+              (r >= 0x2010 && r <= 0x201F) ||
+              (r >= 0x2032 && r <= 0x2037)
+          ? 1
+          : 2),
+);
 
 String? threadNameError(String name) {
   if (name.runes.any(

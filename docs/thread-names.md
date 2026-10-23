@@ -5,9 +5,11 @@ name. The name also appears in the channel reply summary and sidebar activity
 preview. Save an empty name to restore the normal heading. Other channel readers
 receive changes live. Message bodies and reply counts do not change.
 
-The limit is 40 units: ASCII characters (including spaces) cost one unit and
-other Unicode scalars cost two. This permits 40 English or 20 composed Korean
-characters, with the same budget for mixed names. Names are single-line, trimmed,
+The limit is 40 units, counted like Twitter: scalars below U+1100 (Latin,
+Cyrillic, Greek, Arabic, Hebrew, Indic, Thai, ...) and general punctuation
+(U+2000–200D, U+2010–201F, U+2032–2037) cost one unit; everything else (Hangul,
+CJK, kana, emoji) costs two. So 40 English or Russian, or 20 Korean characters,
+with the same budget for mixed names. The editors show only `used / 40`. Names are single-line, trimmed,
 and contain no control characters. Desktop normalizes input to NFC before saving.
 Korean IME Enter does not submit the form while composition is in progress.
 
