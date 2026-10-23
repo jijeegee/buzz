@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
@@ -164,7 +165,7 @@ class PeoplePage extends HookConsumerWidget {
             fieldKey: const Key('people-search'),
             controller: controller,
             focusNode: focusNode,
-            hintText: 'Search friends',
+            hintText: context.l10n.friendsSearchHint,
             iconColor: navigationPrimaryForeground(context),
             inputColor: navigationPrimaryForeground(context),
             placeholderColor: navigationSecondaryForeground(context),
@@ -191,10 +192,10 @@ class PeoplePage extends HookConsumerWidget {
             }.where((pk) => _matches(q, cache[pk], nameOf(pk))).toList()
             ..sort(byName);
       children
-        ..add(_SectionHeader(title: 'Friends'))
+        ..add(_SectionHeader(title: context.l10n.friendsSectionFriends))
         ..addAll(
           local.isEmpty
-              ? [const _EmptyLine(text: 'No friends match')]
+              ? [_EmptyLine(text: context.l10n.friendsNoMatch)]
               : [
                   for (final pk in local)
                     PersonRow(
@@ -218,7 +219,7 @@ class PeoplePage extends HookConsumerWidget {
     } else {
       if (favoriteIds.isNotEmpty) {
         children
-          ..add(const _SectionHeader(title: 'Favorites'))
+          ..add(_SectionHeader(title: context.l10n.friendsSectionFavorites))
           ..addAll([
             for (final pk in favoriteIds)
               PersonRow(
@@ -232,18 +233,18 @@ class PeoplePage extends HookConsumerWidget {
       children.add(
         _SectionHeader(
           title: friendsAsync.hasValue
-              ? 'Friends · ${friendIds.length}'
-              : 'Friends',
+              ? context.l10n.friendsSectionFriendsCount(friendIds.length)
+              : context.l10n.friendsSectionFriends,
         ),
       );
       if (friendsAsync.isLoading && !friendsAsync.hasValue) {
         children.add(
-          const Padding(
-            padding: EdgeInsets.all(Grid.sm),
+          Padding(
+            padding: const EdgeInsets.all(Grid.sm),
             child: Center(
               child: KuzzLoadingIndicator(
                 size: 24,
-                semanticLabel: 'Loading friends',
+                semanticLabel: context.l10n.friendsLoading,
               ),
             ),
           ),
@@ -251,18 +252,18 @@ class PeoplePage extends HookConsumerWidget {
       } else if (friendsAsync.hasError && !friendsAsync.hasValue) {
         children.add(
           _EmptyLine(
-            text: 'Couldn’t load your friends',
+            text: context.l10n.friendsLoadError,
             action: TextButton(
               onPressed: () => ref.invalidate(contactListProvider),
-              child: const Text('Retry'),
+              child: Text(context.l10n.friendsRetry),
             ),
           ),
         );
       } else if (friendIds.isEmpty) {
         children.add(
-          const _EmptyLine(
-            key: Key('people-friends-empty'),
-            text: 'No friends yet. Tap Add friend to find someone.',
+          _EmptyLine(
+            key: const Key('people-friends-empty'),
+            text: context.l10n.friendsEmpty,
           ),
         );
       } else {
@@ -285,12 +286,12 @@ class PeoplePage extends HookConsumerWidget {
         horizontalInset: Grid.gutter,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,
-        title: Text('Friends', style: headerTitleStyle),
+        title: Text(context.l10n.friendsTitle, style: headerTitleStyle),
         titleStyle: headerTitleStyle,
         actions: [
           IconButton(
             key: const Key('people-add-friend'),
-            tooltip: 'Add friend',
+            tooltip: context.l10n.friendsAddFriend,
             color: navigationPrimaryForeground(context),
             icon: const Icon(LucideIcons.userPlus),
             onPressed: () => unawaited(showAddFriendSheet(context)),
@@ -341,7 +342,9 @@ class _SharedResults extends ConsumerWidget {
     if (ref.watch(accountOriginProvider) == null) {
       return const SizedBox.shrink();
     }
-    final header = const _SectionHeader(title: 'In your groups');
+    final header = _SectionHeader(
+      title: context.l10n.friendsSectionInYourGroups,
+    );
     if (pending || query.isEmpty) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -358,11 +361,11 @@ class _SharedResults extends ConsumerWidget {
         _EmptyLine(
           key: const Key('people-shared-error'),
           text: error is AccountApiException && error.statusCode == 429
-              ? 'Too many searches. Wait a minute and try again.'
-              : 'Couldn’t search your groups',
+              ? context.l10n.friendsTooManySearches
+              : context.l10n.friendsSearchGroupsError,
           action: TextButton(
             onPressed: () => ref.invalidate(sharedPeopleProvider(query)),
-            child: const Text('Retry'),
+            child: Text(context.l10n.friendsRetry),
           ),
         ),
       ];
@@ -373,7 +376,7 @@ class _SharedResults extends ConsumerWidget {
             person,
       ];
       body = people.isEmpty
-          ? [const _EmptyLine(text: 'No one else matches')]
+          ? [_EmptyLine(text: context.l10n.friendsNoOtherMatch)]
           : [
               for (final person in people)
                 PersonRow(
@@ -453,10 +456,13 @@ class _Searching extends StatelessWidget {
   const _Searching();
 
   @override
-  Widget build(BuildContext context) => const Padding(
-    padding: EdgeInsets.all(Grid.xs),
+  Widget build(BuildContext context) => Padding(
+    padding: const EdgeInsets.all(Grid.xs),
     child: Center(
-      child: KuzzLoadingIndicator(size: 20, semanticLabel: 'Searching'),
+      child: KuzzLoadingIndicator(
+        size: 20,
+        semanticLabel: context.l10n.friendsSearching,
+      ),
     ),
   );
 }

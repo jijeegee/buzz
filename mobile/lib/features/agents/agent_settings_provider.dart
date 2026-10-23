@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import 'agent_settings.dart';
 
@@ -97,14 +98,11 @@ class AgentSettingsException implements Exception {
   String toString() => message;
 }
 
-const agentSettingsReadOnlyMessage =
-    'This agent\'s settings can only be changed on the computer it runs on.';
+String get agentSettingsReadOnlyMessage => appL10n.agentsSettingsReadOnly;
 
-const agentSettingsNameLockedMessage =
-    'This agent’s name can only be changed on the computer it runs on.';
+String get agentSettingsNameLockedMessage => appL10n.agentsSettingsNameLocked;
 
-const agentSettingsChangedMessage =
-    'Settings changed on another device. Reopen to see the latest.';
+String get agentSettingsChangedMessage => appL10n.agentsSettingsChanged;
 
 /// Loads the editable definition of the agent with this pubkey, or
 /// [AgentSettingsReadOnly] named after its kind:30177 projection (falls back
@@ -217,14 +215,14 @@ Future<void> saveAgentSettings(
   DateTime? now,
 }) async {
   if (!loaded.nameEditable && draft.name != loaded.draft.name) {
-    throw const AgentSettingsException(agentSettingsNameLockedMessage);
+    throw AgentSettingsException(agentSettingsNameLockedMessage);
   }
   final invalid = validateAgentSettings(draft);
   if (invalid != null) throw AgentSettingsException(invalid);
 
   final head = await _fetchPersona(relay, loaded.owner, loaded.personaD);
   if (head == null || head.id != loaded.event.id) {
-    throw const AgentSettingsException(agentSettingsChangedMessage);
+    throw AgentSettingsException(agentSettingsChangedMessage);
   }
 
   if (draft.name.trim() != loaded.draft.name.trim()) {

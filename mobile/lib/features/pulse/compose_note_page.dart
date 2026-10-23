@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/mention_tags.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -72,7 +73,7 @@ class ComposeNotePage extends HookConsumerWidget {
       appBar: FrostedAppBar(
         leading: TextButton(
           onPressed: () => Navigator.of(context).pop(),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.pulseCancel),
         ),
         actions: [
           Padding(
@@ -91,11 +92,15 @@ class ComposeNotePage extends HookConsumerWidget {
                       child: KuzzLoadingIndicator(
                         size: 16,
                         semanticLabel: _isReply
-                            ? 'Sending reply'
-                            : 'Publishing post',
+                            ? context.l10n.pulseSendingReply
+                            : context.l10n.pulsePublishingPost,
                       ),
                     )
-                  : Text(_isReply ? 'Reply' : 'Post'),
+                  : Text(
+                      _isReply
+                          ? context.l10n.pulseReply
+                          : context.l10n.pulsePost,
+                    ),
             ),
           ),
         ],
@@ -137,8 +142,8 @@ class ComposeNotePage extends HookConsumerWidget {
                         style: context.textTheme.bodyLarge,
                         decoration: InputDecoration(
                           hintText: _isReply
-                              ? 'Post your reply'
-                              : 'What’s on your mind?',
+                              ? context.l10n.pulseReplyHint
+                              : context.l10n.pulsePostHint,
                           border: InputBorder.none,
                           enabledBorder: InputBorder.none,
                           focusedBorder: InputBorder.none,
@@ -187,7 +192,7 @@ class _ReplyContext extends ConsumerWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Replying to $displayName',
+            context.l10n.pulseReplyingTo(displayName),
             style: context.textTheme.labelMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),

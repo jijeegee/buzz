@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../activity/inbox_item.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
@@ -160,10 +161,10 @@ SearchChatResults buildSearchChatResults({
       thread: row,
       channelName: channelName.isEmpty
           ? (row.isDm
-                ? 'Direct message'
+                ? appL10n.searchDirectMessage
                 : row.isGroupChat
                 ? emptyChatTitle
-                : 'Group')
+                : appL10n.searchGroup)
           : channelName,
       title: title,
       at: row.at,
@@ -240,5 +241,5 @@ String searchHitThreadTitle(
       return chatThreadTitle(row);
     }
   }
-  return 'Thread';
+  return appL10n.searchThread;
 }

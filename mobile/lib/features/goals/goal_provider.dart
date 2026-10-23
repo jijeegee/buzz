@@ -2,6 +2,7 @@ import 'dart:math';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import 'goal_tree.dart';
 
@@ -80,7 +81,7 @@ class GoalActions {
     final signer = SignedEventRelay(session: session, nsec: relayConfig.nsec);
     final editor = signer.pubkey;
     if (editor == null) {
-      throw const GoalTreeException('Sign in to edit goals.');
+      throw GoalTreeException(appL10n.goalsSignInToEdit);
     }
     for (var attempt = 0; attempt < _maxAttempts; attempt++) {
       if (attempt > 0) {
@@ -113,9 +114,7 @@ class GoalActions {
       }
     }
     _ref.invalidate(goalTreeProvider(channelId));
-    throw const GoalTreeException(
-      'The goals kept changing while saving. Try again.',
-    );
+    throw GoalTreeException(appL10n.goalsSaveConflict);
   }
 }
 

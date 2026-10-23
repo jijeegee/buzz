@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
@@ -18,7 +19,8 @@ import 'group_preview.dart';
 import 'groups_api.dart';
 
 /// Shown when an invitation can no longer be accepted.
-const invitationNoLongerValidMessage = 'This invitation is no longer valid.';
+String get invitationNoLongerValidMessage =>
+    appL10n.groupsInvitationNoLongerValid;
 
 /// My pending group invitations. Loaded when first watched (app start, as
 /// Chats is the first tab); [refresh] runs on resume and when Chats opens.
@@ -125,7 +127,7 @@ class GroupInvitationsRow extends ConsumerWidget {
               const SizedBox(width: Grid.twelve),
               Expanded(
                 child: Text(
-                  'Invitations · $count',
+                  context.l10n.groupsInvitationsCount(count),
                   style: context.textTheme.bodyLarge?.copyWith(
                     fontWeight: FontWeight.w600,
                   ),
@@ -180,14 +182,14 @@ class GroupInvitationsPage extends HookConsumerWidget {
                 onPressed: () => unawaited(
                   ref.read(groupInvitationsProvider.notifier).refresh(),
                 ),
-                child: const Text('Try again'),
+                child: Text(context.l10n.groupsTryAgain),
               ),
             )
           : const Center(child: KuzzLoadingIndicator());
     } else if (invitations.isEmpty) {
       body = Center(
         child: Text(
-          'No invitations',
+          context.l10n.groupsNoInvitations,
           key: const ValueKey('invitations-empty'),
           style: context.textTheme.bodyMedium?.copyWith(
             color: context.colors.onSurfaceVariant,
@@ -214,7 +216,7 @@ class GroupInvitationsPage extends HookConsumerWidget {
     }
 
     return FrostedScaffold(
-      appBar: const FrostedAppBar(title: Text('Invitations')),
+      appBar: FrostedAppBar(title: Text(context.l10n.groupsInvitationsTitle)),
       body: body,
     );
   }
@@ -243,9 +245,8 @@ class GroupInvitationTile extends HookConsumerWidget {
     final title = isChat
         ? watchChannelTitle(ref, group.toChannel())
         : group.name;
-    final joinFailed = isChat
-        ? 'Couldn’t join the chat. Try again.'
-        : 'Couldn’t join group. Try again.';
+    final l10n = context.l10n;
+    final joinFailed = isChat ? l10n.groupsJoinChatError : l10n.groupsJoinError;
 
     void say(String message) => ScaffoldMessenger.maybeOf(
       context,
@@ -268,7 +269,7 @@ class GroupInvitationTile extends HookConsumerWidget {
         );
       } on GroupsApiException catch (error) {
         if (error.message.contains('chat is full')) {
-          say('This chat is full.');
+          say(l10n.groupsChatFull);
         } else if (error.isConflict || error.isNotFound) {
           say(invitationNoLongerValidMessage);
         } else {
@@ -287,13 +288,13 @@ class GroupInvitationTile extends HookConsumerWidget {
       try {
         await ref.read(groupInvitationsProvider.notifier).decline(invitation);
       } catch (_) {
-        say('Couldn’t decline. Try again.');
+        say(l10n.groupsDeclineError);
       } finally {
         if (context.mounted) busy.value = false;
       }
     }
 
-    final who = inviterName ?? 'Someone';
+    final who = inviterName ?? l10n.groupsSomeone;
     return Padding(
       padding: const EdgeInsets.symmetric(
         horizontal: Grid.gutter,
@@ -317,8 +318,12 @@ class GroupInvitationTile extends HookConsumerWidget {
                   ),
                 ),
                 Text(
-                  '$who invited you · '
-                  '${isChat ? chatPeopleLabel(group.memberCount) : memberCountLabel(group.memberCount)}',
+                  l10n.groupsInvitedYou(
+                    who,
+                    isChat
+                        ? chatPeopleLabel(group.memberCount)
+                        : memberCountLabel(group.memberCount),
+                  ),
                   maxLines: 2,
                   overflow: TextOverflow.ellipsis,
                   style: context.textTheme.bodySmall?.copyWith(
@@ -332,13 +337,13 @@ class GroupInvitationTile extends HookConsumerWidget {
                     TextButton(
                       key: ValueKey('invitation-decline-${invitation.id}'),
                       onPressed: busy.value ? null : () => unawaited(decline()),
-                      child: const Text('Decline'),
+                      child: Text(l10n.groupsDecline),
                     ),
                     const SizedBox(width: Grid.xxs),
                     FilledButton(
                       key: ValueKey('invitation-join-${invitation.id}'),
                       onPressed: busy.value ? null : () => unawaited(join()),
-                      child: const Text('Join'),
+                      child: Text(l10n.groupsJoin),
                     ),
                   ],
                 ),

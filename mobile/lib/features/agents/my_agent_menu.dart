@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/devices/agent_host_devices.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -27,7 +28,7 @@ class MyAgentMenu extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
     key: ValueKey('my-agent-menu-${agent.pubkey}'),
     icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
-    tooltip: 'Agent actions',
+    tooltip: context.l10n.agentsActions,
     onPressed: () => showMyAgentSheet(context, ref, agent: agent, name: name),
   );
 }
@@ -135,7 +136,10 @@ class MyAgentSheet extends ConsumerWidget {
                           ),
                         ),
                         Text(
-                          '${myAgentStatusLabel(status)} · $computer',
+                          context.l10n.agentsStatusOnComputer(
+                            myAgentStatusLabel(status),
+                            computer,
+                          ),
                           key: ValueKey('my-agent-sheet-status-$pubkey'),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
@@ -155,7 +159,7 @@ class MyAgentSheet extends ConsumerWidget {
                     child: _QuickAction(
                       key: ValueKey('my-agent-menu-message-$pubkey'),
                       icon: LucideIcons.messageSquare,
-                      label: 'Message',
+                      label: context.l10n.agentsMessage,
                       onTap: () => run(
                         (page) => unawaited(
                           openMyAgentDm(page, pageRef, pubkey, name),
@@ -169,7 +173,7 @@ class MyAgentSheet extends ConsumerWidget {
                         ? _QuickAction(
                             key: ValueKey('my-agent-menu-stop-$pubkey'),
                             icon: LucideIcons.square,
-                            label: 'Stop',
+                            label: context.l10n.agentsStop,
                             onTap: busy
                                 ? null
                                 : () => run(
@@ -181,7 +185,7 @@ class MyAgentSheet extends ConsumerWidget {
                         : _QuickAction(
                             key: ValueKey('my-agent-menu-start-$pubkey'),
                             icon: LucideIcons.play,
-                            label: 'Start',
+                            label: context.l10n.agentsStart,
                             onTap: busy || !myAgentCanStart(agent, status)
                                 ? null
                                 : () => run(
@@ -198,7 +202,7 @@ class MyAgentSheet extends ConsumerWidget {
                 key: ValueKey('my-agent-menu-edit-$pubkey'),
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.pencil),
-                title: const Text('Edit'),
+                title: Text(context.l10n.agentsEdit),
                 onTap: () =>
                     run((page) => openMyAgentSettings(page, pubkey, name)),
               ),
@@ -206,7 +210,7 @@ class MyAgentSheet extends ConsumerWidget {
                 key: ValueKey('my-agent-menu-profile-$pubkey'),
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.userRound),
-                title: const Text('View profile'),
+                title: Text(context.l10n.agentsViewProfile),
                 onTap: () => run((page) => showUserProfileSheet(page, pubkey)),
               ),
             ],

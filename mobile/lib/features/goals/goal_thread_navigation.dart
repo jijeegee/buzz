@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channels_provider.dart';
 import 'goal_links.dart';
@@ -29,8 +30,8 @@ void openGoalLink(
       SnackBar(
         content: Text(
           target.messageId == null
-              ? 'Could not open the thread'
-              : 'Could not open the message',
+              ? context.l10n.goalsOpenThreadError
+              : context.l10n.goalsOpenMessageError,
         ),
       ),
     );

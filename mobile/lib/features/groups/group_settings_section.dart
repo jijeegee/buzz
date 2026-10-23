@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:share_plus/share_plus.dart';
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
@@ -40,22 +41,15 @@ String groupAddressPrefix(String relayBaseUrl) {
 /// User-facing text for a refused address change.
 String publicAddressErrorMessage(Object error) {
   if (error is GroupsApiException) {
-    if (error.isConflict) return 'This address is taken.';
+    if (error.isConflict) return appL10n.groupsAddressTaken;
     if (error.statusCode == 400) {
       return error.message.contains('reserved')
-          ? 'This address is reserved.'
-          : 'Use 3-32 characters: a-z, 0-9 and _.';
+          ? appL10n.groupsAddressReserved
+          : appL10n.groupsAddressRules;
     }
   }
-  return 'Couldn’t save. Try again.';
+  return appL10n.groupsSaveError;
 }
-
-const _toPublicBody =
-    'Anyone on Kuzz will be able to find this group and read its past '
-    'messages.';
-const _toPrivateBody =
-    'The public address will be removed and the group will disappear from '
-    'search. Members stay.';
 
 /// Group settings rows: Visibility, Public address, Invite link and Who can
 /// invite. [canManage] is owner/admin.
@@ -80,6 +74,7 @@ class GroupSettingsCard extends HookConsumerWidget {
     final isPublic = (info?.visibility ?? channel.visibility) == 'open';
     final policy = info?.invitePolicy ?? 'members';
     final canSeeLink = canManage || policy != 'admins';
+    final l10n = context.l10n;
     final chevron = Icon(
       LucideIcons.chevronRight,
       size: 18,
@@ -93,18 +88,18 @@ class GroupSettingsCard extends HookConsumerWidget {
     Future<void> changeVisibility() async {
       final next = await showGroupChoiceSheet<String>(
         context: context,
-        title: 'Visibility',
+        title: l10n.groupsVisibility,
         selected: isPublic ? 'open' : 'private',
-        options: const [
+        options: [
           GroupChoice(
             value: 'open',
-            label: 'Public group',
-            key: ValueKey('group-visibility-open'),
+            label: l10n.groupsPublicGroup,
+            key: const ValueKey('group-visibility-open'),
           ),
           GroupChoice(
             value: 'private',
-            label: 'Private group',
-            key: ValueKey('group-visibility-private'),
+            label: l10n.groupsPrivateGroup,
+            key: const ValueKey('group-visibility-private'),
           ),
         ],
       );
@@ -114,10 +109,10 @@ class GroupSettingsCard extends HookConsumerWidget {
       final confirmed = await showGroupConfirmDialog(
         context,
         title: toPublic
-            ? 'Make this group public?'
-            : 'Make this group private?',
-        body: toPublic ? _toPublicBody : _toPrivateBody,
-        confirmLabel: toPublic ? 'Make public' : 'Make private',
+            ? l10n.groupsMakePublicTitle
+            : l10n.groupsMakePrivateTitle,
+        body: toPublic ? l10n.groupsToPublicBody : l10n.groupsToPrivateBody,
+        confirmLabel: toPublic ? l10n.groupsMakePublic : l10n.groupsMakePrivate,
       );
       if (!confirmed) return;
       saving.value = true;
@@ -128,7 +123,7 @@ class GroupSettingsCard extends HookConsumerWidget {
         ref.invalidate(groupInfoProvider(channel.id));
         onVisibilityChanged?.call(next);
       } catch (_) {
-        say('Couldn’t change this setting. Try again.');
+        say(l10n.groupsSettingChangeError);
       } finally {
         if (context.mounted) saving.value = false;
       }
@@ -137,18 +132,18 @@ class GroupSettingsCard extends HookConsumerWidget {
     Future<void> changeInvitePolicy() async {
       final next = await showGroupChoiceSheet<String>(
         context: context,
-        title: 'Who can invite',
+        title: l10n.groupsWhoCanInvite,
         selected: policy,
-        options: const [
+        options: [
           GroupChoice(
             value: 'members',
-            label: 'All members',
-            key: ValueKey('group-invite-policy-members'),
+            label: l10n.groupsAllMembers,
+            key: const ValueKey('group-invite-policy-members'),
           ),
           GroupChoice(
             value: 'admins',
-            label: 'Admins only',
-            key: ValueKey('group-invite-policy-admins'),
+            label: l10n.groupsAdminsOnly,
+            key: const ValueKey('group-invite-policy-admins'),
           ),
         ],
       );
@@ -157,7 +152,7 @@ class GroupSettingsCard extends HookConsumerWidget {
         await ref.read(groupsApiProvider).setInvitePolicy(channel.id, next);
         ref.invalidate(groupInfoProvider(channel.id));
       } catch (_) {
-        say('Couldn’t change this setting. Try again.');
+        say(l10n.groupsSettingChangeError);
       }
     }
 
@@ -166,8 +161,8 @@ class GroupSettingsCard extends HookConsumerWidget {
         AppListRow(
           key: const ValueKey('group-settings-visibility'),
           icon: isPublic ? LucideIcons.globe : LucideIcons.lock,
-          title: 'Visibility',
-          value: isPublic ? 'Public group' : 'Private group',
+          title: l10n.groupsVisibility,
+          value: isPublic ? l10n.groupsPublicGroup : l10n.groupsPrivateGroup,
           trailing: saving.value
               ? const KuzzLoadingIndicator(size: 18)
               : chevron,
@@ -177,8 +172,10 @@ class GroupSettingsCard extends HookConsumerWidget {
         AppListRow(
           key: const ValueKey('group-settings-address'),
           icon: LucideIcons.atSign,
-          title: 'Public address',
-          subtitle: info?.handle == null ? 'Not set' : '$prefix${info!.handle}',
+          title: l10n.groupsPublicAddress,
+          subtitle: info?.handle == null
+              ? l10n.groupsNotSet
+              : '$prefix${info!.handle}',
           trailing: chevron,
           onTap: info == null
               ? null
@@ -195,7 +192,7 @@ class GroupSettingsCard extends HookConsumerWidget {
         AppListRow(
           key: const ValueKey('group-settings-invite-link'),
           icon: LucideIcons.link,
-          title: 'Invite link',
+          title: l10n.groupsInviteLink,
           trailing: chevron,
           onTap: () => unawaited(
             showInviteLinkSheet(
@@ -209,8 +206,10 @@ class GroupSettingsCard extends HookConsumerWidget {
         AppListRow(
           key: const ValueKey('group-settings-invite-policy'),
           icon: LucideIcons.userPlus,
-          title: 'Who can invite',
-          value: policy == 'admins' ? 'Admins only' : 'All members',
+          title: l10n.groupsWhoCanInvite,
+          value: policy == 'admins'
+              ? l10n.groupsAdminsOnly
+              : l10n.groupsAllMembers,
           trailing: chevron,
           onTap: info == null ? null : changeInvitePolicy,
         ),
@@ -239,7 +238,7 @@ Future<bool> showGroupConfirmDialog(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(context).pop(false),
-          child: const Text('Cancel'),
+          child: Text(context.l10n.groupsCancel),
         ),
         FilledButton(
           key: const ValueKey('group-confirm'),
@@ -260,7 +259,7 @@ Future<void> showPublicAddressSheet(
   required String? current,
 }) => showKuzzModalBottomSheet<void>(
   context: context,
-  title: 'Public address',
+  title: context.l10n.groupsPublicAddress,
   isScrollControlled: true,
   showDragHandle: true,
   builder: (_) =>
@@ -350,8 +349,8 @@ class PublicAddressSheet extends HookConsumerWidget {
                       onChanged: (_) => error.value = null,
                       onSubmitted: (_) => unawaited(save()),
                       style: context.textTheme.bodyLarge,
-                      decoration: const InputDecoration(
-                        hintText: 'address',
+                      decoration: InputDecoration(
+                        hintText: context.l10n.groupsAddressHint,
                         border: InputBorder.none,
                         enabledBorder: InputBorder.none,
                         focusedBorder: InputBorder.none,
@@ -381,7 +380,11 @@ class PublicAddressSheet extends HookConsumerWidget {
               onPressed: changed && !saving.value
                   ? () => unawaited(save())
                   : null,
-              child: Text(saving.value ? 'Saving…' : 'Save'),
+              child: Text(
+                saving.value
+                    ? context.l10n.groupsSaving
+                    : context.l10n.groupsSave,
+              ),
             ),
           ],
         ),
@@ -398,7 +401,7 @@ Future<void> showInviteLinkSheet(
   required bool canReset,
 }) => showKuzzModalBottomSheet<void>(
   context: context,
-  title: 'Invite link',
+  title: context.l10n.groupsInviteLink,
   isScrollControlled: true,
   showDragHandle: true,
   builder: (_) => InviteLinkSheet(groupId: groupId, canReset: canReset),
@@ -441,9 +444,9 @@ class InviteLinkSheet extends HookConsumerWidget {
     Future<void> reset() async {
       final confirmed = await showGroupConfirmDialog(
         context,
-        title: 'Reset link?',
-        body: 'The old link will stop working.',
-        confirmLabel: 'Reset link',
+        title: context.l10n.groupsResetLinkTitle,
+        body: context.l10n.groupsResetLinkBody,
+        confirmLabel: context.l10n.groupsResetLink,
       );
       if (!confirmed || !context.mounted) return;
       resetting.value = true;
@@ -452,9 +455,7 @@ class InviteLinkSheet extends HookConsumerWidget {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(
-              content: Text('Couldn’t reset the link. Try again.'),
-            ),
+            SnackBar(content: Text(context.l10n.groupsResetLinkError)),
           );
         }
       } finally {
@@ -470,12 +471,12 @@ class InviteLinkSheet extends HookConsumerWidget {
               mainAxisSize: MainAxisSize.min,
               children: [
                 Text(
-                  'Couldn’t load the invite link.',
+                  context.l10n.groupsInviteLinkLoadError,
                   style: context.textTheme.bodyMedium,
                 ),
                 TextButton(
                   onPressed: () => loadSerial.value++,
-                  child: const Text('Try again'),
+                  child: Text(context.l10n.groupsTryAgain),
                 ),
               ],
             )
@@ -508,12 +509,12 @@ class InviteLinkSheet extends HookConsumerWidget {
                 child: FilledButton.tonalIcon(
                   key: const ValueKey('invite-link-copy'),
                   icon: const Icon(LucideIcons.copy, size: 18),
-                  label: const Text('Copy link'),
+                  label: Text(context.l10n.groupsCopyLink),
                   onPressed: () => unawaited(
                     copyToClipboard(
                       context,
                       current.url,
-                      message: 'Link copied',
+                      message: context.l10n.groupsLinkCopied,
                     ),
                   ),
                 ),
@@ -523,7 +524,7 @@ class InviteLinkSheet extends HookConsumerWidget {
                 child: FilledButton.tonalIcon(
                   key: const ValueKey('invite-link-share'),
                   icon: const Icon(LucideIcons.share2, size: 18),
-                  label: const Text('Share link'),
+                  label: Text(context.l10n.groupsShareLink),
                   onPressed: () {
                     final box = context.findRenderObject() as RenderBox?;
                     unawaited(
@@ -549,7 +550,11 @@ class InviteLinkSheet extends HookConsumerWidget {
               style: TextButton.styleFrom(
                 foregroundColor: context.colors.error,
               ),
-              child: Text(resetting.value ? 'Resetting…' : 'Reset link'),
+              child: Text(
+                resetting.value
+                    ? context.l10n.groupsResetting
+                    : context.l10n.groupsResetLink,
+              ),
             ),
           ],
         ],

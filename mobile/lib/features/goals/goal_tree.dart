@@ -1,6 +1,8 @@
 import 'dart:convert';
 import 'dart:math';
 
+import '../../shared/l10n/l10n.dart';
+
 /// Goal tree (kind 40110) — mirrors `kuzz_core::goal_tree`.
 ///
 /// One document per channel or DM. The root is the conversation's single
@@ -15,14 +17,29 @@ const int maxGoalNoteChars = 4000;
 const int maxGoalContentBytes = 64 * 1024;
 
 enum GoalStatus {
-  open('open', 'To do'),
-  inProgress('in_progress', 'In progress'),
-  done('done', 'Done'),
-  dropped('dropped', 'Dropped');
+  open('open'),
+  inProgress('in_progress'),
+  done('done'),
+  dropped('dropped');
 
-  const GoalStatus(this.wire, this.label);
+  const GoalStatus(this.wire);
   final String wire;
-  final String label;
+
+  /// The status as a goal's status button names it.
+  String label(AppLocalizations l10n) => switch (this) {
+    open => l10n.goalsStatusOpen,
+    inProgress => l10n.goalsStatusInProgress,
+    done => l10n.goalsStatusDone,
+    dropped => l10n.goalsStatusDropped,
+  };
+
+  /// The goal actions menu item that sets this status.
+  String markLabel(AppLocalizations l10n) => switch (this) {
+    open => l10n.goalsMarkOpen,
+    inProgress => l10n.goalsMarkInProgress,
+    done => l10n.goalsMarkDone,
+    dropped => l10n.goalsMarkDropped,
+  };
 
   static GoalStatus parse(String? value) => GoalStatus.values.firstWhere(
     (status) => status.wire == value,
@@ -150,7 +167,7 @@ class GoalTree {
       'nodes': [for (final node in nodes) node.toJson()],
     });
     if (utf8.encode(content).length > maxGoalContentBytes) {
-      throw const GoalTreeException('The goals are too large to save.');
+      throw GoalTreeException(appL10n.goalsTooLarge);
     }
     return content;
   }
@@ -229,7 +246,7 @@ class GoalTree {
 
   void validate() {
     if (nodes.length > maxGoalNodes) {
-      throw const GoalTreeException('Too many goals.');
+      throw GoalTreeException(appL10n.goalsTooMany);
     }
     final ids = <String>{};
     final threads = <String>{};
@@ -244,17 +261,17 @@ class GoalTree {
       final titleError = goalTitleError(node.title);
       if (titleError != null) throw GoalTreeException(titleError);
       if (node.note.runes.length > maxGoalNoteChars) {
-        throw const GoalTreeException('Keep the note shorter.');
+        throw GoalTreeException(appL10n.goalsNoteTooLong);
       }
       for (final thread in node.threads) {
         if (!threads.add(thread)) {
-          throw const GoalTreeException('A thread can work on only one goal.');
+          throw GoalTreeException(appL10n.goalsThreadOneGoal);
         }
       }
       if (node.parent == null) roots++;
     }
     if (nodes.isNotEmpty && roots != 1) {
-      throw const GoalTreeException('There must be exactly one layer 1 goal.');
+      throw GoalTreeException(appL10n.goalsOneRoot);
     }
     final parents = {for (final node in nodes) node.id: node.parent};
     for (final node in nodes) {
@@ -267,7 +284,7 @@ class GoalTree {
       while (cursor != null) {
         depth++;
         if (depth > maxGoalDepth) {
-          throw const GoalTreeException('Goals are nested too deeply.');
+          throw GoalTreeException(appL10n.goalsTooDeep);
         }
         cursor = parents[cursor];
       }
@@ -296,12 +313,12 @@ class GoalTree {
 }
 
 String? goalTitleError(String title) {
-  if (title.trim().isEmpty) return 'Write the goal in one sentence.';
+  if (title.trim().isEmpty) return appL10n.goalsTitleEmpty;
   if (title.contains('\n') || title.contains('\r')) {
-    return 'Keep the goal on one line.';
+    return appL10n.goalsTitleOneLine;
   }
   if (title.runes.length > maxGoalTitleChars) {
-    return 'Keep the goal under $maxGoalTitleChars characters.';
+    return appL10n.goalsTitleTooLong(maxGoalTitleChars);
   }
   return null;
 }
@@ -418,7 +435,7 @@ class RemoveGoal extends GoalOp {
     if (tree.node(id) == null) throw GoalTreeException('goal $id not found');
     final doomed = tree.subtreeIds(id);
     if (doomed.length > 1 && !recursive) {
-      throw const GoalTreeException('Remove its sub-goals too.');
+      throw GoalTreeException(appL10n.goalsRemoveSubGoalsToo);
     }
     return GoalTree([
       for (final node in tree.nodes)

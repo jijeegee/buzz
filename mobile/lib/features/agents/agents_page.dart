@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
@@ -142,7 +143,7 @@ class AgentsPage extends HookConsumerWidget {
         final agent = agentsByPubkey[pubkey];
         if (agent != null) return nameOf(agent);
       }
-      return member.name ?? 'Missing agent';
+      return member.name ?? context.l10n.agentsMissingAgent;
     }
 
     final teamPresets = [
@@ -211,7 +212,7 @@ class AgentsPage extends HookConsumerWidget {
         horizontalInset: Grid.gutter,
         showBottomDivider: true,
         bottomDividerOpacity: 0.07,
-        title: Text('Agents', style: headerTitleStyle),
+        title: Text(context.l10n.agentsTitle, style: headerTitleStyle),
         titleStyle: headerTitleStyle,
         bottomHeight: Grid.xxs,
         bottom: const SizedBox.expand(),
@@ -240,17 +241,17 @@ class AgentsPage extends HookConsumerWidget {
                 height: 36,
                 child: KuzzViewSwitch<_AgentsTab>(
                   key: const Key('agents-tabs'),
-                  semanticsLabel: 'Agents view',
-                  options: const [
+                  semanticsLabel: context.l10n.agentsViewLabel,
+                  options: [
                     KuzzViewOption(
                       value: _AgentsTab.myAgents,
-                      label: 'My agents',
-                      key: Key('agents-tab-agents'),
+                      label: context.l10n.agentsTabMyAgents,
+                      key: const Key('agents-tab-agents'),
                     ),
                     KuzzViewOption(
                       value: _AgentsTab.presets,
-                      label: 'Presets',
-                      key: Key('agents-tab-presets'),
+                      label: context.l10n.agentsTabPresets,
+                      key: const Key('agents-tab-presets'),
                     ),
                   ],
                   selected: tab.value,
@@ -260,7 +261,9 @@ class AgentsPage extends HookConsumerWidget {
             ),
             AgentsFilterField(
               controller: filterController,
-              hint: onPresets ? 'Find presets' : 'Find agents',
+              hint: onPresets
+                  ? context.l10n.agentsFindPresets
+                  : context.l10n.agentsFindAgents,
               onChanged: (value) => filter.value = value,
             ),
             if (onPresets)
@@ -282,14 +285,10 @@ class AgentsPage extends HookConsumerWidget {
                   child: Center(child: KuzzLoadingIndicator()),
                 )
               else if (agents.isEmpty)
-                note(
-                  'No agents yet. Agents run on your computers: create one in '
-                  'the Kuzz app on your computer.',
-                  key: const Key('agents-empty'),
-                )
+                note(context.l10n.agentsEmpty, key: const Key('agents-empty'))
               else if (groups.isEmpty)
                 note(
-                  'No agents match that name.',
+                  context.l10n.agentsNoMatch,
                   key: const Key('agents-no-match'),
                 ),
               for (final deviceId in deviceIds) ...[
@@ -305,7 +304,7 @@ class AgentsPage extends HookConsumerWidget {
                   MyAgentTile(agent: agent, name: nameOf(agent)),
               ],
               if (teams.isNotEmpty) ...[
-                const AgentsSectionTitle('Teams'),
+                AgentsSectionTitle(context.l10n.agentsSectionTeams),
                 for (final team in teams)
                   _TeamRow(
                     key: ValueKey('agents-team-${team.id}'),
@@ -348,7 +347,7 @@ List<Widget> _presetsChildren(
       borderRadius: BorderRadius.circular(Radii.md),
     ),
     child: Text(
-      'Presets are templates. Create agents in the Kuzz app on your computer.',
+      context.l10n.agentsPresetsNote,
       style: context.textTheme.bodySmall?.copyWith(
         color: context.colors.onSurfaceVariant,
       ),
@@ -361,16 +360,18 @@ List<Widget> _presetsChildren(
     )
   else if (presets.isEmpty && teams.isEmpty)
     note(
-      filtering ? 'No presets match that name.' : 'No presets yet.',
+      filtering
+          ? context.l10n.agentsNoPresetsMatch
+          : context.l10n.agentsNoPresets,
       key: const Key('agents-presets-empty'),
     ),
   if (presets.isNotEmpty) ...[
-    const AgentsSectionTitle('Agent presets'),
+    AgentsSectionTitle(context.l10n.agentsSectionAgentPresets),
     for (final preset in presets)
       _PresetRow(key: ValueKey('agents-preset-${preset.id}'), preset: preset),
   ],
   if (teams.isNotEmpty) ...[
-    const AgentsSectionTitle('Team presets'),
+    AgentsSectionTitle(context.l10n.agentsSectionTeamPresets),
     for (final team in teams)
       _TeamPresetRow(
         key: ValueKey('agents-team-preset-${team.id}'),

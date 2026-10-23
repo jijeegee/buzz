@@ -180,7 +180,9 @@ class NoteCard extends HookConsumerWidget {
                 if (note.replyParentId != null) ...[
                   const SizedBox(height: 2),
                   Text(
-                    'Replying to ${_replyTargetLabel(note, labels)}',
+                    context.l10n.pulseReplyingTo(
+                      _replyTargetLabel(note, labels),
+                    ),
                     style: context.textTheme.labelSmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -236,7 +238,7 @@ class NoteCard extends HookConsumerWidget {
                         await copyToClipboard(
                           context,
                           _shareUri(note),
-                          message: 'Copied note URI',
+                          message: context.l10n.pulseCopiedUri,
                         );
                       },
                     ),
@@ -286,7 +288,7 @@ class _FollowButton extends StatelessWidget {
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: Grid.half, vertical: 2),
         child: Text(
-          isFollowing ? 'Following' : 'Follow',
+          isFollowing ? context.l10n.pulseFollowing : context.l10n.pulseFollow,
           style: context.textTheme.labelSmall?.copyWith(
             color: context.colors.primary,
             fontWeight: FontWeight.w700,
