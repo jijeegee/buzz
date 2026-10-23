@@ -26,6 +26,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:kuzz/features/channels/channel_hash_links.dart';
 import 'package:kuzz/features/agents/owner_view/owner_view.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/channels/channel.dart';
@@ -12289,7 +12290,7 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(observer.pushCount, initialPushCount + 1);
-    });
+    }, skip: !kChannelHashLinksEnabled);
 
     testWidgets('missing channel link shows an error', (tester) async {
       final randomChannel = _channel(id: 'random-channel', name: 'random');
@@ -12321,61 +12322,63 @@ void main() {
       await tester.pump();
 
       expect(find.text('Group could not be opened'), findsOneWidget);
-    });
+    }, skip: !kChannelHashLinksEnabled);
 
-    testWidgets('tapping a channel link inside a thread opens that channel', (
-      tester,
-    ) async {
-      final randomChannel = _channel(id: 'random-channel', name: 'random');
-      final observer = _TestNavigatorObserver();
+    testWidgets(
+      'tapping a channel link inside a thread opens that channel',
+      (tester) async {
+        final randomChannel = _channel(id: 'random-channel', name: 'random');
+        final observer = _TestNavigatorObserver();
 
-      await tester.pumpWidget(
-        _buildTestable(
-          messages: [
-            _textMsg(
-              id: 'msg1',
-              pubkey: 'alice',
-              content: 'Thread root #random',
-              createdAt: 1000,
-            ),
-          ],
-          users: {
-            'alice': const UserProfile(pubkey: 'alice', displayName: 'Alice'),
-          },
-          channels: [_testChannel, randomChannel],
-          navigatorObservers: [observer],
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final threadMessages = formatTimeline([
-        _textMsg(
-          id: 'msg1',
-          pubkey: 'alice',
-          content: 'Thread root #random',
-          createdAt: 1000,
-        ),
-      ]);
-      Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
-        MaterialPageRoute<void>(
-          builder: (_) => ThreadDetailPage(
-            threadHead: threadMessages.single,
-            allMessages: threadMessages,
-            channelId: _channelId,
-            currentPubkey: 'self',
-            isMember: true,
-            isArchived: false,
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [
+              _textMsg(
+                id: 'msg1',
+                pubkey: 'alice',
+                content: 'Thread root #random',
+                createdAt: 1000,
+              ),
+            ],
+            users: {
+              'alice': const UserProfile(pubkey: 'alice', displayName: 'Alice'),
+            },
+            channels: [_testChannel, randomChannel],
+            navigatorObservers: [observer],
           ),
-        ),
-      );
-      await tester.pumpAndSettle();
-      final initialPushCount = observer.pushCount;
+        );
+        await tester.pumpAndSettle();
 
-      await tester.tap(find.text('random').last);
-      await tester.pumpAndSettle();
+        final threadMessages = formatTimeline([
+          _textMsg(
+            id: 'msg1',
+            pubkey: 'alice',
+            content: 'Thread root #random',
+            createdAt: 1000,
+          ),
+        ]);
+        Navigator.of(tester.element(find.byType(ChannelDetailPage))).push(
+          MaterialPageRoute<void>(
+            builder: (_) => ThreadDetailPage(
+              threadHead: threadMessages.single,
+              allMessages: threadMessages,
+              channelId: _channelId,
+              currentPubkey: 'self',
+              isMember: true,
+              isArchived: false,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        final initialPushCount = observer.pushCount;
 
-      expect(observer.pushCount, initialPushCount + 1);
-    });
+        await tester.tap(find.text('random').last);
+        await tester.pumpAndSettle();
+
+        expect(observer.pushCount, initialPushCount + 1);
+      },
+      skip: !kChannelHashLinksEnabled,
+    );
 
     testWidgets('thread shows day dividers when replies cross days', (
       tester,

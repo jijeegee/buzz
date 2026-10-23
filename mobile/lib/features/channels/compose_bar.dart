@@ -38,6 +38,7 @@ import '../../shared/l10n/l10n.dart';
 import '../activity/compose_drafts_provider.dart';
 import 'camera_capture_cleanup.dart';
 import 'channel.dart';
+import 'channel_hash_links.dart';
 import 'group_avatar.dart';
 import 'channel_management_provider.dart';
 import 'channels_provider.dart';

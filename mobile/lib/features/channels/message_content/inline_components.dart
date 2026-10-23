@@ -62,10 +62,11 @@ List<MarkdownComponent> _useMessageInlineComponents({
         onMentionTap: inputs.hasMentionHandler ? mentionTap : null,
       ),
       CustomEmojiMd(inputs.customEmoji, content: finalContent, size: emojiSize),
-      _ChannelLinkMd(
-        channelNames: inputs.channelNames,
-        onChannelTap: channelTap,
-      ),
+      if (kChannelHashLinksEnabled)
+        _ChannelLinkMd(
+          channelNames: inputs.channelNames,
+          onChannelTap: channelTap,
+        ),
       ...MarkdownComponent.inlineComponents,
     ],
     [inputs],

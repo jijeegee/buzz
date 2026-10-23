@@ -4,6 +4,7 @@ import { useChannelNavigation } from "@/shared/context/ChannelNavigationContext"
 import { detectPrefixQuery } from "@/shared/lib/detectPrefixQuery";
 import type { Channel } from "@/shared/api/types";
 import type { AutocompleteEdit } from "./useRichTextEditor";
+import { CHANNEL_HASH_LINKS_ENABLED } from "./channelHashLinks";
 
 export type ChannelSuggestion = {
   id: string;
@@ -66,7 +67,10 @@ export function useChannelLinks() {
 
   /** Channel names (original casing) for overlay highlighting. */
   const knownChannelNames = React.useMemo<string[]>(
-    () => channels.filter(isChannelSuggestable).map((ch) => ch.name),
+    () =>
+      CHANNEL_HASH_LINKS_ENABLED
+        ? channels.filter(isChannelSuggestable).map((ch) => ch.name)
+        : [],
     [channels],
   );
 
@@ -123,6 +127,7 @@ export function useChannelLinks() {
 
   const updateChannelQuery = React.useCallback(
     (value: string, cursorPosition: number) => {
+      if (!CHANNEL_HASH_LINKS_ENABLED) return;
       // Store latest values so the debounced callback always uses fresh data
       latestValueRef.current = value;
       latestCursorRef.current = cursorPosition;

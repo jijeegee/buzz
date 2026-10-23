@@ -16,6 +16,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:kuzz/features/activity/compose_drafts_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_hash_links.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/compose_bar.dart';
 import 'package:kuzz/features/channels/mentions/thread_agent_audience.dart';
@@ -825,7 +826,10 @@ void main() {
       );
       expect(find.byType(TextField), findsOneWidget);
       expect(find.byIcon(LucideIcons.atSign), findsOneWidget);
-      expect(find.byIcon(LucideIcons.users), findsOneWidget);
+      expect(
+        find.byIcon(LucideIcons.users),
+        kChannelHashLinksEnabled ? findsOneWidget : findsNothing,
+      );
       expect(find.byIcon(LucideIcons.smilePlus), findsOneWidget);
       expect(find.byIcon(LucideIcons.aLargeSmall), findsOneWidget);
     });
@@ -1664,8 +1668,10 @@ void main() {
       await tester.tap(find.byIcon(LucideIcons.atSign));
       tester.widget<TextField>(find.byType(TextField)).controller!.clear();
       await tester.pump();
-      await tester.tap(find.byIcon(LucideIcons.users));
-      await tester.pump();
+      if (kChannelHashLinksEnabled) {
+        await tester.tap(find.byIcon(LucideIcons.users));
+        await tester.pump();
+      }
       await tester.tap(find.byIcon(LucideIcons.aLargeSmall));
       await tester.pumpAndSettle();
       await tester.tap(find.byIcon(LucideIcons.bold));
@@ -1675,7 +1681,7 @@ void main() {
       await tester.tap(find.byTooltip('Add attachment'));
       await tester.pumpAndSettle();
 
-      expect(hapticCalls, hasLength(6));
+      expect(hapticCalls, hasLength(kChannelHashLinksEnabled ? 6 : 5));
       expect(
         hapticCalls.every(
           (call) => call.arguments == 'HapticFeedbackType.selectionClick',
@@ -1684,40 +1690,44 @@ void main() {
       );
     });
 
-    testWidgets('composer suggestions use the shared popover treatment', (
-      tester,
-    ) async {
-      await tester.pumpWidget(
-        _buildComposeBar(
-          uploadService: _testUploadService(nostr.Keys.generate().nsec),
-          channels: [_makeChannel(name: 'general', channelType: 'stream')],
-          onSend:
-              (
-                content,
-                mentionPubkeys, {
-                mediaTags = const <List<String>>[],
-              }) async {},
-        ),
-      );
-      await _expandComposer(tester);
-      await tester.tap(find.byIcon(LucideIcons.users));
-      await tester.pumpAndSettle();
+    testWidgets(
+      'composer suggestions use the shared popover treatment',
+      (tester) async {
+        await tester.pumpWidget(
+          _buildComposeBar(
+            uploadService: _testUploadService(nostr.Keys.generate().nsec),
+            channels: [_makeChannel(name: 'general', channelType: 'stream')],
+            onSend:
+                (
+                  content,
+                  mentionPubkeys, {
+                  mediaTags = const <List<String>>[],
+                }) async {},
+          ),
+        );
+        await _expandComposer(tester);
+        await tester.tap(find.byIcon(LucideIcons.users));
+        await tester.pumpAndSettle();
 
-      final surface = find.byKey(const ValueKey('channel-suggestions-popover'));
-      final material = tester.widget<Material>(surface);
-      final shape = material.shape! as RoundedRectangleBorder;
-      expect(shape.borderRadius, BorderRadius.circular(Radii.popover));
-      expect(shape.side.color, Colors.black.withValues(alpha: 0.04));
-      expect(material.elevation, appPopoverElevation);
-      expect(
-        material.shadowColor,
-        appPopoverShadowColor(tester.element(surface)),
-      );
-      expect(
-        tester.widget<Text>(find.text('general')).style?.fontFamily,
-        'Inter',
-      );
-    });
+        final surface = find.byKey(
+          const ValueKey('channel-suggestions-popover'),
+        );
+        final material = tester.widget<Material>(surface);
+        final shape = material.shape! as RoundedRectangleBorder;
+        expect(shape.borderRadius, BorderRadius.circular(Radii.popover));
+        expect(shape.side.color, Colors.black.withValues(alpha: 0.04));
+        expect(material.elevation, appPopoverElevation);
+        expect(
+          material.shadowColor,
+          appPopoverShadowColor(tester.element(surface)),
+        );
+        expect(
+          tester.widget<Text>(find.text('general')).style?.fontFamily,
+          'Inter',
+        );
+      },
+      skip: !kChannelHashLinksEnabled,
+    );
 
     testWidgets('shows cached member mentions before the refresh completes', (
       tester,
