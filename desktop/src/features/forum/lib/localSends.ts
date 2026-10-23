@@ -431,6 +431,17 @@ export function mergeForumReplies(
   return insertByTime(ordered, rows, false);
 }
 
+/**
+ * Asks the relay, by id, for the post a restored reply answers. The relay
+ * leaves deleted events out of every query, so only a lookup that answered
+ * without it means the post is gone; a failed lookup says nothing.
+ */
+export type ForumParentCheck = {
+  state: Map<string, "checking" | "present" | "gone" | "unknown">;
+  lookup: (channelId: string, eventId: string) => Promise<RelayEvent[]>;
+  onSettled: () => void;
+};
+
 function isForumKind(kind: number) {
   return kind === KIND_FORUM_POST || kind === KIND_FORUM_COMMENT;
 }
@@ -448,6 +459,7 @@ export function syncForumLocalSends(
   channelId: string,
   retry: (variables: ForumSendVariables) => Promise<unknown>,
   relayCheck?: StoredSendRelayCheck,
+  parentCheck?: ForumParentCheck,
 ) {
   const fetched = fetchedForumEvents(queryClient, channelId);
   const sends = readForumLocalSends(queryClient, channelId);
@@ -524,6 +536,39 @@ export function syncForumLocalSends(
       if (checked === undefined || checked === "checking") continue;
     }
     const parentEventId = stored.send.parentEventId;
+    if (
+      parentEventId &&
+      parentCheck &&
+      !fetched.some((event) => event.id === parentEventId) &&
+      !sends.some((send) => send.eventId === parentEventId)
+    ) {
+      const parent = parentCheck.state.get(parentEventId);
+      if (parent === undefined) {
+        parentCheck.state.set(parentEventId, "checking");
+        parentCheck
+          .lookup(channelId, parentEventId)
+          .then((events) => {
+            parentCheck.state.set(
+              parentEventId,
+              events.some((event) => event.id === parentEventId)
+                ? "present"
+                : "gone",
+            );
+          })
+          .catch(() => {
+            parentCheck.state.set(parentEventId, "unknown");
+          })
+          .finally(() => parentCheck.onSettled());
+      }
+      if (parent === undefined || parent === "checking") continue;
+      if (parent === "gone") {
+        // Its post was deleted: no card or thread could show the reply, so
+        // nothing could retry or delete it.
+        forgetFailedSend(localKey);
+        removeStoredSend(localKey);
+        continue;
+      }
+    }
     writeForumLocalSend(queryClient, {
       localKey,
       channelId,

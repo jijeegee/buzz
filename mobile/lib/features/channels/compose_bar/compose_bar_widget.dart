@@ -19,6 +19,11 @@ class ComposeBar extends HookConsumerWidget {
   final String? threadHeadId;
   final String? rootId;
 
+  /// Persists the draft under this key instead of the channel or thread key,
+  /// for composers that are not a channel thread (a forum post's replies).
+  /// Typing indicators and thread mentions still follow [threadHeadId].
+  final String? draftKey;
+
   /// Thread head tags; its agent `p` tags seed automatic mentions.
   final List<List<String>> threadRootTags;
 
@@ -32,6 +37,7 @@ class ComposeBar extends HookConsumerWidget {
     this.hintText,
     this.threadHeadId,
     this.rootId,
+    this.draftKey,
     this.threadRootTags = const [],
     this.channelMainAgentAudience = false,
     this.focusNode,
@@ -47,7 +53,8 @@ class ComposeBar extends HookConsumerWidget {
       () => controller.text,
     );
     useEffect(() => controller.dispose, [controller]);
-    final draftKey = composeDraftKey(channelId, threadHeadId: threadHeadId);
+    final draftKey =
+        this.draftKey ?? composeDraftKey(channelId, threadHeadId: threadHeadId);
     final draftRevision = useRef(0);
     final draftIdentity = _composerDraftIdentity(ref);
     final isComposerExpanded = useState(false);

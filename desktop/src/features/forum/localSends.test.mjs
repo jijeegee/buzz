@@ -413,6 +413,82 @@ test("a failed reply comes back into its thread after a restart", async () => {
   assert.deepEqual(shownPosts(queryClient, rows), []);
 });
 
+function parentCheck(lookup) {
+  return { state: new Map(), lookup, onSettled: () => {} };
+}
+
+/**
+ * A reply that failed in an earlier session, synced after a restart with only
+ * the posts list loaded (its thread closed) until both lookups settle.
+ */
+async function restoreReplyWithPostsList(posts, lookupParent) {
+  const row = await failInEarlierSession({
+    ...post("orphan"),
+    kind: KIND_COMMENT,
+    parentEventId: POST,
+  });
+  const queryClient = newClient();
+  queryClient.setQueryData(["forum-posts", CHANNEL, null], {
+    posts,
+    nextCursor: null,
+  });
+  const relay = relayCheck(async () => []);
+  const parents = parentCheck(lookupParent);
+  for (let i = 0; i < 3; i++) {
+    syncForumLocalSends(queryClient, CHANNEL, async () => {}, relay, parents);
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+  return { row, rows: localRows(queryClient) };
+}
+
+test("a failed reply to a deleted post is dropped after a restart", async () => {
+  const lookups = [];
+  const { row, rows } = await restoreReplyWithPostsList([], async (...args) => {
+    lookups.push(args);
+    return [];
+  });
+  assert.deepEqual(lookups, [[CHANNEL, POST]]);
+  assert.deepEqual(rows, []);
+  assert.equal(hasFailedSend(row.localKey), false);
+  assert.deepEqual(storedSends(CHANNEL), []);
+});
+
+test("a failed reply to a listed post is restored without a lookup", async () => {
+  const lookups = [];
+  const { row, rows } = await restoreReplyWithPostsList(
+    [fetchedPost(POST, "root", 100)],
+    async (...args) => {
+      lookups.push(args);
+      return [];
+    },
+  );
+  assert.deepEqual(lookups, []);
+  assert.deepEqual(
+    rows.map((send) => [send.localKey, send.failed]),
+    [[row.localKey, true]],
+  );
+});
+
+test("a failed reply is kept when its post is found or cannot be looked up", async () => {
+  for (const lookupParent of [
+    async () => [{ ...fetchedReply(POST, "root", 100), id: POST }],
+    async () => {
+      throw new Error("relay unreachable");
+    },
+  ]) {
+    localStorage.clear();
+    initDraftStore(ME, "wss://forum.test");
+    restart();
+    const { row, rows } = await restoreReplyWithPostsList([], lookupParent);
+    assert.deepEqual(
+      rows.map((send) => [send.localKey, send.failed]),
+      [[row.localKey, true]],
+    );
+    assert.equal(hasFailedSend(row.localKey), true);
+    assert.equal(storedSends(CHANNEL).length, 1);
+  }
+});
+
 test("a post the relay stored before the app quit is not shown as failed", async () => {
   const row = await failInEarlierSession(post("landed"));
   const queryClient = newClient();

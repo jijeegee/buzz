@@ -104,6 +104,9 @@ final localSendStoreProvider = Provider<LocalSendStore?>((ref) {
 /// confirms a row, and a row it lacks, or a lookup that fails, is marked
 /// failed for retry or delete. After a failed lookup the rows stay
 /// unverified, so a retry asks the relay again before sending.
+///
+/// A forum reply whose post the relay no longer has (deleted) is dropped:
+/// it has no thread to show it in, so nothing could retry or delete it.
 Future<void> restoreLocalSends(
   Ref ref,
   ChannelMessagesNotifier messages,
@@ -134,6 +137,60 @@ Future<void> restoreLocalSends(
       failed.markFailed(id);
     }
   }
+  if (delivered == null) return;
+  final orphaned = await _forumRepliesToGonePosts(
+    ref,
+    channelId,
+    stored.where((event) => !delivered!.contains(event.id)),
+  );
+  if (!ref.mounted) return;
+  for (final id in orphaned) {
+    messages.removeLocalMessage(id);
+  }
+}
+
+/// Ids of unsent forum [replies] whose post a by-id lookup no longer finds.
+/// The relay leaves deleted events out of every query, by id too, so only a
+/// lookup that answered counts: when it fails, none are returned. A post
+/// still unsent on this device is not looked up.
+Future<Set<String>> _forumRepliesToGonePosts(
+  Ref ref,
+  String channelId,
+  Iterable<NostrEvent> replies,
+) async {
+  final local = ref.read(pendingLocalMessagesProvider(channelId));
+  final parentOf = <String, String>{};
+  for (final event in replies) {
+    final parent = event.threadReference.parentId;
+    if (event.kind != EventKind.forumComment || parent == null) continue;
+    if (!local.containsKey(parent)) parentOf[event.id] = parent;
+  }
+  if (parentOf.isEmpty) return const {};
+  final parents = parentOf.values.toSet().toList();
+  final List<NostrEvent> found;
+  try {
+    found = await ref
+        .read(relaySessionProvider.notifier)
+        .queryRelay([
+          NostrFilter(
+            ids: parents,
+            kinds: const [EventKind.forumPost, EventKind.forumComment],
+            tags: {
+              '#h': [channelId],
+            },
+            limit: parents.length,
+          ),
+        ], timeout: _restoreLookupTimeout)
+        .timeout(_restoreLookupTimeout);
+  } catch (error) {
+    debugPrint('[restoreLocalSends] post lookup failed for $channelId: $error');
+    return const {};
+  }
+  final present = {for (final event in found) event.id};
+  return {
+    for (final MapEntry(key: id, value: parent) in parentOf.entries)
+      if (!present.contains(parent)) id,
+  };
 }
 
 /// Ids of [events] the relay already has in [channelId]. Throws when the

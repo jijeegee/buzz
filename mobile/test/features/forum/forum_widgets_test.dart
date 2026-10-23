@@ -103,6 +103,7 @@ Widget _buildPostsView({
       userCacheProvider.overrideWith(() => _FakeUserCacheNotifier(users)),
       profileProvider.overrideWith(() => _FakeProfileNotifier()),
       forumPostsProvider(ch.id).overrideWith((ref) async => postsResponse),
+      savedPrefsProvider.overrideWithValue(_testPrefs),
       relayClientProvider.overrideWithValue(
         RelayClient(baseUrl: 'http://localhost:3000'),
       ),
@@ -995,6 +996,57 @@ void main() {
       await tester.pumpAndSettle();
 
       expect(find.text('Reply to this post\u2026'), findsOneWidget);
+    });
+
+    testWidgets('keeps reply drafts per post, apart from the new post', (
+      tester,
+    ) async {
+      // Each screen gets a fresh scope; drafts persist through prefs.
+      Future<void> openThread(String postId) async {
+        await tester.pumpWidget(const SizedBox());
+        await tester.pumpWidget(
+          _buildThreadPage(
+            postEventId: postId,
+            threadResponse: ForumThreadResponse(
+              post: _makePost(eventId: postId),
+              replies: const [],
+              totalReplies: 0,
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+      }
+
+      const replyHint = 'Reply to this post…';
+      // A collapsed composer shows its saved draft, else its hint.
+      Future<void> type(String hint, String text) async {
+        await tester.tap(find.text(hint));
+        await tester.pumpAndSettle();
+        await tester.enterText(find.byType(TextField), text);
+        await tester.pump();
+      }
+
+      await openThread('post1');
+      await type(replyHint, 'Reply to one');
+
+      await openThread('post2');
+      expect(find.text('Reply to one'), findsNothing);
+      await type(replyHint, 'Reply to two');
+
+      await tester.pumpWidget(const SizedBox());
+      await tester.pumpWidget(
+        _buildPostsView(postsResponse: const ForumPostsResponse(posts: [])),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(find.byTooltip('New post'));
+      await tester.pumpAndSettle();
+      expect(find.text('Write your post…'), findsOneWidget);
+      await type('Write your post…', 'New post text');
+
+      await openThread('post1');
+      expect(find.text('Reply to one'), findsOneWidget);
+      await openThread('post2');
+      expect(find.text('Reply to two'), findsOneWidget);
     });
 
     testWidgets('renders media previews for forum posts', (tester) async {

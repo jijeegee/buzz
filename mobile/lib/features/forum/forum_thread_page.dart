@@ -362,6 +362,8 @@ class _ThreadContent extends HookConsumerWidget {
         if (isMember && !isArchived)
           ComposeBar(
             channelId: channelId,
+            // Each post keeps its own reply draft, apart from the new post's.
+            draftKey: forumReplyDraftKey(channelId, post.eventId),
             hintText: context.l10n.forumReplyHint,
             onSend:
                 (

@@ -2,6 +2,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useCallback, useEffect, useRef } from "react";
 
 import { getForumPosts, getForumThread } from "@/shared/api/forum";
+import { relayClient } from "@/shared/api/relayClient";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import {
   lookupStoredSendOnRelay,
@@ -22,11 +23,13 @@ import type {
   ForumThreadResponse,
   SendChannelMessageResult,
 } from "@/shared/api/types";
+import { KIND_FORUM_COMMENT, KIND_FORUM_POST } from "@/shared/constants/kinds";
 import { t } from "@/shared/i18n";
 
 import {
   buildForumLocalEvent,
   type ForumLocalSend,
+  type ForumParentCheck,
   type ForumSendVariables,
   findForumLocalSend,
   forumLocalSendsKey,
@@ -314,6 +317,16 @@ export function useForumSend(pubkey: string | undefined) {
   return { send, retry: mutation.mutateAsync };
 }
 
+/** A forum post or reply by id; the relay omits it once it is deleted. */
+function lookupForumEventOnRelay(channelId: string, eventId: string) {
+  return relayClient.fetchEvents({
+    ids: [eventId],
+    kinds: [KIND_FORUM_POST, KIND_FORUM_COMMENT],
+    "#h": [channelId],
+    limit: 1,
+  });
+}
+
 /**
  * Own forum rows of a channel, kept in step with what the forum loads: rows
  * a fetch returned go, and sends an earlier app session never got
@@ -337,6 +350,11 @@ export function useForumLocalSends(
       },
       isDisposed: () => disposed,
     };
+    const parentCheck: ForumParentCheck = {
+      state: new Map(),
+      lookup: lookupForumEventOnRelay,
+      onSettled: relayCheck.onSettled,
+    };
     let syncing = false;
     const sync = () => {
       if (syncing) return;
@@ -347,6 +365,7 @@ export function useForumLocalSends(
           channelId,
           (variables) => retryRef.current(variables),
           relayCheck,
+          parentCheck,
         );
       } finally {
         syncing = false;

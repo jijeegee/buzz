@@ -44,8 +44,11 @@ void main() {
   /// (which restores stored sends) is live while the forum is shown.
   Future<(ProviderContainer, _ForumSession)> openForum({
     List<NostrEvent> relayEvents = const [],
+    bool postLookupFails = false,
   }) async {
-    final session = _ForumSession()..relayEvents.addAll(relayEvents);
+    final session = _ForumSession()
+      ..relayEvents.addAll(relayEvents)
+      ..postLookupFails = postLookupFails;
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => session),
@@ -369,6 +372,91 @@ void main() {
     await close(tester, container);
   });
 
+  /// A reply to [root] that failed to send, then a restart with the relay
+  /// holding [relayEvents].
+  Future<(ProviderContainer, NostrEvent)> restartWithFailedReply(
+    WidgetTester tester, {
+    required List<NostrEvent> relayEvents,
+    bool postLookupFails = false,
+  }) async {
+    final root = _post('root', createdAt: 1000);
+    final (first, firstSession) =
+        await tester.runAsync(() => openForum(relayEvents: [root])) ??
+        (null, null);
+    unawaited(
+      ForumEventDelivery.capture(first!).createReply(
+        channelId: _channelId,
+        parentEventId: root.id,
+        content: 'lost reply',
+      ),
+    );
+    final reply = await firstSession!.nextPublish;
+    firstSession.reject();
+    await tester.runAsync(_pumpEventQueue);
+    expect(_storedIds(prefs), [reply.id]);
+
+    final (container, _) =
+        await tester.runAsync(() async {
+          await restart(first);
+          final opened = await openForum(
+            relayEvents: relayEvents,
+            postLookupFails: postLookupFails,
+          );
+          for (var i = 0; i < 5; i++) {
+            await _pumpEventQueue();
+          }
+          return opened;
+        }) ??
+        (null, null);
+    return (container!, reply);
+  }
+
+  testWidgets('a failed reply to a deleted post is dropped on restart', (
+    tester,
+  ) async {
+    final (container, reply) = await restartWithFailedReply(
+      tester,
+      relayEvents: const [],
+    );
+    expect(
+      container.read(pendingLocalMessagesProvider(_channelId)),
+      isNot(contains(reply.id)),
+    );
+    expect(_storedIds(prefs), isEmpty);
+    container.dispose();
+  });
+
+  testWidgets('a failed reply to a listed post stays Not sent on restart', (
+    tester,
+  ) async {
+    final (container, reply) = await restartWithFailedReply(
+      tester,
+      relayEvents: [_post('root', createdAt: 1000)],
+    );
+    expect(
+      container.read(failedLocalMessagesProvider(_channelId)),
+      contains(reply.id),
+    );
+    expect(_storedIds(prefs), [reply.id]);
+    container.dispose();
+  });
+
+  testWidgets('a failed reply stays when its post cannot be looked up', (
+    tester,
+  ) async {
+    final (container, reply) = await restartWithFailedReply(
+      tester,
+      relayEvents: const [],
+      postLookupFails: true,
+    );
+    expect(
+      container.read(failedLocalMessagesProvider(_channelId)),
+      contains(reply.id),
+    );
+    expect(_storedIds(prefs), [reply.id]);
+    container.dispose();
+  });
+
   testWidgets('own rows and their Retry stay when a list refresh fails', (
     tester,
   ) async {
@@ -642,6 +730,9 @@ class _ForumSession extends RelaySessionNotifier {
 
   /// Thrown by forum list and thread queries while set.
   Object? listError;
+
+  /// Fails by-id lookups of forum posts, as an unreachable relay would.
+  var postLookupFails = false;
   final _listeners = <void Function(NostrEvent)>[];
   final _subscribed = Completer<void>();
   final _announced = <Completer<NostrEvent>>[];
@@ -686,6 +777,9 @@ class _ForumSession extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     final filter = filters.single;
+    if (postLookupFails && filter.kinds.contains(EventKind.forumPost)) {
+      throw Exception('relay unreachable');
+    }
     if (filter.ids != null) return _matching(filter);
     return [_bounds()];
   }

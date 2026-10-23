@@ -3,6 +3,11 @@ import 'package:flutter/foundation.dart';
 import '../../shared/l10n/time_format.dart';
 import '../../shared/relay/relay.dart';
 
+/// The composer draft slot for replies to [postId]. The new-post composer
+/// keeps the channel's own slot, so no two forum composers share text.
+String forumReplyDraftKey(String channelId, String postId) =>
+    '$channelId:forum-reply:$postId';
+
 /// A top-level forum post with an optional thread summary.
 @immutable
 class ForumPost {
