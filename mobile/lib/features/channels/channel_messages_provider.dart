@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
+import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
@@ -156,9 +157,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
     }
 
+    final me = ref.watch(myPubkeyProvider);
+    Future.microtask(() => restoreLocalSends(ref, this, me));
     final localSends = splitLocalSendsBySigner(
       ref.read(pendingLocalMessagesProvider(channelId)),
-      ref.watch(myPubkeyProvider),
+      me,
     );
     if (localSends.foreignIds.isNotEmpty) {
       bool own(NostrEvent event) => !localSends.foreignIds.contains(event.id);

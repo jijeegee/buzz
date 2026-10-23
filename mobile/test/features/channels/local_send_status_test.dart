@@ -15,6 +15,8 @@ import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
 import 'package:kuzz/features/channels/send_message_provider.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 const _channelId = '11111111-1111-4111-8111-111111111111';
 
@@ -32,13 +34,18 @@ void main() {
 
   Future<(ProviderContainer, _ControlledSession)> openChannel({
     Future<List<ChannelMember>> Function(int build)? members,
+    SharedPreferences? prefs,
+    String? signer,
   }) async {
     final session = _ControlledSession();
     var memberBuilds = 0;
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => session),
-        relayConfigProvider.overrideWith(() => config = _FixedConfig(nsec)),
+        relayConfigProvider.overrideWith(
+          () => config = _FixedConfig(signer ?? nsec),
+        ),
+        if (prefs != null) savedPrefsProvider.overrideWithValue(prefs),
         if (members != null)
           channelMembersProvider(
             _channelId,
@@ -311,6 +318,159 @@ void main() {
     config.switchTo(nostr.Keys.generate().nsec);
     await _pumpEventQueue();
     expect(shown(), isEmpty);
+  });
+
+  group('stored unsent messages', () {
+    /// Ids of the local sends kept on the device, by signer.
+    Map<String, List<String>> stored(SharedPreferences prefs) => {
+      for (final key in prefs.getKeys())
+        if (key.startsWith('local_sends_v1:'))
+          key.split(':').reversed.elementAt(1): [
+            for (final entry
+                in jsonDecode(prefs.getString(key)!) as List<dynamic>)
+              (entry as Map<String, dynamic>)['id'] as String,
+          ],
+    };
+
+    /// Closes [container] and reopens the preferences as a new app run does.
+    Future<SharedPreferences> restart(
+      ProviderContainer container,
+      SharedPreferences prefs,
+    ) async {
+      container.dispose();
+      final values = {
+        for (final key in prefs.getKeys()) key: prefs.getString(key) as Object,
+      };
+      SharedPreferences.resetStatic();
+      SharedPreferences.setMockInitialValues(values);
+      return SharedPreferences.getInstance();
+    }
+
+    /// Sends one message that fails, then restarts the app.
+    Future<(ProviderContainer, _ControlledSession, NostrEvent)>
+    failThenRestart() async {
+      SharedPreferences.setMockInitialValues({});
+      var prefs = await SharedPreferences.getInstance();
+      final (first, session) = await openChannel(prefs: prefs);
+      final send = first
+          .read(sendMessageProvider)
+          .call(
+            channelId: _channelId,
+            content: 'offline',
+            mentionPubkeys: const [],
+            keepFailedMessage: true,
+          );
+      final event = await session.nextPublish;
+      session.reject();
+      await send;
+      expect(stored(prefs), {
+        self: [event.id],
+      });
+
+      prefs = await restart(first, prefs);
+      final (container, next) = await openChannel(prefs: prefs);
+      await _pumpEventQueue();
+      return (container, next, event);
+    }
+
+    tearDown(SharedPreferences.resetStatic);
+
+    test('a failed row comes back after a restart, still failed', () async {
+      final (container, _, event) = await failThenRestart();
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+    });
+
+    test('retrying a restored row resends it and clears the store', () async {
+      final (container, session, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      final retry = container
+          .read(sendMessageProvider)
+          .retry(channelId: _channelId, eventId: event.id);
+      final republished = await session.nextPublish;
+      expect(republished.id, event.id);
+      session.accept();
+      await retry;
+
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('deleting a restored row clears the store', () async {
+      final (container, _, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      container
+          .read(sendMessageProvider)
+          .discard(channelId: _channelId, eventId: event.id);
+
+      expect(rowIds(container), isEmpty);
+      expect(container.read(failedLocalMessagesProvider(_channelId)), isEmpty);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('the echo of a restored row replaces it once', () async {
+      final (container, session, event) = await failThenRestart();
+      final prefs = container.read(savedPrefsProvider);
+      session.emit(event);
+      await _pumpEventQueue();
+
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.sent);
+      expect(stored(prefs), isEmpty);
+    });
+
+    test('another account never sees the stored row', () async {
+      final (container, _, event) = await failThenRestart();
+      final prefs = await restart(
+        container,
+        container.read(savedPrefsProvider),
+      );
+      final (other, _) = await openChannel(
+        prefs: prefs,
+        signer: nostr.Keys.generate().nsec,
+      );
+      await _pumpEventQueue();
+
+      expect(rowIds(other), isEmpty);
+      expect(other.read(pendingLocalMessagesProvider(_channelId)), isEmpty);
+      expect(stored(prefs), {
+        self: [event.id],
+      });
+    });
+
+    test('a send cut off by the app closing comes back failed', () async {
+      SharedPreferences.setMockInitialValues({});
+      var prefs = await SharedPreferences.getInstance();
+      final (first, session) = await openChannel(prefs: prefs);
+      unawaited(
+        first
+            .read(sendMessageProvider)
+            .call(
+              channelId: _channelId,
+              content: 'in flight',
+              mentionPubkeys: const [],
+              keepFailedMessage: true,
+            ),
+      );
+      final event = await session.nextPublish;
+      expect(statusOf(first, event.id), LocalSendStatus.pending);
+
+      prefs = await restart(first, prefs);
+      final (container, _) = await openChannel(prefs: prefs);
+      await _pumpEventQueue();
+      expect(rowIds(container), [event.id]);
+      expect(statusOf(container, event.id), LocalSendStatus.failed);
+    });
+
+    testWidgets('a restored row shows Not sent', (tester) async {
+      final (container, _, event) =
+          await tester.runAsync(failThenRestart) ?? (null, null, null);
+      await tester.pumpWidget(_StatusHarness(container: container!));
+      expect(find.text('offline'), findsOne);
+      expect(find.byKey(ValueKey('local-send-failed-${event!.id}')), findsOne);
+      expect(find.text('Not sent'), findsOne);
+    });
   });
 
   test('a retry that cannot start names the reason', () {
