@@ -2909,7 +2909,7 @@
   "messages.threadName.set": "Poner nombre al hilo",
   "messages.threadName.retry": "Reintentar",
   "messages.threadName.title": "Nombre del hilo",
-  "messages.threadName.description": "Visible para todos en este grupo. Hasta 40 caracteres latinos o 20 coreanos. Déjalo vacío para quitar el nombre.",
+  "messages.threadName.description": "Visible para todos en este grupo. Déjalo vacío para quitar el nombre.",
   "messages.threadName.saving": "Guardando…",
   "messages.send.notSent": "No enviado",
   "messages.send.sending": "Enviando",

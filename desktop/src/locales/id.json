@@ -2909,7 +2909,7 @@
   "messages.threadName.set": "Atur nama utas",
   "messages.threadName.retry": "Coba lagi",
   "messages.threadName.title": "Nama utas",
-  "messages.threadName.description": "Terlihat oleh semua orang di grup ini. Maksimal 40 karakter Latin atau 20 karakter Korea. Kosongkan untuk menghapus nama.",
+  "messages.threadName.description": "Terlihat oleh semua orang di grup ini. Kosongkan untuk menghapus nama.",
   "messages.threadName.saving": "Menyimpan…",
   "messages.send.notSent": "Tidak terkirim",
   "messages.send.sending": "Mengirim",

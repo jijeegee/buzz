@@ -95,6 +95,12 @@ void main() {
     expect(threadNameError('가' * 20), isNull);
     expect(threadNameError('가' * 10 + 'a' * 20), isNull);
     expect(threadNameError('가' * 21), isNotNull);
+    expect(threadNameError('é' * 40), isNull);
+    expect(threadNameError('Ж' * 40), isNull);
+    expect(threadNameError('ก' * 40), isNull);
+    expect(threadNameError('あ' * 21), isNotNull);
+    expect(threadNameError('😀' * 21), isNotNull);
+    expect(threadNameWeight('Привет 😀'), 9);
     expect(threadNameError('line\nbreak'), isNotNull);
     expect(
       latestThreadName(target, [named('old', 1), named('', 2)])?.content,

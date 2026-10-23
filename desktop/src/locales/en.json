@@ -16431,7 +16431,7 @@
   "@messages.threadName.title": {
     "description": "Thread name dialog, title and screen-reader label of the name field. Short."
   },
-  "messages.threadName.description": "Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.",
+  "messages.threadName.description": "Visible to everyone in this group. Leave empty to remove the name.",
   "@messages.threadName.description": {
     "description": "Thread name dialog, explanation under the title."
   },

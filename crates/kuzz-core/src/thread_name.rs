@@ -1,7 +1,20 @@
 //! Shared validation for channel-scoped thread names.
 
-/// Maximum name weight: ASCII characters cost one, other Unicode scalars two.
+/// Maximum name weight; see [`thread_name_weight`].
 pub const MAX_THREAD_NAME_WEIGHT: usize = 40;
+
+/// Twitter-style weight: Latin, Cyrillic, Greek, Arabic, Hebrew, Indic, Thai
+/// and other scripts below U+1100, plus general punctuation, cost one per
+/// scalar. Everything else (Hangul, CJK, kana, emoji) costs two. Desktop and
+/// mobile repeat these ranges.
+pub fn thread_name_weight(name: &str) -> usize {
+    name.chars()
+        .map(|c| match c as u32 {
+            0x0000..=0x10FF | 0x2000..=0x200D | 0x2010..=0x201F | 0x2032..=0x2037 => 1,
+            _ => 2,
+        })
+        .sum()
+}
 
 /// Validate the name event envelope and return its thread head reference.
 /// A plain e tag deliberately carries no NIP-10 reply/root marker.
@@ -46,13 +59,8 @@ pub fn validate_thread_name(name: &str) -> Result<(), &'static str> {
     {
         return Err("thread name must be trimmed and contain no control characters");
     }
-    if name
-        .chars()
-        .map(|c| if c.is_ascii() { 1 } else { 2 })
-        .sum::<usize>()
-        > MAX_THREAD_NAME_WEIGHT
-    {
-        return Err("thread name exceeds 40 English or 20 Korean characters");
+    if thread_name_weight(name) > MAX_THREAD_NAME_WEIGHT {
+        return Err("thread name is longer than 40 (Korean, Chinese, Japanese and emoji count 2)");
     }
     Ok(())
 }
@@ -102,6 +110,10 @@ mod tests {
             "a".repeat(40),
             "가".repeat(20),
             format!("{}{}", "가".repeat(10), "a".repeat(20)),
+            "é".repeat(40),
+            "Ж".repeat(40),
+            "ก".repeat(40),
+            "“a”—b".repeat(8),
         ] {
             assert!(validate_thread_name(&name).is_ok(), "{name:?}");
         }
@@ -109,6 +121,8 @@ mod tests {
             "a".repeat(41),
             "가".repeat(21),
             format!("{}a", "가".repeat(20)),
+            "あ".repeat(21),
+            "😀".repeat(21),
             " leading".into(),
             "trailing ".into(),
             "line\nbreak".into(),

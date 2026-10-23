@@ -543,7 +543,7 @@ pub enum MessagesCmd {
         #[arg(long)]
         content: String,
     },
-    /// Set a shared thread name (40 English / 20 Korean characters); empty clears it
+    /// Set a shared thread name (up to 40; Korean, Chinese, Japanese and emoji count 2); empty clears it
     NameThread {
         /// Channel UUID
         #[arg(long)]

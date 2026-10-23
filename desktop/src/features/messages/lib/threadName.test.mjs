@@ -12,6 +12,9 @@ test("thread names enforce English, Korean and mixed boundaries", () => {
     "a".repeat(40),
     "가".repeat(20),
     "가".repeat(10) + "a".repeat(20),
+    "é".repeat(40),
+    "Ж".repeat(40),
+    "ก".repeat(40),
   ]) {
     assert.equal(isValidThreadName(name), true);
   }
@@ -19,6 +22,8 @@ test("thread names enforce English, Korean and mixed boundaries", () => {
     "a".repeat(41),
     "가".repeat(21),
     "가".repeat(20) + "a",
+    "あ".repeat(21),
+    "😀".repeat(21),
     " leading",
     "trailing ",
     "a\nb",
@@ -27,6 +32,7 @@ test("thread names enforce English, Korean and mixed boundaries", () => {
     assert.equal(isValidThreadName(name), false);
   }
   assert.equal(threadNameWeight("한글 test"), 9);
+  assert.equal(threadNameWeight("Привет 😀"), 9);
 });
 
 test("live and history names converge without stale overwrites or channel leakage", () => {
