@@ -103,3 +103,66 @@ so a mismatch refuses every sign-in.
 `kuzz-admin regions add|remove` run only against the primary region's
 database. In a copy region they answer "not the primary": the list is written
 in one place and copied everywhere.
+
+## Turning stages off
+
+Each stage of the regions work can be turned off by a setting, except where
+noted. Migrations stay in place; none needs reverting. Settings are per relay
+and take effect on restart.
+
+| Stage | Turn off with | What stays, and is harmless |
+|-------|---------------|-----------------------------|
+| S0 order numbers | `KUZZ_PUBSUB_SEQ_ENVELOPE=off` | 0075 (no wasted numbers on duplicates), 0082, 0083 (event order per room). Pods read both message forms, so pods can be switched one by one. |
+| S0 resync signal | `KUZZ_RESYNC_SIGNAL=off` | Nothing; the relay only counts lag. |
+| S0 side-effect retry | `KUZZ_SIDE_EFFECT_RETRY=off` | 0077, 0081: `event_side_effects` keeps getting a row per event and deletes it on success. A failed side effect is not retried and its row stays (see below). |
+| S1 service names | `KUZZ_SERVICE_ALIASES=` (empty) | Nothing. Apps that connect through an alias stop reaching the community. |
+| S2 home markers | cannot be turned off | 0078–0080: one small directory row per room and a home region per account. Nothing reads them while there is one region. |
+| S3 routing | no setting: active while `regions` has more than one row | No migrations. With one region nothing is looked up. |
+| S4 region link | `KUZZ_REGION_LINK=off` | 0084–0086. Rows left in `region_outbox` only close connections and can be deleted. `user_block_versions` rows are tombstones. |
+| S5 global copy | only with the link (see below) | 0087: the guard triggers stay on the copy's tables. |
+
+**Apps.** Apps that opted into order numbers (`?kuzz_seq=1`) keep getting
+them from history and `OK` frames. With the envelope off, a live message
+that reaches a pod from another pod comes without a number; with the resync
+signal off, apps learn of a gap only when they reconnect.
+
+**Side effects with the retry off.** Watch for rows that stay:
+
+```sql
+SELECT count(*), min(created_at) FROM event_side_effects WHERE lease_until < now();
+```
+
+Turn the retry back on to run them, or delete them after checking `last_error`.
+
+### Taking back a second region
+
+A region other than the primary holds the global copy, and **cannot run with
+the link off**:
+- its guard triggers refuse the writes a relay without the link makes at startup;
+- its rooms are recorded in the primary as living there.
+
+So the way back is to remove the region, not to turn its link off:
+
+1. Move its rooms to the primary or another region (S6-3/S6-4).
+2. Follow [Removing a region](#removing-a-region).
+
+While no room's home is the region, step 1 is empty and taking it back is quick.
+
+The primary keeps running with its link off. In that case:
+- it stops its heartbeat, so every copy region's lag grows, and copy regions then refuse ban and membership checks they cannot confirm;
+- the publication and the full replica identity on `events` stay, and so does the extra WAL they cost;
+- each copy region's subscription keeps its slot, and so keeps WAL on the primary, until that region drops it.
+
+Turn the link off in the primary only once no other region is left.
+
+### Not covered by tests
+
+The two-region tests cover these:
+- a link failing and coming back (`a_link_down_fails_retryably_and_never_splits_the_room`);
+- a copy that stops and restarts (`e2e_regions_lag.rs`).
+
+They do not cover:
+- restarting a relay while messages flow (planned with the tangle tests, S4-8);
+- turning the stages above off in a running deployment.
+
+Try a switch in a staging deployment first.
