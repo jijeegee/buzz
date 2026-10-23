@@ -29,7 +29,9 @@ plus the rooms whose home it is.
   cleanup of unused uploads (`KUZZ_MEDIA_GC`) runs only in the primary, with
   the link on, and asks every other region which files its rooms use. It pauses
   elsewhere (`kuzz_media_gc_paused_total`). If a region does not answer, the
-  files in question are kept (`kuzz_media_gc_regions_unanswered_total`).
+  files in question are kept (`kuzz_media_gc_regions_unanswered_total`). A
+  region that is listed but not running, or not linked yet, stops all removals
+  until it answers or is removed.
 
 ## Adding a region
 

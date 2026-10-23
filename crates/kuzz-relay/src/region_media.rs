@@ -25,8 +25,13 @@ use crate::state::AppState;
 /// The route each region answers on.
 pub const MEDIA_IN_USE_PATH: &str = "/internal/region/media-in-use";
 
-/// One region's answer may take as long as its database check.
-const ASK_TIMEOUT: Duration = Duration::from_secs(150);
+/// Files asked about in one call. A region checks them in one statement,
+/// bounded at 120 s by the database; smaller questions answer well inside
+/// [`ASK_TIMEOUT`].
+const ASK_CHUNK: usize = 100;
+
+/// Time limit for one question, above the database's own bound.
+const ASK_TIMEOUT: Duration = Duration::from_secs(130);
 
 /// Which of `hashes` are in use, counting uploads and deletions since
 /// `grace_cutoff` (unix seconds) as use.
@@ -55,18 +60,17 @@ pub async fn in_use_elsewhere(
         return Ok(in_use);
     }
     let regions = state.db.list_regions().await.map_err(|e| e.to_string())?;
-    let question = serde_json::to_value(InUseQuestion {
-        hashes: hashes.to_vec(),
-        grace_cutoff: grace_cutoff.timestamp(),
-    })
-    .map_err(|e| e.to_string())?;
     for region in regions
         .iter()
         .filter(|region| region.id != state.config.region_id)
     {
-        let answer = tokio::time::timeout(
-            ASK_TIMEOUT,
-            crate::region_link::call(
+        for chunk in hashes.chunks(ASK_CHUNK) {
+            let question = serde_json::to_value(InUseQuestion {
+                hashes: chunk.to_vec(),
+                grace_cutoff: grace_cutoff.timestamp(),
+            })
+            .map_err(|e| e.to_string())?;
+            let answer = crate::region_link::call_within(
                 state,
                 &region.id,
                 *community.as_uuid(),
@@ -74,17 +78,15 @@ pub async fn in_use_elsewhere(
                 &question,
                 None,
                 None,
-            ),
-        )
-        .await;
-        let answer = match answer {
-            Ok(Ok(answer)) => serde_json::from_value::<InUseAnswer>(answer)
-                .map_err(|e| format!("region {} answered badly: {e}", region.id))?,
-            Ok(Err(error)) => return Err(format!("region {}: {error:?}", region.id)),
-            Err(_) => return Err(format!("region {} did not answer in time", region.id)),
-        };
-        // Only hashes that were asked about count.
-        in_use.extend(answer.in_use.into_iter().filter(|sha| hashes.contains(sha)));
+                ASK_TIMEOUT,
+            )
+            .await
+            .map_err(|error| format!("region {}: {error:?}", region.id))?;
+            let answer = serde_json::from_value::<InUseAnswer>(answer)
+                .map_err(|e| format!("region {} answered badly: {e}", region.id))?;
+            // Only hashes that were asked about count.
+            in_use.extend(answer.in_use.into_iter().filter(|sha| chunk.contains(sha)));
+        }
     }
     Ok(in_use)
 }

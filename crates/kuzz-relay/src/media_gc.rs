@@ -302,28 +302,9 @@ async fn clean_community<R: OtherRegions>(
     let tenant = TenantContext::resolved(community, String::new());
 
     for batch in shas.chunks(MAX_CLEANUP_HASHES_PER_CALL) {
-        let mut in_use = db
+        let in_use = db
             .media_hashes_in_use(community, batch, grace_cutoff)
             .await?;
-        if let Some(others) = regions {
-            let unused_here: Vec<String> = batch
-                .iter()
-                .filter(|sha| !in_use.contains(sha))
-                .cloned()
-                .collect();
-            match others
-                .in_use_elsewhere(community, &unused_here, grace_cutoff)
-                .await
-            {
-                Ok(elsewhere) => in_use.extend(elsewhere),
-                Err(error) => {
-                    // Every file in question is kept.
-                    warn!(%community, error, "media cleanup: a region did not answer; batch kept");
-                    metrics::counter!("kuzz_media_gc_regions_unanswered_total").increment(1);
-                    continue;
-                }
-            }
-        }
         let mut old_unused = Vec::new();
         for sha in batch.iter().filter(|sha| !in_use.contains(sha)) {
             // The sidecar's first-upload time covers files uploaded before
@@ -335,6 +316,21 @@ async fn clean_community<R: OtherRegions>(
                 Ok(_) => {}
                 Err(e) => {
                     warn!(%community, sha, error = %e, "media cleanup: sidecar unreadable; kept")
+                }
+            }
+        }
+        if let Some(others) = regions {
+            let candidates: Vec<String> = old_unused.iter().map(|(sha, _)| sha.clone()).collect();
+            match others
+                .in_use_elsewhere(community, &candidates, grace_cutoff)
+                .await
+            {
+                Ok(elsewhere) => old_unused.retain(|(sha, _)| !elsewhere.contains(sha)),
+                Err(error) => {
+                    // Every file in question is kept.
+                    warn!(%community, error, "media cleanup: a region did not answer; batch kept");
+                    metrics::counter!("kuzz_media_gc_regions_unanswered_total").increment(1);
+                    continue;
                 }
             }
         }
@@ -695,6 +691,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires Postgres and MinIO"]
     async fn cleanup_removes_only_unused_files_against_real_storage() {
+        let _one_at_a_time = STORAGE_TESTS.lock().await;
         use kuzz_media::BlobMeta;
 
         let mut config = crate::config::Config::for_test();
@@ -876,6 +873,10 @@ mod tests {
         assert!(exists(recent).await, "recent trash kept");
     }
 
+    /// The storage tests run one at a time: a run takes the cleanup's try-lock
+    /// and walks every community in the shared test database.
+    static STORAGE_TESTS: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
     /// Another region, as the cleanup in the primary sees it.
     struct FakeRegion {
         uses: HashSet<String>,
@@ -904,6 +905,7 @@ mod tests {
     #[tokio::test]
     #[ignore = "requires Postgres and MinIO"]
     async fn files_another_region_uses_are_kept() {
+        let _one_at_a_time = STORAGE_TESTS.lock().await;
         let mut config = crate::config::Config::for_test();
         config.media.s3_bucket = std::env::var("KUZZ_TEST_S3_BUCKET").expect("test bucket");
         config.media.s3_addressing_style = kuzz_media::config::S3AddressingStyle::Path;
@@ -924,8 +926,8 @@ mod tests {
                 .collect()
         };
         let old = chrono::Utc::now().timestamp() - 30 * 86_400;
-        let (used_elsewhere, unused, kept_unanswered) = (sha(), sha(), sha());
-        for sha in [&used_elsewhere, &unused, &kept_unanswered] {
+        let (used_elsewhere, unused, also_used_elsewhere) = (sha(), sha(), sha());
+        for sha in [&used_elsewhere, &unused, &also_used_elsewhere] {
             storage
                 .put(&format!("{sha}.png"), b"png", "image/png")
                 .await
@@ -948,14 +950,14 @@ mod tests {
             .await
             .expect("run")
             .expect("leader");
-        for sha in [&used_elsewhere, &unused, &kept_unanswered] {
+        for sha in [&used_elsewhere, &unused, &also_used_elsewhere] {
             assert!(exists(sidecar(sha)).await, "removed without an answer");
             assert!(exists(format!("{sha}.png")).await);
         }
 
         // Unused here: removed only when the other region does not use it.
         let jp = FakeRegion {
-            uses: [used_elsewhere.clone(), kept_unanswered.clone()].into(),
+            uses: [used_elsewhere.clone(), also_used_elsewhere.clone()].into(),
             answers: true,
         };
         run_once(&db, &storage, on, Some(&jp))
