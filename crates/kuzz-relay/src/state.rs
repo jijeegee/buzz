@@ -1205,6 +1205,10 @@ pub struct AppState {
     /// Per-community channel visibility string, used to gate the private-channel fan-out
     /// access check so open channels stay zero-cost. Invalidated on a flip.
     pub channel_visibility_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), String>>,
+    /// Whether a room hides history from before a member's join, so live
+    /// fan-out in rooms that show everything skips the history lookup.
+    /// Dropped with the visibility entry (a history switch drops both).
+    pub channel_history_cut_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), bool>>,
     /// Silent-block lists and DM-ness of channels (see [`crate::blocks`]).
     pub blocks: Arc<crate::blocks::BlockCaches>,
 
@@ -1492,6 +1496,12 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            channel_history_cut_cache: Arc::new(
+                moka::sync::Cache::builder()
+                    .max_capacity(10_000)
+                    .time_to_live(std::time::Duration::from_secs(10))
+                    .build(),
+            ),
             blocks: Arc::new(crate::blocks::BlockCaches::new()),
             audit_tx: audit_enabled.then_some(audit_tx),
             media_storage: Arc::new(media_storage),
@@ -1704,6 +1714,8 @@ impl AppState {
         channel_id: Uuid,
     ) {
         self.channel_visibility_cache
+            .invalidate(&(community_id, channel_id));
+        self.channel_history_cut_cache
             .invalidate(&(community_id, channel_id));
     }
 
@@ -2032,6 +2044,27 @@ impl AppState {
     /// the prefetched row (the cache is fail-safe by design), and a `private`
     /// read from the row still populates the cache. With `Some(row)` this
     /// method performs no DB I/O and cannot error.
+    /// [`kuzz_db::Db::channel_cuts_history`] behind a short cache.
+    pub async fn channel_cuts_history_cached(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+    ) -> Result<bool, kuzz_db::DbError> {
+        if let Some(cached) = self
+            .channel_history_cut_cache
+            .get(&(community_id, channel_id))
+        {
+            return Ok(cached);
+        }
+        let cuts = self
+            .db
+            .channel_cuts_history(community_id, channel_id)
+            .await?;
+        self.channel_history_cut_cache
+            .insert((community_id, channel_id), cuts);
+        Ok(cuts)
+    }
+
     pub async fn channel_visibility_cached(
         &self,
         community_id: CommunityId,

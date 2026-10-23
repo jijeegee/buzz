@@ -144,7 +144,14 @@ impl Db {
                                         WHERE cm.community_id = $1
                                           AND cm.channel_id = r.channel_id
                                           AND cm.pubkey = $3
-                                          AND cm.removed_at IS NULL)))))
+                                          AND cm.removed_at IS NULL))))
+                      -- A message from before the reader's join does not
+                      -- grant the file (since_join rooms).
+                      AND NOT channel_event_before_join($1, r.channel_id,
+                                                        event_history_sequence(e.channel_sequence,
+                                                            e.thread_root_sequence), $3)
+                      AND NOT channel_event_targets_before_join($1, r.channel_id, e.kind,
+                                                                e.tags, $3))
                OR EXISTS (
                     SELECT 1 FROM communities co
                     WHERE co.id = $1 AND co.icon LIKE '%/media/' || h.sha || '%')

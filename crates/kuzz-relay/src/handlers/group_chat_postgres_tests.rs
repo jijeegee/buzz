@@ -631,3 +631,184 @@ async fn workflows_are_rejected_in_group_chats() {
     let msg = rejection(send(&state, &tenant, &creator, workflow).await);
     assert!(msg.contains("chats cannot have workflows"), "{msg}");
 }
+
+/// Someone already in a private room with the adder is added straight into a
+/// group chat, at creation and later; a stranger still gets an invitation.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn people_sharing_a_room_are_added_directly() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (creator, friend, stranger) = (Keys::generate(), Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&creator, &friend, &stranger]).await;
+    // Only `friend` lists `creator`; `creator` does not list `friend`.
+    befriend(&state, &tenant, &friend, &creator).await;
+    let (_, first) = create_chat(&state, &tenant, &creator, &[&friend]).await;
+    assert!(first.expect("first chat").accepted);
+
+    // `friend` is not `creator`'s contact, but they share the first chat.
+    let (id, second) = create_chat(&state, &tenant, &friend, &[&creator, &stranger]).await;
+    let second = second.expect("second chat");
+    assert_eq!(second.message, "invite-sent:1");
+    let members = active_members(&state, &tenant, id).await;
+    assert_eq!(role_of(&members, &creator).as_deref(), Some("member"));
+    assert_eq!(role_of(&members, &stranger), None);
+
+    // A later add (kind:9000) follows the same rule.
+    let (id, third) = create_chat(&state, &tenant, &friend, &[]).await;
+    assert!(third.expect("third chat").accepted);
+    let put = sign(
+        &friend,
+        9000,
+        "",
+        vec![
+            tag(&["h", &id.to_string()]),
+            tag(&["p", &creator.public_key().to_hex()]),
+        ],
+    );
+    assert!(
+        send(&state, &tenant, &friend, put)
+            .await
+            .expect("add")
+            .accepted
+    );
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, id).await, &creator).as_deref(),
+        Some("member")
+    );
+}
+
+/// A private group hides earlier messages from a later member: quoting one
+/// is refused until the owner lets new members see earlier messages (kind
+/// 9002 `history`), which a plain member may not do. Group chats have no
+/// such setting.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn history_setting_and_quotes_of_hidden_messages() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, member) = (Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &member]).await;
+    let group = state
+        .db
+        .create_channel(
+            tenant.community(),
+            "history",
+            kuzz_db::channel::ChannelType::Stream,
+            kuzz_db::channel::ChannelVisibility::Private,
+            None,
+            owner.public_key().as_bytes(),
+            None,
+        )
+        .await
+        .expect("group")
+        .id;
+    let h = group.to_string();
+    let message = |keys: &Keys, content: &str, quote: Option<&str>| {
+        let mut tags = vec![tag(&["h", &h])];
+        if let Some(id) = quote {
+            tags.push(tag(&["q", id, ""]));
+        }
+        sign(keys, 9, content, tags)
+    };
+    let early = message(&owner, "before the join", None);
+    let early_id = early.id.to_hex();
+    assert!(
+        send(&state, &tenant, &owner, early)
+            .await
+            .expect("early")
+            .accepted
+    );
+    state
+        .db
+        .add_member(
+            tenant.community(),
+            group,
+            member.public_key().as_bytes(),
+            kuzz_db::channel::MemberRole::Member,
+            Some(owner.public_key().as_bytes()),
+        )
+        .await
+        .expect("join");
+    let late = message(&owner, "after the join", None);
+    let late_id = late.id.to_hex();
+    assert!(
+        send(&state, &tenant, &owner, late)
+            .await
+            .expect("late")
+            .accepted
+    );
+
+    let msg = rejection(
+        send(
+            &state,
+            &tenant,
+            &member,
+            message(&member, "see", Some(&early_id)),
+        )
+        .await,
+    );
+    assert!(msg.contains("quoted event not found"), "{msg}");
+    assert!(
+        send(
+            &state,
+            &tenant,
+            &member,
+            message(&member, "see", Some(&late_id))
+        )
+        .await
+        .expect("quote a visible message")
+        .accepted
+    );
+
+    let history = |keys: &Keys, value: &str| {
+        sign(
+            keys,
+            9002,
+            "",
+            vec![tag(&["h", &h]), tag(&["history", value])],
+        )
+    };
+    assert!(send(&state, &tenant, &member, history(&member, "all"))
+        .await
+        .is_err());
+    assert!(send(&state, &tenant, &owner, history(&owner, "sometimes"))
+        .await
+        .is_err());
+    assert!(
+        send(&state, &tenant, &owner, history(&owner, "all"))
+            .await
+            .expect("owner switch")
+            .accepted
+    );
+    assert_eq!(
+        state
+            .db
+            .channel_history_policy(tenant.community(), group)
+            .await
+            .expect("policy"),
+        "all"
+    );
+    assert!(
+        send(
+            &state,
+            &tenant,
+            &member,
+            message(&member, "now", Some(&early_id))
+        )
+        .await
+        .expect("quote after the switch")
+        .accepted
+    );
+
+    // Group chats always hide earlier messages.
+    let (chat, created) = create_chat(&state, &tenant, &owner, &[]).await;
+    assert!(created.expect("chat").accepted);
+    let in_chat = sign(
+        &owner,
+        9002,
+        "",
+        vec![tag(&["h", &chat.to_string()]), tag(&["history", "all"])],
+    );
+    assert!(send(&state, &tenant, &owner, in_chat).await.is_err());
+}

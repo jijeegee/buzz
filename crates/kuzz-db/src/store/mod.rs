@@ -39,6 +39,8 @@ pub mod feed;
 pub mod git_repo;
 /// Group search, public addresses, invite links and invitations.
 pub mod groups;
+/// Room history cut (`since_join`) lookups.
+pub mod history;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.
@@ -104,6 +106,9 @@ mod media_access_postgres_tests;
 
 #[cfg(test)]
 mod channel_history_postgres_tests;
+
+#[cfg(test)]
+mod channel_since_join_postgres_tests;
 
 #[cfg(test)]
 mod chat_backfill_postgres_tests;

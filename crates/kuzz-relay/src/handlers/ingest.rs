@@ -704,6 +704,57 @@ pub(crate) enum ReactionChannelResult {
 }
 
 /// Derive channel_id from the target event for NIP-25 reactions.
+/// since_join rooms: whether `target` was written before `author` joined its
+/// room. Such a target is "not found" to `author` (the reads hide it).
+async fn target_before_join(
+    db: &kuzz_db::Db,
+    community_id: CommunityId,
+    author: &nostr::PublicKey,
+    target: &[u8],
+) -> Result<bool, String> {
+    db.history_hidden_event_ids(community_id, &author.to_bytes(), &[target.to_vec()])
+        .await
+        .map(|hidden| !hidden.is_empty())
+        .map_err(|e| format!("db error checking target history: {e}"))
+}
+
+/// Most `q` tags one channel event may carry.
+const MAX_QUOTE_TAGS: usize = 20;
+
+/// since_join: a quote (`q` tag) may only name an event its author can read.
+/// Later readers see a pre-join original only through the quote preview, so
+/// an author must not be able to point it at history they cannot see.
+async fn check_quote_targets(
+    db: &kuzz_db::Db,
+    community_id: CommunityId,
+    event: &Event,
+) -> Result<(), IngestError> {
+    let quoted: Vec<Vec<u8>> = event
+        .tags
+        .iter()
+        .filter(|tag| tag.kind().to_string() == "q")
+        .filter_map(|tag| tag.content().and_then(|id| hex::decode(id).ok()))
+        .filter(|id| id.len() == 32)
+        .collect();
+    if quoted.is_empty() {
+        return Ok(());
+    }
+    if quoted.len() > MAX_QUOTE_TAGS {
+        return Err(IngestError::Rejected(format!(
+            "invalid: at most {MAX_QUOTE_TAGS} quotes"
+        )));
+    }
+    let hidden = db
+        .history_hidden_event_ids(community_id, &event.pubkey.to_bytes(), &quoted)
+        .await
+        .map_err(|e| IngestError::Internal(format!("db error checking quote history: {e}")))?;
+    if hidden.is_empty() {
+        Ok(())
+    } else {
+        Err(IngestError::Rejected("invalid: quoted event not found".into()))
+    }
+}
+
 pub(crate) async fn derive_reaction_channel(
     community_id: CommunityId,
     db: &kuzz_db::Db,
@@ -731,16 +782,21 @@ pub(crate) async fn derive_reaction_channel(
         _ => return ReactionChannelResult::NoTarget,
     };
 
-    match db
+    let target = match db
         .get_event_by_id_for_event_write(community_id, &id_bytes)
         .await
     {
-        Ok(Some(target)) => match target.channel_id {
+        Ok(Some(target)) => target,
+        Ok(None) => return ReactionChannelResult::NotFound,
+        Err(e) => return ReactionChannelResult::DbError(e.to_string()),
+    };
+    match target_before_join(db, community_id, &event.pubkey, &id_bytes).await {
+        Ok(true) => ReactionChannelResult::NotFound,
+        Ok(false) => match target.channel_id {
             Some(ch_id) => ReactionChannelResult::Channel(ch_id),
             None => ReactionChannelResult::NoChannel,
         },
-        Ok(None) => ReactionChannelResult::NotFound,
-        Err(e) => ReactionChannelResult::DbError(e.to_string()),
+        Err(e) => ReactionChannelResult::DbError(e),
     }
 }
 
@@ -1030,6 +1086,9 @@ pub(crate) async fn resolve_nip10_thread_meta(
     let parent_event = parent_event_result
         .map_err(|e| format!("db error looking up parent: {e}"))?
         .ok_or_else(|| "reply parent not found".to_string())?;
+    if target_before_join(&state.db, community_id, &event.pubkey, &parent_bytes).await? {
+        return Err("reply parent not found".to_string());
+    }
 
     match parent_event.channel_id {
         Some(parent_ch) if parent_ch != channel_id => {
@@ -1387,6 +1446,9 @@ async fn validate_edit_ownership(
         .await
         .map_err(|e| format!("db error: {e}"))?
         .ok_or_else(|| "edit target event not found".to_string())?;
+    if target_before_join(&state.db, community_id, &event.pubkey, &target_bytes).await? {
+        return Err("edit target event not found".to_string());
+    }
 
     // Verify target belongs to the same channel as the edit event.
     let edit_channel_id = extract_channel_id(event);
@@ -1468,6 +1530,9 @@ async fn validate_forum_vote_target(
         .await
         .map_err(|e| format!("db error: {e}"))?
         .ok_or_else(|| "vote target event not found".to_string())?;
+    if target_before_join(&state.db, community_id, &event.pubkey, &target_bytes).await? {
+        return Err("vote target event not found".to_string());
+    }
 
     let target_kind = event_kind_u32(&target_event.event);
     if target_kind != KIND_FORUM_POST && target_kind != KIND_FORUM_COMMENT {
@@ -3297,6 +3362,12 @@ async fn ingest_event_inner(
             .await
             .map_err(|e| IngestError::Internal(format!("error: loading thread head: {e}")))?
             .ok_or_else(|| IngestError::Rejected("invalid: thread head not found".into()))?;
+        if target_before_join(&state.db, tenant.community(), &event.pubkey, target_id.as_bytes())
+            .await
+            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+        {
+            return Err(IngestError::Rejected("invalid: thread head not found".into()));
+        }
         if head.channel_id != extract_channel_id(&event)
             || !matches!(
                 event_kind_u32(&head.event),
@@ -3667,6 +3738,9 @@ async fn ingest_event_inner(
     } else {
         None
     };
+    if requires_h_channel_scope(kind_u32) {
+        check_quote_targets(&state.db, tenant.community(), &event).await?;
+    }
 
     // Pre-validate kind:0 content before storage so we don't store an event
     // whose profile sync will silently fail in the side-effect handler.

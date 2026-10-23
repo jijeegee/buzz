@@ -126,9 +126,15 @@ async fn query(
     accessible: &[uuid::Uuid],
     budget: &mut Budget,
 ) -> Result<Vec<Value>, Error> {
+    let reader_bytes = reader.to_bytes();
     let (window, mut session) = state
         .db
-        .get_thread_window_with_session(tenant.community(), request, &mut budget.scan)
+        .get_thread_window_for_reader_with_session(
+            tenant.community(),
+            request,
+            Some(&reader_bytes),
+            &mut budget.scan,
+        )
         .await
         .map_err(|e| database_error("window", e))?;
     // An unsupported, missing or out-of-scope root is not a served window.
@@ -136,7 +142,6 @@ async fn query(
     if !window.root_in_channel {
         return Ok(vec![]);
     }
-    let reader_bytes = reader.to_bytes();
     let visible = |se: &kuzz_core::StoredEvent| {
         event_in_accessible_channel(se, accessible)
             && crate::handlers::req::event_visible_to_reader(&se.event, &reader_bytes)
@@ -175,6 +180,7 @@ async fn query(
                         kinds,
                         accessible,
                         cursor: None,
+                        history_reader: Some(&reader_bytes),
                     };
                     loop {
                         let was_replica = session.is_replica();

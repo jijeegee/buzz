@@ -123,6 +123,7 @@ async fn search_finds_event_in_same_community() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("search ok");
@@ -171,6 +172,7 @@ async fn search_does_not_return_other_community_events() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -188,6 +190,7 @@ async fn search_does_not_return_other_community_events() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -232,6 +235,7 @@ async fn kind0_search_by_display_name_works_without_flattening() {
                 page: 1,
                 per_page: 10,
                 mode: kuzz_search::SearchMode::FullText,
+                history_reader: None,
             })
             .await
             .unwrap();
@@ -292,6 +296,7 @@ async fn short_kind0_prefix_prioritizes_exact_lexeme_on_a_noisy_page() {
             page: 1,
             per_page: 3,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("short profile prefix search ok");
@@ -358,6 +363,7 @@ async fn prefix_mode_matches_final_token_prefix_without_changing_full_text() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("full text search ok");
@@ -383,6 +389,7 @@ async fn prefix_mode_matches_final_token_prefix_without_changing_full_text() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("prefix search ok");
@@ -402,6 +409,7 @@ async fn prefix_mode_matches_final_token_prefix_without_changing_full_text() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("multi-token prefix search ok");
@@ -420,6 +428,7 @@ async fn prefix_mode_matches_final_token_prefix_without_changing_full_text() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("completed-token exact + trailing-prefix search ok");
@@ -469,6 +478,7 @@ async fn prefix_mode_handles_tsquery_boundary_punctuation() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("prefix punctuation search ok");
@@ -522,6 +532,7 @@ async fn words_inside_urls_and_paths_are_searchable() {
         page: 1,
         per_page: 10,
         mode,
+        history_reader: None,
     };
     let ids = |hits: &[kuzz_search::SearchHit]| {
         let mut ids: Vec<[u8; 32]> = hits.iter().map(|hit| hit.event_id).collect();
@@ -607,6 +618,7 @@ async fn prefix_mode_preserves_storage_level_privacy_exclusions() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("prefix privacy search ok");
@@ -687,6 +699,7 @@ async fn channel_scope_restricts_results() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -706,6 +719,7 @@ async fn channel_scope_restricts_results() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -724,6 +738,7 @@ async fn channel_scope_restricts_results() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -742,6 +757,7 @@ async fn channel_scope_restricts_results() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -781,6 +797,7 @@ async fn deleted_events_are_excluded() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -812,6 +829,7 @@ async fn empty_query_returns_empty_result_no_roundtrip() {
                 page: 1,
                 per_page: 10,
                 mode: kuzz_search::SearchMode::FullText,
+                history_reader: None,
             })
             .await
             .unwrap();
@@ -879,6 +897,7 @@ async fn since_until_filters() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -923,6 +942,7 @@ async fn pagination_works() {
             page: 1,
             per_page: 3,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -940,6 +960,7 @@ async fn pagination_works() {
             page: 3,
             per_page: 3,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -1032,6 +1053,7 @@ async fn channel_less_only_excludes_per_channel_events() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .unwrap();
@@ -1080,6 +1102,7 @@ async fn nul_bytes_in_query_are_sanitized() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("NUL-containing search query should not bubble a Postgres error");
@@ -1123,6 +1146,7 @@ async fn enormous_page_number_is_clamped() {
             page: u32::MAX,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("huge page number should be bounded, not error");
@@ -1152,6 +1176,7 @@ async fn very_long_query_is_bounded_before_pg_parse() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("long search query should be capped before Postgres parses it");
@@ -1293,6 +1318,7 @@ async fn excluded_kinds_are_storage_level_unsearchable() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("search ok");
@@ -1390,6 +1416,7 @@ async fn author_only_kinds_are_storage_level_unsearchable() {
             page: 1,
             per_page: 100,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("search ok");
@@ -1497,6 +1524,7 @@ async fn p_gated_persistent_kinds_have_storage_null_tsvector() {
             page: 1,
             per_page: 100,
             mode: kuzz_search::SearchMode::FullText,
+            history_reader: None,
         })
         .await
         .expect("search ok");
@@ -1572,6 +1600,7 @@ async fn artifact_search_uses_only_live_current_head() {
         page: 1,
         per_page: 10,
         mode: kuzz_search::SearchMode::FullText,
+        history_reader: None,
     };
     let result = svc.search(&query).await.unwrap();
     assert_eq!(result.hits.len(), 1);
@@ -1622,6 +1651,7 @@ async fn search_budget_is_scoped_to_the_search_and_cancels_as_timeout() {
             page: 1,
             per_page: 10,
             mode: kuzz_search::SearchMode::Prefix,
+            history_reader: None,
         })
         .await
         .expect("search ok");
@@ -1649,5 +1679,88 @@ async fn search_budget_is_scoped_to_the_search_and_cancels_as_timeout() {
     drop(tx);
 
     single.close().await;
+    teardown(pool, &schema).await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn since_join_reader_finds_only_messages_after_the_join() {
+    use kuzz_db::channel::{ChannelType, ChannelVisibility, MemberRole};
+
+    let (pool, schema) = setup().await;
+    let community = mk_community(&pool, &format!("since-join-{}.example", Uuid::new_v4())).await;
+    let owner = rand_bytes32();
+    let member = rand_bytes32();
+    let channel = kuzz_db::channel::create_channel(
+        &pool,
+        community,
+        "since-join",
+        ChannelType::Stream,
+        ChannelVisibility::Private,
+        None,
+        &owner,
+        None,
+    )
+    .await
+    .expect("channel")
+    .id;
+    let before = rand_bytes32();
+    insert_event(
+        &pool,
+        community,
+        before,
+        owner,
+        9,
+        "zebracake before",
+        Some(channel),
+        1700000000,
+    )
+    .await;
+    kuzz_db::channel_members::add_member(
+        &pool,
+        community,
+        channel,
+        &member,
+        MemberRole::Member,
+        Some(&owner),
+    )
+    .await
+    .expect("join");
+    let after = rand_bytes32();
+    insert_event(
+        &pool,
+        community,
+        after,
+        owner,
+        9,
+        "zebracake after",
+        Some(channel),
+        1700000001,
+    )
+    .await;
+
+    let svc = SearchService::new(pool.clone());
+    let find = |reader: Option<[u8; 32]>| SearchQuery {
+        community,
+        q: "zebracake".into(),
+        channel_scope: ChannelScope::Channels(vec![channel]),
+        kinds: None,
+        authors: None,
+        since: None,
+        until: None,
+        page: 1,
+        per_page: 10,
+        mode: kuzz_search::SearchMode::FullText,
+        history_reader: reader.map(|r| r.to_vec()),
+    };
+    let ids = |hits: Vec<kuzz_search::SearchHit>| -> Vec<[u8; 32]> {
+        hits.into_iter().map(|h| h.event_id).collect()
+    };
+    let hits = svc.search(&find(Some(member))).await.expect("search").hits;
+    assert_eq!(ids(hits), [after]);
+    let hits = svc.search(&find(Some(owner))).await.expect("search").hits;
+    assert_eq!(hits.len(), 2);
+    let hits = svc.search(&find(None)).await.expect("search").hits;
+    assert_eq!(hits.len(), 2);
     teardown(pool, &schema).await;
 }
