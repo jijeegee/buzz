@@ -49,7 +49,8 @@ const STATE_CONNECTED: &str = "connected";
 const STATE_PENDING: &str = "pending";
 /// Refusal codes of `POST /pair/claim` after which the claim certainly did
 /// not land, so the saved key can go.
-const DEFINITE_REFUSALS: [&str; 6] = [
+const DEFINITE_REFUSALS: [&str; 7] = [
+    "invalid_request",
     "invalid_code",
     "code_used",
     "key_in_use",
@@ -317,8 +318,13 @@ fn claim_error(status: u16, body: &str) -> CliError {
         .unwrap_or_default();
     let message = match code.as_str() {
         "invalid_code" => {
-            "invalid or expired: this pairing code is unknown or older than 10 minutes; \
-             press \"Connect external agent\" in the app again and paste the new command"
+            "invalid or expired: this pairing code is unknown, older than 10 minutes, or no \
+             longer valid (the app that made it was signed out); press \"Connect external \
+             agent\" in the app again and paste the new command"
+        }
+        "invalid_request" => {
+            "invalid: the relay refused this claim as malformed; update kuzz and paste the \
+             app's command again"
         }
         "code_used" => {
             "code_used: this pairing code was used already (each code works once); \

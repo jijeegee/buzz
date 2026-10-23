@@ -506,6 +506,27 @@ fn pair_needs_a_named_relay_never_the_localhost_default() {
 }
 
 #[test]
+fn the_servers_exact_command_parses() {
+    // `pair_command` in crates/kuzz-relay/src/api/auth/pairing.rs.
+    let command = format!("kuzz pair --relay wss://relay.example {CODE}");
+    let cli = crate::parse_args(command.split(' ')).expect("parses");
+    let crate::Cmd::Pair {
+        code,
+        pair_relay: flag,
+        ..
+    } = cli.command
+    else {
+        panic!("pair");
+    };
+    assert_eq!(code, CODE);
+    let relay = pair_relay(flag.as_deref(), &cli.relay, cli.relay_from_default).unwrap();
+    assert_eq!(
+        crate::client::normalize_relay_url(&relay),
+        "https://relay.example"
+    );
+}
+
+#[test]
 fn the_relay_can_follow_the_code_in_the_apps_command() {
     for flag in ["--relay", "--relay-url"] {
         let cli = crate::parse_args(["kuzz", "pair", CODE, flag, "https://relay.example"])
