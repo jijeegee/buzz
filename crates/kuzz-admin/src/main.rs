@@ -23,6 +23,7 @@
 mod chat_backfill;
 mod deletions;
 mod key_backups;
+mod primary;
 mod regions;
 mod rooms;
 mod storage_snapshot_startup;
@@ -163,6 +164,12 @@ enum Command {
         #[command(subcommand)]
         command: rooms::RoomsCommand,
     },
+    /// Check the primary region, or hand it over to another region (global
+    /// regions). Runs against the primary's and the other regions' databases.
+    Primary {
+        #[command(subcommand)]
+        command: primary::PrimaryCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -236,6 +243,7 @@ async fn run(cli: Cli) -> Result<i32> {
         Command::ReencryptKeyBackups => key_backups::run().await,
         Command::Regions { command } => regions::run(command).await,
         Command::Rooms { command } => rooms::run(command).await,
+        Command::Primary { command } => primary::run(command).await,
     }
 }
 

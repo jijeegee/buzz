@@ -13,6 +13,8 @@ plus the rooms whose home it is.
   Postgres major version as the primary's.
   - The primary's Postgres runs with `wal_level=logical`, and has enough
     `max_replication_slots` and `max_wal_senders` for one more region.
+  - So does every region that may become the primary later (see "Handing
+    over the primary"); `wal_level` takes a Postgres restart to change.
 - **Network.** The new region's database can reach the primary's database
   over TLS.
   - Use a role with the `REPLICATION` attribute and `SELECT` on the
@@ -57,8 +59,13 @@ plus the rooms whose home it is.
    ```sql
    CREATE SUBSCRIPTION kuzz_global
      CONNECTION 'host=<primary db> dbname=kuzz user=<replication role> sslmode=verify-full …'
-     PUBLICATION kuzz_global;
+     PUBLICATION kuzz_global
+     WITH (slot_name = 'kuzz_global_jp');
    ```
+
+   Name the slot after the region (`kuzz_global_<region>`, `-` as `_`): every
+   region has its own slot in the primary, and the default name would clash
+   with the next region's.
 
    The relay logs that it is waiting for the first copy. That takes as long as
    copying the accounts and lists; rooms are not copied.
@@ -158,6 +165,63 @@ It refuses a room that has not moved out, one that moved out less than
   missing from the new home.
 - Ban enforcement queued for the room in the old home (`relay_admin_outbox`)
   does not move. Run moves after pending enforcement has finished.
+
+## Handing over the primary
+
+A planned move of the primary role (the global lists) to another region, for
+example from `kr` to `jp`. Rooms stay where they are.
+
+**Before.**
+- The new primary's Postgres runs with `wal_level=logical` and has room for
+  a replication slot per other region.
+- Every other region's database can reach the new primary's database (the
+  same role, `pg_hba.conf` and TLS set-up as for the old primary).
+- The command connects to every region's database with a superuser: it
+  creates and drops subscriptions and the copy's triggers.
+- Every region's `kuzz_global_copy_lag_seconds` is near 1.
+
+**Run** with `DATABASE_URL` set to the current primary's database:
+
+```sh
+KUZZ_HANDOVER_TO_DATABASE_URL=<jp database URL> \
+KUZZ_HANDOVER_COPY_DATABASE_URLS=<other regions' database URLs, comma-separated> \
+kuzz-admin primary hand-over --to jp \
+  --publisher-conninfo 'host=<jp db> dbname=kuzz user=<replication role> sslmode=verify-full …'
+```
+
+`--publisher-conninfo` is what the other regions' database servers use to
+reach jp's database, as in `CREATE SUBSCRIPTION`.
+
+It prints one JSON line per step:
+1. `frozen`: the old primary refuses global writes from now on. Sign-ups,
+   profile changes and new rooms fail until the relays restart; messages in
+   existing rooms keep working.
+2. `caught_up`: every region has the old primary's last global change.
+   `--wait-secs` (default 120) bounds the wait.
+3. `promoted`: jp leaves its copy and publishes the lists.
+4. `subscribed`, once per region: the old primary and every other region
+   copy from jp, each with its own slot, without copying again.
+5. `marked`: jp is the primary in `regions`.
+6. `done`: the old primary stops publishing.
+
+Then restart every relay with `KUZZ_PRIMARY_REGION=jp`, jp's first. A relay
+left on the old setting fails to start or keeps waiting for a copy.
+
+**If it stops.** Each step checks where things stand first, so running the
+same command again continues. Before `promoted`, `--abort` undoes the handover:
+the old primary takes global writes again. After it, finish the handover; to
+go back, hand the primary back the same way.
+
+**Check** with `kuzz-admin primary check` in each region's database: jp shows
+`"role": "primary"` and no `subscribers_behind`, the others `"role": "copy"`
+with a `copy_lag_seconds` near 1, and every region lists jp as the primary.
+
+**Limits.**
+- Planned handovers only: the old primary's database must answer. If it is
+  lost, promote a copy by hand (its lists are as fresh as its lag) and expect
+  global changes since then to be missing.
+- Global writes stop from `frozen` until the relays restart; plan a quiet
+  time. Room messages are not affected.
 
 ## Removing a region
 

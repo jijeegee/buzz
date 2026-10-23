@@ -140,13 +140,13 @@ pub const LOCAL_TABLES: &[&str] = &[
 ];
 
 /// Name of the guard triggers on copied tables.
-const GUARD: &str = "kuzz_global_copy_guard";
+pub(crate) const GUARD: &str = "kuzz_global_copy_guard";
 
 /// Notification channel a copy's database tells its relays on when the copy
 /// brings a room-less event (S5-3c): payload `<community>:<event id hex>`.
 pub const LIVE_CHANNEL: &str = "kuzz_global_event";
 /// The trigger that sends it.
-const LIVE_TRIGGER: &str = "kuzz_global_copy_live";
+pub(crate) const LIVE_TRIGGER: &str = "kuzz_global_copy_live";
 
 /// How far a copy's subscription has come.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
