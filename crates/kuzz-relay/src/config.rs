@@ -378,6 +378,16 @@ pub struct Config {
     /// calls another region, as before.
     pub region_link: bool,
 
+    /// Global copy (`KUZZ_GLOBAL_COPY`, default on for a region other than
+    /// the primary with the link on; global regions stage S5).
+    ///
+    /// On: this database's global tables are a copy of the primary's, kept by
+    /// the `kuzz_global` subscription. The relay waits for the first copy,
+    /// then refuses local writes to them. In the primary with the link on,
+    /// the relay publishes them instead. Off in a non-primary region: the
+    /// region keeps its own global tables (development only).
+    pub global_copy: bool,
+
     /// This region's link key (`KUZZ_REGION_KEY`, hex or nsec), required when
     /// [`Config::region_link`] is on. One key per region: other regions know
     /// it by its public half in `regions.link_pubkey`.
@@ -1385,6 +1395,16 @@ impl Config {
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| relay_url.clone());
+        let global_copy = parse_bool(
+            "KUZZ_GLOBAL_COPY",
+            region_link && region_id != primary_region,
+        )?;
+        if global_copy && (!region_link || region_id == primary_region) {
+            return Err(ConfigError::InvalidValue(
+                "KUZZ_GLOBAL_COPY=on is for a region other than the primary, with KUZZ_REGION_LINK=on"
+                    .into(),
+            ));
+        }
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1624,6 +1644,7 @@ impl Config {
             resync_signal,
             side_effect_retry,
             region_link,
+            global_copy,
             region_key,
             community_id,
             ephemeral_ttl_override,

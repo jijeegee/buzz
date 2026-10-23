@@ -423,11 +423,20 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             }
         }
         let is_primary = config.region_id == config.primary_region;
-        match db
-            .register_region(&config.region_id, &config.region_connect_url, is_primary)
-            .await
-        {
-            Ok(region) => {
+        // A copy region (S5) learns its row from the primary and writes no
+        // global table: it waits for the first copy, then guards it.
+        let registered = if config.global_copy {
+            kuzz_relay::global_copy::open_copy(&db, &config).await?;
+            None
+        } else {
+            Some(
+                db.register_region(&config.region_id, &config.region_connect_url, is_primary)
+                    .await,
+            )
+        };
+        match registered {
+            None => {}
+            Some(Ok(region)) => {
                 info!(region = %region.id, primary = region.is_primary, "Region recorded");
                 // One database serves one region: refuse to start on a
                 // database another region claimed.
@@ -462,15 +471,18 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     }
                     Err(e) => warn!("Account home backfill failed (retried next start): {e}"),
                 }
+                if is_primary && config.region_link {
+                    kuzz_relay::global_copy::publish(&db).await?;
+                }
             }
-            Err(e) if auto_migrate => {
+            Some(Err(e)) if auto_migrate => {
                 error!(region = %config.region_id, "Failed to record this relay's region: {e}");
                 return Err(anyhow::anyhow!(
                     "Failed to record region {}: {e}",
                     config.region_id
                 ));
             }
-            Err(e) => {
+            Some(Err(e)) => {
                 warn!(region = %config.region_id, "Could not record this relay's region (migrations not applied by this relay?): {e}");
                 if config.region_link {
                     warn!(region = %config.region_id, "Region link is on but its key was not recorded; other regions cannot verify this one until it is");
@@ -522,13 +534,32 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             );
             None
         } else {
-            match db
-                .ensure_configured_community_for_bootstrap(&host, config.community_id)
-                .await
-            {
-                Ok(record) => {
-                    info!(host = %record.host, community = %record.id, "Deployment community ensured");
-                    Some(record.id)
+            // A copy region finds the community in the copy; the primary
+            // made it.
+            let ensured = if config.global_copy {
+                db.lookup_community_by_host(&host)
+                    .await
+                    .and_then(|found| match found {
+                        Some(record)
+                            if config
+                                .community_id
+                                .is_none_or(|id| *record.id.as_uuid() == id) =>
+                        {
+                            Ok((record.id, record.host))
+                        }
+                        _ => Err(kuzz_db::DbError::NotFound(format!(
+                            "community {host:?} with the configured id in the global copy"
+                        ))),
+                    })
+            } else {
+                db.ensure_configured_community_for_bootstrap(&host, config.community_id)
+                    .await
+                    .map(|record| (record.id, record.host))
+            };
+            match ensured {
+                Ok((id, host)) => {
+                    info!(host = %host, community = %id, "Deployment community ensured");
+                    Some(id)
                 }
                 Err(e) if config.community_id.is_some() => {
                     // Serving under another id would split the community
@@ -555,7 +586,8 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // Idempotent — safe to run every startup. Must run before bootstrap_owner
     // so that existing allowlist users become relay members before the owner
     // is promoted (otherwise enabling membership locks everyone out).
-    if let Some(community) = deployment_community {
+    // A copy region gets members and the owner from the primary.
+    if let Some(community) = deployment_community.filter(|_| !config.global_copy) {
         match db.backfill_from_allowlist(community).await {
             Ok(0) => {}
             Ok(n) => info!("Backfilled {n} pubkey_allowlist entries into relay_members"),
@@ -576,9 +608,11 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
 
     // NIP-43: ensure the configured relay owner always holds the owner role
     // within the deployment community.
-    if let (Some(community), Some(owner_pubkey)) =
-        (deployment_community, config.relay_owner_pubkey.as_ref())
-    {
+    if let (Some(community), Some(owner_pubkey), false) = (
+        deployment_community,
+        config.relay_owner_pubkey.as_ref(),
+        config.global_copy,
+    ) {
         match db.bootstrap_owner(community, owner_pubkey).await {
             Ok(()) => info!(pubkey = %owner_pubkey, "Relay owner bootstrapped"),
             Err(e) => {
@@ -1145,6 +1179,16 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
             async move { kuzz_relay::handlers::admin_outbox_worker::run(outbox_state).await },
         );
         info!("Admin outbox delivery worker started");
+    }
+
+    // Global copy (S5): the primary beats, a copy measures its lag.
+    if state.config.region_link && state.config.region_id == state.config.primary_region {
+        let beat_state = Arc::clone(&state);
+        tokio::spawn(async move { kuzz_relay::global_copy::run_heartbeat(beat_state).await });
+    }
+    if state.config.global_copy {
+        let lag_state = Arc::clone(&state);
+        tokio::spawn(async move { kuzz_relay::global_copy::run_lag_monitor(lag_state).await });
     }
 
     // Region propagation worker: delivers logouts and disconnects to the

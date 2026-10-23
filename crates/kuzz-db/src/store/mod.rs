@@ -37,6 +37,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Global tables copied from the primary region (S5).
+pub mod global_copy;
 /// Centralized identity: principals, devices, sessions, bots, access tokens.
 pub mod identity;
 /// One-statement inbox summary of member rooms and active threads.
@@ -130,3 +132,6 @@ mod inbox_summary_postgres_tests;
 
 #[cfg(test)]
 mod side_effect_outbox_postgres_tests;
+
+#[cfg(test)]
+mod global_copy_postgres_tests;

@@ -171,11 +171,27 @@ impl IdentityRuntime {
 pub async fn init_relay_principal(state: &AppState) -> anyhow::Result<PrincipalId> {
     let key = PrincipalId::from_slice(&state.relay_keypair.public_key().to_bytes())
         .map_err(|error| anyhow::anyhow!("relay key is not a valid principal id: {error}"))?;
-    let relay = state
-        .db
-        .ensure_relay_principal(&key)
-        .await
-        .map_err(|error| anyhow::anyhow!("failed to ensure relay principal: {error}"))?;
+    let relay = if state.config.global_copy {
+        // A copy region reads the relay principal the primary made: every
+        // region signs with the same relay key.
+        state
+            .db
+            .get_principal(&key)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to read relay principal: {error}"))?
+            .map(|principal| principal.id)
+            .ok_or_else(|| {
+                anyhow::anyhow!(
+                    "the relay principal is not in the global copy yet; start the primary first"
+                )
+            })?
+    } else {
+        state
+            .db
+            .ensure_relay_principal(&key)
+            .await
+            .map_err(|error| anyhow::anyhow!("failed to ensure relay principal: {error}"))?
+    };
     state.identity.set_relay_principal(relay);
     Ok(relay)
 }

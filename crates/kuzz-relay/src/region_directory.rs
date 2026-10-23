@@ -5,9 +5,11 @@
 //! itself, then creates the room; opening a new DM reserves its participant
 //! set the same way, so two regions opening the same DM at once end on one
 //! room (the later one is sent to the home of the first). A region that
-//! meets a room it does not know asks the primary where it lives and keeps
-//! the answer in its own directory. Until S5 copies the directory to every
-//! region, these calls go to the primary directly.
+//! meets a room it does not know asks the primary where it lives. Without
+//! the global copy it keeps the answer in its own directory; with the copy
+//! (S5) the primary's directory reaches every region by itself, and asking
+//! covers only the moment before it arrives. Reservations always go to the
+//! primary.
 //!
 //! If the primary cannot be reached, creating a room or a new DM fails with
 //! a retryable error (late rather than split); looking a room up falls back
@@ -73,6 +75,26 @@ struct LookupRequest {
 
 fn is_primary(state: &AppState) -> bool {
     state.config.primary_region == state.config.region_id
+}
+
+/// Keep a room's home learned from the primary in this region's directory.
+/// A copy region (S5) does not: the primary's row reaches it by the copy.
+async fn remember(
+    state: &AppState,
+    community: CommunityId,
+    channel_id: Uuid,
+    home: &kuzz_db::region::RoomHome,
+) {
+    if state.config.global_copy {
+        return;
+    }
+    if let Err(error) = state
+        .db
+        .remember_room_home(community, channel_id, home)
+        .await
+    {
+        tracing::warn!(%error, "Could not remember a room's home");
+    }
 }
 
 fn home_from(answer: &Value) -> Option<RoomHome> {
@@ -178,13 +200,7 @@ pub async fn reserve(
         return Ok(Reserved::Here(reserved.channel_id));
     }
     // Keep the answer here so later operations route without asking.
-    if let Err(error) = state
-        .db
-        .remember_room_home(community, reserved.channel_id, &reserved.home)
-        .await
-    {
-        tracing::warn!(%error, "Could not remember a room's home");
-    }
+    remember(state, community, reserved.channel_id, &reserved.home).await;
     Ok(Reserved::Elsewhere(
         remote_home(state, reserved.channel_id, reserved.home).await,
     ))
@@ -243,13 +259,7 @@ pub async fn ask_primary(state: &AppState, community: CommunityId, channel_id: U
         state.room_router.note_unknown(community, channel_id);
         return Asked::Unknown;
     }
-    if let Err(error) = state
-        .db
-        .remember_room_home(community, channel_id, &home)
-        .await
-    {
-        tracing::warn!(%error, "Could not remember a room's home");
-    }
+    remember(state, community, channel_id, &home).await;
     state.room_router.forget(community, channel_id);
     Asked::Elsewhere(remote_home(state, channel_id, home).await)
 }

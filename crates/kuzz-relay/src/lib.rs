@@ -37,6 +37,8 @@ pub mod conformance;
 pub mod connection;
 /// Relay error types.
 pub mod error;
+/// Global tables copied from the primary region (S5).
+pub mod global_copy;
 /// WebSocket message handlers for NIP-01 client commands.
 pub mod handlers;
 /// Centralized identity: token auth beside key auth (`AUTH_TOKEN_ENABLED`).

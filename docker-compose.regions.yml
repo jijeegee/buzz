@@ -34,6 +34,8 @@ x-redis: &redis
 services:
   postgres-kr:
     <<: *postgres
+    # The primary: jp's database copies its global tables (S5).
+    command: ["postgres", "-c", "wal_level=logical"]
     ports:
       - "127.0.0.1:5491:5432"
 
