@@ -230,7 +230,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                 onPressed: canSaveDetails ? saveDetails : null,
                 child: Text(
                   isSavingDetails.value
-                      ? context.l10n.commonSaving
+                      ? context.l10n.commonSavingEllipsis
                       : context.l10n.channelManageSaveChanges,
                 ),
               ),
@@ -274,7 +274,7 @@ class ManageChannelSheet extends HookConsumerWidget {
                                   : saveCanvas,
                               child: Text(
                                 isSavingCanvas.value
-                                    ? context.l10n.commonSaving
+                                    ? context.l10n.commonSavingEllipsis
                                     : context.l10n.channelManageSaveCanvas,
                               ),
                             ),

@@ -175,8 +175,8 @@
   "@commonYou": {
     "description": "Shown instead of your own name in member lists and call tiles. Short."
   },
-  "commonSaving": "Saving…",
-  "@commonSaving": {
+  "commonSavingEllipsis": "Saving…",
+  "@commonSavingEllipsis": {
     "description": "Button label while a change is being saved. Short."
   },
   "channelAddPeople": "Add people",
@@ -1206,8 +1206,8 @@
   "@messageImageShareError": {
     "description": "Snackbar when sharing an image failed."
   },
-  "huddleLeaveCurrentFirst": "Leave your current Huddle first",
-  "@huddleLeaveCurrentFirst": {
+  "huddleLeaveCurrentFirstTooltip": "Leave your current Huddle first",
+  "@huddleLeaveCurrentFirstTooltip": {
     "description": "Chat header, tooltip of the Huddle (voice call) button when you are already in another Huddle. 'Huddle' is the name of the voice call feature."
   },
   "huddleOpen": "Open Huddle",
@@ -1271,8 +1271,8 @@
   "@huddleUnavailable": {
     "description": "Huddle screen, error when the call can no longer be joined."
   },
-  "huddleAudioFailed": "Huddle audio failed.",
-  "@huddleAudioFailed": {
+  "huddleAudioFailedUnknown": "Huddle audio failed.",
+  "@huddleAudioFailedUnknown": {
     "description": "Huddle screen, error when the call audio failed for an unknown reason."
   },
   "huddleReactionFailed": "Reaction failed",

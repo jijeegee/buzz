@@ -103,7 +103,7 @@ class ThreadNameEditor extends HookConsumerWidget {
             onPressed: saving.value || error != null ? null : save,
             child: Text(
               saving.value
-                  ? context.l10n.commonSaving
+                  ? context.l10n.commonSavingEllipsis
                   : context.l10n.commonSave,
             ),
           ),

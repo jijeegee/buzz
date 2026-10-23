@@ -253,7 +253,7 @@ class _HuddleButton extends ConsumerWidget {
               }
             },
       tooltip: disabledByOtherHuddle
-          ? context.l10n.huddleLeaveCurrentFirst
+          ? context.l10n.huddleLeaveCurrentFirstTooltip
           : activeStart != null || isCurrentParent
           ? context.l10n.huddleOpen
           : context.l10n.huddleStart,
@@ -715,7 +715,7 @@ class _MobileHuddleCallPage extends ConsumerWidget {
                     error: session.phase == HuddleSessionPhase.failed
                         ? unavailable
                               ? context.l10n.huddleUnavailable
-                              : session.error ?? context.l10n.huddleAudioFailed
+                              : session.error ?? context.l10n.huddleAudioFailedUnknown
                         : null,
                     profiles: profiles,
                     fallbackLabels: directoryDisplayNames,
