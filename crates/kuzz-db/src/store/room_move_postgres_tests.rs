@@ -356,3 +356,301 @@ async fn every_local_table_with_a_room_column_moves_with_the_room() {
         );
     }
 }
+
+/// Insert an event of `kind` with `id` in `channel`.
+async fn event(
+    db: &Db,
+    community: CommunityId,
+    channel: Uuid,
+    id: &[u8],
+    kind: i32,
+) -> Result<(), DbError> {
+    sqlx::query(
+        "INSERT INTO events (community_id, id, pubkey, created_at, kind, tags, content, channel_id) \
+         VALUES ($1, $2, $3, '2026-10-24T00:00:00Z', $4, '[]', 'x', $5)",
+    )
+    .bind(community.as_uuid())
+    .bind(id)
+    .bind([7u8; 32].as_slice())
+    .bind(kind)
+    .bind(channel)
+    .execute(db.pool())
+    .await?;
+    Ok(())
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_retried_event_is_refused_once_frozen() {
+    let db = old_home().await;
+    let community = community(&[&db]).await;
+    let channel = room(&db, community).await;
+    let id = Uuid::new_v4().as_bytes().repeat(2);
+    event(&db, community, channel, &id, 7).await.expect("open");
+    db.freeze_room(community, channel).await.unwrap();
+    let refused = event(&db, community, channel, &id, 7)
+        .await
+        .expect_err("a retry is refused too");
+    assert!(refused.is_room_moving(), "{refused}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn side_effects_drain_through_the_freeze() {
+    let db = old_home().await;
+    let community = community(&[&db]).await;
+    let channel = room(&db, community).await;
+    let trigger = message(&db, community, channel).await.unwrap();
+    sqlx::query(
+        "INSERT INTO event_side_effects (community_id, event_id, kind) VALUES ($1, $2, 9000)",
+    )
+    .bind(community.as_uuid())
+    .bind(&trigger)
+    .execute(db.pool())
+    .await
+    .unwrap();
+    db.freeze_room(community, channel).await.unwrap();
+
+    let system = |n: u8| {
+        let mut id = Uuid::new_v4().as_bytes().repeat(2);
+        id[0] = n;
+        id
+    };
+    event(&db, community, channel, &system(1), 40099)
+        .await
+        .expect("the relay's room message lands while side effects drain");
+    event(&db, community, channel, &system(2), 39002)
+        .await
+        .expect("so does the group snapshot");
+    assert!(event(&db, community, channel, &system(3), 9)
+        .await
+        .expect_err("a member's message does not")
+        .is_room_moving());
+
+    sqlx::query("DELETE FROM event_side_effects WHERE community_id = $1")
+        .bind(community.as_uuid())
+        .execute(db.pool())
+        .await
+        .unwrap();
+    assert!(event(&db, community, channel, &system(4), 40099)
+        .await
+        .expect_err("drained: nothing lands")
+        .is_room_moving());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn the_old_home_is_never_removed_as_a_copy() {
+    let db = old_home().await;
+    let community = community(&[&db]).await;
+    let channel = busy_room(&db, community).await;
+    db.freeze_room(community, channel).await.unwrap();
+    let refused = db
+        .delete_room_copy(community, channel)
+        .await
+        .expect_err("frozen, but not a copy");
+    assert!(
+        refused.to_string().contains("not an unopened copy"),
+        "{refused}"
+    );
+    assert_eq!(
+        db.room_fingerprint(community, channel)
+            .await
+            .unwrap()
+            .events,
+        3
+    );
+}
+
+/// The new home's database as region `mvb`, the primary; `mva` is the
+/// other region. Only these tests use that database.
+async fn claimed_new_home() -> Db {
+    let db = new_home().await;
+    for sql in [
+        "INSERT INTO regions (id, connect_url, is_primary) VALUES ('mvb', 'wss://mvb.test', true) \
+         ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO regions (id, connect_url) VALUES ('mva', 'wss://mva.test') \
+         ON CONFLICT (id) DO NOTHING",
+        "INSERT INTO local_region (region_id) VALUES ('mvb') ON CONFLICT (singleton) DO NOTHING",
+    ] {
+        sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(db.pool())
+            .await
+            .expect(sql);
+    }
+    assert_eq!(db.local_region().await.unwrap().as_deref(), Some("mvb"));
+    db
+}
+
+/// Set the directory's home of `channel`.
+async fn homed(db: &Db, community: CommunityId, channel: Uuid, region: &str, epoch: i32) {
+    sqlx::query(
+        "INSERT INTO room_directory (community_id, channel_id, home_region, epoch) \
+         VALUES ($1, $2, $3, $4) \
+         ON CONFLICT (community_id, channel_id) \
+         DO UPDATE SET home_region = EXCLUDED.home_region, epoch = EXCLUDED.epoch",
+    )
+    .bind(community.as_uuid())
+    .bind(channel)
+    .bind(region)
+    .bind(epoch)
+    .execute(db.pool())
+    .await
+    .expect("directory row");
+}
+
+/// Mark `channel` as a move's copy not opened yet.
+async fn as_copy(db: &Db, community: CommunityId, channel: Uuid) {
+    db.freeze_room(community, channel).await.unwrap();
+    sqlx::query("UPDATE channels SET moved_in_at = now() WHERE community_id = $1 AND id = $2")
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(db.pool())
+        .await
+        .unwrap();
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_moved_room_opens_only_where_the_directory_homes_it() {
+    use super::region::RoomHome;
+
+    let db = claimed_new_home().await;
+    let community = community(&[&db]).await;
+    let channel = room(&db, community).await;
+    homed(&db, community, channel, "mva", 0).await;
+    as_copy(&db, community, channel).await;
+
+    let elsewhere = db
+        .unfreeze_room(community, channel)
+        .await
+        .expect_err("homed in mva");
+    assert!(elsewhere.to_string().contains("region mva"), "{elsewhere}");
+
+    let from = RoomHome {
+        region: "mva".into(),
+        epoch: 0,
+    };
+    let moved = db
+        .switch_room_home(community, channel, &from, "mvb")
+        .await
+        .expect("switch");
+    assert_eq!((moved.region.as_str(), moved.epoch), ("mvb", 1));
+    db.switch_room_home(community, channel, &from, "mvb")
+        .await
+        .expect_err("a stale home does not switch again");
+    db.switch_room_home(community, channel, &moved, "nowhere")
+        .await
+        .expect_err("an unknown region");
+
+    assert!(db.unfreeze_room(community, channel).await.expect("open"));
+    assert_eq!(
+        db.room_here(community, channel).await.unwrap(),
+        RoomHere::Open
+    );
+    let opened = db
+        .delete_room_copy(community, channel)
+        .await
+        .expect_err("an opened copy is the room");
+    assert!(
+        opened.to_string().contains("not an unopened copy"),
+        "{opened}"
+    );
+    message(&db, community, channel)
+        .await
+        .expect("takes events");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_room_moved_out_is_kept_then_forgotten() {
+    let db = claimed_new_home().await;
+    let community = community(&[&db]).await;
+    let channel = room(&db, community).await;
+    message(&db, community, channel).await.unwrap();
+    homed(&db, community, channel, "mvb", 0).await;
+    db.freeze_room(community, channel).await.unwrap();
+
+    let here = db
+        .mark_room_moved_out(community, channel)
+        .await
+        .expect_err("still homed here");
+    assert!(
+        here.to_string().contains("this database's region"),
+        "{here}"
+    );
+
+    homed(&db, community, channel, "mva", 1).await;
+    db.mark_room_moved_out(community, channel)
+        .await
+        .expect("moved out");
+    db.mark_room_moved_out(community, channel)
+        .await
+        .expect("again changes nothing");
+    assert!(matches!(
+        db.room_here(community, channel).await.unwrap(),
+        RoomHere::MovedOut(_)
+    ));
+    assert!(message(&db, community, channel)
+        .await
+        .expect_err("read-only")
+        .is_room_moving());
+
+    let kept = db
+        .forget_moved_room(community, channel, 7)
+        .await
+        .expect_err("kept a week");
+    assert!(kept.to_string().contains("kept until"), "{kept}");
+    assert!(db.forget_moved_room(community, channel, 0).await.unwrap() >= 2);
+    assert_eq!(
+        db.room_here(community, channel).await.unwrap(),
+        RoomHere::Absent
+    );
+
+    // A copy the directory homes here is the room: never removed.
+    let other = room(&db, community).await;
+    homed(&db, community, other, "mvb", 0).await;
+    as_copy(&db, community, other).await;
+    let refused = db
+        .delete_room_copy(community, other)
+        .await
+        .expect_err("homed here");
+    assert!(
+        refused.to_string().contains("this database's region"),
+        "{refused}"
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_frozen_room_runs_no_schedules() {
+    let db = claimed_new_home().await;
+    let community = community(&[&db]).await;
+    let channel = room(&db, community).await;
+    sqlx::query("INSERT INTO users (community_id, pubkey) VALUES ($1, $2)")
+        .bind(community.as_uuid())
+        .bind([7u8; 32].as_slice())
+        .execute(db.pool())
+        .await
+        .expect("owner");
+    let workflow: Uuid = sqlx::query_scalar(
+        r#"INSERT INTO workflows (community_id, name, owner_pubkey, channel_id, definition, definition_hash)
+           VALUES ($1, 'tick', $2, $3, '{"trigger": {"on": "schedule"}}', '\x00') RETURNING id"#,
+    )
+    .bind(community.as_uuid())
+    .bind([7u8; 32].as_slice())
+    .bind(channel)
+    .fetch_one(db.pool())
+    .await
+    .expect("workflow");
+    let listed = || async {
+        super::workflow::list_all_enabled_workflows(db.pool())
+            .await
+            .unwrap()
+            .iter()
+            .any(|w| w.id == workflow)
+    };
+    assert!(listed().await);
+    db.freeze_room(community, channel).await.unwrap();
+    assert!(!listed().await, "frozen: no schedule fires");
+}

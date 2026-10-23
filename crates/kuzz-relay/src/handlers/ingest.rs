@@ -3821,7 +3821,10 @@ async fn ingest_event_inner(
                 emoji,
             )
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?
         {
             kuzz_db::ReactionEventInsertOutcome::TargetMissing => {
                 return Err(IngestError::Rejected(
@@ -3933,7 +3936,10 @@ async fn ingest_event_inner(
             .db
             .replace_addressable_event(tenant.community(), &event, channel_id)
             .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            .map_err(|e| {
+                let message = format!("error: {e}");
+                stored_error(e, message)
+            })?
     } else if is_parameterized_replaceable(kind_u32) {
         // NIP-33 parameterized replaceable — keyed by (kind, pubkey, d_tag).
         let d_tag = kuzz_db::event::extract_d_tag(&event).unwrap_or_default();

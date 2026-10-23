@@ -170,6 +170,10 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
   REGION_JP_MEMBERS_URL=ws://localhost:3043 \
   cargo test -p kuzz-test-client --test e2e_regions_lag -- --ignored --test-threads=1
 
+# Room moves (S6-3, S6-4) run last: they move rooms between the regions.
+log "running e2e_regions_move"
+REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}"   REGION_JP_DATABASE_URL="${JP_DB}" REGION_KR_DATABASE_URL="${KR_DB}"   REGION_ADMIN_BIN="${ADMIN}"   REGION_REDIS_URLS=redis://127.0.0.1:6491,redis://127.0.0.1:6492   cargo test -p kuzz-test-client --test e2e_regions_move -- --ignored --test-threads=1
+
 # The relay in jp must never write a global table itself (S5-3): its copy
 # guard would refuse it.
 if grep -q "is written in the primary region" "${LOG_DIR}"/relay-jp*.log; then

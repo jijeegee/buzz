@@ -2,12 +2,23 @@
 //!
 //! A room lives in one region's database. To move it, the operator tool
 //! freezes it in the old home ([`Db::freeze_room`]: the sequence trigger then
-//! refuses its events), waits for its side effects to finish, copies its rows
-//! into the new home ([`copy_room`]) and checks the copy
+//! refuses its events, except the relay's own room messages and group
+//! snapshots while the room's side effects drain), waits for its side effects
+//! to finish, copies its rows into the new home ([`copy_room`], which checks
+//! every table's rows against the old home's) and checks the copy again
 //! ([`Db::room_fingerprint`]). The copy keeps every row as it is: rows go in
 //! with `COPY` and the session's triggers off, so sequence numbers, join
 //! cutoffs and unread tallies are not stamped again, and no side effect or
-//! push runs twice. The switch in the primary's directory comes after (S6-4).
+//! push runs twice. The copy is marked (`moved_in_at`) until it is opened;
+//! only a marked copy is ever removed by an abandoned move.
+//!
+//! Then (S6-4) the primary's directory homes the room in the new region
+//! ([`Db::switch_room_home`]), the copy is opened ([`Db::unfreeze_room`]) and
+//! the old home's room is marked moved out ([`Db::mark_room_moved_out`]),
+//! read-only until it is removed ([`Db::forget_moved_room`]). Every step that
+//! could split a room checks the directory as the database holds it: a room
+//! the directory homes elsewhere is never opened, and one it homes here is
+//! never removed.
 //!
 //! Writes that do not go through events (read positions, thread follows)
 //! are not frozen; one made while the copy runs stays in the old home only.
@@ -142,13 +153,22 @@ impl Db {
     }
 
     /// Freeze `channel` for a move: from now on its events are refused.
-    /// Waits for events being written to finish (they hold the room's row).
+    /// Takes the room's event lock, so events being written finish first.
     /// Returns when it was frozen; freezing again keeps the first time.
     pub async fn freeze_room(
         &self,
         community: CommunityId,
         channel: Uuid,
     ) -> Result<DateTime<Utc>> {
+        let mut tx = self.pool.begin().await?;
+        sqlx::query(
+            "SELECT pg_advisory_xact_lock(hashtextextended(\
+                 'kuzz_channel_membership:' || $1::text || ':' || $2::text, 0))",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(&mut *tx)
+        .await?;
         let since: Option<DateTime<Utc>> = sqlx::query_scalar(
             "UPDATE channels SET moving_since = COALESCE(moving_since, now()) \
               WHERE community_id = $1 AND id = $2 AND moved_out_at IS NULL \
@@ -156,8 +176,9 @@ impl Db {
         )
         .bind(community.as_uuid())
         .bind(channel)
-        .fetch_optional(&self.pool)
+        .fetch_optional(&mut *tx)
         .await?;
+        tx.commit().await?;
         since.ok_or_else(|| {
             DbError::NotFound(format!(
                 "room {channel} is not in this database, or has moved out of it"
@@ -165,18 +186,37 @@ impl Db {
         })
     }
 
-    /// Let `channel` take events again. A room that has moved out stays
-    /// frozen. Returns whether it was frozen.
+    /// Let `channel` take events again: an abandoned move in the old home,
+    /// or the copy in the new home once the directory homes it there. A room
+    /// that has moved out stays frozen, and so does one the directory (this
+    /// database's copy of it) homes in another region. Returns whether it was
+    /// frozen.
     pub async fn unfreeze_room(&self, community: CommunityId, channel: Uuid) -> Result<bool> {
+        let mut tx = self.pool.begin().await?;
+        let elsewhere: Option<String> = sqlx::query_scalar(
+            "SELECT d.home_region FROM room_directory d JOIN local_region l \
+                ON l.region_id <> d.home_region \
+              WHERE d.community_id = $1 AND d.channel_id = $2",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .fetch_optional(&mut *tx)
+        .await?;
+        if let Some(home) = elsewhere {
+            return Err(DbError::InvalidData(format!(
+                "the directory homes room {channel} in region {home}; it stays frozen here"
+            )));
+        }
         let done = sqlx::query(
-            "UPDATE channels SET moving_since = NULL \
+            "UPDATE channels SET moving_since = NULL, moved_in_at = NULL \
               WHERE community_id = $1 AND id = $2 AND moving_since IS NOT NULL \
                 AND moved_out_at IS NULL",
         )
         .bind(community.as_uuid())
         .bind(channel)
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await?;
+        tx.commit().await?;
         Ok(done.rows_affected() > 0)
     }
 
@@ -227,34 +267,149 @@ impl Db {
     }
 
     /// Remove a copy of `channel` that was never opened (an abandoned move).
-    /// Refuses a room that is open or has moved out. The caller makes sure
-    /// the directory does not send the room here. Returns the rows removed.
+    /// Only a copy [`copy_room`] wrote and nothing opened since is removed:
+    /// never the old home (frozen during a move too), and never a room the
+    /// directory homes in this database's region. Returns the rows removed.
     pub async fn delete_room_copy(&self, community: CommunityId, channel: Uuid) -> Result<u64> {
         let mut tx = self.pool.begin().await?;
-        match room_here(&mut tx, community, channel).await? {
-            RoomHere::Frozen(_) => {}
-            RoomHere::Absent => return Ok(0),
-            other => {
+        let copy: Option<bool> = sqlx::query_scalar(
+            "SELECT moved_in_at IS NOT NULL AND moving_since IS NOT NULL \
+                    AND moved_out_at IS NULL \
+               FROM channels WHERE community_id = $1 AND id = $2 FOR UPDATE",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .fetch_optional(&mut *tx)
+        .await?;
+        match copy {
+            None => return Ok(0),
+            Some(true) => {}
+            Some(false) => {
+                let here = room_here(&mut tx, community, channel).await?;
                 return Err(DbError::InvalidData(format!(
-                    "room {channel} here is {other:?}, not an unopened copy; it was not removed"
-                )))
+                    "room {channel} here is {here:?}, not an unopened copy; it was not removed"
+                )));
             }
         }
-        triggers_off(&mut tx).await?;
-        let mut removed = 0;
-        for (table, belongs) in ROOM_TABLES.iter().rev() {
-            let sql = format!(
-                "DELETE FROM {table} WHERE {}",
-                room_rows(*belongs, *community.as_uuid(), channel)
-            );
-            removed += sqlx::query(sqlx::AssertSqlSafe(sql))
-                .execute(&mut *tx)
-                .await?
-                .rows_affected();
-        }
+        refuse_if_homed_here(&mut tx, community, channel).await?;
+        let removed = delete_room_rows(&mut tx, community, channel).await?;
         tx.commit().await?;
         Ok(removed)
     }
+
+    /// Mark the old home's frozen room as moved out once the directory homes
+    /// it elsewhere (S6-4): it stays frozen and read-only, and its workflows
+    /// stop running here. Refused while the directory (this database's copy
+    /// of it) still homes the room here. Marking again changes nothing.
+    pub async fn mark_room_moved_out(&self, community: CommunityId, channel: Uuid) -> Result<()> {
+        let mut tx = self.pool.begin().await?;
+        match room_here(&mut tx, community, channel).await? {
+            RoomHere::Frozen(_) => {}
+            RoomHere::MovedOut(_) => return Ok(()),
+            other => {
+                return Err(DbError::InvalidData(format!(
+                    "room {channel} here is {other:?}, not frozen for a move"
+                )))
+            }
+        }
+        refuse_if_homed_here(&mut tx, community, channel).await?;
+        sqlx::query(
+            "UPDATE channels SET moved_out_at = now() \
+              WHERE community_id = $1 AND id = $2 AND moved_out_at IS NULL",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(&mut *tx)
+        .await?;
+        sqlx::query(
+            "UPDATE workflows SET enabled = false WHERE community_id = $1 AND channel_id = $2",
+        )
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(&mut *tx)
+        .await?;
+        tx.commit().await?;
+        Ok(())
+    }
+
+    /// Remove the rows of a room that moved out of this database at least
+    /// `kept_days` ago (S6-4). Refused for any other room, and while the
+    /// directory homes it here. Returns the rows removed.
+    pub async fn forget_moved_room(
+        &self,
+        community: CommunityId,
+        channel: Uuid,
+        kept_days: u32,
+    ) -> Result<u64> {
+        let kept_for = chrono::Duration::days(i64::from(kept_days));
+        let mut tx = self.pool.begin().await?;
+        match room_here(&mut tx, community, channel).await? {
+            RoomHere::MovedOut(at) if at <= Utc::now() - kept_for => {}
+            RoomHere::MovedOut(at) => {
+                return Err(DbError::InvalidData(format!(
+                    "room {channel} moved out at {at}; it is kept until {}",
+                    at + kept_for
+                )))
+            }
+            RoomHere::Absent => return Ok(0),
+            other => {
+                return Err(DbError::InvalidData(format!(
+                    "room {channel} here is {other:?}, not moved out; it was not removed"
+                )))
+            }
+        }
+        refuse_if_homed_here(&mut tx, community, channel).await?;
+        let removed = delete_room_rows(&mut tx, community, channel).await?;
+        tx.commit().await?;
+        Ok(removed)
+    }
+}
+
+/// Refuse when the directory, as this database holds it, homes `channel` in
+/// this database's own region. A database no region has claimed has no home
+/// to protect.
+async fn refuse_if_homed_here(
+    conn: &mut PgConnection,
+    community: CommunityId,
+    channel: Uuid,
+) -> Result<()> {
+    let here: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM room_directory d JOIN local_region l \
+                           ON l.region_id = d.home_region \
+                        WHERE d.community_id = $1 AND d.channel_id = $2)",
+    )
+    .bind(community.as_uuid())
+    .bind(channel)
+    .fetch_one(conn)
+    .await?;
+    if here {
+        return Err(DbError::InvalidData(format!(
+            "the directory homes room {channel} in this database's region; nothing was changed"
+        )));
+    }
+    Ok(())
+}
+
+/// Delete every row of `channel`, children first, with triggers off so no
+/// cascade or directory trigger runs.
+async fn delete_room_rows(
+    conn: &mut PgConnection,
+    community: CommunityId,
+    channel: Uuid,
+) -> Result<u64> {
+    triggers_off(conn).await?;
+    let mut removed = 0;
+    for (table, belongs) in ROOM_TABLES.iter().rev() {
+        let sql = format!(
+            "DELETE FROM {table} WHERE {}",
+            room_rows(*belongs, *community.as_uuid(), channel)
+        );
+        removed += sqlx::query(sqlx::AssertSqlSafe(sql))
+            .execute(&mut *conn)
+            .await?
+            .rows_affected();
+    }
+    Ok(removed)
 }
 
 async fn room_here(
@@ -338,8 +493,41 @@ async fn copy_columns(conn: &mut PgConnection, table: &str) -> Result<String> {
     Ok(columns.join(", "))
 }
 
+/// Render values the same way in both databases, whatever their settings,
+/// so their checksums compare.
+async fn same_text(conn: &mut PgConnection) -> Result<()> {
+    for setting in [
+        "SET LOCAL TimeZone = 'UTC'",
+        "SET LOCAL DateStyle = 'ISO, YMD'",
+        "SET LOCAL IntervalStyle = 'postgres'",
+        "SET LOCAL extra_float_digits = 3",
+        "SET LOCAL bytea_output = 'hex'",
+    ] {
+        sqlx::query(setting).execute(&mut *conn).await?;
+    }
+    Ok(())
+}
+
+/// Rows of `table` selected by `rows`, and a checksum of their values.
+async fn table_checksum(
+    conn: &mut PgConnection,
+    table: &str,
+    columns: &str,
+    rows: &str,
+) -> Result<(i64, String)> {
+    let row = sqlx::query(sqlx::AssertSqlSafe(format!(
+        "SELECT count(*) AS n, COALESCE(md5(string_agg(h, '' ORDER BY h)), '') AS sum \
+           FROM (SELECT md5(ROW({columns})::text) AS h FROM {table} WHERE {rows}) r"
+    )))
+    .fetch_one(conn)
+    .await?;
+    Ok((row.try_get("n")?, row.try_get("sum")?))
+}
+
 /// Copy the frozen room `channel` from its old home `from` into the new home
-/// `to`, all in one transaction there, from one snapshot of `from`.
+/// `to`, all in one transaction there, from one snapshot of `from`. Every
+/// table's copied rows must match the old home's, value for value, or
+/// nothing is kept. The copy stays frozen and marked as a move's copy.
 ///
 /// Refuses unless both databases are on the same migration, the room is
 /// frozen in `from` with no side effect left, and `to` does not hold it.
@@ -387,17 +575,22 @@ pub async fn copy_room(
             )))
         }
     }
+    // With triggers off the community's write fence does not run: check it
+    // once here instead.
+    sqlx::query("SELECT assert_community_write_allowed($1)")
+        .bind(community.as_uuid())
+        .execute(&mut *target)
+        .await?;
     triggers_off(&mut target).await?;
+    for conn in [&mut *source, &mut *target] {
+        same_text(conn).await?;
+    }
 
     let mut copied = Vec::with_capacity(ROOM_TABLES.len());
     for (table, belongs) in ROOM_TABLES {
         let columns = copy_columns(&mut target, table).await?;
         let rows = room_rows(*belongs, *community.as_uuid(), channel);
-        let expected: i64 = sqlx::query_scalar(sqlx::AssertSqlSafe(format!(
-            "SELECT count(*) FROM {table} WHERE {rows}"
-        )))
-        .fetch_one(&mut *source)
-        .await?;
+        let expected = table_checksum(&mut source, table, &columns, &rows).await?;
         let mut sink = target
             .copy_in_raw(&format!(
                 "COPY {table} ({columns}) FROM STDIN (FORMAT binary)"
@@ -414,9 +607,12 @@ pub async fn copy_room(
             }
         }
         let written = sink.finish().await?;
-        if i64::try_from(written).ok() != Some(expected) {
+        let landed = table_checksum(&mut target, table, &columns, &rows).await?;
+        if landed != expected || i64::try_from(written).ok() != Some(expected.0) {
             return Err(DbError::InvalidData(format!(
-                "{table}: {expected} rows in the old home, {written} written; nothing was kept"
+                "{table}: the copy does not match the old home ({} rows there, {written} \
+                 written, {} here); nothing was kept",
+                expected.0, landed.0
             )));
         }
         copied.push(TableCopied {
@@ -424,6 +620,11 @@ pub async fn copy_room(
             rows: written,
         });
     }
+    sqlx::query("UPDATE channels SET moved_in_at = now() WHERE community_id = $1 AND id = $2")
+        .bind(community.as_uuid())
+        .bind(channel)
+        .execute(&mut *target)
+        .await?;
     target.commit().await?;
     source.rollback().await?;
     Ok(copied)
