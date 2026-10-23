@@ -27,6 +27,7 @@ import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import 'account_actions.dart';
 import 'account_page.dart';
 import 'agents_settings.dart';
 import 'devices_page.dart';
@@ -254,6 +255,7 @@ class SettingsPage extends HookConsumerWidget {
               children: isProfile
                   ? [profileHeader, const KuzzIdSettings()]
                   : [
+                      _CommunitySection(invitePageBuilder: invitePageBuilder),
                       if (tokenOrigin != null)
                         _AccountSection(origin: tokenOrigin)
                       else if (googleKeyOrigin != null)
@@ -264,7 +266,6 @@ class SettingsPage extends HookConsumerWidget {
                       else
                         const _ProtectAccountSection(),
                       const _NotificationsSection(),
-                      _CommunitySection(invitePageBuilder: invitePageBuilder),
                       const MessagesSettings(),
                       const AgentsSettings(),
                       const PeopleSettings(),
@@ -274,6 +275,11 @@ class SettingsPage extends HookConsumerWidget {
                       // The built-in server cannot be removed from the
                       // device.
                       if (!hasBuiltInServer) const _RemoveCommunitySection(),
+                      // Folded at the very bottom, as on desktop. The
+                      // relay refuses deletion for Google-held accounts
+                      // for now, so they are not offered it.
+                      if (tokenOrigin != null)
+                        AccountDeletionSection(origin: tokenOrigin),
                     ],
             ),
           ),

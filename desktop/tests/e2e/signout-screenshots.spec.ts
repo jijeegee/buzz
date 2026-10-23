@@ -28,7 +28,7 @@ test.describe("signout screenshots", () => {
   }) => {
     await installMockBridge(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "profile");
+    await openSettings(page, "devices");
 
     const section = page.getByTestId("settings-signout");
     await section.scrollIntoViewIfNeeded();
@@ -51,7 +51,7 @@ test.describe("signout screenshots", () => {
   }) => {
     await installMockBridge(page);
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "profile");
+    await openSettings(page, "devices");
 
     const section = page.getByTestId("settings-signout");
     await section.scrollIntoViewIfNeeded();
@@ -62,7 +62,9 @@ test.describe("signout screenshots", () => {
 
     const dialog = page.getByRole("alertdialog");
     await expect(dialog).toBeVisible({ timeout: 5_000 });
-    await expect(dialog.getByText("Delete all local data?")).toBeVisible();
+    await expect(
+      dialog.getByText("Delete all data on this computer?"),
+    ).toBeVisible();
     await expect(
       dialog.getByRole("button", { name: "Delete my data" }),
     ).toBeVisible();
