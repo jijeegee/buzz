@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import '../l10n/l10n.dart';
 
 /// The standard (Unicode) emoji set, projected from the same emoji-mart dataset
 /// desktop uses.
@@ -52,14 +53,14 @@ class EmojiCategory {
 
   /// Title-cased label for the category rail.
   String get label => switch (id) {
-    'people' => 'Smileys & People',
-    'nature' => 'Animals & Nature',
-    'foods' => 'Food & Drink',
-    'activity' => 'Activity',
-    'places' => 'Travel & Places',
-    'objects' => 'Objects',
-    'symbols' => 'Symbols',
-    'flags' => 'Flags',
+    'people' => appL10n.emojiCategoryPeople,
+    'nature' => appL10n.emojiCategoryNature,
+    'foods' => appL10n.emojiCategoryFoods,
+    'activity' => appL10n.emojiCategoryActivity,
+    'places' => appL10n.emojiCategoryPlaces,
+    'objects' => appL10n.emojiCategoryObjects,
+    'symbols' => appL10n.emojiCategorySymbols,
+    'flags' => appL10n.emojiCategoryFlags,
     _ => id,
   };
 }

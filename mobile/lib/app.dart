@@ -325,9 +325,12 @@ class _SplashScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Scaffold(
+    return Scaffold(
       body: Center(
-        child: KuzzLoadingIndicator(size: 56, semanticLabel: 'Starting Kuzz'),
+        child: KuzzLoadingIndicator(
+          size: 56,
+          semanticLabel: context.l10n.appStartingLabel,
+        ),
       ),
     );
   }

@@ -43,14 +43,14 @@ class _ThemeHomePreview extends StatelessWidget {
             _PreviewDeviceFrame(
               key: const ValueKey('theme-home-device-preview'),
               theme: previewTheme,
-              semanticLabel: 'Home preview',
+              semanticLabel: context.l10n.settingsThemeHomePreview,
               child: const _FigmaHomeScreen(),
             ),
             const SizedBox(width: 96),
             _PreviewDeviceFrame(
               key: const ValueKey('theme-chat-device-preview'),
               theme: previewTheme,
-              semanticLabel: 'Chat preview',
+              semanticLabel: context.l10n.settingsThemeChatPreview,
               child: const _FigmaChatScreen(),
             ),
           ],
@@ -205,7 +205,7 @@ class _FigmaHomeScreen extends ConsumerWidget {
                       hasBuiltInServer
                           ? appBrandName
                           : communityName == null || communityName.isEmpty
-                          ? 'Community'
+                          ? context.l10n.settingsThemePreviewCommunity
                           : communityName,
                       key: const ValueKey('theme-preview-community-name'),
                       maxLines: 1,

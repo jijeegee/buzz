@@ -4,6 +4,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
@@ -44,7 +45,8 @@ class InviteJoinSheet extends ConsumerWidget {
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
     final isClaiming = state.status == InviteJoinStatus.claiming;
     final isStarterSetupRecovery = state.isStarterSetupRecovery;
-    final host = state.host ?? 'unknown host';
+    final l10n = context.l10n;
+    final host = state.host ?? l10n.inviteUnknownHost;
     final derivedName = state.communityName;
     final tokenOrigin = state.tokenRelayOrigin;
     final tokenStatus = tokenOrigin == null
@@ -57,12 +59,12 @@ class InviteJoinSheet extends ConsumerWidget {
       isStarterSetupRecovery,
       state.status,
     )) {
-      (true, true, _) => 'Finishing setup…',
-      (true, false, _) => 'Joining…',
-      (false, true, InviteJoinStatus.error) => 'Retry setup',
-      (false, true, _) => 'Finish setting up',
-      _ when needsSignIn => 'Sign in with Google to join',
-      _ => 'Join',
+      (true, true, _) => l10n.inviteFinishingSetup,
+      (true, false, _) => l10n.inviteJoining,
+      (false, true, InviteJoinStatus.error) => l10n.inviteRetrySetup,
+      (false, true, _) => l10n.inviteFinishSettingUp,
+      _ when needsSignIn => l10n.inviteSignInWithGoogleToJoin,
+      _ => l10n.inviteJoin,
     };
 
     if (state.status == InviteJoinStatus.success) {
@@ -86,17 +88,17 @@ class InviteJoinSheet extends ConsumerWidget {
             const SizedBox(height: Grid.sm),
             Text(
               isStarterSetupRecovery
-                  ? 'Finish setting up'
+                  ? l10n.inviteFinishSettingUp
                   : hasBuiltInServer
-                  ? 'Join?'
-                  : 'Join this Kuzz community?',
+                  ? l10n.inviteJoinTitle
+                  : l10n.inviteJoinCommunityTitle,
               key: const Key('invite-join-title'),
               style: context.textTheme.titleLarge,
             ),
             if (!hasBuiltInServer) ...[
               const SizedBox(height: Grid.xxs),
               Text(
-                'Check the relay host before you join:',
+                l10n.inviteCheckHost,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -122,7 +124,7 @@ class InviteJoinSheet extends ConsumerWidget {
               if (derivedName != null && derivedName != host) ...[
                 const SizedBox(height: Grid.xxs),
                 Text(
-                  'Display name: $derivedName',
+                  l10n.inviteDisplayName(derivedName),
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -132,7 +134,7 @@ class InviteJoinSheet extends ConsumerWidget {
             const SizedBox(height: Grid.sm),
             if (isStarterSetupRecovery) ...[
               Text(
-                'Your membership is ready, but starter groups still need to be set up. You can safely retry without claiming the invite again.',
+                l10n.inviteStarterSetupPending,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -142,10 +144,8 @@ class InviteJoinSheet extends ConsumerWidget {
             if (tokenStatus != null) ...[
               Text(
                 hasBuiltInServer
-                    ? 'Joining uses your Google sign-in. Your membership '
-                          'belongs to your account, not this phone.'
-                    : 'This community uses your Google sign-in. Your membership '
-                          'belongs to your account, not this phone.',
+                    ? l10n.inviteGoogleMembership
+                    : l10n.inviteGoogleMembershipCommunity,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -153,12 +153,12 @@ class InviteJoinSheet extends ConsumerWidget {
               const SizedBox(height: Grid.xxs),
               Text(
                 switch (tokenStatus) {
-                  TokenSessionStatus.signedIn => 'Signed in',
-                  TokenSessionStatus.signingIn => 'Signing in…',
-                  TokenSessionStatus.restoring => 'Checking sign-in…',
-                  TokenSessionStatus.retrying ||
-                  TokenSessionStatus.stalled => 'Sign-in needs a connection',
-                  TokenSessionStatus.signedOut => 'Not signed in',
+                  TokenSessionStatus.signedIn => l10n.inviteSessionSignedIn,
+                  TokenSessionStatus.signingIn => l10n.inviteSessionSigningIn,
+                  TokenSessionStatus.restoring => l10n.inviteSessionChecking,
+                  TokenSessionStatus.retrying || TokenSessionStatus.stalled =>
+                    l10n.inviteSessionNeedsConnection,
+                  TokenSessionStatus.signedOut => l10n.inviteSessionSignedOut,
                 },
                 style: context.textTheme.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
@@ -166,7 +166,7 @@ class InviteJoinSheet extends ConsumerWidget {
               ),
             ] else
               Text(
-                'This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.',
+                l10n.inviteOnlyCopyWarning,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -189,7 +189,7 @@ class InviteJoinSheet extends ConsumerWidget {
                     onPressed: isClaiming
                         ? null
                         : () => Navigator.of(context).pop(),
-                    child: const Text('Cancel'),
+                    child: Text(l10n.commonCancel),
                   ),
                 ),
                 const SizedBox(width: Grid.sm),
@@ -207,10 +207,10 @@ class InviteJoinSheet extends ConsumerWidget {
                             child: KuzzLoadingIndicator(
                               size: 16,
                               semanticLabel: isStarterSetupRecovery
-                                  ? 'Finishing setup'
+                                  ? l10n.inviteFinishingSetupLabel
                                   : hasBuiltInServer
-                                  ? 'Joining'
-                                  : 'Joining community',
+                                  ? l10n.inviteJoiningLabel
+                                  : l10n.inviteJoiningCommunityLabel,
                             ),
                           )
                         : Icon(
@@ -259,13 +259,15 @@ class _InviteJoinSuccess extends StatelessWidget {
             ),
             const SizedBox(height: Grid.sm),
             Text(
-              hideServer ? 'You’re in' : 'You joined ${communityName ?? host}',
+              hideServer
+                  ? context.l10n.inviteJoinedTitle
+                  : context.l10n.inviteJoinedCommunity(communityName ?? host),
               style: context.textTheme.titleLarge,
             ),
             if (!isTokenAuth) ...[
               const SizedBox(height: Grid.xs),
               Text(
-                'This phone is the only copy of this identity. If you lose it, you’ll lose access as this member.',
+                context.l10n.inviteOnlyCopyWarning,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -274,7 +276,11 @@ class _InviteJoinSuccess extends StatelessWidget {
             const SizedBox(height: Grid.lg),
             FilledButton(
               onPressed: () => Navigator.of(context).pop(hasFocusChannel),
-              child: Text(hasFocusChannel ? 'Continue' : 'Done'),
+              child: Text(
+                hasFocusChannel
+                    ? context.l10n.inviteJoinedContinue
+                    : context.l10n.inviteJoinedDone,
+              ),
             ),
           ],
         ),

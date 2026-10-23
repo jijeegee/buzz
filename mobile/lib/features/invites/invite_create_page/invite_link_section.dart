@@ -40,12 +40,10 @@ class _InviteLinkSection extends HookConsumerWidget {
       return null;
     }, [ttlSeconds.value, maxUses.value]);
 
-    final ttlLabel = communityInviteTtlOptions
-        .firstWhere((option) => option.value == ttlSeconds.value)
-        .label;
-    final maxUsesLabel = communityInviteMaxUseOptions
-        .firstWhere((option) => option.value == maxUses.value)
-        .label;
+    final l10n = context.l10n;
+    final ttlLabel = _ttlLabel(l10n, ttlSeconds.value);
+    final maxUsesLabel = _maxUsesLabel(l10n, maxUses.value);
+    final shareFailedMessage = l10n.inviteShareFailed;
     Future<void> share(BuildContext buttonContext) async {
       final url = invite.value?.url;
       if (url == null) return;
@@ -57,9 +55,9 @@ class _InviteLinkSection extends HookConsumerWidget {
         await ref.read(shareCommunityInviteProvider)(url, origin);
       } catch (_) {
         if (!context.mounted) return;
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Could not share invite link')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text(shareFailedMessage)));
       }
     }
 
@@ -75,7 +73,7 @@ class _InviteLinkSection extends HookConsumerWidget {
                   builder: (buttonContext) => KuzzActionTile(
                     key: const Key('community-invite-share-link'),
                     icon: LucideIcons.share2,
-                    label: 'Share',
+                    label: l10n.inviteShare,
                     isEnabled: invite.value != null,
                     onTap: () => share(buttonContext),
                   ),
@@ -86,12 +84,12 @@ class _InviteLinkSection extends HookConsumerWidget {
                 child: KuzzActionTile(
                   key: const Key('community-invite-copy-link'),
                   icon: LucideIcons.copy,
-                  label: 'Copy',
+                  label: l10n.inviteCopy,
                   isEnabled: invite.value != null,
                   onTap: () => copyToClipboard(
                     context,
                     invite.value!.url,
-                    message: 'Invite link copied',
+                    message: l10n.inviteLinkCopied,
                   ),
                 ),
               ),
@@ -112,7 +110,7 @@ class _InviteLinkSection extends HookConsumerWidget {
                     ),
                   ),
                 ),
-                TextButton(onPressed: generate, child: const Text('Retry')),
+                TextButton(onPressed: generate, child: Text(l10n.inviteRetry)),
               ],
             ),
           ),
@@ -124,31 +122,33 @@ class _InviteLinkSection extends HookConsumerWidget {
           children: [
             AppListRow(
               key: const Key('community-invite-expiry-setting'),
-              title: 'Expires after',
+              title: l10n.inviteExpiresAfter,
               value: ttlLabel,
               trailing: const _InviteRowChevron(),
               onTap: isGenerating.value
                   ? null
                   : () => _showInviteOptionSheet<int>(
                       context: context,
-                      title: 'Expires after',
+                      title: l10n.inviteExpiresAfter,
                       value: ttlSeconds.value,
                       options: communityInviteTtlOptions,
+                      labelOf: (value) => _ttlLabel(l10n, value),
                       onSelected: (value) => ttlSeconds.value = value,
                     ),
             ),
             AppListRow(
               key: const Key('community-invite-max-uses-setting'),
-              title: 'Limit number of uses',
+              title: l10n.inviteLimitUses,
               value: maxUsesLabel,
               trailing: const _InviteRowChevron(),
               onTap: isGenerating.value
                   ? null
                   : () => _showInviteOptionSheet<int?>(
                       context: context,
-                      title: 'Limit number of uses',
+                      title: l10n.inviteLimitUses,
                       value: maxUses.value,
                       options: communityInviteMaxUseOptions,
+                      labelOf: (value) => _maxUsesLabel(l10n, value),
                       onSelected: (value) => maxUses.value = value,
                     ),
             ),
@@ -164,6 +164,7 @@ void _showInviteOptionSheet<T>({
   required String title,
   required T value,
   required List<CommunityInviteOption<T>> options,
+  required String Function(T value) labelOf,
   required ValueChanged<T> onSelected,
 }) {
   showKuzzModalBottomSheet<void>(
@@ -173,22 +174,33 @@ void _showInviteOptionSheet<T>({
       title: title,
       value: value,
       options: options,
+      labelOf: labelOf,
       onSelected: onSelected,
     ),
   );
 }
+
+/// Shown name of an invite-link lifetime in whole days.
+String _ttlLabel(AppLocalizations l10n, int seconds) =>
+    l10n.inviteExpiryDays(seconds ~/ (24 * 60 * 60));
+
+/// Shown name of an invite-link use limit; `null` means no limit.
+String _maxUsesLabel(AppLocalizations l10n, int? uses) =>
+    uses == null ? l10n.inviteNoUseLimit : l10n.inviteUseCount(uses);
 
 class _InviteOptionSheet<T> extends StatelessWidget {
   const _InviteOptionSheet({
     required this.title,
     required this.value,
     required this.options,
+    required this.labelOf,
     required this.onSelected,
   });
 
   final String title;
   final T value;
   final List<CommunityInviteOption<T>> options;
+  final String Function(T value) labelOf;
   final ValueChanged<T> onSelected;
 
   @override
@@ -210,7 +222,7 @@ class _InviteOptionSheet<T> extends StatelessWidget {
           for (final option in options)
             AppListRow(
               key: Key('community-invite-option-${_optionKey(option.label)}'),
-              title: option.label,
+              title: labelOf(option.value),
               trailing: option.value == value
                   ? Icon(
                       LucideIcons.check,

@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 
 class AgeRestrictionPage extends StatelessWidget {
@@ -26,7 +27,7 @@ class AgeRestrictionPage extends StatelessWidget {
                   ),
                   const SizedBox(height: Grid.lg),
                   Text(
-                    'Kuzz is for people 18 and older',
+                    context.l10n.ageGateTitle,
                     textAlign: TextAlign.center,
                     style: context.textTheme.headlineSmall?.copyWith(
                       fontWeight: FontWeight.w600,
@@ -34,7 +35,7 @@ class AgeRestrictionPage extends StatelessWidget {
                   ),
                   const SizedBox(height: Grid.sm),
                   Text(
-                    "You must be 18 or older to use Kuzz under Kuzz's Terms.",
+                    context.l10n.ageGateBody,
                     textAlign: TextAlign.center,
                     style: context.textTheme.bodyLarge?.copyWith(
                       color: context.colors.onSurfaceVariant,

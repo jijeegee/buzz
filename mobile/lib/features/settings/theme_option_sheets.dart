@@ -5,17 +5,22 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 
-const appearanceModeOptions = <({ThemeMode mode, String label, IconData icon})>[
-  (mode: ThemeMode.light, label: 'Light', icon: LucideIcons.sun),
-  (mode: ThemeMode.dark, label: 'Dark', icon: LucideIcons.moon),
-  (mode: ThemeMode.system, label: 'System', icon: LucideIcons.sunMoon),
+const appearanceModeOptions = <({ThemeMode mode, IconData icon})>[
+  (mode: ThemeMode.light, icon: LucideIcons.sun),
+  (mode: ThemeMode.dark, icon: LucideIcons.moon),
+  (mode: ThemeMode.system, icon: LucideIcons.sunMoon),
 ];
 
-String appearanceModeLabel(ThemeMode mode) =>
-    appearanceModeOptions.firstWhere((option) => option.mode == mode).label;
+String appearanceModeLabel(AppLocalizations l10n, ThemeMode mode) =>
+    switch (mode) {
+      ThemeMode.light => l10n.settingsAppearanceLight,
+      ThemeMode.dark => l10n.settingsAppearanceDark,
+      ThemeMode.system => l10n.settingsAppearanceSystem,
+    };
 
 Future<void> showAppearanceModePickerSheet({
   required BuildContext context,
@@ -23,7 +28,7 @@ Future<void> showAppearanceModePickerSheet({
   required ValueChanged<ThemeMode> onSelected,
 }) => showKuzzModalBottomSheet<void>(
   context: context,
-  title: 'Appearance',
+  title: context.l10n.settingsAppearanceSection,
   showDragHandle: true,
   builder: (_) =>
       _AppearanceModePicker(initialMode: selectedMode, onSelected: onSelected),
@@ -36,7 +41,7 @@ Future<void> showAccentColorPickerSheet({
   required ValueChanged<int> onSelected,
 }) => showKuzzModalBottomSheet<void>(
   context: context,
-  title: 'Accent color',
+  title: context.l10n.settingsAccentColor,
   showDragHandle: true,
   builder: (_) => _AccentColorPicker(
     colorScheme: colorScheme,
@@ -106,7 +111,7 @@ class _AppearanceModeOption extends StatelessWidget {
     required this.onTap,
   });
 
-  final ({ThemeMode mode, String label, IconData icon}) option;
+  final ({ThemeMode mode, IconData icon}) option;
   final bool selected;
   final VoidCallback onTap;
 
@@ -114,7 +119,9 @@ class _AppearanceModeOption extends StatelessWidget {
   Widget build(BuildContext context) => Semantics(
     button: true,
     selected: selected,
-    label: '${option.label} appearance',
+    label: context.l10n.settingsAppearanceOption(
+      appearanceModeLabel(context.l10n, option.mode),
+    ),
     child: Container(
       key: ValueKey('appearance-mode-${option.mode.name}'),
       decoration: BoxDecoration(
@@ -152,7 +159,7 @@ class _AppearanceModeOption extends StatelessWidget {
                 right: Grid.xxs,
                 bottom: Grid.xxs,
                 child: Text(
-                  option.label,
+                  appearanceModeLabel(context.l10n, option.mode),
                   key: ValueKey('appearance-mode-${option.mode.name}-label'),
                   textAlign: TextAlign.center,
                   style: context.textTheme.labelLarge?.copyWith(
@@ -236,7 +243,7 @@ class _AccentSheetOption extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => Semantics(
-    label: '${accentColors[index].name} accent color',
+    label: context.l10n.settingsAccentColorOption(accentColors[index].name),
     button: true,
     selected: selected,
     child: InkResponse(

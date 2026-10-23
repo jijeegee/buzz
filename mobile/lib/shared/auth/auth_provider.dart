@@ -12,6 +12,7 @@ import '../push/push_bridge.dart';
 import '../push/push_subscription.dart';
 import 'default_community.dart';
 import 'token/relay_origin.dart';
+import '../l10n/l10n.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
 
@@ -310,7 +311,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             nsec: null,
             pushNotificationsEnabled: false,
           ),
-          logoutError: 'Finishing sign-out…',
+          logoutError: appL10n.authSignOutFinishing,
         ),
       );
       state = AsyncData(await _signedOutState(active));
@@ -331,7 +332,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     try {
       await settleSignedOutCommunitySnapshot(ref);
     } catch (_) {
-      error = 'Couldn’t finish turning off notifications. Try again.';
+      error = appL10n.authNotificationsOffFailed;
     }
     return AuthState(
       status: AuthStatus.unauthenticated,

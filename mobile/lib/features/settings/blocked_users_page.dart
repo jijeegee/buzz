@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
@@ -39,10 +40,10 @@ class BlockedUsersPage extends HookConsumerWidget {
 
     final Widget body;
     if (blocked.isLoading && !blocked.hasValue) {
-      body = const Center(
+      body = Center(
         child: KuzzLoadingIndicator(
           size: 32,
-          semanticLabel: 'Loading blocked users',
+          semanticLabel: context.l10n.settingsBlockedLoading,
         ),
       );
     } else if (blocked.hasError && !blocked.hasValue) {
@@ -53,7 +54,7 @@ class BlockedUsersPage extends HookConsumerWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(
-                'Couldn’t load blocked users',
+                context.l10n.settingsBlockedLoadFailed,
                 key: const Key('blocked-users-error'),
                 style: context.textTheme.bodyMedium,
               ),
@@ -61,7 +62,7 @@ class BlockedUsersPage extends HookConsumerWidget {
               FilledButton(
                 key: const Key('blocked-users-retry'),
                 onPressed: () => ref.invalidate(blockedUsersProvider),
-                child: const Text('Try again'),
+                child: Text(context.l10n.commonTryAgain),
               ),
             ],
           ),
@@ -77,7 +78,7 @@ class BlockedUsersPage extends HookConsumerWidget {
               height: constraints.maxHeight,
               child: Center(
                 child: Text(
-                  'You haven’t blocked anyone',
+                  context.l10n.settingsBlockedEmpty,
                   key: const Key('blocked-users-empty'),
                   style: context.textTheme.bodyMedium?.copyWith(
                     color: context.colors.onSurfaceVariant,
@@ -102,7 +103,7 @@ class BlockedUsersPage extends HookConsumerWidget {
     }
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Blocked users')),
+      appBar: AppBar(title: Text(context.l10n.settingsBlockedTitle)),
       body: SafeArea(child: body),
     );
   }
@@ -136,7 +137,10 @@ class _BlockedRow extends HookConsumerWidget {
                 );
                 if (context.mounted) busy.value = false;
               },
-        child: Text('Unblock', semanticsLabel: 'Unblock $name'),
+        child: Text(
+          context.l10n.settingsBlockedUnblock,
+          semanticsLabel: context.l10n.settingsBlockedUnblockLabel(name),
+        ),
       ),
     );
   }

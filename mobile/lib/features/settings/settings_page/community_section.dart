@@ -14,14 +14,18 @@ class _CommunitySection extends ConsumerWidget {
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
 
     return AppListCard(
-      label: hasBuiltInServer ? 'Appearance' : 'Community',
+      label: hasBuiltInServer
+          ? context.l10n.settingsAppearanceSection
+          : context.l10n.settingsCommunitySection,
       verticalPadding: Grid.twelve,
       children: [
         if (canInvite)
           AppListRow(
             key: const ValueKey('settings-invite-row'),
             icon: LucideIcons.userPlus,
-            title: hasBuiltInServer ? 'Invite people' : 'Invite to community',
+            title: hasBuiltInServer
+                ? context.l10n.settingsInvitePeople
+                : context.l10n.settingsInviteToCommunity,
             trailing: const _RowChevron(),
             onTap: () => Navigator.of(
               context,
@@ -30,7 +34,7 @@ class _CommunitySection extends ConsumerWidget {
         AppListRow(
           key: const ValueKey('community-theme-row'),
           icon: LucideIcons.palette,
-          title: 'Theme',
+          title: context.l10n.settingsTheme,
           value: themeSelectionLabel(preference.theme, preference.mode),
           trailing: const _RowChevron(),
           onTap: () => Navigator.of(context).push(
