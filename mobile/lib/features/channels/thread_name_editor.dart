@@ -72,9 +72,9 @@ class ThreadNameEditor extends HookConsumerWidget {
                 decoration: InputDecoration(
                   labelText: context.l10n.threadNameLabel,
                   errorText: error,
-                  counterText: context.l10n.threadNameCounter(
-                    threadNameWeight(controller.text.trim()),
-                  ),
+                  counterText:
+                      '${threadNameWeight(controller.text.trim())} / '
+                      '$maxThreadNameWeight',
                 ),
                 onChanged: (text) {
                   writes.value = writes.value

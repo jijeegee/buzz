@@ -1357,7 +1357,6 @@
   "threadNameTitle": "Nama utas",
   "threadNameBody": "Terlihat oleh semua orang di grup ini. Maksimal 40 karakter Latin atau 20 karakter Korea. Kosongkan untuk menghapus nama.",
   "threadNameLabel": "Nama",
-  "threadNameCounter": "{weight} / 40 · Inggris 1, Korea 2",
   "threadNameControlCharsError": "Gunakan satu baris tanpa karakter kontrol.",
   "threadNameTooLongError": "Maksimal 40 karakter Inggris atau 20 karakter Korea.",
   "threadNameConnectionChanged": "Koneksi berubah. Buka ulang utas untuk memeriksa nama yang disimpan.",

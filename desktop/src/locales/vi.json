@@ -2883,7 +2883,6 @@
   "messages.threadName.retry": "Tải lại tên",
   "messages.threadName.title": "Tên chuỗi tin nhắn",
   "messages.threadName.description": "Mọi người trong nhóm này đều thấy được. Tối đa 40 ký tự tiếng Anh hoặc 20 ký tự tiếng Hàn. Để trống để xóa tên.",
-  "messages.threadName.count": "{count} / 40 · Tiếng Anh 1, tiếng Hàn 2",
   "messages.threadName.saving": "Đang lưu…",
   "messages.send.notSent": "Chưa gửi",
   "messages.send.sending": "Đang gửi",

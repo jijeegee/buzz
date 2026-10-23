@@ -2883,7 +2883,6 @@
   "messages.threadName.retry": "Reintentar",
   "messages.threadName.title": "Nombre del hilo",
   "messages.threadName.description": "Visible para todos en este grupo. Hasta 40 caracteres latinos o 20 coreanos. Déjalo vacío para quitar el nombre.",
-  "messages.threadName.count": "{count} / 40 · Latino 1, coreano 2",
   "messages.threadName.saving": "Guardando…",
   "messages.send.notSent": "No enviado",
   "messages.send.sending": "Enviando",

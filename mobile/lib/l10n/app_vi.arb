@@ -1357,7 +1357,6 @@
   "threadNameTitle": "Tên chuỗi tin nhắn",
   "threadNameBody": "Mọi người trong nhóm này đều thấy được. Tối đa 40 ký tự tiếng Anh hoặc 20 ký tự tiếng Hàn. Để trống để xóa tên.",
   "threadNameLabel": "Tên",
-  "threadNameCounter": "{weight} / 40 · Tiếng Anh 1, Tiếng Hàn 2",
   "threadNameControlCharsError": "Chỉ dùng một dòng, không có ký tự điều khiển.",
   "threadNameTooLongError": "Tối đa 40 ký tự tiếng Anh hoặc 20 ký tự tiếng Hàn.",
   "threadNameConnectionChanged": "Kết nối đã thay đổi. Hãy mở lại chuỗi tin nhắn để kiểm tra tên đã lưu.",

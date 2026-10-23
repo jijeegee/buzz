@@ -3601,7 +3601,6 @@
   "messages.threadName.retry": "重新載入名稱",
   "messages.threadName.title": "討論串名稱",
   "messages.threadName.description": "此群組中的所有人都看得到。最多 40 個英文字元或 20 個韓文字元。留空即可移除名稱。",
-  "messages.threadName.count": "{count} / 40 · 英文算 1，韓文算 2",
   "messages.threadName.saving": "儲存中…",
   "messages.send.notSent": "未傳送",
   "messages.send.sending": "傳送中",

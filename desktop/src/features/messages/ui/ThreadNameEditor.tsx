@@ -3,7 +3,11 @@ import { useState, type ComponentProps } from "react";
 import { MessageThreadPanelHeader } from "./MessageThreadPanelSkeleton";
 import { Pencil } from "lucide-react";
 import { useThreadName } from "../lib/useThreadName";
-import { isValidThreadName, threadNameWeight } from "../lib/threadName";
+import {
+  isValidThreadName,
+  MAX_THREAD_NAME_WEIGHT,
+  threadNameWeight,
+} from "../lib/threadName";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import {
@@ -119,9 +123,7 @@ export function ThreadNameEditor({
               id="thread-name-count"
               className="mt-2 text-xs text-muted-foreground"
             >
-              {t("messages.threadName.count", {
-                count: threadNameWeight(normalized),
-              })}
+              {threadNameWeight(normalized)} / {MAX_THREAD_NAME_WEIGHT}
             </p>
             {saveError ? (
               <p role="alert" className="mt-2 text-sm text-destructive">

@@ -1357,7 +1357,6 @@
   "threadNameTitle": "Nom du fil de discussion",
   "threadNameBody": "Visible par tous dans ce groupe. Jusqu'à 40 caractères latins ou 20 caractères coréens. Laissez vide pour supprimer le nom.",
   "threadNameLabel": "Nom",
-  "threadNameCounter": "{weight} / 40 · anglais 1, coréen 2",
   "threadNameControlCharsError": "Utilisez une seule ligne sans caractères de contrôle.",
   "threadNameTooLongError": "40 caractères anglais ou 20 coréens maximum.",
   "threadNameConnectionChanged": "La connexion a changé. Rouvrez le fil de discussion pour vérifier le nom enregistré.",

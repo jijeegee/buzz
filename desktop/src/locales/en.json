@@ -16435,10 +16435,6 @@
   "@messages.threadName.description": {
     "description": "Thread name dialog, explanation under the title."
   },
-  "messages.threadName.count": "{count} / 40 · English 1, Korean 2",
-  "@messages.threadName.count": {
-    "description": "Thread name dialog, small counter under the name field; {count} is the used length. Korean letters count double."
-  },
   "messages.threadName.saving": "Saving…",
   "@messages.threadName.saving": {
     "description": "Thread name dialog, save button while saving. Short."

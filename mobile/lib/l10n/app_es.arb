@@ -1357,7 +1357,6 @@
   "threadNameTitle": "Nombre del hilo",
   "threadNameBody": "Visible para todos en este grupo. Hasta 40 caracteres latinos o 20 coreanos. Déjalo vacío para quitar el nombre.",
   "threadNameLabel": "Nombre",
-  "threadNameCounter": "{weight} / 40 · inglés 1, coreano 2",
   "threadNameControlCharsError": "Usa una sola línea sin caracteres de control.",
   "threadNameTooLongError": "Hasta 40 caracteres en inglés o 20 en coreano.",
   "threadNameConnectionChanged": "La conexión cambió. Vuelve a abrir el hilo para comprobar el nombre guardado.",

@@ -2883,7 +2883,6 @@
   "messages.threadName.retry": "Réessayer",
   "messages.threadName.title": "Nom du fil de discussion",
   "messages.threadName.description": "Visible par tous dans ce groupe. Jusqu'à 40 caractères latins ou 20 caractères coréens. Laissez vide pour supprimer le nom.",
-  "messages.threadName.count": "{count} / 40 · latin 1, coréen 2",
   "messages.threadName.saving": "Enregistrement…",
   "messages.send.notSent": "Non envoyé",
   "messages.send.sending": "Envoi",
