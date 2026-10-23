@@ -13603,10 +13603,6 @@
   "@forum.view.emptyBody": {
     "description": "Forum, empty state text under the title."
   },
-  "forum.mentions.inviteFailed": "Could not invite members.",
-  "@forum.mentions.inviteFailed": {
-    "description": "Forum composer, error when adding mentioned people to the forum fails."
-  },
   "groups.genericError": "Something went wrong. Try again.",
   "@groups.genericError": {
     "description": "Error toast or message when joining a group or answering an invitation fails for an unknown reason."

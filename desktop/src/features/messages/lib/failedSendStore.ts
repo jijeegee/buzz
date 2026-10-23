@@ -15,7 +15,10 @@ export type StoredSend = {
   rootId: string | null;
   /** The row as drawn: its time and tags place it where it was. */
   event: RelayEvent;
-  /** What Retry sends again. */
+  /**
+   * What Retry sends again. Forum posts and replies use the same shape (no
+   * thread provenance, no forced REST); `event.kind` tells them apart.
+   */
   send: {
     content: string;
     mentionPubkeys: string[];

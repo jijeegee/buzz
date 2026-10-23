@@ -1,16 +1,43 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useCallback, useEffect, useRef } from "react";
 
 import { getForumPosts, getForumThread } from "@/shared/api/forum";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
+import {
+  lookupStoredSendOnRelay,
+  type StoredSendRelayCheck,
+} from "@/features/messages/hooks";
+import { registerFailedSend } from "@/features/messages/lib/failedSends";
+import {
+  removeStoredSend,
+  saveStoredSend,
+  settleStoredSend,
+  storedSends,
+} from "@/features/messages/lib/failedSendStore";
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { deleteMessage, sendChannelMessage } from "@/shared/api/tauri";
 import type {
   Channel,
   ForumPostsResponse,
   ForumThreadResponse,
+  SendChannelMessageResult,
 } from "@/shared/api/types";
-import { KIND_FORUM_COMMENT, KIND_FORUM_POST } from "@/shared/constants/kinds";
 import { t } from "@/shared/i18n";
+
+import {
+  buildForumLocalEvent,
+  type ForumLocalSend,
+  type ForumSendVariables,
+  findForumLocalSend,
+  forumLocalSendsKey,
+  hasForumCopy,
+  readForumLocalSends,
+  removeForumLocalSend,
+  removeForumLocalSendOfEvent,
+  syncForumLocalSends,
+  updateForumLocalSend,
+  writeForumLocalSend,
+} from "./lib/localSends";
 
 /** Keeps focused polling for forum posts at the established 15-second cadence. */
 export const FORUM_POSTS_REFETCH_INTERVAL_MS = 15_000;
@@ -82,42 +109,6 @@ export function useForumThreadQuery(
   });
 }
 
-export function useCreateForumPostMutation(channel: Channel | null) {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: async ({
-      content,
-      mentionPubkeys,
-      mediaTags,
-    }: {
-      content: string;
-      mentionPubkeys?: string[];
-      mediaTags?: string[][];
-    }) => {
-      if (!channel) {
-        throw new Error(t("forum.noGroupSelected"));
-      }
-
-      return sendChannelMessage(
-        channel.id,
-        content,
-        null,
-        mediaTags,
-        mentionPubkeys,
-        KIND_FORUM_POST,
-      );
-    },
-    onSuccess: () => {
-      if (channel) {
-        void queryClient.invalidateQueries({
-          queryKey: forumPostsQueryKey(channel.id),
-        });
-      }
-    },
-  });
-}
-
 export function useDeleteForumPostMutation(channel: Channel | null) {
   const queryClient = useQueryClient();
 
@@ -128,8 +119,10 @@ export function useDeleteForumPostMutation(channel: Channel | null) {
       }
       await deleteMessage(channel.id, eventId);
     },
-    onSuccess: () => {
+    onSuccess: (_data, { eventId }) => {
       if (channel) {
+        // A just-sent post no fetch has returned yet would otherwise stay.
+        removeForumLocalSendOfEvent(queryClient, channel.id, eventId);
         void queryClient.invalidateQueries({
           queryKey: forumPostsQueryKey(channel.id),
         });
@@ -151,8 +144,9 @@ export function useDeleteForumReplyMutation(
       }
       await deleteMessage(channel.id, eventId);
     },
-    onSuccess: () => {
+    onSuccess: (_data, { eventId }) => {
       if (channel) {
+        removeForumLocalSendOfEvent(queryClient, channel.id, eventId);
         if (rootEventId) {
           void queryClient.invalidateQueries({
             queryKey: forumThreadQueryKey(channel.id, rootEventId),
@@ -166,43 +160,232 @@ export function useDeleteForumReplyMutation(
   });
 }
 
-export function useCreateForumReplyMutation(channel: Channel | null) {
+/**
+ * Send own forum posts and replies the way chat sends messages: `send` draws
+ * the row at once, at the second it is signed with, and never waits for the
+ * relay. A failed send stays as a row with Retry / Delete, and its text is
+ * kept on disk until the relay accepts it. `send` throws only when it could
+ * not draw the row, so the composer keeps its text.
+ */
+export function useForumSend(pubkey: string | undefined) {
   const queryClient = useQueryClient();
+  // Retry from a failed row re-runs this mutation even after the view that
+  // sent it unmounted; the variables carry the channel.
+  const retryRef = useRef<(variables: ForumSendVariables) => Promise<unknown>>(
+    () => Promise.reject(new Error("Send is not ready.")),
+  );
 
-  return useMutation({
-    mutationFn: async ({
-      content,
-      parentEventId,
-      mentionPubkeys,
-      mediaTags,
-    }: {
-      content: string;
-      parentEventId: string;
-      mentionPubkeys?: string[];
-      mediaTags?: string[][];
-    }) => {
-      if (!channel) {
-        throw new Error(t("forum.noGroupSelected"));
-      }
-
-      return sendChannelMessage(
-        channel.id,
-        content,
+  const mutation = useMutation<
+    SendChannelMessageResult,
+    Error,
+    ForumSendVariables,
+    { channelId: string } | undefined
+  >({
+    mutationFn: (variables) =>
+      sendChannelMessage(
+        variables.channelId,
+        variables.content,
+        variables.parentEventId,
+        variables.mediaTags,
+        variables.mentionPubkeys,
+        variables.kind,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        undefined,
+        // Sign with the second the row already shows, so it never moves.
+        findForumLocalSend(queryClient, variables.channelId, variables.localKey)
+          ?.event.created_at,
+      ),
+    onMutate: (variables) => {
+      const { channelId, localKey, parentEventId } = variables;
+      const drawn =
+        findForumLocalSend(queryClient, channelId, localKey)?.event ??
+        (pubkey
+          ? buildForumLocalEvent(
+              variables,
+              pubkey,
+              Math.floor(Date.now() / 1000),
+            )
+          : null);
+      if (!drawn) return undefined;
+      writeForumLocalSend(queryClient, {
+        localKey,
+        channelId,
         parentEventId,
-        mediaTags,
-        mentionPubkeys,
-        KIND_FORUM_COMMENT,
-      );
+        event: drawn,
+        eventId: null,
+        failed: false,
+      });
+      // Kept on disk until the relay accepts it, so a failure or a quit
+      // mid-send never loses the text.
+      saveStoredSend({
+        localKey,
+        channelId,
+        rootId: parentEventId,
+        event: drawn,
+        send: {
+          content: variables.content,
+          mentionPubkeys: variables.mentionPubkeys,
+          mediaTags: variables.mediaTags,
+          parentEventId,
+          sentFromThreadRootId: null,
+          sentFromThreadRootExcerpt: null,
+          forceRest: false,
+        },
+      });
+      return { channelId };
     },
-    onSuccess: (_data, variables) => {
-      if (channel) {
+    onSuccess: (result, { channelId, localKey, parentEventId }) => {
+      removeStoredSend(localKey);
+      // The row stays, without a send state, until a fetch returns the event.
+      updateForumLocalSend(queryClient, channelId, localKey, (send) => ({
+        ...send,
+        eventId: result.eventId,
+        event: { ...send.event, created_at: result.createdAt },
+        failed: false,
+      }));
+      if (parentEventId) {
         void queryClient.invalidateQueries({
-          queryKey: forumThreadQueryKey(channel.id, variables.parentEventId),
-        });
-        void queryClient.invalidateQueries({
-          queryKey: forumPostsQueryKey(channel.id),
+          queryKey: forumThreadQueryKey(channelId, parentEventId),
         });
       }
+      void queryClient.invalidateQueries({
+        queryKey: forumPostsQueryKey(channelId),
+      });
+    },
+    onError: (_error, variables, context) => {
+      const { channelId, localKey } = variables;
+      // A row whose copy a poll already brought is gone; its disk copy
+      // still says how it was drawn.
+      const drawn =
+        findForumLocalSend(queryClient, channelId, localKey)?.event ??
+        storedSends(channelId).find((stored) => stored.localKey === localKey)
+          ?.event;
+      if (!context || (drawn && hasForumCopy(queryClient, channelId, drawn))) {
+        // Nothing was drawn, or it timed out after the relay stored it and
+        // its copy is already shown.
+        removeForumLocalSend(queryClient, channelId, localKey);
+        removeStoredSend(localKey);
+        return;
+      }
+      updateForumLocalSend(queryClient, channelId, localKey, (send) => ({
+        ...send,
+        failed: true,
+      }));
+      registerFailedSend(localKey, {
+        retry: () => {
+          retryRef.current(variables).catch(() => {});
+        },
+        discard: () => {
+          removeForumLocalSend(queryClient, channelId, localKey);
+          removeStoredSend(localKey);
+        },
+      });
+      settleStoredSend(localKey);
     },
   });
+  retryRef.current = mutation.mutateAsync;
+
+  const { mutate } = mutation;
+  const send = useCallback(
+    (input: Omit<ForumSendVariables, "localKey">) => {
+      if (!pubkey) throw new Error(t("profile.actions.noIdentity"));
+      const variables: ForumSendVariables = {
+        ...input,
+        localKey: `forum-local-${crypto.randomUUID()}`,
+      };
+      writeForumLocalSend(queryClient, {
+        localKey: variables.localKey,
+        channelId: variables.channelId,
+        parentEventId: variables.parentEventId,
+        event: buildForumLocalEvent(
+          variables,
+          pubkey,
+          Math.floor(Date.now() / 1000),
+        ),
+        eventId: null,
+        failed: false,
+      });
+      mutate(variables);
+    },
+    [mutate, pubkey, queryClient],
+  );
+
+  return { send, retry: mutation.mutateAsync };
+}
+
+/**
+ * Own forum rows of a channel, kept in step with what the forum loads: rows
+ * a fetch returned go, and sends an earlier app session never got
+ * acknowledged come back as failed rows.
+ */
+export function useForumLocalSends(
+  channelId: string,
+  retry: (variables: ForumSendVariables) => Promise<unknown>,
+): ForumLocalSend[] {
+  const queryClient = useQueryClient();
+  const retryRef = useRef(retry);
+  retryRef.current = retry;
+
+  useEffect(() => {
+    let disposed = false;
+    const relayCheck: StoredSendRelayCheck = {
+      state: new Map(),
+      lookup: lookupStoredSendOnRelay,
+      onSettled: () => {
+        if (!disposed) sync();
+      },
+      isDisposed: () => disposed,
+    };
+    let syncing = false;
+    const sync = () => {
+      if (syncing) return;
+      syncing = true;
+      try {
+        syncForumLocalSends(
+          queryClient,
+          channelId,
+          (variables) => retryRef.current(variables),
+          relayCheck,
+        );
+      } finally {
+        syncing = false;
+      }
+    };
+    sync();
+    const unsubscribe = queryClient.getQueryCache().subscribe((event) => {
+      const [scope, eventChannelId] = event.query.queryKey as unknown[];
+      if (
+        eventChannelId === channelId &&
+        (scope === "forum-posts" || scope === "forum-thread") &&
+        // Data changes only; observer bookkeeping fires on every render.
+        (event.type === "added" ||
+          (event.type === "updated" &&
+            (event.action.type === "success" ||
+              event.action.type === "setState")))
+      ) {
+        sync();
+      }
+    });
+    return () => {
+      disposed = true;
+      unsubscribe();
+    };
+  }, [channelId, queryClient]);
+
+  return useQuery({
+    queryKey: forumLocalSendsKey(channelId),
+    queryFn: () => readForumLocalSends(queryClient, channelId),
+    initialData: [],
+    // Written only through the cache; never refetched, and kept while sends
+    // can still settle into it.
+    staleTime: Number.POSITIVE_INFINITY,
+    gcTime: Number.POSITIVE_INFINITY,
+  }).data;
 }

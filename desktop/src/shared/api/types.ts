@@ -917,6 +917,16 @@ export type ThreadSummary = {
   participants: string[];
 };
 
+/** Send state of an own forum post or reply drawn before a fetch returns it. */
+export type ForumSendState = {
+  /** Render identity that stays the same once the relay accepts the send. */
+  localKey?: string;
+  /** Not yet accepted by the relay; still true when the send failed. */
+  pending?: boolean;
+  /** The relay did not accept it; Retry / Delete are offered. */
+  failed?: boolean;
+};
+
 export type ForumPost = {
   eventId: string;
   pubkey: string;
@@ -926,7 +936,7 @@ export type ForumPost = {
   channelId: string;
   tags: string[][];
   threadSummary: ThreadSummary | null;
-};
+} & ForumSendState;
 
 export type ForumPostsResponse = {
   posts: ForumPost[];
@@ -944,7 +954,7 @@ export type ThreadReply = {
   parentEventId: string | null;
   rootEventId: string | null;
   depth: number;
-};
+} & ForumSendState;
 
 export type ForumThreadResponse = {
   post: ForumPost;

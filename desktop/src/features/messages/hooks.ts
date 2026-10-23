@@ -352,7 +352,7 @@ export type StoredSendRelayCheck = {
  * the time it was drawn (or later, when re-signed), never earlier, so an
  * earlier message with the same text is a different message.
  */
-function isStoredSendCopy(match: RelayEvent, event: RelayEvent): boolean {
+export function isStoredSendCopy(match: RelayEvent, event: RelayEvent) {
   return (
     !event.pending &&
     event.created_at >= match.created_at &&

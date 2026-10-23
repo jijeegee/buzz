@@ -8,18 +8,20 @@ import { getMentionTagPubkey } from "@/shared/lib/resolveMentionNames";
 import type { Channel } from "@/shared/api/types";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { useT } from "@/shared/i18n";
+import { KIND_FORUM_COMMENT, KIND_FORUM_POST } from "@/shared/constants/kinds";
 import { cn } from "@/shared/lib/cn";
 import { Skeleton } from "@/shared/ui/skeleton";
 import { VirtualizedList } from "@/shared/ui/VirtualizedList";
 
 import {
-  useCreateForumPostMutation,
-  useCreateForumReplyMutation,
   useDeleteForumPostMutation,
   useDeleteForumReplyMutation,
+  useForumLocalSends,
   useForumPostsQuery,
+  useForumSend,
   useForumThreadQuery,
 } from "../hooks";
+import { mergeForumPosts, mergeForumReplies } from "../lib/localSends";
 import { ForumComposer } from "./ForumComposer";
 import { ForumPostCard } from "./ForumPostCard";
 import { ForumThreadPanel } from "./ForumThreadPanel";
@@ -64,15 +66,37 @@ export function ForumView({
     selectedPostId ? channel.id : null,
     selectedPostId,
   );
-  const createPostMutation = useCreateForumPostMutation(channel);
-  const createReplyMutation = useCreateForumReplyMutation(channel);
+  const effectiveCurrentPubkey = currentPubkey ?? profileQuery.data?.pubkey;
+  const forumSend = useForumSend(effectiveCurrentPubkey);
+  const localSends = useForumLocalSends(channel.id, forumSend.retry);
   const deletePostMutation = useDeleteForumPostMutation(channel);
   const deleteReplyMutation = useDeleteForumReplyMutation(
     channel,
     selectedPostId,
   );
 
-  const posts = postsQuery.data?.posts ?? [];
+  // Own posts and replies show the moment they are sent, merged into what
+  // the forum fetched until a fetch returns them.
+  const fetchedPosts = postsQuery.data?.posts;
+  const posts = React.useMemo(
+    () => mergeForumPosts(fetchedPosts ?? [], localSends),
+    [fetchedPosts, localSends],
+  );
+  const fetchedThread = threadQuery.data;
+  const thread = React.useMemo(
+    () =>
+      fetchedThread && selectedPostId
+        ? {
+            ...fetchedThread,
+            replies: mergeForumReplies(
+              fetchedThread.replies,
+              localSends,
+              selectedPostId,
+            ),
+          }
+        : fetchedThread,
+    [fetchedThread, localSends, selectedPostId],
+  );
 
   // Collect all pubkeys from posts and thread for profile resolution.
   // Mentioned pubkeys (`p`/`mention` tags) must be included too: mention
@@ -97,21 +121,20 @@ export function ForumView({
         }
       }
     }
-    if (threadQuery.data) {
-      pubkeys.add(threadQuery.data.post.pubkey);
-      addMentionPubkeys(threadQuery.data.post.tags);
-      for (const reply of threadQuery.data.replies) {
+    if (thread) {
+      pubkeys.add(thread.post.pubkey);
+      addMentionPubkeys(thread.post.tags);
+      for (const reply of thread.replies) {
         pubkeys.add(reply.pubkey);
         addMentionPubkeys(reply.tags);
       }
     }
     return [...pubkeys];
-  }, [posts, threadQuery.data]);
+  }, [posts, thread]);
 
   const profilesQuery = useUsersBatchQuery(allPubkeys, {
     enabled: allPubkeys.length > 0,
   });
-  const effectiveCurrentPubkey = currentPubkey ?? profileQuery.data?.pubkey;
   const profiles = React.useMemo(
     () =>
       mergeCurrentProfileIntoLookup(
@@ -132,7 +155,7 @@ export function ForumView({
   }, [channel.id]);
 
   if (selectedPostId) {
-    const threadPost = threadQuery.data?.post;
+    const threadPost = thread?.post;
     const canDeleteExpandedPost = threadPost
       ? canDelete(threadPost.pubkey, effectiveCurrentPubkey)
       : false;
@@ -145,7 +168,6 @@ export function ForumView({
         currentPubkey={effectiveCurrentPubkey}
         isDeletingPost={deletePostMutation.isPending}
         isLoading={threadQuery.isLoading}
-        isSendingReply={createReplyMutation.isPending}
         onBack={onClosePost}
         onDeletePost={(eventId) => {
           deletePostMutation.mutate({ eventId }, { onSuccess: onClosePost });
@@ -154,20 +176,23 @@ export function ForumView({
           deleteReplyMutation.mutate({ eventId });
         }}
         channelId={channel.id}
-        onReply={(content, mentionPubkeys, mediaTags) =>
-          createReplyMutation.mutateAsync({
+        onReply={(content, mentionPubkeys, mediaTags) => {
+          // The reply is drawn in the thread; the composer is free at once.
+          forumSend.send({
+            channelId: channel.id,
+            kind: KIND_FORUM_COMMENT,
             content,
             parentEventId: selectedPostId,
             mentionPubkeys,
-            mediaTags,
-          })
-        }
+            mediaTags: mediaTags ?? [],
+          });
+        }}
         onTargetReached={onTargetReached}
         profiles={profiles}
         targetEventId={targetReplyId}
         targetSearchMessageId={targetSearchMessageId}
         targetSearchQuery={targetSearchQuery}
-        thread={threadQuery.data}
+        thread={thread}
       />
     );
   }
@@ -181,13 +206,16 @@ export function ForumView({
             channelId={channel.id}
             channelType="forum"
             draftKey={`forum:${channel.id}`}
-            isSending={createPostMutation.isPending}
             onCancel={() => setIsComposerOpen(false)}
-            onSubmit={async (content, mentionPubkeys, mediaTags) => {
-              await createPostMutation.mutateAsync({
+            onSubmit={(content, mentionPubkeys, mediaTags) => {
+              // The post is drawn in the list; the composer closes at once.
+              forumSend.send({
+                channelId: channel.id,
+                kind: KIND_FORUM_POST,
                 content,
+                parentEventId: null,
                 mentionPubkeys,
-                mediaTags,
+                mediaTags: mediaTags ?? [],
               });
               setIsComposerOpen(false);
             }}
@@ -237,20 +265,26 @@ export function ForumView({
         ) : (
           <VirtualizedList
             estimateSize={120}
-            getItemKey={(post) => post.eventId}
+            getItemKey={(post) => post.localKey ?? post.eventId}
             innerClassName="p-4"
             items={posts}
             renderItem={(post) => (
               <div className="pb-3">
                 <ForumPostCard
-                  canDelete={canDelete(post.pubkey, effectiveCurrentPubkey)}
+                  canDelete={
+                    !post.pending &&
+                    canDelete(post.pubkey, effectiveCurrentPubkey)
+                  }
                   currentPubkey={effectiveCurrentPubkey}
                   isActive={selectedPostId === post.eventId}
                   isDeleting={
                     deletePostMutation.isPending &&
                     deletePostMutation.variables?.eventId === post.eventId
                   }
-                  onClick={() => onSelectPost(post.eventId)}
+                  onClick={() => {
+                    // Not on the relay yet: there is no thread to open.
+                    if (!post.pending) onSelectPost(post.eventId);
+                  }}
                   onDelete={(eventId) => {
                     deletePostMutation.mutate({ eventId });
                   }}

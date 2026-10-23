@@ -18,6 +18,10 @@ import { Button } from "@/shared/ui/button";
 import { parseImetaTags } from "@/shared/ui/markdown/parseImeta";
 import { Markdown } from "@/shared/ui/markdown";
 import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelineMessages";
+import {
+  FailedSendActions,
+  MessageSendState,
+} from "@/features/messages/ui/MessageSendState";
 import { Skeleton } from "@/shared/ui/skeleton";
 
 import { formatRelativeTime } from "../lib/time";
@@ -27,7 +31,6 @@ import { ForumComposer } from "./ForumComposer";
 type ForumThreadPanelProps = {
   thread: ForumThreadResponse | undefined;
   isLoading: boolean;
-  isSendingReply: boolean;
   channelId: string;
   postId: string;
   currentPubkey?: string;
@@ -52,7 +55,7 @@ function canDeleteReply(
   reply: ThreadReply,
   currentPubkey: string | undefined,
 ): boolean {
-  if (!currentPubkey) return false;
+  if (!currentPubkey || reply.pending) return false;
   return reply.pubkey.toLowerCase() === currentPubkey.toLowerCase();
 }
 
@@ -116,6 +119,9 @@ function ReplyRow({
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(reply.createdAt)}
         </span>
+        {reply.pending ? (
+          <MessageSendState failed={reply.failed === true} />
+        ) : null}
 
         {showDelete ? (
           <DeleteActionMenu
@@ -138,6 +144,11 @@ function ReplyRow({
           mentionPubkeysByName={replyMentionPubkeysByName}
           searchQuery={searchQuery}
         />
+        {reply.failed && reply.localKey ? (
+          <div className="mt-1 text-xs">
+            <FailedSendActions localKey={reply.localKey} />
+          </div>
+        ) : null}
       </div>
     </div>
   );
@@ -146,7 +157,6 @@ function ReplyRow({
 export function ForumThreadPanel({
   thread,
   isLoading,
-  isSendingReply,
   channelId,
   postId,
   currentPubkey,
@@ -314,7 +324,7 @@ export function ForumThreadPanel({
             <ReplyRow
               channelNames={channelNames}
               currentPubkey={currentPubkey}
-              key={reply.eventId}
+              key={reply.localKey ?? reply.eventId}
               onDelete={onDeleteReply}
               profiles={profiles}
               reply={reply}
@@ -339,7 +349,6 @@ export function ForumThreadPanel({
           channelId={channelId}
           channelType="forum"
           draftKey={`thread:${postId}`}
-          isSending={isSendingReply}
           onSubmit={onReply}
           placeholder={t("forum.thread.replyPlaceholder")}
           profiles={profiles}

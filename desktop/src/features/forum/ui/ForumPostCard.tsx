@@ -13,6 +13,10 @@ import { cn } from "@/shared/lib/cn";
 import { resolveMentionProps } from "@/shared/lib/resolveMentionNames";
 import { Markdown } from "@/shared/ui/markdown";
 import { hasLinkPreviewSuppression } from "@/features/messages/lib/formatTimelineMessages";
+import {
+  FailedSendActions,
+  MessageSendState,
+} from "@/features/messages/ui/MessageSendState";
 import { parseImetaTags } from "@/shared/ui/markdown/parseImeta";
 
 import { formatRelativeTime } from "../lib/time";
@@ -111,6 +115,9 @@ export function ForumPostCard({
         <span className="text-xs text-muted-foreground">
           {formatRelativeTime(post.createdAt)}
         </span>
+        {post.pending ? (
+          <MessageSendState failed={post.failed === true} />
+        ) : null}
 
         {canDelete && onDelete ? (
           // biome-ignore lint/a11y/noStaticElementInteractions: presentation wrapper only stops click propagation to parent card link
@@ -139,6 +146,17 @@ export function ForumPostCard({
           mentionPubkeysByName={mentionPubkeysByName}
         />
       </div>
+
+      {post.failed && post.localKey ? (
+        // biome-ignore lint/a11y/noStaticElementInteractions: presentation wrapper stops click propagation to parent card
+        <div
+          className="mt-2 text-xs"
+          onClick={(e) => e.stopPropagation()}
+          role="presentation"
+        >
+          <FailedSendActions localKey={post.localKey} />
+        </div>
+      ) : null}
 
       {summary && summary.replyCount > 0 ? (
         <div className="mt-3 flex items-center gap-1.5 text-xs text-muted-foreground">
