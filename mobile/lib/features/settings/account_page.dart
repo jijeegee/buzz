@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
@@ -29,7 +30,7 @@ class AccountPage extends ConsumerWidget {
     // A reload after saving keeps the form (and its edits) mounted.
     final loaded = profile.value;
     return Scaffold(
-      appBar: AppBar(title: const Text('Account')),
+      appBar: AppBar(title: Text(context.l10n.settingsAccountTitle)),
       body: SafeArea(
         child: switch (profile) {
           _ when loaded != null => _AccountForm(
@@ -41,10 +42,10 @@ class AccountPage extends ConsumerWidget {
             message: '$error',
             onRetry: () => ref.invalidate(accountProfileProvider(origin)),
           ),
-          _ => const Center(
+          _ => Center(
             child: KuzzLoadingIndicator(
               size: 32,
-              semanticLabel: 'Loading account',
+              semanticLabel: context.l10n.settingsAccountLoading,
             ),
           ),
         },
@@ -70,7 +71,7 @@ class _LoadFailure extends StatelessWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                'Couldn’t load your account: $message',
+                context.l10n.settingsAccountLoadFailed(message),
                 textAlign: TextAlign.center,
                 style: context.textTheme.bodyMedium,
               ),
@@ -79,7 +80,7 @@ class _LoadFailure extends StatelessWidget {
             FilledButton(
               key: const Key('account-load-retry'),
               onPressed: onRetry,
-              child: const Text('Try again'),
+              child: Text(context.l10n.commonTryAgain),
             ),
           ],
         ),
@@ -114,7 +115,9 @@ class _AccountForm extends HookConsumerWidget {
         if (blob != null && context.mounted) avatarUrl.value = blob.url;
       } catch (failure) {
         if (context.mounted) {
-          error.value = 'Couldn’t upload the photo: $failure';
+          error.value = context.l10n.settingsAccountPhotoUploadFailed(
+            '$failure',
+          );
         }
       } finally {
         if (context.mounted) uploading.value = false;
@@ -126,12 +129,11 @@ class _AccountForm extends HookConsumerWidget {
       final displayName = name.text.trim();
       final handle = username.text.trim();
       if (displayName.isEmpty || displayName.characters.length > 64) {
-        error.value = 'Display name must be 1–64 characters.';
+        error.value = context.l10n.settingsAccountDisplayNameInvalid;
         return;
       }
       if (handle.isNotEmpty && !_usernamePattern.hasMatch(handle)) {
-        error.value =
-            'Username must be 3–32 lowercase letters, digits or underscores.';
+        error.value = context.l10n.settingsAccountUsernameInvalid;
         return;
       }
       error.value = null;
@@ -151,8 +153,8 @@ class _AccountForm extends HookConsumerWidget {
         if (context.mounted) {
           saving.value = false;
           error.value = failure.code == 'username_taken'
-              ? 'That username is already taken.'
-              : 'Couldn’t save your profile: ${failure.message}';
+              ? context.l10n.settingsAccountUsernameTaken
+              : context.l10n.settingsAccountSaveFailed(failure.message);
         }
         return;
       }
@@ -175,9 +177,9 @@ class _AccountForm extends HookConsumerWidget {
       container.invalidate(accountProfileProvider(origin));
       if (!context.mounted) return;
       saving.value = false;
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(const SnackBar(content: Text('Profile saved')));
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(context.l10n.settingsAccountProfileSaved)),
+      );
     }
 
     return ListView(
@@ -187,8 +189,8 @@ class _AccountForm extends HookConsumerWidget {
           child: Semantics(
             image: true,
             label: avatarUrl.value == null
-                ? 'No profile photo'
-                : 'Profile photo',
+                ? context.l10n.settingsAccountNoPhoto
+                : context.l10n.settingsAccountPhoto,
             child: ExcludeSemantics(
               child: AvatarImage(
                 imageUrl: avatarUrl.value,
@@ -209,13 +211,13 @@ class _AccountForm extends HookConsumerWidget {
             TextButton(
               key: const Key('account-avatar-change'),
               onPressed: busy ? null : () => unawaited(changePhoto()),
-              child: const Text('Change photo'),
+              child: Text(context.l10n.settingsAccountChangePhoto),
             ),
             if (avatarUrl.value != null)
               TextButton(
                 key: const Key('account-avatar-remove'),
                 onPressed: busy ? null : () => avatarUrl.value = null,
-                child: const Text('Remove photo'),
+                child: Text(context.l10n.settingsAccountRemovePhoto),
               ),
           ],
         ),
@@ -226,7 +228,9 @@ class _AccountForm extends HookConsumerWidget {
           enabled: !busy,
           maxLength: 64,
           textInputAction: TextInputAction.next,
-          decoration: const InputDecoration(labelText: 'Display name'),
+          decoration: InputDecoration(
+            labelText: context.l10n.settingsAccountDisplayNameLabel,
+          ),
         ),
         const SizedBox(height: Grid.xxs),
         TextField(
@@ -236,10 +240,10 @@ class _AccountForm extends HookConsumerWidget {
           maxLength: 32,
           autocorrect: false,
           textInputAction: TextInputAction.done,
-          decoration: const InputDecoration(
-            labelText: 'Username',
+          decoration: InputDecoration(
+            labelText: context.l10n.settingsAccountUsernameLabel,
             prefixText: '@',
-            helperText: 'Optional. Lowercase letters, digits and _',
+            helperText: context.l10n.settingsAccountUsernameHelper,
           ),
         ),
         if (error.value != null) ...[
@@ -260,13 +264,15 @@ class _AccountForm extends HookConsumerWidget {
           key: const Key('account-save'),
           onPressed: busy ? null : () => unawaited(save()),
           child: saving.value
-              ? const KuzzLoadingIndicator(size: 20, semanticLabel: 'Saving')
-              : const Text('Save'),
+              ? KuzzLoadingIndicator(
+                  size: 20,
+                  semanticLabel: context.l10n.commonSaving,
+                )
+              : Text(context.l10n.commonSave),
         ),
         const SizedBox(height: Grid.xs),
         Text(
-          'Your name, username and photo are shared by every community on '
-          'this relay.',
+          context.l10n.settingsAccountSharedNote,
           style: context.textTheme.bodySmall?.copyWith(
             color: context.colors.onSurfaceVariant,
           ),

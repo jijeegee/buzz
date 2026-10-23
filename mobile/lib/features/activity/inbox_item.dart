@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/l10n/time_format.dart';
 import 'feed_item.dart';
 
@@ -143,7 +144,9 @@ class InboxItem {
 }) {
   if (isDm) {
     return (
-      text: senderLabel.isNotEmpty ? 'DM from $senderLabel' : 'DM',
+      text: senderLabel.isNotEmpty
+          ? appL10n.activityDmFrom(senderLabel)
+          : appL10n.activityDm,
       channelLabel: null,
     );
   }
@@ -151,26 +154,32 @@ class InboxItem {
   final category = item.categories.firstOrNull ?? item.item.category;
   if (category == 'mention') {
     return (
-      text: channelName != null ? 'Mentioned in' : 'Mentioned',
+      text: channelName != null
+          ? appL10n.activityMentionedIn
+          : appL10n.activityMentioned,
       channelLabel: channelName,
     );
   }
   if (category == 'needs_action') {
     return (
-      text: channelName != null ? 'Needs action in' : 'Needs action',
+      text: channelName != null
+          ? appL10n.activityNeedsActionIn
+          : appL10n.activityNeedsAction,
       channelLabel: channelName,
     );
   }
   if (item.threadRootId != null) {
     return (
-      text: channelName != null ? 'Thread in' : 'Thread',
+      text: channelName != null
+          ? appL10n.activityThreadIn
+          : appL10n.activityThread,
       channelLabel: channelName,
     );
   }
 
   final headline = item.item.headline;
   return (
-    text: channelName != null ? '$headline in' : headline,
+    text: channelName != null ? appL10n.activityHeadlineIn(headline) : headline,
     channelLabel: channelName,
   );
 }

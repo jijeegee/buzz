@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -137,7 +138,10 @@ class MyAgentTile extends ConsumerWidget {
                   Text(
                     computer == null
                         ? myAgentStatusLabel(status)
-                        : '${myAgentStatusLabel(status)} · $computer',
+                        : context.l10n.agentsStatusOnComputer(
+                            myAgentStatusLabel(status),
+                            computer,
+                          ),
                     key: ValueKey('my-agent-status-${agent.pubkey}'),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,

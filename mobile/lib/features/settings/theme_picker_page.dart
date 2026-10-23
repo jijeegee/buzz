@@ -10,6 +10,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_brand_logo.dart';
 import '../../shared/widgets/avatar_image.dart';

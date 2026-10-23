@@ -6,6 +6,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay_closed_policy.dart';
 import '../../shared/theme/theme.dart';
@@ -82,13 +83,13 @@ class ForumThreadPage extends HookConsumerWidget {
 
     return FrostedScaffold(
       appBar: FrostedAppBar(
-        title: const Text('Thread'),
+        title: Text(context.l10n.forumThreadTitle),
         actions: [
           if (isOwnPost)
             IconButton(
               onPressed: () =>
                   _showPostActions(context, ref, threadAsync.value!),
-              tooltip: 'Post actions',
+              tooltip: context.l10n.forumPostActions,
               icon: const Icon(LucideIcons.ellipsis),
             ),
         ],
@@ -98,17 +99,17 @@ class ForumThreadPage extends HookConsumerWidget {
         skipLoadingOnRefresh: !threadAsync.hasError,
         loading: () => Padding(
           padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
-          child: const Center(
+          child: Center(
             child: KuzzLoadingIndicator(
               size: 44,
-              semanticLabel: 'Loading thread',
+              semanticLabel: context.l10n.forumLoadingThread,
             ),
           ),
         ),
         error: (e, _) => Padding(
           padding: EdgeInsets.only(top: frostedAppBarHeight(context)),
           child: LoadErrorView(
-            message: 'Failed to load thread',
+            message: context.l10n.forumLoadThreadError,
             onRetry: () => ref.invalidate(
               forumThreadProvider((channelId: channelId, eventId: postEventId)),
             ),
@@ -148,7 +149,7 @@ class ForumThreadPage extends HookConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: const Text('Copy text'),
+                  title: Text(context.l10n.forumCopyText),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: thread.post.content));
@@ -160,7 +161,7 @@ class ForumThreadPage extends HookConsumerWidget {
                     color: sheetContext.colors.error,
                   ),
                   title: Text(
-                    'Delete post',
+                    context.l10n.forumDeletePost,
                     style: TextStyle(color: sheetContext.colors.error),
                   ),
                   onTap: () {
@@ -180,12 +181,12 @@ class ForumThreadPage extends HookConsumerWidget {
     showKuzzDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete post'),
-        content: const Text('This cannot be undone.'),
+        title: Text(context.l10n.forumDeletePost),
+        content: Text(context.l10n.forumDeleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.forumCancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -202,7 +203,7 @@ class ForumThreadPage extends HookConsumerWidget {
             style: FilledButton.styleFrom(
               backgroundColor: dialogContext.colors.error,
             ),
-            child: const Text('Delete'),
+            child: Text(context.l10n.forumDelete),
           ),
         ],
       ),
@@ -280,7 +281,7 @@ class _ThreadContent extends HookConsumerWidget {
                     ),
                     const SizedBox(width: Grid.half),
                     Text(
-                      '${replies.length} ${replies.length == 1 ? 'reply' : 'replies'}',
+                      context.l10n.forumReplyCount(replies.length),
                       style: context.textTheme.labelMedium?.copyWith(
                         color: context.colors.onSurfaceVariant,
                         fontWeight: FontWeight.w600,
@@ -295,7 +296,7 @@ class _ThreadContent extends HookConsumerWidget {
                 Padding(
                   padding: const EdgeInsets.all(Grid.sm),
                   child: Text(
-                    'No replies yet. Be the first to respond.',
+                    context.l10n.forumNoReplies,
                     style: context.textTheme.bodyMedium?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -318,7 +319,7 @@ class _ThreadContent extends HookConsumerWidget {
         if (isMember && !isArchived)
           ComposeBar(
             channelId: channelId,
-            hintText: 'Reply to this post\u2026',
+            hintText: context.l10n.forumReplyHint,
             onSend:
                 (
                   content,
@@ -610,7 +611,7 @@ class _ReplyRow extends ConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: const Text('Copy text'),
+                  title: Text(context.l10n.forumCopyText),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: reply.content));
@@ -623,7 +624,7 @@ class _ReplyRow extends ConsumerWidget {
                       color: sheetContext.colors.error,
                     ),
                     title: Text(
-                      'Delete reply',
+                      context.l10n.forumDeleteReply,
                       style: TextStyle(color: sheetContext.colors.error),
                     ),
                     onTap: () {
@@ -643,12 +644,12 @@ class _ReplyRow extends ConsumerWidget {
     showKuzzDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete reply'),
-        content: const Text('This cannot be undone.'),
+        title: Text(context.l10n.forumDeleteReply),
+        content: Text(context.l10n.forumDeleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.forumCancel),
           ),
           FilledButton(
             onPressed: () async {
@@ -663,7 +664,7 @@ class _ReplyRow extends ConsumerWidget {
             style: FilledButton.styleFrom(
               backgroundColor: dialogContext.colors.error,
             ),
-            child: const Text('Delete'),
+            child: Text(context.l10n.forumDelete),
           ),
         ],
       ),

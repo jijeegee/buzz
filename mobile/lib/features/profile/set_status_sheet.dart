@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import '../../shared/custom_emoji/custom_emoji.dart';
 import '../../shared/custom_emoji/custom_emoji_provider.dart';
 import '../../shared/custom_emoji/custom_emoji_render.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -30,16 +31,23 @@ const _statusPresets = [
 ];
 
 enum _StatusDuration {
-  oneHour('1 hour', Duration(hours: 1)),
-  eightHours('8 hours', Duration(hours: 8)),
-  oneDay('1 day', Duration(days: 1)),
-  oneWeek('1 week', Duration(days: 7)),
-  custom('Custom', null);
+  oneHour(Duration(hours: 1)),
+  eightHours(Duration(hours: 8)),
+  oneDay(Duration(days: 1)),
+  oneWeek(Duration(days: 7)),
+  custom(null);
 
-  const _StatusDuration(this.label, this.duration);
+  const _StatusDuration(this.duration);
 
-  final String label;
   final Duration? duration;
+
+  String label(AppLocalizations l10n) => switch (this) {
+    oneHour => l10n.profileStatusDurationHours(1),
+    eightHours => l10n.profileStatusDurationHours(8),
+    oneDay => l10n.profileStatusDurationDays(1),
+    oneWeek => l10n.profileStatusDurationWeeks(1),
+    custom => l10n.profileStatusDurationCustom,
+  };
 }
 
 void showSetStatusSheet(BuildContext context, {UserStatus? currentStatus}) {
@@ -141,7 +149,7 @@ class _SetStatusSheet extends HookConsumerWidget {
       dimension: 44,
       child: IconButton(
         key: const ValueKey('save-status-button'),
-        tooltip: 'Save status',
+        tooltip: context.l10n.profileStatusSave,
         onPressed: hasContent && !isSaving.value ? handleSave : null,
         style: IconButton.styleFrom(
           padding: EdgeInsets.zero,
@@ -161,7 +169,7 @@ class _SetStatusSheet extends HookConsumerWidget {
     return SafeArea(
       top: false,
       child: KuzzTitledSheetLayout(
-        title: 'Set a status',
+        title: context.l10n.profileStatusSetTitle,
         showDragHandle: true,
         leading: headerAction,
         child: SingleChildScrollView(
@@ -194,26 +202,26 @@ class _SetStatusSheet extends HookConsumerWidget {
                 ),
               ),
               AppListCard(
-                label: 'Duration',
+                label: context.l10n.profileStatusDuration,
                 children: [
                   AppListRow(
                     icon: LucideIcons.clock3,
-                    title: 'Duration',
-                    value: duration.value.label,
+                    title: context.l10n.profileStatusDuration,
+                    value: duration.value.label(context.l10n),
                     trailing: const Icon(LucideIcons.chevronDown, size: 18),
                     onTap: chooseDuration,
                   ),
                   if (duration.value == _StatusDuration.custom)
                     AppListRow(
                       icon: LucideIcons.calendarClock,
-                      title: 'Until',
+                      title: context.l10n.profileStatusUntil,
                       value: _formatUntil(customUntil.value),
                       onTap: pickCustomUntil,
                     ),
                 ],
               ),
               AppListCard(
-                label: 'Quick statuses',
+                label: context.l10n.profileStatusQuick,
                 children: [
                   for (final preset in _statusPresets)
                     AppListRowRaw(
@@ -242,7 +250,7 @@ class _SetStatusSheet extends HookConsumerWidget {
                   children: [
                     AppListRow(
                       icon: LucideIcons.trash2,
-                      title: 'Clear status',
+                      title: context.l10n.profileStatusClear,
                       titleColor: context.colors.error,
                       onTap: isSaving.value ? null : handleClear,
                     ),
@@ -292,7 +300,7 @@ class _StatusInput extends ConsumerWidget {
               children: [
                 Semantics(
                   button: true,
-                  label: 'Choose a status emoji',
+                  label: context.l10n.profileStatusChooseEmoji,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(Radii.container),
                     onTap: enabled ? onChooseEmoji : null,
@@ -307,7 +315,7 @@ class _StatusInput extends ConsumerWidget {
                       dimension: Grid.sm,
                       child: IconButton(
                         onPressed: enabled ? onRemoveEmoji : null,
-                        tooltip: 'Remove status emoji',
+                        tooltip: context.l10n.profileStatusRemoveEmoji,
                         visualDensity: VisualDensity.compact,
                         style: IconButton.styleFrom(
                           backgroundColor: context.colors.surface,
@@ -334,7 +342,7 @@ class _StatusInput extends ConsumerWidget {
               autofocus: false,
               style: context.textTheme.bodyLarge,
               decoration: InputDecoration(
-                hintText: 'What\u2019s your status?',
+                hintText: context.l10n.profileStatusHint,
                 hintStyle: context.textTheme.bodyLarge?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -394,7 +402,7 @@ Future<_StatusDuration?> _showStatusDurationSheet(
 }) {
   return showKuzzModalBottomSheet<_StatusDuration>(
     context: context,
-    title: 'Duration',
+    title: context.l10n.profileStatusDuration,
     isScrollControlled: true,
     showDragHandle: true,
     builder: (sheetContext) => SingleChildScrollView(
@@ -404,7 +412,7 @@ Future<_StatusDuration?> _showStatusDurationSheet(
           children: [
             for (final option in _StatusDuration.values)
               AppListRow(
-                title: option.label,
+                title: option.label(context.l10n),
                 trailing: option == selected
                     ? const Icon(LucideIcons.check, size: 18)
                     : null,
@@ -441,7 +449,7 @@ Future<DateTime?> _showNativeDateTimePicker(
                   alignment: Alignment.centerRight,
                   child: TextButton(
                     onPressed: () => Navigator.of(pickerContext).pop(selected),
-                    child: const Text('Done'),
+                    child: Text(context.l10n.profileStatusPickerDone),
                   ),
                 ),
                 Expanded(

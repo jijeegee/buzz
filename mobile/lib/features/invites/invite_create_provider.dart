@@ -17,10 +17,11 @@ const defaultCommunityInviteTtlSeconds = 3 * 24 * 60 * 60;
 /// A labeled value shown in a community invite settings sheet.
 @immutable
 class CommunityInviteOption<T> {
-  /// Creates an option with its user-facing [label] and submitted [value].
+  /// Creates an option with its stable [label] and submitted [value].
   const CommunityInviteOption({required this.label, required this.value});
 
-  /// The text presented for this option.
+  /// Stable English name of this option, used in widget keys. The shown
+  /// text comes from the language files.
   final String label;
 
   /// The value applied when this option is selected.

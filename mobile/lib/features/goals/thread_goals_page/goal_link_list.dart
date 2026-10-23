@@ -43,7 +43,7 @@ class _GoalLinkList extends StatelessWidget {
                         bottom: Grid.xxs,
                       ),
                       child: Text(
-                        'L${row.layer}  ${row.node.title}',
+                        context.l10n.goalsLayerTitle(row.layer, row.node.title),
                         style: context.textTheme.bodyMedium?.copyWith(
                           fontWeight: row.node.id == linkedGoalId
                               ? FontWeight.w600
@@ -59,7 +59,9 @@ class _GoalLinkList extends StatelessWidget {
                 if (_canAddUnder(row))
                   IconButton(
                     key: ValueKey('thread-goal-create-under-${row.node.id}'),
-                    tooltip: 'Add a goal under this and link the $subject',
+                    tooltip: subject == 'message'
+                        ? context.l10n.goalsAddUnderLinkMessage
+                        : context.l10n.goalsAddUnderLinkThread,
                     visualDensity: VisualDensity.compact,
                     icon: const Icon(LucideIcons.plus, size: 18),
                     onPressed: () => onCreateUnder(row.node, row.layer),

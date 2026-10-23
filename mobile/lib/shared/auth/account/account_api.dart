@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../token/token.dart';
+import '../../l10n/l10n.dart';
 
 /// A failed account request (`/auth/me`, `/auth/profile`, `/auth/devices`,
 /// `/auth/sessions/*`, `/auth/bots/*`, `/auth/account`, `/auth/blocks`,
@@ -148,7 +149,9 @@ class AccountDevice {
     final lastSeen = json['last_seen_at'];
     return AccountDevice(
       id: id,
-      name: name is String && name.isNotEmpty ? name : 'Unnamed device',
+      name: name is String && name.isNotEmpty
+          ? name
+          : appL10n.accountUnnamedDevice,
       platform: platform is String ? platform : '',
       current: json['current'] == true,
       lastSeenAt: lastSeen is String ? DateTime.tryParse(lastSeen) : null,
@@ -394,12 +397,12 @@ class AccountApi {
       final streamed = await _client.send(request).timeout(timeout);
       return await http.Response.fromStream(streamed).timeout(timeout);
     } catch (error) {
-      throw AccountApiException('Could not reach the relay: $error');
+      throw AccountApiException(appL10n.accountRelayUnreachable('$error'));
     }
   }
 
   static AccountApiException _signedOut() =>
-      const AccountApiException('You are signed out of this relay.');
+      AccountApiException(appL10n.accountSignedOut);
 
   static String? _code(http.Response response) {
     final decoded = _decode(response.body);

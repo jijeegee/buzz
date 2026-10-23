@@ -11,6 +11,7 @@ import '../auth/token/token_session.dart';
 import '../relay/relay_access_tokens.dart';
 import 'huddle_auth.dart';
 import 'huddle_wire.dart';
+import '../l10n/l10n.dart';
 
 typedef HuddleWebSocketFactory = WebSocketChannel Function(Uri uri);
 
@@ -262,7 +263,7 @@ final class HuddleTransport implements HuddleTransportClient {
     if (next != null) return next;
     final failure = HuddleTransportError(
       code: HuddleTransportErrorCode.authenticationFailed,
-      message: 'Sign in to this community to join the Huddle.',
+      message: appL10n.huddleSignInRequired,
       cause: cause,
     );
     _emitState(
@@ -313,7 +314,7 @@ final class HuddleTransport implements HuddleTransportClient {
       'huddle connection',
       parameters.audioWebSocketUri.toString(),
     )) {
-      const failure = HuddleTransportError(
+      final failure = HuddleTransportError(
         code: HuddleTransportErrorCode.connectionFailed,
         message: differentServerMessage,
       );
@@ -350,9 +351,9 @@ final class HuddleTransport implements HuddleTransportClient {
       );
       _handshakeTimer = Timer(handshakeTimeout, () {
         _fail(
-          const HuddleTransportError(
+          HuddleTransportError(
             code: HuddleTransportErrorCode.handshakeTimeout,
-            message: 'Timed out waiting for Huddle room admission.',
+            message: appL10n.huddleAdmissionTimedOut,
           ),
           generation,
         );
@@ -364,7 +365,7 @@ final class HuddleTransport implements HuddleTransportClient {
     } catch (error) {
       final failure = HuddleTransportError(
         code: HuddleTransportErrorCode.connectionFailed,
-        message: 'Unable to connect to the Huddle audio relay.',
+        message: appL10n.huddleRelayConnectFailed,
         cause: error,
       );
       _fail(failure, generation);
@@ -392,7 +393,7 @@ final class HuddleTransport implements HuddleTransportClient {
     } catch (error) {
       throw HuddleTransportError(
         code: HuddleTransportErrorCode.sendFailed,
-        message: 'Unable to send Huddle audio.',
+        message: appL10n.huddleSendAudioFailed,
         cause: error,
       );
     }
@@ -413,9 +414,9 @@ final class HuddleTransport implements HuddleTransportClient {
     _handshakeTimer = null;
     if (_handshakeCompleter case final completer? when !completer.isCompleted) {
       completer.completeError(
-        const HuddleTransportError(
+        HuddleTransportError(
           code: HuddleTransportErrorCode.cancelled,
-          message: 'Huddle connection was closed.',
+          message: appL10n.huddleConnectionClosed,
         ),
       );
     }
@@ -543,7 +544,7 @@ final class HuddleTransport implements HuddleTransportClient {
       _fail(
         HuddleTransportError(
           code: HuddleTransportErrorCode.authenticationFailed,
-          message: 'Unable to sign Huddle authentication.',
+          message: appL10n.huddleAuthSignFailed,
           cause: error,
         ),
         generation,
@@ -575,7 +576,7 @@ final class HuddleTransport implements HuddleTransportClient {
       _fail(
         HuddleTransportError(
           code: HuddleTransportErrorCode.authenticationFailed,
-          message: 'Sign in to this community to join the Huddle.',
+          message: appL10n.huddleSignInRequired,
           cause: cause,
         ),
         generation,
@@ -608,9 +609,9 @@ final class HuddleTransport implements HuddleTransportClient {
       }
       // Logout fence: the relay would only close this socket at expiry.
       _fail(
-        const HuddleTransportError(
+        HuddleTransportError(
           code: HuddleTransportErrorCode.authenticationFailed,
-          message: 'Signed out of this community.',
+          message: appL10n.huddleSignedOut,
         ),
         generation,
       );
@@ -1119,7 +1120,7 @@ final class HuddleTransport implements HuddleTransportClient {
     _fail(
       HuddleTransportError(
         code: HuddleTransportErrorCode.connectionFailed,
-        message: 'Huddle audio socket failed.',
+        message: appL10n.huddleSocketFailed,
         cause: error,
       ),
       generation,
@@ -1129,9 +1130,9 @@ final class HuddleTransport implements HuddleTransportClient {
   void _handleSocketClosed(int generation) {
     if (_intentionalClose || !_isCurrent(generation)) return;
     _fail(
-      const HuddleTransportError(
+      HuddleTransportError(
         code: HuddleTransportErrorCode.socketClosed,
-        message: 'Huddle audio socket closed unexpectedly.',
+        message: appL10n.huddleSocketClosed,
       ),
       generation,
     );

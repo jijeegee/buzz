@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 
 /// Pure helpers for editing an agent's definition from the phone.
@@ -120,30 +121,41 @@ String? managedAgentPersonaId(String content) {
 /// Why [draft] cannot be saved, or `null` when it can.
 String? validateAgentSettings(AgentSettingsDraft draft) {
   final name = draft.name.trim();
-  if (name.isEmpty) return 'Name is required.';
+  if (name.isEmpty) return appL10n.agentsNameRequired;
   final nameChars = name.runes.length;
   if (nameChars > maxAgentNameChars) {
-    return 'Name is too long ($nameChars characters, max $maxAgentNameChars).';
+    return appL10n.agentsNameTooLong(nameChars, maxAgentNameChars);
   }
   final description = draft.description;
   final descriptionChars = description.runes.length;
   if (descriptionChars > maxAgentDescriptionChars) {
-    return 'Description is too long ($descriptionChars characters, max '
-        '$maxAgentDescriptionChars).';
+    return appL10n.agentsDescriptionTooLong(
+      descriptionChars,
+      maxAgentDescriptionChars,
+    );
   }
   final instructionsBytes = utf8.encode(draft.instructions).length;
   if (instructionsBytes > maxAgentInstructionsBytes) {
-    return 'Instructions are too long ($instructionsBytes bytes, max '
-        '$maxAgentInstructionsBytes).';
+    return appL10n.agentsInstructionsTooLong(
+      instructionsBytes,
+      maxAgentInstructionsBytes,
+    );
   }
-  return _invisibleCharacter(name, 'Name') ??
+  return _invisibleCharacter(name, appL10n.agentsNameInvisibleChar) ??
       // Dart's trim also drops edge U+FEFF, which desktop's trim keeps and
       // then rejects; check the untrimmed name for it too.
-      _invisibleCharacter(draft.name, 'Name', ignorableOnly: true) ??
-      _invisibleCharacter(description, 'Description') ??
+      _invisibleCharacter(
+        draft.name,
+        appL10n.agentsNameInvisibleChar,
+        ignorableOnly: true,
+      ) ??
+      _invisibleCharacter(
+        description,
+        appL10n.agentsDescriptionInvisibleChar,
+      ) ??
       _invisibleCharacter(
         draft.instructions,
-        'Instructions',
+        appL10n.agentsInstructionsInvisibleChar,
         allowLayout: true,
       ) ??
       _modelError(draft.model.trim());
@@ -152,7 +164,7 @@ String? validateAgentSettings(AgentSettingsDraft draft) {
 String? _modelError(String model) {
   for (final rune in model.runes) {
     if (_isControl(rune) || _isDefaultIgnorable(rune)) {
-      return 'Model contains an invisible or formatting character.';
+      return appL10n.agentsModelInvisibleChar;
     }
   }
   return null;
@@ -163,7 +175,7 @@ String? _modelError(String model) {
 /// and, when [allowLayout], `\n` and `\t`.
 String? _invisibleCharacter(
   String value,
-  String label, {
+  String Function(String code) message, {
   bool allowLayout = false,
   bool ignorableOnly = false,
 }) {
@@ -175,8 +187,7 @@ String? _invisibleCharacter(
     if ((!layout && _isControl(rune)) ||
         (_isDefaultIgnorable(rune) && !_isAllowedEmojiFormat(runes, index))) {
       final code = rune.toRadixString(16).toUpperCase().padLeft(4, '0');
-      return '$label contains an invisible or formatting character '
-          '(U+$code).';
+      return message(code);
     }
   }
   return null;
@@ -361,5 +372,4 @@ bool agentNameConflicts({
 
 /// The name-conflict error for [name].
 String agentNameConflictMessage(String name) =>
-    'You already have an agent named "${name.trim()}". '
-    'Choose a different name.';
+    appL10n.agentsNameConflict(name.trim());

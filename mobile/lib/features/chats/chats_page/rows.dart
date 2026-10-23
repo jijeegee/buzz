@@ -363,7 +363,7 @@ String _roomName(
   }
   if (!row.isDm) {
     final name = _bareRoomName(row, channel);
-    return name.isEmpty ? 'Group' : name;
+    return name.isEmpty ? appL10n.chatsGroupFallback : name;
   }
   if (channel != null) {
     return resolveDmChannelDisplayLabel(
@@ -638,7 +638,7 @@ class _ChannelHeaderRow extends ConsumerWidget {
         children: [
           Expanded(
             child: Text(
-              name.isEmpty ? 'Group' : name,
+              name.isEmpty ? context.l10n.chatsGroupFallback : name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
               style: activityUsernameTextStyle.copyWith(
@@ -682,10 +682,10 @@ class _MoreThreadsRow extends StatelessWidget {
     );
     final hidden = more.hidden;
     final label = !more.expanded
-        ? '+ $hidden more ${hidden == 1 ? 'thread' : 'threads'}'
+        ? context.l10n.chatsMoreThreads(hidden)
         : hidden > byChannelThreadStep
-        ? '+ $byChannelThreadStep more · $hidden left'
-        : '+ $hidden more';
+        ? context.l10n.chatsMoreStep(byChannelThreadStep, hidden)
+        : context.l10n.chatsMore(hidden);
     final showMore = Row(
       mainAxisSize: MainAxisSize.min,
       children: [
@@ -709,7 +709,7 @@ class _MoreThreadsRow extends StatelessWidget {
       Grid.gutter,
       Grid.twelve,
     );
-    final showLess = Text('Show less', style: style);
+    final showLess = Text(context.l10n.chatsShowLess, style: style);
     // One control: the whole line taps, as before.
     if (hidden == 0 || !more.expanded) {
       return InkWell(
@@ -768,7 +768,7 @@ class _ChatsEmptyState extends StatelessWidget {
             color: context.colors.onSurfaceVariant,
           ),
           const SizedBox(height: Grid.xs),
-          Text('No chats yet', style: context.textTheme.titleMedium),
+          Text(context.l10n.chatsEmpty, style: context.textTheme.titleMedium),
           const SizedBox(height: Grid.sm),
           Row(
             mainAxisSize: MainAxisSize.min,
@@ -776,13 +776,13 @@ class _ChatsEmptyState extends StatelessWidget {
               OutlinedButton(
                 key: const ValueKey('chats-empty-find-channels'),
                 onPressed: onFindChannels,
-                child: const Text('Find groups'),
+                child: Text(context.l10n.chatsFindGroups),
               ),
               const SizedBox(width: Grid.xs),
               FilledButton(
                 key: const ValueKey('chats-empty-message'),
                 onPressed: onMessageSomeone,
-                child: const Text('Message someone'),
+                child: Text(context.l10n.chatsMessageSomeone),
               ),
             ],
           ),

@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../channels/channels_provider.dart';
 import 'blocked_users_provider.dart';
@@ -54,7 +55,7 @@ class BlockedMessageGate extends HookConsumerWidget {
     final color = context.colors.onSurfaceVariant;
     return Semantics(
       button: true,
-      label: 'Message from a blocked user. Double tap to show.',
+      label: context.l10n.friendsBlockedMessageLabel,
       excludeSemantics: true,
       child: InkWell(
         key: const Key('blocked-message'),
@@ -70,7 +71,7 @@ class BlockedMessageGate extends HookConsumerWidget {
               const SizedBox(width: Grid.xxs),
               Expanded(
                 child: Text(
-                  'Message from a blocked user',
+                  context.l10n.friendsBlockedMessage,
                   style: context.textTheme.bodySmall?.copyWith(
                     color: color,
                     fontStyle: FontStyle.italic,
@@ -78,7 +79,7 @@ class BlockedMessageGate extends HookConsumerWidget {
                 ),
               ),
               Text(
-                'Show',
+                context.l10n.friendsBlockedMessageShow,
                 style: context.textTheme.labelMedium?.copyWith(color: color),
               ),
             ],

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'goal_links.dart';
 import 'goal_tree.dart';
@@ -55,7 +56,7 @@ class GoalTile extends StatelessWidget {
           children: [
             IconButton(
               key: ValueKey('goal-status-${node.id}'),
-              tooltip: node.status.label,
+              tooltip: node.status.label(context.l10n),
               visualDensity: VisualDensity.compact,
               onPressed: onToggleStatus,
               icon: Icon(goalStatusIcon(node.status), size: 20),
@@ -67,7 +68,7 @@ class GoalTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'L$layer  ${node.title}',
+                      context.l10n.goalsLayerTitle(layer, node.title),
                       style: context.textTheme.bodyMedium?.copyWith(
                         decoration: finished
                             ? TextDecoration.lineThrough
@@ -83,7 +84,8 @@ class GoalTile extends StatelessWidget {
                       Wrap(
                         spacing: Grid.xs,
                         children: [
-                          for (final thread in node.threads) _link(thread),
+                          for (final thread in node.threads)
+                            _link(context, thread),
                         ],
                       ),
                   ],
@@ -97,13 +99,13 @@ class GoalTile extends StatelessWidget {
     return muted ? Opacity(opacity: 0.5, child: tile) : tile;
   }
 
-  Widget _link(String id) {
+  Widget _link(BuildContext context, String id) {
     final isCurrent = id == currentThreadId;
     final (:label, :target) = goalLinkView(id, linkKinds?[id]);
     final open = onOpenLink;
     return _ThreadLink(
       key: ValueKey('goal-thread-$id'),
-      label: isCurrent ? 'This thread' : label,
+      label: isCurrent ? context.l10n.goalsThisThread : label,
       onTap: isCurrent || target == null || open == null
           ? null
           : () => open(target),
@@ -125,8 +127,8 @@ class _ThreadLink extends StatelessWidget {
         : context.colors.primary;
     return Tooltip(
       message: switch (label) {
-        'Message' => 'Go to message',
-        'Thread' => 'Open thread',
+        'Message' => context.l10n.goalsGoToMessage,
+        'Thread' => context.l10n.goalsOpenThread,
         _ => label,
       },
       child: InkWell(
@@ -169,7 +171,9 @@ class _GoalNoteState extends State<GoalNote> {
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Tooltip(
-          message: _open ? 'Hide note' : 'Show note',
+          message: _open
+              ? context.l10n.goalsHideNote
+              : context.l10n.goalsShowNote,
           child: InkWell(
             key: ValueKey('goal-note-toggle-${widget.goalId}'),
             onTap: () => setState(() => _open = !_open),

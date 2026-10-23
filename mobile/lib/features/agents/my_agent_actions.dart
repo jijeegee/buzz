@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/devices/agent_host_devices.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../channels/channel.dart';
@@ -25,10 +26,10 @@ MyAgentStatus myAgentStatus(String? presence) => switch (presence) {
 };
 
 String myAgentStatusLabel(MyAgentStatus status) => switch (status) {
-  MyAgentStatus.online => 'Online',
-  MyAgentStatus.busy => 'Busy',
-  MyAgentStatus.stopped => 'Stopped',
-  MyAgentStatus.checking => 'Checking…',
+  MyAgentStatus.online => appL10n.agentsStatusOnline,
+  MyAgentStatus.busy => appL10n.agentsStatusBusy,
+  MyAgentStatus.stopped => appL10n.agentsStatusStopped,
+  MyAgentStatus.checking => appL10n.agentsStatusChecking,
 };
 
 Color myAgentStatusColor(BuildContext context, MyAgentStatus status) =>
@@ -66,16 +67,20 @@ final myAgentCommandsProvider =
 /// The computer an agent runs on, for sentences.
 String myAgentComputerName(String? deviceName, {required bool current}) {
   final name = deviceName?.trim() ?? '';
-  if (current) return name.isEmpty ? 'this device' : 'this device ($name)';
-  return name.isEmpty ? 'its computer' : name;
+  if (current) {
+    return name.isEmpty
+        ? appL10n.agentsComputerThisDevice
+        : appL10n.agentsComputerThisDeviceNamed(name);
+  }
+  return name.isEmpty ? appL10n.agentsComputerUnknown : name;
 }
 
 /// The computer an agent runs on, as a title: its name, or "This device"
 /// when it is the one in hand.
 String myAgentComputerLabel(String? deviceName, {required bool current}) {
   final name = deviceName?.trim() ?? '';
-  if (current) return 'This device';
-  return name.isEmpty ? 'Another computer' : name;
+  if (current) return appL10n.agentsComputerThisDeviceTitle;
+  return name.isEmpty ? appL10n.agentsComputerAnother : name;
 }
 
 /// Whether Stop can be sent: the agent runs.
@@ -118,12 +123,13 @@ Future<void> openMyAgentDm(
 ) async {
   final navigator = Navigator.of(context);
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   final Channel channel;
   try {
     channel = await ref.read(myAgentDmProvider)(agentPubkey);
   } catch (failure) {
     messenger.showSnackBar(
-      SnackBar(content: Text('Couldn’t open the DM with $name: $failure')),
+      SnackBar(content: Text(l10n.agentsOpenDmError(name, '$failure'))),
     );
     return;
   }
@@ -149,6 +155,7 @@ Future<void> stopMyAgent(
   if (!ok || !context.mounted) return;
   commands._set(agent.pubkey, MyAgentCommand.stop);
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   try {
     final channelId = await ref.read(myAgentCommandChannelProvider)(
       agent.pubkey,
@@ -160,16 +167,10 @@ Future<void> stopMyAgent(
           content: '!shutdown',
           mentionPubkeys: [agent.pubkey],
         );
-    messenger.showSnackBar(
-      const SnackBar(
-        content: Text(
-          'Stop requested. The agent stops on the computer it runs on.',
-        ),
-      ),
-    );
+    messenger.showSnackBar(SnackBar(content: Text(l10n.agentsStopRequested)));
   } catch (failure) {
     messenger.showSnackBar(
-      SnackBar(content: Text('Couldn’t stop $name: $failure')),
+      SnackBar(content: Text(l10n.agentsStopError(name, '$failure'))),
     );
   } finally {
     commands._set(agent.pubkey, null);
@@ -192,6 +193,7 @@ Future<void> startMyAgent(
   );
   commands._set(agent.pubkey, MyAgentCommand.start);
   final messenger = ScaffoldMessenger.of(context);
+  final l10n = context.l10n;
   try {
     final channelId = await ref.read(myAgentCommandChannelProvider)(
       agent.pubkey,
@@ -204,16 +206,11 @@ Future<void> startMyAgent(
           mentionPubkeys: [agent.pubkey],
         );
     messenger.showSnackBar(
-      SnackBar(
-        content: Text(
-          'Start requested. $name starts only if Kuzz is open on '
-          '$computer now.',
-        ),
-      ),
+      SnackBar(content: Text(l10n.agentsStartRequested(name, computer))),
     );
   } catch (failure) {
     messenger.showSnackBar(
-      SnackBar(content: Text('Couldn’t start $name: $failure')),
+      SnackBar(content: Text(l10n.agentsStartError(name, '$failure'))),
     );
   } finally {
     commands._set(agent.pubkey, null);
@@ -235,20 +232,17 @@ Future<bool> _confirmStop(BuildContext context, String name) async {
   final confirmed = await showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: Text('Stop $name?'),
-      content: const Text(
-        'It stops on the computer it runs on and stays stopped until it is '
-        'started there again.',
-      ),
+      title: Text(dialogContext.l10n.agentsStopConfirmTitle(name)),
+      content: Text(dialogContext.l10n.agentsStopConfirmBody),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.agentsCancel),
         ),
         FilledButton(
           key: const Key('my-agents-confirm-stop'),
           onPressed: () => Navigator.of(dialogContext).pop(true),
-          child: const Text('Stop'),
+          child: Text(dialogContext.l10n.agentsStop),
         ),
       ],
     ),

@@ -4,6 +4,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
@@ -216,7 +217,7 @@ class ForumPostCard extends HookConsumerWidget {
                   ),
                   const SizedBox(width: Grid.half),
                   Text(
-                    '${summary.replyCount} ${summary.replyCount == 1 ? 'reply' : 'replies'}',
+                    context.l10n.forumReplyCount(summary.replyCount),
                     style: context.textTheme.labelSmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -233,7 +234,9 @@ class ForumPostCard extends HookConsumerWidget {
                     ),
                     const SizedBox(width: Grid.half),
                     Text(
-                      'last ${formatRelativeTime(summary.lastReplyAt!)}',
+                      context.l10n.forumLastReply(
+                        formatRelativeTime(summary.lastReplyAt!),
+                      ),
                       style: context.textTheme.labelSmall?.copyWith(
                         color: context.colors.onSurfaceVariant,
                       ),
@@ -271,7 +274,7 @@ class ForumPostCard extends HookConsumerWidget {
               children: [
                 ListTile(
                   leading: const Icon(LucideIcons.copy),
-                  title: const Text('Copy text'),
+                  title: Text(context.l10n.forumCopyText),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     Clipboard.setData(ClipboardData(text: post.content));
@@ -284,7 +287,7 @@ class ForumPostCard extends HookConsumerWidget {
                       color: sheetContext.colors.error,
                     ),
                     title: Text(
-                      'Delete post',
+                      context.l10n.forumDeletePost,
                       style: TextStyle(color: sheetContext.colors.error),
                     ),
                     onTap: () {
@@ -304,12 +307,12 @@ class ForumPostCard extends HookConsumerWidget {
     showKuzzDialog<void>(
       context: context,
       builder: (dialogContext) => AlertDialog(
-        title: const Text('Delete post'),
-        content: const Text('This cannot be undone.'),
+        title: Text(context.l10n.forumDeletePost),
+        content: Text(context.l10n.forumDeleteConfirmBody),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(dialogContext).pop(),
-            child: const Text('Cancel'),
+            child: Text(context.l10n.forumCancel),
           ),
           FilledButton(
             onPressed: () {
@@ -319,7 +322,7 @@ class ForumPostCard extends HookConsumerWidget {
             style: FilledButton.styleFrom(
               backgroundColor: dialogContext.colors.error,
             ),
-            child: const Text('Delete'),
+            child: Text(context.l10n.forumDelete),
           ),
         ],
       ),

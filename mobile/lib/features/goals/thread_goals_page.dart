@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'goal_actions_sheet.dart';
@@ -45,14 +46,14 @@ class ThreadGoalsPage extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final headAsync = ref.watch(goalTreeProvider(channelId));
     return Scaffold(
-      appBar: AppBar(title: const Text('Thread goal')),
+      appBar: AppBar(title: Text(context.l10n.goalsThreadGoalTitle)),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(goalTreeProvider(channelId).future),
         child: headAsync.when(
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => ListView(
             padding: const EdgeInsets.all(Grid.gutter),
-            children: [Text('Could not load goals: $error')],
+            children: [Text(context.l10n.goalsLoadError('$error'))],
           ),
           data: (head) => _body(context, ref, head.tree),
         ),
@@ -66,8 +67,7 @@ class ThreadGoalsPage extends ConsumerWidget {
         padding: const EdgeInsets.all(Grid.gutter),
         children: [
           Text(
-            'This conversation has no goals yet. Set its goal from the '
-            'group first.',
+            context.l10n.goalsThreadNoGoals,
             style: context.textTheme.bodyMedium,
           ),
         ],
@@ -83,8 +83,7 @@ class ThreadGoalsPage extends ConsumerWidget {
         padding: const EdgeInsets.all(Grid.gutter),
         children: [
           Text(
-            'Link this thread to the goal it works on, or add a new goal for '
-            'it with +.',
+            context.l10n.goalsThreadLinkIntro,
             style: context.textTheme.bodyMedium,
           ),
           const SizedBox(height: Grid.twelve),
@@ -139,8 +138,8 @@ class _ThreadLinks {
   ) async {
     final result = await editGoal(
       context,
-      title: 'New layer ${layer + 1} goal',
-      saveLabel: 'Add and link',
+      title: context.l10n.goalsNewLayerGoal(layer + 1),
+      saveLabel: context.l10n.goalsAddAndLink,
     );
     if (result == null || !context.mounted) return;
     final id = newGoalId();

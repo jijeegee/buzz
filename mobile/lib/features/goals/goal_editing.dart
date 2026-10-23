@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 
+import '../../shared/l10n/l10n.dart';
 import 'goal_tree.dart';
 
 /// A goal title and optional note from [editGoal].
@@ -27,14 +28,14 @@ Future<GoalDraft?> editGoal(
   required String title,
   String initialTitle = '',
   String initialNote = '',
-  String saveLabel = 'Save',
+  String? saveLabel,
 }) => showDialog<GoalDraft>(
   context: context,
-  builder: (_) => _GoalEditorDialog(
+  builder: (dialogContext) => _GoalEditorDialog(
     heading: title,
     initialTitle: initialTitle,
     initialNote: initialNote,
-    saveLabel: saveLabel,
+    saveLabel: saveLabel ?? dialogContext.l10n.goalsSave,
   ),
 );
 
@@ -57,6 +58,7 @@ class _GoalEditorDialog extends HookWidget {
     final noteController = useTextEditingController(text: initialNote);
     useListenable(titleController);
     final error = goalTitleError(titleController.text);
+    final l10n = context.l10n;
     return AlertDialog(
       title: Text(heading),
       content: Column(
@@ -68,7 +70,7 @@ class _GoalEditorDialog extends HookWidget {
             autofocus: true,
             maxLines: 1,
             decoration: InputDecoration(
-              labelText: 'Goal (one sentence)',
+              labelText: l10n.goalsTitleLabel,
               errorText: titleController.text.isEmpty ? null : error,
             ),
           ),
@@ -77,16 +79,14 @@ class _GoalEditorDialog extends HookWidget {
             controller: noteController,
             minLines: 2,
             maxLines: 5,
-            decoration: const InputDecoration(
-              labelText: 'Key information (optional)',
-            ),
+            decoration: InputDecoration(labelText: l10n.goalsNoteLabel),
           ),
         ],
       ),
       actions: [
         TextButton(
           onPressed: () => Navigator.pop(context),
-          child: const Text('Cancel'),
+          child: Text(l10n.goalsCancel),
         ),
         FilledButton(
           key: const ValueKey('goal-editor-save'),

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import 'goal_editing.dart';
@@ -16,7 +17,10 @@ Future<void> addChildGoal(
   required String parentId,
   required int layer,
 }) async {
-  final result = await editGoal(context, title: 'New layer $layer goal');
+  final result = await editGoal(
+    context,
+    title: context.l10n.goalsNewLayerGoal(layer),
+  );
   if (result == null || !context.mounted) return;
   await runGoalAction(
     context,
@@ -45,6 +49,7 @@ Future<void> showGoalActions(
 }) async {
   final actions = ref.read(goalActionsProvider);
   final subGoals = tree.subtreeIds(node.id).length - 1;
+  final l10n = context.l10n;
   final choice = await showKuzzModalBottomSheet<String>(
     context: context,
     title: node.title,
@@ -55,25 +60,27 @@ Future<void> showGoalActions(
         children: [
           ListTile(
             leading: const Icon(LucideIcons.pencil),
-            title: const Text('Edit'),
+            title: Text(l10n.goalsEdit),
             onTap: () => Navigator.pop(sheetContext, 'edit'),
           ),
           for (final status in GoalStatus.values)
             if (status != node.status)
               ListTile(
                 leading: const Icon(LucideIcons.circleCheck),
-                title: Text('Mark ${status.label.toLowerCase()}'),
+                title: Text(status.markLabel(l10n)),
                 onTap: () => Navigator.pop(sheetContext, status.wire),
               ),
           ListTile(
             leading: const Icon(LucideIcons.plus),
-            title: Text('Add a layer ${layer + 1} goal'),
+            title: Text(l10n.goalsAddLayerGoal(layer + 1)),
             onTap: () => Navigator.pop(sheetContext, 'add'),
           ),
           ListTile(
             leading: Icon(LucideIcons.trash2, color: context.colors.error),
             title: Text(
-              subGoals > 0 ? 'Remove with $subGoals sub-goals' : 'Remove',
+              subGoals > 0
+                  ? l10n.goalsRemoveWithSubGoals(subGoals)
+                  : l10n.goalsRemove,
               style: TextStyle(color: context.colors.error),
             ),
             onTap: () => Navigator.pop(sheetContext, 'remove'),
@@ -87,7 +94,7 @@ Future<void> showGoalActions(
     case 'edit':
       final result = await editGoal(
         context,
-        title: layer == 1 ? 'Layer 1 goal' : 'Goal',
+        title: layer == 1 ? l10n.goalsLayer1Goal : l10n.goalsGoal,
         initialTitle: node.title,
         initialNote: node.note,
       );
@@ -121,20 +128,20 @@ Future<void> showGoalActions(
       final confirmed = await showDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: const Text('Remove goal?'),
+          title: Text(l10n.goalsRemoveConfirmTitle),
           content: Text(
             subGoals > 0
-                ? 'This also removes its $subGoals sub-goals. History keeps them.'
-                : 'History keeps it.',
+                ? l10n.goalsRemoveConfirmSubGoals(subGoals)
+                : l10n.goalsRemoveConfirmBody,
           ),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
-              child: const Text('Cancel'),
+              child: Text(l10n.goalsCancel),
             ),
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, true),
-              child: const Text('Remove'),
+              child: Text(l10n.goalsRemove),
             ),
           ],
         ),

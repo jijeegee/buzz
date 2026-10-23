@@ -10,6 +10,7 @@ import '../../shared/auth/token/token.dart';
 import '../../shared/community/community.dart';
 import '../../shared/community/community_provider.dart';
 import '../../shared/community/community_removal.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/modal_presentation.dart';
 
@@ -60,14 +61,14 @@ class CommunityRecoveryActions extends HookConsumerWidget {
       final confirmed = await showKuzzDialog<bool>(
         context: context,
         builder: (dialogContext) => AlertDialog(
-          title: Text('Remove ${community.name}?'),
-          content: const Text(
-            'This community and its sign-in are removed from this device.',
+          title: Text(
+            dialogContext.l10n.signInRecoveryRemoveTitle(community.name),
           ),
+          content: Text(dialogContext.l10n.signInRecoveryRemoveBody),
           actions: [
             TextButton(
               onPressed: () => Navigator.of(dialogContext).pop(false),
-              child: const Text('Cancel'),
+              child: Text(dialogContext.l10n.commonCancel),
             ),
             FilledButton(
               key: const Key('community-recovery-remove-confirm'),
@@ -75,7 +76,7 @@ class CommunityRecoveryActions extends HookConsumerWidget {
               style: FilledButton.styleFrom(
                 backgroundColor: dialogContext.colors.error,
               ),
-              child: const Text('Remove'),
+              child: Text(dialogContext.l10n.signInRecoveryRemove),
             ),
           ],
         ),
@@ -96,7 +97,7 @@ class CommunityRecoveryActions extends HookConsumerWidget {
       children: [
         if (others.isNotEmpty) ...[
           Text(
-            'Switch community',
+            context.l10n.signInRecoverySwitchCommunity,
             style: context.textTheme.titleSmall?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -123,13 +124,13 @@ class CommunityRecoveryActions extends HookConsumerWidget {
             key: const Key('community-recovery-remove'),
             onPressed: busy.value ? null : () => unawaited(remove(active)),
             style: TextButton.styleFrom(foregroundColor: context.colors.error),
-            child: const Text('Remove this community'),
+            child: Text(context.l10n.signInRecoveryRemoveThis),
           ),
         if (error.value != null)
           Semantics(
             liveRegion: true,
             child: Text(
-              'Could not complete that: ${error.value}',
+              context.l10n.signInRecoveryFailed(error.value!),
               key: const Key('community-recovery-error'),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.error,
@@ -164,6 +165,7 @@ class _SignOutRecoveryAction extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final l10n = context.l10n;
     final busy = useState(false);
     final error = useState<String?>(null);
     final hasSession = ref.watch(_hasSignedInSessionProvider);
@@ -178,7 +180,7 @@ class _SignOutRecoveryAction extends HookConsumerWidget {
         await ref.read(authProvider.notifier).signOut(deviceOnly: true);
       } catch (_) {
         if (context.mounted) {
-          error.value = 'Couldn’t sign out on this device. Try again.';
+          error.value = l10n.signInRecoverySignOutFailed;
         }
       } finally {
         if (context.mounted) busy.value = false;
@@ -195,7 +197,9 @@ class _SignOutRecoveryAction extends HookConsumerWidget {
           TextButton(
             key: const Key('community-recovery-sign-out'),
             onPressed: busy.value ? null : () => unawaited(signOut()),
-            child: Text(busy.value ? 'Signing out…' : 'Sign out'),
+            child: Text(
+              busy.value ? l10n.settingsSigningOut : l10n.settingsSignOut,
+            ),
           ),
         if (error.value != null)
           Semantics(

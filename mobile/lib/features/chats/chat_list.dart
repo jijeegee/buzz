@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/relay/relay.dart';
 import '../activity/inbox_item.dart';
@@ -574,15 +575,15 @@ String chatThreadTitle(ChatListRow row) {
       .map((line) => line.trim())
       .where((line) => line.isNotEmpty)
       .firstOrNull;
-  if (firstLine == null) return 'Thread';
+  if (firstLine == null) return appL10n.chatsThreadFallback;
   return firstLine.length > 80 ? '${firstLine.substring(0, 80)}…' : firstLine;
 }
 
 /// Shown instead of a blocked person's message.
-const blockedMessageLabel = 'Message from a blocked user';
+String get blockedMessageLabel => appL10n.chatsPreviewBlocked;
 
 /// Shown for a message with no text left after clean-up.
-const noMessageTextLabel = 'No message text';
+String get noMessageTextLabel => appL10n.chatsPreviewNoText;
 
 const _previewMaxLength = 160;
 
@@ -632,7 +633,7 @@ String chatRowPreviewText(
   final text = summarizeMessageText(event.content);
   if (text == noMessageTextLabel &&
       event.tags.any((tag) => tag.isNotEmpty && tag[0] == 'imeta')) {
-    return 'Photo';
+    return appL10n.chatsPreviewPhoto;
   }
   return text;
 }

@@ -13,6 +13,7 @@ import '../../shared/devices/agent_badge_widgets.dart';
 import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
@@ -54,9 +55,6 @@ void showUserProfileSheet(
     );
   });
 }
-
-/// The sheet's heading for someone whose name has not loaded: never a key.
-const unnamedProfileHeading = 'Kuzz user';
 
 class UserProfileSheet extends HookConsumerWidget {
   final String pubkey;
@@ -135,7 +133,7 @@ class UserProfileSheet extends HookConsumerWidget {
     // "Kuzz user" (not "Unknown", which the presence chip below already
     // uses); a malformed identity keeps its own neutral label.
     final displayName = unnamed && plainName != unknownIdentityLabel
-        ? unnamedProfileHeading
+        ? context.l10n.profileUnnamedUser
         : label;
     final avatarUrl = profile?.avatarUrl;
     final nip05 = profile?.nip05Handle;
@@ -238,7 +236,7 @@ class UserProfileSheet extends HookConsumerWidget {
                                 variant: variant,
                                 size: 22,
                                 semanticLabel:
-                                    'Robot of the device this agent runs on',
+                                    context.l10n.profileAgentDeviceRobot,
                               ),
                             ),
                           ],
@@ -305,10 +303,11 @@ class UserProfileSheet extends HookConsumerWidget {
                                   ? null
                                   : LucideIcons.messageSquare,
                               label: isOpeningDirectMessage.value
-                                  ? 'Opening…'
-                                  : 'Message',
+                                  ? context.l10n.profileSheetOpening
+                                  : context.l10n.profileSheetMessage,
                               isLoading: isOpeningDirectMessage.value,
-                              loadingSemanticLabel: 'Opening direct message',
+                              loadingSemanticLabel:
+                                  context.l10n.profileSheetOpeningLabel,
                               onTap: openDirectMessage,
                             ),
                           ),
@@ -322,7 +321,9 @@ class UserProfileSheet extends HookConsumerWidget {
                               child: KuzzActionTile(
                                 key: const Key('profile-sheet-block'),
                                 icon: LucideIcons.ban,
-                                label: isBlocked ? 'Unblock' : 'Block',
+                                label: isBlocked
+                                    ? context.l10n.profileSheetUnblock
+                                    : context.l10n.profileSheetBlock,
                                 onTap: () => unawaited(
                                   isBlocked
                                       ? unblockWithFeedback(
@@ -348,7 +349,7 @@ class UserProfileSheet extends HookConsumerWidget {
                             child: KuzzActionTile(
                               key: const Key('profile-sheet-report'),
                               icon: LucideIcons.flag,
-                              label: 'Report',
+                              label: context.l10n.profileSheetReport,
                               onTap: () => unawaited(
                                 showReportSheet(
                                   context,
@@ -374,7 +375,7 @@ class UserProfileSheet extends HookConsumerWidget {
                       ),
                       const SizedBox(height: Grid.xxs),
                       Text(
-                        'About',
+                        context.l10n.profileSheetAbout,
                         style: context.textTheme.labelSmall?.copyWith(
                           color: context.colors.onSurfaceVariant,
                           fontWeight: FontWeight.w600,
@@ -419,14 +420,14 @@ class _ProfilePresenceChip extends StatelessWidget {
       _ => context.colors.onSurfaceVariant,
     };
     final label = switch (effectivePresence) {
-      'online' => 'Online',
-      'away' => 'Away',
-      'offline' => 'Offline',
-      _ => 'Unknown',
+      'online' => context.l10n.profilePresenceOnline,
+      'away' => context.l10n.profilePresenceAway,
+      'offline' => context.l10n.profilePresenceOffline,
+      _ => context.l10n.profilePresenceUnknown,
     };
 
     return Semantics(
-      label: 'Presence: $label',
+      label: context.l10n.profilePresenceLabel(label),
       excludeSemantics: true,
       child: SizedBox(
         height: Grid.xl,

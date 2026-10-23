@@ -4639,6 +4639,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "kuzz-device-key"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "kuzz-auth",
+ "nostr 0.44.7",
+ "p256",
+ "rand 0.10.1",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "thiserror 2.0.18",
+ "windows-sys 0.61.2",
+ "zeroize",
+]
+
+[[package]]
 name = "kuzz-feature-flags"
 version = "0.1.0"
 dependencies = [

@@ -4,6 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -46,14 +47,14 @@ class AgentSettingsPage extends ConsumerWidget {
         name: name,
       ),
       AsyncError() => Scaffold(
-        appBar: AppBar(title: const Text('Agent settings')),
+        appBar: AppBar(title: Text(context.l10n.agentsSettingsTitle)),
         body: LoadErrorView(
-          message: 'Couldn’t load this agent’s settings.',
+          message: context.l10n.agentsSettingsLoadError,
           onRetry: () => ref.invalidate(agentSettingsProvider(args)),
         ),
       ),
       _ => Scaffold(
-        appBar: AppBar(title: const Text('Agent settings')),
+        appBar: AppBar(title: Text(context.l10n.agentsSettingsTitle)),
         body: const Center(child: KuzzLoadingIndicator()),
       ),
     };
@@ -69,7 +70,7 @@ class _ReadOnly extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Agent settings')),
+      appBar: AppBar(title: Text(context.l10n.agentsSettingsTitle)),
       body: SafeArea(
         child: ListView(
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),
@@ -86,7 +87,7 @@ class _ReadOnly extends StatelessWidget {
                   leading: const SizedBox.shrink(),
                   title: Text(name, style: context.textTheme.bodyLarge),
                   subtitle: Text(
-                    'Name',
+                    context.l10n.agentsFieldName,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),

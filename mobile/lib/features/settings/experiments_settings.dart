@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -31,7 +32,7 @@ class ExperimentsSettings extends ConsumerWidget {
         AppListRow(
           key: const ValueKey('settings-experiments-row'),
           icon: LucideIcons.flaskConical,
-          title: 'Experiments',
+          title: context.l10n.settingsExperimentsTitle,
           trailing: Icon(
             LucideIcons.chevronRight,
             size: 18,
@@ -57,7 +58,7 @@ class ExperimentsPage extends ConsumerWidget {
     ];
     return FrostedScaffold(
       useUtilitySurfaceTheme: true,
-      appBar: const FrostedAppBar(title: Text('Experiments')),
+      appBar: FrostedAppBar(title: Text(context.l10n.settingsExperimentsTitle)),
       body: ListView(
         padding: EdgeInsets.only(
           top: frostedAppBarHeight(context),
@@ -66,9 +67,7 @@ class ExperimentsPage extends ConsumerWidget {
         children: [
           AppListCard(
             key: const ValueKey('experiments-list'),
-            description:
-                'Features that are still being refined. They may change or be '
-                'removed.',
+            description: context.l10n.settingsExperimentsDescription,
             verticalPadding: Grid.twelve,
             children: rows,
           ),

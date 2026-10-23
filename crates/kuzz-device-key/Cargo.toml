@@ -1,0 +1,27 @@
+[package]
+name = "kuzz-device-key"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "Kuzz device key: a P-256 key bound to this install (TPM where available), and the device proofs it signs"
+
+[dependencies]
+# Wire formats (proof messages, event tag) and the verifier this crate must match.
+kuzz-auth = { workspace = true }
+hex       = { workspace = true }
+nostr     = { workspace = true }
+p256      = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
+rand      = { workspace = true }
+sha2      = { workspace = true }
+thiserror = { workspace = true }
+zeroize   = { workspace = true }
+
+[target.'cfg(windows)'.dependencies]
+# CNG (NCrypt) for the TPM key. Same windows-sys version kuzz-dev-mcp uses.
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security", "Win32_Security_Cryptography"] }
+
+[dev-dependencies]
+serde_json = { workspace = true }
+tempfile   = "3"

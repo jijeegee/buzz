@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/clipboard_utils.dart';
 import '../../shared/community/community_membership_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
@@ -33,15 +34,15 @@ class CommunityInvitePage extends ConsumerWidget {
     final roleAsync = ref.watch(currentCommunityRoleProvider);
     return FrostedScaffold(
       useUtilitySurfaceTheme: true,
-      appBar: const FrostedAppBar(
+      appBar: FrostedAppBar(
         centerTitle: true,
-        title: Text('Invite to community'),
+        title: Text(context.l10n.inviteCreateTitle),
       ),
       body: roleAsync.when(
-        loading: () => const Center(
+        loading: () => Center(
           child: KuzzLoadingIndicator(
             size: 48,
-            semanticLabel: 'Checking community permissions',
+            semanticLabel: context.l10n.inviteCheckingPermissions,
           ),
         ),
         error: (_, _) => _InvitePermissionError(
@@ -80,7 +81,7 @@ class _CommunityInviteBody extends StatelessWidget {
               Padding(
                 padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
                 child: Text(
-                  'Or use npub',
+                  context.l10n.inviteOrUseNpub,
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -106,9 +107,12 @@ class _InvitePermissionError extends StatelessWidget {
   Widget build(BuildContext context) {
     return _InviteMessage(
       icon: LucideIcons.wifiOff,
-      title: 'Could not check permissions',
-      body: 'Reconnect to this community and try again.',
-      action: TextButton(onPressed: onRetry, child: const Text('Retry')),
+      title: context.l10n.invitePermissionCheckFailedTitle,
+      body: context.l10n.invitePermissionCheckFailedBody,
+      action: TextButton(
+        onPressed: onRetry,
+        child: Text(context.l10n.inviteRetry),
+      ),
     );
   }
 }
@@ -118,10 +122,10 @@ class _InvitePermissionDenied extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const _InviteMessage(
+    return _InviteMessage(
       icon: LucideIcons.shieldAlert,
-      title: 'Invite access required',
-      body: 'Only community owners and admins can invite people.',
+      title: context.l10n.invitePermissionDeniedTitle,
+      body: context.l10n.invitePermissionDeniedBody,
     );
   }
 }
