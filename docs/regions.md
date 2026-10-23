@@ -69,6 +69,19 @@ REFRESH PUBLICATION` in each region; the relay waits and says so until then.
 A migration that writes rows into a copied table must skip copies
 (`WHERE NOT kuzz_is_global_copy()`).
 
+### Events outside rooms
+
+A region holding the copy forwards an event stored outside any room to the
+primary over the region link, like a room write to its home (stage S5-3):
+profiles, contact lists, settings, lists, reports, moderation commands,
+relay membership requests and push leases. The primary stores it and runs
+its side effects (for example the profile row), and the copy brings the
+rows back. Dev header logins (`X-Pubkey`) cannot be vouched for and get the
+"wrong region" answer.
+
+Jobs that write global data run only in the primary: the NIP-33 `d` tag
+backfill, the NIP-43 roster reconcile and the expired invite reaper.
+
 ### Global writes over HTTP
 
 A region holding the copy sends HTTP requests that write global data to the

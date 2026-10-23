@@ -578,6 +578,23 @@ pub(crate) async fn ensure_room_here(
     }
 }
 
+/// Global regions (S5-3): in a region holding the global copy, a write kept
+/// outside any room (profiles, contact lists, settings, reports, moderation,
+/// relay membership, push leases) is made in the primary, which stores it
+/// and runs its side effects; the copy brings the rows back. Answered as a
+/// write for the primary's "room", so [`ingest_event`] forwards it.
+fn ensure_global_here(state: &AppState) -> Result<(), IngestError> {
+    if !state.config.global_copy {
+        return Ok(());
+    }
+    Err(IngestError::WrongRegion(crate::routing::RemoteHome {
+        region: state.config.primary_region.clone(),
+        connect_url: String::new(),
+        epoch: 0,
+        room: None,
+    }))
+}
+
 /// Map the durable community write-fence lookup onto the ingest error taxonomy.
 ///
 /// An inactive community is an authorization decision and keeps the exact
@@ -2939,6 +2956,11 @@ async fn ingest_event_inner(
         return super::command_executor::handle_command(tenant, state, event, auth).await;
     }
 
+    // Reports and moderation commands write global tables only.
+    if kind_u32 == KIND_REPORT || kuzz_core::kind::is_moderation_command_kind(kind_u32) {
+        ensure_global_here(state)?;
+    }
+
     // Product feedback is sidecarred directly into its private deployment table.
     // It never enters ordinary event storage or subscription fan-out.
     if kind_u32 == KIND_PRODUCT_FEEDBACK {
@@ -3075,6 +3097,12 @@ async fn ingest_event_inner(
         return Err(IngestError::Rejected(
             "invalid: channel-scoped events must include an h tag".into(),
         ));
+    }
+
+    // Stored outside any room (a kind:9007 without an h tag creates a room
+    // here instead).
+    if channel_id.is_none() && kind_u32 != KIND_NIP29_CREATE_GROUP {
+        ensure_global_here(state)?;
     }
 
     // Global regions (S3): a room that lives in another region is not

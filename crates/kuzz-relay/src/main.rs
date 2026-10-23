@@ -635,10 +635,13 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
 
     // NIP-33: backfill d_tag for any existing parameterized replaceable events
     // that predate the column addition. Idempotent — no-ops when fully populated.
-    match db.backfill_d_tags().await {
-        Ok(0) => {}
-        Ok(n) => info!("Backfilled d_tag for {n} NIP-33 events"),
-        Err(e) => error!("Failed to backfill d_tags: {e}"),
+    // Those rows are room-less, so a global copy gets them from the primary.
+    if !config.global_copy {
+        match db.backfill_d_tags().await {
+            Ok(0) => {}
+            Ok(n) => info!("Backfilled d_tag for {n} NIP-33 events"),
+            Err(e) => error!("Failed to backfill d_tags: {e}"),
+        }
     }
 
     let (audit, audit_metrics_pool) = if config.audit_enabled {
@@ -957,8 +960,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // NIP-43: reconcile the event-backed roster for every provisioned
     // community before opening the listener. `relay_members` is canonical;
     // this repairs pre-snapshot communities and any publication that failed
-    // after a membership transaction committed.
-    if config.require_relay_membership {
+    // after a membership transaction committed. Both are global: in a global
+    // copy the primary reconciles them (S5-3).
+    if config.require_relay_membership && !config.global_copy {
         match kuzz_relay::handlers::side_effects::reconcile_nip43_membership_snapshots_with_purpose(
             &state,
             kuzz_relay::handlers::side_effects::Nip43ReconciliationPurpose::Bootstrap,
@@ -2426,18 +2430,21 @@ async fn run_usage_metrics_tick(
             *leader = None;
             return Err(error);
         }
-        let invite_retention_cutoff = chrono::Utc::now() - chrono::Duration::days(30);
-        match state
-            .db
-            .reap_expired_relay_invites(invite_retention_cutoff)
-            .await
-        {
-            Ok(deleted) if deleted > 0 => {
-                info!(deleted, "reaped expired relay invites");
-            }
-            Ok(_) => {}
-            Err(error) => {
-                warn!(error = %error, "failed to reap expired relay invites");
+        // Invites are global: in a global copy the primary reaps them (S5-3).
+        if !state.config.global_copy {
+            let invite_retention_cutoff = chrono::Utc::now() - chrono::Duration::days(30);
+            match state
+                .db
+                .reap_expired_relay_invites(invite_retention_cutoff)
+                .await
+            {
+                Ok(deleted) if deleted > 0 => {
+                    info!(deleted, "reaped expired relay invites");
+                }
+                Ok(_) => {}
+                Err(error) => {
+                    warn!(error = %error, "failed to reap expired relay invites");
+                }
             }
         }
         run_storage_sweep_tick(state, emission_scope, &host_map).await;
