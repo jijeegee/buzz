@@ -11,7 +11,7 @@ void _showHuddleParticipantSpotlight({
 }) {
   _showHuddleParticipantOverlay(
     context: context,
-    barrierLabel: 'Dismiss participant',
+    barrierLabel: context.l10n.huddleDismissParticipant,
     childBuilder: (dialogContext) => _HuddleParticipantSpotlight(
       ephemeralChannelId: ephemeralChannelId,
       pubkey: pubkey,
@@ -27,7 +27,7 @@ void _showHuddleParticipantRoster({
 }) {
   _showHuddleParticipantOverlay(
     context: context,
-    barrierLabel: 'Dismiss participant list',
+    barrierLabel: context.l10n.huddleDismissParticipantList,
     childBuilder: (_) =>
         _HuddleParticipantRoster(ephemeralChannelId: ephemeralChannelId),
   );
@@ -165,6 +165,7 @@ class _HuddleParticipantSpotlight extends ConsumerWidget {
       ),
     );
     final label = _huddleParticipantLabel(
+      l10n: context.l10n,
       pubkey: pubkey,
       profile: profile,
       fallbackLabel: fallbackLabel,
@@ -178,8 +179,8 @@ class _HuddleParticipantSpotlight extends ConsumerWidget {
     final isAgent = profile?.isAgent == true || fallbackLabel != null;
 
     return Semantics(
-      label: active ? '$label, speaking' : label,
-      hint: 'Tap to close participant',
+      label: active ? context.l10n.huddleParticipantSpeaking(label) : label,
+      hint: context.l10n.huddleCloseParticipantHint,
       button: true,
       excludeSemantics: true,
       child: GestureDetector(
@@ -282,7 +283,7 @@ class _HuddleParticipantRoster extends ConsumerWidget {
     final listHeight = min(pubkeys.length * 64.0, maxListHeight);
 
     return Semantics(
-      label: '${pubkeys.length} more participants',
+      label: context.l10n.huddleMoreParticipants(pubkeys.length),
       container: true,
       child: GestureDetector(
         behavior: HitTestBehavior.opaque,
@@ -336,6 +337,7 @@ class _HuddleParticipantRoster extends ConsumerWidget {
                           final profile = profiles[pubkey];
                           final active = activeSpeakerPubkeys.contains(pubkey);
                           final label = _huddleParticipantLabel(
+                            l10n: context.l10n,
                             pubkey: pubkey,
                             profile: profile,
                             fallbackLabel: fallbackLabels[pubkey],

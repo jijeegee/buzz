@@ -84,7 +84,7 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                   children: [
                     TextSpan(
                       text:
-                          '${name != null && name.isNotEmpty ? '$name · ' : ''}${summary.isCountPending ? 'Replies' : '${summary.replyCount}${summary.isLowerBound ? '+' : ''} ${summary.replyCount == 1 ? 'reply' : 'replies'}'}',
+                          '${name != null && name.isNotEmpty ? '$name · ' : ''}${formatThreadSummaryReplyCount(context.l10n, isCountPending: summary.isCountPending, replyCount: summary.replyCount, isLowerBound: summary.isLowerBound)}',
                       style: replyPreviewTextStyle.copyWith(
                         color: context.colors.primary,
                       ),
@@ -99,8 +99,9 @@ class _NestedThreadSummaryRow extends ConsumerWidget {
                         ),
                       ),
                       TextSpan(
-                        text:
-                            'last reply ${formatThreadSummaryLastReplyTime(lastReplyAt)}',
+                        text: context.l10n.threadSummaryLastReply(
+                          formatThreadSummaryLastReplyTime(lastReplyAt),
+                        ),
                         style: replyPreviewTextStyle.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),

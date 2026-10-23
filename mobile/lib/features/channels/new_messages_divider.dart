@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 
 /// Marks where the unread messages start in a window opened at them.
@@ -17,7 +18,7 @@ class NewMessagesDivider extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: Grid.xs),
             child: Text(
-              'New messages',
+              context.l10n.messageNewMessagesDivider,
               style: context.textTheme.labelSmall?.copyWith(
                 color: color,
                 fontWeight: FontWeight.w600,

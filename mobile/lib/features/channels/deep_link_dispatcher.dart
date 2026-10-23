@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/deeplink/pending_deep_link_provider.dart';
+import '../../shared/l10n/l10n.dart';
 import '../groups/group_preview.dart';
 import '../invites/invite_join_provider.dart';
 import '../invites/invite_join_sheet.dart';
@@ -113,14 +114,14 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
       case DeepLinkCommunityPreparation.unavailable:
         ref.read(pendingDeepLinkProvider.notifier).consume();
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('Notification community is no longer available'),
+          SnackBar(
+            content: Text(context.l10n.channelNotificationCommunityGone),
           ),
         );
       case DeepLinkCommunityPreparation.failed:
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          const SnackBar(
-            content: Text('Could not open the notification community'),
+          SnackBar(
+            content: Text(context.l10n.channelNotificationCommunityError),
           ),
         );
     }
@@ -147,7 +148,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
         'deep-link: channel $channelId not found in workspace; dropping link',
       );
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-        const SnackBar(content: Text('Group not found in this workspace')),
+        SnackBar(content: Text(context.l10n.channelLinkGroupNotFound)),
       );
       return;
     }
@@ -223,8 +224,8 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
             SnackBar(
               content: Text(
                 ref.read(hasBuiltInServerProvider)
-                    ? 'You’re already a member'
-                    : 'Switched to this community',
+                    ? appL10n.channelInviteAlreadyMember
+                    : appL10n.channelInviteSwitchedCommunity,
               ),
             ),
           );
@@ -233,11 +234,7 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
         debugPrint('deep-link: failed to prepare invite: $error');
         if (navigatorContext.mounted) {
           messenger?.showSnackBar(
-            const SnackBar(
-              content: Text(
-                'Could not open this invite. Re-open the invite link to try again.',
-              ),
-            ),
+            SnackBar(content: Text(appL10n.channelInviteOpenError)),
           );
         }
       } finally {

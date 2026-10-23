@@ -2,6 +2,7 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
+import '../../../shared/l10n/l10n.dart';
 import '../../../shared/relay/relay.dart';
 import '../../../shared/theme/theme_provider.dart';
 import '../../../shared/community/community_provider.dart';
@@ -99,8 +100,7 @@ class ChannelStarsNotifier extends Notifier<ChannelStarsState> {
         if (_manager != manager) return;
         state = ChannelStarsState(
           store: manager.store,
-          errorMessage:
-              'Could not load personal pins. Retry to keep your saved pins.',
+          errorMessage: appL10n.channelPinsLoadError,
           version: state.version + 1,
         );
         return;

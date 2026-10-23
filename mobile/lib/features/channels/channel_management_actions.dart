@@ -79,8 +79,8 @@ class CreateGroupChatResult {
     if (invitedCount <= 0) {
       return rateLimited ? tooManyInvitationsMessage : null;
     }
-    if (invitedCount >= pickedCount) return 'Invitations sent';
-    return 'Invitation sent to $invitedCount';
+    if (invitedCount >= pickedCount) return appL10n.channelInvitationsSent;
+    return appL10n.channelInvitationSentCount(invitedCount);
   }
 }
 

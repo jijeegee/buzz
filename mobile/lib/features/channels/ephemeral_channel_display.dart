@@ -1,5 +1,8 @@
 import 'dart:math' as math;
 
+import 'package:intl/intl.dart';
+
+import '../../shared/l10n/l10n.dart';
 import 'channel.dart';
 
 class EphemeralChannelDisplay {
@@ -34,95 +37,91 @@ EphemeralChannelDisplay? ephemeralChannelDisplay(
     return EphemeralChannelDisplay(
       detailLabel: ttlSeconds == null ? null : formatCompactTtl(ttlSeconds),
       tooltipLabel: ttlSeconds == null
-          ? 'Ephemeral group. Cleans up automatically after inactivity.'
-          : 'Ephemeral group. Cleans up after ${formatVerboseTtl(ttlSeconds)} of inactivity.',
+          ? appL10n.ephemeralTooltipNoTtl
+          : _ttlTooltip(ttlSeconds),
     );
   }
 
-  final compactRemaining = formatCompactRemaining(remainingSeconds);
-  final verboseRemaining = formatVerboseRemaining(remainingSeconds);
-  final absoluteDeadlineLabel = formatAbsoluteDeadline(deadline!);
-
   return EphemeralChannelDisplay(
-    detailLabel: compactRemaining,
-    tooltipLabel: compactRemaining == 'Cleanup due'
-        ? 'Ephemeral group. Cleanup is due now.'
-        : 'Ephemeral group. Cleans up $verboseRemaining. Scheduled for $absoluteDeadlineLabel.',
+    detailLabel: formatCompactRemaining(remainingSeconds),
+    tooltipLabel: remainingSeconds <= 0
+        ? appL10n.ephemeralTooltipDueNow
+        : _remainingTooltip(
+            remainingSeconds,
+            formatAbsoluteDeadline(deadline!),
+          ),
   );
 }
 
-String formatCompactRemaining(int remainingSeconds) {
-  if (remainingSeconds <= 0) return 'Cleanup due';
-  if (remainingSeconds <= 60) return '1m left';
-  if (remainingSeconds < 60 * 60) {
-    return '${math.max(1, (remainingSeconds / 60).ceil())}m left';
+enum _TtlUnit { second, minute, hour, day }
+
+/// [seconds] as a count of its largest whole unit, rounded up. Under a
+/// minute counts as one minute unless [keepSeconds].
+(_TtlUnit, int) _ttlParts(int seconds, {required bool keepSeconds}) {
+  if (seconds < 60) {
+    return keepSeconds
+        ? (_TtlUnit.second, math.max(1, seconds))
+        : (_TtlUnit.minute, 1);
   }
-  if (remainingSeconds < 60 * 60 * 24) {
-    return '${math.max(1, (remainingSeconds / (60 * 60)).ceil())}h left';
+  if (seconds < 60 * 60) {
+    return (_TtlUnit.minute, math.max(1, (seconds / 60).ceil()));
   }
-  return '${math.max(1, (remainingSeconds / (60 * 60 * 24)).ceil())}d left';
+  if (seconds < 60 * 60 * 24) {
+    return (_TtlUnit.hour, math.max(1, (seconds / (60 * 60)).ceil()));
+  }
+  return (_TtlUnit.day, math.max(1, (seconds / (60 * 60 * 24)).ceil()));
 }
 
-String formatVerboseRemaining(int remainingSeconds) {
-  if (remainingSeconds <= 0) return 'now';
-  if (remainingSeconds <= 60) return 'in 1 minute';
-  if (remainingSeconds < 60 * 60) {
-    final minutes = math.max(1, (remainingSeconds / 60).ceil());
-    return 'in $minutes minute${minutes == 1 ? '' : 's'}';
-  }
-  if (remainingSeconds < 60 * 60 * 24) {
-    final hours = math.max(1, (remainingSeconds / (60 * 60)).ceil());
-    return 'in $hours hour${hours == 1 ? '' : 's'}';
-  }
-  final days = math.max(1, (remainingSeconds / (60 * 60 * 24)).ceil());
-  return 'in $days day${days == 1 ? '' : 's'}';
+String formatCompactRemaining(int remainingSeconds) {
+  final l10n = appL10n;
+  if (remainingSeconds <= 0) return l10n.ephemeralCleanupDue;
+  final (unit, count) = _ttlParts(remainingSeconds, keepSeconds: false);
+  return switch (unit) {
+    _TtlUnit.second || _TtlUnit.minute => l10n.ephemeralLeftMinutes(count),
+    _TtlUnit.hour => l10n.ephemeralLeftHours(count),
+    _TtlUnit.day => l10n.ephemeralLeftDays(count),
+  };
+}
+
+String _remainingTooltip(int remainingSeconds, String deadline) {
+  final l10n = appL10n;
+  final (unit, count) = _ttlParts(remainingSeconds, keepSeconds: false);
+  return switch (unit) {
+    _TtlUnit.second ||
+    _TtlUnit.minute => l10n.ephemeralTooltipInMinutes(count, deadline),
+    _TtlUnit.hour => l10n.ephemeralTooltipInHours(count, deadline),
+    _TtlUnit.day => l10n.ephemeralTooltipInDays(count, deadline),
+  };
 }
 
 String formatCompactTtl(int ttlSeconds) {
-  if (ttlSeconds < 60) return '${math.max(1, ttlSeconds)}s TTL';
-  if (ttlSeconds < 60 * 60) {
-    return '${math.max(1, (ttlSeconds / 60).ceil())}m TTL';
-  }
-  if (ttlSeconds < 60 * 60 * 24) {
-    return '${math.max(1, (ttlSeconds / (60 * 60)).ceil())}h TTL';
-  }
-  return '${math.max(1, (ttlSeconds / (60 * 60 * 24)).ceil())}d TTL';
+  final l10n = appL10n;
+  final (unit, count) = _ttlParts(ttlSeconds, keepSeconds: true);
+  return switch (unit) {
+    _TtlUnit.second => l10n.ephemeralTtlSeconds(count),
+    _TtlUnit.minute => l10n.ephemeralTtlMinutes(count),
+    _TtlUnit.hour => l10n.ephemeralTtlHours(count),
+    _TtlUnit.day => l10n.ephemeralTtlDays(count),
+  };
 }
 
-String formatVerboseTtl(int ttlSeconds) {
-  if (ttlSeconds < 60) {
-    final seconds = math.max(1, ttlSeconds);
-    return '$seconds second${seconds == 1 ? '' : 's'}';
-  }
-  if (ttlSeconds < 60 * 60) {
-    final minutes = math.max(1, (ttlSeconds / 60).ceil());
-    return '$minutes minute${minutes == 1 ? '' : 's'}';
-  }
-  if (ttlSeconds < 60 * 60 * 24) {
-    final hours = math.max(1, (ttlSeconds / (60 * 60)).ceil());
-    return '$hours hour${hours == 1 ? '' : 's'}';
-  }
-  final days = math.max(1, (ttlSeconds / (60 * 60 * 24)).ceil());
-  return '$days day${days == 1 ? '' : 's'}';
+String _ttlTooltip(int ttlSeconds) {
+  final l10n = appL10n;
+  final (unit, count) = _ttlParts(ttlSeconds, keepSeconds: true);
+  return switch (unit) {
+    _TtlUnit.second => l10n.ephemeralTooltipAfterSeconds(count),
+    _TtlUnit.minute => l10n.ephemeralTooltipAfterMinutes(count),
+    _TtlUnit.hour => l10n.ephemeralTooltipAfterHours(count),
+    _TtlUnit.day => l10n.ephemeralTooltipAfterDays(count),
+  };
 }
 
 String formatAbsoluteDeadline(DateTime deadline) {
-  const months = [
-    'Jan',
-    'Feb',
-    'Mar',
-    'Apr',
-    'May',
-    'Jun',
-    'Jul',
-    'Aug',
-    'Sep',
-    'Oct',
-    'Nov',
-    'Dec',
-  ];
   final local = deadline.toLocal();
   final hour = local.hour.toString().padLeft(2, '0');
   final minute = local.minute.toString().padLeft(2, '0');
-  return '${months[local.month - 1]} ${local.day}, $hour:$minute';
+  return appL10n.ephemeralDeadline(
+    DateFormat.MMMd().format(local),
+    '$hour:$minute',
+  );
 }

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/l10n/l10n.dart';
 import 'channel.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
@@ -26,7 +27,7 @@ void openChannelLink({
   if (targetChannel == null) {
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Group could not be opened')));
+    ).showSnackBar(SnackBar(content: Text(context.l10n.channelOpenGroupError)));
     return;
   }
 

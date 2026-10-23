@@ -121,7 +121,7 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                   enableSuggestions: false,
                   textInputAction: TextInputAction.search,
                   decoration: InputDecoration(
-                    hintText: 'Search groups',
+                    hintText: context.l10n.channelFindGroupsSearchHint,
                     prefixIcon: Icon(
                       LucideIcons.search,
                       size: 18,
@@ -150,12 +150,14 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                     color: context.colors.primary,
                   ),
                 ),
-                title: const Text('New group'),
+                title: Text(context.l10n.channelNewGroup),
                 onTap: () =>
                     Navigator.of(context).pop(_FindGroupsAction.newGroup),
               ),
             ),
-            SliverToBoxAdapter(child: sectionHeader('mine', 'My groups')),
+            SliverToBoxAdapter(
+              child: sectionHeader('mine', context.l10n.channelFindGroupsMine),
+            ),
             if (all == null && channelsAsync.isLoading)
               const SliverToBoxAdapter(
                 child: Padding(
@@ -168,8 +170,8 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                 child: note(
                   'find-groups-mine-empty',
                   query.isEmpty
-                      ? 'You’re not in any groups yet.'
-                      : 'None of your groups match.',
+                      ? context.l10n.channelFindGroupsMineEmpty
+                      : context.l10n.channelFindGroupsMineNoMatch,
                 ),
               )
             else
@@ -190,12 +192,17 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                   );
                 },
               ),
-            SliverToBoxAdapter(child: sectionHeader('public', 'Public groups')),
+            SliverToBoxAdapter(
+              child: sectionHeader(
+                'public',
+                context.l10n.channelFindGroupsPublic,
+              ),
+            ),
             if (!searchesPublic)
               SliverToBoxAdapter(
                 child: note(
                   'find-groups-public-hint',
-                  'Type 2 or more letters to find public groups.',
+                  context.l10n.channelFindGroupsPublicHint,
                 ),
               )
             else if (publicIsLoading && publicGroups == null)
@@ -212,7 +219,7 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                   child: Column(
                     children: [
                       Text(
-                        'Couldn’t load public groups.',
+                        context.l10n.channelFindGroupsPublicError,
                         textAlign: TextAlign.center,
                         style: mutedStyle,
                       ),
@@ -220,7 +227,7 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
                       TextButton(
                         key: const Key('browse-channels-retry'),
                         onPressed: () => retry.value++,
-                        child: const Text('Try again'),
+                        child: Text(context.l10n.commonTryAgain),
                       ),
                     ],
                   ),
@@ -230,7 +237,7 @@ class _BrowseChannelsSheet extends HookConsumerWidget {
               SliverToBoxAdapter(
                 child: note(
                   'find-groups-public-empty',
-                  'No public groups match.',
+                  context.l10n.channelFindGroupsPublicNoMatch,
                 ),
               )
             else
@@ -272,7 +279,7 @@ class _PublicGroupTile extends HookConsumerWidget {
         if (context.mounted) navigator.pop(channel);
       } catch (_) {
         if (context.mounted) {
-          actionError.value = 'Couldn’t join group. Try again.';
+          actionError.value = context.l10n.channelJoinGroupError;
         }
       } finally {
         if (context.mounted) isJoining.value = false;
@@ -295,10 +302,10 @@ class _PublicGroupTile extends HookConsumerWidget {
             onPressed: isJoining.value ? null : () => unawaited(join()),
             child: Text(
               group.isMember
-                  ? 'Open'
+                  ? context.l10n.channelFindGroupsOpen
                   : isJoining.value
-                  ? 'Joining…'
-                  : 'Join',
+                  ? context.l10n.channelFindGroupsJoining
+                  : context.l10n.channelFindGroupsJoin,
             ),
           ),
         ),

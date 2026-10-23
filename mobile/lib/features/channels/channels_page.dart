@@ -16,6 +16,7 @@ import '../../shared/auth/default_community.dart';
 import '../../shared/community/add_community_route.dart';
 import '../../shared/community/community_icon_provider.dart';
 import '../../shared/community/community_removal.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_brand_logo.dart';
@@ -348,7 +349,7 @@ class ChannelsPage extends HookConsumerWidget {
                 key: const Key('channels-header-back'),
                 onPressed: () => Navigator.of(context).maybePop(),
                 icon: const Icon(LucideIcons.chevronLeft),
-                tooltip: 'Back',
+                tooltip: context.l10n.commonBack,
               )
             : hasBuiltInServer
             ? const AppBrandLogo(

@@ -9,6 +9,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 import '../../shared/devices/agent_badge_widgets.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
@@ -1323,7 +1324,7 @@ class ThreadDetailPage extends HookConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('thread-ios-glass-back'),
                 icon: IosGlassNavigationIcon.back,
-                semanticLabel: 'Back',
+                semanticLabel: context.l10n.commonBack,
                 onPressed: () => Navigator.of(context).maybePop(),
                 width: iosGlassChannelHeaderLeadingWidth,
                 buttonCenterX: iosGlassChannelHeaderButtonCenterX,
@@ -1338,7 +1339,9 @@ class ThreadDetailPage extends HookConsumerWidget {
                 : 0,
           ),
           child: Text(
-            threadName == null || threadName.isEmpty ? 'Thread' : threadName,
+            threadName == null || threadName.isEmpty
+                ? context.l10n.threadTitleFallback
+                : threadName,
             key: const ValueKey('thread-app-bar-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1353,7 +1356,7 @@ class ThreadDetailPage extends HookConsumerWidget {
             ),
           if (isMember && !isArchived && !liveDeletionHidesHead)
             IconButton(
-              tooltip: 'Edit thread name',
+              tooltip: context.l10n.threadEditName,
               icon: const Icon(Icons.edit_outlined),
               onPressed: () => showThreadNameEditor(context, nameKey),
             ),
@@ -1495,7 +1498,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                           focusNode: composerFocusNode,
                           onFocusRestorerChanged: (restoreFocus) =>
                               restoreComposerFocus.value = restoreFocus,
-                          hintText: 'Reply in thread\u2026',
+                          hintText: context.l10n.threadComposerHint,
                           threadHeadId: threadHead.id,
                           rootId: effectiveRootId,
                           threadRootTags: threadHead.tags,

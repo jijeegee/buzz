@@ -76,7 +76,7 @@ class _UploadProgressPill extends HookConsumerWidget {
     final percentage = (clampedProgress * 100).round();
     return Semantics(
       liveRegion: true,
-      label: 'Uploading $percentage%',
+      label: context.l10n.composeUploadingPercent(percentage),
       child: SizedBox(
         key: const ValueKey('compose-upload-progress'),
         width: 300,
@@ -120,7 +120,7 @@ class _UploadProgressPill extends HookConsumerWidget {
                     children: [
                       Expanded(
                         child: Text(
-                          'Uploading',
+                          context.l10n.composeUploading,
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: context.textTheme.labelMedium?.copyWith(
@@ -172,7 +172,7 @@ class _UploadProgressPill extends HookConsumerWidget {
                                   vertical: Grid.quarter,
                                 ),
                                 child: Text(
-                                  'Cancel',
+                                  context.l10n.commonCancel,
                                   style: context.textTheme.labelMedium
                                       ?.copyWith(
                                         color: context.colors.onSurface,

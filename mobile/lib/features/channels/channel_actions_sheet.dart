@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/clipboard_utils.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/relay/relay_provider.dart';
@@ -211,7 +212,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.folderInput),
-                  title: const Text('Move to section…'),
+                  title: Text(context.l10n.channelMoveToSection),
                   onTap: () async {
                     final pageContext = Navigator.of(
                       context,
@@ -231,8 +232,12 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 leading: Icon(isMuted ? LucideIcons.bell : LucideIcons.bellOff),
                 title: Text(
                   isMuted
-                      ? 'Unmute ${channel.isPersonChat ? 'chat' : 'group'}'
-                      : 'Mute ${channel.isPersonChat ? 'chat' : 'group'}',
+                      ? (channel.isPersonChat
+                            ? context.l10n.channelUnmuteChat
+                            : context.l10n.channelUnmuteGroup)
+                      : (channel.isPersonChat
+                            ? context.l10n.channelMuteChat
+                            : context.l10n.channelMuteGroup),
                 ),
                 onTap: () {
                   close();
@@ -247,7 +252,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   key: const ValueKey('dm-add-people'),
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.userPlus),
-                  title: const Text('Add people'),
+                  title: Text(context.l10n.channelAddPeople),
                   onTap: () {
                     final pageContext = Navigator.of(
                       context,
@@ -268,7 +273,7 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   key: const ValueKey('chat-info-open'),
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.info),
-                  title: const Text('Chat info'),
+                  title: Text(context.l10n.channelChatInfo),
                   onTap: () async {
                     final left = await showChatInfoSheet(
                       context: context,
@@ -291,11 +296,11 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.settings),
-                  title: const Text('Manage group'),
+                  title: Text(context.l10n.channelManageGroup),
                   onTap: () async {
                     final shouldClose = await showKuzzModalBottomSheet<bool>(
                       context: context,
-                      title: 'Manage group',
+                      title: context.l10n.channelManageGroup,
                       isScrollControlled: true,
                       showDragHandle: true,
                       constraints: BoxConstraints(
@@ -319,14 +324,19 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 ListTile(
                   contentPadding: EdgeInsets.zero,
                   leading: const Icon(LucideIcons.copy),
-                  title: Text('Copy ${channel.isDm ? 'chat' : 'group'} name'),
+                  title: Text(
+                    channel.isDm
+                        ? context.l10n.channelCopyChatName
+                        : context.l10n.channelCopyGroupName,
+                  ),
                   onTap: () {
                     close();
                     copyToClipboard(
                       context,
                       currentChannel.name,
-                      message:
-                          '${channel.isDm ? 'Chat' : 'Group'} name copied to clipboard',
+                      message: channel.isDm
+                          ? context.l10n.channelChatNameCopied
+                          : context.l10n.channelGroupNameCopied,
                     );
                   },
                 ),
@@ -334,16 +344,18 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 contentPadding: EdgeInsets.zero,
                 leading: const Icon(LucideIcons.fingerprint),
                 title: Text(
-                  'Copy ${channel.isPersonChat ? 'chat' : 'group'} ID',
+                  channel.isPersonChat
+                      ? context.l10n.channelCopyChatId
+                      : context.l10n.channelCopyGroupId,
                 ),
                 onTap: () {
                   close();
                   copyToClipboard(
                     context,
                     channel.id,
-                    message:
-                        '${channel.isPersonChat ? 'Chat' : 'Group'} ID copied '
-                        'to clipboard',
+                    message: channel.isPersonChat
+                        ? context.l10n.channelChatIdCopied
+                        : context.l10n.channelGroupIdCopied,
                   );
                 },
               ),
@@ -351,15 +363,15 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 const SheetDivider(),
                 _ActionTile(
                   icon: LucideIcons.logOut,
-                  label: 'Leave chat',
+                  label: context.l10n.channelLeaveChat,
                   destructive: true,
                   onTap: () => _confirmAndRun(
                     context,
                     ref,
-                    title: 'Leave this chat?',
-                    body: 'You’ll stop receiving messages from it.',
-                    confirmLabel: 'Leave',
-                    noun: 'chat',
+                    title: context.l10n.channelLeaveChatTitle,
+                    body: context.l10n.channelLeaveChatBody,
+                    confirmLabel: context.l10n.channelLeave,
+                    errorMessage: context.l10n.channelLeaveChatError,
                     action: () => ref
                         .read(channelActionsProvider)
                         .leaveChannel(channel.id),
@@ -371,45 +383,52 @@ class ChannelActionsSheet extends HookConsumerWidget {
                 if (channel.isMember && !channel.isArchived)
                   _ActionTile(
                     icon: LucideIcons.logOut,
-                    label: 'Leave group',
+                    label: context.l10n.channelLeaveGroup,
                     destructive: true,
                     onTap: () => _confirmAndRun(
                       context,
                       ref,
-                      title: 'Leave ${currentChannel.name}?',
-                      body: 'You’ll stop receiving messages from this group.',
-                      confirmLabel: 'Leave',
+                      title: context.l10n.channelLeaveGroupTitle(
+                        currentChannel.name,
+                      ),
+                      body: context.l10n.channelLeaveGroupBody,
+                      confirmLabel: context.l10n.channelLeave,
+                      errorMessage: context.l10n.channelLeaveGroupError,
                       action: () => ref
                           .read(channelActionsProvider)
                           .leaveChannel(channel.id),
                     ),
                   ),
                 if (lifecycleCapabilitiesLoading)
-                  const ListTile(
+                  ListTile(
                     enabled: false,
                     leading: KuzzLoadingIndicator(
                       size: 20,
-                      semanticLabel: 'Loading group actions',
+                      semanticLabel:
+                          context.l10n.channelGroupActionsLoadingLabel,
                     ),
-                    title: Text('Loading group actions…'),
+                    title: Text(context.l10n.channelGroupActionsLoading),
                   )
                 else if (lifecycleCapabilitiesUnavailable)
-                  const ListTile(
+                  ListTile(
                     enabled: false,
-                    leading: Icon(LucideIcons.triangleAlert),
-                    title: Text('Group actions unavailable'),
+                    leading: const Icon(LucideIcons.triangleAlert),
+                    title: Text(context.l10n.channelGroupActionsUnavailable),
                   )
                 else ...[
                   if (canArchive)
                     _ActionTile(
                       icon: LucideIcons.archive,
-                      label: 'Archive group',
+                      label: context.l10n.channelArchiveGroup,
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Archive ${currentChannel.name}?',
-                        body: 'The group will become read-only.',
-                        confirmLabel: 'Archive',
+                        title: context.l10n.channelArchiveGroupTitle(
+                          currentChannel.name,
+                        ),
+                        body: context.l10n.channelArchiveGroupBody,
+                        confirmLabel: context.l10n.channelArchive,
+                        errorMessage: context.l10n.channelArchiveGroupError,
                         action: () => ref
                             .read(channelActionsProvider)
                             .archiveChannel(channel.id),
@@ -418,13 +437,16 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   if (canUnarchive)
                     _ActionTile(
                       icon: LucideIcons.archiveRestore,
-                      label: 'Unarchive group',
+                      label: context.l10n.channelUnarchiveGroup,
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Unarchive ${currentChannel.name}?',
-                        body: 'The group will become active again.',
-                        confirmLabel: 'Unarchive',
+                        title: context.l10n.channelUnarchiveGroupTitle(
+                          currentChannel.name,
+                        ),
+                        body: context.l10n.channelUnarchiveGroupBody,
+                        confirmLabel: context.l10n.channelUnarchive,
+                        errorMessage: context.l10n.channelUnarchiveGroupError,
                         action: () => ref
                             .read(channelActionsProvider)
                             .unarchiveChannel(channel.id),
@@ -433,15 +455,17 @@ class ChannelActionsSheet extends HookConsumerWidget {
                   if (canDelete)
                     _ActionTile(
                       icon: LucideIcons.trash2,
-                      label: 'Delete group',
+                      label: context.l10n.channelDeleteGroup,
                       destructive: true,
                       onTap: () => _confirmAndRun(
                         context,
                         ref,
-                        title: 'Delete ${currentChannel.name}?',
-                        body:
-                            'This permanently deletes the group and cannot be undone.',
-                        confirmLabel: 'Delete',
+                        title: context.l10n.channelDeleteGroupTitle(
+                          currentChannel.name,
+                        ),
+                        body: context.l10n.channelDeleteGroupBody,
+                        confirmLabel: context.l10n.commonDelete,
+                        errorMessage: context.l10n.channelDeleteGroupError,
                         action: () => ref
                             .read(channelActionsProvider)
                             .deleteChannel(channel.id),
@@ -476,7 +500,9 @@ class _ChannelQuickActionsRow extends StatelessWidget {
       Expanded(
         child: _ChannelQuickAction(
           icon: isStarred ? LucideIcons.pinOff : LucideIcons.pin,
-          label: isStarred ? 'Unpin' : 'Pin',
+          label: isStarred
+              ? context.l10n.channelUnpin
+              : context.l10n.channelPin,
           onTap: onToggleStar,
         ),
       ),
@@ -484,7 +510,9 @@ class _ChannelQuickActionsRow extends StatelessWidget {
       Expanded(
         child: _ChannelQuickAction(
           icon: isUnread ? LucideIcons.checkCheck : LucideIcons.circleDot,
-          label: isUnread ? 'Mark Read' : 'Mark Unread',
+          label: isUnread
+              ? context.l10n.channelMarkRead
+              : context.l10n.channelMarkUnread,
           onTap: onToggleRead,
         ),
       ),
@@ -576,8 +604,8 @@ Future<void> _confirmAndRun(
   required String title,
   required String body,
   required String confirmLabel,
+  required String errorMessage,
   required Future<void> Function() action,
-  String noun = 'group',
 }) async {
   final pageContext = Navigator.of(sheetContext, rootNavigator: true).context;
   final confirmed = await showKuzzDialog<bool>(
@@ -588,7 +616,7 @@ Future<void> _confirmAndRun(
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(false),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () => Navigator.of(dialogContext).pop(true),
@@ -603,13 +631,9 @@ Future<void> _confirmAndRun(
     if (pageContext.mounted) Navigator.of(pageContext).pop(true);
   } catch (error) {
     if (!pageContext.mounted) return;
-    ScaffoldMessenger.of(pageContext).showSnackBar(
-      SnackBar(
-        content: Text(
-          'Couldn’t ${confirmLabel.toLowerCase()} $noun. Try again.',
-        ),
-      ),
-    );
+    ScaffoldMessenger.of(
+      pageContext,
+    ).showSnackBar(SnackBar(content: Text(errorMessage)));
   }
 }
 
@@ -656,7 +680,7 @@ Future<void> _showMoveSectionSheet(
                 ),
               ListTile(
                 leading: const Icon(LucideIcons.folderPlus),
-                title: const Text('New section…'),
+                title: Text(sheetContext.l10n.channelNewSection),
                 onTap: () async {
                   Navigator.of(sheetContext).pop();
                   final name = await _showSectionNameDialog(context);
@@ -677,7 +701,7 @@ Future<void> _showMoveSectionSheet(
               if (sectionId != null)
                 ListTile(
                   leading: const Icon(LucideIcons.folderMinus),
-                  title: const Text('Remove from section'),
+                  title: Text(sheetContext.l10n.channelRemoveFromSection),
                   onTap: () {
                     Navigator.of(sheetContext).pop();
                     ref
@@ -698,17 +722,17 @@ Future<String?> _showSectionNameDialog(BuildContext context) async {
   final result = await showKuzzDialog<String>(
     context: context,
     builder: (dialogContext) => AlertDialog(
-      title: const Text('New Section'),
+      title: Text(dialogContext.l10n.channelNewSectionTitle),
       content: TextField(controller: controller, autofocus: true),
       actions: [
         TextButton(
           onPressed: () => Navigator.of(dialogContext).pop(),
-          child: const Text('Cancel'),
+          child: Text(dialogContext.l10n.commonCancel),
         ),
         FilledButton(
           onPressed: () =>
               Navigator.of(dialogContext).pop(controller.text.trim()),
-          child: const Text('Create'),
+          child: Text(dialogContext.l10n.channelNewSectionCreate),
         ),
       ],
     ),

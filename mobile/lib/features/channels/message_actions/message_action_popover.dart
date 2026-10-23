@@ -171,7 +171,7 @@ Future<bool> _showMessageActionsPopover({
     String? selectedActionId;
     final dialogRoute = RawDialogRoute<String>(
       barrierDismissible: true,
-      barrierLabel: 'Dismiss message actions',
+      barrierLabel: context.l10n.messageActionsDismiss,
       barrierColor: Colors.transparent,
       transitionDuration: reduceMotion
           ? Duration.zero
@@ -246,7 +246,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'reply',
-          title: 'Reply in thread',
+          title: context.l10n.messageReplyInThread,
           icon: LucideIcons.messageSquareReply,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -271,7 +271,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'quote',
-          title: 'Quote',
+          title: context.l10n.messageQuote,
           icon: LucideIcons.quote,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -284,7 +284,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'copyLink',
-        title: 'Copy link',
+        title: context.l10n.messageCopyLink,
         icon: LucideIcons.link2,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () {
@@ -292,7 +292,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
           copyToClipboard(
             context,
             messageLinkFor(message: message, channelId: channelId),
-            message: 'Message link copied',
+            message: context.l10n.messageLinkCopied,
           );
         },
       ),
@@ -301,7 +301,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'linkGoal',
-          title: 'Link to goal',
+          title: context.l10n.messageLinkToGoal,
           icon: LucideIcons.target,
           group: _PopoverMessageActionGroup.utility,
           onSelected: () {
@@ -320,7 +320,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: 'remind',
-          title: 'Remind me',
+          title: context.l10n.messageRemindMe,
           icon: LucideIcons.clock,
           group: _PopoverMessageActionGroup.utility,
           onSelected: () {
@@ -354,7 +354,9 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
       actions.add(
         _PopoverMessageAction(
           id: unread ? 'markRead' : 'markUnread',
-          title: unread ? 'Mark read' : 'Mark unread',
+          title: unread
+              ? context.l10n.messageMarkRead
+              : context.l10n.messageMarkUnread,
           icon: unread ? LucideIcons.mailCheck : LucideIcons.mailOpen,
           group: _PopoverMessageActionGroup.primary,
           onSelected: () {
@@ -380,7 +382,9 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: following ? 'unfollowThread' : 'followThread',
-        title: following ? 'Unfollow thread' : 'Follow thread',
+        title: following
+            ? context.l10n.messageUnfollowThread
+            : context.l10n.messageFollowThread,
         icon: following ? LucideIcons.bellOff : LucideIcons.bellRing,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () {
@@ -396,7 +400,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'copyText',
-        title: 'Copy text',
+        title: context.l10n.messageCopyText,
         icon: LucideIcons.copy,
         group: _PopoverMessageActionGroup.utility,
         onSelected: () =>
@@ -409,7 +413,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'edit',
-        title: 'Edit message',
+        title: context.l10n.messageEdit,
         icon: LucideIcons.pencil,
         group: _PopoverMessageActionGroup.primary,
         onSelected: () {
@@ -426,7 +430,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'delete',
-        title: 'Delete message',
+        title: context.l10n.messageDelete,
         icon: LucideIcons.trash2,
         group: _PopoverMessageActionGroup.destructive,
         destructive: true,
@@ -447,7 +451,7 @@ List<_PopoverMessageAction> _buildPopoverMessageActions({
     actions.add(
       _PopoverMessageAction(
         id: 'report',
-        title: 'Report message',
+        title: context.l10n.messageReport,
         icon: LucideIcons.flag,
         group: _PopoverMessageActionGroup.destructive,
         destructive: true,

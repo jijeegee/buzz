@@ -38,9 +38,11 @@ class _SystemMessageRow extends HookConsumerWidget {
     );
     final roomNoun = isChat ? 'chat' : 'group';
     final messageStyleAction = switch (systemEvent.type) {
-      SystemEventType.channelCreated => 'created this $roomNoun',
-      SystemEventType.huddleStarted => 'started a huddle',
-      SystemEventType.huddleEnded => 'ended the huddle',
+      SystemEventType.channelCreated => context.l10n.systemActionCreatedRoom(
+        roomNoun,
+      ),
+      SystemEventType.huddleStarted => context.l10n.systemActionHuddleStarted,
+      SystemEventType.huddleEnded => context.l10n.systemActionHuddleEnded,
       _ => null,
     };
     final messageStyleActor = messageStyleAction == null
@@ -52,7 +54,7 @@ class _SystemMessageRow extends HookConsumerWidget {
 
     final identityNames = ref.watch(channelIdentityNamesProvider(channelId));
     String resolveLabel(String? pubkey) {
-      if (pubkey == null) return 'Someone';
+      if (pubkey == null) return context.l10n.systemSomeone;
       if (userCache[pubkey.toLowerCase()] == null) {
         ref.read(userCacheProvider.notifier).get(pubkey.toLowerCase());
       }
@@ -347,16 +349,20 @@ class _MembershipSystemMessageContent extends StatelessWidget {
     final actionSpans = <InlineSpan>[
       TextSpan(
         text: event.isSelfJoin
-            ? 'joined the $roomNoun'
+            ? context.l10n.systemActionJoinedRoom(roomNoun)
             // No "was": the name renders on the line above via
             // MessageAuthorMeta, so this reads as a status line rather than a
             // sentence continuing across the metadata row. Matches desktop's
             // SystemMessageRow. `SystemEvent.describe` keeps "was added by"
             // because it builds subject and predicate into one string.
-            : 'added by ${resolveLabel(event.actorPubkey)}',
+            : context.l10n.systemActionAddedBy(resolveLabel(event.actorPubkey)),
       ),
       if (additionalTargets.isNotEmpty)
-        TextSpan(text: event.isSelfJoin ? ' along with ' : ', along with '),
+        TextSpan(
+          text: event.isSelfJoin
+              ? context.l10n.systemAlongWith
+              : context.l10n.systemAlongWithAfterComma,
+        ),
       ..._memberNameSpans(
         context,
         visibleTargets: visibleTargets,
@@ -475,8 +481,10 @@ List<InlineSpan> _memberNameSpans(
     final separator = index == 0
         ? ''
         : isLast && hiddenTargets.isEmpty
-        ? (visibleTargets.length == 2 ? ' and ' : ', and ')
-        : ', ';
+        ? (visibleTargets.length == 2
+              ? context.l10n.systemListAndTwo
+              : context.l10n.systemListAndLast)
+        : context.l10n.systemListSeparator;
     spans.add(
       TextSpan(text: '$separator${resolveLabel(visibleTargets[index])}'),
     );
@@ -485,7 +493,7 @@ List<InlineSpan> _memberNameSpans(
   if (hiddenTargets.isNotEmpty) {
     final hiddenLabels = hiddenTargets.map(resolveLabel).toList();
     spans
-      ..add(const TextSpan(text: ', and '))
+      ..add(TextSpan(text: context.l10n.systemListAndLast))
       ..add(
         WidgetSpan(
           alignment: PlaceholderAlignment.baseline,
@@ -494,7 +502,7 @@ List<InlineSpan> _memberNameSpans(
             message: hiddenLabels.join('\n'),
             triggerMode: TooltipTriggerMode.tap,
             child: Text(
-              '${hiddenTargets.length} others',
+              context.l10n.systemOthersCount(hiddenTargets.length),
               key: const Key('membership-overflow'),
               style: style?.copyWith(
                 decoration: TextDecoration.underline,
@@ -662,7 +670,7 @@ class _ThreadSummaryRow extends ConsumerWidget {
                   children: [
                     TextSpan(
                       text:
-                          '${name != null && name.isNotEmpty ? '$name · ' : ''}${summary.isCountPending ? 'Replies' : '${summary.replyCount}${summary.isLowerBound ? '+' : ''} ${summary.replyCount == 1 ? 'reply' : 'replies'}'}',
+                          '${name != null && name.isNotEmpty ? '$name · ' : ''}${formatThreadSummaryReplyCount(context.l10n, isCountPending: summary.isCountPending, replyCount: summary.replyCount, isLowerBound: summary.isLowerBound)}',
                       style: replyPreviewTextStyle.copyWith(
                         color: context.colors.primary,
                       ),
@@ -677,8 +685,9 @@ class _ThreadSummaryRow extends ConsumerWidget {
                         ),
                       ),
                       TextSpan(
-                        text:
-                            'last reply ${formatThreadSummaryLastReplyTime(lastReplyAt)}',
+                        text: context.l10n.threadSummaryLastReply(
+                          formatThreadSummaryLastReplyTime(lastReplyAt),
+                        ),
                         style: replyPreviewTextStyle.copyWith(
                           color: context.colors.onSurfaceVariant,
                         ),

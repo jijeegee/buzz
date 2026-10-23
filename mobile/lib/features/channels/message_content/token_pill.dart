@@ -48,8 +48,8 @@ class _ChannelLinkMd extends InlineMd {
             ),
       interactive: opensChannel,
       semanticLabel: opensChannel
-          ? 'Open group $channelName'
-          : 'Group $channelName',
+          ? context.l10n.messageLinkOpenGroup(channelName)
+          : context.l10n.composeLinkGroupLabel(channelName),
       text: channelName,
       textStyle: config.style?.copyWith(fontWeight: FontWeight.w500),
     );

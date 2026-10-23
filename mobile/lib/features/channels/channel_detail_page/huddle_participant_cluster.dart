@@ -289,8 +289,8 @@ class _HuddleParticipantOverflow extends StatelessWidget {
           child: Transform.scale(scale: 0.95 + value * 0.05, child: child),
         ),
         child: Semantics(
-          label: '$count more participants',
-          hint: 'Tap to show participant list',
+          label: context.l10n.huddleMoreParticipants(count),
+          hint: context.l10n.huddleShowParticipantsHint,
           button: true,
           onTap: onTap,
           child: ExcludeSemantics(

@@ -178,7 +178,7 @@ class _SliverChannelsList extends HookConsumerWidget {
             ListTile(
               title: Text(error),
               trailing: IconButton(
-                tooltip: 'Retry personal pins',
+                tooltip: context.l10n.channelListRetryPins,
                 icon: const Icon(LucideIcons.refreshCw),
                 onPressed: () => ref.invalidate(channelStarsProvider),
               ),
@@ -187,7 +187,7 @@ class _SliverChannelsList extends HookConsumerWidget {
             const _EmptyState()
           else
             _ChannelSection(
-              title: 'Chats',
+              title: context.l10n.channelListChatsSection,
               icon: LucideIcons.messagesSquare,
               showTopDivider: false,
               expanded: chatsExpanded.value,
@@ -196,7 +196,7 @@ class _SliverChannelsList extends HookConsumerWidget {
               unreadChannelIds: unreadChannelIds,
               mutedChannelIds: mutedChannelIds,
               currentPubkey: currentPubkey,
-              emptyLabel: 'No chats yet',
+              emptyLabel: context.l10n.channelListNoChats,
               onSelectChannel: onSelectChannel,
             ),
         ],

@@ -47,11 +47,11 @@ class _MentionSuggestions extends StatelessWidget {
                 dense: true,
                 visualDensity: VisualDensity.compact,
                 title: Text(
-                  'Automatically mention agents',
+                  context.l10n.composeAutoMentionAgents,
                   style: context.textTheme.titleSmall,
                 ),
                 subtitle: Text(
-                  'Address selected agents in group and thread replies',
+                  context.l10n.composeAutoMentionAgentsBody,
                   style: context.textTheme.labelSmall?.copyWith(
                     color: context.colors.onSurfaceVariant,
                   ),
@@ -91,8 +91,8 @@ class _MentionSuggestions extends StatelessWidget {
                         'mention-always-address-${candidate.pubkey}',
                       ),
                       tooltip: pinned
-                          ? "Don't automatically mention here"
-                          : 'Automatically mention',
+                          ? context.l10n.composeAutoMentionOff
+                          : context.l10n.composeAutoMentionOn,
                       isSelected: pinned,
                       visualDensity: VisualDensity.compact,
                       color: pinned ? context.colors.primary : null,
@@ -201,7 +201,7 @@ abstract final class _MentionSuggestionInfo {
             color: context.colors.onSurfaceVariant,
           ),
           const SizedBox(width: Grid.half),
-          Text('agent', style: style),
+          Text(context.l10n.composeMentionAgentTag, style: style),
         ] else if (isAdmin)
           Container(
             padding: const EdgeInsets.symmetric(
@@ -213,7 +213,7 @@ abstract final class _MentionSuggestionInfo {
               borderRadius: BorderRadius.circular(Radii.sm),
             ),
             child: Text(
-              'admin',
+              context.l10n.composeMentionAdminTag,
               style: style?.copyWith(
                 color: context.colors.onSecondaryContainer,
               ),

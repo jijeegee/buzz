@@ -50,16 +50,16 @@ Future<void> _presentIosEmojiPicker({
           builder: (sheetContext) {
             loadingSheetContext = sheetContext;
             if (!loadingSheetBuilt.isCompleted) loadingSheetBuilt.complete();
-            return const SizedBox(
-              key: Key('ios-emoji-picker-palette-loading'),
+            return SizedBox(
+              key: const Key('ios-emoji-picker-palette-loading'),
               height: 180,
               child: Center(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
                   children: [
-                    CircularProgressIndicator(),
-                    SizedBox(height: Grid.sm),
-                    Text('Loading emoji…'),
+                    const CircularProgressIndicator(),
+                    const SizedBox(height: Grid.sm),
+                    Text(sheetContext.l10n.emojiLoading),
                   ],
                 ),
               ),

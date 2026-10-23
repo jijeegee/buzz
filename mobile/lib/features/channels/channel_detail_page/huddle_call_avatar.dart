@@ -123,6 +123,7 @@ class _HuddleCallAvatar extends HookConsumerWidget {
       return () => originRegistry.unregister(pubkey, originKey);
     }, [originRegistry, pubkey, originKey]);
     final label = _huddleParticipantLabel(
+      l10n: context.l10n,
       pubkey: pubkey,
       profile: profile,
       fallbackLabel: fallbackLabel,
@@ -133,15 +134,15 @@ class _HuddleCallAvatar extends HookConsumerWidget {
 
     final semanticStates = [
       label,
-      if (showPreparingResponse) 'preparing a response',
-      if (active) 'speaking',
+      if (showPreparingResponse) context.l10n.huddleStatePreparing,
+      if (active) context.l10n.huddleStateSpeaking,
     ].join(', ');
 
     return SizedBox(
       width: frameSize,
       child: Semantics(
         label: semanticStates,
-        hint: onTap == null ? null : 'Tap to focus participant',
+        hint: onTap == null ? null : context.l10n.huddleFocusParticipantHint,
         button: onTap != null,
         // The outer node excludes descendant semantics, so the child
         // indicator's live region never reaches assistive tech. Promote this
@@ -266,17 +267,18 @@ class _HuddleCallAvatar extends HookConsumerWidget {
 }
 
 String _huddleParticipantLabel({
+  required AppLocalizations l10n,
   required String pubkey,
   required UserProfile? profile,
   required String? fallbackLabel,
   required bool isSelf,
   String? contextualLabel,
 }) {
-  if (isSelf) return 'You';
+  if (isSelf) return l10n.commonYou;
   if (contextualLabel != null) return contextualLabel;
   final profileName = profile?.displayName?.trim();
   final directoryName = fallbackLabel?.trim();
   return (profileName?.isNotEmpty == true ? profileName : null) ??
       (directoryName?.isNotEmpty == true ? directoryName : null) ??
-      (pubkey.isEmpty ? 'Participant' : shortPubkey(pubkey));
+      (pubkey.isEmpty ? l10n.huddleParticipant : shortPubkey(pubkey));
 }

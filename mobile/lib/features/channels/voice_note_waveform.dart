@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../shared/l10n/l10n.dart';
+
 /// Resolves bar width and spacing so a waveform occupies its full width.
 @visibleForTesting
 ({double barWidth, double gap}) voiceNoteWaveformBarLayout({
@@ -84,16 +86,23 @@ class VoiceNoteWaveform extends StatelessWidget {
         void adjust(double delta) =>
             onSeek?.call((progress.clamp(0.0, 1.0) + delta).clamp(0.0, 1.0));
 
+        final l10n = context.l10n;
         return Semantics(
-          label: 'Voice note waveform',
+          label: l10n.voiceNoteWaveform,
           slider: onSeek != null,
-          value: onSeek == null ? null : '${(progress * 100).round()} percent',
+          value: onSeek == null
+              ? null
+              : l10n.voiceNotePercent((progress * 100).round()),
           increasedValue: onSeek == null
               ? null
-              : '${((progress + 0.1).clamp(0.0, 1.0) * 100).round()} percent',
+              : l10n.voiceNotePercent(
+                  ((progress + 0.1).clamp(0.0, 1.0) * 100).round(),
+                ),
           decreasedValue: onSeek == null
               ? null
-              : '${((progress - 0.1).clamp(0.0, 1.0) * 100).round()} percent',
+              : l10n.voiceNotePercent(
+                  ((progress - 0.1).clamp(0.0, 1.0) * 100).round(),
+                ),
           onIncrease: onSeek == null ? null : () => adjust(0.1),
           onDecrease: onSeek == null ? null : () => adjust(-0.1),
           child: GestureDetector(

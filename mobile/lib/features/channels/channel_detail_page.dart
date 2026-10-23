@@ -21,6 +21,7 @@ import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
@@ -931,7 +932,7 @@ class ChannelDetailPage extends HookConsumerWidget {
             ? IosGlassNavigationButton(
                 key: const ValueKey('channel-ios-glass-back'),
                 icon: IosGlassNavigationIcon.back,
-                semanticLabel: 'Back',
+                semanticLabel: context.l10n.commonBack,
                 onPressed: () => Navigator.of(context).maybePop(),
                 width: iosGlassChannelHeaderLeadingWidth,
                 buttonCenterX: iosGlassChannelHeaderButtonCenterX,
@@ -1008,7 +1009,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                       Navigator.of(context).pop();
                     }
                   },
-                  tooltip: 'Group actions',
+                  tooltip: context.l10n.channelGroupActions,
                   icon: const Icon(LucideIcons.ellipsisVertical, size: 22),
                 ),
               ]
@@ -1079,7 +1080,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                               ),
                             ),
                             child: LoadErrorView(
-                              message: 'Failed to load messages',
+                              message: context.l10n.channelLoadMessagesError,
                               onRetry: () => ref.invalidate(
                                 channelMessagesProvider(channel.id),
                               ),

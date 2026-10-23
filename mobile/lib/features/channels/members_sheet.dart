@@ -3,6 +3,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -96,7 +97,11 @@ class MembersSheet extends HookConsumerWidget {
             padding: EdgeInsets.only(top: Grid.xxs, bottom: bottomClearance),
             children: [
               if (people.isNotEmpty) ...[
-                _SectionLabel(label: 'People · ${people.length}'),
+                _SectionLabel(
+                  label: context.l10n.channelMembersPeopleSection(
+                    people.length,
+                  ),
+                ),
                 for (final member in people)
                   _MemberTile(
                     member: member,
@@ -112,7 +117,9 @@ class MembersSheet extends HookConsumerWidget {
               ],
               if (bots.isNotEmpty) ...[
                 const SizedBox(height: Grid.xxs),
-                _SectionLabel(label: 'Agents · ${bots.length}'),
+                _SectionLabel(
+                  label: context.l10n.channelMembersAgentsSection(bots.length),
+                ),
                 for (final bot in bots)
                   _MemberTile(
                     member: bot,
@@ -134,7 +141,7 @@ class MembersSheet extends HookConsumerWidget {
               if (people.isEmpty && bots.isEmpty)
                 Center(
                   child: Text(
-                    'No members found.',
+                    context.l10n.channelMembersNoneFound,
                     style: context.textTheme.bodySmall?.copyWith(
                       color: context.colors.onSurfaceVariant,
                     ),
@@ -142,10 +149,10 @@ class MembersSheet extends HookConsumerWidget {
                 ),
             ],
           ),
-          loading: () => const Center(
+          loading: () => Center(
             child: KuzzLoadingIndicator(
               size: 44,
-              semanticLabel: 'Loading members',
+              semanticLabel: context.l10n.channelMembersLoadingLabel,
             ),
           ),
           error: (error, _) => Center(
@@ -184,11 +191,14 @@ class _SectionLabel extends StatelessWidget {
 
 const _changeableRoles = ['admin', 'member', 'guest'];
 
-String _roleLabel(String role) {
-  if (role == 'bot') return 'Agent';
-  if (role.isEmpty) return 'Member';
-  return '${role[0].toUpperCase()}${role.substring(1)}';
-}
+String _roleLabel(AppLocalizations l10n, String role) => switch (role) {
+  'bot' => l10n.channelRoleAgent,
+  '' || 'member' => l10n.channelRoleMember,
+  'owner' => l10n.channelRoleOwner,
+  'admin' => l10n.channelRoleAdmin,
+  'guest' => l10n.channelRoleGuest,
+  _ => '${role[0].toUpperCase()}${role.substring(1)}',
+};
 
 class _MemberTile extends ConsumerWidget {
   final ChannelMember member;
@@ -218,11 +228,11 @@ class _MemberTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final name = isSelf
-        ? 'You'
+        ? context.l10n.commonYou
         : (profile?.displayName?.trim().isNotEmpty == true
               ? profile!.displayName!.trim()
               : member.labelFor(currentPubkey));
-    final label = _watchContextualLabel(ref);
+    final label = _watchContextualLabel(context, ref);
     // Named members initial from their name; unnamed ones stay keyed to the
     // hex public key so the compact-npub label doesn't render `N` for all.
     final hasName = profile?.displayName?.trim().isNotEmpty == true;
@@ -247,11 +257,11 @@ class _MemberTile extends ConsumerWidget {
                 KuzzLoadingIndicator(
                   size: 14,
                   color: context.appColors.success,
-                  semanticLabel: 'Agent working',
+                  semanticLabel: context.l10n.channelMembersAgentWorkingLabel,
                 ),
                 const SizedBox(width: Grid.half),
                 Text(
-                  'Working\u2026',
+                  context.l10n.channelMembersAgentWorking,
                   style: context.textTheme.bodySmall?.copyWith(
                     color: context.appColors.success,
                     fontWeight: FontWeight.w600,
@@ -269,7 +279,7 @@ class _MemberTile extends ConsumerWidget {
               overflow: TextOverflow.ellipsis,
             )
           : Text(
-              _roleLabel(member.role),
+              _roleLabel(context.l10n, member.role),
               style: context.textTheme.bodySmall?.copyWith(
                 color: context.colors.onSurfaceVariant,
               ),
@@ -290,8 +300,9 @@ class _MemberTile extends ConsumerWidget {
   }
 
   /// 'You' for the viewer; otherwise the channel's contextual label.
-  String _watchContextualLabel(WidgetRef ref) =>
-      isSelf ? 'You' : watchChannelIdentityLabel(ref, channelId, member.pubkey);
+  String _watchContextualLabel(BuildContext context, WidgetRef ref) => isSelf
+      ? context.l10n.commonYou
+      : watchChannelIdentityLabel(ref, channelId, member.pubkey);
 
   void _showMemberActions(
     BuildContext context,
@@ -299,7 +310,7 @@ class _MemberTile extends ConsumerWidget {
     required bool showManagementActions,
   }) {
     final label = isSelf
-        ? 'You'
+        ? context.l10n.commonYou
         : ref
               .read(channelIdentityNamesProvider(channelId))
               .labelFor(member.pubkey);
@@ -320,7 +331,7 @@ class _MemberTile extends ConsumerWidget {
                   size: 18,
                   color: context.colors.primary,
                 ),
-                title: const Text('View activity'),
+                title: Text(context.l10n.channelMembersViewActivity),
                 onTap: () {
                   Navigator.of(sheetContext).pop();
                   WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -353,7 +364,7 @@ class _MemberTile extends ConsumerWidget {
                   color: context.colors.error,
                 ),
                 title: Text(
-                  'Remove from group',
+                  context.l10n.channelMembersRemoveFromGroup,
                   style: TextStyle(color: context.colors.error),
                 ),
                 onTap: () async {
@@ -361,17 +372,19 @@ class _MemberTile extends ConsumerWidget {
                   final confirmed = await showKuzzDialog<bool>(
                     context: context,
                     builder: (context) => AlertDialog(
-                      title: const Text('Remove member'),
-                      content: Text('Remove $label from this group?'),
+                      title: Text(context.l10n.channelMembersRemoveTitle),
+                      content: Text(
+                        context.l10n.channelMembersRemoveBody(label),
+                      ),
                       actions: [
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(false),
-                          child: const Text('Cancel'),
+                          child: Text(context.l10n.commonCancel),
                         ),
                         TextButton(
                           onPressed: () => Navigator.of(context).pop(true),
                           child: Text(
-                            'Remove',
+                            context.l10n.commonRemove,
                             style: TextStyle(color: context.colors.error),
                           ),
                         ),
@@ -413,7 +426,7 @@ class _RoleSelector extends StatelessWidget {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'Role',
+            context.l10n.channelMembersRole,
             style: context.textTheme.labelMedium?.copyWith(
               color: context.colors.onSurfaceVariant,
             ),
@@ -426,7 +439,7 @@ class _RoleSelector extends StatelessWidget {
                 for (final role in _changeableRoles)
                   ButtonSegment<String>(
                     value: role,
-                    label: Text(_roleLabel(role)),
+                    label: Text(_roleLabel(context.l10n, role)),
                   ),
               ],
               selected: hasKnownRole ? {selectedRole} : const <String>{},

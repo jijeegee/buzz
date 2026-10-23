@@ -59,7 +59,7 @@ class _IOSInlinePhotoPicker extends HookWidget {
               SnackBar(
                 content: Text(
                   call.arguments as String? ??
-                      'Unable to prepare the selected photos.',
+                      context.l10n.composePhotosPrepareError,
                 ),
               ),
             );
@@ -104,7 +104,7 @@ class _IOSInlinePhotoPicker extends HookWidget {
       } catch (_) {
         if (context.mounted) {
           ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            const SnackBar(content: Text('Unable to open your photo library.')),
+            SnackBar(content: Text(context.l10n.composePhotoLibraryOpenError)),
           );
         }
       } finally {
@@ -141,7 +141,7 @@ class _IOSInlinePhotoPicker extends HookWidget {
               child: IosGlassNavigationButton(
                 key: const ValueKey('ios-inline-photo-picker-back'),
                 icon: IosGlassNavigationIcon.back,
-                semanticLabel: 'Back to attachment options',
+                semanticLabel: context.l10n.composeBackToAttachments,
                 onPressed: isProcessing.value
                     ? null
                     : () => _runComposerAction(onBack),
@@ -175,31 +175,32 @@ class _IOSInlinePhotoPicker extends HookWidget {
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.28)),
                 ),
                 child: isPreparingSelection.value
-                    ? const SizedBox.square(
+                    ? SizedBox.square(
                         dimension: 20,
                         child: KuzzLoadingIndicator(
                           size: 20,
                           color: Colors.white,
-                          semanticLabel: 'Preparing selected photos',
+                          semanticLabel: context.l10n.composePhotosPreparing,
                         ),
                       )
                     : Text(
                         selectedCount.value == 0
-                            ? 'All Photos'
-                            : 'Add ${selectedCount.value} '
-                                  '${selectedCount.value == 1 ? 'photo' : 'photos'}',
+                            ? context.l10n.composeAllPhotosIos
+                            : context.l10n.composeAddPhotos(
+                                selectedCount.value,
+                              ),
                       ),
               ),
             ),
           ),
           if (isProcessing.value)
-            const ColoredBox(
-              color: Color.fromRGBO(0, 0, 0, 0.28),
+            ColoredBox(
+              color: const Color.fromRGBO(0, 0, 0, 0.28),
               child: Center(
                 child: KuzzLoadingIndicator(
                   size: 44,
                   color: Colors.white,
-                  semanticLabel: 'Preparing selected photos',
+                  semanticLabel: context.l10n.composePhotosPreparing,
                 ),
               ),
             ),
@@ -218,8 +219,11 @@ class _NativePhotoPickerLoading extends StatelessWidget {
       key: const ValueKey('ios-inline-photo-picker-loading'),
       height: _attachmentExpandedHeight,
       width: double.infinity,
-      child: const Center(
-        child: KuzzLoadingIndicator(size: 44, semanticLabel: 'Opening Photos'),
+      child: Center(
+        child: KuzzLoadingIndicator(
+          size: 44,
+          semanticLabel: context.l10n.composeOpeningPhotos,
+        ),
       ),
     );
   }

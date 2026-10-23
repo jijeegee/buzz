@@ -28,7 +28,7 @@ class _VideoViewerBottomControls extends StatelessWidget {
               _MediaViewerCircleButton(
                 key: const ValueKey('message-media-video-viewer-reply-thread'),
                 icon: LucideIcons.messageSquareReply,
-                tooltip: 'Reply in thread',
+                tooltip: context.l10n.messageReplyInThread,
                 onPressed: onReply,
               ),
               const Spacer(),
@@ -74,7 +74,9 @@ class _VideoTransportBar extends HookConsumerWidget {
                     controller.play();
                   }
                 },
-                tooltip: value.isPlaying ? 'Pause video' : 'Play video',
+                tooltip: value.isPlaying
+                    ? context.l10n.mediaPauseVideo
+                    : context.l10n.mediaPlayVideo,
                 icon: Icon(
                   value.isPlaying ? LucideIcons.pause : LucideIcons.play,
                   color: Colors.white,

@@ -59,7 +59,7 @@ class _ChannelAppBarTitle extends ConsumerWidget {
     final title = isChat ? watchChannelTitle(ref, shown) : channel.name;
     final memberLabel = isChat
         ? chatPeopleLabel(memberCount)
-        : '$memberCount ${memberCount == 1 ? 'member' : 'members'}';
+        : context.l10n.channelMemberCount(memberCount);
 
     Future<void> openChatInfo() async {
       final left = await showChatInfoSheet(context: context, channel: shown);
@@ -69,10 +69,12 @@ class _ChannelAppBarTitle extends ConsumerWidget {
     return Semantics(
       button: true,
       label: isChat
-          ? 'Open chat info for $title, $memberLabel'
-          : 'Open settings for ${channel.name}, $memberLabel',
+          ? context.l10n.channelHeaderOpenChatInfo(title, memberLabel)
+          : context.l10n.channelHeaderOpenSettings(channel.name, memberLabel),
       child: Tooltip(
-        message: isChat ? 'Chat info' : 'Open group settings',
+        message: isChat
+            ? context.l10n.channelChatInfo
+            : context.l10n.channelHeaderOpenGroupSettings,
         child: InkWell(
           key: const ValueKey('channel-header-settings-trigger'),
           borderRadius: BorderRadius.circular(Radii.md),
@@ -178,7 +180,7 @@ class _GoalsButton extends ConsumerWidget {
     return IconButton(
       key: const ValueKey('channel-goals-button'),
       color: context.colors.primary,
-      tooltip: root?.title ?? 'Goals',
+      tooltip: root?.title ?? context.l10n.channelGoals,
       onPressed: () => showGoalsPage(
         context: context,
         channelId: channel.id,
@@ -214,14 +216,14 @@ class _MembersButton extends ConsumerWidget {
       onPressed: () {
         showKuzzModalBottomSheet<void>(
           context: context,
-          title: 'Members',
+          title: context.l10n.channelMembers,
           isScrollControlled: true,
           showDragHandle: true,
           builder: (_) =>
               MembersSheet(channel: channel, currentPubkey: currentPubkey),
         );
       },
-      tooltip: 'View members',
+      tooltip: context.l10n.channelHeaderViewMembers,
       icon: Stack(
         clipBehavior: Clip.none,
         children: [
@@ -299,10 +301,10 @@ class _DmAppBarTitle extends ConsumerWidget {
         profile?.initial ??
         dmAvatarInitial(channel, currentPubkey: currentPubkey);
     final presenceLabel = switch (presence) {
-      'online' => 'Online',
-      'away' => 'Away',
-      'offline' => 'Offline',
-      _ => 'Unknown',
+      'online' => context.l10n.channelPresenceOnline,
+      'away' => context.l10n.channelPresenceAway,
+      'offline' => context.l10n.channelPresenceOffline,
+      _ => context.l10n.channelPresenceUnknown,
     };
 
     return Row(

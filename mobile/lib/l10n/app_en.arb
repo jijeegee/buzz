@@ -4589,5 +4589,2741 @@
         "type": "String"
       }
     }
+  },
+  "commonDelete": "Delete",
+  "@commonDelete": {
+    "description": "Generic Delete button or menu item. Short."
+  },
+  "commonRemove": "Remove",
+  "@commonRemove": {
+    "description": "Generic Remove button in a confirmation dialog. Short."
+  },
+  "commonRetry": "Retry",
+  "@commonRetry": {
+    "description": "Generic Retry button or menu item after something failed to load or send. Short."
+  },
+  "commonClose": "Close",
+  "@commonClose": {
+    "description": "Generic Close button in a dialog. Short."
+  },
+  "commonDone": "Done",
+  "@commonDone": {
+    "description": "Generic Done button that ends editing. Short."
+  },
+  "commonEdit": "Edit",
+  "@commonEdit": {
+    "description": "Generic Edit button. Short."
+  },
+  "commonBack": "Back",
+  "@commonBack": {
+    "description": "Back button tooltip / screen-reader label in a screen header. Short."
+  },
+  "commonYou": "You",
+  "@commonYou": {
+    "description": "Shown instead of your own name in member lists and call tiles. Short."
+  },
+  "channelAddPeople": "Add people",
+  "@channelAddPeople": {
+    "description": "Button or menu item that opens the picker to add people to a chat. Short."
+  },
+  "channelAddMembersSearchHint": "Search for people or agents",
+  "@channelAddMembersSearchHint": {
+    "description": "Add members sheet, hint in the search field."
+  },
+  "channelAddMembersAllInChat": "Everyone available is already in this chat.",
+  "@channelAddMembersAllInChat": {
+    "description": "Add members sheet, empty list when there is no search text and everyone is already in the chat."
+  },
+  "channelAddMembersAllInGroup": "Everyone available is already in this group.",
+  "@channelAddMembersAllInGroup": {
+    "description": "Add members sheet, empty list when there is no search text and everyone is already in the group."
+  },
+  "channelAddMembersNoMatches": "No matching people or agents.",
+  "@channelAddMembersNoMatches": {
+    "description": "Add members sheet, empty list when nothing matches the search."
+  },
+  "channelAddMembersSelected": "{name}, selected",
+  "@channelAddMembersSelected": {
+    "description": "Add members sheet, screen-reader label of a person row that is selected.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAddMembersLoading": "Loading people and agents",
+  "@channelAddMembersLoading": {
+    "description": "Add members sheet, screen-reader label of the loading spinner."
+  },
+  "channelAddMembersLoadError": "Couldn’t load people or agents. Try again.",
+  "@channelAddMembersLoadError": {
+    "description": "Add members sheet, error when the people list failed to load."
+  },
+  "channelAddMembersStarting": "Starting…",
+  "@channelAddMembersStarting": {
+    "description": "Add people sheet (from a 1:1 chat), submit button while the new chat is being started. Short."
+  },
+  "channelAddMembersStartChat": "Start chat",
+  "@channelAddMembersStartChat": {
+    "description": "Add people sheet (from a 1:1 chat), submit button that starts a new chat with the picked people. Short."
+  },
+  "channelAddMembersAdding": "Adding…",
+  "@channelAddMembersAdding": {
+    "description": "Add members sheet, submit button while members are being added. Short."
+  },
+  "channelAddMembersSubmit": "{count, plural, one{Add member} other{Add {count} members}}",
+  "@channelAddMembersSubmit": {
+    "description": "Add members sheet, submit button with the number of picked people. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelAgentActivityLiveFromHere": "Showing live activity from this point.",
+  "@channelAgentActivityLiveFromHere": {
+    "description": "Agent activity sheet, note under the agent's name: only activity from now on is shown."
+  },
+  "channelAgentActivityError": "Error: {message}",
+  "@channelAgentActivityError": {
+    "description": "Agent activity sheet, error shown when the live activity stream failed; {message} is a technical error text.",
+    "placeholders": {
+      "message": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAgentActivityUnknownError": "Unknown error",
+  "@channelAgentActivityUnknownError": {
+    "description": "Agent activity sheet, used as the error text when no details are known."
+  },
+  "channelAgentActivityNotConnected": "Not connected",
+  "@channelAgentActivityNotConnected": {
+    "description": "Agent activity sheet, empty state when the activity stream is not connected."
+  },
+  "channelAgentActivityWaitingLabel": "Waiting for agent activity",
+  "@channelAgentActivityWaitingLabel": {
+    "description": "Agent activity sheet, screen-reader label of the loading spinner."
+  },
+  "channelAgentActivityWaiting": "Waiting for activity…",
+  "@channelAgentActivityWaiting": {
+    "description": "Agent activity sheet, empty state text while no activity has arrived yet."
+  },
+  "channelAgentActivityStatusIdle": "Idle",
+  "@channelAgentActivityStatusIdle": {
+    "description": "Agent activity sheet, connection badge: not connected. Short."
+  },
+  "channelAgentActivityStatusConnecting": "Connecting",
+  "@channelAgentActivityStatusConnecting": {
+    "description": "Agent activity sheet, connection badge: connecting. Short."
+  },
+  "channelAgentActivityStatusLive": "Live",
+  "@channelAgentActivityStatusLive": {
+    "description": "Agent activity sheet, connection badge: live stream open. Short."
+  },
+  "channelAgentActivityStatusError": "Error",
+  "@channelAgentActivityStatusError": {
+    "description": "Agent activity sheet, badge for a failed connection or a failed tool call. Short."
+  },
+  "channelAgentActivityAssistant": "Assistant",
+  "@channelAgentActivityAssistant": {
+    "description": "Agent activity transcript, badge/title on a message written by the agent. Short."
+  },
+  "channelAgentActivityUser": "User",
+  "@channelAgentActivityUser": {
+    "description": "Agent activity transcript, badge/title on a message sent to the agent. Short."
+  },
+  "channelAgentActivityArguments": "Arguments",
+  "@channelAgentActivityArguments": {
+    "description": "Agent activity transcript, tool call card: toggle that shows the tool's input. Short."
+  },
+  "channelAgentActivityResult": "Result",
+  "@channelAgentActivityResult": {
+    "description": "Agent activity transcript, tool call card: toggle that shows the tool's output. Short."
+  },
+  "channelAgentActivityTruncated": "… (truncated)",
+  "@channelAgentActivityTruncated": {
+    "description": "Agent activity transcript, appended after a long tool result that was cut off."
+  },
+  "channelAgentActivityToolDone": "Done",
+  "@channelAgentActivityToolDone": {
+    "description": "Agent activity transcript, tool call status: finished. Short."
+  },
+  "channelAgentActivityToolPending": "Pending",
+  "@channelAgentActivityToolPending": {
+    "description": "Agent activity transcript, tool call status: not started yet. Short."
+  },
+  "channelAgentActivityToolRunning": "Running",
+  "@channelAgentActivityToolRunning": {
+    "description": "Agent activity transcript, tool call status: in progress. Short."
+  },
+  "channelAgentActivityPrompt": "Prompt",
+  "@channelAgentActivityPrompt": {
+    "description": "Agent activity transcript, title of the instructions sent to the agent. Short."
+  },
+  "channelAgentActivityKuzzEvent": "Kuzz event",
+  "@channelAgentActivityKuzzEvent": {
+    "description": "Agent activity transcript, title of a chat event sent to the agent. Kuzz is the app name. Short."
+  },
+  "channelAgentActivityToolCall": "Tool call",
+  "@channelAgentActivityToolCall": {
+    "description": "Agent activity transcript, title of a tool call card when the tool has no name. Short."
+  },
+  "channelAgentActivityTriggeredBy": "Triggered by {ids}.",
+  "@channelAgentActivityTriggeredBy": {
+    "description": "Agent activity transcript, 'Turn started' row: which events started the agent's turn; {ids} is a comma-separated list of short ids.",
+    "placeholders": {
+      "ids": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAgentActivityInternalTurn": "Heartbeat or internal turn.",
+  "@channelAgentActivityInternalTurn": {
+    "description": "Agent activity transcript, 'Turn started' row when no message started the turn."
+  },
+  "channelAgentActivityExistingSession": "Using existing ACP session.",
+  "@channelAgentActivityExistingSession": {
+    "description": "Agent activity transcript, 'Session ready' row. ACP is a technical protocol name; keep it."
+  },
+  "channelAgentActivitySessionCreated": "Created session {id}.",
+  "@channelAgentActivitySessionCreated": {
+    "description": "Agent activity transcript, 'Session ready' row: a new agent session was created; {id} is a short id.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAgentActivitySessionUsing": "Using session {id}.",
+  "@channelAgentActivitySessionUsing": {
+    "description": "Agent activity transcript, 'Session ready' row: an existing agent session is reused; {id} is a short id.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      }
+    }
+  },
+  "channelAgentActivityTurnStarted": "Turn started",
+  "@channelAgentActivityTurnStarted": {
+    "description": "Agent activity transcript, row title: the agent started working on a turn. Short."
+  },
+  "channelAgentActivitySessionReady": "Session ready",
+  "@channelAgentActivitySessionReady": {
+    "description": "Agent activity transcript, row title: the agent session is ready. Short."
+  },
+  "channelAgentActivityParseError": "Wire parse error",
+  "@channelAgentActivityParseError": {
+    "description": "Agent activity transcript, row title: a technical message from the agent could not be read. Short."
+  },
+  "channelAgentActivityPromptContext": "Prompt context",
+  "@channelAgentActivityPromptContext": {
+    "description": "Agent activity transcript, title of the expandable context sent along with the prompt. Short."
+  },
+  "channelAgentActivityThinking": "Thinking",
+  "@channelAgentActivityThinking": {
+    "description": "Agent activity transcript, title of the agent's reasoning text. Short."
+  },
+  "channelAgentActivityPlan": "Plan",
+  "@channelAgentActivityPlan": {
+    "description": "Agent activity transcript, title of the agent's step plan. Short."
+  },
+  "channelListRetryPins": "Retry personal pins",
+  "@channelListRetryPins": {
+    "description": "Chat list, tooltip of the retry button next to the error about pinned chats."
+  },
+  "channelListChatsSection": "Chats",
+  "@channelListChatsSection": {
+    "description": "Chat list, title of the collapsible section that lists chats. Short."
+  },
+  "channelListNoChats": "No chats yet",
+  "@channelListNoChats": {
+    "description": "Chat list, empty Chats section."
+  },
+  "channelListErrorUnauthorized": "Not authorized. Check your API token.",
+  "@channelListErrorUnauthorized": {
+    "description": "Chat list, error details when the server refused the sign-in (HTTP 401)."
+  },
+  "channelListErrorForbidden": "Access denied.",
+  "@channelListErrorForbidden": {
+    "description": "Chat list, error details when the server denied access (HTTP 403)."
+  },
+  "channelListErrorServer": "Server error ({code}). Try again later.",
+  "@channelListErrorServer": {
+    "description": "Chat list, error details for other server errors; {code} is the HTTP status number.",
+    "placeholders": {
+      "code": {
+        "type": "int"
+      }
+    }
+  },
+  "channelListErrorUnreachable": "Could not reach the relay server.",
+  "@channelListErrorUnreachable": {
+    "description": "Chat list, error details when the server could not be reached. 'Relay server' is the chat server."
+  },
+  "channelListErrorGeneric": "Something went wrong. Check your connection.",
+  "@channelListErrorGeneric": {
+    "description": "Chat list, error details for any other failure."
+  },
+  "channelListLoadError": "Could not load groups",
+  "@channelListLoadError": {
+    "description": "Chat list, title of the error view when chats failed to load."
+  },
+  "channelListPinned": "Pinned",
+  "@channelListPinned": {
+    "description": "Chat list row, screen-reader label of the pin icon on a pinned chat. Short."
+  },
+  "channelListPublicBadge": "Public",
+  "@channelListPublicBadge": {
+    "description": "Chat list row, small badge on a public group you have not joined. Short."
+  },
+  "channelNewGroup": "New group",
+  "@channelNewGroup": {
+    "description": "Menu item / quick action that starts creating a new group. Short."
+  },
+  "channelFindGroups": "Find groups",
+  "@channelFindGroups": {
+    "description": "Quick action that opens the group search sheet. Short."
+  },
+  "channelNewMessage": "New message",
+  "@channelNewMessage": {
+    "description": "Quick action / sheet title for starting a new conversation with people. Short."
+  },
+  "channelFindGroupsSearchHint": "Search groups",
+  "@channelFindGroupsSearchHint": {
+    "description": "Find groups sheet, hint in the search field."
+  },
+  "channelFindGroupsMine": "My groups",
+  "@channelFindGroupsMine": {
+    "description": "Find groups sheet, section header for groups you are in. Short."
+  },
+  "channelFindGroupsMineEmpty": "You’re not in any groups yet.",
+  "@channelFindGroupsMineEmpty": {
+    "description": "Find groups sheet, My groups section is empty."
+  },
+  "channelFindGroupsMineNoMatch": "None of your groups match.",
+  "@channelFindGroupsMineNoMatch": {
+    "description": "Find groups sheet, My groups section has no matches for the search."
+  },
+  "channelFindGroupsPublic": "Public groups",
+  "@channelFindGroupsPublic": {
+    "description": "Find groups sheet, section header for public groups. Short."
+  },
+  "channelFindGroupsPublicHint": "Type 2 or more letters to find public groups.",
+  "@channelFindGroupsPublicHint": {
+    "description": "Find groups sheet, hint under Public groups before a search."
+  },
+  "channelFindGroupsPublicError": "Couldn’t load public groups.",
+  "@channelFindGroupsPublicError": {
+    "description": "Find groups sheet, error when the public group search failed."
+  },
+  "channelFindGroupsPublicNoMatch": "No public groups match.",
+  "@channelFindGroupsPublicNoMatch": {
+    "description": "Find groups sheet, no public group matches the search."
+  },
+  "channelJoinGroupError": "Couldn’t join group. Try again.",
+  "@channelJoinGroupError": {
+    "description": "Error when joining a group failed (Find groups sheet or group details)."
+  },
+  "channelFindGroupsOpen": "Open",
+  "@channelFindGroupsOpen": {
+    "description": "Find groups sheet, button on a group you are already in. Short."
+  },
+  "channelFindGroupsJoining": "Joining…",
+  "@channelFindGroupsJoining": {
+    "description": "Find groups sheet, button while joining a group. Short."
+  },
+  "channelFindGroupsJoin": "Join",
+  "@channelFindGroupsJoin": {
+    "description": "Find groups sheet, button that joins a public group. Short."
+  },
+  "channelCommunitySwitchTitle": "Switch Community",
+  "@channelCommunitySwitchTitle": {
+    "description": "Community switcher sheet, title. Short."
+  },
+  "channelCommunityLoading": "Loading communities",
+  "@channelCommunityLoading": {
+    "description": "Community switcher sheet, screen-reader label of the loading spinner."
+  },
+  "channelCommunityLoadError": "Error loading communities: {error}",
+  "@channelCommunityLoadError": {
+    "description": "Community switcher sheet, error; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunityRemoveTooltip": "Remove {name} from this device",
+  "@channelCommunityRemoveTooltip": {
+    "description": "Community switcher sheet in edit mode, tooltip of the delete button on a community row.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunityCurrentLabel": "{name} is the current community",
+  "@channelCommunityCurrentLabel": {
+    "description": "Community switcher sheet, screen-reader label of the selected marker on the active community.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunitySwitchToLabel": "Switch to {name}",
+  "@channelCommunitySwitchToLabel": {
+    "description": "Community switcher sheet, screen-reader label of the selection circle on another community.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunityAdd": "Add Community",
+  "@channelCommunityAdd": {
+    "description": "Community switcher sheet, row that adds another community. Short."
+  },
+  "channelCommunityRemoveTitle": "Remove community from this device?",
+  "@channelCommunityRemoveTitle": {
+    "description": "Dialog title when removing a community from the switcher."
+  },
+  "channelCommunityRemoveBody": "This removes “{name}” and its sign-in from this device. Your account and memberships on the server aren’t deleted.",
+  "@channelCommunityRemoveBody": {
+    "description": "Remove community dialog, body; {name} is the community name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunityRemoveNoGoogle": "If this community isn’t connected to a Google account, you won’t be able to sign back in to it.",
+  "@channelCommunityRemoveNoGoogle": {
+    "description": "Remove community dialog, extra warning paragraph for a community not linked to Google sign-in."
+  },
+  "channelCommunityRemoveError": "Couldn’t remove the community: {error}",
+  "@channelCommunityRemoveError": {
+    "description": "Snackbar when removing a community failed; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "channelCommunityFallbackTitle": "Community",
+  "@channelCommunityFallbackTitle": {
+    "description": "Chat list header, shown when the active community has no name. Short."
+  },
+  "channelQuickActionsOpenLabel": "Create or start conversation",
+  "@channelQuickActionsOpenLabel": {
+    "description": "Chat list, tooltip and screen-reader label of the round + button that opens quick actions."
+  },
+  "channelQuickActionsClose": "Close quick actions",
+  "@channelQuickActionsClose": {
+    "description": "Chat list, screen-reader label of the dimmed area behind the open quick actions menu."
+  },
+  "channelJoinWithLink": "Join with link",
+  "@channelJoinWithLink": {
+    "description": "Quick actions menu item that joins a group from an invite link. Short."
+  },
+  "channelListNoConversations": "No conversations yet",
+  "@channelListNoConversations": {
+    "description": "Chat list, empty state when you have no chats or groups."
+  },
+  "channelStatusConnecting": "Connecting",
+  "@channelStatusConnecting": {
+    "description": "Screen-reader label / banner while connecting to the server. Short."
+  },
+  "channelStatusReconnecting": "Reconnecting",
+  "@channelStatusReconnecting": {
+    "description": "Screen-reader label / banner while reconnecting to the server. Short."
+  },
+  "channelStatusLoading": "Loading",
+  "@channelStatusLoading": {
+    "description": "Screen-reader label / banner while content is loading. Short."
+  },
+  "channelCreateTtlMinutes": "{count, plural, one{{count} minute} other{{count} minutes}}",
+  "@channelCreateTtlMinutes": {
+    "description": "New group sheet, option in the 'Expires after' menu for a temporary group.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelCreateTtlHours": "{count, plural, one{{count} hour} other{{count} hours}}",
+  "@channelCreateTtlHours": {
+    "description": "New group sheet, option in the 'Expires after' menu for a temporary group.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelCreateTtlDays": "{count, plural, one{{count} day} other{{count} days}}",
+  "@channelCreateTtlDays": {
+    "description": "New group sheet, option in the 'Expires after' menu for a temporary group.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelCreateName": "Name",
+  "@channelCreateName": {
+    "description": "New group sheet, label above the group name field. Short."
+  },
+  "channelCreateGroupNameHint": "release-notes",
+  "@channelCreateGroupNameHint": {
+    "description": "New group sheet, example group name shown as a hint in the name field. Lowercase words joined by hyphens."
+  },
+  "channelCreateForumNameHint": "design-discussions",
+  "@channelCreateForumNameHint": {
+    "description": "New forum sheet, example forum name shown as a hint in the name field. Lowercase words joined by hyphens."
+  },
+  "channelCreateDescription": "Description",
+  "@channelCreateDescription": {
+    "description": "New group sheet, label above the description field. Short."
+  },
+  "channelCreateOptional": "Optional",
+  "@channelCreateOptional": {
+    "description": "Marks a form field as optional (after a field label, or as the hint in the chat name field). Short."
+  },
+  "channelCreateGroupDescriptionHint": "What this group is for",
+  "@channelCreateGroupDescriptionHint": {
+    "description": "New group sheet, hint in the description field."
+  },
+  "channelCreateForumDescriptionHint": "What this forum is for",
+  "@channelCreateForumDescriptionHint": {
+    "description": "New forum sheet, hint in the description field."
+  },
+  "channelCreateGroupType": "Group type",
+  "@channelCreateGroupType": {
+    "description": "New group sheet, label of the choice between an ongoing and a temporary group. Short."
+  },
+  "channelCreateTypeOngoing": "Ongoing",
+  "@channelCreateTypeOngoing": {
+    "description": "New group sheet, group type option: the group stays. Short."
+  },
+  "channelCreateTypeTemporary": "Temporary",
+  "@channelCreateTypeTemporary": {
+    "description": "New group sheet, group type option: the group is cleaned up after a while. Short."
+  },
+  "channelCreateExpiresAfter": "Expires after",
+  "@channelCreateExpiresAfter": {
+    "description": "New group sheet, label of the menu that picks how long a temporary group lasts. Short."
+  },
+  "channelCreateVisibility": "Visibility",
+  "@channelCreateVisibility": {
+    "description": "New group sheet, label of the public/private choice. Short."
+  },
+  "channelCreateVisibilityPublic": "Public",
+  "@channelCreateVisibilityPublic": {
+    "description": "New group sheet, visibility option: anyone can find the group. Short."
+  },
+  "channelCreateVisibilityPrivate": "Private",
+  "@channelCreateVisibilityPrivate": {
+    "description": "New group sheet, visibility option: invite only. Short."
+  },
+  "channelNewMessagePreviewOnly": "Preview only — mock people cannot be messaged.",
+  "@channelNewMessagePreviewOnly": {
+    "description": "New message sheet, error in the demo preview where the people list is sample data."
+  },
+  "channelNewMessageStartError": "Couldn’t start the conversation. Try again.",
+  "@channelNewMessageStartError": {
+    "description": "New message sheet, error when starting the conversation failed."
+  },
+  "channelNewMessageTo": "To:",
+  "@channelNewMessageTo": {
+    "description": "New message sheet, label before the picked recipients, like an email To field. Short."
+  },
+  "channelNewMessageSearchHint": "Search for a person",
+  "@channelNewMessageSearchHint": {
+    "description": "New message sheet, hint in the recipient search field."
+  },
+  "channelNewMessageCreating": "Creating conversation",
+  "@channelNewMessageCreating": {
+    "description": "New message sheet, screen-reader label of the spinner while the conversation is created."
+  },
+  "channelNewMessageChatName": "Chat name",
+  "@channelNewMessageChatName": {
+    "description": "New message sheet, label of the optional name field when several people are picked. Short."
+  },
+  "channelNewMessageLimit": "A chat can start with up to {count} people.",
+  "@channelNewMessageLimit": {
+    "description": "New message sheet, shown instead of results when the maximum number of people is picked.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelNewMessageLoading": "Loading people",
+  "@channelNewMessageLoading": {
+    "description": "New message sheet, screen-reader label of the loading spinner."
+  },
+  "channelNewMessageLoadError": "Couldn’t load people. Try again.",
+  "@channelNewMessageLoadError": {
+    "description": "New message sheet, error when the people list failed to load."
+  },
+  "channelNewMessageNoFriends": "Add friends in the Friends tab to message them here.",
+  "@channelNewMessageNoFriends": {
+    "description": "New message sheet, empty state when you have no friends yet. 'Friends' is the bottom tab name."
+  },
+  "channelNewMessageNoMatches": "No matching people.",
+  "@channelNewMessageNoMatches": {
+    "description": "New message sheet, no person matches the search."
+  },
+  "channelNewMessageFriends": "Friends",
+  "@channelNewMessageFriends": {
+    "description": "New message sheet, section header for your friends. Short."
+  },
+  "channelNewMessageInYourGroups": "In your groups",
+  "@channelNewMessageInYourGroups": {
+    "description": "New message sheet, section header for people who share a group with you. Short."
+  },
+  "channelNewMessageSearching": "Searching…",
+  "@channelNewMessageSearching": {
+    "description": "New message sheet, note while searching people in your groups. Short."
+  },
+  "channelNewMessageSharedError": "Couldn’t search your groups",
+  "@channelNewMessageSharedError": {
+    "description": "New message sheet, note when searching people in your groups failed."
+  },
+  "channelNewMessageAgents": "Agents",
+  "@channelNewMessageAgents": {
+    "description": "New message sheet, section header for AI agents. Short."
+  },
+  "channelNewMessageRemoveRecipient": "Remove {name}",
+  "@channelNewMessageRemoveRecipient": {
+    "description": "New message sheet, screen-reader label of a picked recipient chip; tapping removes it.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelMoveToSection": "Move to section…",
+  "@channelMoveToSection": {
+    "description": "Group actions / group details, item that opens the section picker for a forum. Short."
+  },
+  "channelMuteChat": "Mute chat",
+  "@channelMuteChat": {
+    "description": "Chat actions sheet, item that mutes notifications for a chat. Short."
+  },
+  "channelMuteGroup": "Mute group",
+  "@channelMuteGroup": {
+    "description": "Group actions sheet, item that mutes notifications for a group. Short."
+  },
+  "channelUnmuteChat": "Unmute chat",
+  "@channelUnmuteChat": {
+    "description": "Chat actions sheet, item that turns notifications back on for a chat. Short."
+  },
+  "channelUnmuteGroup": "Unmute group",
+  "@channelUnmuteGroup": {
+    "description": "Group actions sheet, item that turns notifications back on for a group. Short."
+  },
+  "channelChatInfo": "Chat info",
+  "@channelChatInfo": {
+    "description": "Chat actions sheet item / tooltip / sheet title: info about a chat of several people. Short."
+  },
+  "channelManageGroup": "Manage group",
+  "@channelManageGroup": {
+    "description": "Group actions item and sheet title for editing a group's settings. Short."
+  },
+  "channelCopyChatName": "Copy chat name",
+  "@channelCopyChatName": {
+    "description": "Chat actions sheet, item that copies the chat's name. Short."
+  },
+  "channelCopyGroupName": "Copy group name",
+  "@channelCopyGroupName": {
+    "description": "Group actions sheet / group details, item that copies the group's name. Short."
+  },
+  "channelChatNameCopied": "Chat name copied to clipboard",
+  "@channelChatNameCopied": {
+    "description": "Snackbar after copying a chat's name."
+  },
+  "channelGroupNameCopied": "Group name copied to clipboard",
+  "@channelGroupNameCopied": {
+    "description": "Snackbar after copying a group's name."
+  },
+  "channelCopyChatId": "Copy chat ID",
+  "@channelCopyChatId": {
+    "description": "Chat actions sheet, item that copies the chat's technical ID. Short."
+  },
+  "channelCopyGroupId": "Copy group ID",
+  "@channelCopyGroupId": {
+    "description": "Group actions sheet / group details, item that copies the group's technical ID. Short."
+  },
+  "channelChatIdCopied": "Chat ID copied to clipboard",
+  "@channelChatIdCopied": {
+    "description": "Snackbar after copying a chat's ID."
+  },
+  "channelGroupIdCopied": "Group ID copied to clipboard",
+  "@channelGroupIdCopied": {
+    "description": "Snackbar after copying a group's ID."
+  },
+  "channelLeave": "Leave",
+  "@channelLeave": {
+    "description": "Confirm button in the leave chat/group dialog. Short."
+  },
+  "channelLeaveChat": "Leave chat",
+  "@channelLeaveChat": {
+    "description": "Chat actions / chat info, destructive item that leaves a chat of several people. Short."
+  },
+  "channelLeaveChatTitle": "Leave this chat?",
+  "@channelLeaveChatTitle": {
+    "description": "Confirmation dialog title before leaving a chat."
+  },
+  "channelLeaveChatBody": "You’ll stop receiving messages from it.",
+  "@channelLeaveChatBody": {
+    "description": "Confirmation dialog body before leaving a chat."
+  },
+  "channelLeaveChatError": "Couldn’t leave chat. Try again.",
+  "@channelLeaveChatError": {
+    "description": "Snackbar when leaving a chat failed."
+  },
+  "channelLeaveGroup": "Leave group",
+  "@channelLeaveGroup": {
+    "description": "Group actions / group details, destructive item that leaves a group. Short."
+  },
+  "channelLeaveGroupTitle": "Leave {name}?",
+  "@channelLeaveGroupTitle": {
+    "description": "Confirmation dialog title before leaving a group; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelLeaveGroupBody": "You’ll stop receiving messages from this group.",
+  "@channelLeaveGroupBody": {
+    "description": "Confirmation dialog body before leaving a group."
+  },
+  "channelLeaveGroupError": "Couldn’t leave group. Try again.",
+  "@channelLeaveGroupError": {
+    "description": "Snackbar when leaving a group failed."
+  },
+  "channelGroupActionsLoadingLabel": "Loading group actions",
+  "@channelGroupActionsLoadingLabel": {
+    "description": "Group actions / group details, screen-reader label of the spinner while checking what you may do."
+  },
+  "channelGroupActionsLoading": "Loading group actions…",
+  "@channelGroupActionsLoading": {
+    "description": "Group actions / group details, disabled row while checking what you may do."
+  },
+  "channelGroupActionsUnavailable": "Group actions unavailable",
+  "@channelGroupActionsUnavailable": {
+    "description": "Group actions / group details, disabled row when your permissions could not be loaded."
+  },
+  "channelArchive": "Archive",
+  "@channelArchive": {
+    "description": "Confirm button in the archive group dialog. Short."
+  },
+  "channelArchiveGroup": "Archive group",
+  "@channelArchiveGroup": {
+    "description": "Group actions / group details item that archives a group. Short."
+  },
+  "channelArchiveGroupTitle": "Archive {name}?",
+  "@channelArchiveGroupTitle": {
+    "description": "Confirmation dialog title before archiving a group; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelArchiveGroupBody": "The group will become read-only.",
+  "@channelArchiveGroupBody": {
+    "description": "Confirmation dialog body before archiving a group."
+  },
+  "channelArchiveGroupError": "Couldn’t archive group. Try again.",
+  "@channelArchiveGroupError": {
+    "description": "Snackbar when archiving a group failed."
+  },
+  "channelUnarchive": "Unarchive",
+  "@channelUnarchive": {
+    "description": "Confirm button in the unarchive group dialog. Short."
+  },
+  "channelUnarchiveGroup": "Unarchive group",
+  "@channelUnarchiveGroup": {
+    "description": "Group actions / group details item that makes an archived group active again. Short."
+  },
+  "channelUnarchiveGroupTitle": "Unarchive {name}?",
+  "@channelUnarchiveGroupTitle": {
+    "description": "Confirmation dialog title before unarchiving a group; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelUnarchiveGroupBody": "The group will become active again.",
+  "@channelUnarchiveGroupBody": {
+    "description": "Confirmation dialog body before unarchiving a group."
+  },
+  "channelUnarchiveGroupError": "Couldn’t unarchive group. Try again.",
+  "@channelUnarchiveGroupError": {
+    "description": "Snackbar when unarchiving a group failed."
+  },
+  "channelDeleteGroup": "Delete group",
+  "@channelDeleteGroup": {
+    "description": "Group actions / group details, destructive item that deletes a group. Short."
+  },
+  "channelDeleteGroupTitle": "Delete {name}?",
+  "@channelDeleteGroupTitle": {
+    "description": "Confirmation dialog title before deleting a group; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelDeleteGroupBody": "This permanently deletes the group and cannot be undone.",
+  "@channelDeleteGroupBody": {
+    "description": "Confirmation dialog body before deleting a group."
+  },
+  "channelDeleteGroupError": "Couldn’t delete group. Try again.",
+  "@channelDeleteGroupError": {
+    "description": "Snackbar when deleting a group failed."
+  },
+  "channelPin": "Pin",
+  "@channelPin": {
+    "description": "Chat actions / group details, button that pins the chat to the top of the list. Short."
+  },
+  "channelUnpin": "Unpin",
+  "@channelUnpin": {
+    "description": "Chat actions / group details, button that unpins the chat. Short."
+  },
+  "channelMarkRead": "Mark Read",
+  "@channelMarkRead": {
+    "description": "Chat actions sheet, button that marks the chat as read. Short."
+  },
+  "channelMarkUnread": "Mark Unread",
+  "@channelMarkUnread": {
+    "description": "Chat actions sheet, button that marks the chat as unread. Short."
+  },
+  "channelMute": "Mute",
+  "@channelMute": {
+    "description": "Group details, button that mutes notifications; also the mute-microphone tooltip in a Huddle call. Short."
+  },
+  "channelUnmute": "Unmute",
+  "@channelUnmute": {
+    "description": "Group details, button that turns notifications back on; also the unmute-microphone tooltip in a Huddle call. Short."
+  },
+  "channelNewSection": "New section…",
+  "@channelNewSection": {
+    "description": "Move to section sheet, item that creates a new section. Short."
+  },
+  "channelRemoveFromSection": "Remove from section",
+  "@channelRemoveFromSection": {
+    "description": "Move to section sheet, item that takes the forum out of its section. Short."
+  },
+  "channelNewSectionTitle": "New Section",
+  "@channelNewSectionTitle": {
+    "description": "Dialog title for naming a new section. Short."
+  },
+  "channelNewSectionCreate": "Create",
+  "@channelNewSectionCreate": {
+    "description": "New Section dialog, confirm button. Short."
+  },
+  "channelMemberCount": "{count, plural, one{{count} member} other{{count} members}}",
+  "@channelMemberCount": {
+    "description": "Group details, header of the members card.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelMembers": "Members",
+  "@channelMembers": {
+    "description": "Sheet title / tooltip for the list of members of a group. Short."
+  },
+  "channelAddMembers": "Add members",
+  "@channelAddMembers": {
+    "description": "Group details, row and sheet title for adding people to a group. Short."
+  },
+  "channelMembersLoading": "Loading members…",
+  "@channelMembersLoading": {
+    "description": "Group details, row while members load."
+  },
+  "channelMembersLoadingLabel": "Loading members",
+  "@channelMembersLoadingLabel": {
+    "description": "Screen-reader label of the spinner while members load."
+  },
+  "channelMembersUnavailable": "Members unavailable",
+  "@channelMembersUnavailable": {
+    "description": "Group details, row when members failed to load."
+  },
+  "channelMembersSeeAll": "See all",
+  "@channelMembersSeeAll": {
+    "description": "Group details, row that opens the full members list. Short."
+  },
+  "channelJoiningGroup": "Joining group…",
+  "@channelJoiningGroup": {
+    "description": "Group details, row while joining the group. Short."
+  },
+  "channelJoinGroup": "Join group",
+  "@channelJoinGroup": {
+    "description": "Group details, row that joins the group. Short."
+  },
+  "channelRoleAgent": "Agent",
+  "@channelRoleAgent": {
+    "description": "Member role label: an AI agent. Short."
+  },
+  "channelRoleMember": "Member",
+  "@channelRoleMember": {
+    "description": "Member role label: regular member. Short."
+  },
+  "channelRoleOwner": "Owner",
+  "@channelRoleOwner": {
+    "description": "Member role label: the group's owner. Short."
+  },
+  "channelRoleAdmin": "Admin",
+  "@channelRoleAdmin": {
+    "description": "Member role label: administrator. Short."
+  },
+  "channelRoleGuest": "Guest",
+  "@channelRoleGuest": {
+    "description": "Member role label: guest with limited access. Short."
+  },
+  "channelMembersPeopleSection": "People · {count}",
+  "@channelMembersPeopleSection": {
+    "description": "Members sheet, section header for people with their number. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelMembersAgentsSection": "Agents · {count}",
+  "@channelMembersAgentsSection": {
+    "description": "Members sheet, section header for AI agents with their number. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelMembersNoneFound": "No members found.",
+  "@channelMembersNoneFound": {
+    "description": "Members sheet, empty list."
+  },
+  "channelMembersAgentWorkingLabel": "Agent working",
+  "@channelMembersAgentWorkingLabel": {
+    "description": "Members sheet, screen-reader label of the spinner next to an agent that is working."
+  },
+  "channelMembersAgentWorking": "Working…",
+  "@channelMembersAgentWorking": {
+    "description": "Members sheet, status under an agent that is currently working. Short."
+  },
+  "channelMembersViewActivity": "View activity",
+  "@channelMembersViewActivity": {
+    "description": "Member actions sheet, item that opens an agent's live activity. Short."
+  },
+  "channelMembersRemoveFromGroup": "Remove from group",
+  "@channelMembersRemoveFromGroup": {
+    "description": "Member actions sheet, destructive item that removes the member. Short."
+  },
+  "channelMembersRemoveTitle": "Remove member",
+  "@channelMembersRemoveTitle": {
+    "description": "Confirmation dialog title before removing a member. Short."
+  },
+  "channelMembersRemoveBody": "Remove {name} from this group?",
+  "@channelMembersRemoveBody": {
+    "description": "Confirmation dialog body before removing a member; {name} is the member's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "channelMembersRole": "Role",
+  "@channelMembersRole": {
+    "description": "Member actions sheet, label above the role picker. Short."
+  },
+  "messageActionsDismiss": "Dismiss message actions",
+  "@messageActionsDismiss": {
+    "description": "Message long-press menu, screen-reader label of the area behind the menu; tapping closes it."
+  },
+  "messageReactionPickerDismiss": "Dismiss reaction picker",
+  "@messageReactionPickerDismiss": {
+    "description": "Reaction picker, screen-reader label of the area behind the picker; tapping closes it."
+  },
+  "messageReplyInThread": "Reply in thread",
+  "@messageReplyInThread": {
+    "description": "Message menu item / media viewer tooltip that opens the message's thread to reply. Short."
+  },
+  "messageQuote": "Quote",
+  "@messageQuote": {
+    "description": "Message menu item that quotes the message in the composer. Short."
+  },
+  "messageCopyLink": "Copy link",
+  "@messageCopyLink": {
+    "description": "Message / thread menu item that copies a link to it. Short."
+  },
+  "messageLinkCopied": "Message link copied",
+  "@messageLinkCopied": {
+    "description": "Snackbar after copying a link to a message."
+  },
+  "messageLinkToGoal": "Link to goal",
+  "@messageLinkToGoal": {
+    "description": "Message menu item that links the message to a goal. Short."
+  },
+  "messageRemindMe": "Remind me",
+  "@messageRemindMe": {
+    "description": "Message menu item that sets a reminder for the message. Short."
+  },
+  "messageMarkRead": "Mark read",
+  "@messageMarkRead": {
+    "description": "Message menu item that marks the message as read. Short."
+  },
+  "messageMarkUnread": "Mark unread",
+  "@messageMarkUnread": {
+    "description": "Message menu item that marks the message as unread. Short."
+  },
+  "messageFollowThread": "Follow thread",
+  "@messageFollowThread": {
+    "description": "Message / thread menu item: get notified about new replies. Short."
+  },
+  "messageUnfollowThread": "Unfollow thread",
+  "@messageUnfollowThread": {
+    "description": "Message / thread menu item: stop notifications about new replies. Short."
+  },
+  "messageCopyText": "Copy text",
+  "@messageCopyText": {
+    "description": "Message menu item that copies the message text. Short."
+  },
+  "messageEdit": "Edit message",
+  "@messageEdit": {
+    "description": "Message menu item to edit your message; also the hint in the edit field. Short."
+  },
+  "messageDelete": "Delete message",
+  "@messageDelete": {
+    "description": "Message menu item / dialog title for deleting a message. Short."
+  },
+  "messageDeleteBody": "This cannot be undone.",
+  "@messageDeleteBody": {
+    "description": "Delete message dialog, body."
+  },
+  "messageDeleteError": "Failed to delete message: {error}",
+  "@messageDeleteError": {
+    "description": "Snackbar when deleting a message failed; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "messageReport": "Report message",
+  "@messageReport": {
+    "description": "Message menu item that reports a message to moderators. Short."
+  },
+  "messageSaveImage": "Save image",
+  "@messageSaveImage": {
+    "description": "Image long-press menu item that saves the image to the photo library. Short."
+  },
+  "messageShareImage": "Share image",
+  "@messageShareImage": {
+    "description": "Image long-press menu item that opens the share sheet. Short."
+  },
+  "messageCopyImageLink": "Copy image link",
+  "@messageCopyImageLink": {
+    "description": "Image long-press menu item that copies the image URL. Short."
+  },
+  "messageImageLinkCopied": "Image link copied",
+  "@messageImageLinkCopied": {
+    "description": "Snackbar after copying an image link."
+  },
+  "messageImageSaved": "Image saved to Photos",
+  "@messageImageSaved": {
+    "description": "Snackbar after an image was saved to the photo library. 'Photos' is the system photo library."
+  },
+  "messageImageSaveError": "Could not save image",
+  "@messageImageSaveError": {
+    "description": "Snackbar when saving an image failed."
+  },
+  "messageImageShareError": "Could not share image",
+  "@messageImageShareError": {
+    "description": "Snackbar when sharing an image failed."
+  },
+  "huddleLeaveCurrentFirstTooltip": "Leave your current Huddle first",
+  "@huddleLeaveCurrentFirstTooltip": {
+    "description": "Chat header, tooltip of the Huddle (voice call) button when you are already in another Huddle. 'Huddle' is the name of the voice call feature."
+  },
+  "huddleOpen": "Open Huddle",
+  "@huddleOpen": {
+    "description": "Tooltip / screen-reader label of the button that opens the running Huddle (voice call). Short."
+  },
+  "huddleStart": "Start Huddle",
+  "@huddleStart": {
+    "description": "Chat header, tooltip of the button that starts a Huddle (voice call). Short."
+  },
+  "huddleCardStartNew": "Start new",
+  "@huddleCardStartNew": {
+    "description": "Huddle card in the chat, button that starts a new Huddle when the old one is gone. Short."
+  },
+  "huddleCardOpen": "Open",
+  "@huddleCardOpen": {
+    "description": "Huddle card in the chat, button that opens the Huddle you are in. Short."
+  },
+  "huddleCardJoining": "Joining",
+  "@huddleCardJoining": {
+    "description": "Huddle card in the chat, button while joining. Short."
+  },
+  "huddleCardEnded": "Ended",
+  "@huddleCardEnded": {
+    "description": "Huddle card in the chat, disabled button after the Huddle ended. Short."
+  },
+  "huddleCardJoin": "Join",
+  "@huddleCardJoin": {
+    "description": "Huddle card in the chat, button that joins the Huddle. Short."
+  },
+  "huddleEnded": "Huddle ended",
+  "@huddleEnded": {
+    "description": "Huddle card in the chat, title when the voice call is over. Short."
+  },
+  "huddleInProgress": "Huddle in progress",
+  "@huddleInProgress": {
+    "description": "Huddle card in the chat, title while the voice call is running. Short."
+  },
+  "huddleConnectedCount": "{count} connected",
+  "@huddleConnectedCount": {
+    "description": "Huddle card in the chat, how many people are connected to the call.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "huddleForegroundVoice": "Foreground voice Huddle",
+  "@huddleForegroundVoice": {
+    "description": "Huddle card in the chat, subtitle: the voice call runs while the app is open."
+  },
+  "huddleStartNew": "Start a new Huddle",
+  "@huddleStartNew": {
+    "description": "Huddle screen, tooltip of the button that starts a new call when this one is no longer available."
+  },
+  "huddleOpenSettings": "Open Settings",
+  "@huddleOpenSettings": {
+    "description": "Huddle screen, tooltip of the button that opens system settings to allow the microphone. Short."
+  },
+  "huddleUnavailable": "This Huddle is no longer available.",
+  "@huddleUnavailable": {
+    "description": "Huddle screen, error when the call can no longer be joined."
+  },
+  "huddleAudioFailedUnknown": "Huddle audio failed.",
+  "@huddleAudioFailedUnknown": {
+    "description": "Huddle screen, error when the call audio failed for an unknown reason."
+  },
+  "huddleReactionFailed": "Reaction failed",
+  "@huddleReactionFailed": {
+    "description": "Huddle screen, snackbar when sending an emoji reaction failed. Short."
+  },
+  "huddleMinimize": "Minimize",
+  "@huddleMinimize": {
+    "description": "Huddle screen, tooltip of the button that shrinks the call to a bar. Short."
+  },
+  "huddleLeave": "Leave Huddle",
+  "@huddleLeave": {
+    "description": "Huddle screen / bar, tooltip of the hang-up button. Short."
+  },
+  "huddleUseEarpiece": "Use earpiece",
+  "@huddleUseEarpiece": {
+    "description": "Huddle controls, tooltip of the speaker toggle when the loudspeaker is on. Short."
+  },
+  "huddleUseSpeaker": "Use speaker",
+  "@huddleUseSpeaker": {
+    "description": "Huddle controls, tooltip of the speaker toggle when the loudspeaker is off. Short."
+  },
+  "huddleMute": "Mute",
+  "@huddleMute": {
+    "description": "Huddle controls, tooltip of the button that mutes your microphone. Short."
+  },
+  "huddleUnmute": "Unmute",
+  "@huddleUnmute": {
+    "description": "Huddle controls, tooltip of the button that unmutes your microphone. Short."
+  },
+  "huddleEmojiReactions": "Emoji reactions",
+  "@huddleEmojiReactions": {
+    "description": "Huddle controls, tooltip of the button that opens emoji reactions. Short."
+  },
+  "huddleJoining": "Joining Huddle",
+  "@huddleJoining": {
+    "description": "Huddle screen, screen-reader label of the loading animation while joining the call."
+  },
+  "huddleDrawerLabel": "Huddle controls",
+  "@huddleDrawerLabel": {
+    "description": "Minimized Huddle bar, screen-reader label of the bar with call controls."
+  },
+  "huddleDrawerHint": "Tap outside a control to open the Huddle",
+  "@huddleDrawerHint": {
+    "description": "Minimized Huddle bar, screen-reader hint."
+  },
+  "huddleStatePreparing": "preparing a response",
+  "@huddleStatePreparing": {
+    "description": "Huddle participant tile, screen-reader state after the name when an agent is preparing to speak. Lowercase, joined to the name with a comma."
+  },
+  "huddleStateSpeaking": "speaking",
+  "@huddleStateSpeaking": {
+    "description": "Huddle participant tile, screen-reader state after the name when the person is speaking. Lowercase, joined to the name with a comma."
+  },
+  "huddleParticipantSpeaking": "{name}, speaking",
+  "@huddleParticipantSpeaking": {
+    "description": "Huddle participant spotlight, screen-reader label when the person is speaking.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "huddleFocusParticipantHint": "Tap to focus participant",
+  "@huddleFocusParticipantHint": {
+    "description": "Huddle participant tile, screen-reader hint."
+  },
+  "huddleParticipant": "Participant",
+  "@huddleParticipant": {
+    "description": "Huddle participant tile, name used when nothing is known about the person. Short."
+  },
+  "huddleMoreParticipants": "{count} more participants",
+  "@huddleMoreParticipants": {
+    "description": "Huddle screen, screen-reader label of the '+N' bubble / list of further participants.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "huddleShowParticipantsHint": "Tap to show participant list",
+  "@huddleShowParticipantsHint": {
+    "description": "Huddle screen, screen-reader hint of the '+N' bubble."
+  },
+  "huddleDismissParticipant": "Dismiss participant",
+  "@huddleDismissParticipant": {
+    "description": "Huddle screen, screen-reader label of the area behind an enlarged participant; tapping closes it."
+  },
+  "huddleDismissParticipantList": "Dismiss participant list",
+  "@huddleDismissParticipantList": {
+    "description": "Huddle screen, screen-reader label of the area behind the participant list; tapping closes it."
+  },
+  "huddleCloseParticipantHint": "Tap to close participant",
+  "@huddleCloseParticipantHint": {
+    "description": "Huddle screen, screen-reader hint on an enlarged participant."
+  },
+  "channelHeaderOpenChatInfo": "Open chat info for {title}, {members}",
+  "@channelHeaderOpenChatInfo": {
+    "description": "Chat header, screen-reader label of the tappable title; {title} is the chat name and {members} is e.g. '3 people'.",
+    "placeholders": {
+      "title": {
+        "type": "String"
+      },
+      "members": {
+        "type": "String"
+      }
+    }
+  },
+  "channelHeaderOpenSettings": "Open settings for {name}, {members}",
+  "@channelHeaderOpenSettings": {
+    "description": "Group header, screen-reader label of the tappable title; {name} is the group name and {members} is e.g. '5 members'.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "members": {
+        "type": "String"
+      }
+    }
+  },
+  "channelHeaderOpenGroupSettings": "Open group settings",
+  "@channelHeaderOpenGroupSettings": {
+    "description": "Group header, tooltip of the tappable title. Short."
+  },
+  "channelGoals": "Goals",
+  "@channelGoals": {
+    "description": "Chat header, tooltip of the goals button when no goal is set; also the goals switch title. Short."
+  },
+  "channelHeaderViewMembers": "View members",
+  "@channelHeaderViewMembers": {
+    "description": "Group header, tooltip of the members button. Short."
+  },
+  "channelPresenceOnline": "Online",
+  "@channelPresenceOnline": {
+    "description": "1:1 chat header, the other person's status. Short."
+  },
+  "channelPresenceAway": "Away",
+  "@channelPresenceAway": {
+    "description": "1:1 chat header, the other person's status. Short."
+  },
+  "channelPresenceOffline": "Offline",
+  "@channelPresenceOffline": {
+    "description": "1:1 chat header, the other person's status. Short."
+  },
+  "channelPresenceUnknown": "Unknown",
+  "@channelPresenceUnknown": {
+    "description": "1:1 chat header, the other person's status when unknown. Short."
+  },
+  "channelGroupArchivedBanner": "This group is archived and read-only on mobile.",
+  "@channelGroupArchivedBanner": {
+    "description": "Group screen, banner in place of the message box when the group is archived."
+  },
+  "channelForumArchivedBanner": "This forum is archived and read-only on mobile.",
+  "@channelForumArchivedBanner": {
+    "description": "Forum screen, banner in place of the message box when the forum is archived."
+  },
+  "channelGroupJoinBanner": "Join this group from Manage to participate.",
+  "@channelGroupJoinBanner": {
+    "description": "Group screen, banner in place of the message box when you are not a member. 'Manage' is the group settings menu."
+  },
+  "channelForumJoinBanner": "Join this forum from Manage to participate.",
+  "@channelForumJoinBanner": {
+    "description": "Forum screen, banner in place of the message box when you are not a member. 'Manage' is the group settings menu."
+  },
+  "threadTitleFallback": "Thread",
+  "@threadTitleFallback": {
+    "description": "Thread screen header when the thread has no name. Short."
+  },
+  "threadLoadingReplies": "Loading replies…",
+  "@threadLoadingReplies": {
+    "description": "Thread screen, shown while replies load."
+  },
+  "channelNoMessages": "No messages yet",
+  "@channelNoMessages": {
+    "description": "Chat screen, empty state title."
+  },
+  "channelNoMessagesHint": "Be the first to say something!",
+  "@channelNoMessagesHint": {
+    "description": "Chat screen, empty state text under 'No messages yet'."
+  },
+  "channelLoadingOlder": "Loading older messages",
+  "@channelLoadingOlder": {
+    "description": "Chat screen, screen-reader label of the spinner at the top while older messages load."
+  },
+  "channelJumpToOldestUnread": "Jump to oldest unread message",
+  "@channelJumpToOldestUnread": {
+    "description": "Chat screen, tooltip of the up-arrow button."
+  },
+  "channelGroupActions": "Group actions",
+  "@channelGroupActions": {
+    "description": "Group screen header, tooltip of the ⋮ menu button. Short."
+  },
+  "channelLoadMessagesError": "Failed to load messages",
+  "@channelLoadMessagesError": {
+    "description": "Chat screen, error when messages could not be loaded."
+  },
+  "threadSummaryReplies": "Replies",
+  "@threadSummaryReplies": {
+    "description": "Thread summary row under a message, shown while the reply count is loading. Short."
+  },
+  "threadSummaryReplyCount": "{count, plural, one{{count} reply} other{{count} replies}}",
+  "@threadSummaryReplyCount": {
+    "description": "Thread summary row under a message, number of replies. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "threadSummaryReplyCountAtLeast": "{count, plural, one{{count}+ reply} other{{count}+ replies}}",
+  "@threadSummaryReplyCountAtLeast": {
+    "description": "Thread summary row under a message, number of replies when the exact count is not known yet (at least {count}). Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "threadSummaryLastReply": "last reply {time}",
+  "@threadSummaryLastReply": {
+    "description": "Thread summary row, when the last reply was; {time} is e.g. 'just now', '3 hours ago' or 'on May 19'. Lowercase.",
+    "placeholders": {
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "systemSomeone": "Someone",
+  "@systemSomeone": {
+    "description": "Chat system message, name used when the person is unknown. Short."
+  },
+  "systemActionCreatedRoom": "{room, select, chat{created this chat} other{created this group}}",
+  "@systemActionCreatedRoom": {
+    "description": "Chat system message after the person's name (shown on the line above): they created the room. {room} is 'chat' for a chat of people, otherwise a group.",
+    "placeholders": {
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemActionHuddleStarted": "started a huddle",
+  "@systemActionHuddleStarted": {
+    "description": "Chat system message after the person's name (shown on the line above): they started a voice call."
+  },
+  "systemActionHuddleEnded": "ended the huddle",
+  "@systemActionHuddleEnded": {
+    "description": "Chat system message after the person's name (shown on the line above): they ended the voice call."
+  },
+  "systemActionJoinedRoom": "{room, select, chat{joined the chat} other{joined the group}}",
+  "@systemActionJoinedRoom": {
+    "description": "Chat system message after the person's name (shown on the line above): they joined. {room} is 'chat' for a chat of people, otherwise a group.",
+    "placeholders": {
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemActionAddedBy": "added by {name}",
+  "@systemActionAddedBy": {
+    "description": "Chat system message after the new member's name (shown on the line above): who added them.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "systemAlongWith": " along with ",
+  "@systemAlongWith": {
+    "description": "Chat system message, joins 'joined the group' to the list of other people who joined. Keep the spaces around it."
+  },
+  "systemAlongWithAfterComma": ", along with ",
+  "@systemAlongWithAfterComma": {
+    "description": "Chat system message, joins 'added by X' to the list of other people who were added. Keep the comma and spaces."
+  },
+  "systemListAndTwo": " and ",
+  "@systemListAndTwo": {
+    "description": "Chat system message, joins the last two names of a list of two. Keep the spaces."
+  },
+  "systemListAndLast": ", and ",
+  "@systemListAndLast": {
+    "description": "Chat system message, joins the last name (or 'N others') of a longer list. Keep punctuation and spaces as your language needs."
+  },
+  "systemListSeparator": ", ",
+  "@systemListSeparator": {
+    "description": "Chat system message, separator between names in a list."
+  },
+  "systemOthersCount": "{count} others",
+  "@systemOthersCount": {
+    "description": "Chat system message, tappable end of a long list of names; tapping shows the rest.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "systemMemberJoined": "{room, select, chat{{actor} joined the chat} other{{actor} joined the group}}",
+  "@systemMemberJoined": {
+    "description": "Chat system message: someone joined. {room} is 'chat' for a chat of people, otherwise a group.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemMemberAddedBy": "{target} was added by {actor}",
+  "@systemMemberAddedBy": {
+    "description": "Chat system message: someone was added by another member.",
+    "placeholders": {
+      "target": {
+        "type": "String"
+      },
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemMemberLeft": "{room, select, chat{{actor} left the chat} other{{actor} left the group}}",
+  "@systemMemberLeft": {
+    "description": "Chat system message: someone left. {room} is 'chat' for a chat of people, otherwise a group.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemMemberRemoved": "{room, select, chat{{actor} removed {target} from the chat} other{{actor} removed {target} from the group}}",
+  "@systemMemberRemoved": {
+    "description": "Chat system message: someone removed another member.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "target": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemTopicChanged": "{actor} changed the topic to \"{topic}\"",
+  "@systemTopicChanged": {
+    "description": "Chat system message: the group topic changed; {topic} is the new topic.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "topic": {
+        "type": "String"
+      }
+    }
+  },
+  "systemTopicCleared": "{actor} cleared the topic",
+  "@systemTopicCleared": {
+    "description": "Chat system message: the group topic was removed.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemPurposeChanged": "{actor} changed the purpose to \"{purpose}\"",
+  "@systemPurposeChanged": {
+    "description": "Chat system message: the group purpose changed; {purpose} is the new purpose.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "purpose": {
+        "type": "String"
+      }
+    }
+  },
+  "systemPurposeCleared": "{actor} cleared the purpose",
+  "@systemPurposeCleared": {
+    "description": "Chat system message: the group purpose was removed.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemRoomCreated": "{room, select, chat{{actor} created this chat} other{{actor} created this group}}",
+  "@systemRoomCreated": {
+    "description": "Chat system message: someone created the room.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemRoomArchived": "{room, select, chat{{actor} archived this chat} other{{actor} archived this group}}",
+  "@systemRoomArchived": {
+    "description": "Chat system message: someone archived the room.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemRoomUnarchived": "{room, select, chat{{actor} unarchived this chat} other{{actor} unarchived this group}}",
+  "@systemRoomUnarchived": {
+    "description": "Chat system message: someone made the archived room active again.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemGoalsOn": "{actor} turned goals on",
+  "@systemGoalsOn": {
+    "description": "Chat system message: someone turned on goals for the room.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemGoalsOff": "{actor} turned goals off",
+  "@systemGoalsOff": {
+    "description": "Chat system message: someone turned off goals for the room.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemPhotoChanged": "{room, select, chat{{actor} changed the chat photo} other{{actor} changed the group photo}}",
+  "@systemPhotoChanged": {
+    "description": "Chat system message: someone changed the room's photo.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemPhotoRemoved": "{room, select, chat{{actor} removed the chat photo} other{{actor} removed the group photo}}",
+  "@systemPhotoRemoved": {
+    "description": "Chat system message: someone removed the room's photo.",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      },
+      "room": {
+        "type": "String"
+      }
+    }
+  },
+  "systemHuddleStarted": "{actor} started a huddle",
+  "@systemHuddleStarted": {
+    "description": "Chat system message: someone started a voice call (Huddle).",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "systemHuddleEnded": "{actor} ended the huddle",
+  "@systemHuddleEnded": {
+    "description": "Chat system message: someone ended the voice call (Huddle).",
+    "placeholders": {
+      "actor": {
+        "type": "String"
+      }
+    }
+  },
+  "threadEditName": "Edit thread name",
+  "@threadEditName": {
+    "description": "Thread page, tooltip of the button that renames the thread. Short."
+  },
+  "threadComposerHint": "Reply in thread…",
+  "@threadComposerHint": {
+    "description": "Thread page, hint in the reply composer."
+  },
+  "threadLoadingEarlierReplies": "Loading earlier replies…",
+  "@threadLoadingEarlierReplies": {
+    "description": "Thread page, note while older replies load."
+  },
+  "threadEarlierRepliesOnScroll": "Earlier replies load as you scroll up",
+  "@threadEarlierRepliesOnScroll": {
+    "description": "Thread page, note that older replies exist and load when scrolling up."
+  },
+  "threadLoadRepliesError": "Couldn’t load replies",
+  "@threadLoadRepliesError": {
+    "description": "Thread page, note when replies failed to load."
+  },
+  "threadRepliesRetrying": "Retrying…",
+  "@threadRepliesRetrying": {
+    "description": "Thread page, after the reply count while loading replies again. Short."
+  },
+  "threadRepliesRefreshError": "Couldn’t refresh",
+  "@threadRepliesRefreshError": {
+    "description": "Thread page, after the reply count when refreshing replies failed. Short."
+  },
+  "threadMessageDeleted": "This message was deleted",
+  "@threadMessageDeleted": {
+    "description": "Thread page, shown in place of the thread's first message when it was deleted."
+  },
+  "threadOpenGroup": "Open group",
+  "@threadOpenGroup": {
+    "description": "Thread page, tooltip of the button that opens the group this thread is in. Short."
+  },
+  "threadGroupStillLoading": "This group is still loading.",
+  "@threadGroupStillLoading": {
+    "description": "Thread page, snackbar when opening the group before it has loaded."
+  },
+  "threadMoreActions": "More thread actions",
+  "@threadMoreActions": {
+    "description": "Thread page, tooltip of the menu button with more actions. Short."
+  },
+  "threadLinkCopied": "Link copied",
+  "@threadLinkCopied": {
+    "description": "Snackbar after copying a link to a thread."
+  },
+  "threadCloseError": "Could not close the thread: {error}",
+  "@threadCloseError": {
+    "description": "Snackbar when closing a thread failed; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "threadReopenError": "Could not reopen the thread: {error}",
+  "@threadReopenError": {
+    "description": "Snackbar when reopening a thread failed; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "threadReopen": "Reopen thread",
+  "@threadReopen": {
+    "description": "Thread menu item that reopens a closed thread. Short."
+  },
+  "threadClose": "Close thread",
+  "@threadClose": {
+    "description": "Thread menu item that marks the thread as done. Short."
+  },
+  "threadMarkUnread": "Mark as unread",
+  "@threadMarkUnread": {
+    "description": "Thread menu item that marks the thread as unread. Short."
+  },
+  "composeVoiceNoteFinishFirst": "Finish or discard the voice note before attaching a file.",
+  "@composeVoiceNoteFinishFirst": {
+    "description": "Composer error when adding a file while a voice note is being recorded."
+  },
+  "composeVoiceNoteOnlyAttachment": "A voice note must be the only attachment.",
+  "@composeVoiceNoteOnlyAttachment": {
+    "description": "Composer error when mixing a voice note with other attachments."
+  },
+  "composeVoiceNoteLeaveHuddle": "Leave the Huddle before recording a voice note.",
+  "@composeVoiceNoteLeaveHuddle": {
+    "description": "Composer error when recording a voice note during a call. 'Huddle' is the name of the voice call feature."
+  },
+  "composeCamera": "Camera",
+  "@composeCamera": {
+    "description": "Composer attachment menu item that opens the camera. Short."
+  },
+  "composePhotos": "Photos",
+  "@composePhotos": {
+    "description": "Composer attachment menu item that opens the photo picker. Short."
+  },
+  "composeVideo": "Video",
+  "@composeVideo": {
+    "description": "Composer attachment menu item that picks a video. Short."
+  },
+  "composeVoiceNote": "Voice note",
+  "@composeVoiceNote": {
+    "description": "Composer attachment menu item that records a voice message. Short."
+  },
+  "composeFiles": "Files",
+  "@composeFiles": {
+    "description": "Composer attachment menu item that picks a file. Short."
+  },
+  "composeCloseFormatting": "Close formatting",
+  "@composeCloseFormatting": {
+    "description": "Composer, tooltip of the + button while the text formatting bar is open. Short."
+  },
+  "composeAddAttachment": "Add attachment",
+  "@composeAddAttachment": {
+    "description": "Composer, tooltip of the + button that opens the attachment menu. Short."
+  },
+  "composeCloseAttachments": "Close attachments",
+  "@composeCloseAttachments": {
+    "description": "Composer, tooltip of the button that closes the attachment menu. Short."
+  },
+  "composeBackToAttachments": "Back to attachment options",
+  "@composeBackToAttachments": {
+    "description": "Composer camera / photo picker, back button tooltip and screen-reader label."
+  },
+  "composeFileFallback": "File",
+  "@composeFileFallback": {
+    "description": "Composer, name shown on an attached file that has no name. Short."
+  },
+  "composeRemoveAttachment": "Remove attachment",
+  "@composeRemoveAttachment": {
+    "description": "Composer, tooltip of the x button on an attachment. Short."
+  },
+  "composeCameraStarting": "Starting camera",
+  "@composeCameraStarting": {
+    "description": "Composer camera, screen-reader label of the spinner while the camera starts."
+  },
+  "composeCameraUnavailableHere": "Camera isn’t available here.",
+  "@composeCameraUnavailableHere": {
+    "description": "Composer camera, message when the camera cannot be used."
+  },
+  "composeTakePhoto": "Take photo",
+  "@composeTakePhoto": {
+    "description": "Composer camera, screen-reader label of the shutter button. Short."
+  },
+  "composeCameraAccessOff": "Camera access is turned off for Kuzz.",
+  "@composeCameraAccessOff": {
+    "description": "Composer camera, message when camera permission is denied. 'Kuzz' is the app name."
+  },
+  "composeCameraUnavailableDevice": "Camera isn’t available on this device.",
+  "@composeCameraUnavailableDevice": {
+    "description": "Composer camera, message when the device has no camera."
+  },
+  "composeCameraStartError": "Camera couldn’t start. Try again.",
+  "@composeCameraStartError": {
+    "description": "Composer camera, message when the camera failed to start."
+  },
+  "composeHintNamed": "Message {name}",
+  "@composeHintNamed": {
+    "description": "Composer, hint in the message field; {name} is the chat or group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "composeHint": "Message…",
+  "@composeHint": {
+    "description": "Composer, hint in the message field when the chat has no name."
+  },
+  "composePasteImageError": "Unable to read pasted image",
+  "@composePasteImageError": {
+    "description": "Composer error when a pasted image could not be read."
+  },
+  "composePasteImage": "Paste Image",
+  "@composePasteImage": {
+    "description": "Text field context menu item that pastes an image from the clipboard. Short."
+  },
+  "composePhotoLibraryOpenError": "Unable to open your photo library.",
+  "@composePhotoLibraryOpenError": {
+    "description": "Composer error when the photo library could not be opened."
+  },
+  "composeBold": "Bold",
+  "@composeBold": {
+    "description": "Composer formatting bar, tooltip of the bold button. Short."
+  },
+  "composeItalic": "Italic",
+  "@composeItalic": {
+    "description": "Composer formatting bar, tooltip of the italic button. Short."
+  },
+  "composeStrikethrough": "Strikethrough",
+  "@composeStrikethrough": {
+    "description": "Composer formatting bar, tooltip of the strikethrough button. Short."
+  },
+  "composeCode": "Code",
+  "@composeCode": {
+    "description": "Composer formatting bar, tooltip of the inline code button. Short."
+  },
+  "composeCodeBlock": "Code block",
+  "@composeCodeBlock": {
+    "description": "Composer formatting bar, tooltip of the code block button. Short."
+  },
+  "composePhotosPrepareError": "Unable to prepare the selected photos.",
+  "@composePhotosPrepareError": {
+    "description": "Composer photo picker, error when the picked photos could not be prepared."
+  },
+  "composePhotosPreparing": "Preparing selected photos",
+  "@composePhotosPreparing": {
+    "description": "Composer photo picker, screen-reader label of the spinner while picked photos are prepared."
+  },
+  "composeAllPhotosIos": "All Photos",
+  "@composeAllPhotosIos": {
+    "description": "iPhone composer photo picker, button that opens the full photo library (title case on iOS). Short."
+  },
+  "composeAllPhotos": "All photos",
+  "@composeAllPhotos": {
+    "description": "Composer photo picker, button that opens the full photo library. Short."
+  },
+  "composeAddPhotos": "{count, plural, one{Add {count} photo} other{Add {count} photos}}",
+  "@composeAddPhotos": {
+    "description": "Composer photo picker, button that attaches the picked photos. Short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeOpeningPhotos": "Opening Photos",
+  "@composeOpeningPhotos": {
+    "description": "iPhone composer, screen-reader label while the system photo picker opens. 'Photos' is the iOS app name."
+  },
+  "composeRecentPhotosLoading": "Loading recent photos",
+  "@composeRecentPhotosLoading": {
+    "description": "Composer photo picker, screen-reader label while recent photos load."
+  },
+  "composeRecentPhotosUnavailable": "Recent photos aren’t available",
+  "@composeRecentPhotosUnavailable": {
+    "description": "Composer photo picker, title when recent photos could not be read."
+  },
+  "composeRecentPhotosUnavailableBody": "Use All photos to choose with the system photo picker.",
+  "@composeRecentPhotosUnavailableBody": {
+    "description": "Composer photo picker, hint when recent photos could not be read. 'All photos' is the button label."
+  },
+  "composeRecentPhotosEmpty": "No recent photos",
+  "@composeRecentPhotosEmpty": {
+    "description": "Composer photo picker, title when there are no recent photos."
+  },
+  "composeRecentPhotosEmptyBody": "Use All photos to browse your photo library.",
+  "@composeRecentPhotosEmptyBody": {
+    "description": "Composer photo picker, hint when there are no recent photos. 'All photos' is the button label."
+  },
+  "composeRecentPhotos": "Recent photos",
+  "@composeRecentPhotos": {
+    "description": "Composer photo picker, header. Short."
+  },
+  "composeOpeningAllPhotos": "Opening all photos",
+  "@composeOpeningAllPhotos": {
+    "description": "Composer photo picker, screen-reader label while the full photo library opens."
+  },
+  "composePhotoSelected": "Photo {index} selected",
+  "@composePhotoSelected": {
+    "description": "Composer photo picker, screen-reader label of a picked photo; {index} is its position in the selection.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "composeSelectPhoto": "Select photo",
+  "@composeSelectPhoto": {
+    "description": "Composer photo picker, screen-reader label of a photo that is not picked. Short."
+  },
+  "composeSending": "Sending message",
+  "@composeSending": {
+    "description": "Composer, screen-reader label of the spinner on the send button."
+  },
+  "composeAutoMentionAgents": "Automatically mention agents",
+  "@composeAutoMentionAgents": {
+    "description": "Mention picker, title of the switch that keeps mentioning chosen AI agents."
+  },
+  "composeAutoMentionAgentsBody": "Address selected agents in group and thread replies",
+  "@composeAutoMentionAgentsBody": {
+    "description": "Mention picker, subtitle of the automatic agent mention switch."
+  },
+  "composeAutoMentionOff": "Don't automatically mention here",
+  "@composeAutoMentionOff": {
+    "description": "Mention picker, tooltip of the pin button of an agent that is mentioned automatically."
+  },
+  "composeAutoMentionOn": "Automatically mention",
+  "@composeAutoMentionOn": {
+    "description": "Mention picker, tooltip of the pin button that makes an agent mentioned automatically. Short."
+  },
+  "composeAutoMentionNamed": "{name} will be mentioned automatically",
+  "@composeAutoMentionNamed": {
+    "description": "Composer banner after an agent became automatically mentioned; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "composeAutoMentionCount": "{count, plural, one{Agent will be mentioned automatically} other{{count} agents will be mentioned automatically}}",
+  "@composeAutoMentionCount": {
+    "description": "Composer banner after AI agents became automatically mentioned.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "composeTurnOff": "Turn off",
+  "@composeTurnOff": {
+    "description": "Composer automatic mention banner, button that stops it. Short."
+  },
+  "composeUploadingPercent": "Uploading {percent}%",
+  "@composeUploadingPercent": {
+    "description": "Composer, screen-reader label of the upload progress; {percent} is 0-100.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "composeUploading": "Uploading",
+  "@composeUploading": {
+    "description": "Composer upload progress pill label. Short."
+  },
+  "composeMentionInvalid": "Saved mention identity is invalid. Clear the draft and select again.",
+  "@composeMentionInvalid": {
+    "description": "Composer error when a saved draft mention is broken."
+  },
+  "composeMentionAmbiguous": "The mention @{name} is ambiguous. Choose a recipient from the mention picker.",
+  "@composeMentionAmbiguous": {
+    "description": "Composer error when a typed @name matches several people; {name} is the typed name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "composeMentionUnavailable": "Saved mention is no longer available. Select it again from the picker.",
+  "@composeMentionUnavailable": {
+    "description": "Composer error when a saved draft mention no longer exists."
+  },
+  "composeCommunityChangedNotSent": "Message not sent: the community changed",
+  "@composeCommunityChangedNotSent": {
+    "description": "Snackbar when a message was not sent because the user switched community."
+  },
+  "composeLinkGroupLabel": "Group {name}",
+  "@composeLinkGroupLabel": {
+    "description": "Composer, screen-reader label of a group link chip; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "composeLinkMessageLabel": "Message {id} in group {group}",
+  "@composeLinkMessageLabel": {
+    "description": "Composer, screen-reader label of a message link chip; {id} is a short message ID, {group} the group name.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "composeLinkRepoLabel": "Repository {repo}",
+  "@composeLinkRepoLabel": {
+    "description": "Composer, screen-reader label of a code repository link chip; {repo} is its name.",
+    "placeholders": {
+      "repo": {
+        "type": "String"
+      }
+    }
+  },
+  "composeLinkPullRequestLabel": "Pull request {id} in repository {repo}",
+  "@composeLinkPullRequestLabel": {
+    "description": "Composer, screen-reader label of a pull request link chip; {id} is a short ID, {repo} the repository.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "repo": {
+        "type": "String"
+      }
+    }
+  },
+  "composeLinkIssueLabel": "Issue {id} in repository {repo}",
+  "@composeLinkIssueLabel": {
+    "description": "Composer, screen-reader label of an issue link chip; {id} is a short ID, {repo} the repository.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "repo": {
+        "type": "String"
+      }
+    }
+  },
+  "composeAgentMentionLabel": "Agent mention: {name}",
+  "@composeAgentMentionLabel": {
+    "description": "Composer, screen-reader label of an AI agent mention chip; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatInfoPeopleCount": "{count, plural, one{{count} person} other{{count} people}}",
+  "@chatInfoPeopleCount": {
+    "description": "Chat info / invitations, number of people in a chat.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "chatInfoLeaveError": "Couldn’t leave the chat. Try again.",
+  "@chatInfoLeaveError": {
+    "description": "Chat info, snackbar when leaving the chat failed."
+  },
+  "chatInfoRenameForMe": "Rename for me",
+  "@chatInfoRenameForMe": {
+    "description": "Chat info, item and dialog title for a private chat name only you see. Short."
+  },
+  "chatInfoRestoreName": "Restore name",
+  "@chatInfoRestoreName": {
+    "description": "Chat info, item that removes your private chat name. Short."
+  },
+  "chatInfoMuteNotifications": "Mute notifications",
+  "@chatInfoMuteNotifications": {
+    "description": "Chat info, switch that mutes notifications for the chat. Short."
+  },
+  "chatInfoSearchPeople": "Search people",
+  "@chatInfoSearchPeople": {
+    "description": "Chat info, hint in the member search field. Short."
+  },
+  "chatInfoMemberYou": "{name} (you)",
+  "@chatInfoMemberYou": {
+    "description": "Chat info member list, your own row; {name} is your name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "chatInfoRenameHelper": "Only you see this name.",
+  "@chatInfoRenameHelper": {
+    "description": "Rename for me dialog, helper text under the name field."
+  },
+  "chatEmptyTitle": "Empty chat",
+  "@chatEmptyTitle": {
+    "description": "Title of a chat with nobody else in it. Short."
+  },
+  "chatGroupTitleFallback": "Group",
+  "@chatGroupTitleFallback": {
+    "description": "Title of a group that has no name. Short."
+  },
+  "ephemeralTooltipNoTtl": "Ephemeral group. Cleans up automatically after inactivity.",
+  "@ephemeralTooltipNoTtl": {
+    "description": "Tooltip on the timer badge of a temporary group with no set lifetime."
+  },
+  "ephemeralTooltipDueNow": "Ephemeral group. Cleanup is due now.",
+  "@ephemeralTooltipDueNow": {
+    "description": "Tooltip on the timer badge of a temporary group that is about to be cleaned up."
+  },
+  "ephemeralTooltipInMinutes": "Ephemeral group. Cleans up in {count, plural, one{{count} minute} other{{count} minutes}}. Scheduled for {deadline}.",
+  "@ephemeralTooltipInMinutes": {
+    "description": "Tooltip on a temporary group's timer badge; {deadline} is a date and time like 'Jan 5, 14:03'.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "deadline": {
+        "type": "String"
+      }
+    }
+  },
+  "ephemeralTooltipInHours": "Ephemeral group. Cleans up in {count, plural, one{{count} hour} other{{count} hours}}. Scheduled for {deadline}.",
+  "@ephemeralTooltipInHours": {
+    "description": "Tooltip on a temporary group's timer badge; {deadline} is a date and time like 'Jan 5, 14:03'.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "deadline": {
+        "type": "String"
+      }
+    }
+  },
+  "ephemeralTooltipInDays": "Ephemeral group. Cleans up in {count, plural, one{{count} day} other{{count} days}}. Scheduled for {deadline}.",
+  "@ephemeralTooltipInDays": {
+    "description": "Tooltip on a temporary group's timer badge; {deadline} is a date and time like 'Jan 5, 14:03'.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      },
+      "deadline": {
+        "type": "String"
+      }
+    }
+  },
+  "ephemeralTooltipAfterSeconds": "Ephemeral group. Cleans up after {count, plural, one{{count} second} other{{count} seconds}} of inactivity.",
+  "@ephemeralTooltipAfterSeconds": {
+    "description": "Tooltip on a temporary group's timer badge.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTooltipAfterMinutes": "Ephemeral group. Cleans up after {count, plural, one{{count} minute} other{{count} minutes}} of inactivity.",
+  "@ephemeralTooltipAfterMinutes": {
+    "description": "Tooltip on a temporary group's timer badge.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTooltipAfterHours": "Ephemeral group. Cleans up after {count, plural, one{{count} hour} other{{count} hours}} of inactivity.",
+  "@ephemeralTooltipAfterHours": {
+    "description": "Tooltip on a temporary group's timer badge.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTooltipAfterDays": "Ephemeral group. Cleans up after {count, plural, one{{count} day} other{{count} days}} of inactivity.",
+  "@ephemeralTooltipAfterDays": {
+    "description": "Tooltip on a temporary group's timer badge.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralCleanupDue": "Cleanup due",
+  "@ephemeralCleanupDue": {
+    "description": "Timer badge of a temporary group that is about to be cleaned up. Short."
+  },
+  "ephemeralLeftMinutes": "{count}m left",
+  "@ephemeralLeftMinutes": {
+    "description": "Timer badge of a temporary group: minutes left. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralLeftHours": "{count}h left",
+  "@ephemeralLeftHours": {
+    "description": "Timer badge of a temporary group: hours left. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralLeftDays": "{count}d left",
+  "@ephemeralLeftDays": {
+    "description": "Timer badge of a temporary group: days left. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTtlSeconds": "{count}s TTL",
+  "@ephemeralTtlSeconds": {
+    "description": "Timer badge of a temporary group: lifetime after inactivity in seconds. TTL = time to live. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTtlMinutes": "{count}m TTL",
+  "@ephemeralTtlMinutes": {
+    "description": "Timer badge of a temporary group: lifetime after inactivity in minutes. TTL = time to live. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTtlHours": "{count}h TTL",
+  "@ephemeralTtlHours": {
+    "description": "Timer badge of a temporary group: lifetime after inactivity in hours. TTL = time to live. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralTtlDays": "{count}d TTL",
+  "@ephemeralTtlDays": {
+    "description": "Timer badge of a temporary group: lifetime after inactivity in days. TTL = time to live. Very short.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "ephemeralDeadline": "{date}, {time}",
+  "@ephemeralDeadline": {
+    "description": "Cleanup date and time of a temporary group, used inside its tooltip; {date} is like 'Jan 5', {time} like '14:03'.",
+    "placeholders": {
+      "date": {
+        "type": "String"
+      },
+      "time": {
+        "type": "String"
+      }
+    }
+  },
+  "messageQuoting": "Quoting {name}",
+  "@messageQuoting": {
+    "description": "Composer, label above the quoted message; {name} is its author.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "messageCancelQuote": "Cancel quote",
+  "@messageCancelQuote": {
+    "description": "Composer, tooltip of the x button that removes the quote. Short."
+  },
+  "channelGroupPhotoSaving": "Saving group photo",
+  "@channelGroupPhotoSaving": {
+    "description": "Manage group, screen-reader label of the spinner while the group photo saves."
+  },
+  "channelGroupPhotoChange": "Change photo",
+  "@channelGroupPhotoChange": {
+    "description": "Manage group, button that picks a new group photo. Short."
+  },
+  "channelGroupPhotoRemove": "Remove photo",
+  "@channelGroupPhotoRemove": {
+    "description": "Manage group, button that removes the group photo. Short."
+  },
+  "channelGroupPhoto": "Group photo",
+  "@channelGroupPhoto": {
+    "description": "Screen-reader label of a group photo in the image viewer. Short."
+  },
+  "channelGroupPhotoView": "View group photo",
+  "@channelGroupPhotoView": {
+    "description": "Screen-reader label of a group photo that opens full size. Short."
+  },
+  "channelGroupPhotoUpdateError": "We couldn't update the group photo. Try again.",
+  "@channelGroupPhotoUpdateError": {
+    "description": "Manage group, error when changing the group photo failed."
+  },
+  "messageJumpToLatest": "Jump to latest message",
+  "@messageJumpToLatest": {
+    "description": "Chat, tooltip and screen-reader label of the button that scrolls to the newest message."
+  },
+  "messageNewMessagesDivider": "New messages",
+  "@messageNewMessagesDivider": {
+    "description": "Chat, divider line above the first unread message. Short."
+  },
+  "messageAddReaction": "Add reaction",
+  "@messageAddReaction": {
+    "description": "Message reactions row, screen-reader label of the + pill that adds a reaction. Short."
+  },
+  "channelGoalsUpdateError": "Couldn’t update goals. Try again.",
+  "@channelGoalsUpdateError": {
+    "description": "Snackbar when turning goals on or off for a conversation failed."
+  },
+  "channelGoalsBody": "Track goals for this conversation. Agents get goal guidance only when on.",
+  "@channelGoalsBody": {
+    "description": "Subtitle of the Goals switch. 'Agents' are AI agents."
+  },
+  "messageQuoteLoading": "Loading quoted message…",
+  "@messageQuoteLoading": {
+    "description": "Message, placeholder while the quoted message loads."
+  },
+  "messageQuoteUnavailable": "Original message unavailable",
+  "@messageQuoteUnavailable": {
+    "description": "Message, placeholder when the quoted message cannot be found."
+  },
+  "messageQuoteBlocked": "Message from a blocked user",
+  "@messageQuoteBlocked": {
+    "description": "Message, placeholder for a quoted message written by someone you blocked."
+  },
+  "messageQuoteJump": "Jump to quoted message from {name}",
+  "@messageQuoteJump": {
+    "description": "Message, screen-reader label of the quote header; {name} is the quoted author.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "messageQuoteNoText": "No message text",
+  "@messageQuoteNoText": {
+    "description": "Quote preview when the quoted message has no text."
+  },
+  "messageSendPending": "Sending",
+  "@messageSendPending": {
+    "description": "Message, screen-reader label of the clock icon while your message is sending. Short."
+  },
+  "messageSendFailedLabel": "Not sent. Tap to retry or delete",
+  "@messageSendFailedLabel": {
+    "description": "Message, screen-reader label of the failed-send mark."
+  },
+  "messageSendFailed": "Not sent",
+  "@messageSendFailed": {
+    "description": "Message, small label under your message when sending failed. Short."
+  },
+  "messageRetryOtherAccount": "Message not sent: it was written by another account",
+  "@messageRetryOtherAccount": {
+    "description": "Snackbar when retrying a failed message that another signed-in account wrote."
+  },
+  "messageRetryNoSigningKey": "Message not sent: no signing key for this account",
+  "@messageRetryNoSigningKey": {
+    "description": "Snackbar when retrying a failed message is impossible because the account cannot sign."
+  },
+  "messageRetryError": "Message not sent: {error}",
+  "@messageRetryError": {
+    "description": "Snackbar when retrying a failed message failed; {error} is a technical error text.",
+    "placeholders": {
+      "error": {
+        "type": "String"
+      }
+    }
+  },
+  "channelManageGroupName": "Group name",
+  "@channelManageGroupName": {
+    "description": "Manage group, hint in the group name field. Short."
+  },
+  "channelManageGroupNameRequired": "Group name is required.",
+  "@channelManageGroupNameRequired": {
+    "description": "Manage group, error when the name field is empty."
+  },
+  "channelManageSaveChanges": "Save changes",
+  "@channelManageSaveChanges": {
+    "description": "Manage group, button that saves the name and description. Short."
+  },
+  "channelManageCanvas": "Canvas",
+  "@channelManageCanvas": {
+    "description": "Manage group, section title for the group's shared Markdown note (canvas). Short."
+  },
+  "channelManageCanvasHint": "Write your canvas content in Markdown…",
+  "@channelManageCanvasHint": {
+    "description": "Manage group, hint in the canvas editor."
+  },
+  "channelManageSaveCanvas": "Save canvas",
+  "@channelManageSaveCanvas": {
+    "description": "Manage group, button that saves the canvas. Short."
+  },
+  "channelManageCanvasEmpty": "No canvas set for this group.",
+  "@channelManageCanvasEmpty": {
+    "description": "Manage group, shown when the group has no canvas."
+  },
+  "channelManageEditCanvas": "Edit canvas",
+  "@channelManageEditCanvas": {
+    "description": "Manage group, button that edits the canvas. Short."
+  },
+  "channelManageCreateCanvas": "Create canvas",
+  "@channelManageCreateCanvas": {
+    "description": "Manage group, button that starts a canvas. Short."
+  },
+  "channelManageCanvasLoading": "Loading group canvas",
+  "@channelManageCanvasLoading": {
+    "description": "Manage group, screen-reader label while the canvas loads."
+  },
+  "channelManageCanvasLoadError": "Couldn’t load the group canvas.",
+  "@channelManageCanvasLoadError": {
+    "description": "Manage group, error when the canvas failed to load."
+  },
+  "threadNameTitle": "Thread name",
+  "@threadNameTitle": {
+    "description": "Thread name dialog title. Short."
+  },
+  "threadNameBody": "Visible to everyone in this group. Up to 40 English or 20 Korean characters. Leave empty to remove the name.",
+  "@threadNameBody": {
+    "description": "Thread name dialog, explanation. The limit counts Korean characters double."
+  },
+  "threadNameLabel": "Name",
+  "@threadNameLabel": {
+    "description": "Thread name dialog, label of the name field. Short."
+  },
+  "threadNameCounter": "{weight} / 40 · English 1, Korean 2",
+  "@threadNameCounter": {
+    "description": "Thread name dialog, length counter; {weight} is the used length, where a Korean character counts 2. Short.",
+    "placeholders": {
+      "weight": {
+        "type": "int"
+      }
+    }
+  },
+  "threadNameControlCharsError": "Use a single line without control characters.",
+  "@threadNameControlCharsError": {
+    "description": "Thread name dialog, error for line breaks or control characters in the name."
+  },
+  "threadNameTooLongError": "Up to 40 English or 20 Korean characters.",
+  "@threadNameTooLongError": {
+    "description": "Thread name dialog, error when the name is too long."
+  },
+  "voiceNotePause": "Pause voice note",
+  "@voiceNotePause": {
+    "description": "Voice message, tooltip of the pause button. Short."
+  },
+  "voiceNoteCancelLoading": "Cancel voice note loading",
+  "@voiceNoteCancelLoading": {
+    "description": "Voice message, tooltip of the button that stops loading the audio. Short."
+  },
+  "voiceNoteLoading": "Loading voice note",
+  "@voiceNoteLoading": {
+    "description": "Voice message, tooltip while the audio loads. Short."
+  },
+  "voiceNoteRetry": "Retry voice note",
+  "@voiceNoteRetry": {
+    "description": "Voice message, tooltip of the retry button after loading failed. Short."
+  },
+  "voiceNotePlay": "Play voice note",
+  "@voiceNotePlay": {
+    "description": "Voice message, tooltip of the play button. Short."
+  },
+  "voiceNoteUnavailable": "Voice note unavailable",
+  "@voiceNoteUnavailable": {
+    "description": "Voice message, shown instead of the duration when the audio cannot be played. Short."
+  },
+  "voiceNoteRemove": "Remove voice note",
+  "@voiceNoteRemove": {
+    "description": "Composer, tooltip of the x button on a recorded voice message. Short."
+  },
+  "voiceNoteSpeedLabel": "Playback speed {rate}",
+  "@voiceNoteSpeedLabel": {
+    "description": "Voice message, screen-reader label of the speed button; {rate} is like '1.5×'.",
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceNoteSpeedHint": "Double tap to change to {rate}.",
+  "@voiceNoteSpeedHint": {
+    "description": "Voice message, screen-reader hint of the speed button; {rate} is the next speed like '2×'.",
+    "placeholders": {
+      "rate": {
+        "type": "String"
+      }
+    }
+  },
+  "voiceNoteSpeed": "Playback speed",
+  "@voiceNoteSpeed": {
+    "description": "Voice message, tooltip of the speed button. Short."
+  },
+  "voiceNoteFinishError": "Kuzz could not finish the voice note.",
+  "@voiceNoteFinishError": {
+    "description": "Voice recorder, error when saving the recording failed. 'Kuzz' is the app name."
+  },
+  "voiceNoteStartError": "Kuzz could not start recording. Check microphone access.",
+  "@voiceNoteStartError": {
+    "description": "Voice recorder, error when recording could not start. 'Kuzz' is the app name."
+  },
+  "voiceNoteDiscard": "Discard voice note",
+  "@voiceNoteDiscard": {
+    "description": "Voice recorder, tooltip of the x button. Short."
+  },
+  "voiceNoteStopRecording": "Stop recording",
+  "@voiceNoteStopRecording": {
+    "description": "Voice recorder, tooltip of the stop button. Short."
+  },
+  "voiceNoteWaveform": "Voice note waveform",
+  "@voiceNoteWaveform": {
+    "description": "Voice message, screen-reader label of the seekable waveform."
+  },
+  "voiceNotePercent": "{percent} percent",
+  "@voiceNotePercent": {
+    "description": "Voice message waveform, screen-reader value of the playback position.",
+    "placeholders": {
+      "percent": {
+        "type": "int"
+      }
+    }
+  },
+  "channelTooManyInvitations": "Too many invitations today",
+  "@channelTooManyInvitations": {
+    "description": "Error when adding people was refused because the daily invitation limit was reached."
+  },
+  "channelInvitationSentTo": "Invitation sent to {names}",
+  "@channelInvitationSentTo": {
+    "description": "Snackbar after adding people who were sent an invitation instead; {names} is a comma-separated list of names.",
+    "placeholders": {
+      "names": {
+        "type": "String"
+      }
+    }
+  },
+  "channelInvitationsSent": "Invitations sent",
+  "@channelInvitationsSent": {
+    "description": "Note after creating a chat when every picked person was sent an invitation. Short."
+  },
+  "channelInvitationSentCount": "Invitation sent to {count}",
+  "@channelInvitationSentCount": {
+    "description": "Note after creating a chat when some picked people were sent an invitation; {count} is how many people.",
+    "placeholders": {
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "channelOpenGroupError": "Group could not be opened",
+  "@channelOpenGroupError": {
+    "description": "Snackbar when a group link points to a group that is not available."
+  },
+  "channelPinsLoadError": "Could not load personal pins. Retry to keep your saved pins.",
+  "@channelPinsLoadError": {
+    "description": "Chat list, error when your pinned chats failed to load."
+  },
+  "channelNotificationCommunityGone": "Notification community is no longer available",
+  "@channelNotificationCommunityGone": {
+    "description": "Snackbar when a tapped notification belongs to a community you no longer have."
+  },
+  "channelNotificationCommunityError": "Could not open the notification community",
+  "@channelNotificationCommunityError": {
+    "description": "Snackbar when switching to the community of a tapped notification failed."
+  },
+  "channelLinkGroupNotFound": "Group not found in this workspace",
+  "@channelLinkGroupNotFound": {
+    "description": "Snackbar when a link points to a group that is not in the current community."
+  },
+  "channelInviteAlreadyMember": "You’re already a member",
+  "@channelInviteAlreadyMember": {
+    "description": "Snackbar after opening an invite to a community you are already in."
+  },
+  "channelInviteSwitchedCommunity": "Switched to this community",
+  "@channelInviteSwitchedCommunity": {
+    "description": "Snackbar after an invite link switched you to a community you were already in."
+  },
+  "channelInviteOpenError": "Could not open this invite. Re-open the invite link to try again.",
+  "@channelInviteOpenError": {
+    "description": "Snackbar when an invite link could not be opened."
+  },
+  "emojiFrequentlyUsed": "Frequently used",
+  "@emojiFrequentlyUsed": {
+    "description": "Emoji picker, section of recently used emoji. Short."
+  },
+  "emojiCustom": "Custom",
+  "@emojiCustom": {
+    "description": "Emoji picker, section of the community's own custom emoji. Short."
+  },
+  "emojiSection": "Emoji",
+  "@emojiSection": {
+    "description": "Emoji picker search results, section of standard emoji (shown below custom emoji). Short."
+  },
+  "emojiSkinTone": "Skin tone",
+  "@emojiSkinTone": {
+    "description": "Emoji picker, tooltip and screen-reader label of the skin tone menu. Short."
+  },
+  "emojiSkinToneDefault": "Default",
+  "@emojiSkinToneDefault": {
+    "description": "Emoji picker skin tone option: the default yellow. Short."
+  },
+  "emojiSkinToneLight": "Light",
+  "@emojiSkinToneLight": {
+    "description": "Emoji picker skin tone option. Short."
+  },
+  "emojiSkinToneMediumLight": "Medium-light",
+  "@emojiSkinToneMediumLight": {
+    "description": "Emoji picker skin tone option. Short."
+  },
+  "emojiSkinToneMedium": "Medium",
+  "@emojiSkinToneMedium": {
+    "description": "Emoji picker skin tone option. Short."
+  },
+  "emojiSkinToneMediumDark": "Medium-dark",
+  "@emojiSkinToneMediumDark": {
+    "description": "Emoji picker skin tone option. Short."
+  },
+  "emojiSkinToneDark": "Dark",
+  "@emojiSkinToneDark": {
+    "description": "Emoji picker skin tone option. Short."
+  },
+  "emojiNoneFound": "No emoji found.",
+  "@emojiNoneFound": {
+    "description": "Emoji picker, empty search result."
+  },
+  "emojiLoading": "Loading emoji…",
+  "@emojiLoading": {
+    "description": "iPhone emoji picker, shown while the system emoji keyboard opens."
+  },
+  "emojiSearchHint": "Search emoji",
+  "@emojiSearchHint": {
+    "description": "Emoji picker, hint in the search field. Short."
+  },
+  "emojiClearSearch": "Clear search",
+  "@emojiClearSearch": {
+    "description": "Emoji picker, tooltip of the x button in the search field. Short."
+  },
+  "mediaImageLoadError": "Failed to load image",
+  "@mediaImageLoadError": {
+    "description": "Image viewer, shown when the image could not be loaded."
+  },
+  "mediaCloseImageViewer": "Close image viewer",
+  "@mediaCloseImageViewer": {
+    "description": "Image viewer, tooltip of the close button. Short."
+  },
+  "mediaMoreImageActions": "More image actions",
+  "@mediaMoreImageActions": {
+    "description": "Image viewer, tooltip of the ... button. Short."
+  },
+  "mediaImageSelected": "Image {index}, selected",
+  "@mediaImageSelected": {
+    "description": "Image viewer thumbnail strip, screen-reader label of the current image; {index} is its position.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaShowImage": "Show image {index}",
+  "@mediaShowImage": {
+    "description": "Image viewer thumbnail strip, screen-reader label of another image; {index} is its position.",
+    "placeholders": {
+      "index": {
+        "type": "int"
+      }
+    }
+  },
+  "mediaPauseVideo": "Pause video",
+  "@mediaPauseVideo": {
+    "description": "Video viewer, tooltip of the pause button. Short."
+  },
+  "mediaPlayVideo": "Play video",
+  "@mediaPlayVideo": {
+    "description": "Video viewer, tooltip of the play button. Short."
+  },
+  "mediaVideoLoadError": "Failed to load video",
+  "@mediaVideoLoadError": {
+    "description": "Video viewer, shown when the video could not be loaded."
+  },
+  "mediaCloseVideoViewer": "Close video viewer",
+  "@mediaCloseVideoViewer": {
+    "description": "Video viewer, tooltip of the close button. Short."
+  },
+  "mediaVideoLoading": "Loading video",
+  "@mediaVideoLoading": {
+    "description": "Video viewer, screen-reader label of the spinner while the video loads."
+  },
+  "messageImage": "Message image",
+  "@messageImage": {
+    "description": "Screen-reader label of an image in a message that has no description. Short."
+  },
+  "messageLinkOpenGroup": "Open group {name}",
+  "@messageLinkOpenGroup": {
+    "description": "Message, screen-reader label of a group link chip; {name} is the group name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "messageLinkOpenMessage": "Open message {id} in group {group}",
+  "@messageLinkOpenMessage": {
+    "description": "Message, screen-reader label of a message link chip; {id} is a short message ID, {group} the group name.",
+    "placeholders": {
+      "id": {
+        "type": "String"
+      },
+      "group": {
+        "type": "String"
+      }
+    }
+  },
+  "messageAttachmentOpenError": "Could not open attachment",
+  "@messageAttachmentOpenError": {
+    "description": "Snackbar when a file attachment could not be opened."
+  },
+  "mediaImageUnavailable": "Image unavailable",
+  "@mediaImageUnavailable": {
+    "description": "Message, placeholder when an image could not be loaded. Short."
+  },
+  "messageCodeCopied": "Copied code to clipboard",
+  "@messageCodeCopied": {
+    "description": "Snackbar after copying a code block from a message."
+  },
+  "mediaOpenItem": "Open {label}",
+  "@mediaOpenItem": {
+    "description": "Message image gallery, screen-reader label of an image; {label} is the image's description.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      }
+    }
+  },
+  "mediaVideoPreviewUnavailable": "Video preview unavailable",
+  "@mediaVideoPreviewUnavailable": {
+    "description": "Message, placeholder when a video's preview image could not be loaded."
+  },
+  "mediaVideoAttachment": "Video attachment",
+  "@mediaVideoAttachment": {
+    "description": "Message, placeholder for a video while its first frame is not available."
+  },
+  "channelCreateMenuTooltip": "{label}: {value}",
+  "@channelCreateMenuTooltip": {
+    "description": "New group sheet, tooltip of a dropdown; {label} is its name (like 'Expires after'), {value} the chosen option.",
+    "placeholders": {
+      "label": {
+        "type": "String"
+      },
+      "value": {
+        "type": "String"
+      }
+    }
+  },
+  "huddleIdentityRequired": "A paired identity is required.",
+  "@huddleIdentityRequired": {
+    "description": "Snackbar when joining a Huddle (voice call) is impossible because this account cannot sign in to audio."
+  },
+  "composeMentionAgentTag": "agent",
+  "@composeMentionAgentTag": {
+    "description": "Mention picker, small lowercase tag next to an AI agent. Very short."
+  },
+  "composeMentionAdminTag": "admin",
+  "@composeMentionAdminTag": {
+    "description": "Mention picker, small lowercase tag next to a group administrator. Very short."
   }
 }

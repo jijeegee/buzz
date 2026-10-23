@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import 'composer_quote_provider.dart';
 
@@ -21,7 +22,7 @@ class ComposerQuoteChip extends ConsumerWidget {
       padding: const EdgeInsets.fromLTRB(Grid.twelve, 0, Grid.twelve, Grid.xxs),
       child: Semantics(
         container: true,
-        label: 'Quoting ${target.author}',
+        label: context.l10n.messageQuoting(target.author),
         child: DecoratedBox(
           key: const ValueKey('composer-quote-chip'),
           decoration: BoxDecoration(
@@ -50,7 +51,7 @@ class ComposerQuoteChip extends ConsumerWidget {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text(
-                          'Quoting ${target.author}',
+                          context.l10n.messageQuoting(target.author),
                           maxLines: 1,
                           overflow: TextOverflow.ellipsis,
                           style: replyPreviewTextStyle.copyWith(
@@ -72,7 +73,7 @@ class ComposerQuoteChip extends ConsumerWidget {
                 ),
                 IconButton(
                   key: const ValueKey('composer-quote-cancel'),
-                  tooltip: 'Cancel quote',
+                  tooltip: context.l10n.messageCancelQuote,
                   visualDensity: VisualDensity.compact,
                   icon: Icon(
                     LucideIcons.x,
