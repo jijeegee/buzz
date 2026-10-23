@@ -1,3 +1,5 @@
+SET LOCAL lock_timeout = '5s';
+
 -- External agent pairing (device-bound keys plan §5 and §14.7, PR A4). An
 -- owner's app starts a pairing and shows `kuzz pair <code>`; an agent on
 -- another computer claims the code with its key and that computer's device

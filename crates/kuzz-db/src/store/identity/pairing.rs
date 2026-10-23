@@ -118,7 +118,8 @@ pub enum ClaimPairing {
     },
     /// The code was used already.
     Used,
-    /// No pairing has this code, or it expired unused.
+    /// No pairing has this code, it expired unused, the device that
+    /// started it is revoked or gone, or the owner's account is disabled.
     Invalid,
     /// The agent key is an account key or already registered (plan S6).
     KeyInUse,
@@ -133,6 +134,9 @@ enum KeyUse {
     Free,
     /// An agent bound to `owner` by the 0080 backfill, with no host or copy.
     Unbound,
+    /// An external key of `owner` whose computer was disconnected (its
+    /// device revoked or gone): pairing it again rebinds it.
+    Disconnected,
     /// An account key, a registered key, or a key some profile attests to
     /// another owner.
     InUse,
@@ -154,7 +158,13 @@ async fn key_use(
                         AND r.host_device_id IS NULL AND r.revoked_at IS NULL \
                         AND NOT EXISTS (SELECT 1 FROM agent_key_backups c \
                                          WHERE c.agent_pubkey = r.pubkey) \
-                   FROM key_registry r WHERE r.pubkey = $1) AS registered_unbound",
+                   FROM key_registry r WHERE r.pubkey = $1) AS registered_unbound, \
+                (SELECT r.role = 'external' AND r.principal_id = $2 \
+                        AND r.revoked_at IS NULL \
+                        AND NOT EXISTS (SELECT 1 FROM devices h \
+                                         WHERE h.id = r.host_device_id \
+                                           AND h.revoked_at IS NULL) \
+                   FROM key_registry r WHERE r.pubkey = $1) AS external_disconnected",
     )
     .bind(agent.as_slice())
     .bind(owner)
@@ -163,11 +173,16 @@ async fn key_use(
     let person: bool = row.try_get("person")?;
     let named_elsewhere: bool = row.try_get("named_elsewhere")?;
     let registered: Option<bool> = row.try_get("registered_unbound")?;
-    Ok(match (person || named_elsewhere, registered) {
-        (true, _) | (false, Some(false)) => KeyUse::InUse,
-        (false, Some(true)) => KeyUse::Unbound,
-        (false, None) => KeyUse::Free,
-    })
+    let disconnected: Option<bool> = row.try_get("external_disconnected")?;
+    Ok(
+        match (person || named_elsewhere, registered, disconnected) {
+            (true, ..) => KeyUse::InUse,
+            (false, Some(true), _) => KeyUse::Unbound,
+            (false, _, Some(true)) => KeyUse::Disconnected,
+            (false, Some(false), _) => KeyUse::InUse,
+            (false, None, _) => KeyUse::Free,
+        },
+    )
 }
 
 fn record(row: &sqlx::postgres::PgRow) -> Result<PairingRecord> {
@@ -274,6 +289,21 @@ impl Db {
             PairingState::Open if !pairing.live => return Ok(ClaimPairing::Invalid),
             PairingState::Open => {}
         }
+        // The code is only as good as the device that started it and the
+        // account it pairs to.
+        let started: Option<Uuid> = row.try_get("started_device_id")?;
+        let usable: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM devices WHERE id = $1 AND principal_id = $2 \
+                              AND revoked_at IS NULL) \
+                AND EXISTS (SELECT 1 FROM principals WHERE id = $2 AND disabled_at IS NULL)",
+        )
+        .bind(started)
+        .bind(owner_bytes.as_slice())
+        .fetch_one(&mut *tx)
+        .await?;
+        if !usable {
+            return Ok(ClaimPairing::Invalid);
+        }
         let key = key_use(&mut tx, claim.agent_pubkey, &owner_bytes).await?;
         if matches!(key, KeyUse::InUse) {
             return Ok(ClaimPairing::KeyInUse);
@@ -328,6 +358,17 @@ impl Db {
             KeyUse::Free => sqlx::query(
                 "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
                  VALUES ($1, $2, 'external', $3) ON CONFLICT (pubkey) DO NOTHING",
+            )
+            .bind(claim.agent_pubkey.as_slice())
+            .bind(owner_bytes.as_slice())
+            .bind(device_id),
+            KeyUse::Disconnected => sqlx::query(
+                "UPDATE key_registry SET host_device_id = $3 \
+                 WHERE pubkey = $1 AND principal_id = $2 AND role = 'external' \
+                   AND revoked_at IS NULL \
+                   AND NOT EXISTS (SELECT 1 FROM devices h \
+                                    WHERE h.id = key_registry.host_device_id \
+                                      AND h.revoked_at IS NULL)",
             )
             .bind(claim.agent_pubkey.as_slice())
             .bind(owner_bytes.as_slice())

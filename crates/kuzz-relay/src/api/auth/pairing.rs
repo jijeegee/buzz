@@ -17,8 +17,13 @@
 //!    device revoke call (`DELETE /auth/devices/{device_id}`).
 //!
 //! Key admission then accepts that key from that computer only, with no
-//! login there. The `/auth/pairing` calls are Bearer + device proof of a
-//! key-backup account in every auth surface mode, like `/auth/agents/*`.
+//! login there. A claim is refused once the device that started the pairing
+//! is revoked or the owner's account is disabled; after a disconnect the
+//! same owner may pair the agent key again (on a new external device).
+//! Claims are rate limited per IPv4 address and per IPv6 /64 only.
+//!
+//! The `/auth/pairing` calls are Bearer + device proof of a key-backup
+//! account in every auth surface mode, like `/auth/agents/*`.
 //! Codes are never logged.
 
 use std::sync::Arc;
@@ -39,21 +44,15 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use super::agents::authorize_device_call;
-use super::{auth_error, bad_request, rate_limit, rate_limit_client, unavailable};
-use crate::identity::kv;
+use super::{auth_error, bad_request, client_ip, rate_limit, unavailable};
 use crate::state::AppState;
 
 /// Version of this HTTP contract.
 const PAIRING_API_VERSION: u16 = 1;
-/// Claims per client IP per minute.
+/// Claims per client per minute: per IPv4 address, per IPv6 /64.
 const CLAIM_PER_IP: u64 = 30;
 /// Claims per minute for all clients without a known IP.
 const CLAIM_GLOBAL: u64 = 300;
-/// Failed claims (bad signature, unknown, used or expired code) per minute across
-/// the deployment before every claim is refused for [`CLAIM_LOCK_SECS`].
-const CLAIM_FAILURES_PER_MIN: u64 = 100;
-const CLAIM_LOCK_SECS: u64 = 60;
-const CLAIM_LOCK_NAMESPACE: &str = "pair-claim:lock";
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -155,23 +154,18 @@ pub(super) async fn list(State(state): State<Arc<AppState>>, headers: HeaderMap)
     }
 }
 
-/// Count a failed claim; past [`CLAIM_FAILURES_PER_MIN`] lock every claim
-/// for [`CLAIM_LOCK_SECS`]. Best effort: the per-IP limit still applies.
-async fn claim_failed(state: &AppState) {
-    if let Err(response) =
-        rate_limit(state, "pair:claim:failures", 60, CLAIM_FAILURES_PER_MIN).await
-    {
-        if response.status() == StatusCode::TOO_MANY_REQUESTS {
-            tracing::warn!("pair claim failures over the global limit; claims locked");
-            let _ = kv::put(
-                &state.redis_pool,
-                CLAIM_LOCK_NAMESPACE,
-                "global",
-                "1",
-                CLAIM_LOCK_SECS,
-            )
-            .await;
+/// The rate limit bucket of a client address: an IPv4 address as is, an
+/// IPv6 address by its /64 (one host usually holds a whole /64). There is no
+/// deployment-wide failure lock: a few clients must not lock pairing for
+/// everyone, and 128-bit codes cannot be guessed anyway.
+fn claim_bucket(ip: &str) -> String {
+    match ip.parse::<std::net::IpAddr>().map(|ip| ip.to_canonical()) {
+        Ok(std::net::IpAddr::V6(v6)) => {
+            let s = v6.segments();
+            format!("{:x}:{:x}:{:x}:{:x}::/64", s[0], s[1], s[2], s[3])
         }
+        Ok(std::net::IpAddr::V4(v4)) => v4.to_string(),
+        Err(_) => ip.to_owned(),
     }
 }
 
@@ -183,28 +177,15 @@ pub(super) async fn claim(
     headers: HeaderMap,
     body: Bytes,
 ) -> Response {
-    if let Err(response) = rate_limit_client(
-        &state,
-        &extensions,
-        &headers,
-        "pair:claim",
-        CLAIM_PER_IP,
-        CLAIM_GLOBAL,
-    )
-    .await
-    {
-        return response;
-    }
-    match kv::get(&state.redis_pool, CLAIM_LOCK_NAMESPACE, "global").await {
-        Ok(None) => {}
-        Ok(Some(_)) => {
-            return auth_error(
-                StatusCode::TOO_MANY_REQUESTS,
-                "rate_limited",
-                &format!("too many failed pairing claims; retry in {CLAIM_LOCK_SECS}s"),
-            )
+    let limited = match client_ip(&state, &extensions, &headers) {
+        Some(ip) => {
+            let key = format!("pair:claim:{}", claim_bucket(&ip));
+            rate_limit(&state, &key, 60, CLAIM_PER_IP).await
         }
-        Err(_) => return unavailable(),
+        None => rate_limit(&state, "pair:claim:global", 60, CLAIM_GLOBAL).await,
+    };
+    if let Err(response) = limited {
+        return response;
     }
     let Ok(request) = serde_json::from_slice::<ClaimRequest>(&body) else {
         return bad_request(
@@ -228,7 +209,6 @@ pub(super) async fn claim(
         }
     }
     if !is_pair_code(&request.code) {
-        claim_failed(&state).await;
         return invalid_code();
     }
     if verify_pair_claim(
@@ -240,7 +220,6 @@ pub(super) async fn claim(
     )
     .is_err()
     {
-        claim_failed(&state).await;
         return auth_error(
             StatusCode::BAD_REQUEST,
             "invalid_signature",
@@ -281,13 +260,10 @@ pub(super) async fn claim(
             }))
             .into_response()
         }
-        ClaimPairing::Used => {
-            claim_failed(&state).await;
-            conflict(
-                "code_used",
-                "this pairing code was used already; ask the owner for a new one",
-            )
-        }
+        ClaimPairing::Used => conflict(
+            "code_used",
+            "this pairing code was used already; ask the owner for a new one",
+        ),
         ClaimPairing::KeyInUse => conflict(
             "key_in_use",
             "this agent key is an account key or already registered",
@@ -296,10 +272,7 @@ pub(super) async fn claim(
             "device_limit",
             "this account already has the most paired computers it can",
         ),
-        ClaimPairing::Invalid => {
-            claim_failed(&state).await;
-            invalid_code()
-        }
+        ClaimPairing::Invalid => invalid_code(),
     }
 }
 
@@ -307,19 +280,34 @@ fn invalid_code() -> Response {
     auth_error(
         StatusCode::NOT_FOUND,
         "invalid_code",
-        "this pairing code is unknown or expired",
+        "this pairing code is unknown, expired or no longer valid",
     )
 }
 
 #[cfg(test)]
 mod tests {
-    use super::pair_command;
+    use super::{claim_bucket, pair_command};
 
     #[test]
     fn the_command_names_the_relay_before_the_code() {
         assert_eq!(
             pair_command("wss://relay.example", "abc_DEF-123"),
             "kuzz pair --relay wss://relay.example abc_DEF-123"
+        );
+    }
+
+    #[test]
+    fn claims_are_limited_per_ipv4_address_and_per_ipv6_64() {
+        assert_eq!(claim_bucket("203.0.113.7"), "203.0.113.7");
+        assert_eq!(claim_bucket("::ffff:203.0.113.7"), "203.0.113.7");
+        assert_eq!(
+            claim_bucket("2001:db8:1:2:aaaa::1"),
+            claim_bucket("2001:db8:1:2:bbbb:cccc:dddd:eeee")
+        );
+        assert_eq!(claim_bucket("2001:db8:1:2::9"), "2001:db8:1:2::/64");
+        assert_ne!(
+            claim_bucket("2001:db8:1:2::1"),
+            claim_bucket("2001:db8:1:3::1")
         );
     }
 }

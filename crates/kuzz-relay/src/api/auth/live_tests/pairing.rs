@@ -53,8 +53,6 @@ async fn reset_claim_limits(inst: &Instance) {
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("DEL")
         .arg("kuzz:ratelimit:pair:claim:127.0.0.1")
-        .arg("kuzz:ratelimit:pair:claim:failures")
-        .arg("kuzz:auth:pair-claim:lock:global")
         .query_async(&mut redis)
         .await
         .expect("reset claim limits");
@@ -253,27 +251,20 @@ async fn claims_expire_and_refuse_bad_or_taken_keys() {
         (409, "key_in_use".to_owned())
     );
 
-    // Past the global failure limit every claim waits.
+    // Failed claims lock nobody out; only the client's own limit applies.
+    for _ in 0..5 {
+        let (unknown, _) = kuzz_auth::pairing::generate_pair_code();
+        assert_eq!(claim(&inst, &unknown, &agent).await.0, 404);
+    }
     let mut redis = inst.state.redis_pool.get().await.expect("redis");
     let _: () = redis::cmd("SET")
-        .arg("kuzz:ratelimit:pair:claim:failures")
+        .arg("kuzz:ratelimit:pair:claim:127.0.0.1")
         .arg(1000)
         .arg("EX")
         .arg(60)
         .query_async(&mut redis)
         .await
         .unwrap();
-    let response = inst
-        .post("/pair/claim")
-        .json(&claim_body(
-            &kuzz_auth::pairing::generate_pair_code().0,
-            &agent.keys,
-            &agent.device,
-        ))
-        .send()
-        .await
-        .unwrap();
-    assert_eq!(response.status(), 404);
     let response = inst
         .post("/pair/claim")
         .json(&claim_body(&code, &external().keys, &agent.device))

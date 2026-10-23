@@ -418,3 +418,135 @@ async fn open_pairings_are_capped_per_owner() {
             .unwrap();
     assert_eq!(rows, 1);
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_disconnected_agent_can_be_paired_again_by_its_owner_only() {
+    let db = database().await;
+    let (owner, _, pc, _) = owner(&db).await;
+    let (agent, remote) = (agent_key(), device_key());
+    let (_, code) = start(&db, &owner, pc).await;
+    let first = connect(&db, &code, &agent, &remote).await;
+    db.revoke_device(&owner, first, RevokeReason::DeviceRevoked)
+        .await
+        .unwrap()
+        .unwrap();
+
+    // Another owner cannot take the disconnected key.
+    let (stranger, _, stranger_pc, _) = self::owner(&db).await;
+    let (_, code) = start(&db, &stranger, stranger_pc).await;
+    assert_eq!(
+        claim(&db, &code, &agent, &device_key()).await,
+        ClaimPairing::KeyInUse
+    );
+
+    // Its owner pairs it again: rebound to a new external device.
+    let (_, code) = start(&db, &owner, pc).await;
+    let second = connect(&db, &code, &agent, &remote).await;
+    assert_ne!(second, first);
+    let host: Option<Uuid> =
+        sqlx::query_scalar("SELECT host_device_id FROM key_registry WHERE pubkey = $1")
+            .bind(agent.as_slice())
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert_eq!(host, Some(second));
+    assert!(matches!(
+        db.key_admission(&agent, Some(&remote)).await.unwrap(),
+        KeyAdmission::Admitted { .. }
+    ));
+    // While connected, it is in use even for its owner.
+    let (_, code) = start(&db, &owner, pc).await;
+    assert_eq!(
+        claim(&db, &code, &agent, &device_key()).await,
+        ClaimPairing::KeyInUse
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_code_dies_with_its_starting_device_or_a_disabled_owner() {
+    let db = database().await;
+    let (owner, _, pc, _) = owner(&db).await;
+    let laptop = login(&db, &owner, &device_key()).await;
+    let (on_laptop, laptop_code) = start(&db, &owner, laptop).await;
+    let (_, pc_code) = start(&db, &owner, pc).await;
+
+    // Revoking the starting device ends its open pairings.
+    db.revoke_device(&owner, laptop, RevokeReason::DeviceRevoked)
+        .await
+        .unwrap()
+        .unwrap();
+    let listed = db.recent_pairings(&owner).await.unwrap();
+    let laptop_pairing = listed.iter().find(|p| p.id == on_laptop).unwrap();
+    assert!(laptop_pairing.expired());
+    assert_eq!(
+        claim(&db, &laptop_code, &agent_key(), &device_key()).await,
+        ClaimPairing::Invalid
+    );
+    // Even with its deadline moved back, the revoked device's code is dead.
+    sqlx::query(
+        "UPDATE pairing_requests SET expires_at = now() + interval '5 minutes' WHERE id = $1",
+    )
+    .bind(on_laptop)
+    .execute(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(
+        claim(&db, &laptop_code, &agent_key(), &device_key()).await,
+        ClaimPairing::Invalid
+    );
+
+    // A disabled owner pairs nothing.
+    sqlx::query("UPDATE principals SET disabled_at = now() WHERE id = $1")
+        .bind(owner.as_bytes().as_slice())
+        .execute(db.pool())
+        .await
+        .unwrap();
+    assert_eq!(
+        claim(&db, &pc_code, &agent_key(), &device_key()).await,
+        ClaimPairing::Invalid
+    );
+    assert_eq!(external_devices(&db, &owner).await, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn signing_out_other_sessions_keeps_paired_agents() {
+    let db = database().await;
+    let (owner, _, pc, _) = owner(&db).await;
+    let (agent, remote) = (agent_key(), device_key());
+    let (_, code) = start(&db, &owner, pc).await;
+    let external = connect(&db, &code, &agent, &remote).await;
+    let laptop = login(&db, &owner, &device_key()).await;
+    let kept = db
+        .complete_login_with_device_key(
+            &owner,
+            "phone",
+            "mobile",
+            None,
+            Some(DeviceKey {
+                pubkey: &device_key(),
+                kind: "hardware",
+            }),
+            token(),
+            token(),
+        )
+        .await
+        .unwrap();
+
+    let (_, revoked) = db
+        .revoke_other_sessions(&owner, kept.session_id)
+        .await
+        .unwrap();
+    assert!(revoked.contains(&pc) && revoked.contains(&laptop));
+    assert!(!revoked.contains(&external));
+    assert_eq!(
+        device_row(&db, external).await,
+        ("external".into(), "external".into(), false)
+    );
+    assert!(matches!(
+        db.key_admission(&agent, Some(&remote)).await.unwrap(),
+        KeyAdmission::Admitted { .. }
+    ));
+}
