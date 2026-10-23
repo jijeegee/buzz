@@ -12,6 +12,11 @@ export function newSignInDeviceName(): string | null {
   return followedName;
 }
 
+/** The Devices view was seen: the next visit marks nothing. */
+export function clearNewSignInDevice() {
+  followedName = null;
+}
+
 /**
  * The device the notice was about: the newest (last listed) other device
  * with that name, or `null`. Pure.

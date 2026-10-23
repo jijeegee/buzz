@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 
 import {
@@ -45,9 +45,17 @@ import { Input } from "@/shared/ui/input";
 import { needsGoogleProtection } from "@/shared/lib/signingKeyUi";
 import { Spinner } from "@/shared/ui/spinner";
 import {
+  clearNewSignInDevice,
   newSignInDeviceId,
   newSignInDeviceName,
 } from "@/features/accounts/newSignIn/newSignInHighlight";
+import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
+import {
+  refreshExternalAgents,
+  useExternalConnectAvailable,
+  useHermesStatusQuery,
+} from "@/features/agents/externalConnect/useExternalAgents";
+import { disconnectExternalDevice } from "@/shared/api/agentPairing";
 import { AccountDeviceRow } from "./AccountDeviceRow";
 import { SettingsConfirmDialog } from "./SettingsConfirmDialog";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
@@ -591,8 +599,26 @@ function SignedInDevices({
   }, [loadDevices]);
 
   const disabled = busy !== null;
-  // Reached from a "New sign-in" notice: mark that device.
-  const newDeviceId = newSignInDeviceId(devices ?? [], newSignInDeviceName());
+  const queryClient = useQueryClient();
+  const hermes = useHermesStatusQuery(useExternalConnectAvailable());
+  const hermesDevices = new Set(
+    (hermes.data?.agents ?? []).flatMap((agent) =>
+      agent.deviceId ? [agent.deviceId] : [],
+    ),
+  );
+  // Reached from a "New sign-in" notice: mark that device, found by name
+  // once when the list loads and then kept by id. Seeing this view uses the
+  // notice up; leaving it clears the mark.
+  const [newSignInName, setNewSignInName] = React.useState(newSignInDeviceName);
+  const [newDeviceId, setNewDeviceId] = React.useState<string | null>(null);
+  React.useEffect(() => {
+    clearNewSignInDevice();
+  }, []);
+  React.useEffect(() => {
+    if (devices === null || newSignInName === null) return;
+    setNewDeviceId(newSignInDeviceId(devices, newSignInName));
+    setNewSignInName(null);
+  }, [devices, newSignInName]);
 
   return (
     <>
@@ -614,17 +640,33 @@ function SignedInDevices({
                 <AccountDeviceRow
                   device={device}
                   disabled={disabled}
+                  hermes={
+                    device.platform === EXTERNAL_PLATFORM &&
+                    hermesDevices.has(device.id)
+                  }
                   isNew={device.id === newDeviceId}
                   key={device.id}
                   onChanged={loadDevices}
                   onSignOut={() =>
-                    void run(
-                      "settings.device.signOutDeviceFailed",
-                      async () => {
-                        await revokeAuthDevice(device.id);
-                        await loadDevices();
-                      },
-                    )
+                    device.platform === EXTERNAL_PLATFORM
+                      ? void run(
+                          "settings.device.disconnectFailed",
+                          async () => {
+                            try {
+                              await disconnectExternalDevice(device.id);
+                            } finally {
+                              refreshExternalAgents(queryClient);
+                            }
+                            await loadDevices();
+                          },
+                        )
+                      : void run(
+                          "settings.device.signOutDeviceFailed",
+                          async () => {
+                            await revokeAuthDevice(device.id);
+                            await loadDevices();
+                          },
+                        )
                   }
                   run={run}
                 />

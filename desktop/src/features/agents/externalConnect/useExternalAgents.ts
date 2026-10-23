@@ -150,6 +150,8 @@ export function useExternalAgentGroups(): {
   groups: ExternalAgentGroup[];
   hermesPubkeys: ReadonlySet<string>;
   owner: string;
+  /** The device list loaded (it holds this computer). */
+  devicesLoaded: boolean;
 } {
   const available = useExternalConnectAvailable();
   const owner = useIdentityQuery().data?.pubkey?.toLowerCase() ?? "";
@@ -169,11 +171,11 @@ export function useExternalAgentGroups(): {
 
   // Keep what the relay listed, and forget computers that were disconnected.
   // The device list counts only when it loaded (it holds this computer).
+  const devicesLoaded = (devices.data ?? []).some((device) => device.current);
   React.useEffect(() => {
     if (!available || !owner) return;
     const deviceList = devices.data ?? [];
-    const loaded = deviceList.some((device) => device.current);
-    const live = loaded
+    const live = devicesLoaded
       ? new Set(
           deviceList
             .filter((device) => device.platform === EXTERNAL_PLATFORM)
@@ -183,7 +185,7 @@ export function useExternalAgentGroups(): {
     const current = readRemembered(owner);
     const next = mergeRemembered(current, pairings.data ?? [], live);
     if (!sameEntries(current, next)) writeRemembered(owner, next);
-  }, [available, devices.data, owner, pairings.data]);
+  }, [available, devices.data, devicesLoaded, owner, pairings.data]);
 
   const groups = React.useMemo(
     () =>
@@ -205,7 +207,7 @@ export function useExternalAgentGroups(): {
       ),
     [hermes.data],
   );
-  return { groups, hermesPubkeys, owner };
+  return { groups, hermesPubkeys, owner, devicesLoaded };
 }
 
 /** An external agent's name: its profile, "Hermes", or a fallback. */

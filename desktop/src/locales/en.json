@@ -11295,6 +11295,22 @@
   "@settings.device.signOut": {
     "description": "Settings > Devices, button that signs out one device. Short."
   },
+  "settings.device.hermesOn": "Hermes on {device}",
+  "@settings.device.hermesOn": {
+    "description": "Settings > Devices: name of the row for the Hermes agent connected on a computer; {device} is the computer name. Hermes is a product name."
+  },
+  "settings.device.disconnect": "Disconnect",
+  "@settings.device.disconnect": {
+    "description": "Settings > Devices, button that disconnects an external agent's computer (signs it out). Short."
+  },
+  "settings.device.disconnectNamed": "Disconnect {name}",
+  "@settings.device.disconnectNamed": {
+    "description": "Settings > Devices, screen-reader label of an external agent row's Disconnect button; {name} is the row name."
+  },
+  "settings.device.disconnectFailed": "Disconnect failed.",
+  "@settings.device.disconnectFailed": {
+    "description": "Settings > Devices: error when disconnecting an external agent's computer fails."
+  },
   "settings.robotPicker.change": "Change robot for {name}",
   "@settings.robotPicker.change": {
     "description": "Settings > Devices, screen-reader label of the robot icon button that opens the robot picker; {name} is the device name."

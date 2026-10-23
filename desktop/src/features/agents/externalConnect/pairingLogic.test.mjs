@@ -7,6 +7,7 @@ import {
   groupExternalAgents,
   mergeRemembered,
   parseRemembered,
+  pairingDeadline,
   secondsLeft,
   startPairingPoll,
 } from "./pairingLogic.ts";
@@ -72,16 +73,24 @@ function fakeTimers(start = 0) {
 }
 
 test("countdown: whole seconds left, formatted as m:ss", () => {
-  const expires = "2026-10-23T05:40:00Z";
-  const at = Date.parse(expires);
-  assert.equal(secondsLeft(expires, at - 582_000), 582);
-  assert.equal(secondsLeft(expires, at - 581_400), 582, "rounds up");
-  assert.equal(secondsLeft(expires, at + 5_000), 0, "never negative");
-  assert.equal(secondsLeft("not a time", at), 0);
+  const at = 1_000_000;
+  assert.equal(secondsLeft(at, at - 582_000), 582);
+  assert.equal(secondsLeft(at, at - 581_400), 582, "rounds up");
+  assert.equal(secondsLeft(at, at + 5_000), 0, "never negative");
+  assert.equal(secondsLeft(Number.NaN, at), 0);
   assert.equal(formatCountdown(582), "9:42");
   assert.equal(formatCountdown(600), "10:00");
   assert.equal(formatCountdown(5), "0:05");
   assert.equal(formatCountdown(-3), "0:00");
+});
+
+test("countdown: from the received expiresIn, not the relay's clock", () => {
+  // Received at 50s on this computer's clock, valid for ten minutes.
+  assert.equal(pairingDeadline(50_000, 600), 650_000);
+  assert.equal(secondsLeft(pairingDeadline(50_000, 600), 50_000), 600);
+  // A missing or broken expiresIn ends the code at once.
+  assert.equal(pairingDeadline(50_000, 0), 50_000);
+  assert.equal(pairingDeadline(50_000, Number.NaN), 50_000);
 });
 
 test("connectedClaim: only this code's connected claim", () => {

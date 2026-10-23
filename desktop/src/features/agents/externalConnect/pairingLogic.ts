@@ -7,11 +7,24 @@ export const PAIRING_POLL_MS = 2_000;
 /** The relay's platform of a computer paired with `kuzz pair`. */
 export const EXTERNAL_PLATFORM = "external";
 
-/** Whole seconds until `expiresAt` (ISO time), never below zero. */
-export function secondsLeft(expiresAt: string, nowMs: number): number {
-  const at = Date.parse(expiresAt);
-  if (!Number.isFinite(at)) return 0;
-  return Math.max(0, Math.ceil((at - nowMs) / 1000));
+/**
+ * When a code received at `receivedAtMs` expires on this computer's clock:
+ * the relay's `expiresIn` seconds from then, so a wrong local clock does not
+ * change the countdown.
+ */
+export function pairingDeadline(
+  receivedAtMs: number,
+  expiresIn: number,
+): number {
+  return Number.isFinite(expiresIn) && expiresIn > 0
+    ? receivedAtMs + expiresIn * 1000
+    : receivedAtMs;
+}
+
+/** Whole seconds until `deadlineMs`, never below zero. */
+export function secondsLeft(deadlineMs: number, nowMs: number): number {
+  if (!Number.isFinite(deadlineMs)) return 0;
+  return Math.max(0, Math.ceil((deadlineMs - nowMs) / 1000));
 }
 
 /** `9:42`, `0:05`. */

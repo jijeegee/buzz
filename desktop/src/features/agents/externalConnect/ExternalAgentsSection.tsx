@@ -6,8 +6,10 @@ import { useAgentWorking } from "@/features/agents/agentWorkingSignal";
 import type { AgentAvailabilityReader } from "@/features/agents/lib/useAgentAvailability";
 import { useAgentAvailabilityLookup } from "@/features/agents/lib/useAgentAvailability";
 import { useUserProfileQuery } from "@/features/profile/hooks";
-import { connectHermes } from "@/shared/api/agentPairing";
-import { revokeAuthDevice } from "@/shared/api/tokenAuth";
+import {
+  connectHermes,
+  disconnectExternalDevice,
+} from "@/shared/api/agentPairing";
 import { useT } from "@/shared/i18n";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import {
@@ -71,7 +73,7 @@ export function ExternalAgentsSection({
   async function disconnect(group: ExternalAgentGroup) {
     setBusy(true);
     try {
-      await revokeAuthDevice(group.deviceId);
+      await disconnectExternalDevice(group.deviceId);
       toast.success(
         t("agents.external.disconnected", { device: group.deviceName }),
       );
@@ -252,7 +254,8 @@ function ExternalAgentTile({
 
 /**
  * "Hermes found on this computer": shown when Hermes is installed here
- * (`$HERMES_HOME` or `%LOCALAPPDATA%\hermes`) and no Hermes agent of this
+ * (`$HERMES_HOME` or `%LOCALAPPDATA%\hermes`), its `kuzz pair --hermes`
+ * installer is too, the device list has loaded, and no Hermes agent of this
  * account is connected; Connect pairs it in one step.
  */
 export function HermesFoundCard() {
@@ -260,14 +263,22 @@ export function HermesFoundCard() {
   const queryClient = useQueryClient();
   const available = useExternalConnectAvailable();
   const hermes = useHermesStatusQuery(available);
-  const { groups } = useExternalAgentGroups();
+  const { groups, devicesLoaded } = useExternalAgentGroups();
   const [connecting, setConnecting] = React.useState(false);
 
   const liveDevices = new Set(groups.map((group) => group.deviceId));
   const connected = (hermes.data?.agents ?? []).some(
     (agent) => agent.deviceId !== null && liveDevices.has(agent.deviceId),
   );
-  if (!available || !hermes.data?.found || connected) return null;
+  if (
+    !available ||
+    !hermes.data?.found ||
+    !hermes.data.canConnect ||
+    !devicesLoaded ||
+    connected
+  ) {
+    return null;
+  }
 
   async function connect() {
     setConnecting(true);

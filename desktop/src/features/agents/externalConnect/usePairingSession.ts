@@ -6,11 +6,12 @@ import {
   type PairingStart,
   startAgentPairing,
 } from "@/shared/api/agentPairing";
-import { secondsLeft, startPairingPoll } from "./pairingLogic";
+import { pairingDeadline, secondsLeft, startPairingPoll } from "./pairingLogic";
 
 export type PairingPhase =
   | { kind: "starting" }
-  | { kind: "waiting"; start: PairingStart }
+  /** `deadlineMs`: expiry on this computer's clock ([pairingDeadline]). */
+  | { kind: "waiting"; start: PairingStart; deadlineMs: number }
   | { kind: "connected"; start: PairingStart; claim: AgentPairing }
   | { kind: "expired"; start: PairingStart }
   | { kind: "error"; message: string };
@@ -24,7 +25,8 @@ function errorMessage(error: unknown, fallback: string) {
 }
 
 /**
- * One connect-screen session: a code when `open` turns on, a check every
+ * One connect-screen session: one code each time `open` turns on (a new
+ * label text or language does not make another), a check every
  * two seconds while the code waits (stopped when the screen closes or the
  * code expires), and `newCode` to replace it. `onConnected` runs once per
  * connected code.
@@ -45,6 +47,8 @@ export function usePairingSession({
   const generation = React.useRef(0);
   const onConnectedRef = React.useRef(onConnected);
   onConnectedRef.current = onConnected;
+  const failedTextRef = React.useRef(failedText);
+  failedTextRef.current = failedText;
 
   const newCode = React.useCallback(() => {
     const mine = ++generation.current;
@@ -52,14 +56,22 @@ export function usePairingSession({
     startAgentPairing()
       .then((start) => {
         if (generation.current !== mine) return;
-        setNow(Date.now());
-        setPhase({ kind: "waiting", start });
+        const receivedAt = Date.now();
+        setNow(receivedAt);
+        setPhase({
+          kind: "waiting",
+          start,
+          deadlineMs: pairingDeadline(receivedAt, start.expiresIn),
+        });
       })
       .catch((error) => {
         if (generation.current !== mine) return;
-        setPhase({ kind: "error", message: errorMessage(error, failedText) });
+        setPhase({
+          kind: "error",
+          message: errorMessage(error, failedTextRef.current),
+        });
       });
-  }, [failedText]);
+  }, []);
 
   React.useEffect(() => {
     if (open) {
@@ -70,28 +82,28 @@ export function usePairingSession({
     setPhase({ kind: "starting" });
   }, [open, newCode]);
 
-  const waiting = phase.kind === "waiting" ? phase.start : null;
+  const waiting = phase.kind === "waiting" ? phase : null;
 
   React.useEffect(() => {
     if (!waiting) return;
     const mine = generation.current;
-    const expiresAtMs = Date.parse(waiting.expiresAt);
+    const { start, deadlineMs } = waiting;
     const tick = window.setInterval(() => setNow(Date.now()), 1_000);
     const stop = startPairingPoll({
-      pairingId: waiting.pairingId,
-      expiresAtMs: Number.isFinite(expiresAtMs) ? expiresAtMs : 0,
+      pairingId: start.pairingId,
+      expiresAtMs: deadlineMs,
       list: listAgentPairings,
       now: Date.now,
       schedule: (run, ms) => window.setTimeout(run, ms),
       cancel: (handle) => window.clearTimeout(handle as number),
       onConnected: (claim) => {
         if (generation.current !== mine) return;
-        setPhase({ kind: "connected", start: waiting, claim });
+        setPhase({ kind: "connected", start, claim });
         onConnectedRef.current(claim);
       },
       onExpired: () => {
         if (generation.current !== mine) return;
-        setPhase({ kind: "expired", start: waiting });
+        setPhase({ kind: "expired", start });
       },
     });
     return () => {
@@ -102,7 +114,7 @@ export function usePairingSession({
 
   return {
     phase,
-    secondsLeft: waiting ? secondsLeft(waiting.expiresAt, now) : 0,
+    secondsLeft: waiting ? secondsLeft(waiting.deadlineMs, now) : 0,
     newCode,
   };
 }

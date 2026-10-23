@@ -118,7 +118,8 @@ async function installExternalConnectBridge(page: Page) {
               };
             case "list_devices":
               return state.devices;
-            case "revoke_device": {
+            case "revoke_device":
+            case "disconnect_external_device": {
               const { deviceId } = args as { deviceId: string };
               state.devices = state.devices.filter((d) => d.id !== deviceId);
               return null;
@@ -130,12 +131,16 @@ async function installExternalConnectBridge(page: Page) {
                 pairingId: "p1",
                 command: "kuzz pair 7QKF-M2XD-9RTB-H4WN-C8PJ-ZL6V-3EYA",
                 expiresAt: state.expiresAt,
-                expiresIn: 600,
+                expiresIn: 582,
               };
             case "list_agent_pairings":
               return state.expiresAt ? [pairing()] : [];
             case "get_hermes_status":
-              return { found: state.hermesFound, agents: [] };
+              return {
+                found: state.hermesFound,
+                canConnect: state.hermesFound,
+                agents: [],
+              };
             case "get_user_profile": {
               // The external agent's own kind:0 profile.
               const { pubkey } = (args ?? {}) as { pubkey?: string };

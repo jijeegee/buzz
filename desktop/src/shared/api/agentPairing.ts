@@ -3,8 +3,9 @@ import { invokeTauri } from "@/shared/api/tauri";
 /**
  * External agent pairing (device-bound keys, PR C2). The app shows a one-use,
  * ten-minute `kuzz pair <code>` command; the first valid claim on another
- * computer connects that agent at once. Disconnecting is the device sign-out
- * (`revokeAuthDevice`). Only for accounts signed in with Google.
+ * computer connects that agent at once. Disconnecting signs that computer
+ * out and forgets its Hermes key (`disconnectExternalDevice`). Only for
+ * accounts signed in with Google.
  */
 
 /** A new code, as `kuzz pair <code>`. */
@@ -34,9 +35,14 @@ export type HermesAgent = {
   deviceId: string | null;
 };
 
-/** Whether Hermes is on this computer, and the Hermes agents paired here. */
+/**
+ * Whether Hermes is on this computer, whether this app can connect it (the
+ * `kuzz pair --hermes` installer is here too), and the Hermes agents paired
+ * here.
+ */
 export type HermesStatus = {
   found: boolean;
+  canConnect: boolean;
   agents: HermesAgent[];
 };
 
@@ -60,4 +66,9 @@ export function getHermesStatus(): Promise<HermesStatus> {
 
 export function connectHermes(): Promise<HermesConnected> {
   return invokeTauri<HermesConnected>("connect_hermes");
+}
+
+/** Sign a paired computer out and forget its Hermes key, if any. */
+export function disconnectExternalDevice(deviceId: string): Promise<void> {
+  return invokeTauri<void>("disconnect_external_device", { deviceId });
 }

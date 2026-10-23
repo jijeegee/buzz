@@ -387,6 +387,7 @@ pub fn run() {
             // Centralized identity: restart agents whose bot token became
             // unusable (exit 78), within the restart cap. Inert in key mode.
             tauri::async_runtime::spawn(crate::auth::watchdog::run(app_handle.clone()));
+            crate::auth::pairing::watch_accounts(&app_handle);
 
             let (tts_settings, tts_settings_load_error) =
                 huddle::tts_settings::load_for_app(&app_handle);
@@ -702,6 +703,7 @@ pub fn run() {
             auth::pairing::list_agent_pairings,
             auth::pairing::get_hermes_status,
             auth::pairing::connect_hermes,
+            auth::pairing::disconnect_external_device,
             auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,
