@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Obrigado pela sua denúncia em {community}. Ela foi analisada e medidas foram tomadas.",
+  "moderation.reportResolved.dismissed": "Obrigado pela sua denúncia em {community}. Ela foi analisada e nenhuma medida foi tomada.",
+  "moderation.reportResolved.escalated": "Obrigado pela sua denúncia em {community}. Ela foi encaminhada para uma análise mais detalhada.",
+  "moderation.reportResolved.other": "Obrigado pela sua denúncia em {community}. Ela foi analisada.",
+  "moderation.contentActioned": "Um moderador em {community} tomou uma medida sobre o seu conteúdo.",
+  "moderation.banned": "Você foi banido de {community}.",
+  "moderation.timedOut": "Você foi suspenso temporariamente em {community} até {until}.",
+  "moderation.timedOutNoEnd": "Você foi suspenso temporariamente em {community}.",
+  "moderation.reason": "Motivo: {reason}",
+  "groups.landing.title": "{name} no Kuzz",
+  "groups.landing.members": "{count, plural, one {# membro} many {# membros} other {# membros}}",
+  "groups.landing.open": "Abrir no Kuzz",
+  "groups.landing.noApp": "Ainda não tem o Kuzz? Peça para a pessoa que compartilhou este link.",
+  "groups.landing.notFoundTitle": "Link não encontrado",
+  "groups.landing.notFoundHeading": "Este link não funciona",
+  "groups.landing.notFoundHint": "Ele pode ter sido redefinido ou o grupo pode não existir mais. Peça um novo link para a pessoa que o compartilhou.",
+  "groups.landing.rateLimitedTitle": "Tente novamente em breve",
+  "groups.landing.rateLimitedHeading": "Muitas solicitações",
+  "groups.landing.rateLimitedHint": "Tente novamente em um minuto."
+}

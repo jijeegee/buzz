@@ -33,7 +33,7 @@
   "Account": { "means": "Your sign-in on Kuzz (Google account)", "fixed": true },
   "Device": { "means": "A computer or phone where you use Kuzz", "fixed": true },
   "Notification": { "means": "An alert telling you something happened", "fixed": true },
-  "Draft": { "means": "A message you started writing but have not sent", "fixed": true },
+  "Draft": { "means": "A message you started writing but have not sent (in projects also a draft pull request)", "fixed": false },
   "Archive": { "means": "Hide a room or chat without deleting it", "fixed": false },
   "Settings": { "means": "The settings screen", "fixed": true },
   "Voice message": { "means": "A recorded audio message", "fixed": true }

@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Спасибо за жалобу в сообщество {community}. Мы её рассмотрели и приняли меры.",
+  "moderation.reportResolved.dismissed": "Спасибо за жалобу в сообщество {community}. Мы её рассмотрели, но меры не потребовались.",
+  "moderation.reportResolved.escalated": "Спасибо за жалобу в сообщество {community}. Она передана на дополнительную проверку.",
+  "moderation.reportResolved.other": "Спасибо за жалобу в сообщество {community}. Мы её рассмотрели.",
+  "moderation.contentActioned": "Модератор сообщества {community} принял меры в отношении вашего сообщения.",
+  "moderation.banned": "Вы заблокированы в сообществе {community}.",
+  "moderation.timedOut": "Вам временно запрещено писать в сообществе {community} до {until}.",
+  "moderation.timedOutNoEnd": "Вам временно запрещено писать в сообществе {community}.",
+  "moderation.reason": "Причина: {reason}",
+  "groups.landing.title": "{name} в Kuzz",
+  "groups.landing.members": "{count, plural, one {# участник} few {# участника} many {# участников} other {# участника}}",
+  "groups.landing.open": "Открыть в Kuzz",
+  "groups.landing.noApp": "Ещё нет Kuzz? Спросите у того, кто поделился ссылкой.",
+  "groups.landing.notFoundTitle": "Ссылка не найдена",
+  "groups.landing.notFoundHeading": "Ссылка не работает",
+  "groups.landing.notFoundHint": "Возможно, ссылку сбросили или группы больше нет. Попросите новую ссылку у того, кто ею поделился.",
+  "groups.landing.rateLimitedTitle": "Попробуйте позже",
+  "groups.landing.rateLimitedHeading": "Слишком много запросов",
+  "groups.landing.rateLimitedHint": "Попробуйте через минуту."
+}

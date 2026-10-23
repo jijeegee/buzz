@@ -82,6 +82,18 @@ function writeTarget(config, src, lang, english, messages) {
     if (key in messages) out[key] = messages[key];
   }
   writeJson(sourcePath(config, src, lang), out);
+  // Flutter gen-l10n needs a plain-language file (app_zh, app_pt) beside
+  // zh_Hans or pt_BR; it copies the first listed variant.
+  const base = baseFallback(config, src, lang);
+  if (base) writeJson(sourcePath(config, src, base), { ...out, "@@locale": base });
+}
+
+function baseFallback(config, src, lang) {
+  if (!src.localeHeader || !lang.includes("-")) return null;
+  const base = lang.split("-")[0];
+  const codes = config.languages.map((l) => l.code);
+  if (codes.includes(base)) return null;
+  return codes.find((code) => code.split("-")[0] === base) === lang ? base : null;
 }
 
 export function hash(text) {

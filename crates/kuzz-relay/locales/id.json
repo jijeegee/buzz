@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Terima kasih atas laporan Anda ke {community}. Laporan Anda telah ditinjau dan ditindaklanjuti.",
+  "moderation.reportResolved.dismissed": "Terima kasih atas laporan Anda ke {community}. Laporan Anda telah ditinjau; tidak ada tindakan yang diambil.",
+  "moderation.reportResolved.escalated": "Terima kasih atas laporan Anda ke {community}. Laporan Anda diteruskan untuk peninjauan lebih lanjut.",
+  "moderation.reportResolved.other": "Terima kasih atas laporan Anda ke {community}. Laporan Anda telah ditinjau.",
+  "moderation.contentActioned": "Moderator di {community} mengambil tindakan atas konten Anda.",
+  "moderation.banned": "Anda telah diblokir dari {community}.",
+  "moderation.timedOut": "Anda dibatasi sementara di {community} hingga {until}.",
+  "moderation.timedOutNoEnd": "Anda dibatasi sementara di {community}.",
+  "moderation.reason": "Alasan: {reason}",
+  "groups.landing.title": "{name} di Kuzz",
+  "groups.landing.members": "{count, plural, other {# anggota}}",
+  "groups.landing.open": "Buka di Kuzz",
+  "groups.landing.noApp": "Belum punya Kuzz? Tanyakan ke orang yang membagikan tautan ini.",
+  "groups.landing.notFoundTitle": "Tautan tidak ditemukan",
+  "groups.landing.notFoundHeading": "Tautan ini tidak berfungsi",
+  "groups.landing.notFoundHint": "Tautan mungkin telah diatur ulang atau grup sudah tidak ada. Minta tautan baru ke orang yang membagikannya.",
+  "groups.landing.rateLimitedTitle": "Coba lagi nanti",
+  "groups.landing.rateLimitedHeading": "Terlalu banyak permintaan",
+  "groups.landing.rateLimitedHint": "Coba lagi dalam satu menit."
+}

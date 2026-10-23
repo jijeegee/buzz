@@ -3,7 +3,7 @@
   "moderation.reportResolved.dismissed": "{community}에 신고해 주셔서 감사해요. 신고 내용을 검토했지만 별도로 조치하지 않았어요.",
   "moderation.reportResolved.escalated": "{community}에 신고해 주셔서 감사해요. 추가 검토를 위해 신고 내용을 전달했어요.",
   "moderation.reportResolved.other": "{community}에 신고해 주셔서 감사해요. 신고 내용을 검토했어요.",
-  "moderation.contentActioned": "{community}의 관리자가 내 콘텐츠에 조치를 취했어요.",
+  "moderation.contentActioned": "{community}의 운영자가 내 콘텐츠에 조치를 취했어요.",
   "moderation.banned": "{community}에서 차단됐어요.",
   "moderation.timedOut": "{community}에서 {until}까지 활동이 일시 정지됐어요.",
   "moderation.timedOutNoEnd": "{community}에서 활동이 일시 정지됐어요.",
