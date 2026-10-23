@@ -108,8 +108,13 @@ CREATE TABLE channels (
     main_last_seq   BIGINT,
     main_last_at    TIMESTAMPTZ,
     main_last_event_id BYTEA,
+    -- Moving to another region (migration 0088): events are refused while
+    -- set; kept in the old home once the room has moved out.
+    moving_since    TIMESTAMPTZ,
+    moved_out_at    TIMESTAMPTZ,
     PRIMARY KEY (community_id, id),
-    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid)
+    CONSTRAINT chk_channels_id_not_nil CHECK (id <> '00000000-0000-0000-0000-000000000000'::uuid),
+    CONSTRAINT chk_channels_moved_out_frozen CHECK (moved_out_at IS NULL OR moving_since IS NOT NULL)
 );
 
 -- nip29 group id and DM participant hash are unique WITHIN a community, not globally.
@@ -2330,6 +2335,8 @@ SELECT attach_community_write_fence('artifact_revisions');
 -- Channel history acceptance ordering (migration 0060, body from 0075).
 CREATE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER
 LANGUAGE plpgsql AS $$
+DECLARE
+    frozen TIMESTAMPTZ;
 BEGIN
     IF NEW.channel_id IS NULL THEN
         NEW.channel_sequence := 0;
@@ -2348,10 +2355,15 @@ BEGIN
     END IF;
     UPDATE channels SET accepted_sequence = accepted_sequence + 1
     WHERE community_id = NEW.community_id AND id = NEW.channel_id
-    RETURNING accepted_sequence INTO NEW.channel_sequence;
+    RETURNING accepted_sequence, moving_since INTO NEW.channel_sequence, frozen;
     -- Existing event storage permits references to absent channels. They have
     -- no membership and cannot pass a reader's channel authorization.
     IF NOT FOUND THEN NEW.channel_sequence := 0; END IF;
+    -- A room moving to another region (0088) takes no events.
+    IF frozen IS NOT NULL THEN
+        RAISE EXCEPTION 'room % is moving to another region', NEW.channel_id
+            USING ERRCODE = 'KZ001';
+    END IF;
     RETURN NEW;
 END
 $$;

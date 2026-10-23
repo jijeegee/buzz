@@ -727,7 +727,10 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 86);
+        assert_eq!(migrations.len(), 87);
+        assert_eq!(migrations[86].version, 88);
+        assert!(migrations[86].sql.as_str().contains("ADD COLUMN moving_since"));
+        assert!(include_str!("../../../../schema/schema.sql").contains("moving_since    TIMESTAMPTZ"));
         assert_eq!(migrations[85].version, 87);
         assert!(migrations[85]
             .sql
@@ -797,15 +800,17 @@ mod postgres_tests {
             .as_str()
             .contains("CREATE TABLE event_side_effects"));
         assert_eq!(migrations[74].version, 75);
-        // Fresh desired-state bootstraps must stamp the same body as 0075.
-        let skip_duplicates = migrations[74].sql.as_str();
-        let body_start = skip_duplicates
+        // Fresh desired-state bootstraps must stamp the same body as the
+        // latest redefinition (0075, then 0088).
+        let room_move = migrations[86].sql.as_str();
+        let body_start = room_move
             .find("CREATE OR REPLACE FUNCTION stamp_channel_event_sequence() RETURNS TRIGGER")
-            .expect("0075 redefines the sequence stamp")
+            .expect("0088 redefines the sequence stamp")
             + "CREATE OR REPLACE ".len();
-        let body_len = skip_duplicates[body_start..].find("$$;").expect("body end") + 3;
-        let body = &skip_duplicates[body_start..body_start + body_len];
+        let body_len = room_move[body_start..].find("$$;").expect("body end") + 3;
+        let body = &room_move[body_start..body_start + body_len];
         assert!(body.contains("AND id = NEW.id"));
+        assert!(body.contains("ERRCODE = 'KZ001'"));
         assert!(include_str!("../../../../schema/schema.sql").contains(body));
         assert_eq!(migrations[73].version, 74);
         assert!(migrations[73]
