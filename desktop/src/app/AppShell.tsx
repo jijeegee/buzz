@@ -391,13 +391,15 @@ export function AppShell() {
   });
   const sidebarListTab = useSidebarListTab();
   // A screen opened by route (a link, search, back) shows its own list.
-  // A fresh launch starts on the Activity route but shows Chats.
+  // A fresh launch starts on the Activity route but shows Chats. Settings
+  // also reads as the home view, but it keeps the list it was opened over.
   React.useEffect(() => {
+    if (settingsOpen) return;
     const tab = listTabForView(selectedView);
     if (!tab) return;
     if (tab === "activity" && isFreshStartLandingPending()) return;
     setSidebarListTab(tab);
-  }, [selectedView]);
+  }, [selectedView, settingsOpen]);
   const [terminalContextOverride, setTerminalContextOverride] =
     React.useState<TerminalContextOverride | null>(null);
   const { activeChannel, terminalContext } = useTerminalContext({
