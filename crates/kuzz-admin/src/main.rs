@@ -23,6 +23,7 @@
 mod chat_backfill;
 mod deletions;
 mod key_backups;
+mod regions;
 mod storage_snapshot_startup;
 
 use std::future::Future;
@@ -149,6 +150,12 @@ enum Command {
     /// transaction, skips rows that are already current and prints counts as
     /// JSON. Run once after migration 0067, before users log in.
     ReencryptKeyBackups,
+    /// The deployment's regions (global regions). Run against the primary
+    /// region's database.
+    Regions {
+        #[command(subcommand)]
+        command: regions::RegionsCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -220,6 +227,7 @@ async fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Command::ReencryptKeyBackups => key_backups::run().await,
+        Command::Regions { command } => regions::run(command).await,
     }
 }
 

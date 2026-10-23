@@ -56,9 +56,12 @@ Adding a region:
 3. In the new database: `CREATE SUBSCRIPTION kuzz_global CONNECTION '…the
    primary…' PUBLICATION kuzz_global`. The relay waits until the first copy
    of every table is done.
-4. In the primary: `INSERT INTO regions (id, connect_url, link_pubkey)` with
-   the values the waiting relay logs. The row reaches the new region by the
-   copy, and the relay starts.
+4. In the primary: `kuzz-admin regions add --id … --connect-url …
+   --link-pubkey …` with the values the waiting relay logs. The row reaches
+   the new region by the copy, and the relay starts.
+
+The full steps, including network, keys, DNS and removing a region, are in
+[regions-runbook.md](regions-runbook.md).
 
 From then on the relay refuses local writes to the copied tables (a trigger;
 replication itself is not affected) and exports

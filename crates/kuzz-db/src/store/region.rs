@@ -42,6 +42,41 @@ pub struct RegionRecord {
     pub is_primary: bool,
 }
 
+/// One region as an operator sees it (`kuzz-admin regions list`).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RegionStatus {
+    /// Short id such as `kr`.
+    pub id: String,
+    /// Address clients in this region connect to.
+    pub connect_url: String,
+    /// Whether this is the primary region.
+    pub is_primary: bool,
+    /// The region's link key, when it has a link.
+    pub link_pubkey: Option<String>,
+    /// Rooms whose home is this region.
+    pub rooms: i64,
+    /// Accounts whose home is this region.
+    pub people: i64,
+}
+
+/// What [`Db::add_region`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RegionAdded {
+    /// The region was new.
+    Added,
+    /// The region existed; its address or link key changed.
+    Updated,
+    /// The region existed with the same address and link key.
+    Unchanged,
+}
+
+/// What [`Db::remove_region`] did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct RegionRemoved {
+    /// Accounts whose home was the removed region, now homed in the primary.
+    pub people_moved: u64,
+}
+
 impl Db {
     /// Record this relay's region: insert it, or refresh its address, primary
     /// flag and `last_seen_at`. Fails when it claims primary while another
@@ -364,6 +399,187 @@ impl Db {
             })
             .collect()
     }
+
+    /// Every region with its rooms and accounts, primary first, then by id.
+    #[datastore_span(name = "region_status", system = "postgresql")]
+    pub async fn region_status(&self) -> Result<Vec<RegionStatus>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT r.id, r.connect_url, r.is_primary, r.link_pubkey,
+                   (SELECT count(*) FROM room_directory d WHERE d.home_region = r.id) AS rooms,
+                   (SELECT count(*) FROM principals p WHERE p.home_region = r.id) AS people
+              FROM regions r
+             ORDER BY r.is_primary DESC, r.id
+            "#,
+        )
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|row| {
+                Ok(RegionStatus {
+                    id: row.try_get("id")?,
+                    connect_url: row.try_get("connect_url")?,
+                    is_primary: row.try_get("is_primary")?,
+                    link_pubkey: row.try_get("link_pubkey")?,
+                    rooms: row.try_get("rooms")?,
+                    people: row.try_get("people")?,
+                })
+            })
+            .collect()
+    }
+
+    /// Add a region, or change its address or link key (global regions S6-1).
+    ///
+    /// Runs only in the primary region's database: the row reaches every
+    /// other region through the global copy, and a waiting new region starts
+    /// once it sees its own row with its own link key. The primary's own row
+    /// is never changed here; it is written by the primary's relay.
+    #[datastore_span(name = "add_region", system = "postgresql")]
+    pub async fn add_region(
+        &self,
+        id: &str,
+        connect_url: &str,
+        link_pubkey: &str,
+    ) -> Result<RegionAdded> {
+        let mut tx = self.pool.begin().await?;
+        refuse_unless_primary(&mut tx).await?;
+        let shared: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM regions WHERE link_pubkey = $2 AND id <> $1)",
+        )
+        .bind(id)
+        .bind(link_pubkey)
+        .fetch_one(&mut *tx)
+        .await?;
+        if shared {
+            return Err(DbError::InvalidData(
+                "another region already uses this link key; give each region its own".into(),
+            ));
+        }
+        let existing = sqlx::query(
+            "SELECT connect_url, is_primary, link_pubkey FROM regions WHERE id = $1 FOR UPDATE",
+        )
+        .bind(id)
+        .fetch_optional(&mut *tx)
+        .await?;
+        let added = match existing {
+            None => {
+                sqlx::query(
+                    "INSERT INTO regions (id, connect_url, is_primary, link_pubkey) \
+                     VALUES ($1, $2, false, $3)",
+                )
+                .bind(id)
+                .bind(connect_url)
+                .bind(link_pubkey)
+                .execute(&mut *tx)
+                .await?;
+                RegionAdded::Added
+            }
+            Some(row) => {
+                if row.try_get::<bool, _>("is_primary")? {
+                    return Err(DbError::InvalidData(format!(
+                        "region {id} is the primary; its relay records it"
+                    )));
+                }
+                let same_url = row.try_get::<String, _>("connect_url")? == connect_url;
+                let same_key = row.try_get::<Option<String>, _>("link_pubkey")?.as_deref()
+                    == Some(link_pubkey);
+                if same_url && same_key {
+                    RegionAdded::Unchanged
+                } else {
+                    sqlx::query(
+                        "UPDATE regions SET connect_url = $2, link_pubkey = $3 WHERE id = $1",
+                    )
+                    .bind(id)
+                    .bind(connect_url)
+                    .bind(link_pubkey)
+                    .execute(&mut *tx)
+                    .await?;
+                    RegionAdded::Updated
+                }
+            }
+        };
+        tx.commit().await?;
+        Ok(added)
+    }
+
+    /// Remove a region (global regions S6-1). Runs only in the primary
+    /// region's database, never removes the primary, and refuses while any
+    /// room's home is the region: its rooms must move first. Accounts homed
+    /// there are homed in the primary instead (an account's home only decides
+    /// where its new rooms are made).
+    #[datastore_span(name = "remove_region", system = "postgresql")]
+    pub async fn remove_region(&self, id: &str) -> Result<RegionRemoved> {
+        let mut tx = self.pool.begin().await?;
+        let primary = refuse_unless_primary(&mut tx).await?;
+        // No room or account may be homed in the region between the count and
+        // the delete (rooms are reserved here, in the primary). The mode
+        // conflicts with itself, so two removals queue instead of deadlocking.
+        sqlx::query("LOCK TABLE room_directory, principals IN SHARE ROW EXCLUSIVE MODE")
+            .execute(&mut *tx)
+            .await?;
+        if primary == id {
+            return Err(DbError::InvalidData(format!(
+                "region {id} is the primary and cannot be removed"
+            )));
+        }
+        let exists: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM regions WHERE id = $1 FOR UPDATE)")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if !exists {
+            return Err(DbError::NotFound(format!("region {id}")));
+        }
+        let rooms: i64 =
+            sqlx::query_scalar("SELECT count(*) FROM room_directory WHERE home_region = $1")
+                .bind(id)
+                .fetch_one(&mut *tx)
+                .await?;
+        if rooms > 0 {
+            return Err(DbError::InvalidData(format!(
+                "{rooms} rooms live in region {id}; move them before removing it"
+            )));
+        }
+        let people_moved =
+            sqlx::query("UPDATE principals SET home_region = $2 WHERE home_region = $1")
+                .bind(id)
+                .bind(&primary)
+                .execute(&mut *tx)
+                .await?
+                .rows_affected();
+        sqlx::query("DELETE FROM regions WHERE id = $1")
+            .bind(id)
+            .execute(&mut *tx)
+            .await?;
+        tx.commit().await?;
+        Ok(RegionRemoved { people_moved })
+    }
+}
+
+/// The primary region's id, or an error unless this database is the primary
+/// region's: the region list is written there and copied everywhere else.
+async fn refuse_unless_primary(tx: &mut sqlx::Transaction<'_, sqlx::Postgres>) -> Result<String> {
+    let row = sqlx::query(
+        r#"
+        SELECT l.region_id, r.is_primary, kuzz_is_global_copy() AS copy
+          FROM local_region l JOIN regions r ON r.id = l.region_id
+        "#,
+    )
+    .fetch_optional(&mut **tx)
+    .await?;
+    let Some(row) = row else {
+        return Err(DbError::InvalidData(
+            "no region has claimed this database yet; start its relay first".into(),
+        ));
+    };
+    let region: String = row.try_get("region_id")?;
+    if row.try_get::<bool, _>("copy")? || !row.try_get::<bool, _>("is_primary")? {
+        return Err(DbError::InvalidData(format!(
+            "this database belongs to region {region}, which is not the primary; \
+             change regions in the primary region's database"
+        )));
+    }
+    Ok(region)
 }
 
 #[cfg(test)]
@@ -673,5 +889,106 @@ mod postgres_tests {
             Some((Some("kr".to_string()), Some("JP".to_string())))
         );
         assert!(db.record_signup_country(&early, "jp").await.is_err());
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn regions_are_added_and_removed_only_in_the_primary() {
+        let db = db().await;
+        let key = "ab".repeat(32);
+        // No region has claimed this database yet.
+        assert!(db.add_region("jp", "wss://jp.example", &key).await.is_err());
+
+        db.register_region("kr", "wss://kr.example", true)
+            .await
+            .expect("kr");
+        db.claim_local_region("kr").await.expect("claim");
+        assert_eq!(
+            db.add_region("jp", "wss://jp.example", &key)
+                .await
+                .expect("add"),
+            super::RegionAdded::Added
+        );
+        assert_eq!(
+            db.add_region("jp", "wss://jp.example", &key)
+                .await
+                .expect("again"),
+            super::RegionAdded::Unchanged
+        );
+        let new_key = "cd".repeat(32);
+        assert_eq!(
+            db.add_region("jp", "wss://jp2.example", &new_key)
+                .await
+                .expect("update"),
+            super::RegionAdded::Updated
+        );
+        assert_eq!(
+            db.region_link("jp").await.expect("read"),
+            Some(("wss://jp2.example".to_string(), Some(new_key.clone())))
+        );
+        // The primary's own row and bad values are refused.
+        assert!(db.add_region("kr", "wss://x.example", &key).await.is_err());
+        assert!(db.add_region("JP!", "wss://x.example", &key).await.is_err());
+        assert!(db
+            .add_region("sg", "wss://sg.example", "short")
+            .await
+            .is_err());
+        // Each region has its own link key.
+        assert!(db
+            .add_region("sg", "wss://sg.example", &new_key)
+            .await
+            .is_err());
+
+        let status = db.region_status().await.expect("status");
+        assert_eq!(
+            status.iter().map(|r| r.id.as_str()).collect::<Vec<_>>(),
+            ["kr", "jp"]
+        );
+        assert_eq!(status[1].link_pubkey.as_deref(), Some(new_key.as_str()));
+
+        // A region with a room cannot be removed; the primary never can.
+        let community = community(&db).await;
+        let room = Uuid::new_v4();
+        sqlx::query(
+            "INSERT INTO room_directory (community_id, channel_id, home_region) VALUES ($1, $2, 'jp')",
+        )
+        .bind(community.as_uuid())
+        .bind(room)
+        .execute(&db.pool)
+        .await
+        .expect("room in jp");
+        assert_eq!(db.region_status().await.expect("status")[1].rooms, 1);
+        assert!(db.remove_region("jp").await.is_err());
+        assert!(db.remove_region("kr").await.is_err());
+        assert!(db.remove_region("us").await.is_err());
+        sqlx::query("DELETE FROM room_directory WHERE channel_id = $1")
+            .bind(room)
+            .execute(&db.pool)
+            .await
+            .expect("room gone");
+        assert_eq!(
+            db.remove_region("jp").await.expect("remove"),
+            super::RegionRemoved { people_moved: 0 }
+        );
+        assert_eq!(db.region_link("jp").await.expect("read"), None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn regions_are_not_changed_from_a_region_that_is_not_the_primary() {
+        let db = db().await;
+        db.register_region("kr", "wss://kr.example", true)
+            .await
+            .expect("kr");
+        db.register_region("jp", "wss://jp.example", false)
+            .await
+            .expect("jp");
+        db.claim_local_region("jp").await.expect("claim");
+        let error = db
+            .add_region("sg", "wss://sg.example", &"ab".repeat(32))
+            .await
+            .expect_err("jp is not the primary");
+        assert!(error.to_string().contains("not the primary"), "{error}");
+        assert!(db.remove_region("kr").await.is_err());
     }
 }

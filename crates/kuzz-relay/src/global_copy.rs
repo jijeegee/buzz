@@ -194,8 +194,8 @@ async fn wait_for_own_row(db: &Db, config: &Config) -> anyhow::Result<()> {
                 connect_url = %config.region_connect_url,
                 link_pubkey = %link_pubkey,
                 "Waiting for this region to be added in the primary: \
-                 INSERT INTO regions (id, connect_url, link_pubkey) VALUES (region, connect_url, link_pubkey), \
-                 or set link_pubkey on its row"
+                 kuzz-admin regions add --id <region> --connect-url <connect_url> --link-pubkey <link_pubkey> \
+                 against the primary's database"
             );
         }
         tokio::time::sleep(Duration::from_secs(2)).await;
