@@ -18,10 +18,14 @@ import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/modal_presentation.dart';
 import '../channels/compose_bar.dart';
 import '../channels/channel_identity_names_provider.dart';
+import '../channels/failed_local_messages_provider.dart';
+import '../channels/local_send_status_mark.dart';
+import '../channels/pending_local_messages_provider.dart';
 import '../channels/message_content.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../profile/user_profile_sheet.dart';
+import 'forum_local_sends.dart';
 import 'forum_models.dart';
 import 'forum_provider.dart';
 
@@ -232,7 +236,11 @@ class _ThreadContent extends HookConsumerWidget {
     final providerContainer = ProviderScope.containerOf(context, listen: false);
     final forumDelivery = ForumEventDelivery.capture(providerContainer);
     final post = thread.post;
-    final replies = thread.replies;
+    final replies = withLocalForumReplies(
+      thread.replies,
+      watchOwnForumSends(ref, channelId, currentPubkey),
+      post.eventId,
+    );
 
     // Preload profiles for all participants and tagged mentions.
     final allPubkeys = useMemoized(() {
@@ -423,6 +431,10 @@ class _OriginalPost extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    _SendStatus(
+                      channelId: post.channelId,
+                      eventId: post.eventId,
+                    ),
                   ],
                 ),
               ),
@@ -546,6 +558,7 @@ class _ReplyRow extends ConsumerWidget {
                         ),
                       ),
                     ),
+                    _SendStatus(channelId: channelId, eventId: reply.eventId),
                   ],
                 ),
               ),
@@ -592,7 +605,11 @@ class _ReplyRow extends ConsumerWidget {
   }
 
   void _showActions(BuildContext context, WidgetRef ref) {
+    // An unsent reply is deleted from its "Not sent" mark, not the relay.
     final isOwn =
+        !ref
+            .read(pendingLocalMessagesProvider(channelId))
+            .containsKey(reply.eventId) &&
         currentPubkey != null &&
         reply.pubkey.toLowerCase() == currentPubkey!.toLowerCase();
 
@@ -670,6 +687,28 @@ class _ReplyRow extends ConsumerWidget {
             child: Text(context.l10n.forumDelete),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// The clock or "Not sent" mark after an own post or reply's time.
+class _SendStatus extends ConsumerWidget {
+  final String channelId;
+  final String eventId;
+
+  const _SendStatus({required this.channelId, required this.eventId});
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final status = watchLocalSendStatus(ref, channelId, eventId);
+    if (status == LocalSendStatus.sent) return const SizedBox.shrink();
+    return Padding(
+      padding: const EdgeInsetsDirectional.only(start: Grid.half),
+      child: LocalSendStatusMark(
+        status: status,
+        channelId: channelId,
+        eventId: eventId,
       ),
     );
   }

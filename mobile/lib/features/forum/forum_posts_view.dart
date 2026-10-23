@@ -14,6 +14,7 @@ import '../../shared/widgets/load_error_view.dart';
 import '../../shared/widgets/bee_refresh_indicator.dart';
 import '../channels/channel.dart';
 import '../channels/compose_bar.dart';
+import 'forum_local_sends.dart';
 import 'forum_models.dart';
 import 'forum_post_card.dart';
 import 'forum_provider.dart';
@@ -36,6 +37,7 @@ class ForumPostsView extends HookConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final postsAsync = ref.watch(forumPostsProvider(channel.id));
+    final localSends = watchOwnForumSends(ref, channel.id, currentPubkey);
     final isComposing = useState(false);
     // A queued attachment can finish after this view is popped. Capture the
     // app-level provider container instead of retaining the route's WidgetRef.
@@ -99,7 +101,7 @@ class ForumPostsView extends HookConsumerWidget {
                 ),
               ),
               data: (response) {
-                final posts = response.posts;
+                final posts = withLocalForumPosts(response.posts, localSends);
                 if (posts.isEmpty) {
                   return _EmptyState(
                     isMember: channel.isMember,
@@ -169,8 +171,11 @@ class ForumPostsView extends HookConsumerWidget {
                     content: content,
                     mentionPubkeys: mentionPubkeys,
                     mediaTags: mediaTags,
+                    // The new post is in the list now; nothing waits on it.
+                    onShown: () {
+                      if (context.mounted) isComposing.value = false;
+                    },
                   );
-                  if (context.mounted) isComposing.value = false;
                 },
           ),
         ],
