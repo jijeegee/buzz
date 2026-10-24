@@ -1,0 +1,396 @@
+{
+  "description": "Window reads stay inside one covered run; touching pages join runs.",
+  "steps": [
+    {
+      "op": "ingest",
+      "events": [
+        {
+          "id": "0101010101010101010101010101010101010101010101010101010101010101",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 100,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 1",
+          "sig": ""
+        },
+        {
+          "id": "0202020202020202020202020202020202020202020202020202020202020202",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 110,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 2",
+          "sig": ""
+        },
+        {
+          "id": "0303030303030303030303030303030303030303030303030303030303030303",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 120,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 3",
+          "sig": ""
+        },
+        {
+          "id": "0404040404040404040404040404040404040404040404040404040404040404",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 130,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 4",
+          "sig": ""
+        },
+        {
+          "id": "0505050505050505050505050505050505050505050505050505050505050505",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 140,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 5",
+          "sig": ""
+        },
+        {
+          "id": "0606060606060606060606060606060606060606060606060606060606060606",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 150,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-a"
+            ]
+          ],
+          "content": "message 6",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "claim",
+      "channelId": "room-a",
+      "class": "top",
+      "lo": {
+        "createdAt": 140,
+        "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+      },
+      "loIsStart": false,
+      "hi": {
+        "at": 160
+      }
+    },
+    {
+      "op": "claim",
+      "channelId": "room-a",
+      "class": "top",
+      "lo": {
+        "createdAt": 100,
+        "eventId": "0101010101010101010101010101010101010101010101010101010101010101"
+      },
+      "loIsStart": true,
+      "hi": {
+        "before": {
+          "createdAt": 120,
+          "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+        }
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": null,
+      "limit": 5,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [
+          "0606060606060606060606060606060606060606060606060606060606060606",
+          "0505050505050505050505050505050505050505050505050505050505050505"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 140,
+          "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+        },
+        "hasMore": true,
+        "gap": true
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": {
+        "createdAt": 140,
+        "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+      },
+      "limit": 5,
+      "expect": {
+        "startCursor": {
+          "createdAt": 140,
+          "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+        },
+        "rowIds": [],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 140,
+          "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+        },
+        "hasMore": true,
+        "gap": true
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": {
+        "createdAt": 120,
+        "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+      },
+      "limit": 5,
+      "expect": {
+        "startCursor": {
+          "createdAt": 120,
+          "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+        },
+        "rowIds": [],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 120,
+          "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+        },
+        "hasMore": true,
+        "gap": true
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": {
+        "createdAt": 110,
+        "eventId": "0202020202020202020202020202020202020202020202020202020202020202"
+      },
+      "limit": 5,
+      "expect": {
+        "startCursor": {
+          "createdAt": 110,
+          "eventId": "0202020202020202020202020202020202020202020202020202020202020202"
+        },
+        "rowIds": [
+          "0101010101010101010101010101010101010101010101010101010101010101"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": false
+      }
+    },
+    {
+      "op": "coverage",
+      "channelIds": [
+        "room-a"
+      ],
+      "expect": [
+        {
+          "channelId": "room-a",
+          "ranges": [
+            {
+              "class": "top",
+              "loAt": 100,
+              "loId": "0101010101010101010101010101010101010101010101010101010101010101",
+              "loIsStart": true,
+              "hiAt": 119
+            },
+            {
+              "class": "top",
+              "loAt": 140,
+              "loId": "0505050505050505050505050505050505050505050505050505050505050505",
+              "loIsStart": false,
+              "hiAt": 160
+            }
+          ],
+          "liveCovered": false,
+          "provenThrough": null,
+          "newestLocalAt": 150,
+          "gapBelow": true
+        }
+      ]
+    },
+    {
+      "op": "claim",
+      "channelId": "room-a",
+      "class": "top",
+      "lo": {
+        "createdAt": 120,
+        "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+      },
+      "loIsStart": false,
+      "hi": {
+        "before": {
+          "createdAt": 140,
+          "eventId": "0505050505050505050505050505050505050505050505050505050505050505"
+        }
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": null,
+      "limit": 3,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [
+          "0606060606060606060606060606060606060606060606060606060606060606",
+          "0505050505050505050505050505050505050505050505050505050505050505",
+          "0404040404040404040404040404040404040404040404040404040404040404"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 130,
+          "eventId": "0404040404040404040404040404040404040404040404040404040404040404"
+        },
+        "hasMore": true,
+        "gap": false
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": {
+        "createdAt": 130,
+        "eventId": "0404040404040404040404040404040404040404040404040404040404040404"
+      },
+      "limit": 3,
+      "expect": {
+        "startCursor": {
+          "createdAt": 130,
+          "eventId": "0404040404040404040404040404040404040404040404040404040404040404"
+        },
+        "rowIds": [
+          "0303030303030303030303030303030303030303030303030303030303030303"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 120,
+          "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+        },
+        "hasMore": true,
+        "gap": true
+      }
+    },
+    {
+      "op": "claim",
+      "channelId": "room-a",
+      "class": "top",
+      "lo": {
+        "createdAt": 110,
+        "eventId": "0202020202020202020202020202020202020202020202020202020202020202"
+      },
+      "loIsStart": false,
+      "hi": {
+        "before": {
+          "createdAt": 120,
+          "eventId": "0303030303030303030303030303030303030303030303030303030303030303"
+        }
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [
+          "0606060606060606060606060606060606060606060606060606060606060606",
+          "0505050505050505050505050505050505050505050505050505050505050505",
+          "0404040404040404040404040404040404040404040404040404040404040404",
+          "0303030303030303030303030303030303030303030303030303030303030303",
+          "0202020202020202020202020202020202020202020202020202020202020202",
+          "0101010101010101010101010101010101010101010101010101010101010101"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": false
+      }
+    },
+    {
+      "op": "coverage",
+      "channelIds": [
+        "room-a",
+        "room-empty"
+      ],
+      "expect": [
+        {
+          "channelId": "room-a",
+          "ranges": [
+            {
+              "class": "top",
+              "loAt": 100,
+              "loId": "0101010101010101010101010101010101010101010101010101010101010101",
+              "loIsStart": true,
+              "hiAt": 160
+            }
+          ],
+          "liveCovered": false,
+          "provenThrough": null,
+          "newestLocalAt": 150,
+          "gapBelow": false
+        },
+        {
+          "channelId": "room-empty",
+          "ranges": [],
+          "liveCovered": false,
+          "provenThrough": null,
+          "newestLocalAt": null,
+          "gapBelow": true
+        }
+      ]
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-empty",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": true
+      }
+    }
+  ]
+}

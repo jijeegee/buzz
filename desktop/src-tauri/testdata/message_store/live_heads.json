@@ -1,0 +1,205 @@
+{
+  "description": "An open live segment continues the newest range; closing it proves an all range; heads skip rooms without coverage.",
+  "steps": [
+    {
+      "op": "ingest",
+      "events": [
+        {
+          "id": "3030303030303030303030303030303030303030303030303030303030303030",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 100,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-l"
+            ]
+          ],
+          "content": "message 48",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "claim",
+      "channelId": "room-l",
+      "class": "top",
+      "lo": {
+        "createdAt": 100,
+        "eventId": "3030303030303030303030303030303030303030303030303030303030303030"
+      },
+      "loIsStart": false,
+      "hi": {
+        "at": 200
+      }
+    },
+    {
+      "op": "beginLive",
+      "wsId": 7,
+      "channelIds": [
+        "room-l"
+      ],
+      "since": 150
+    },
+    {
+      "op": "coverage",
+      "channelIds": [
+        "room-l"
+      ],
+      "expect": [
+        {
+          "channelId": "room-l",
+          "ranges": [
+            {
+              "class": "top",
+              "loAt": 100,
+              "loId": "3030303030303030303030303030303030303030303030303030303030303030",
+              "loIsStart": false,
+              "hiAt": 200
+            }
+          ],
+          "liveCovered": true,
+          "provenThrough": null,
+          "newestLocalAt": 100,
+          "gapBelow": true
+        }
+      ]
+    },
+    {
+      "op": "ingest",
+      "events": [
+        {
+          "id": "3131313131313131313131313131313131313131313131313131313131313131",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 250,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-l"
+            ]
+          ],
+          "content": "message 49",
+          "sig": ""
+        },
+        {
+          "id": "3232323232323232323232323232323232323232323232323232323232323232",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 300,
+          "kind": 9,
+          "tags": [
+            [
+              "h",
+              "room-m"
+            ]
+          ],
+          "content": "message 50",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-l",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [
+          "3131313131313131313131313131313131313131313131313131313131313131",
+          "3030303030303030303030303030303030303030303030303030303030303030"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 100,
+          "eventId": "3030303030303030303030303030303030303030303030303030303030303030"
+        },
+        "hasMore": true,
+        "gap": true
+      }
+    },
+    {
+      "op": "readAround",
+      "channelId": "room-l",
+      "anchor": {
+        "createdAt": 250,
+        "eventId": "3131313131313131313131313131313131313131313131313131313131313131"
+      },
+      "before": 5,
+      "after": 5,
+      "expect": {
+        "rowIds": [
+          "3131313131313131313131313131313131313131313131313131313131313131",
+          "3030303030303030303030303030303030303030303030303030303030303030"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "hasOlder": true,
+        "hasNewer": false,
+        "gapBelow": true,
+        "gapAbove": false
+      }
+    },
+    {
+      "op": "closeLive",
+      "wsId": 7,
+      "closedAt": 260
+    },
+    {
+      "op": "coverage",
+      "channelIds": [
+        "room-l"
+      ],
+      "expect": [
+        {
+          "channelId": "room-l",
+          "ranges": [
+            {
+              "class": "top",
+              "loAt": 100,
+              "loId": "3030303030303030303030303030303030303030303030303030303030303030",
+              "loIsStart": false,
+              "hiAt": 260
+            },
+            {
+              "class": "all",
+              "loAt": 150,
+              "loId": "~",
+              "loIsStart": false,
+              "hiAt": 260
+            }
+          ],
+          "liveCovered": false,
+          "provenThrough": 260,
+          "newestLocalAt": 250,
+          "gapBelow": true
+        }
+      ]
+    },
+    {
+      "op": "loadHeads",
+      "rooms": 5,
+      "rows": 1,
+      "expect": [
+        {
+          "channelId": "room-l",
+          "page": {
+            "startCursor": null,
+            "rowIds": [
+              "3131313131313131313131313131313131313131313131313131313131313131"
+            ],
+            "auxIds": [],
+            "summaryIds": [],
+            "nextCursor": {
+              "createdAt": 250,
+              "eventId": "3131313131313131313131313131313131313131313131313131313131313131"
+            },
+            "hasMore": true,
+            "gap": false
+          }
+        }
+      ]
+    }
+  ]
+}
