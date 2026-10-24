@@ -1,14 +1,18 @@
 //! Device-bound keys in the harness (device-bound keys plan §6, review S2).
 //!
 //! In key mode the harness opens this OS user's shared device key (never
-//! creating it: only `kuzz auth login` and the desktop app do) and:
+//! creating it: only `kuzz auth login` and the desktop app do), or, when it
+//! cannot (macOS: no keychain access group for the Secure Enclave key), signs
+//! through the desktop app signer it was spawned with
+//! (`kuzz_token_broker::app_signer`), and:
 //!
 //! - adds the `device` tag to its own auth events: NIP-42 AUTH and the NIP-98
 //!   events of the HTTP bridge ([`tag`]);
 //! - asks `GET /agents/{pubkey}/status` before starting, and stays down when
 //!   the relay says the agent is bound to another device ([`check_status`]);
 //! - runs a loopback **device broker** ([`DeviceBroker`]) so agent children
-//!   that cannot open the key themselves get device tags without touching it.
+//!   that cannot open the key themselves get device tags without touching it
+//!   (forwarded to the app signer when that is this process's signer).
 //!
 //! No key, or a failed signature, is a warning: the event goes out exactly as
 //! it did before and the relay decides (it refuses only under `enforce`).
@@ -18,10 +22,11 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
+use kuzz_token_broker::app_signer::APP_SIGNER_ENV_VARS;
 use kuzz_token_broker::device::{
-    open_shared, parse_device_request, render_device_tag, DeviceKey, OpenMode,
-    DEVICE_BROKER_SECRET_ENV, DEVICE_BROKER_URL_ENV, DEVICE_ENV_VARS, DEVICE_TAGGED_KINDS,
-    DEVICE_TAG_PATH, MAX_DEVICE_REQUEST_BYTES,
+    parse_device_request, render_device_tag, DeviceScope, DeviceSigner, Refusal,
+    DEVICE_BROKER_SECRET_ENV, DEVICE_BROKER_URL_ENV, DEVICE_ENV_VARS, DEVICE_TAG_PATH,
+    MAX_DEVICE_REQUEST_BYTES,
 };
 use kuzz_token_broker::{authorization_matches, render_status, Secret, BROKER_REQUESTS_PER_MINUTE};
 use nostr::{JsonUtil as _, PublicKey, UnsignedEvent};
@@ -33,8 +38,6 @@ use crate::token_broker::{BrokerFull, MAX_CONCURRENT, MAX_SECRETS, REQUEST_TIMEO
 
 /// Name of the event tag carrying the device signature.
 const DEVICE_TAG: &str = "device";
-/// How far a brokered event's `created_at` may be from now.
-const BROKER_MAX_SKEW_SECS: u64 = 60;
 /// Time allowed for the start-up status check.
 const STATUS_TIMEOUT: Duration = Duration::from_secs(3);
 /// The relay's reason for a key bound to another device.
@@ -60,30 +63,37 @@ pub fn wrong_host_exit_requested() -> bool {
     WRONG_HOST_STOP.load(std::sync::atomic::Ordering::SeqCst)
 }
 
-static DEVICE: OnceLock<DeviceKey> = OnceLock::new();
+static DEVICE: OnceLock<DeviceSigner> = OnceLock::new();
 
-/// Open the shared device key (existing only, on a blocking thread) and make
-/// it this process's device signer. `None`, with a log line, when there is
-/// none or it cannot be opened.
-pub async fn init() -> Option<&'static DeviceKey> {
-    if let Some(key) = DEVICE.get() {
-        return Some(key);
+/// Resolve this process's device signer once (on a blocking thread): the
+/// shared device key (existing only), else the desktop app signer from the
+/// environment ([`DeviceSigner::from_env`]). `None`, with a log line, when
+/// there is neither.
+pub async fn init() -> Option<&'static DeviceSigner> {
+    if let Some(signer) = DEVICE.get() {
+        return Some(signer);
     }
-    match tokio::task::spawn_blocking(|| open_shared(OpenMode::ExistingOnly)).await {
-        Ok(Ok(Some(key))) => {
-            tracing::info!(
-                device = %key.pubkey().to_hex(),
-                kind = key.kind().as_wire(),
-                "device key opened"
-            );
-            Some(DEVICE.get_or_init(|| key))
+    match tokio::task::spawn_blocking(DeviceSigner::from_env).await {
+        Ok((Some(signer), _)) => {
+            match &signer {
+                DeviceSigner::Key(key) => tracing::info!(
+                    device = %key.pubkey().to_hex(),
+                    kind = key.kind().as_wire(),
+                    "device key opened"
+                ),
+                DeviceSigner::App { .. } => {
+                    tracing::info!("device key not reachable here; signing through the app")
+                }
+                DeviceSigner::Broker { .. } => tracing::info!("signing through a device broker"),
+            }
+            Some(DEVICE.get_or_init(|| signer))
         }
-        Ok(Ok(None)) => {
-            tracing::info!("no device key on this machine yet; signing without one");
+        Ok((None, Some(warning))) => {
+            tracing::warn!("{warning}; signing without it");
             None
         }
-        Ok(Err(error)) => {
-            tracing::warn!("device key unavailable; signing without it: {error}");
+        Ok((None, None)) => {
+            tracing::info!("no device key on this machine yet; signing without one");
             None
         }
         Err(error) => {
@@ -93,8 +103,8 @@ pub async fn init() -> Option<&'static DeviceKey> {
     }
 }
 
-/// This process's device key, once [`init`] opened it.
-pub fn current() -> Option<&'static DeviceKey> {
+/// This process's device signer, once [`init`] resolved it.
+pub fn current() -> Option<&'static DeviceSigner> {
     DEVICE.get()
 }
 
@@ -103,14 +113,14 @@ pub async fn tag(unsigned: UnsignedEvent) -> UnsignedEvent {
     tag_with(current(), unsigned).await
 }
 
-/// `unsigned` with `key`'s device tag (on a blocking thread, the TPM takes
-/// ~13 ms), or unchanged with a warning when it cannot be tagged.
-pub async fn tag_with(key: Option<&DeviceKey>, unsigned: UnsignedEvent) -> UnsignedEvent {
-    let Some(key) = key.cloned() else {
+/// `unsigned` with `signer`'s device tag (on a blocking thread, the TPM
+/// takes ~13 ms), or unchanged with a warning when it cannot be tagged.
+pub async fn tag_with(signer: Option<&DeviceSigner>, unsigned: UnsignedEvent) -> UnsignedEvent {
+    let Some(signer) = signer.cloned() else {
         return unsigned;
     };
     let original = unsigned.clone();
-    let task = tokio::task::spawn_blocking(move || key.add_event_tag(unsigned));
+    let task = tokio::task::spawn_blocking(move || signer.tag_event(&unsigned));
     match tokio::time::timeout(kuzz_token_broker::device::DEVICE_SIGN_TIMEOUT, task).await {
         Ok(Ok(Ok(tagged))) => tagged,
         Ok(Ok(Err(error))) => {
@@ -147,7 +157,7 @@ pub async fn check_status(
     http: &reqwest::Client,
     http_base: &str,
     keys: &nostr::Keys,
-    device: Option<&DeviceKey>,
+    device: Option<&DeviceSigner>,
 ) -> Admission {
     let url = format!(
         "{}/agents/{}/status",
@@ -218,7 +228,7 @@ fn admission_of(status: u16, body: &str) -> Admission {
 /// `Nostr <base64>` for a NIP-98 event over `method url`, device-tagged.
 async fn nip98_header(
     keys: &nostr::Keys,
-    device: Option<&DeviceKey>,
+    device: Option<&DeviceSigner>,
     method: &str,
     url: &str,
 ) -> Result<String, String> {
@@ -258,15 +268,16 @@ struct Secrets {
 
 /// Loopback device broker: `POST /device-tag` with a spawn secret and an
 /// unsigned auth event answers the event's device tag. It signs only what
-/// this harness's agent may send to this relay (review S2): one of
-/// [`DEVICE_TAGGED_KINDS`], authored by the agent, fresh, without a device
-/// tag, and aimed at this relay (`relay`, `u` or `server` tag). It never
-/// signs header proofs. Bounds as in [`crate::token_broker`].
+/// this harness's agent may send to this relay (review S2,
+/// [`DeviceScope::admit_event`]): one of the device-tagged kinds, authored by
+/// the agent, fresh, without a device tag, and aimed at this relay (`relay`,
+/// `u` or `server` tag). It never signs header proofs. It signs with this
+/// process's signer: the device key, or the desktop app signer it forwards
+/// to. Bounds as in [`crate::token_broker`].
 pub struct DeviceBroker {
     addr: SocketAddr,
-    key: DeviceKey,
-    agent: PublicKey,
-    relay_authority: String,
+    signer: DeviceSigner,
+    scope: DeviceScope,
     secrets: Mutex<Secrets>,
 }
 
@@ -317,16 +328,16 @@ pub fn global() -> Option<&'static Arc<DeviceBroker>> {
 }
 
 /// Start the process device broker for `agent` on `relay_url` (key mode with
-/// an open device key). Idempotent.
+/// a device signer). Idempotent.
 pub async fn start_global(
-    key: DeviceKey,
+    signer: DeviceSigner,
     agent: PublicKey,
     relay_url: &str,
 ) -> std::io::Result<&'static Arc<DeviceBroker>> {
     if let Some(broker) = BROKER.get() {
         return Ok(broker);
     }
-    let broker = DeviceBroker::start(key, agent, relay_url).await?;
+    let broker = DeviceBroker::start(signer, agent, relay_url).await?;
     Ok(BROKER.get_or_init(|| broker))
 }
 
@@ -342,30 +353,18 @@ fn unix_now() -> u64 {
         .as_secs()
 }
 
-/// Why the broker refuses to tag an event (answered as `403`).
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-enum Refusal {
-    Malformed,
-    Kind,
-    Author,
-    Stale,
-    AlreadyTagged,
-    Origin,
-}
-
 impl DeviceBroker {
     /// Bind `127.0.0.1:0` and serve until the process exits.
     pub async fn start(
-        key: DeviceKey,
+        signer: DeviceSigner,
         agent: PublicKey,
         relay_url: &str,
     ) -> std::io::Result<Arc<Self>> {
         let listener = TcpListener::bind("127.0.0.1:0").await?;
         let broker = Arc::new(Self {
             addr: listener.local_addr()?,
-            key,
-            agent,
-            relay_authority: kuzz_core::tenant::relay_url_authority(relay_url),
+            signer,
+            scope: DeviceScope::new(agent, relay_url),
             secrets: Mutex::new(Secrets::default()),
         });
         let serving = Arc::clone(&broker);
@@ -429,44 +428,6 @@ impl DeviceBroker {
         Ok(())
     }
 
-    /// Whether this broker may tag `unsigned` (review S2).
-    fn admit(&self, unsigned: &UnsignedEvent, now: u64) -> Result<(), Refusal> {
-        let kind = unsigned.kind.as_u16();
-        if !DEVICE_TAGGED_KINDS.contains(&kind) {
-            return Err(Refusal::Kind);
-        }
-        if unsigned.pubkey != self.agent {
-            return Err(Refusal::Author);
-        }
-        if unsigned.created_at.as_secs().abs_diff(now) > BROKER_MAX_SKEW_SECS {
-            return Err(Refusal::Stale);
-        }
-        let first = |name: &str| {
-            unsigned.tags.iter().find_map(|tag| {
-                let values = tag.as_slice();
-                (values.first().map(String::as_str) == Some(name))
-                    .then(|| values.get(1).cloned())
-                    .flatten()
-            })
-        };
-        if unsigned
-            .tags
-            .iter()
-            .any(|tag| tag.as_slice().first().map(String::as_str) == Some(DEVICE_TAG))
-        {
-            return Err(Refusal::AlreadyTagged);
-        }
-        let authority = match kind {
-            22242 => first("relay").map(|url| kuzz_core::tenant::relay_url_authority(&url)),
-            27235 => first("u").map(|url| kuzz_core::tenant::relay_url_authority(&url)),
-            _ => first("server").map(|server| kuzz_core::tenant::normalize_host(&server)),
-        };
-        match authority {
-            Some(authority) if !authority.is_empty() && authority == self.relay_authority => Ok(()),
-            _ => Err(Refusal::Origin),
-        }
-    }
-
     /// The raw HTTP response for one request.
     async fn respond(&self, request: &[u8]) -> Vec<u8> {
         let Some(request) = parse_device_request(request) else {
@@ -484,7 +445,7 @@ impl DeviceBroker {
             .ok()
             .and_then(|body| UnsignedEvent::from_json(body).ok());
         let admitted = match &unsigned {
-            Some(unsigned) => self.admit(unsigned, unix_now()),
+            Some(unsigned) => self.scope.admit_event(unsigned, unix_now()),
             None => Err(Refusal::Malformed),
         };
         let unsigned = match (unsigned, admitted) {
@@ -495,8 +456,8 @@ impl DeviceBroker {
             }
             (None, Ok(())) => return render_status(400, "Bad Request").into_bytes(),
         };
-        let key = self.key.clone();
-        let tagged = tokio::task::spawn_blocking(move || key.add_event_tag(unsigned)).await;
+        let signer = self.signer.clone();
+        let tagged = tokio::task::spawn_blocking(move || signer.tag_event(&unsigned)).await;
         let tag = match tagged {
             Ok(Ok(tagged)) => tagged.tags.iter().find_map(|tag| {
                 let values = tag.as_slice();
@@ -578,14 +539,17 @@ async fn read_request(stream: &mut TcpStream) -> Option<Vec<u8>> {
     }
 }
 
-/// Strip inherited device broker variables from a child and, when the
-/// harness runs a device broker, give it fresh per-spawn credentials. The
-/// lease must live exactly as long as the child.
+/// Strip inherited device broker and app signer variables from a child and,
+/// when the harness runs a device broker, give it fresh per-spawn
+/// credentials. The lease must live exactly as long as the child. The app
+/// signer's own secret never reaches agent children: they sign through this
+/// harness's broker, which is bound to this agent and relay per child and
+/// never signs header proofs.
 pub fn apply_child_device(
     cmd: &mut tokio::process::Command,
     broker: Option<&Arc<DeviceBroker>>,
 ) -> Result<Option<DeviceLease>, BrokerFull> {
-    for name in DEVICE_ENV_VARS {
+    for name in DEVICE_ENV_VARS.iter().chain(APP_SIGNER_ENV_VARS.iter()) {
         cmd.env_remove(name);
     }
     let Some(broker) = broker else {
@@ -603,9 +567,10 @@ pub fn apply_mcp_device(servers: &mut [crate::acp::McpServer], lease: Option<&De
         return;
     };
     for server in servers {
-        server
-            .env
-            .retain(|var| !DEVICE_ENV_VARS.contains(&var.name.as_str()));
+        server.env.retain(|var| {
+            !DEVICE_ENV_VARS.contains(&var.name.as_str())
+                && !APP_SIGNER_ENV_VARS.contains(&var.name.as_str())
+        });
         server
             .env
             .extend(lease.env().iter().map(|(name, value)| crate::acp::EnvVar {
@@ -619,7 +584,7 @@ pub fn apply_mcp_device(servers: &mut [crate::acp::McpServer], lease: Option<&De
 mod tests {
     use super::*;
     use kuzz_auth::device_proof::verify_event_device_tag;
-    use kuzz_token_broker::device::{request_device_tag, DeviceSigner};
+    use kuzz_token_broker::device::{request_device_tag, DeviceKey, DeviceSigner};
     use kuzz_token_broker::DEFAULT_BROKER_TIMEOUT;
     use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
 
@@ -667,7 +632,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let key = file_key(&dir);
         let agent = Keys::generate();
-        let broker = DeviceBroker::start(key.clone(), agent.public_key(), RELAY)
+        let broker = DeviceBroker::start(DeviceSigner::Key(key.clone()), agent.public_key(), RELAY)
             .await
             .unwrap();
         let lease = broker.register().unwrap();
@@ -695,13 +660,70 @@ mod tests {
         assert_eq!(verify_event_device_tag(&event).unwrap(), Some(key.pubkey()));
     }
 
+    /// kuzz-acp signing through the desktop app signer (macOS: no keychain
+    /// access group) still lends tags to its children: its broker forwards.
+    #[tokio::test]
+    async fn broker_forwards_to_the_app_signer() {
+        use kuzz_token_broker::app_signer::{AppSigner, APP_SIGNER_SECRET_ENV, APP_SIGNER_URL_ENV};
+        let dir = tempfile::tempdir().unwrap();
+        let key = file_key(&dir);
+        let agent = Keys::generate();
+        let app = AppSigner::start(key.clone()).unwrap();
+        let app_lease = app.register(agent.public_key(), RELAY).unwrap();
+        let get = |name: &str| {
+            app_lease
+                .env()
+                .iter()
+                .find(|(k, _)| k == name)
+                .map(|(_, v)| v.clone())
+                .unwrap()
+        };
+        let through_app = DeviceSigner::App {
+            url: get(APP_SIGNER_URL_ENV),
+            secret: Secret::new(get(APP_SIGNER_SECRET_ENV)),
+        };
+        let broker = DeviceBroker::start(through_app, agent.public_key(), RELAY)
+            .await
+            .unwrap();
+        let lease = broker.register().unwrap();
+
+        let unsigned = nip98(&agent, "https://relay.example/query");
+        let tag = ask(&lease, unsigned.clone()).await.unwrap();
+        let mut tagged = unsigned;
+        tagged.tags.push(tag);
+        tagged.id = None;
+        let event = tagged.sign_with_keys(&agent).unwrap();
+        assert_eq!(verify_event_device_tag(&event).unwrap(), Some(key.pubkey()));
+
+        // The broker's own admission still applies before forwarding.
+        let elsewhere = nip98(&agent, "https://evil.example/query");
+        assert!(ask(&lease, elsewhere).await.is_err());
+        // Once the app signer is gone, the child gets no tag (never fatal).
+        app.stop();
+        let unsigned = nip98(&agent, "https://relay.example/query");
+        assert!(ask(&lease, unsigned).await.is_err());
+    }
+
+    #[tokio::test]
+    async fn children_never_inherit_the_app_signer_secret() {
+        use kuzz_token_broker::app_signer::APP_SIGNER_SECRET_ENV;
+        let mut cmd = tokio::process::Command::new("unused");
+        cmd.env(APP_SIGNER_SECRET_ENV, "inherited");
+        assert!(apply_child_device(&mut cmd, None).unwrap().is_none());
+        assert!(cmd
+            .as_std()
+            .get_envs()
+            .any(|(name, value)| name == APP_SIGNER_SECRET_ENV && value.is_none()));
+    }
+
     #[tokio::test]
     async fn broker_refuses_what_the_agent_may_not_send_here() {
         let dir = tempfile::tempdir().unwrap();
         let agent = Keys::generate();
-        let broker = DeviceBroker::start(file_key(&dir), agent.public_key(), RELAY)
-            .await
-            .unwrap();
+        let broker =
+            DeviceBroker::start(DeviceSigner::Key(file_key(&dir)), agent.public_key(), RELAY)
+                .await
+                .unwrap();
         let lease = broker.register().unwrap();
 
         let other_author = nip98(&Keys::generate(), "https://relay.example/query");
@@ -725,9 +747,10 @@ mod tests {
     async fn broker_secrets_die_with_their_lease() {
         let dir = tempfile::tempdir().unwrap();
         let agent = Keys::generate();
-        let broker = DeviceBroker::start(file_key(&dir), agent.public_key(), RELAY)
-            .await
-            .unwrap();
+        let broker =
+            DeviceBroker::start(DeviceSigner::Key(file_key(&dir)), agent.public_key(), RELAY)
+                .await
+                .unwrap();
         let lease = broker.register().unwrap();
         let url = broker.url();
         let secret = secret_of(&lease);
@@ -748,7 +771,7 @@ mod tests {
         let key = file_key(&dir);
         let agent = Keys::generate();
         let unsigned = nip98(&agent, "https://relay.example/query");
-        let event = tag_with(Some(&key), unsigned.clone())
+        let event = tag_with(Some(&DeviceSigner::Key(key.clone())), unsigned.clone())
             .await
             .sign_with_keys(&agent)
             .unwrap();
@@ -819,7 +842,13 @@ mod tests {
         let base = format!("http://{}", listener.local_addr().unwrap());
         tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
 
-        let admission = check_status(&reqwest::Client::new(), &base, &agent, Some(&key)).await;
+        let admission = check_status(
+            &reqwest::Client::new(),
+            &base,
+            &agent,
+            Some(&DeviceSigner::Key(key.clone())),
+        )
+        .await;
         assert!(matches!(admission, Admission::OtherDevice(_)));
 
         use base64::Engine as _;
@@ -837,9 +866,10 @@ mod tests {
     async fn child_env_gets_device_broker_credentials_only_with_a_broker() {
         let dir = tempfile::tempdir().unwrap();
         let agent = Keys::generate();
-        let broker = DeviceBroker::start(file_key(&dir), agent.public_key(), RELAY)
-            .await
-            .unwrap();
+        let broker =
+            DeviceBroker::start(DeviceSigner::Key(file_key(&dir)), agent.public_key(), RELAY)
+                .await
+                .unwrap();
         let mut cmd = tokio::process::Command::new("unused");
         cmd.env(DEVICE_BROKER_SECRET_ENV, "inherited");
         assert!(apply_child_device(&mut cmd, None).unwrap().is_none());

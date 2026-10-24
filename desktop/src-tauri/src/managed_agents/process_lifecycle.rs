@@ -202,6 +202,7 @@ pub fn finish_spawn(
         setup_mode,
         adapter_availability,
         start_nonce,
+        app_signer_lease: None,
         job,
     }
 }

@@ -18,6 +18,7 @@
 //! at most [`MAX_RESPONSE_BYTES`]. The client side ([`fetch_from_broker`]) is
 //! std-only and talks plain HTTP/1.1 to a loopback address only.
 
+pub mod app_signer;
 pub mod device;
 
 use std::io::{Read, Write};

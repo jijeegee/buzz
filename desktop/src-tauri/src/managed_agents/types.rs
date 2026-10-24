@@ -588,6 +588,10 @@ pub struct ManagedAgentProcess {
     pub adapter_availability: Option<AcpAvailabilityStatus>,
     /// Unpredictable identity shared only with this harness generation.
     pub start_nonce: String,
+    /// This harness's app signer lease (`crate::app_signer`): its secret is
+    /// revoked when the process record is dropped. `None` when the app
+    /// signer is not running.
+    pub app_signer_lease: Option<kuzz_token_broker_pkg::app_signer::AppSignerLease>,
     /// Win32 Job Object owning the harness + its entire process tree. Closing
     /// the handle (via `JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE`) kills the whole
     /// tree — the Windows mirror of the Unix process-group teardown. `None`

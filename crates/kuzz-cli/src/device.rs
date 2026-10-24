@@ -172,9 +172,9 @@ fn unix_now() -> i64 {
 
 /// The `X-Kuzz-Device-Proof` value for an account call: `purpose` over
 /// `binding` (`<METHOD> <full URL>` or `login:<sha256 hex>`), the token the
-/// call carries (`None` for a login) and its body. `None` (with a warning on
-/// failure) when this process holds no local key: the broker never signs
-/// header proofs.
+/// call carries (`None` for a login) and its body. Signed by the local key or
+/// the desktop app signer (which gets only hashes). `None` (with a warning on
+/// failure) without either: the broker never signs header proofs.
 pub async fn header_proof(
     signer: Option<&DeviceSigner>,
     purpose: &'static str,
@@ -182,12 +182,14 @@ pub async fn header_proof(
     token: Option<&str>,
     body: &[u8],
 ) -> Option<String> {
-    let key = signer?.key()?.clone();
+    let signer = signer
+        .filter(|signer| signer.signs_header_proofs())?
+        .clone();
     let token = token.map(|token| Zeroizing::new(token.to_owned()));
     let body = body.to_vec();
     let ts = unix_now() + CLOCK_OFFSET.load(Ordering::Relaxed);
     let task = tokio::task::spawn_blocking(move || {
-        key.header_proof_at(
+        signer.header_proof_at(
             ts,
             purpose,
             &binding,

@@ -4860,6 +4860,7 @@ dependencies = [
  "kuzz-persona",
  "kuzz-sdk",
  "kuzz-terminal",
+ "kuzz-token-broker",
  "kuzz-voice",
  "kuzz-ws-client",
  "libc",
@@ -5002,6 +5003,22 @@ dependencies = [
  "libc",
  "parking_lot",
  "portable-pty",
+]
+
+[[package]]
+name = "kuzz-token-broker"
+version = "0.1.0"
+dependencies = [
+ "hex",
+ "kuzz-auth",
+ "kuzz-core",
+ "kuzz-device-key",
+ "nostr 0.44.7",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "thiserror 2.0.18",
+ "zeroize",
 ]
 
 [[package]]

@@ -6,6 +6,10 @@
 //! Everything here is best effort: with no device key, or when signing
 //! fails, callers send exactly what they sent before and a warning is
 //! logged. The device key is never deleted by sign-out.
+//!
+//! Once the key is open the app signer (`crate::app_signer`) serves it to
+//! the runners the app spawns, for helpers that cannot open it themselves
+//! (macOS Secure Enclave keys need the app's keychain access group).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -191,6 +195,8 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
             let mut slot = slot();
             slot.key = Some(key.clone());
             slot.failed_at = None;
+            drop(slot);
+            crate::app_signer::start(&key);
             Some(key)
         }
         Err(error) => {

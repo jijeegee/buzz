@@ -1,5 +1,6 @@
 #![recursion_limit = "256"] // Deep Tauri command futures exceed the default layout query depth.
 mod app_menu;
+mod app_signer;
 mod app_state;
 mod archive;
 mod auth;
