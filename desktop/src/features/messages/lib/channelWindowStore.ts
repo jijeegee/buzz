@@ -236,6 +236,51 @@ export function mergeLiveChannelWindowEvent(
   };
 }
 
+/** Live rows a room that is not on screen keeps in memory. */
+export const CLOSED_CHANNEL_OVERLAY_CAP = 50;
+/** Live reactions / edits / deletions such a room keeps in memory. */
+export const CLOSED_CHANNEL_AUX_CAP = 200;
+
+/**
+ * Bound the live part of a room that is not on screen. Within the caps the
+ * store is returned unchanged. Past them, the room keeps only its newest live
+ * rows (plus own unsent rows) and drops its pages: rows trimmed from between
+ * a page and the kept rows would otherwise be a silent hole in the timeline.
+ * The caller marks the result as needing a refresh. Structural events and
+ * thread summaries are kept only for the rows that remain.
+ */
+export function boundClosedChannelWindow(
+  store: ChannelWindowStore,
+): ChannelWindowStore {
+  if (
+    store.liveOverlay.length <= CLOSED_CHANNEL_OVERLAY_CAP &&
+    store.liveAux.length <= CLOSED_CHANNEL_AUX_CAP
+  ) {
+    return store;
+  }
+  const isLocal = (event: RelayEvent) => event.pending === true;
+  // liveOverlay is kept in relay order: newest first.
+  const newest = store.liveOverlay
+    .filter((event) => !isLocal(event))
+    .slice(0, CLOSED_CHANNEL_OVERLAY_CAP);
+  const kept = new Set(newest.map((event) => event.id));
+  const liveOverlay = store.liveOverlay.filter(
+    (event) => isLocal(event) || kept.has(event.id),
+  );
+  const keptIds = new Set(liveOverlay.map((event) => event.id));
+  const liveAux = store.liveAux
+    .filter((event) =>
+      event.tags.some((tag) => tag[0] === "e" && keptIds.has(tag[1])),
+    )
+    .slice(-CLOSED_CHANNEL_AUX_CAP);
+  const liveSummaries = Object.fromEntries(
+    Object.entries(store.liveSummaries).filter(([rootId]) =>
+      keptIds.has(rootId),
+    ),
+  );
+  return { pages: [], liveOverlay, liveAux, liveSummaries };
+}
+
 /**
  * Apply a per-event transform across every event the store holds (page rows,
  * page aux, live overlay, live aux), returning the same store reference when

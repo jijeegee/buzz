@@ -65,6 +65,18 @@ export function markPaintableChannelSnapshot(
     persistedHydratedChannels.set(queryClient, new Set([channelId]));
   }
 }
+/**
+ * Forget that a room has a paintable snapshot (persisted or preloaded), e.g.
+ * after its rendered timeline was dropped, so opening it fetches instead of
+ * returning or painting a copy that no longer exists.
+ */
+export function forgetChannelSnapshot(
+  queryClient: QueryClient,
+  channelId: string,
+): void {
+  consumeHydratedChannel(queryClient, channelId);
+  persistedHydratedChannels.get(queryClient)?.delete(channelId);
+}
 export function hydrateChannelHeads(
   queryClient: QueryClient,
   scope: ChannelHeadScope,

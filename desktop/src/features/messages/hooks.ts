@@ -23,7 +23,6 @@ import {
 import {
   buildReplyTags,
   getThreadReference,
-  isBroadcastReply,
   normalizeMentionPubkeys,
   resolveReplyRootId,
 } from "@/features/messages/lib/threading";
@@ -38,6 +37,8 @@ import {
   consumeHydratedChannel,
 } from "@/features/messages/lib/channelHeadCache";
 import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
+import { applyLiveChannelEvent } from "@/features/messages/lib/applyLiveChannelEvent";
+import { clearChannelNeedsRefresh } from "@/features/messages/lib/channelRoomSyncState";
 import {
   isMatchingPendingMessage,
   mergeMessages,
@@ -94,18 +95,11 @@ import {
   flattenChannelWindowEvents,
   mapChannelWindowEvents,
   mergeLiveChannelWindowEvent,
-  mergeLiveThreadSummary,
   replaceNewestChannelWindow,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
+import { parseChannelWindowResponse } from "@/features/messages/lib/channelWindowResponse";
 import {
-  parseChannelWindowResponse,
-  parseLiveThreadSummary,
-} from "@/features/messages/lib/channelWindowResponse";
-import {
-  CHANNEL_AUX_EVENT_KINDS,
-  CHANNEL_TIMELINE_CONTENT_KINDS,
-  KIND_CHANNEL_THREAD_SUMMARY,
   KIND_STREAM_MESSAGE,
   KIND_SYSTEM_MESSAGE,
 } from "@/shared/constants/kinds";
@@ -136,9 +130,6 @@ type MessageQueryContext = {
   channelId: string;
   queryKey: ReturnType<typeof channelMessagesKey>;
 };
-
-const CHANNEL_TIMELINE_KINDS = new Set<number>(CHANNEL_TIMELINE_CONTENT_KINDS);
-const CHANNEL_AUX_KINDS = new Set<number>(CHANNEL_AUX_EVENT_KINDS);
 
 export function resolveCachedReplyRootId(
   parentEventId: string,
@@ -763,6 +754,7 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
+  clearChannelNeedsRefresh(queryClient, channelId);
   const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
   if (scope) {
     void storeChannelHeadCache(scope, channelId, events).catch((error) => {
@@ -817,51 +809,7 @@ export function useChannelSubscription(channel: Channel | null) {
 
   const appendMessage = useEffectEvent((event: RelayEvent) => {
     if (!channelId) return;
-    if (event.kind === KIND_CHANNEL_THREAD_SUMMARY) {
-      // Relay-pushed live badge recount — window-store overlay only, never a
-      // timeline row (mirrors the page path, where 39005 is metadata).
-      const parsed = parseLiveThreadSummary(event);
-      if (!parsed) return;
-      const windowKey = channelWindowKey(channelId);
-      const current =
-        queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
-        emptyChannelWindowStore();
-      const next = mergeLiveThreadSummary(current, parsed.rootId, parsed.live);
-      if (next !== current) queryClient.setQueryData(windowKey, next);
-      return;
-    }
-    const isTimelineRow = CHANNEL_TIMELINE_KINDS.has(event.kind);
-    const threadReference = isTimelineRow
-      ? getThreadReference(event.tags)
-      : null;
-    if (threadReference?.parentId != null) {
-      const rootId = threadReference?.rootId;
-      if (rootId) {
-        queryClient.setQueryData<RelayEvent[]>(
-          threadRepliesKey(channelId, rootId),
-          (current = []) => mergeMessages(current, event),
-        );
-      }
-      if (!isBroadcastReply(event.tags)) return;
-    }
-    if (!isTimelineRow && !CHANNEL_AUX_KINDS.has(event.kind)) return;
-    if (!isTimelineRow) {
-      queryClient.setQueriesData<RelayEvent[]>(
-        { queryKey: ["thread-replies", channelId] },
-        (current = []) => mergeMessages(current, event),
-      );
-    }
-
-    const windowKey = channelWindowKey(channelId);
-    const current =
-      queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
-      emptyChannelWindowStore();
-    const next = mergeLiveChannelWindowEvent(current, event, isTimelineRow);
-    if (next !== current) {
-      queryClient.setQueryData(windowKey, next);
-      projectChannelWindowMessages(queryClient, channelId);
-    }
-
+    applyLiveChannelEvent(queryClient, channelId, event, { isOpen: true });
     if (event.kind === KIND_SYSTEM_MESSAGE) {
       refreshOnSystemMessage(channelId, event.content, {
         queryClient,
