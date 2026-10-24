@@ -324,7 +324,7 @@ void main() {
     // The default grant is token mode; key backup must reject it.
     final pending = h.controller.signIn(identityMode: 'key_backup');
     await settle();
-    expect(h.logouts, hasLength(1));
+    expect(h.endedSessions, hasLength(1));
     await h.controller.forgetOnDevice();
     h.store.readError = StateError('Keychain unavailable');
     await h.controller.restore();

@@ -134,6 +134,7 @@ class FakeAuthServer {
         if (held != null) return held.future;
         return complete(request);
       case '/auth/logout':
+      case '/auth/sessions/end':
         final held = heldLogout;
         if (held != null) return held.future;
         return logout(request);

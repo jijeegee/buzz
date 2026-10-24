@@ -481,9 +481,12 @@ async fn finish_sign_in(
         match super::key_recovery::complete(app, &origin, &tokens, connect).await {
             Ok(pubkey) => signed_in_account = Some(pubkey),
             Err(error) => {
-                // The session is never stored on failure: revoke it
-                // server-side instead of leaving it alive.
-                if let Err(revoke) = api::logout(&state.http_client, &origin, &tokens.access).await
+                // The session is never stored on failure: end it
+                // server-side instead of leaving it alive. Only this
+                // session: a logout would also sign out another session of
+                // this account on this device.
+                if let Err(revoke) =
+                    api::end_session(&state.http_client, &origin, &tokens.access).await
                 {
                     eprintln!("kuzz-desktop: auth: revoking a failed key-backup sign-in: {revoke}");
                 }

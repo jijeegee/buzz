@@ -461,6 +461,39 @@ pub(super) async fn revoke_device(
     Ok(Some(revoked))
 }
 
+/// Revoke one session of `principal` and its tokens. The device, its key,
+/// its other sessions and its hosted bots stay: this ends a sign-in that was
+/// replaced or never stored, not the device. `None`: not this principal's.
+pub(super) async fn revoke_session(
+    pool: &PgPool,
+    principal: &PrincipalId,
+    session_id: Uuid,
+    reason: RevokeReason,
+) -> Result<Option<Vec<[u8; 32]>>> {
+    let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
+    let owned: Option<Uuid> = sqlx::query_scalar(
+        "SELECT s.id FROM sessions s JOIN devices d ON d.id = s.device_id          WHERE s.id = $1 AND d.principal_id = $2 FOR UPDATE OF s",
+    )
+    .bind(session_id)
+    .bind(principal.as_bytes().as_slice())
+    .fetch_optional(&mut *tx)
+    .await?;
+    if owned.is_none() {
+        return Ok(None);
+    }
+    sqlx::query(
+        "UPDATE sessions SET revoked_at = now(), revoked_reason = $2          WHERE id = $1 AND revoked_at IS NULL",
+    )
+    .bind(session_id)
+    .bind(reason.as_str())
+    .execute(&mut *tx)
+    .await?;
+    let revoked = revoke_session_tokens(&mut tx, &[session_id], reason).await?;
+    tx.commit().await?;
+    Ok(Some(revoked))
+}
+
 /// Revoke every human session of `principal` except `keep_session`. Bot
 /// tokens are untouched (Telegram "terminate other sessions"), and so are
 /// external devices: paired agents keep running. Returns the
@@ -664,6 +697,17 @@ impl crate::Db {
         reason: super::RevokeReason,
     ) -> Result<Option<Vec<[u8; 32]>>> {
         revoke_device(&self.pool, principal, device_id, reason).await
+    }
+
+    /// Revoke one session of `principal` and its tokens; the device stays.
+    #[datastore_span(name = "revoke_session", system = "postgresql")]
+    pub async fn revoke_session(
+        &self,
+        principal: &PrincipalId,
+        session_id: Uuid,
+        reason: super::RevokeReason,
+    ) -> Result<Option<Vec<[u8; 32]>>> {
+        revoke_session(&self.pool, principal, session_id, reason).await
     }
 
     /// Revoke all human sessions of `principal` except `keep_session`:
