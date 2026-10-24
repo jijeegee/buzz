@@ -111,9 +111,10 @@ export const settingsNavGroups: Array<{
       "agents",
       "compute",
       "mobile",
-      "updates",
-      // Last: switches for features still being refined.
+      // Switches for features still being refined.
       "experimental",
+      // Last, as in most apps.
+      "updates",
     ],
   },
 ];

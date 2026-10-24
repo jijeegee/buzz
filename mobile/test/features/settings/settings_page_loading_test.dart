@@ -62,6 +62,11 @@ void main() {
       'buildSignature': '',
     });
     await tester.pumpAndSettle();
+    await tester.scrollUntilVisible(
+      find.byKey(const ValueKey('settings-version-row')),
+      300,
+      scrollable: find.byType(Scrollable).first,
+    );
     expect(find.text('v0.16.0 (432)'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });

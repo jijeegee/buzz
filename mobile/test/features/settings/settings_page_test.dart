@@ -71,6 +71,11 @@ void main() {
       );
       expect(find.text('Invite to community'), findsOneWidget);
       await tester.pumpAndSettle();
+      await tester.scrollUntilVisible(
+        find.byKey(const ValueKey('settings-version-row')),
+        300,
+        scrollable: find.byType(Scrollable).first,
+      );
       expect(
         find.text(buildNumber.isEmpty ? 'v0.16.0' : 'v0.16.0 ($buildNumber)'),
         findsOneWidget,
