@@ -1,7 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/message_db/coverage.dart';
@@ -12,10 +11,7 @@ import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-const _scope = ChannelHeadScope(
-  relayUrl: 'https://relay.example',
-  pubkey: 'me',
-);
+const _scope = MessageScope(relayUrl: 'https://relay.example', pubkey: 'me');
 
 const _messageScope = MessageScope(
   relayUrl: 'https://relay.example',
@@ -164,7 +160,7 @@ void main() {
       container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => session),
-          channelHeadScopeProvider.overrideWithValue(_scope),
+          messageScopeProvider.overrideWithValue(_scope),
           messageStoreProvider.overrideWithValue(messages),
           channelPreloaderProvider.overrideWith(
             (ref) => ChannelPreloader(ref, now: () => now),

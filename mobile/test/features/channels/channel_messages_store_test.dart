@@ -5,7 +5,6 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
-import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/shared/message_db/coverage.dart';
@@ -15,7 +14,7 @@ import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 const _channelId = '11111111-1111-4111-8111-111111111111';
-const _scope = ChannelHeadScope(relayUrl: 'https://relay.test', pubkey: 'me');
+const _scope = MessageScope(relayUrl: 'https://relay.test', pubkey: 'me');
 const _messageScope = MessageScope(
   relayUrl: 'https://relay.test',
   pubkey: 'me',
@@ -39,10 +38,7 @@ void main() {
     container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => session),
-        channelHeadScopeProvider.overrideWithValue(_scope),
-        channelHeadCacheProvider.overrideWithValue(
-          ChannelHeadCache(() async => Directory('${root.path}/heads')),
-        ),
+        messageScopeProvider.overrideWithValue(_scope),
         messageStoreProvider.overrideWithValue(messages),
       ],
     );

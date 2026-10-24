@@ -2,7 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_messages_provider.dart';
 import 'channel_page_records.dart';
 import 'channel_room_store.dart';
@@ -146,7 +146,7 @@ class ChannelPreloader {
   /// [preloadRetryAfter], or stored through their newest message. Resolves
   /// to the rooms stored.
   Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
-    final scope = _ref.read(channelHeadScopeProvider);
+    final scope = _ref.read(messageScopeProvider);
     if (scope == null) return const [];
     final store = _ref.read(channelRoomStoreProvider);
     final cold = <String>[];
@@ -177,7 +177,7 @@ class ChannelPreloader {
       debugPrint('[ChannelPreloader] batched room preload failed: $error');
       return const [];
     }
-    if (_ref.read(channelHeadScopeProvider) != scope) return const [];
+    if (_ref.read(messageScopeProvider) != scope) return const [];
     final stored = <String>[];
     final writes = <Future<void>>[];
     for (final MapEntry(key: channelId, value: window) in splitChannelWindows(

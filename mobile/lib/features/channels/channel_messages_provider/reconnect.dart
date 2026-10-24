@@ -77,7 +77,7 @@ extension _RoomReconnect on ChannelMessagesNotifier {
 
   /// The message database ends a room's live range when rows may be missing
   /// that no catch-up could bring (an interrupted feed, a failed write).
-  Future<void> _restartIfRoomHasGap(ChannelHeadScope scope) async {
+  Future<void> _restartIfRoomHasGap(MessageScope scope) async {
     final initVersion = _initVersion;
     final bool gap;
     try {

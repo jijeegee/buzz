@@ -5,7 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/message_db/coverage.dart';
 import '../../shared/relay/relay.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_room_store.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
@@ -181,9 +181,9 @@ Future<void> _recordPage(
   }
 }
 
-ChannelHeadScope? _scope(Ref ref) {
+MessageScope? _scope(Ref ref) {
   try {
-    return ref.read(channelHeadScopeProvider);
+    return ref.read(messageScopeProvider);
   } catch (_) {
     // A disposed provider's ref; the page is not stored.
     return null;

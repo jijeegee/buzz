@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -32,6 +34,9 @@ Future<void> runKuzzApp(Widget app) async {
       return null;
     },
   );
+
+  // Rooms read the message database now; the old per-room head files go.
+  unawaited(deleteLegacyChannelHeads());
 
   runApp(
     buildRootProviderScope(

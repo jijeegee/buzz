@@ -1,7 +1,7 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
-import '../channels/channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import '../channels/channel_room_store.dart';
 import '../people/blocked_users_provider.dart';
 import 'chat_list.dart';
@@ -20,7 +20,7 @@ typedef ChatRowVisibleLatestKey = ({
 /// then shows a neutral line instead of the blocked message.
 final chatRowVisibleLatestProvider = FutureProvider.autoDispose
     .family<NostrEvent?, ChatRowVisibleLatestKey>((ref, key) async {
-      final scope = ref.watch(channelHeadScopeProvider);
+      final scope = ref.watch(messageScopeProvider);
       if (scope == null) return null;
       final blocked = {
         for (final id in ref.watch(blockedPubkeysProvider)) id.toLowerCase(),

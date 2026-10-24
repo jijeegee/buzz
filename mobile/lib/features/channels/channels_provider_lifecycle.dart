@@ -103,10 +103,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         return;
       }
       final generation = ++_nextLiveChunkGeneration;
-      final subscription = _LiveChunkSubscription(
-        generation,
-        _newChunkLiveSince(),
-      );
+      final subscription = _LiveChunkSubscription(generation);
       _liveSubscriptionsByChunk[chunkKey] = subscription;
       try {
         final unsubscribe = await session.subscribe(
@@ -124,13 +121,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 !_desiredLiveChannelIds.contains(event.channelId)) {
               return;
             }
-            _ingestLiveEvent(
-              event,
-              liveSince: _roomLiveSince(
-                event.channelId,
-                subscription.liveSince,
-              ),
-            );
+            _ingestLiveEvent(event);
           },
           onClosed: (message) =>
               _handleLiveChunkClosed(chunkKey, generation, message),
@@ -294,12 +285,8 @@ List<List<String>> chunkChannelIdsForLiveSubscriptions(
 String _liveChunkKey(List<String> channelIds) => channelIds.join('\u0000');
 
 class _LiveChunkSubscription {
-  _LiveChunkSubscription(this.generation, this.liveSince);
+  _LiveChunkSubscription(this.generation);
 
   final int generation;
-
-  /// When this chunk's feed counts as continuous from: when it was
-  /// requested, or before when a catch-up owed now covers the time between.
-  final int liveSince;
   void Function()? unsubscribe;
 }

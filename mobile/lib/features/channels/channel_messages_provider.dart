@@ -7,7 +7,7 @@ import '../../shared/message_db/coverage.dart';
 import '../../shared/message_db/message_reads.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_page_records.dart';
 import 'channel_room_store.dart';
 import 'local_send_store.dart';

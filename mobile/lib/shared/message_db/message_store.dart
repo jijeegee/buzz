@@ -300,6 +300,19 @@ final messagesRootProvider = Provider<String?>((ref) => null);
 Future<String> resolveMessagesRoot() async =>
     '${(await getApplicationSupportDirectory()).path}/messages';
 
+/// Deletes the channel heads earlier versions kept in the cache directory
+/// (every page they held was also written to the message database).
+Future<void> deleteLegacyChannelHeads() async {
+  try {
+    final heads = Directory(
+      '${(await getApplicationCacheDirectory()).path}/channel_heads',
+    );
+    if (await heads.exists()) await heads.delete(recursive: true);
+  } catch (error) {
+    debugPrint('[MessageStore] old channel heads not removed: $error');
+  }
+}
+
 final messageStoreProvider = Provider<MessageStore>((ref) {
   final rootPath = ref.watch(messagesRootProvider);
   final store = MessageStore(

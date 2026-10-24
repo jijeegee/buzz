@@ -27,9 +27,9 @@ extension _LocalStore on ChannelMessagesNotifier {
     _handleLiveEvent(event);
   }
 
-  ChannelHeadScope? _readHeadScope() {
+  MessageScope? _readHeadScope() {
     try {
-      return _storeRef.read(channelHeadScopeProvider);
+      return _storeRef.read(messageScopeProvider);
     } catch (_) {
       return null;
     }
@@ -76,7 +76,7 @@ extension _LocalStore on ChannelMessagesNotifier {
   /// Whether the painted rows need nothing from the server: the channel
   /// list's live feed covers the room and has kept its range open up to the
   /// painted rows, and the relay is connected.
-  bool _isStoredWindowCovered(ChannelHeadScope scope) =>
+  bool _isStoredWindowCovered(MessageScope scope) =>
       _storedReachesLive &&
       _storeRef.read(relaySessionProvider).status == SessionStatus.connected &&
       _roomStore.feeds(scope, channelId) &&

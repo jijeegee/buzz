@@ -12,9 +12,10 @@ void _roomStoreFeedTests() {
       if (await root.exists()) await root.delete(recursive: true);
     });
 
-    test('a closed room\'s live events land in its stored tail', () async {
-      final cache = ChannelHeadCache(() async => root);
-      final roomStore = ChannelRoomStore(cache);
+    test('a closed room\'s live events are stored', () async {
+      final messages = MessageStore(() async => root.path);
+      addTearDown(messages.close);
+      final roomStore = ChannelRoomStore(messages: messages);
       final session = _FakeRelaySession(
         memberships: [_membership(_channelA, 'me')],
         metadata: [_meta(id: _channelA, name: 'room')],
@@ -53,10 +54,14 @@ void _roomStoreFeedTests() {
       session.emit(summary);
       await roomStore.flush();
 
-      final scope = container.read(channelHeadScopeProvider)!;
-      final tail = await cache.loadTail(scope, _channelA);
-      expect(tail!.rows.map((event) => event.id), [message.id]);
-      expect(tail.aux.map((event) => event.id), ['summary']);
+      final scope = container.read(messageScopeProvider)!;
+      expect(
+        messages
+            .reader(scope)!
+            .select('SELECT id FROM events ORDER BY created_at')
+            .map((row) => row['id']),
+        [message.id, 'summary'],
+      );
       // Summaries feed the store only, not the list's readers.
       expect(heard.map((event) => event.id), [message.id]);
       // No room notifier was created for the closed room.

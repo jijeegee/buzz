@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-import '../../features/channels/channel_head_cache.dart';
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
@@ -281,14 +280,6 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       // A person key held by Google is deleted from this phone (signing in
       // with Google restores it); this install's device key is kept.
       await storage.saveAll(signedOut);
-      // Cached message heads are derived data; signing out leaves none behind.
-      unawaited(
-        ref.read(channelHeadCacheProvider).clearAll().catchError((
-          Object error,
-        ) {
-          debugPrint('[AuthNotifier] failed to clear channel heads: $error');
-        }),
-      );
       // Each signed-out account's stored messages go with it; accounts that
       // stay signed in keep theirs.
       for (final community in targets) {
