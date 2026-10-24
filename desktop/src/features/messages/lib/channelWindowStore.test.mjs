@@ -130,6 +130,23 @@ test("newest refresh drops a stale tail when its boundary moves", () => {
   );
 });
 
+test("newest refresh at the same boundary keeps the older pages", () => {
+  const first = page(null, [event("b", 100), event("a", 95)]);
+  const loaded = appendOlderChannelWindow(
+    replaceNewestChannelWindow(emptyChannelWindowStore(), first),
+    page(first.nextCursor, [event("z", 90)], { hasMore: false }),
+  );
+  const refreshed = replaceNewestChannelWindow(
+    loaded,
+    page(null, [event("b", 100), event("a", 95)]),
+  );
+  assert.equal(refreshed.pages.length, 2);
+  assert.deepEqual(
+    flattenChannelWindowEvents(refreshed).map((item) => item.content),
+    ["z", "a", "b"],
+  );
+});
+
 test("live rows arriving before page zero enter the overlay", () => {
   const live = event("n", 110);
   const store = mergeLiveChannelWindowEvent(emptyChannelWindowStore(), live);
