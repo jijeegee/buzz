@@ -15,6 +15,12 @@
 //! event as JSON, answered by `{"tag": ["device", <pubkey>, <sig>]}`. The
 //! broker signs event tags only, never header proofs.
 //!
+//! A process the desktop app spawned (`kuzz-acp`) that cannot open the key
+//! itself (macOS: only the app's keychain access group reaches the Secure
+//! Enclave key) asks the app's loopback **app signer** instead
+//! ([`crate::app_signer`]): the same `POST /device-tag`, plus
+//! `POST /header-proof` for `X-Kuzz-Device-Proof` values.
+//!
 //! Failing to open the key or to sign is never fatal: callers send what they
 //! sent before (no tag, no proof) and report the reason as a warning.
 
@@ -24,10 +30,13 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 pub use kuzz_device_key::{DeviceKey, DeviceKeyError, FileStore, DEVICE_KEY_SCOPE};
-use nostr::{JsonUtil as _, Tag, UnsignedEvent};
+use nostr::{JsonUtil as _, PublicKey, Tag, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+use crate::app_signer::{
+    request_header_proof, HeaderProofRequest, APP_SIGNER_SECRET_ENV, APP_SIGNER_URL_ENV,
+};
 use crate::{
     http_ok_body, parse_broker_url, stored_session_disabled, BrokerError, Secret,
     MAX_RESPONSE_BYTES,
@@ -99,9 +108,12 @@ pub enum DeviceSignError {
     /// The local key failed.
     #[error("device key: {0}")]
     Key(#[from] DeviceKeyError),
-    /// The device broker failed or refused.
+    /// The device broker or app signer failed or refused.
     #[error("device broker: {0}")]
     Broker(#[from] BrokerError),
+    /// This signer cannot sign header proofs (the `kuzz-acp` broker).
+    #[error("this device signer does not sign header proofs")]
+    Unsupported,
 }
 
 /// What signs this process's device tags and proofs.
@@ -116,28 +128,49 @@ pub enum DeviceSigner {
         /// This spawn's broker secret.
         secret: Secret,
     },
+    /// The desktop app's signer (event tags and header proofs), for a
+    /// process the app spawned that cannot open the key itself.
+    App {
+        /// App signer base URL.
+        url: String,
+        /// This spawn's app signer secret.
+        secret: Secret,
+    },
 }
 
 impl DeviceSigner {
-    /// Pick the signer: the key `open` returns, else (managed-agent children
-    /// only) the device broker from `lookup`. The second value is a reason
-    /// worth a warning: a key that failed to open. A machine without a key
-    /// yet is not worth one.
+    /// Pick the signer, in order: the desktop app signer from `lookup` (set
+    /// by the app on the processes it spawns; `open` is then not called);
+    /// else the key `open` returns; else (managed-agent children only) the `kuzz-acp` device broker. The
+    /// second value is a reason worth a warning: a key that failed to open
+    /// with nothing to stand in for it. A machine without a key yet is not
+    /// worth one.
     pub fn resolve(
         lookup: impl Fn(&str) -> Option<String>,
         open: impl FnOnce() -> Result<Option<DeviceKey>, DeviceKeyError>,
     ) -> (Option<Self>, Option<String>) {
+        let get = |name: &str| {
+            lookup(name)
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty())
+        };
+        // Spawned by the app: always sign through it, on every platform, so
+        // Windows takes the same path macOS must take.
+        if let (Some(url), Some(secret)) = (get(APP_SIGNER_URL_ENV), get(APP_SIGNER_SECRET_ENV)) {
+            return (
+                Some(Self::App {
+                    url,
+                    secret: Secret::new(secret),
+                }),
+                None,
+            );
+        }
         let warning = match open() {
             Ok(Some(key)) => return (Some(Self::Key(key)), None),
             Ok(None) => None,
             Err(error) => Some(format!("device key unavailable: {error}")),
         };
         if stored_session_disabled(&lookup) {
-            let get = |name: &str| {
-                lookup(name)
-                    .map(|value| value.trim().to_owned())
-                    .filter(|value| !value.is_empty())
-            };
             if let (Some(url), Some(secret)) =
                 (get(DEVICE_BROKER_URL_ENV), get(DEVICE_BROKER_SECRET_ENV))
             {
@@ -162,11 +195,42 @@ impl DeviceSigner {
         )
     }
 
-    /// The local key, when this process holds one (header proofs need it).
+    /// The local key, when this process holds one.
     pub fn key(&self) -> Option<&DeviceKey> {
         match self {
             Self::Key(key) => Some(key),
-            Self::Broker { .. } => None,
+            Self::Broker { .. } | Self::App { .. } => None,
+        }
+    }
+
+    /// Whether [`Self::header_proof_at`] can succeed (not the broker).
+    pub fn signs_header_proofs(&self) -> bool {
+        !matches!(self, Self::Broker { .. })
+    }
+
+    /// The `X-Kuzz-Device-Proof` value at unix time `ts` (see
+    /// [`DeviceKey::header_proof_at`]). The app signer gets only the SHA-256
+    /// of `token` and `body`, never the token. Blocks on the TPM or the app.
+    pub fn header_proof_at(
+        &self,
+        ts: i64,
+        purpose: &str,
+        binding: &str,
+        token: Option<&str>,
+        body: &[u8],
+    ) -> Result<String, DeviceSignError> {
+        match self {
+            Self::Key(key) => Ok(key.header_proof_at(ts, purpose, binding, token, body)?),
+            Self::App { url, secret } => {
+                let request = HeaderProofRequest::new(ts, purpose, binding, token, body);
+                Ok(request_header_proof(
+                    url,
+                    secret,
+                    &request,
+                    crate::DEFAULT_BROKER_TIMEOUT,
+                )?)
+            }
+            Self::Broker { .. } => Err(DeviceSignError::Unsupported),
         }
     }
 
@@ -175,7 +239,7 @@ impl DeviceSigner {
     pub fn tag_event(&self, unsigned: &UnsignedEvent) -> Result<UnsignedEvent, DeviceSignError> {
         match self {
             Self::Key(key) => Ok(key.add_event_tag(unsigned.clone())?),
-            Self::Broker { url, secret } => {
+            Self::Broker { url, secret } | Self::App { url, secret } => {
                 let tag = request_device_tag(url, secret, unsigned, crate::DEFAULT_BROKER_TIMEOUT)?;
                 let mut tagged = unsigned.clone();
                 tagged.tags.push(tag);
@@ -215,11 +279,29 @@ pub fn request_device_tag(
     unsigned: &UnsignedEvent,
     timeout: Duration,
 ) -> Result<Tag, BrokerError> {
+    let raw = post_json(url, secret, DEVICE_TAG_PATH, &unsigned.as_json(), timeout)?;
+    let invalid = || BrokerError::InvalidResponse("body is not a device tag".into());
+    let answer: DeviceTagResponse =
+        serde_json::from_slice(http_ok_body(&raw)?).map_err(|_| invalid())?;
+    if answer.tag.len() != 3 || answer.tag[0] != "device" {
+        return Err(invalid());
+    }
+    Tag::parse(answer.tag).map_err(|_| invalid())
+}
+
+/// One loopback `POST <path>` of a JSON `body` with `Bearer <secret>`: the
+/// raw response, at most [`MAX_RESPONSE_BYTES`].
+pub(crate) fn post_json(
+    url: &str,
+    secret: &Secret,
+    path: &str,
+    body: &str,
+    timeout: Duration,
+) -> Result<Vec<u8>, BrokerError> {
     let addr = parse_broker_url(url)?;
-    let body = unsigned.as_json();
     if body.len() > MAX_DEVICE_REQUEST_BYTES / 2 {
         return Err(BrokerError::InvalidResponse(
-            "event too large for the device broker".into(),
+            "request too large for the device signer".into(),
         ));
     }
     let io = |e: std::io::Error| BrokerError::Io(e.to_string());
@@ -231,7 +313,7 @@ pub fn request_device_tag(
         IpAddr::V6(ip) => format!("[{ip}]:{}", addr.port()),
     };
     let request = Zeroizing::new(format!(
-        "POST {DEVICE_TAG_PATH} HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
+        "POST {path} HTTP/1.1\r\nHost: {host}\r\nAuthorization: Bearer {}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",
         secret.expose(),
         body.len(),
     ));
@@ -249,13 +331,7 @@ pub fn request_device_tag(
         }
         raw.extend_from_slice(&chunk[..n]);
     }
-    let invalid = || BrokerError::InvalidResponse("body is not a device tag".into());
-    let answer: DeviceTagResponse =
-        serde_json::from_slice(http_ok_body(&raw)?).map_err(|_| invalid())?;
-    if answer.tag.len() != 3 || answer.tag[0] != "device" {
-        return Err(invalid());
-    }
-    Tag::parse(answer.tag).map_err(|_| invalid())
+    Ok(raw)
 }
 
 /// A parsed device broker request (server side).
@@ -304,6 +380,92 @@ pub fn parse_device_request(raw: &[u8]) -> Option<DeviceRequest> {
         authorization,
         body,
     })
+}
+
+/// How far a signed event's `created_at` may be from now.
+pub const MAX_EVENT_SKEW_SECS: u64 = 60;
+
+/// Why a device signer refuses a request (answered as `403`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Refusal {
+    /// The body does not parse.
+    Malformed,
+    /// Not one of [`DEVICE_TAGGED_KINDS`], or an unknown proof purpose.
+    Kind,
+    /// The event is not the agent's.
+    Author,
+    /// `created_at` (or the proof time) is too far from now.
+    Stale,
+    /// The event already carries a device tag.
+    AlreadyTagged,
+    /// The event or proof is not aimed at the agent's relay.
+    Origin,
+}
+
+/// What one signer secret may sign (review S2): device tags only on auth
+/// events of `agent` aimed at `relay_authority`, header proofs only for
+/// requests to it. Shared by the `kuzz-acp` broker and the app signer.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceScope {
+    /// The agent whose events may be tagged.
+    pub agent: PublicKey,
+    /// [`kuzz_core::tenant::relay_url_authority`] of the agent's relay.
+    pub relay_authority: String,
+}
+
+impl DeviceScope {
+    /// The scope of `agent` on `relay_url`.
+    pub fn new(agent: PublicKey, relay_url: &str) -> Self {
+        Self {
+            agent,
+            relay_authority: kuzz_core::tenant::relay_url_authority(relay_url),
+        }
+    }
+
+    /// Whether `unsigned` may get a device tag at unix time `now`: one of
+    /// [`DEVICE_TAGGED_KINDS`], authored by the agent, fresh, without a
+    /// device tag, and aimed at the relay (`relay`, `u` or `server` tag).
+    pub fn admit_event(&self, unsigned: &UnsignedEvent, now: u64) -> Result<(), Refusal> {
+        let kind = unsigned.kind.as_u16();
+        if !DEVICE_TAGGED_KINDS.contains(&kind) {
+            return Err(Refusal::Kind);
+        }
+        if unsigned.pubkey != self.agent {
+            return Err(Refusal::Author);
+        }
+        if unsigned.created_at.as_secs().abs_diff(now) > MAX_EVENT_SKEW_SECS {
+            return Err(Refusal::Stale);
+        }
+        let first = |name: &str| {
+            unsigned.tags.iter().find_map(|tag| {
+                let values = tag.as_slice();
+                (values.first().map(String::as_str) == Some(name))
+                    .then(|| values.get(1).cloned())
+                    .flatten()
+            })
+        };
+        if unsigned
+            .tags
+            .iter()
+            .any(|tag| tag.as_slice().first().map(String::as_str) == Some("device"))
+        {
+            return Err(Refusal::AlreadyTagged);
+        }
+        let authority = match kind {
+            22242 => first("relay").map(|url| kuzz_core::tenant::relay_url_authority(&url)),
+            27235 => first("u").map(|url| kuzz_core::tenant::relay_url_authority(&url)),
+            _ => first("server").map(|server| kuzz_core::tenant::normalize_host(&server)),
+        };
+        self.same_relay(authority)
+    }
+
+    /// `Ok` when `authority` is this scope's (non-empty) relay authority.
+    pub(crate) fn same_relay(&self, authority: Option<String>) -> Result<(), Refusal> {
+        match authority {
+            Some(authority) if !authority.is_empty() && authority == self.relay_authority => Ok(()),
+            _ => Err(Refusal::Origin),
+        }
+    }
 }
 
 /// Server side: a `200 OK` answer carrying `tag`.
@@ -406,6 +568,54 @@ mod tests {
             DeviceSigner::resolve(&person, || Err(DeviceKeyError::Store("locked".into())));
         assert!(signer.is_none());
         assert!(warning.unwrap().contains("locked"));
+    }
+
+    #[test]
+    fn a_helper_the_app_spawned_signs_through_the_app() {
+        let dir = tempfile::tempdir().unwrap();
+        let key = file_key(&dir);
+        let agent = Keys::generate();
+        let signer = crate::app_signer::AppSigner::start(key.clone()).unwrap();
+        let lease = signer
+            .register(agent.public_key(), "wss://relay.example")
+            .unwrap();
+        let mut vars: Vec<(String, String)> = lease.env().to_vec();
+        // The app signer wins over the kuzz-acp broker.
+        vars.push((crate::DISABLE_STORED_SESSION_ENV.into(), "1".into()));
+        vars.push((DEVICE_BROKER_URL_ENV.into(), "http://127.0.0.1:9".into()));
+        vars.push((DEVICE_BROKER_SECRET_ENV.into(), "s".into()));
+        let lookup = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
+        // Spawned by the app, the app signer wins even over a key this
+        // process could open (Windows signs the way macOS must).
+        let (own, _) =
+            DeviceSigner::resolve(lookup, || -> Result<Option<DeviceKey>, DeviceKeyError> {
+                panic!("the key is not opened when the app signs")
+            });
+        assert!(matches!(own, Some(DeviceSigner::App { .. })));
+
+        let (fallback, warning) = DeviceSigner::resolve(lookup, || Ok(Some(key.clone())));
+        assert!(warning.is_none());
+        let fallback = fallback.expect("app signer");
+        assert!(matches!(fallback, DeviceSigner::App { .. }));
+        assert!(fallback.signs_header_proofs() && fallback.key().is_none());
+        let (tagged, error) = tag_or_unchanged(Some(&fallback), nip98(&agent));
+        assert!(error.is_none());
+        let event = tagged.sign_with_keys(&agent).unwrap();
+        assert_eq!(verify_event_device_tag(&event).unwrap(), Some(key.pubkey()));
+        signer.stop();
+    }
+
+    #[test]
+    fn the_broker_never_signs_header_proofs() {
+        let broker = DeviceSigner::Broker {
+            url: "http://127.0.0.1:1".into(),
+            secret: Secret::new("s".into()),
+        };
+        assert!(!broker.signs_header_proofs());
+        assert!(matches!(
+            broker.header_proof_at(0, "auth", "GET https://r/auth/me", Some("t"), b""),
+            Err(DeviceSignError::Unsupported)
+        ));
     }
 
     /// A fake broker answers with a real tag from a file key; the client

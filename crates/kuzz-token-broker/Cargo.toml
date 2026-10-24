@@ -15,7 +15,11 @@ zeroize = { workspace = true }
 # Device-bound keys: the shared device key and the device broker protocol.
 kuzz-device-key = { workspace = true }
 nostr = { workspace = true }
+# The desktop app signer: proof hashes and the relay authority of a binding.
+kuzz-auth = { workspace = true }
+kuzz-core = { workspace = true }
+hex = { workspace = true }
+sha2 = { workspace = true }
 
 [dev-dependencies]
-kuzz-auth = { workspace = true }
 tempfile = "3"

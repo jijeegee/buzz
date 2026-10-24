@@ -6,6 +6,10 @@
 //! Everything here is best effort: with no device key, or when signing
 //! fails, callers send exactly what they sent before and a warning is
 //! logged. The device key is never deleted by sign-out.
+//!
+//! Once the key is open the app signer (`crate::app_signer`) serves it to
+//! the runners the app spawns, for helpers that cannot open it themselves
+//! (macOS Secure Enclave keys need the app's keychain access group).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -191,6 +195,8 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
             let mut slot = slot();
             slot.key = Some(key.clone());
             slot.failed_at = None;
+            drop(slot);
+            crate::app_signer::start(&key);
             Some(key)
         }
         Err(error) => {
@@ -199,6 +205,52 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
             None
         }
     }
+}
+
+/// The hardware key the software key in use can move to (TPM or Secure
+/// Enclave; see `crate::auth::device_upgrade`). `None` when the key in use
+/// is not an unmarked software key or this machine has no usable hardware.
+/// Blocks; call from a blocking thread.
+pub(crate) fn hardware_upgrade() -> Option<DeviceKey> {
+    if cfg!(test) {
+        return None;
+    }
+    let current = current()?;
+    if current.kind() != kuzz_device_key_pkg::DeviceKeyKind::Software {
+        return None;
+    }
+    let dir = shared_store_dir()?;
+    match DeviceKey::hardware_upgrade(DEVICE_KEY_SCOPE, &FileStore::new(dir)) {
+        Ok(key) => key,
+        Err(error) => {
+            eprintln!("kuzz-desktop: warning: hardware device key not opened: {error}");
+            None
+        }
+    }
+}
+
+/// Switch to `hardware` once the relay holds it for every signed-in account:
+/// record it as the key in use (deleting the software key), then sign with
+/// it here and in the app signer. The switch in memory happens even when
+/// saving fails, because the relay already has the new key. Blocks.
+pub(crate) fn adopt_hardware(hardware: &DeviceKey) -> Result<(), String> {
+    let saved = match shared_store_dir() {
+        Some(dir) => DeviceKey::adopt_hardware(DEVICE_KEY_SCOPE, &FileStore::new(dir), hardware)
+            .map_err(|error| error.to_string()),
+        None => Err("no local data directory".into()),
+    };
+    {
+        let _opening = OPENING.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut slot = slot();
+        slot.key = Some(hardware.clone());
+        slot.failed_at = None;
+    }
+    crate::app_signer::replace_key(hardware);
+    eprintln!(
+        "kuzz-desktop: device key ready ({})",
+        hardware.kind().as_wire()
+    );
+    saved
 }
 
 /// [`ensure`] off the async runtime, waiting at most `limit` (a TPM that

@@ -190,7 +190,6 @@ fn validate_store_scope(scope: &str) -> Result<()> {
 }
 
 /// Record that `scope` has the TPM key `pubkey` (create-if-absent).
-#[cfg(any(windows, target_os = "macos", test))]
 fn record_tpm_marker(
     store: &dyn SoftwareKeyStore,
     scope: &str,
@@ -227,6 +226,33 @@ fn software_fallback(
     }
 }
 
+/// The key in use when a hardware key of `scope` exists but no hardware
+/// marker does: the store's software key, if any. Such a hardware key was
+/// never used with this store (a test or dev build made it, or a future
+/// sign-in upgrade has not completed), while the relay may have bound the
+/// software key, so the software key stays in use. `None`: the hardware key
+/// is the one to use (its marker is present, or there is no software key).
+#[cfg(any(windows, target_os = "macos", test))]
+fn unmarked_software_key(
+    store: &dyn SoftwareKeyStore,
+    scope: &str,
+) -> Result<Option<p256::ecdsa::SigningKey>> {
+    if store.load(&tpm_marker_scope(scope))?.is_some() {
+        return Ok(None);
+    }
+    store
+        .load(scope)?
+        .map(|secret| software::signing_key(&secret))
+        .transpose()
+}
+
+/// Record `pubkey` as the scope's hardware key and drop its software key.
+/// The marker goes first: once it exists the software key is never used.
+fn adopt_marker(store: &dyn SoftwareKeyStore, scope: &str, pubkey: &DevicePubkey) -> Result<()> {
+    record_tpm_marker(store, scope, pubkey)?;
+    store.delete(scope)
+}
+
 fn validate_scope(scope: &str) -> Result<()> {
     let ok = (1..=MAX_SCOPE_LEN).contains(&scope.len())
         && scope
@@ -250,8 +276,9 @@ impl DeviceKey {
     /// `.`; at most 64 bytes; normally [`DEVICE_KEY_SCOPE`]), creating it
     /// when there is none.
     ///
-    /// On Windows, in order: an existing TPM key; an existing key of `scope`
-    /// in `store`; a new TPM key. Only when the TPM is unavailable, and no
+    /// On Windows, in order: an existing TPM key, unless `store` has a key of
+    /// `scope` and no TPM marker (then that software key: the key in use
+    /// stays in use); an existing key of `scope` in `store`; a new TPM key. Only when the TPM is unavailable, and no
     /// TPM marker is in `store`, does a software key from `store` (loaded,
     /// or created there) take its place. Unavailable means
     /// `NCryptOpenStorageProvider` returned one of `NTE_PROV_DLL_NOT_FOUND`
@@ -280,7 +307,12 @@ impl DeviceKey {
         {
             let name = tpm_key_name(scope);
             match hw::open(&name) {
-                Ok(Some(key)) => return Self::from_hardware(key, scope, store),
+                Ok(Some(key)) => {
+                    if let Some(software) = unmarked_software_key(store, scope)? {
+                        return Self::software(software);
+                    }
+                    return Self::from_hardware(key, scope, store);
+                }
                 Ok(None) => {}
                 Err(hw::HwError::Unavailable(error)) => {
                     return Self::from_fallback(software_fallback(store, scope, error, true)?)
@@ -308,7 +340,9 @@ impl DeviceKey {
 
     /// Open the existing device key of `scope` (TPM or Secure Enclave, else
     /// `store`) without ever creating one: for child processes of the app
-    /// that made it. `Ok(None)` when there is none. Unavailable hardware
+    /// that made it. `Ok(None)` when there is none. The same key
+    /// [`Self::open_or_create`] picks: a software key without a hardware
+    /// marker wins over a hardware key. Unavailable hardware
     /// with a hardware marker in `store` is an error, as in
     /// [`Self::open_or_create`] (on macOS: a binary without the app's
     /// keychain access group after the app made a Secure Enclave key).
@@ -317,7 +351,10 @@ impl DeviceKey {
         #[cfg(any(windows, target_os = "macos"))]
         {
             match hw::open(&tpm_key_name(scope)) {
-                Ok(Some(key)) => Self::from_hardware(key, scope, store).map(Some),
+                Ok(Some(key)) => match unmarked_software_key(store, scope)? {
+                    Some(software) => Self::software(software).map(Some),
+                    None => Self::from_hardware(key, scope, store).map(Some),
+                },
                 Ok(None) => store
                     .load(scope)?
                     .map(|secret| Self::software(software::signing_key(&secret)?))
@@ -337,6 +374,58 @@ impl DeviceKey {
                 .map(|secret| Self::software(software::signing_key(&secret)?))
                 .transpose()
         }
+    }
+
+    /// The hardware key a software device key of `scope` moves to (device
+    /// key rotation, relay `POST /auth/device/rotate`): the existing TPM or
+    /// Secure Enclave key, else a new one. No marker is recorded, so the
+    /// software key stays the one in use until [`Self::adopt_hardware`].
+    /// `Ok(None)`: nothing to move (no software key, or the scope already
+    /// uses hardware) or no usable hardware here.
+    pub fn hardware_upgrade(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Option<Self>> {
+        validate_scope(scope)?;
+        if unmarked_software_key(store, scope)?.is_none() {
+            return Ok(None);
+        }
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let name = tpm_key_name(scope);
+            let key = match hw::open(&name) {
+                Ok(Some(key)) => key,
+                Ok(None) => match hw::create(&name) {
+                    Ok(key) => key,
+                    Err(hw::HwError::Unavailable(_)) => return Ok(None),
+                    Err(hw::HwError::Failed(error)) => return Err(error),
+                },
+                Err(hw::HwError::Unavailable(_)) => return Ok(None),
+                Err(hw::HwError::Failed(error)) => return Err(error),
+            };
+            let pubkey = DevicePubkey::from_sec1(&key.public_sec1()?)
+                .map_err(|_| DeviceKeyError::CorruptKey)?;
+            Ok(Some(Self {
+                backend: Arc::new(Backend::Hardware(Mutex::new(key))),
+                pubkey,
+            }))
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            Ok(None)
+        }
+    }
+
+    /// Finish a rotation to `hardware` (from [`Self::hardware_upgrade`]),
+    /// once the relay holds its key for every account: record its marker,
+    /// then delete the software key, so every later open picks `hardware`.
+    pub fn adopt_hardware(
+        scope: &str,
+        store: &dyn SoftwareKeyStore,
+        hardware: &Self,
+    ) -> Result<()> {
+        validate_scope(scope)?;
+        if hardware.kind() == DeviceKeyKind::Software {
+            return Err(DeviceKeyError::CorruptKey);
+        }
+        adopt_marker(store, scope, &hardware.pubkey)
     }
 
     /// Delete the device key of `scope` everywhere: the TPM key (Windows) or
@@ -502,6 +591,28 @@ impl DeviceKey {
     ) -> Result<String> {
         let nonce = hex::encode(rand::random::<[u8; 16]>());
         self.header_proof_with_nonce(ts, &nonce, purpose, binding, token, body)
+    }
+
+    /// [`Self::header_proof_at`] for a caller that holds only the SHA-256 of
+    /// the token ([`kuzz_auth::hash_token`]) and of the body (`None`: no
+    /// body), with a fresh nonce. The same proof the unhashed variants sign;
+    /// the desktop app signer uses it so helpers never send it a raw token.
+    pub fn header_proof_hashed_at(
+        &self,
+        ts: i64,
+        purpose: &str,
+        binding: &str,
+        token_hash: Option<&[u8; 32]>,
+        body_hash: Option<&[u8; 32]>,
+    ) -> Result<String> {
+        let nonce = hex::encode(rand::random::<[u8; 16]>());
+        let scope = ProofScope {
+            purpose,
+            binding,
+            token_hash,
+            body_hash,
+        };
+        self.header_proof_hashed(ts, &nonce, &scope)
     }
 
     /// Sign the header proof for already hashed token and body.

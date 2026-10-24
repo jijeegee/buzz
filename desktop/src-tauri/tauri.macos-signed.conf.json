@@ -1,0 +1,10 @@
+{
+  "bundle": {
+    "macOS": {
+      "entitlements": "Entitlements.signed.plist",
+      "files": {
+        "embedded.provisionprofile": "profiles/kuzz-developer-id.provisionprofile"
+      }
+    }
+  }
+}

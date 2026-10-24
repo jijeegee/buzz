@@ -1029,6 +1029,11 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     command
         .env("KUZZ_MANAGED_AGENT", current_instance_id(app))
         .env("KUZZ_MANAGED_AGENT_START_NONCE", &start_nonce);
+    // Device signing through the app (after the user env, so a saved value
+    // never wins): the harness uses it only when it cannot open the device
+    // key itself (macOS Secure Enclave).
+    let app_signer_lease =
+        crate::app_signer::apply_spawn_env(&mut command, &record.pubkey, &effective_relay_url);
 
     // Stamp spawn config from values above, BEFORE spawning — a post-spawn
     // re-resolve races config edits and would stamp the wrong values.
@@ -1082,15 +1087,19 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     // Windows: assign the harness to a Job Object so its whole tree dies with
     // the handle. The Unix process-group equivalent is set above.
     #[cfg(windows)]
-    return Ok(super::process_lifecycle::finish_spawn(
-        child,
-        log_path,
-        spawn_config,
-        spawned_setup_mode,
-        spawned_adapter_availability,
-        start_nonce,
-        &record.name,
-    ));
+    {
+        let mut process = super::process_lifecycle::finish_spawn(
+            child,
+            log_path,
+            spawn_config,
+            spawned_setup_mode,
+            spawned_adapter_availability,
+            start_nonce,
+            &record.name,
+        );
+        process.app_signer_lease = app_signer_lease;
+        Ok(process)
+    }
     #[cfg(not(windows))]
     Ok(crate::managed_agents::ManagedAgentProcess {
         child,
@@ -1099,6 +1108,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         setup_mode: spawned_setup_mode,
         adapter_availability: spawned_adapter_availability,
         start_nonce,
+        app_signer_lease,
     })
 }
 

@@ -41,6 +41,13 @@ pub(crate) const RESERVED_ENV_KEYS: &[&str] = &[
     "KUZZ_ACCESS_TOKEN",
     "KUZZ_TOKEN_BROKER_URL",
     "KUZZ_TOKEN_BROKER_SECRET",
+    // Device signing credentials: Desktop hands each runner its own app
+    // signer lease; kuzz-acp hands its children a device broker. A saved
+    // value would point the agent at another signer.
+    "KUZZ_APP_SIGNER_URL",
+    "KUZZ_APP_SIGNER_SECRET",
+    "KUZZ_DEVICE_BROKER_URL",
+    "KUZZ_DEVICE_BROKER_SECRET",
     // Relay URL: overriding would let a malicious config redirect the
     // agent to an attacker-controlled relay.
     "KUZZ_RELAY_URL",

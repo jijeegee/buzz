@@ -33,6 +33,21 @@ pub struct DeviceKey<'a> {
     pub kind: &'a str,
 }
 
+/// What a device key rotation ([`crate::Db::rotate_device_key`]) did.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DeviceKeyRotation {
+    /// The device now holds the new key.
+    Rotated,
+    /// No live login device of the principal has that id.
+    NotFound,
+    /// The device has no key (an older app signed in).
+    Keyless,
+    /// The device's key is no longer the old key (another rotation won).
+    Changed,
+    /// Another live device of the principal holds the new key.
+    InUse,
+}
+
 /// A live device of a principal.
 #[derive(Debug, Clone)]
 pub struct DeviceRecord {
@@ -529,6 +544,58 @@ pub(super) async fn revoke_other_sessions(
     Ok((revoked, devices))
 }
 
+/// Replace the key of `principal`'s live login device `device_id` from `old`
+/// to `new` (kind `kind`). Sessions, refresh tokens and agents stay bound to
+/// the device row, so they move with it. Serialized per principal like
+/// logins ([`super::lock_subject`]), so the "key in use" check cannot race.
+pub(super) async fn rotate_device_key(
+    pool: &PgPool,
+    principal: &PrincipalId,
+    device_id: Uuid,
+    old: &[u8; 33],
+    new: DeviceKey<'_>,
+) -> Result<DeviceKeyRotation> {
+    let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
+    let current: Option<Option<Vec<u8>>> = sqlx::query_scalar(
+        "SELECT device_pubkey FROM devices \
+         WHERE id = $1 AND principal_id = $2 AND kind = 'login' AND revoked_at IS NULL \
+         FOR UPDATE",
+    )
+    .bind(device_id)
+    .bind(principal.as_bytes().as_slice())
+    .fetch_optional(&mut *tx)
+    .await?;
+    let current = match current {
+        None => return Ok(DeviceKeyRotation::NotFound),
+        Some(None) => return Ok(DeviceKeyRotation::Keyless),
+        Some(Some(current)) => current,
+    };
+    if current.as_slice() != old.as_slice() {
+        return Ok(DeviceKeyRotation::Changed);
+    }
+    let taken: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM devices WHERE principal_id = $1 \
+         AND device_pubkey = $2 AND revoked_at IS NULL AND id <> $3)",
+    )
+    .bind(principal.as_bytes().as_slice())
+    .bind(new.pubkey.as_slice())
+    .bind(device_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if taken {
+        return Ok(DeviceKeyRotation::InUse);
+    }
+    sqlx::query("UPDATE devices SET device_pubkey = $2, device_key_kind = $3 WHERE id = $1")
+        .bind(device_id)
+        .bind(new.pubkey.as_slice())
+        .bind(new.kind)
+        .execute(&mut *tx)
+        .await?;
+    tx.commit().await?;
+    Ok(DeviceKeyRotation::Rotated)
+}
+
 /// End the open pairings started by `devices` (being revoked): their codes
 /// stop working and the owner's list shows them expired.
 async fn expire_open_pairings(
@@ -686,6 +753,19 @@ impl crate::Db {
         reuse_grace: chrono::Duration,
     ) -> Result<RefreshOutcome> {
         rotate_refresh(&self.pool, old_hash, new_refresh, new_access, reuse_grace).await
+    }
+
+    /// Move `principal`'s live login device `device_id` from key `old` to
+    /// `new`, keeping its sessions and agents (`POST /auth/device/rotate`).
+    #[datastore_span(name = "rotate_device_key", system = "postgresql")]
+    pub async fn rotate_device_key(
+        &self,
+        principal: &PrincipalId,
+        device_id: Uuid,
+        old: &[u8; 33],
+        new: DeviceKey<'_>,
+    ) -> Result<DeviceKeyRotation> {
+        rotate_device_key(&self.pool, principal, device_id, old, new).await
     }
 
     /// Revoke a device of `principal`, its sessions and hosted bot tokens.

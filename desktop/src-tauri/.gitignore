@@ -8,3 +8,6 @@
 
 # Sidecar binaries (built by scripts/bundle-sidecars.sh)
 /binaries
+
+# macOS provisioning profiles (docs/apple-device-keys.md); never committed
+/profiles

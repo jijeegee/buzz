@@ -143,6 +143,37 @@ fn the_server_verifier_accepts_a_header_proof() {
 }
 
 #[test]
+fn a_hashed_header_proof_verifies_like_the_unhashed_one() {
+    let key = vector_key();
+    let binding = "POST https://relay.example/auth/refresh";
+    let body = br#"{"refresh_token":"r"}"#;
+    let token_hash = kuzz_auth::hash_token("tok");
+    let body_hash: [u8; 32] = sha2::Sha256::digest(body).into();
+    let raw = key
+        .header_proof_hashed_at(
+            now(),
+            "refresh",
+            binding,
+            Some(&token_hash),
+            Some(&body_hash),
+        )
+        .expect("proof");
+    let proof = DeviceProof::parse(&raw).expect("parse");
+    let scope = ProofScope {
+        purpose: "refresh",
+        binding,
+        token_hash: Some(&token_hash),
+        body_hash: Some(&body_hash),
+    };
+    assert_eq!(proof.verify(&key.pubkey(), &scope, now()), Ok(()));
+    let unhashed = key
+        .header_proof_at(now(), "refresh", binding, Some("tok"), body)
+        .expect("proof");
+    let unhashed = DeviceProof::parse(&unhashed).expect("parse");
+    assert_eq!(unhashed.verify(&key.pubkey(), &scope, now()), Ok(()));
+}
+
+#[test]
 fn header_proofs_use_fresh_nonces() {
     let key = vector_key();
     let first = DeviceProof::parse(&key.header_proof("auth", "GET u", Some("t")).expect("1"))
@@ -464,6 +495,83 @@ fn a_tpm_marker_blocks_the_software_fallback() {
             .expect("fallback")
             .is_some()
     );
+}
+
+/// A hardware key without a marker (a stray test or dev build key) never
+/// displaces the software key the relay may have bound; with a marker, or
+/// with no software key at all, the hardware key is the one in use.
+#[test]
+fn a_software_key_without_a_marker_stays_in_use_over_a_stray_hardware_key() {
+    let scope = DEVICE_KEY_SCOPE;
+    // Software key, no marker: software stays (open and open_or_create
+    // both return it before touching the hardware key).
+    let store = MemoryStore::default();
+    let made = software::open_or_create(&store, scope).expect("seed");
+    let kept = unmarked_software_key(&store, scope)
+        .expect("load")
+        .expect("software in use");
+    assert_eq!(kept.verifying_key(), made.verifying_key());
+    assert!(
+        store
+            .load(&tpm_marker_scope(scope))
+            .expect("load")
+            .is_none(),
+        "no marker recorded for the stray key"
+    );
+
+    // Marker present: the hardware key is in use (as before).
+    record_tpm_marker(&store, scope, &vector_key().pubkey()).expect("marker");
+    assert!(unmarked_software_key(&store, scope)
+        .expect("load")
+        .is_none());
+
+    // Fresh install, nothing bound yet: the hardware key is used.
+    let fresh = MemoryStore::default();
+    assert!(unmarked_software_key(&fresh, scope)
+        .expect("load")
+        .is_none());
+}
+
+/// A rotation adopts the hardware key: marker first, then the software key
+/// goes, so later opens never fall back to it.
+#[test]
+fn adopting_a_rotated_hardware_key_retires_the_software_key() {
+    let scope = DEVICE_KEY_SCOPE;
+    let store = MemoryStore::default();
+    software::open_or_create(&store, scope).expect("seed");
+    adopt_marker(&store, scope, &vector_key().pubkey()).expect("adopt");
+    assert!(
+        store.load(scope).expect("load").is_none(),
+        "software key gone"
+    );
+    assert!(store
+        .load(&tpm_marker_scope(scope))
+        .expect("load")
+        .is_some());
+    assert!(unmarked_software_key(&store, scope)
+        .expect("load")
+        .is_none());
+
+    // A software key cannot be adopted as the hardware key.
+    let software =
+        DeviceKey::software(software::open_or_create(&store, scope).expect("key")).expect("key");
+    assert!(DeviceKey::adopt_hardware(scope, &store, &software).is_err());
+}
+
+/// Nothing to rotate: no software key, or the scope already has a marker.
+#[test]
+fn a_hardware_upgrade_needs_an_unmarked_software_key() {
+    let scope = format!("test-upgrade-{}", std::process::id());
+    let empty = MemoryStore::default();
+    assert!(DeviceKey::hardware_upgrade(&scope, &empty)
+        .expect("upgrade")
+        .is_none());
+    let marked = MemoryStore::default();
+    software::open_or_create(&marked, &scope).expect("seed");
+    record_tpm_marker(&marked, &scope, &vector_key().pubkey()).expect("marker");
+    assert!(DeviceKey::hardware_upgrade(&scope, &marked)
+        .expect("upgrade")
+        .is_none());
 }
 
 #[test]
