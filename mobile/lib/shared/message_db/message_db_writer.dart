@@ -7,7 +7,8 @@ import 'message_db.dart';
 
 /// The one read-write connection to a message database file, owned by a
 /// long-lived isolate so no write runs on the UI isolate. Writes apply in the
-/// order they were sent, each in its own transaction.
+/// order they were sent, each in its own transaction; a read sees every
+/// write sent before it.
 class MessageDbWriter {
   MessageDbWriter._(this.path);
 
@@ -19,7 +20,7 @@ class MessageDbWriter {
   final String path;
   final _port = ReceivePort();
   final _ready = Completer<SendPort>();
-  final _waiting = <int, Completer<void>>{};
+  final _waiting = <int, Completer<Object?>>{};
   int _nextId = 0;
   bool _closing = false;
   bool _exited = false;
@@ -43,10 +44,10 @@ class MessageDbWriter {
     switch (message) {
       case final SendPort port:
         _ready.complete(port);
-      case (final int id, final String? error):
+      case (final int id, final String? error, final Object? value):
         final completer = _waiting.remove(id);
         if (error == null) {
-          completer?.complete();
+          completer?.complete(value);
         } else {
           completer?.completeError(MessageDbWriteException(error));
         }
@@ -74,6 +75,14 @@ class MessageDbWriter {
     return _send(write);
   }
 
+  /// Runs [query] on the connection after every write sent so far.
+  Future<R> read<R>(MessageDbRead<R> query) async {
+    if (isClosed) {
+      throw StateError('Message database writer is closed.');
+    }
+    return await _send(query) as R;
+  }
+
   /// Resolves once every write sent so far has been answered.
   Future<void> settled() => Future.wait([
     for (final completer in _waiting.values)
@@ -92,9 +101,9 @@ class MessageDbWriter {
     }
   }
 
-  Future<void> _send(Object command) {
+  Future<Object?> _send(Object command) {
     final id = _nextId++;
-    final completer = Completer<void>();
+    final completer = Completer<Object?>();
     _waiting[id] = completer;
     // Every send awaits the same future, so they go out in call order.
     _ready.future.then(
@@ -134,20 +143,24 @@ void _writerMain((SendPort, String) args) {
     if (command is _Close) {
       db?.close();
       db = null;
-      reply.send((id, null));
+      reply.send((id, null, null));
       commands.close();
       return;
     }
     final open = db;
     if (open == null) {
-      reply.send((id, 'Message database unavailable: $openError'));
+      reply.send((id, 'Message database unavailable: $openError', null));
       return;
     }
     try {
-      applyMessageWrite(open, command as MessageDbWrite);
-      reply.send((id, null));
+      if (command is MessageDbRead) {
+        reply.send((id, null, command.run(open)));
+      } else {
+        applyMessageWrite(open, command as MessageDbWrite);
+        reply.send((id, null, null));
+      }
     } catch (error) {
-      reply.send((id, '$error'));
+      reply.send((id, '$error', null));
     }
   });
 }

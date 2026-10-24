@@ -54,6 +54,7 @@ extension _LocalStore on ChannelMessagesNotifier {
     recordChannelWindowPage(_storeRef, channelId, response, page);
     final scope = _readHeadScope();
     if (scope == null) return;
+    _storeRef.read(channelRoomStoreProvider).clearGap(scope, channelId);
     unawaited(
       _storeRef
           .read(channelHeadCacheProvider)

@@ -1,6 +1,8 @@
 import 'package:flutter/foundation.dart';
 import 'package:sqlite3/sqlite3.dart';
 
+import 'message_db.dart';
+
 /// Every change to what the message database claims is complete goes through
 /// this file: coverage ranges, room live ranges and per-server sync state.
 /// Keeping them together is what lets a later deletion stage trim ranges in
@@ -244,6 +246,69 @@ void applyLiveRanges(Database db, Map<String, int?> liveFrom) {
       );
     }
   }
+}
+
+/// Ends the live range of every room not in [rooms].
+void keepOnlyLiveRanges(Database db, Set<String> rooms) {
+  final open = [
+    for (final row in db.select('SELECT channel_id FROM room_state'))
+      row['channel_id'] as String,
+  ];
+  for (final channelId in open) {
+    if (!rooms.contains(channelId)) {
+      db.execute('DELETE FROM room_state WHERE channel_id = ?', [channelId]);
+    }
+  }
+}
+
+/// Starts a live range at the given time for each room that has none open;
+/// an open one is kept.
+void startLiveRanges(Database db, Map<String, int> liveStart) {
+  for (final MapEntry(key: channelId, value: from) in liveStart.entries) {
+    db.execute(
+      'INSERT INTO room_state (channel_id, live_from) VALUES (?, ?) '
+      'ON CONFLICT (channel_id) DO NOTHING',
+      [channelId, from],
+    );
+  }
+}
+
+/// When [channelId]'s open live range starts, or null when it has none: the
+/// live feed did not deliver it continuously since it was last fetched.
+int? readLiveFrom(Database db, String channelId) {
+  final rows = db.select(
+    'SELECT live_from FROM room_state WHERE channel_id = ?',
+    [channelId],
+  );
+  return rows.isEmpty ? null : rows.single['live_from'] as int?;
+}
+
+/// The stored catch-up watermark of the physical server [origin].
+int? readWatermark(Database db, String origin) {
+  final rows = db.select('SELECT watermark FROM sync_state WHERE origin = ?', [
+    origin,
+  ]);
+  return rows.isEmpty ? null : rows.single['watermark'] as int?;
+}
+
+/// [readLiveFrom] for [MessageStore.read].
+class LiveFromRead extends MessageDbRead<int?> {
+  const LiveFromRead(this.channelId);
+
+  final String channelId;
+
+  @override
+  int? run(Database db) => readLiveFrom(db, channelId);
+}
+
+/// [readWatermark] for [MessageStore.read].
+class WatermarkRead extends MessageDbRead<int?> {
+  const WatermarkRead(this.origin);
+
+  final String origin;
+
+  @override
+  int? run(Database db) => readWatermark(db, origin);
 }
 
 /// What one write changes about a physical server's sync state. The

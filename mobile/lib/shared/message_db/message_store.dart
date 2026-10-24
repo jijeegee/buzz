@@ -133,6 +133,29 @@ class MessageStore {
     if (sent != null) await sent.$1;
   }
 
+  /// Runs [query] on [scope]'s database after every write requested so far
+  /// (see [MessageDbWriter.read]). Null when [scope] has no database yet or
+  /// storage is unavailable; a read never creates the file.
+  Future<R?> read<R>(MessageScope scope, MessageDbRead<R> query) async {
+    final key = scope.relativePath;
+    final sent = await _serialized(() async {
+      if (_closed) return null;
+      final root = await _resolveRoot();
+      if (root == null) return null;
+      var writer = _writers[key];
+      if (writer == null) {
+        if (!File('$root/$key').existsSync()) return null;
+        writer = _writers[key] = MessageDbWriter.start('$root/$key');
+      }
+      return (writer.read(query),);
+    });
+    return sent == null ? null : await sent.$1;
+  }
+
+  /// Whether [scope]'s database can exist on this device: false when
+  /// storage is unavailable.
+  Future<bool> get isAvailable async => await _resolveRoot() != null;
+
   /// Resolves once every write requested so far has been applied (or has
   /// failed).
   Future<void> settled() async {

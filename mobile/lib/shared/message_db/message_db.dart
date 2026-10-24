@@ -146,6 +146,15 @@ void _migrate(Database db) {
   }
 }
 
+/// A read run by the writer isolate, after every write sent before it. It is
+/// sent there, so it holds only plain data (no closures), and so must its
+/// result.
+abstract class MessageDbRead<R> {
+  const MessageDbRead();
+
+  R run(Database db);
+}
+
 /// One transaction's worth of changes.
 @immutable
 class MessageDbWrite {
@@ -153,6 +162,8 @@ class MessageDbWrite {
     this.rows = const [],
     this.claims = const [],
     this.liveFrom = const {},
+    this.liveStart = const {},
+    this.keepLiveRanges,
     this.sync,
   });
 
@@ -163,10 +174,23 @@ class MessageDbWrite {
 
   /// Room live ranges to start (a time) or end (null); for catch-up.
   final Map<String, int?> liveFrom;
+
+  /// Room live ranges to start at a time where none is open; applied after
+  /// [liveFrom].
+  final Map<String, int> liveStart;
+
+  /// When set, every other room's live range ends first: the watermark
+  /// this write stores vouches for these rooms only.
+  final Set<String>? keepLiveRanges;
   final SyncStateUpdate? sync;
 
   bool get isEmpty =>
-      rows.isEmpty && claims.isEmpty && liveFrom.isEmpty && sync == null;
+      rows.isEmpty &&
+      claims.isEmpty &&
+      liveFrom.isEmpty &&
+      liveStart.isEmpty &&
+      keepLiveRanges == null &&
+      sync == null;
 }
 
 /// Applies [write] in one transaction: all of it lands or none of it does,
@@ -186,7 +210,9 @@ void applyMessageWrite(Database db, MessageDbWrite write) {
     for (final claim in write.claims) {
       applyCoverageClaim(db, claim);
     }
+    if (write.keepLiveRanges case final rooms?) keepOnlyLiveRanges(db, rooms);
     applyLiveRanges(db, write.liveFrom);
+    startLiveRanges(db, write.liveStart);
     if (write.sync case final sync?) applySyncState(db, sync);
     db.execute('COMMIT');
   } catch (_) {
