@@ -55,6 +55,9 @@ pub enum TokenRejection {
     PrincipalDisabled,
     /// The use was not proven by the token's device key (enforced).
     DeviceProofRequired,
+    /// The token's device has no key (signed in before the app had device
+    /// keys): no proof can help, the device must sign in again (enforced).
+    DeviceKeyRequired,
     /// The device proof's time is outside the window: the client should
     /// correct its clock from `x-kuzz-server-time` and retry (enforced).
     DeviceProofStale,
@@ -74,6 +77,7 @@ impl TokenRejection {
             Self::TokenRevoked => "token_revoked",
             Self::PrincipalDisabled => "principal_disabled",
             Self::DeviceProofRequired => "device_proof_required",
+            Self::DeviceKeyRequired => "device_key_required",
             Self::DeviceProofStale => "device_proof_stale",
             Self::MessagePathClosed => "token_message_path_closed",
             Self::Unavailable => "unavailable",
