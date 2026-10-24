@@ -176,6 +176,30 @@ REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}" \
 log "running e2e_regions_move"
 REGION_KR_URL="${KR_URL}" REGION_JP_URL="${JP_URL}"   REGION_JP_DATABASE_URL="${JP_DB}" REGION_KR_DATABASE_URL="${KR_DB}"   REGION_ADMIN_BIN="${ADMIN}"   REGION_REDIS_URLS=redis://127.0.0.1:6491,redis://127.0.0.1:6492   cargo test -p kuzz-test-client --test e2e_regions_move -- --ignored --test-threads=1
 
+# Sign-in while kr is down (S5-6): stop kr's relay, so jp's copy falls
+# behind (its heartbeat stops) and refreshes cannot reach kr. jp answers
+# them itself. Then start kr again; refreshes rotate at kr again.
+outage_phase() {
+  REGION_OUTAGE_PHASE=$1 REGION_OUTAGE_STATE="${LOG_DIR}/outage-state.json" \
+    REGION_JP_URL="${JP_URL}" REGION_JP_DATABASE_URL="${JP_DB}" \
+    cargo test -p kuzz-test-client --test e2e_regions_outage -- --ignored --test-threads=1
+}
+log "running e2e_regions_outage"
+outage_phase prepare
+kill "${PIDS[0]}"
+for _ in $(seq 1 60); do
+  curl -s -o /dev/null http://localhost:3041/ || break
+  sleep 1
+done
+# KUZZ_GLOBAL_COPY_MAX_LAG_SECS is 3.
+sleep 6
+outage_phase down
+start_relay kr 3041 5491 6491 3051 3061 "${KR_LINK_KEY}" kr-after-outage
+wait_up http://localhost:3041/
+outage_phase after
+grep -q "auth.outage_refresh" "${LOG_DIR}/relay-jp.log" \
+  || { log "jp logged no outage refresh"; exit 1; }
+
 # Hand the primary to jp (S6-5), restart every relay with the new primary
 # and check both regions still work.
 JP_CONNINFO="host=postgres-jp port=5432 user=kuzz password=kuzz_dev dbname=kuzz"

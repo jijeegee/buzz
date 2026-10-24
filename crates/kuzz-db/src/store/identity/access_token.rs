@@ -103,6 +103,10 @@ pub(super) async fn lookup_access_token(
     .bind(token_hash.as_slice())
     .fetch_optional(&mut *tx)
     .await?;
+    let row = match row {
+        Some(row) => Some(row),
+        None => lookup_outage_token(&mut tx, token_hash).await?,
+    };
     tx.commit().await?;
     let Some(row) = row else {
         return Ok(None);
@@ -130,6 +134,34 @@ pub(super) async fn lookup_access_token(
         bot_deleted_at: row.try_get("bot_deleted_at")?,
         is_operator: row.try_get("is_operator")?,
     }))
+}
+
+/// A token this region gave out while the primary was down (S5-6), in the
+/// same columns as an `access_tokens` row. The session must still be in the
+/// copy: a deleted session ends the token.
+async fn lookup_outage_token(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    token_hash: &[u8; 32],
+) -> Result<Option<sqlx::postgres::PgRow>> {
+    let row = sqlx::query(
+        "SELECT o.principal_id, 'user'::text AS kind, o.expires_at, \
+                NULL::timestamptz AS superseded_at, NULL::timestamptz AS revoked_at, \
+                o.session_id, NULL::bytea AS bot_id, NULL::uuid AS issued_by_device, \
+                p.disabled_at AS principal_disabled_at, \
+                s.revoked_at AS session_revoked_at, s.device_id AS session_device_id, \
+                NULL::bytea AS owner_principal_id, NULL::uuid AS host_device_id, \
+                NULL::timestamptz AS bot_deleted_at, \
+                EXISTS (SELECT 1 FROM relay_operators r \
+                        WHERE r.pubkey = o.principal_id AND r.role = 'operator') AS is_operator \
+         FROM outage_access_tokens o \
+         JOIN principals p ON p.id = o.principal_id \
+         JOIN sessions s ON s.id = o.session_id \
+         WHERE o.token_hash = $1",
+    )
+    .bind(token_hash.as_slice())
+    .fetch_optional(&mut **tx)
+    .await?;
+    Ok(row)
 }
 
 /// Disable `principal` (self-deletion schedules a purge; an operator disable

@@ -3165,3 +3165,19 @@ INSERT INTO _operator_global_tables (table_name, reason) VALUES
 -- Deleting a community also drops its undelivered region calls (S4-5 left
 -- region_outbox out of the deletion fence).
 SELECT attach_community_write_fence('region_outbox');
+
+-- Access tokens this region gave out while the primary was down (S5-6).
+-- Region-local, never copied; checked after access_tokens.
+CREATE TABLE outage_access_tokens (
+    token_hash   BYTEA PRIMARY KEY CHECK (length(token_hash) = 32),
+    principal_id BYTEA NOT NULL CHECK (length(principal_id) = 32),
+    session_id   UUID NOT NULL,
+    refresh_hash BYTEA NOT NULL CHECK (length(refresh_hash) = 32),
+    expires_at   TIMESTAMPTZ NOT NULL,
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX outage_access_tokens_expiry ON outage_access_tokens (expires_at);
+CREATE INDEX outage_access_tokens_refresh ON outage_access_tokens (refresh_hash, created_at);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('outage_access_tokens', 'region-local access tokens given out while the primary is down');

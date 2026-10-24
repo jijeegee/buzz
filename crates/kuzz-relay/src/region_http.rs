@@ -16,7 +16,9 @@
 //! gets this region as its home region.
 //!
 //! If the primary cannot be reached, these requests fail with 503 (late
-//! rather than split). Chat never takes this path.
+//! rather than split). Chat never takes this path. The one exception is a
+//! refresh while the copy has fallen behind: the region gives out an access
+//! token of its own (S5-6, `api::auth::outage_refresh`).
 
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -149,6 +151,17 @@ fn plain_error(status: StatusCode, message: &str) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
 }
 
+/// Whether a refresh that the primary failed should get an outage token
+/// here (S5-6): on, a refresh, and this region's copy has fallen behind, so
+/// the primary has stopped sending changes too. A primary that only
+/// answered badly while the copy keeps up is not down; the app retries.
+fn outage_refresh_applies(state: &AppState, method: &Method, path: &str) -> bool {
+    state.config.outage_tokens
+        && method == Method::POST
+        && path == "/auth/refresh"
+        && crate::region_global_read::copy_lagging(state)
+}
+
 /// Entry side middleware: in a region holding the global copy, send a
 /// global write to the primary and return its answer.
 pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next: Next) -> Response {
@@ -200,6 +213,14 @@ pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next:
             metrics::counter!("kuzz_region_http_forward_failures_total", "reason" => reason)
                 .increment(1);
             tracing::warn!(reason, "Could not forward a global write to the primary");
+            let primary_down = match &error {
+                CallError::Unreachable(_) => true,
+                CallError::Status(status, _) => status.is_server_error(),
+                CallError::Off | CallError::UnknownRegion => false,
+            };
+            if primary_down && outage_refresh_applies(&state, &parts.method, parts.uri.path()) {
+                return crate::api::auth::outage_refresh(&state, &parts.headers, &body).await;
+            }
             return plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE);
         }
     };
@@ -212,6 +233,11 @@ pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next:
     ) else {
         return plain_error(StatusCode::BAD_GATEWAY, UNREACHABLE);
     };
+    // The primary's relay answered but could not serve it (its database is
+    // down, say).
+    if status.is_server_error() && outage_refresh_applies(&state, &parts.method, parts.uri.path()) {
+        return crate::api::auth::outage_refresh(&state, &parts.headers, &body).await;
+    }
     metrics::counter!("kuzz_region_http_forwarded_total").increment(1);
     let mut response = Response::new(Body::from(body));
     *response.status_mut() = status;

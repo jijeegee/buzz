@@ -9,7 +9,7 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use kuzz_db::identity::{ProfileUpdate, RefreshOutcome, RevokeReason};
+use kuzz_db::identity::{OutageRefreshOutcome, ProfileUpdate, RefreshOutcome, RevokeReason};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
@@ -17,7 +17,7 @@ use uuid::Uuid;
 use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
     auth_error, authenticate_session, authenticate_user, authenticate_user_session, bad_request,
-    internal, json_object, not_found, optional_string, rate_limit, unavailable,
+    internal, json_object, limit_response, not_found, optional_string, rate_limit, unavailable,
     validate_avatar_url, validate_device_name, validate_display_name,
 };
 use crate::identity::{kv, publish_revocations};
@@ -44,6 +44,31 @@ fn cookie_refresh(headers: &HeaderMap) -> Option<String> {
         .filter_map(|pair| pair.trim().strip_prefix("kuzz_refresh="))
         .map(str::to_owned)
         .find(|value| !value.is_empty())
+}
+
+/// The refresh token of a refresh request, from the body or the web cookie,
+/// and whether it came from the cookie.
+fn refresh_token_from(
+    headers: &HeaderMap,
+    body: &[u8],
+) -> Result<(kuzz_auth::TokenSecret, bool), Response> {
+    let body = json_object(body)?;
+    let (refresh_token, web) = match body.get("refresh").and_then(|v| v.as_str()) {
+        Some(token) => (token.to_owned(), false),
+        None => match cookie_refresh(headers) {
+            Some(token) => (token, true),
+            None => return Err(bad_request("refresh is required")),
+        },
+    };
+    let token = kuzz_auth::TokenSecret::new(refresh_token);
+    if token.kind() != Some(kuzz_auth::TokenKind::UserRefresh) {
+        return Err(auth_error(
+            StatusCode::UNAUTHORIZED,
+            "invalid_token",
+            "authentication failed",
+        ));
+    }
+    Ok((token, web))
 }
 
 fn rotation_response(rotation: &CachedRotation, web: bool, refresh_ttl: u64) -> Response {
@@ -94,25 +119,10 @@ pub(super) async fn refresh(
     // Rate limited per refresh token only: a per-IP bucket collapses to one
     // deployment-wide bucket behind a proxy or on the UDS listener, where
     // every session's hourly refresh would share it.
-    let body = match json_object(&body) {
-        Ok(body) => body,
+    let (token, web) = match refresh_token_from(&headers, &body) {
+        Ok(found) => found,
         Err(response) => return response,
     };
-    let (refresh_token, web) = match body.get("refresh").and_then(|v| v.as_str()) {
-        Some(token) => (token.to_owned(), false),
-        None => match cookie_refresh(&headers) {
-            Some(token) => (token, true),
-            None => return bad_request("refresh is required"),
-        },
-    };
-    let token = kuzz_auth::TokenSecret::new(refresh_token);
-    if token.kind() != Some(kuzz_auth::TokenKind::UserRefresh) {
-        return auth_error(
-            StatusCode::UNAUTHORIZED,
-            "invalid_token",
-            "authentication failed",
-        );
-    }
     let old_hash = token.hash();
     let old_hash_hex = hex::encode(old_hash);
     if let Err(response) = rate_limit(
@@ -207,6 +217,96 @@ pub(super) async fn refresh(
             auth_error(StatusCode::UNAUTHORIZED, "token_revoked", "session revoked")
         }
         RefreshOutcome::PrincipalDisabled => auth_error(
+            StatusCode::UNAUTHORIZED,
+            "principal_disabled",
+            "account disabled",
+        ),
+    }
+}
+
+/// Access tokens one refresh token gets while the primary is down, per
+/// [`OUTAGE_TOKEN_WINDOW`]. An app refreshes about once per access-token
+/// lifetime; this leaves room for retries and a second app on the device.
+const OUTAGE_TOKENS_PER_REFRESH: i64 = 6;
+/// Window of [`OUTAGE_TOKENS_PER_REFRESH`].
+const OUTAGE_TOKEN_WINDOW: chrono::Duration = chrono::Duration::hours(1);
+
+/// `POST /auth/refresh` in a copy region whose primary cannot be reached
+/// (global regions S5-6).
+///
+/// The region checks the refresh token against its copy and gives out an
+/// access token of its own, recorded in `outage_access_tokens`. The refresh
+/// token is not rotated: the answer returns the same one, and the app
+/// refreshes with it again once the primary is back. A token the copy does
+/// not know, or one already used, gets 503: it may be newer than the copy,
+/// and the primary decides about reuse. The token works only in this
+/// region; another region asks its own copy.
+pub(crate) async fn outage_refresh(state: &AppState, headers: &HeaderMap, body: &[u8]) -> Response {
+    let (token, web) = match refresh_token_from(headers, body) {
+        Ok(found) => found,
+        Err(response) => return response,
+    };
+    let refresh_hash = token.hash();
+    // The shared limiter lives at the primary, which is down: count here.
+    let limited = state
+        .admission_rate_limiter
+        .check_key(
+            &format!("auth:outage:token:{}", hex::encode(refresh_hash)),
+            60,
+            10,
+        )
+        .await
+        .map_err(|e| e.to_string());
+    if let Err(response) = limit_response(limited) {
+        return response;
+    }
+    let (access, _, access_issued, _) = issue_session_tokens(state);
+    let outcome = match state
+        .db
+        .give_outage_access_token(
+            &refresh_hash,
+            &access_issued,
+            OUTAGE_TOKENS_PER_REFRESH,
+            OUTAGE_TOKEN_WINDOW,
+        )
+        .await
+    {
+        Ok(outcome) => outcome,
+        Err(error) => return internal("give_outage_access_token", &error),
+    };
+    let label = match &outcome {
+        OutageRefreshOutcome::Issued { .. } => "issued",
+        OutageRefreshOutcome::Unknown => "unknown",
+        OutageRefreshOutcome::Used => "used",
+        OutageRefreshOutcome::Expired => "expired",
+        OutageRefreshOutcome::SessionRevoked => "session_revoked",
+        OutageRefreshOutcome::PrincipalDisabled => "principal_disabled",
+        OutageRefreshOutcome::TooMany => "too_many",
+    };
+    metrics::counter!("kuzz_outage_tokens_total", "outcome" => label).increment(1);
+    tracing::info!(outcome = label, "auth.outage_refresh");
+    match outcome {
+        OutageRefreshOutcome::Issued { expires_at } => {
+            let expires_in = (expires_at - chrono::Utc::now()).num_seconds().max(1) as u64;
+            let answer = CachedRotation {
+                access: access.expose().to_owned(),
+                refresh: token.expose().to_owned(),
+                expires_in,
+            };
+            rotation_response(&answer, web, state.identity.config().refresh_ttl.as_secs())
+        }
+        OutageRefreshOutcome::Unknown
+        | OutageRefreshOutcome::Used
+        | OutageRefreshOutcome::TooMany => unavailable(),
+        OutageRefreshOutcome::Expired => auth_error(
+            StatusCode::UNAUTHORIZED,
+            "token_expired",
+            "refresh token expired",
+        ),
+        OutageRefreshOutcome::SessionRevoked => {
+            auth_error(StatusCode::UNAUTHORIZED, "token_revoked", "session revoked")
+        }
+        OutageRefreshOutcome::PrincipalDisabled => auth_error(
             StatusCode::UNAUTHORIZED,
             "principal_disabled",
             "account disabled",

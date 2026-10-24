@@ -108,6 +108,8 @@ pub const LOCAL_TABLES: &[&str] = &[
     "user_blocks",
     "user_block_periods",
     "user_block_versions",
+    // Access tokens given out here while the primary was down (S5-6).
+    "outage_access_tokens",
     // Work queues and logs of this region's own workers.
     "region_outbox",
     "relay_admin_actions",

@@ -513,6 +513,7 @@ mod postgres_tests {
             "local_region",
             "region_outbox",
             "global_heartbeat",
+            "outage_access_tokens",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -727,7 +728,14 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 87);
+        assert_eq!(migrations.len(), 88);
+        assert_eq!(migrations[87].version, 89);
+        assert!(migrations[87]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE outage_access_tokens"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE outage_access_tokens"));
         assert_eq!(migrations[86].version, 88);
         assert!(migrations[86].sql.as_str().contains("ADD COLUMN moving_since"));
         assert!(include_str!("../../../../schema/schema.sql").contains("moving_since    TIMESTAMPTZ"));

@@ -12,6 +12,7 @@
 mod access_token;
 mod bot;
 mod key_backup;
+mod outage;
 mod principal;
 mod session;
 
@@ -35,6 +36,7 @@ pub use key_backup::{
     InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,
     LEGACY_KEY_BACKUP_VERSION,
 };
+pub use outage::OutageRefreshOutcome;
 pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,
