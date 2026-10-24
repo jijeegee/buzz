@@ -552,6 +552,22 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                         ))),
                     })
             } else {
+                // A new host without KUZZ_COMMUNITY_ID while another community
+                // has users is a service-name change that missed
+                // communities.host: refuse rather than start an empty one.
+                if config.community_id.is_none()
+                    && db.lookup_community_by_host(&host).await?.is_none()
+                {
+                    if let Some((id, old)) = db.community_with_users_elsewhere(&host).await? {
+                        return Err(anyhow::anyhow!(
+                            "KUZZ_RELAY_URL names {host:?}, which is no community, but community \
+                             {id} ({old:?}) has users. If the service name changed, change \
+                             communities.host first (docs/regions-runbook.md, \"Changing the \
+                             service name\"). To start a separate community, set \
+                             KUZZ_COMMUNITY_ID to a new id."
+                        ));
+                    }
+                }
                 db.ensure_configured_community_for_bootstrap(&host, config.community_id)
                     .await
                     .map(|record| (record.id, record.host))

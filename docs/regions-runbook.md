@@ -97,6 +97,18 @@ When the service name changes (S1), change `communities.host` in the primary
 together with `RELAY_URL` in every region. Apps sign for the service name,
 so a mismatch refuses every sign-in.
 
+1. Stop the relays.
+2. In the primary: `UPDATE communities SET host = '<new name>' WHERE id = '<KUZZ_COMMUNITY_ID>';`
+3. Set `RELAY_URL` to the new name in every region, and add the old name to
+   `KUZZ_SERVICE_ALIASES` so installed apps keep working.
+4. Start the primary, then the other regions.
+
+A relay refuses to start if this was missed. With `KUZZ_COMMUNITY_ID`, it
+refuses when that community has another host. Without it, it refuses when
+no community has the `RELAY_URL` host and another community has users,
+instead of starting a new, empty community. To start a separate community
+on purpose, set `KUZZ_COMMUNITY_ID` to a new id.
+
 ## Moving a room
 
 `kuzz-admin rooms move` moves one room to another region. Run it from a
