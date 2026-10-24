@@ -171,6 +171,7 @@ pub(crate) async fn refresh_once(
             let me = api::me(client, origin, &tokens.access)
                 .await
                 .map_err(|e| classify_me(&e))?;
+            auth.record_device_key(origin, generation, me.device_key);
             if me.identity_mode.as_deref() == Some("key_backup") {
                 let pubkey = me
                     .signing_pubkey
@@ -471,6 +472,22 @@ mod tests {
         };
         assert!(!ends_sign_in(&code), "{code}");
         assert_eq!(classify_me(&err(None, None)), RefreshFailure::Transient);
+    }
+
+    #[test]
+    fn a_device_without_a_key_must_sign_in_again_not_retry() {
+        let refused = err(Some(401), Some("device_key_required"));
+        assert_eq!(
+            classify(&refused),
+            RefreshFailure::Terminal("device_key_required".into())
+        );
+        assert_eq!(
+            classify_me(&refused),
+            RefreshFailure::Terminal("me_device_key_required".into())
+        );
+        // Asks to sign in again; the account and its agents stay.
+        assert!(!ends_sign_in("device_key_required"));
+        assert!(!ends_sign_in("me_device_key_required"));
     }
 
     #[test]

@@ -9,6 +9,7 @@ import {
   accountProvider,
 } from "@/features/accounts/lib/accountLabels";
 import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
+import { isDeviceKeyRequired } from "@/features/accounts/deviceKey/deviceKeyNotice";
 import { useWatchedUnread } from "@/features/accounts/inactiveAccountWatch/useWatchedUnread";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import { AddAccountDialog } from "@/features/accounts/ui/AddAccountDialog";
@@ -238,9 +239,11 @@ export function AccountSettingsCard({
               </p>
               <p className="text-sm text-muted-foreground/70">
                 {status.state === "needs_login"
-                  ? status.keyBackup
-                    ? t("settings.account.needsLoginHintKept")
-                    : t("settings.account.needsLoginHint")
+                  ? isDeviceKeyRequired(status.reason)
+                    ? t("accounts.deviceKey.requiredTitle")
+                    : status.keyBackup
+                      ? t("settings.account.needsLoginHintKept")
+                      : t("settings.account.needsLoginHint")
                   : protect
                     ? t("settings.account.protectHint")
                     : t("settings.account.signInHint")}

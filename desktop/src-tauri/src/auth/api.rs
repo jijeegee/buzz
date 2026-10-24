@@ -189,6 +189,11 @@ pub(crate) struct MeInfo {
     /// the server writes. Relays without the setting omit it.
     #[serde(default)]
     pub locale: Option<String>,
+    /// Whether this person session's device has a registered key. `false`:
+    /// it signed in before device keys and must sign in once more. Absent
+    /// for bots and on relays that do not report it.
+    #[serde(default)]
+    pub device_key: Option<bool>,
 }
 
 /// One person from `GET /auth/people/lookup` or `/auth/people/shared`.
@@ -1374,6 +1379,25 @@ mod tests {
         let older: MeInfo =
             serde_json::from_value(serde_json::json!({ "principal_id": "ab" })).unwrap();
         assert_eq!((older.username, older.discoverable), (None, None));
+    }
+
+    #[test]
+    fn me_reads_whether_the_device_has_a_key() {
+        let read = |extra: serde_json::Value| -> Option<bool> {
+            let mut body = serde_json::json!({ "principal_id": "ab" });
+            body.as_object_mut()
+                .unwrap()
+                .extend(extra.as_object().unwrap().clone());
+            serde_json::from_value::<MeInfo>(body).unwrap().device_key
+        };
+        assert_eq!(
+            read(serde_json::json!({ "device_key": false })),
+            Some(false)
+        );
+        assert_eq!(read(serde_json::json!({ "device_key": true })), Some(true));
+        // A bot session or an older relay: nothing to say.
+        assert_eq!(read(serde_json::json!({ "device_key": null })), None);
+        assert_eq!(read(serde_json::json!({})), None);
     }
 
     #[test]

@@ -211,6 +211,10 @@ pub struct TokenAuthState {
     /// The `/auth/me` profile of each origin's last restored session,
     /// keyed by origin and the account (signing pubkey) it reported.
     me_profiles: Mutex<HashMap<(String, PublicKey), MeProfile>>,
+    /// Origins whose session's `/auth/me` said its device has no key, with
+    /// that login generation: a newer sign-in (which registers the key) or
+    /// switch starts a new generation and so clears it.
+    keyless: Mutex<HashMap<String, u64>>,
     /// A sign-in waiting for the user to confirm a new account.
     pending_signup: Mutex<Option<PendingSignup>>,
 }
@@ -283,6 +287,38 @@ impl TokenAuthState {
             .get(origin)
             .copied()
     }
+    /// Record what `/auth/me` said about the device key of `origin`'s login
+    /// `generation`. Only `Some(false)` counts; a bot or an older relay
+    /// (`None`) never asks to sign in again.
+    pub(crate) fn record_device_key(
+        &self,
+        origin: &str,
+        generation: u64,
+        device_key: Option<bool>,
+    ) {
+        let mut keyless = self.keyless.lock().unwrap_or_else(PoisonError::into_inner);
+        if device_key == Some(false) {
+            keyless.insert(origin.to_owned(), generation);
+        } else {
+            keyless.remove(origin);
+        }
+    }
+
+    /// Whether `origin`'s current, active session has no device key and
+    /// should sign in once more.
+    pub(crate) fn device_key_missing(&self, origin: &str) -> bool {
+        let Some(recorded) = self
+            .keyless
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
+            .get(origin)
+            .copied()
+        else {
+            return false;
+        };
+        matches!(self.get(origin), Some((g, OriginAuth::Active(_))) if g == recorded)
+    }
+
     /// `(generation, state)` of `origin`.
     pub(crate) fn get(&self, origin: &str) -> Option<(u64, OriginAuth)> {
         self.origins
@@ -507,6 +543,37 @@ mod tests {
         // After a switch to B on the same origin, A's name is never B's.
         assert_eq!(auth.me_profile("o", &b), None);
         assert_eq!(auth.me_profile("other", &a), None);
+    }
+
+    #[test]
+    fn a_keyless_device_asks_until_a_new_sign_in() {
+        let auth = TokenAuthState::default();
+        let active = || {
+            OriginAuth::Active(UserSession {
+                principal: nostr::Keys::generate().public_key(),
+                device_id: None,
+                access: Zeroizing::new("a".into()),
+                refresh: Zeroizing::new("r".into()),
+                access_issued_at: 0,
+                access_expires_at: 0,
+            })
+        };
+        let restored = auth.set("o", OriginAuth::Restoring);
+        auth.record_device_key("o", restored, Some(false));
+        assert!(!auth.device_key_missing("o"), "not while restoring");
+        auth.replace_if("o", restored, active());
+        assert!(auth.device_key_missing("o"));
+        assert!(!auth.device_key_missing("other"));
+        // Signing in again starts a new generation: the notice goes.
+        auth.set("o", active());
+        assert!(!auth.device_key_missing("o"));
+        // A key, a bot or an older relay never asks.
+        for device_key in [Some(true), None] {
+            let generation = auth.set("o", active());
+            auth.record_device_key("o", generation, Some(false));
+            auth.record_device_key("o", generation, device_key);
+            assert!(!auth.device_key_missing("o"));
+        }
     }
 
     #[test]

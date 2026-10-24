@@ -47,6 +47,9 @@ pub struct TokenAuthStatus {
     /// The active account is signed out on this computer: chats stay closed
     /// until an account signs in. Keys and data are kept.
     pub device_signed_out: bool,
+    /// The active session's device has no key (`/auth/me` `device_key:
+    /// false`): it should sign in once more to finish the security update.
+    pub device_key_missing: bool,
     /// This sign-in opened a different account than the one active before
     /// (another Google account, or a "connect" whose Google account already
     /// held an account).
@@ -102,6 +105,7 @@ fn status_of(
         legacy_token_account: false,
         signing_pubkey: None,
         device_signed_out: false,
+        device_key_missing: false,
         switched_to: None,
         agents_not_stopped: 0,
         account_changed: false,
@@ -134,6 +138,7 @@ fn current_status(
         .flatten();
     status.device_signed_out =
         state.token_auth.device_signed_out(origin) || state.held_key_unpaired(origin);
+    status.device_key_missing = state.token_auth.device_key_missing(origin);
     status
 }
 
