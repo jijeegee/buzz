@@ -16,6 +16,7 @@ mod bot;
 mod key_backup;
 mod pairing;
 mod principal;
+mod provider_tokens;
 mod session;
 
 #[cfg(test)]
@@ -54,6 +55,7 @@ pub use principal::{
     LoginPrincipal, PrincipalRecord, ProfileCommunity, ProfileEventState, ProfilePublishLock,
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,
 };
+pub use provider_tokens::ProviderRevokeTokenRecord;
 pub use session::{DeviceKey, DeviceKeyRotation, DeviceRecord, LoginSession, RefreshOutcome};
 
 /// Maximum live (non-revoked) devices per principal.

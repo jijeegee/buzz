@@ -879,6 +879,7 @@ pub(super) async fn delete_account(
                 }
             }
             close_key_account_sockets(&state, &binding.principal).await;
+            super::provider_revoke::spawn_revoke_all(Arc::clone(&state), binding.principal);
             tracing::info!(principal = %binding.principal, "auth.account_deleted");
             (StatusCode::NO_CONTENT, clear_cookie()).into_response()
         }

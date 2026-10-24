@@ -446,6 +446,7 @@ impl OidcProvider for FakeOidcProvider {
                 email_verified: true,
                 name: Some(subject.split('@').next().unwrap_or(subject).to_owned()),
                 picture: None,
+                revoke_token: None,
             })
         })
     }

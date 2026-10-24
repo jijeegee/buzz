@@ -251,3 +251,32 @@ fn agent_register_signature_binds_challenge_owner_and_device() {
     .is_err());
     assert!(verify_agent_register(&pubkey, "00", &challenge, &owner, &device).is_err());
 }
+
+#[test]
+fn provider_token_round_trips_and_is_bound_to_provider_subject_and_key() {
+    let sealed = master()
+        .seal_provider_token("apple", "000123.abc", "r.refresh-token")
+        .unwrap();
+    assert_ne!(sealed.ciphertext, b"r.refresh-token".to_vec());
+    let opened = master()
+        .open_provider_token("apple", "000123.abc", &sealed)
+        .unwrap();
+    assert_eq!(opened.as_str(), "r.refresh-token");
+
+    assert!(master()
+        .open_provider_token("google", "000123.abc", &sealed)
+        .is_err());
+    assert!(master()
+        .open_provider_token("apple", "000124.abc", &sealed)
+        .is_err());
+    let other_key = BackupMasterKey::from_hex("test-v1", &"20".repeat(32)).unwrap();
+    assert!(other_key
+        .open_provider_token("apple", "000123.abc", &sealed)
+        .is_err());
+    let mut tampered = sealed.clone();
+    tampered.ciphertext[0] ^= 1;
+    assert!(master()
+        .open_provider_token("apple", "000123.abc", &tampered)
+        .is_err());
+    assert!(master().seal_provider_token("apple", "s", "").is_err());
+}

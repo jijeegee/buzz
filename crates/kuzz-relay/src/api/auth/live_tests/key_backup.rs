@@ -1094,3 +1094,54 @@ async fn deleted_key_account_and_its_agents_are_refused_until_restored_in_window
     let response = signed_post(&inst, &key, "/events", json!(note(&key)), None).await;
     assert_eq!(response.status(), 403);
 }
+
+/// Sign in with Apple: the refresh token from sign-in is kept encrypted, and
+/// deleting the account revokes it at the provider and forgets it.
+#[tokio::test]
+#[ignore = "requires isolated Postgres + Redis with current migrations"]
+async fn account_deletion_revokes_the_provider_sign_in() {
+    let inst = custody_instance().await;
+    let subject = format!("rv-{}", uuid::Uuid::new_v4().simple());
+    let login = key_login(&inst, &subject).await;
+    let account = PrincipalId::from_hex(&login.principal).unwrap();
+    let stored = inst
+        .state
+        .db
+        .principal_provider_revoke_tokens(&account)
+        .await
+        .unwrap();
+    assert_eq!(stored.len(), 1);
+    let token = format!("rt-{subject}");
+    assert!(!stored[0]
+        .ciphertext
+        .windows(token.len())
+        .any(|w| w == token.as_bytes()));
+
+    let gone = inst
+        .delete("/auth/account")
+        .bearer_auth(&login.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(gone.status(), 204);
+    // The revoke runs in the background after the response.
+    let mut revoked = false;
+    for _ in 0..50 {
+        let forgotten = inst
+            .state
+            .db
+            .principal_provider_revoke_tokens(&account)
+            .await
+            .unwrap()
+            .is_empty();
+        if forgotten && REVOKED.lock().unwrap().contains(&token) {
+            revoked = true;
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert!(
+        revoked,
+        "provider sign-in not revoked after account deletion"
+    );
+}

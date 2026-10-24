@@ -28,6 +28,32 @@ pub struct OidcIdentity {
     pub name: Option<String>,
     /// Avatar URL claim, used as the initial profile avatar.
     pub picture: Option<String>,
+    /// Token that revokes this sign-in at the provider when the account is
+    /// deleted (Apple's refresh token). `None` for providers without one.
+    pub revoke_token: Option<RevokeToken>,
+}
+
+/// A provider token kept only to revoke the sign-in on account deletion.
+/// Never logged: `Debug` is redacted.
+#[derive(Clone, PartialEq, Eq)]
+pub struct RevokeToken(String);
+
+impl RevokeToken {
+    /// Wrap a token received from the provider.
+    pub fn new(token: String) -> Self {
+        Self(token)
+    }
+
+    /// The raw token, for encryption at rest and the revoke request.
+    pub fn expose(&self) -> &str {
+        &self.0
+    }
+}
+
+impl std::fmt::Debug for RevokeToken {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("RevokeToken([REDACTED])")
+    }
 }
 
 /// Failure while completing an OIDC login with a provider.
@@ -84,6 +110,13 @@ pub trait OidcProvider: Send + Sync {
                 "provider has no app sign-in".into(),
             ))
         })
+    }
+
+    /// Revoke a sign-in at the provider with the token from
+    /// [`OidcIdentity::revoke_token`]. Providers without one do nothing.
+    fn revoke<'a>(&'a self, token: &'a RevokeToken) -> BoxFuture<'a, Result<(), OidcError>> {
+        let _ = token;
+        Box::pin(async { Ok(()) })
     }
 }
 
@@ -251,6 +284,7 @@ impl GoogleProvider {
             email_verified: claims.email_verified,
             name: claims.name,
             picture: claims.picture,
+            revoke_token: None,
         })
     }
 }

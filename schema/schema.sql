@@ -2219,6 +2219,21 @@ CREATE INDEX pairing_requests_expires ON pairing_requests (expires_at);
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('pairing_requests', 'deployment-global external agent pairing requests of owner accounts');
 
+-- Encrypted provider revoke tokens (migration 0093): Apple's refresh token,
+-- kept only to revoke the sign-in when the account is deleted.
+CREATE TABLE provider_revoke_tokens (
+    provider    TEXT NOT NULL,
+    subject     TEXT NOT NULL,
+    key_id      TEXT NOT NULL CHECK (key_id ~ '^[A-Za-z0-9_-]{1,64}$'),
+    nonce       BYTEA NOT NULL CHECK (length(nonce) = 12),
+    ciphertext  BYTEA NOT NULL CHECK (length(ciphertext) BETWEEN 17 AND 4112),
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (provider, subject)
+);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('provider_revoke_tokens', 'deployment-global encrypted provider revoke tokens of external sign-ins');
+
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable
 -- state machine from claim → enforcing → succeeded|failed|cancelled.
