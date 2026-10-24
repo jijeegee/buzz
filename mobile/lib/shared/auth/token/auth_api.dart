@@ -59,6 +59,18 @@ class LoginGrant {
   final String identityMode;
 }
 
+/// An app sign-in started with the relay: what the phone's account picker
+/// needs.
+class AppSignInStart {
+  const AppSignInStart({required this.nonce, required this.clientId});
+
+  /// One-time value the id_token must carry.
+  final String nonce;
+
+  /// Client id the id_token is issued for.
+  final String clientId;
+}
+
 /// Tokens issued by `POST /auth/refresh` (the old refresh is consumed).
 class RotatedTokens {
   const RotatedTokens({
@@ -138,6 +150,53 @@ class AuthApi {
         'kuzz_client': ?kuzzClient,
       },
     );
+  }
+
+  /// Start an app sign-in (the phone's own account picker instead of the
+  /// browser): the same parameters as [startUri], answered with JSON.
+  Future<AppSignInStart> startAppSignIn({
+    required String provider,
+    required String state,
+    required String codeChallenge,
+    required String redirectUri,
+    String? deviceName,
+    String? installId,
+    String identityMode = 'token',
+    String? devicePubkey,
+  }) async {
+    final uri = startUri(
+      provider: provider,
+      state: state,
+      codeChallenge: codeChallenge,
+      redirectUri: redirectUri,
+      deviceName: deviceName,
+      installId: installId,
+      identityMode: identityMode,
+      devicePubkey: devicePubkey,
+    );
+    final json = await _get(
+      uri.replace(
+        queryParameters: {...uri.queryParameters, 'response': 'json'},
+      ),
+    );
+    return AppSignInStart(
+      nonce: _string(json, 'nonce'),
+      clientId: _string(json, 'client_id'),
+    );
+  }
+
+  /// Trade the account picker's id_token for a one-time login code, which
+  /// [completeLogin] then exchanges like a browser callback's.
+  Future<String> exchangeIdToken({
+    required String provider,
+    required String state,
+    required String idToken,
+  }) async {
+    final json = await _post(
+      '/auth/oidc/${Uri.encodeComponent(provider)}/id-token',
+      {'state': state, 'id_token': idToken},
+    );
+    return _string(json, 'login_code');
   }
 
   /// Exchange a one-time login code (`bzl_...`) and its PKCE verifier.
@@ -252,6 +311,26 @@ class AuthApi {
         'Could not reach the relay: $error',
       );
     }
+    return _decodeResponse(response, expectBody: expectBody);
+  }
+
+  Future<Map<String, Object?>> _get(Uri uri) async {
+    final http.Response response;
+    try {
+      response = await _client.get(uri).timeout(timeout);
+    } catch (error) {
+      throw AuthApiException(
+        AuthFailureKind.transient,
+        'Could not reach the relay: $error',
+      );
+    }
+    return _decodeResponse(response, expectBody: true);
+  }
+
+  Map<String, Object?> _decodeResponse(
+    http.Response response, {
+    required bool expectBody,
+  }) {
     noteServerTime(origin, response.headers[serverTimeHeader]);
     final status = response.statusCode;
     if (status < 200 || status >= 300) {

@@ -6,6 +6,7 @@ import 'auth_api.dart';
 import 'install_id_store.dart';
 import 'oidc_login.dart';
 import 'refresh_token_store.dart';
+import 'google_account_picker.dart';
 import 'web_auth_launcher.dart';
 import '../../l10n/l10n.dart';
 
@@ -130,6 +131,7 @@ class TokenSessionController {
     required AuthApi api,
     required RefreshTokenStore store,
     required WebAuthLauncher launcher,
+    GoogleAccountPicker? accountPicker,
     SessionClock? clock,
     SessionTimerFactory? timerFactory,
     this.deviceName,
@@ -138,6 +140,7 @@ class TokenSessionController {
        _api = api,
        _store = store,
        _launcher = launcher,
+       _accountPicker = accountPicker,
        _clock = clock ?? DateTime.now,
        _timerFactory = timerFactory ?? Timer.new;
 
@@ -170,6 +173,9 @@ class TokenSessionController {
   final AuthApi _api;
   final RefreshTokenStore _store;
   final WebAuthLauncher _launcher;
+
+  /// The phone's own Google account picker, tried before the browser.
+  final GoogleAccountPicker? _accountPicker;
   final SessionClock _clock;
   final SessionTimerFactory _timerFactory;
 
@@ -496,6 +502,7 @@ class TokenSessionController {
       grant = await runOidcLogin(
         api: _api,
         launcher: _launcher,
+        accountPicker: _accountPicker,
         provider: provider,
         deviceName: deviceName,
         installId: installId,

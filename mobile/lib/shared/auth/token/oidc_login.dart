@@ -1,8 +1,10 @@
 import 'dart:math';
 
 import '../../app_update/app_update.dart';
+import '../../device_key/device_key.dart';
 import '../../l10n/l10n.dart';
 import 'auth_api.dart';
+import 'google_account_picker.dart';
 import 'mobile_callback.dart';
 import 'pkce.dart';
 import 'web_auth_launcher.dart';
@@ -35,9 +37,14 @@ class OidcLoginException implements Exception {
 /// The device key proof at `complete` is stamped in relay time, learned
 /// while the browser is open. If the relay still finds it stale (the login
 /// code is then spent), the login starts over once with the corrected clock.
+///
+/// With [accountPicker], a Google login first offers the Google accounts
+/// already on the phone; the browser opens only when the phone cannot show
+/// them or the relay does not offer app sign-in.
 Future<LoginGrant> runOidcLogin({
   required AuthApi api,
   required WebAuthLauncher launcher,
+  GoogleAccountPicker? accountPicker,
   String provider = 'google',
   String? deviceName,
   String? installId,
@@ -48,6 +55,7 @@ Future<LoginGrant> runOidcLogin({
   Future<LoginGrant> attempt() => _runOidcLoginOnce(
     api: api,
     launcher: launcher,
+    accountPicker: accountPicker,
     provider: provider,
     deviceName: deviceName,
     installId: installId,
@@ -67,6 +75,7 @@ Future<LoginGrant> runOidcLogin({
 Future<LoginGrant> _runOidcLoginOnce({
   required AuthApi api,
   required WebAuthLauncher launcher,
+  required GoogleAccountPicker? accountPicker,
   required String provider,
   required String? deviceName,
   required String? installId,
@@ -74,12 +83,27 @@ Future<LoginGrant> _runOidcLoginOnce({
   required String callbackScheme,
   required Random? random,
 }) async {
-  final pkce = PkcePair.generate(random);
   // The device key `start` binds must be the one proven at `complete`.
   final device = await api.deviceKeyInfo();
-  // Learn the relay clock while the user is in the browser.
+  // Learn the relay clock while the user is in the browser or the picker.
   final clock = device == null ? Future<void>.value() : api.syncClock();
   final redirectUri = Uri.parse('$callbackScheme://auth/cb');
+  if (accountPicker != null && provider == 'google') {
+    final grant = await _runAppSignIn(
+      api: api,
+      picker: accountPicker,
+      provider: provider,
+      redirectUri: redirectUri,
+      deviceName: deviceName,
+      installId: installId,
+      identityMode: identityMode,
+      device: device,
+      clock: clock,
+      random: random,
+    );
+    if (grant != null) return grant;
+  }
+  final pkce = PkcePair.generate(random);
   final kuzzClient = await appClientId();
   final callback = await launcher.authenticate(
     url: api.startUri(
@@ -139,6 +163,60 @@ Future<LoginGrant> _runOidcLoginOnce({
       code: 'missing_code',
     );
   }
+  await clock;
+  return api.completeLogin(
+    loginCode: code,
+    codeVerifier: pkce.verifier,
+    device: device,
+  );
+}
+
+/// Sign in with the phone's own account picker. `null`: the picker or the
+/// relay's app sign-in is not available, so the caller opens the browser.
+Future<LoginGrant?> _runAppSignIn({
+  required AuthApi api,
+  required GoogleAccountPicker picker,
+  required String provider,
+  required Uri redirectUri,
+  required String? deviceName,
+  required String? installId,
+  required String identityMode,
+  required DeviceKeyInfo? device,
+  required Future<void> clock,
+  required Random? random,
+}) async {
+  final pkce = PkcePair.generate(random);
+  final AppSignInStart start;
+  try {
+    start = await api.startAppSignIn(
+      provider: provider,
+      state: pkce.state,
+      codeChallenge: pkce.challenge,
+      redirectUri: redirectUri.toString(),
+      deviceName: deviceName,
+      installId: installId,
+      identityMode: identityMode,
+      devicePubkey: device?.publicKeyHex,
+    );
+  } on AuthApiException catch (error) {
+    // A relay without app sign-in refuses `response=json`.
+    if (error.statusCode == 400 || error.statusCode == 404) return null;
+    rethrow;
+  }
+  final String idToken;
+  try {
+    idToken = await picker.idToken(
+      clientId: start.clientId,
+      nonce: start.nonce,
+    );
+  } on GoogleAccountUnavailableException {
+    return null;
+  }
+  final code = await api.exchangeIdToken(
+    provider: provider,
+    state: pkce.state,
+    idToken: idToken,
+  );
   await clock;
   return api.completeLogin(
     loginCode: code,

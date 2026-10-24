@@ -204,6 +204,10 @@ android {
 dependencies {
     implementation("com.google.android.play:age-signals:0.0.4")
     implementation("androidx.appcompat:appcompat:1.6.1")
+    // Google sign-in with the phone's own accounts (no browser).
+    implementation("androidx.credentials:credentials:1.5.0")
+    implementation("androidx.credentials:credentials-play-services-auth:1.5.0")
+    implementation("com.google.android.libraries.identity.googleid:googleid:1.1.1")
 
     testImplementation(kotlin("test"))
 
