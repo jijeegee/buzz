@@ -112,12 +112,29 @@ To get `hardware` on macOS:
    keep the embedded profile when it re-signs. Sidecars in
    `Contents/MacOS` are signed **without** these entitlements: they reach the
    key through the app signer (below).
-4. Check the signed app: `codesign -d --entitlements - Kuzz.app` lists the
+4. Re-sign the sidecars, **then** notarize. `tauri build` signs every
+   executable in `Contents/MacOS` with the app's entitlements; a sidecar
+   carrying `keychain-access-groups` or `application-identifier` has no
+   profile of its own, so macOS kills it at launch (the agent shows
+   `harness exited with status signal: 9 (SIGKILL)`). Build without
+   notarization, then:
+
+   ```sh
+   desktop/scripts/resign-macos-sidecars.sh path/to/Kuzz.app
+   desktop/scripts/verify-macos-entitlements.sh --secure-enclave path/to/Kuzz.app
+   ```
+
+   The first signs each sidecar with `Entitlements.sidecar.plist` and
+   re-seals the app with its own entitlements; the second fails while any
+   sidecar still has a restricted entitlement (`--secure-enclave` also fails
+   when the app lost its profile or restricted keys). Notarize and staple after
+   these.
+5. Check the signed app: `codesign -d --entitlements - Kuzz.app` lists the
    three keys, and the app log says `kuzz-desktop: device key ready (hardware)`
    followed by `kuzz-desktop: app signer ready`. After sign-in the relay shows
    `device_key_kind = hardware` for the session. An agent started by the app
    logs `device key not reachable here; signing through the app`.
-5. Optional local check of the backend: build the test binary
+6. Optional local check of the backend: build the test binary
    (`cargo test -p kuzz-device-key --no-run`), sign it with the same identity,
    entitlements and profile, then run it with
    `--ignored a_secure_enclave_key_signs_proofs_the_server_accepts`

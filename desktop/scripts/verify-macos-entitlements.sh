@@ -3,8 +3,17 @@
 
 set -euo pipefail
 
+# --secure-enclave: also require the Secure Enclave signing (restricted
+# entitlements and the embedded provisioning profile on the app), so a build
+# that lost the profile fails instead of quietly using a software key.
+SECURE_ENCLAVE=0
+if [[ "${1:-}" == "--secure-enclave" ]]; then
+  SECURE_ENCLAVE=1
+  shift
+fi
+
 if [[ $# -ne 1 ]]; then
-  echo "Usage: $0 <path-to-Kuzz.app>" >&2
+  echo "Usage: $0 [--secure-enclave] <path-to-Kuzz.app>" >&2
   exit 2
 fi
 
@@ -42,3 +51,42 @@ for entitlement in "${required_entitlements[@]}"; do
 done
 
 echo "Verified required macOS entitlements on $EXECUTABLE_PATH"
+
+if [[ "$SECURE_ENCLAVE" == 1 ]]; then
+  [[ -f "$APP_PATH/Contents/embedded.provisionprofile" ]] || {
+    echo "Secure Enclave build has no embedded.provisionprofile: $APP_PATH" >&2
+    exit 1
+  }
+  for entitlement in com.apple.application-identifier com.apple.developer.team-identifier keychain-access-groups; do
+    /usr/libexec/PlistBuddy -c "Print :$entitlement" "$ENTITLEMENTS" >/dev/null 2>&1 || {
+      echo "Secure Enclave build is missing entitlement $entitlement: $EXECUTABLE_PATH" >&2
+      exit 1
+    }
+  done
+  echo "Verified Secure Enclave signing on $EXECUTABLE_PATH"
+fi
+
+# Sidecars must not carry restricted entitlements: without a provisioning
+# profile of their own macOS kills them at launch. Fix with
+# resign-macos-sidecars.sh.
+restricted_entitlements=(
+  com.apple.application-identifier
+  com.apple.developer.team-identifier
+  keychain-access-groups
+)
+
+for sidecar in "$APP_PATH"/Contents/MacOS/*; do
+  [[ "$sidecar" == "$EXECUTABLE_PATH" ]] && continue
+  [[ -f "$sidecar" && -x "$sidecar" ]] || continue
+  : > "$ENTITLEMENTS"
+  codesign --display --entitlements "$ENTITLEMENTS" --xml "$sidecar" 2>/dev/null || true
+  [[ -s "$ENTITLEMENTS" ]] || continue
+  for entitlement in "${restricted_entitlements[@]}"; do
+    if /usr/libexec/PlistBuddy -c "Print :$entitlement" "$ENTITLEMENTS" >/dev/null 2>&1; then
+      echo "Sidecar has restricted entitlement $entitlement: $sidecar" >&2
+      exit 1
+    fi
+  done
+done
+
+echo "Verified sidecars carry no restricted entitlements"
