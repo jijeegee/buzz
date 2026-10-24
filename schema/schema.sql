@@ -207,6 +207,12 @@ CREATE TABLE users (
     metadata_event_id   BYTEA,
     agent_owner_pubkey  BYTEA,
     channel_add_policy  channel_add_policy NOT NULL DEFAULT 'anyone',
+    -- Profile (kind:0) and agent profile (kind:10100) event last applied
+    -- (migration 0090); an event NIP-01 would not let replace it is skipped.
+    profile_event_at    TIMESTAMPTZ,
+    profile_event_id    BYTEA,
+    add_policy_event_at TIMESTAMPTZ,
+    add_policy_event_id BYTEA,
     PRIMARY KEY (community_id, pubkey),
     CONSTRAINT chk_users_pubkey_len CHECK (LENGTH(pubkey) = 32),
     -- agent owner is a user in the SAME community.

@@ -41,10 +41,8 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
 
 /// Kinds whose side effects may run again after a failed or interrupted run.
 ///
-/// The others are not safe to replay yet (audit 2026-10-20, see
-/// PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md): profiles (0, 10100)
-/// can apply a stale change after newer ones. Their outbox rows stay as a
-/// record of the failure.
+/// Audit 2026-10-20 in PLANS/GLOBAL_REGIONS_S0_ORDER_GAP_PLAN_20261019.md;
+/// profiles (0, 10100) joined once they skipped stale events (migration 0090).
 pub fn side_effect_retry_safe(kind: u32) -> bool {
     SIDE_EFFECT_RETRY_KINDS.contains(&(kind as i32))
 }
@@ -53,9 +51,11 @@ pub fn side_effect_retry_safe(kind: u32) -> bool {
 /// 9009 are idempotent (a known channel id, system messages and notifications
 /// with the trigger's time); membership changes (9000, 9001, 9021, 9022) skip
 /// a re-run or an event older than the last change (migration 0082), and
-/// metadata edits (9002) do the same per field (migration 0083);
-/// 41001..=41003 have no side effect.
-pub const SIDE_EFFECT_RETRY_KINDS: [i32; 14] = [
+/// metadata edits (9002) do the same per field (migration 0083), and
+/// profiles (0, 10100) skip a re-run or an event NIP-01 would not let replace
+/// the applied one (migration 0090); 41001..=41003 have no side effect.
+pub const SIDE_EFFECT_RETRY_KINDS: [i32; 16] = [
+    0,
     5,
     9000,
     9001,
@@ -67,6 +67,7 @@ pub const SIDE_EFFECT_RETRY_KINDS: [i32; 14] = [
     9021,
     9022,
     KIND_GIT_REPO_ANNOUNCEMENT as i32,
+    KIND_AGENT_PROFILE as i32,
     41001,
     41002,
     41003,
@@ -1488,13 +1489,31 @@ async fn handle_agent_profile(
         )
         .increment(1);
     }
-    state
+    let applied = state
         .db
-        .set_channel_add_policy(tenant.community(), &pubkey_bytes, policy)
+        .set_channel_add_policy_for_event(
+            tenant.community(),
+            &pubkey_bytes,
+            profile_event(event),
+            policy,
+        )
         .await?;
+    if !applied {
+        info!(event_id = %event.id, "kind:10100 older than the applied agent profile; skipped");
+        return Ok(());
+    }
 
     info!(pubkey = %hex::encode(&pubkey_bytes), policy, "kind:10100 channel_add_policy updated");
     Ok(())
+}
+
+/// The replaceable event a profile side effect applies: a re-run, or an event
+/// NIP-01 would not let replace the applied one, is skipped (migration 0090).
+fn profile_event(event: &Event) -> kuzz_db::user::ProfileEvent {
+    kuzz_db::user::ProfileEvent {
+        created_at: trigger_time(event),
+        id: event.id.to_bytes(),
+    }
 }
 
 /// Kind:0 (NIP-01 profile metadata) side effect — sync profile fields to users table.
@@ -1547,41 +1566,50 @@ async fn handle_kind0_profile(
         .increment(1);
     }
 
-    // Pass all fields as Some — empty string clears the field in the DB.
+    // Every field is written — an empty string clears it in the DB.
     // This ensures kind:0 is treated as absolute state, not a partial update.
     // If the NIP-05 handle collides with another user's UNIQUE constraint, retry
     // without it so display_name/about/avatar_url are still written.
+    let order = profile_event(event);
     let result = state
         .db
-        .update_user_profile(
+        .update_user_profile_for_event(
             tenant.community(),
             &pubkey_bytes,
-            Some(display_name),
-            Some(avatar_url),
-            Some(about),
+            order,
+            display_name,
+            avatar_url,
+            about,
             Some(nip05_handle),
         )
         .await;
 
-    if let Err(ref e) = result {
-        let msg = format!("{e}");
-        if msg.contains("duplicate key value") || msg.contains("23505") {
+    let applied = match result {
+        Ok(applied) => applied,
+        Err(e) => {
+            let msg = format!("{e}");
+            if !(msg.contains("duplicate key value") || msg.contains("23505")) {
+                return Err(e.into());
+            }
             warn!(pubkey = %hex::encode(&pubkey_bytes),
                 "kind:0 NIP-05 handle contested, syncing profile without it");
             state
                 .db
-                .update_user_profile(
+                .update_user_profile_for_event(
                     tenant.community(),
                     &pubkey_bytes,
-                    Some(display_name),
-                    Some(avatar_url),
-                    Some(about),
+                    order,
+                    display_name,
+                    avatar_url,
+                    about,
                     None, // skip contested NIP-05
                 )
-                .await?;
-        } else {
-            result?;
+                .await?
         }
+    };
+    if !applied {
+        info!(event_id = %event.id, "kind:0 older than the applied profile; skipped");
+        return Ok(());
     }
 
     info!(pubkey = %hex::encode(&pubkey_bytes), "kind:0 profile synced to users table");
@@ -4012,10 +4040,7 @@ mod tests {
             .unwrap();
         assert_ne!(derived_channel_id(&event), derived_channel_id(&other));
         for kind in [0, KIND_AGENT_PROFILE] {
-            assert!(
-                !side_effect_retry_safe(kind),
-                "{kind} still unsafe to replay"
-            );
+            assert!(side_effect_retry_safe(kind), "{kind} replays safely");
         }
         assert!(!is_side_effect_kind(40099));
     }
