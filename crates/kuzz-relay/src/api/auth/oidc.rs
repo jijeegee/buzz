@@ -11,7 +11,7 @@
 //!
 //! App sign-in: an app that signs in with the platform's own account picker
 //! (Android Credential Manager, Sign in with Apple on iOS) calls `start` with
-//! `response=json`, gets the nonce to hand that picker, and posts the
+//! `response=json`, gets the nonce and client id to hand that picker, and posts the
 //! id_token it returns to `id-token` instead of opening a browser. From the
 //! login code on, both paths are the same.
 
@@ -300,11 +300,15 @@ pub(super) async fn start(
     else {
         return bad_request("redirect_uri is not allowed for this client");
     };
-    let app_sign_in = match query.response.as_deref() {
-        None => false,
-        Some("json") if client == "mobile" => true,
+    let app_client_id = match query.response.as_deref() {
+        None => None,
+        Some("json") if client == "mobile" => match provider.app_sign_in_client_id() {
+            Some(id) => Some(id.to_owned()),
+            None => return bad_request("provider has no app sign-in"),
+        },
         Some(_) => return bad_request("response=json requires client=mobile"),
     };
+    let app_sign_in = app_client_id.is_some();
     // Too old to sign in: back to the app, which shows "Update Kuzz".
     let declared = client_version::declared(&headers).or(query.kuzz_client.as_deref());
     if let Err(min) = client_version::check_current(declared, Some(client.as_str())).await {
@@ -376,7 +380,8 @@ pub(super) async fn start(
         }
     }
     if app_sign_in {
-        return axum::Json(json!({ "nonce": nonce })).into_response();
+        return axum::Json(json!({ "nonce": nonce, "client_id": app_client_id }))
+            .into_response();
     }
     let callback_url = state.identity.config().callback_url(&provider_name);
     redirect(&provider.authorization_url(&callback_url, &client_state, &nonce))

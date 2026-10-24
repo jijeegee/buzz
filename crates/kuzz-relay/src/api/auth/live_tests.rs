@@ -74,6 +74,10 @@ impl OidcProvider for TestProvider {
         })
     }
 
+    fn app_sign_in_client_id(&self) -> Option<&str> {
+        Some("test-client")
+    }
+
     /// App sign-in: the id_token is `subject|email|verified|nonce`.
     fn verify_id_token<'a>(
         &'a self,

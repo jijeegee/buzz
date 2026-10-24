@@ -61,6 +61,12 @@ pub trait OidcProvider: Send + Sync {
         expected_nonce: &'a str,
     ) -> BoxFuture<'a, Result<OidcIdentity, OidcError>>;
 
+    /// Client id the app passes to the platform's own sign-in (the id_token's
+    /// `aud`), or `None` when the provider has no app sign-in.
+    fn app_sign_in_client_id(&self) -> Option<&str> {
+        None
+    }
+
     /// Validate an id_token the app got from the platform's own sign-in
     /// (Android Credential Manager, Sign in with Apple on iOS) for a login
     /// whose server-issued nonce is `expected_nonce`. Providers without an
@@ -299,6 +305,10 @@ impl OidcProvider for GoogleProvider {
             self.validate_id_token(&token.id_token, expected_nonce)
                 .await
         })
+    }
+
+    fn app_sign_in_client_id(&self) -> Option<&str> {
+        Some(&self.client_id)
     }
 
     // Credential Manager asks for the token with the web client id as

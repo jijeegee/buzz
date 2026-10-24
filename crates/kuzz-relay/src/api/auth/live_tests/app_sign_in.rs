@@ -28,6 +28,7 @@ async fn app_start(inst: &Instance, verifier: &str) -> (String, String) {
     assert_eq!(response.status(), 200, "app sign-in start answers JSON");
     let body: Value = response.json().await.expect("json");
     let nonce = body["nonce"].as_str().expect("nonce").to_owned();
+    assert_eq!(body["client_id"], "test-client");
     (state, nonce)
 }
 
