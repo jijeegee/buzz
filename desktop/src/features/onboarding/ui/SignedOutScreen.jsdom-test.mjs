@@ -10,6 +10,7 @@ const calls = [];
 let runtimes = [];
 let supported = true;
 let accounts = [];
+let providers = ["google"];
 
 const tauriMock = {
   invoke(command, args) {
@@ -19,7 +20,7 @@ const tauriMock = {
         return Promise.resolve({
           origin: "https://relay.test",
           supported,
-          providers: supported ? ["google"] : [],
+          providers: supported ? providers : [],
           state: "signed_out",
           principal: null,
           deviceId: null,
@@ -201,5 +202,20 @@ test("no other signed-in account: only Google sign-in", async () => {
     container.querySelector("[data-testid='signed-out-other-accounts']"),
     null,
   );
+  await unmount();
+});
+
+test("a server that offers Apple adds Sign in with Apple", async () => {
+  providers = ["google", "apple"];
+  runtimes = [];
+  const { container, unmount } = await mount(true);
+  const apple = container.querySelector(
+    "[data-testid='onboarding-apple-sign-in']",
+  );
+  assert.equal(apple?.textContent.trim(), "Sign in with Apple");
+  await act(async () => apple.click());
+  const login = calls.find((c) => c.command === "login_with_google");
+  assert.equal(login?.args.provider, "apple");
+  providers = ["google"];
   await unmount();
 });

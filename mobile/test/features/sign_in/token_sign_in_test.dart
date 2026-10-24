@@ -155,10 +155,7 @@ void main() {
       final opened = h.launcher.opened.single;
       expect(opened.path, '/auth/oidc/google/start');
       expect(opened.queryParameters['client'], 'mobile');
-      expect(
-        opened.queryParameters['redirect_uri'],
-        'app.kuzz://auth/cb',
-      );
+      expect(opened.queryParameters['redirect_uri'], 'app.kuzz://auth/cb');
       expect(h.launcher.schemes.single, 'app.kuzz');
       expect(
         h.store.data[_origin],
@@ -178,6 +175,30 @@ void main() {
       ]);
     },
   );
+
+  testWidgets('a server that offers Apple adds Sign in with Apple', (
+    tester,
+  ) async {
+    final h = _Harness(builtInOrigin: _origin);
+    h.server.nip11 = (_) => jsonResponse({
+      'kuzz_token_auth': {
+        'version': 1,
+        'bearer': true,
+        'oidc_providers': ['google', 'apple'],
+      },
+    });
+    await h.pump(tester, const TokenSignInPage());
+
+    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    expect(find.text('Sign in with Apple'), findsOneWidget);
+  });
+
+  testWidgets('a Google-only server shows no Apple button', (tester) async {
+    final h = _Harness(builtInOrigin: _origin);
+    await h.pump(tester, const TokenSignInPage());
+    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    expect(find.byKey(const Key('token-sign-in-apple')), findsNothing);
+  });
 
   testWidgets('a legacy relay offers no Google sign-in', (tester) async {
     final h = _Harness();

@@ -2136,6 +2136,10 @@
   "@signInWithGoogle": {
     "description": "Sign-in page, main Google sign-in button. Short."
   },
+  "signInWithApple": "Sign in with Apple",
+  "@signInWithApple": {
+    "description": "Sign-in page, button below the Google one, shown when the server offers Apple. Short."
+  },
   "signInUseExistingTokenAccount": "Use an existing token account",
   "@signInUseExistingTokenAccount": {
     "description": "Sign-in page, link button to sign in to an older account instead."

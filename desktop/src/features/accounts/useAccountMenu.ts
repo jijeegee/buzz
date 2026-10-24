@@ -4,7 +4,9 @@ import { toast } from "sonner";
 
 import {
   type AccountSummary,
+  getTokenAuthStatus,
   listAccounts,
+  type SignInProvider,
   switchAccount,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
@@ -36,6 +38,11 @@ export function useAccountMenu({ open }: { open: boolean }) {
     staleTime: 0,
   });
   const { refetch } = query;
+  const status = useQuery({
+    queryKey: ["token-auth-status"],
+    queryFn: getTokenAuthStatus,
+    staleTime: 60_000,
+  });
   React.useEffect(() => {
     if (open) void refetch();
   }, [open, refetch]);
@@ -103,17 +110,20 @@ export function useAccountMenu({ open }: { open: boolean }) {
   }, []);
 
   /**
-   * Google sign-in for another account (or a fresh sign-in for one whose
-   * sign-in ended). The account it opens becomes the active one.
+   * Google (or Apple) sign-in for another account (or a fresh sign-in for
+   * one whose sign-in ended). The account it opens becomes the active one.
    */
   const signIn = React.useCallback(
-    async (activePubkey: string | null) => {
+    async (
+      activePubkey: string | null,
+      provider: SignInProvider = "google",
+    ) => {
       setBusy(true);
       const action = beginAccountAction();
       signingIn.current = true;
       showProgress();
       try {
-        const next = await loginRef.current.run(false);
+        const next = await loginRef.current.run(false, false, false, provider);
         signingIn.current = false;
         hideProgress();
         const opened = next?.keyBackup ? next.signingPubkey : next?.principal;
@@ -143,6 +153,8 @@ export function useAccountMenu({ open }: { open: boolean }) {
     busy: busy || login.pending,
     switchTo,
     signIn,
+    /** The server offers Sign in with Apple. */
+    appleSignIn: status.data?.providers.includes("apple") ?? false,
     /** For the "Create your Kuzz account" screen. */
     signupPrompt: { signup: login.signup, answerSignup: login.answerSignup },
   };

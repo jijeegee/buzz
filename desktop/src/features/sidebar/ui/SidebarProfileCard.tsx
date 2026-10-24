@@ -121,6 +121,14 @@ export function SidebarProfileCard({
               setProfilePopoverOpen(false);
               void accountMenu.signIn(activePubkey);
             }}
+            onSignInWithApple={
+              accountMenu.appleSignIn
+                ? () => {
+                    setProfilePopoverOpen(false);
+                    void accountMenu.signIn(activePubkey, "apple");
+                  }
+                : undefined
+            }
             onSwitch={(account) => {
               setProfilePopoverOpen(false);
               void accountMenu.switchTo(account);

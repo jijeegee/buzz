@@ -288,6 +288,11 @@ function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
           accounts={accountMenu.accounts}
           busy={accountMenu.busy || disabled}
           onSignIn={() => void accountMenu.signIn(activePubkey)}
+          onSignInWithApple={
+            accountMenu.appleSignIn
+              ? () => void accountMenu.signIn(activePubkey, "apple")
+              : undefined
+          }
           onSwitch={(account) => void accountMenu.switchTo(account)}
           unread={unread}
         />

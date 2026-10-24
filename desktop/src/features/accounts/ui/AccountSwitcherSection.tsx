@@ -20,7 +20,8 @@ const ROW_CLASS =
 /**
  * Profile menu › accounts on this computer, most recently used first: the
  * active one is checked, another signed-in one switches, one whose sign-in
- * ended signs in again, and "Add account" signs in another Google account.
+ * ended signs in again, and "Add account" signs in another Google account
+ * ("Add account with Apple": an Apple account, when the server offers it).
  * Other accounts show their unread dot or mention count (CommunityRail style).
  */
 export function AccountSwitcherSection({
@@ -28,12 +29,15 @@ export function AccountSwitcherSection({
   busy,
   onSwitch,
   onSignIn,
+  onSignInWithApple,
   unread,
 }: {
   accounts: readonly AccountSummary[];
   busy: boolean;
   onSwitch: (account: AccountSummary) => void;
   onSignIn: () => void;
+  /** Absent: the server does not offer Apple. */
+  onSignInWithApple?: () => void;
   /** Watched accounts' unread state, keyed `origin|pubkey`. */
   unread?: ReadonlyMap<string, WatchedUnread>;
 }) {
@@ -133,6 +137,24 @@ export function AccountSwitcherSection({
         </span>
         <span className="flex-1">{t("accounts.switcher.add")}</span>
       </button>
+      {onSignInWithApple ? (
+        <button
+          className={ROW_CLASS}
+          data-testid="account-add-apple"
+          disabled={busy}
+          onClick={onSignInWithApple}
+          role="menuitem"
+          type="button"
+        >
+          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
+            <Plus
+              aria-hidden="true"
+              className="h-4 w-4 text-muted-foreground"
+            />
+          </span>
+          <span className="flex-1">{t("accounts.switcher.addWithApple")}</span>
+        </button>
+      ) : null}
     </fieldset>
   );
 }

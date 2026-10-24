@@ -11,6 +11,19 @@ use tauri::Manager;
 
 const FILE_NAME: &str = "install-id";
 
+/// The name this install's device gets on the relay's device list.
+pub(crate) fn device_name() -> String {
+    let host = std::env::var("COMPUTERNAME")
+        .or_else(|_| std::env::var("HOSTNAME"))
+        .unwrap_or_default();
+    let host: String = host.chars().filter(|c| !c.is_control()).take(48).collect();
+    if host.trim().is_empty() {
+        "Kuzz Desktop".to_owned()
+    } else {
+        format!("Kuzz Desktop ({})", host.trim())
+    }
+}
+
 /// The id stored in `dir`, created on first use. `None` when it cannot be
 /// read or written; sign-in then proceeds without one (a new device).
 pub(crate) fn load_or_create_in(dir: &Path) -> Option<String> {

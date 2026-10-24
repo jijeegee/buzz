@@ -65,6 +65,8 @@ class TokenSignInPage extends HookConsumerWidget {
           (lockedOrigin == null && configuredOrigin != null),
     );
     final dualMode = useState(false);
+    // The server offers Sign in with Apple (its NIP-11 provider list).
+    final appleOffered = useState(false);
     final fixedOrigin = initialOrigin != null;
     final checking = useState(false);
     final completing = useState(false);
@@ -82,6 +84,21 @@ class TokenSignInPage extends HookConsumerWidget {
         attemptGeneration.value++;
       };
     }, const []);
+    // A fixed server is never checked: read its providers once here.
+    useEffect(() {
+      final fixed = initialOrigin;
+      if (fixed == null) return null;
+      var live = true;
+      fetchTokenAuthDescriptor(fixed, ref.read(authHttpClientProvider))
+          .then((descriptor) {
+            if (live && context.mounted) {
+              appleOffered.value =
+                  descriptor?.oidcProviders.contains('apple') ?? false;
+            }
+          })
+          .catchError((Object _) {});
+      return () => live = false;
+    }, [initialOrigin]);
 
     final session = origin.value == null
         ? null
@@ -123,6 +140,7 @@ class TokenSignInPage extends HookConsumerWidget {
         message.value = l10n.signInRelayNoGoogleConfigured;
       } else {
         keyBackup.value = descriptor.keyBackup;
+        appleOffered.value = descriptor.oidcProviders.contains('apple');
         dualMode.value =
             descriptor.keyBackup && descriptor.existingTokenAccounts;
         origin.value = candidate;
@@ -220,7 +238,7 @@ class TokenSignInPage extends HookConsumerWidget {
       unawaited(Navigator.of(context).maybePop(connectGoogle ? true : null));
     }
 
-    Future<void> signIn() async {
+    Future<void> signIn({String provider = 'google'}) async {
       final sessionOrigin = origin.value;
       if (sessionOrigin == null) return;
       if (attemptBusy.value) return;
@@ -252,6 +270,7 @@ class TokenSignInPage extends HookConsumerWidget {
               : tokenSessionControllerProvider(sessionOrigin),
         );
         final signedIn = await controller.signIn(
+          provider: provider,
           identityMode: keyBackup.value ? 'key_backup' : 'token',
         );
         final principal = controller.state.principalId;
@@ -380,6 +399,19 @@ class TokenSignInPage extends HookConsumerWidget {
                       : l10n.signInWithGoogle,
                 ),
               ),
+            if (restoredPrincipal == null &&
+                origin.value != null &&
+                appleOffered.value &&
+                !connectGoogle) ...[
+              const SizedBox(height: Grid.xxs),
+              OutlinedButton(
+                key: const Key('token-sign-in-apple'),
+                onPressed: busy
+                    ? null
+                    : () => unawaited(signIn(provider: 'apple')),
+                child: Text(l10n.signInWithApple),
+              ),
+            ],
             if (restoredPrincipal == null && origin.value != null)
               const _TermsLine(),
             if (dualMode.value && origin.value != null && !fixedOrigin)

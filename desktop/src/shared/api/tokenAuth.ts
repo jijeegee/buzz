@@ -82,17 +82,22 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
  * account; accounts already signed in here stay signed in. `connect` links
  * the current key-only account to Google instead.
  */
+/** A sign-in method a community can offer (`TokenAuthStatus.providers`). */
+export type SignInProvider = "google" | "apple";
+
 export function loginWithGoogle(
   allowRestore = false,
   existingTokenAccount = false,
   attemptId?: string,
   connect = false,
+  provider: SignInProvider = "google",
 ): Promise<TokenAuthStatus> {
   return invokeTauri<TokenAuthStatus>("login_with_google", {
     allowRestore,
     ...(existingTokenAccount ? { existingTokenAccount: true } : {}),
     ...(attemptId ? { attemptId } : {}),
     ...(connect ? { connect: true } : {}),
+    ...(provider !== "google" ? { provider } : {}),
   });
 }
 
