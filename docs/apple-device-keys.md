@@ -121,12 +121,13 @@ To get `hardware` on macOS:
 
    ```sh
    desktop/scripts/resign-macos-sidecars.sh path/to/Kuzz.app
-   desktop/scripts/verify-macos-entitlements.sh path/to/Kuzz.app
+   desktop/scripts/verify-macos-entitlements.sh --secure-enclave path/to/Kuzz.app
    ```
 
    The first signs each sidecar with `Entitlements.sidecar.plist` and
    re-seals the app with its own entitlements; the second fails while any
-   sidecar still has a restricted entitlement. Notarize and staple after
+   sidecar still has a restricted entitlement (`--secure-enclave` also fails
+   when the app lost its profile or restricted keys). Notarize and staple after
    these.
 5. Check the signed app: `codesign -d --entitlements - Kuzz.app` lists the
    three keys, and the app log says `kuzz-desktop: device key ready (hardware)`

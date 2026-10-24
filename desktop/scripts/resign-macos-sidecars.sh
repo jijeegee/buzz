@@ -26,7 +26,7 @@ INFO_PLIST="$APP_PATH/Contents/Info.plist"
 [[ -d "$APP_PATH" ]] || { echo "Missing app bundle: $APP_PATH" >&2; exit 1; }
 [[ -f "$SIDECAR_ENTITLEMENTS" ]] || { echo "Missing $SIDECAR_ENTITLEMENTS" >&2; exit 1; }
 
-IDENTITY="${2:-$(codesign -dv "$APP_PATH" 2>&1 | sed -n 's/^Authority=\(Developer ID Application.*\)/\1/p' | head -1)}"
+IDENTITY="${2:-$(codesign -dvv "$APP_PATH" 2>&1 | sed -n 's/^Authority=\(Developer ID Application.*\)/\1/p' | head -1)}"
 [[ -n "$IDENTITY" ]] || { echo "No Developer ID identity on $APP_PATH; pass one" >&2; exit 1; }
 
 EXECUTABLE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleExecutable' "$INFO_PLIST")"
