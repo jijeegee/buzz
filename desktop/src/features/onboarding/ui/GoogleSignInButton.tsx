@@ -4,6 +4,7 @@ import { toast } from "sonner";
 import {
   getTokenAuthStatus,
   identityReload,
+  type SignInProvider,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
 import { useGoogleLogin } from "@/shared/hooks/useGoogleLogin";
@@ -37,7 +38,7 @@ export function GoogleSignInButton({
 }) {
   const t = useT();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
-  const [pending, setPending] = React.useState(false);
+  const [pending, setPending] = React.useState<SignInProvider | null>(null);
   const login = useGoogleLogin();
 
   React.useEffect(() => {
@@ -56,17 +57,17 @@ export function GoogleSignInButton({
   if (!status.supported) return <>{unavailable}</>;
   if (status.state === "active" && !showWhenSignedIn) return null;
 
-  function signIn() {
-    setPending(true);
+  function signIn(provider: SignInProvider = "google") {
+    setPending(provider);
     login
-      .run(allowRestore)
+      .run(allowRestore, false, false, provider)
       .then(async (next) => {
         if (!next) return;
         if (onComplete) await onComplete();
         else identityReload.reloadHome();
       })
       .catch((error: unknown) => {
-        setPending(false);
+        setPending(null);
         toast.error(
           error instanceof Error
             ? error.message
@@ -75,7 +76,7 @@ export function GoogleSignInButton({
               : t("onboarding.googleSignIn.failed"),
         );
       })
-      .finally(() => setPending(false));
+      .finally(() => setPending(null));
   }
 
   return (
@@ -86,16 +87,35 @@ export function GoogleSignInButton({
       <Button
         className="h-10 w-full"
         data-testid="onboarding-google-sign-in"
-        disabled={disabled || pending}
+        disabled={disabled || pending !== null}
         onClick={() => signIn()}
         type="button"
         variant="outline"
       >
-        {pending ? <Spinner aria-hidden className="h-4 w-4 border-2" /> : null}
-        {pending
+        {pending === "google" ? (
+          <Spinner aria-hidden className="h-4 w-4 border-2" />
+        ) : null}
+        {pending === "google"
           ? t("onboarding.googleSignIn.signingIn")
           : t("onboarding.googleSignIn.button")}
       </Button>
+      {status.providers.includes("apple") ? (
+        <Button
+          className="h-10 w-full"
+          data-testid="onboarding-apple-sign-in"
+          disabled={disabled || pending !== null}
+          onClick={() => signIn("apple")}
+          type="button"
+          variant="outline"
+        >
+          {pending === "apple" ? (
+            <Spinner aria-hidden className="h-4 w-4 border-2" />
+          ) : null}
+          {pending === "apple"
+            ? t("onboarding.googleSignIn.signingIn")
+            : t("onboarding.googleSignIn.appleButton")}
+        </Button>
+      ) : null}
       <GoogleLoginProgress login={login} />
       <TermsAgreementLine />
     </div>

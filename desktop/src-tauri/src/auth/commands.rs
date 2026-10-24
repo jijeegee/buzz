@@ -194,18 +194,6 @@ pub async fn get_token_auth_status(app: AppHandle) -> Result<TokenAuthStatus, St
     Ok(current_status(&state, &origin, support))
 }
 
-fn device_name() -> String {
-    let host = std::env::var("COMPUTERNAME")
-        .or_else(|_| std::env::var("HOSTNAME"))
-        .unwrap_or_default();
-    let host: String = host.chars().filter(|c| !c.is_control()).take(48).collect();
-    if host.trim().is_empty() {
-        "Kuzz Desktop".to_owned()
-    } else {
-        format!("Kuzz Desktop ({})", host.trim())
-    }
-}
-
 /// Sign in to the current community with Google: system browser + loopback
 /// redirect + PKCE (plan §3.2). Resolves once the session is active.
 ///
@@ -214,6 +202,7 @@ fn device_name() -> String {
 /// links the current key to the Google account instead (a key-only account
 /// protecting itself). `allow_restore` is accepted for older callers and no
 /// longer changes anything: a backed-up account is always restored.
+/// `provider`: "google" (default) or "apple", when the community offers it.
 #[tauri::command]
 pub async fn login_with_google(
     app: AppHandle,
@@ -221,8 +210,14 @@ pub async fn login_with_google(
     existing_token_account: Option<bool>,
     attempt_id: Option<String>,
     connect: Option<bool>,
+    provider: Option<String>,
 ) -> Result<TokenAuthStatus, String> {
     let _ = allow_restore;
+    let provider = match provider.as_deref() {
+        None | Some("google") => "google",
+        Some("apple") => "apple",
+        Some(_) => return Err("unknown sign-in method".into()),
+    };
     let state = app.state::<AppState>();
     let id = attempt_id.unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     if id.is_empty() || id.len() > 128 {
@@ -237,6 +232,7 @@ pub async fn login_with_google(
     );
     login_inner(
         &app,
+        provider,
         connect == Some(true),
         existing_token_account == Some(true),
         &id,
@@ -298,6 +294,7 @@ pub fn cancel_google_login(app: AppHandle, attempt_id: String) -> bool {
 
 async fn login_inner(
     app: &AppHandle,
+    provider: &str,
     connect: bool,
     existing_token_account: bool,
     attempt_id: &str,
@@ -311,22 +308,25 @@ async fn login_inner(
     let (providers, pkce, backup, completed) = loop {
         let (providers, pkce, backup, code) = attempt
             .wait(async {
-                let providers = support_for(&state, &origin)
-                    .await
-                    .ok_or("this community does not offer Google sign-in")?;
-                if !providers.iter().any(|p| p == "google") {
-                    return Err("this community does not offer Google sign-in".into());
+                let unsupported = if provider == "apple" {
+                    "this community does not offer Sign in with Apple"
+                } else {
+                    "this community does not offer Google sign-in"
+                };
+                let providers = support_for(&state, &origin).await.ok_or(unsupported)?;
+                if !providers.iter().any(|p| p == provider) {
+                    return Err(unsupported.into());
                 }
                 let pkce = super::pkce::pkce_pair()?;
                 let oauth_state = super::pkce::new_state()?;
                 let listener = LoopbackListener::bind().await.map_err(|e| e.to_string())?;
                 let mut url = api::start_url(
                     &origin,
-                    "google",
+                    provider,
                     &oauth_state,
                     &pkce.challenge,
                     &listener.redirect_uri(),
-                    &device_name(),
+                    &super::install_id::device_name(),
                     super::install_id::load_or_create(&app).as_deref(),
                     device.as_ref(),
                 );

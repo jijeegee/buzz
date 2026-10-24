@@ -6,6 +6,7 @@ import {
   cancelSignup,
   confirmSignup,
   loginWithGoogle,
+  type SignInProvider,
   type SignupPrompt,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
@@ -77,6 +78,7 @@ export function useGoogleLogin() {
     allowRestore = false,
     existingTokenAccount = false,
     connect = false,
+    provider: SignInProvider = "google",
   ) {
     if (current.current) return null;
     const id = crypto.randomUUID();
@@ -107,7 +109,13 @@ export function useGoogleLogin() {
       });
       if (!mounted.current || current.current !== id) return null;
       const signIn = () =>
-        loginWithGoogle(allowRestore, existingTokenAccount, id, connect);
+        loginWithGoogle(
+          allowRestore,
+          existingTokenAccount,
+          id,
+          connect,
+          provider,
+        );
       const result = await settleSignup(await signIn(), signIn);
       return mounted.current && current.current === id ? result : null;
     } catch (cause) {

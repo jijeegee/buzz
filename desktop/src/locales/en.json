@@ -5559,6 +5559,10 @@
   "@onboarding.googleSignIn.button": {
     "description": "Google sign-in button. Short."
   },
+  "onboarding.googleSignIn.appleButton": "Sign in with Apple",
+  "@onboarding.googleSignIn.appleButton": {
+    "description": "Onboarding sign-in: button below Sign in with Google, shown when the server offers Apple. Short."
+  },
   "onboarding.googleSignIn.olderAccount": "Sign in to an older Kuzz account",
   "@onboarding.googleSignIn.olderAccount": {
     "description": "Onboarding sign-in and Settings > Account: button for accounts made with an earlier Kuzz version. Short."
@@ -12046,6 +12050,10 @@
   "accounts.switcher.add": "Add account",
   "@accounts.switcher.add": {
     "description": "Profile menu > accounts list, last item: sign in with another Google account. Short."
+  },
+  "accounts.switcher.addWithApple": "Add account with Apple",
+  "@accounts.switcher.addWithApple": {
+    "description": "Profile menu > accounts list, item after Add account: sign in with an Apple account. Shown only when the server offers Apple. Short."
   },
   "accounts.fallbackName": "Account {id}",
   "@accounts.fallbackName": {
