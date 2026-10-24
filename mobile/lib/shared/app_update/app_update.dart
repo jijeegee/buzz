@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:open_filex/open_filex.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
 
 import '../auth/default_community.dart';
@@ -18,9 +19,21 @@ import '../relay/relay_provider.dart';
 /// platform's minimum version with HTTP 426 (see the relay's `app_update`).
 const appUpdateHeader = 'X-Kuzz-App';
 
-/// Update channel name of this platform on the relay, or `null` where the
-/// app does not self-update (iOS updates through the store).
-String? get appUpdatePlatform => Platform.isAndroid ? 'android' : null;
+/// Update channel name of this platform on the relay, or `null` off
+/// Android/iOS. Android installs the APK itself; iOS opens TestFlight or the
+/// App Store.
+String? get appUpdatePlatform => Platform.isAndroid
+    ? 'android'
+    : Platform.isIOS
+    ? 'ios'
+    : null;
+
+/// Where iOS goes when the release page does not open: the TestFlight app,
+/// then TestFlight on the App Store.
+const _testFlightFallbacks = [
+  'itms-beta://',
+  'https://apps.apple.com/app/testflight/id899247664',
+];
 
 String? _cachedVersion;
 
@@ -120,7 +133,7 @@ class AppRelease {
   /// Version to install.
   final String version;
 
-  /// APK download URL.
+  /// APK download URL (Android); the TestFlight or App Store page (iOS).
   final String url;
 
   /// Release notes, if the operator wrote any.
@@ -271,6 +284,7 @@ class AppUpdateNotifier extends Notifier<AppUpdateState> {
       if (release == null) unawaited(check());
       return;
     }
+    if (Platform.isIOS) return _openStore(release);
     state = state.copyWith(
       phase: AppUpdatePhase.downloading,
       clearProgress: true,
@@ -314,6 +328,32 @@ class AppUpdateNotifier extends Notifier<AppUpdateState> {
       state = state.copyWith(phase: AppUpdatePhase.failed, clearProgress: true);
     } finally {
       client.close();
+    }
+  }
+
+  /// iOS installs only through Apple: open the release page (TestFlight or
+  /// the App Store) and keep the screen for when the user comes back. Falls
+  /// back to the TestFlight app, then to TestFlight's App Store page when it
+  /// is not installed.
+  Future<void> _openStore(AppRelease release) async {
+    try {
+      var opened = false;
+      for (final url in [release.url, ..._testFlightFallbacks]) {
+        try {
+          opened = await launchUrl(
+            Uri.parse(url),
+            mode: LaunchMode.externalApplication,
+          );
+        } catch (error) {
+          debugPrint('[AppUpdate] $url did not open: $error');
+        }
+        if (opened) break;
+      }
+      if (!opened) throw StateError('could not open ${release.url}');
+      state = state.copyWith(phase: AppUpdatePhase.idle);
+    } catch (error) {
+      debugPrint('[AppUpdate] store open failed: $error');
+      state = state.copyWith(phase: AppUpdatePhase.failed);
     }
   }
 }
