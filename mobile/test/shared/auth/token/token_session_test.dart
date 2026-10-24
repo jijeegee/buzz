@@ -43,6 +43,11 @@ class Harness {
   List<http.Request> get logouts =>
       server.requests.where((r) => r.url.path == '/auth/logout').toList();
 
+  /// Cleanup of an unsaved or superseded sign-in: this session only.
+  List<http.Request> get endedSessions => server.requests
+      .where((r) => r.url.path == '/auth/sessions/end')
+      .toList();
+
   /// Restore into a signed-in session holding `bzs_2` / `bzr_2`.
   Future<void> signedIn({int ttl = 3600}) async {
     store.data[origin] = stored1;
@@ -116,7 +121,10 @@ void main() {
           h.states.any((s) => s.status == TokenSessionStatus.signedIn),
           isFalse,
         );
-        expect(h.logouts.single.headers['Authorization'], 'Bearer bzs_2');
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_2',
+        );
         expect(h.clock.active, isEmpty);
       },
     );
@@ -388,7 +396,10 @@ void main() {
         expect(await h.controller.signIn(), isFalse);
         expect(h.status, TokenSessionStatus.signedOut);
         expect(h.controller.currentAccessToken, isNull);
-        expect(h.logouts.single.headers['Authorization'], 'Bearer bzs_login');
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_login',
+        );
       },
     );
 
@@ -410,7 +421,10 @@ void main() {
         expect(h.status, TokenSessionStatus.signedOut);
         expect(h.controller.currentAccessToken, isNull);
         expect(h.clock.active, isEmpty);
-        expect(h.logouts.single.headers['Authorization'], 'Bearer bzs_login');
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_login',
+        );
       },
     );
 
@@ -442,7 +456,10 @@ void main() {
         expect(h.store.writes, 0);
         expect(h.status, TokenSessionStatus.signedOut);
         expect(h.controller.currentAccessToken, isNull);
-        expect(h.logouts.single.headers['Authorization'], 'Bearer bzs_login');
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_login',
+        );
       },
     );
 
@@ -464,7 +481,10 @@ void main() {
         expect(h.controller.currentAccessToken, isNull);
         expect(h.states.length, before);
         expect(h.clock.active, isEmpty);
-        expect(h.logouts.single.headers['Authorization'], 'Bearer bzs_login');
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_login',
+        );
       },
     );
   });

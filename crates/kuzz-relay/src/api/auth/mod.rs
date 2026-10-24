@@ -81,6 +81,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             delete(session::revoke_device).patch(session::rename_device),
         )
         .route("/auth/sessions/revoke-others", post(session::revoke_others))
+        .route("/auth/sessions/end", post(session::end_session))
         .route("/auth/me", get(session::me))
         .route(
             "/auth/profile",

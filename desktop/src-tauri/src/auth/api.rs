@@ -763,6 +763,24 @@ pub(crate) async fn logout(
     .await
 }
 
+/// `POST /auth/sessions/end` — end only this session; the device and its
+/// other sessions stay signed in. For cleaning up a replaced or unsaved
+/// sign-in, where [`logout`] would sign the whole device out.
+pub(crate) async fn end_session(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+) -> Result<(), ApiError> {
+    call(
+        client,
+        reqwest::Method::POST,
+        format!("{origin}/auth/sessions/end"),
+        access,
+        Some(serde_json::json!({})),
+    )
+    .await
+}
+
 /// `GET /auth/devices`.
 pub(crate) async fn list_devices(
     client: &reqwest::Client,
