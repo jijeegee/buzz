@@ -283,7 +283,7 @@ test.describe("unread pill & divider", () => {
 
     // A run far longer than one screen still opens at its first row, and
     // "Jump to latest" then takes the reader to the newest one.
-    await emitUnreadMessagesInOnePass(page, 260);
+    await emitUnreadMessagesInOnePass(page, 240);
 
     await page.getByTestId("channel-general").click();
     await expect(page.getByTestId("chat-title")).toHaveText("general");
@@ -295,7 +295,7 @@ test.describe("unread pill & divider", () => {
 
     await page.getByRole("button", { name: /jump to latest/i }).click();
     await expect(
-      page.getByText("Unread message 260", { exact: true }),
+      page.getByText("Unread message 240", { exact: true }),
     ).toBeVisible();
   });
 

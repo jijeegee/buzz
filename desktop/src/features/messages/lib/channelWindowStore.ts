@@ -111,13 +111,23 @@ export function replaceNewestChannelWindow(
   assertValidPage(page);
   const ids = new Set(page.rows.map((row) => row.event.id));
   const auxIds = new Set(page.aux.map((event) => event.id));
+  // A refresh that returns the retained newest page unchanged (subscribe
+  // settle right after the open fetch) still continues the older pages'
+  // cursor chain, so they stay; any other newest page drops them.
+  const retainedNewest = current.pages[0];
+  const continuesOlderPages =
+    retainedNewest?.hasMore === true &&
+    page.hasMore &&
+    cursorsEqual(retainedNewest.nextCursor, page.nextCursor) &&
+    retainedNewest.rows.length === page.rows.length &&
+    retainedNewest.rows.every((row) => ids.has(row.event.id));
   return {
-    pages: [page],
+    pages: continuesOlderPages ? [page, ...current.pages.slice(1)] : [page],
     liveOverlay: current.liveOverlay.filter((event) => !ids.has(event.id)),
     liveAux: current.liveAux.filter((event) => !auxIds.has(event.id)),
     // A head refetch is the authoritative resync moment (subscribe/reconnect
-    // both funnel here): every retained page is replaced, so live summaries
-    // pinned to the old snapshot are cleared rather than diffed.
+    // both funnel here): live summaries pinned to the old snapshot are
+    // cleared rather than diffed.
     liveSummaries: {},
   };
 }
