@@ -71,6 +71,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/pair/claim", post(pairing::claim))
         .route("/auth/oidc/{provider}/start", get(oidc::start))
         .route("/auth/oidc/{provider}/callback", get(oidc::callback))
+        .route("/auth/oidc/{provider}/id-token", post(oidc::id_token))
         .route("/auth/oidc/complete", post(oidc::complete))
         .route("/auth/oidc/signup", post(oidc::signup))
         .route("/auth/refresh", post(session::refresh))

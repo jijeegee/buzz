@@ -60,6 +60,29 @@ pub trait OidcProvider: Send + Sync {
         callback_url: &'a str,
         expected_nonce: &'a str,
     ) -> BoxFuture<'a, Result<OidcIdentity, OidcError>>;
+
+    /// Client id the app passes to the platform's own sign-in (the id_token's
+    /// `aud`), or `None` when the provider has no app sign-in.
+    fn app_sign_in_client_id(&self) -> Option<&str> {
+        None
+    }
+
+    /// Validate an id_token the app got from the platform's own sign-in
+    /// (Android Credential Manager, Sign in with Apple on iOS) for a login
+    /// whose server-issued nonce is `expected_nonce`. Providers without an
+    /// app sign-in refuse.
+    fn verify_id_token<'a>(
+        &'a self,
+        id_token: &'a str,
+        expected_nonce: &'a str,
+    ) -> BoxFuture<'a, Result<OidcIdentity, OidcError>> {
+        let _ = (id_token, expected_nonce);
+        Box::pin(async {
+            Err(OidcError::InvalidIdToken(
+                "provider has no app sign-in".into(),
+            ))
+        })
+    }
 }
 
 const GOOGLE_AUTH_ENDPOINT: &str = "https://accounts.google.com/o/oauth2/v2/auth";
@@ -282,6 +305,21 @@ impl OidcProvider for GoogleProvider {
             self.validate_id_token(&token.id_token, expected_nonce)
                 .await
         })
+    }
+
+    fn app_sign_in_client_id(&self) -> Option<&str> {
+        Some(&self.client_id)
+    }
+
+    // Credential Manager asks for the token with the web client id as
+    // `serverClientId`, so its `aud` is the same client id as the browser
+    // login's.
+    fn verify_id_token<'a>(
+        &'a self,
+        id_token: &'a str,
+        expected_nonce: &'a str,
+    ) -> BoxFuture<'a, Result<OidcIdentity, OidcError>> {
+        Box::pin(self.validate_id_token(id_token, expected_nonce))
     }
 }
 
