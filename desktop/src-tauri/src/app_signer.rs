@@ -41,6 +41,16 @@ pub(crate) fn start(key: &DeviceKey) {
     }
 }
 
+/// Sign with `key` from now on (the device key was rotated); the runners
+/// already spawned keep their leases. Starts the signer when none runs.
+pub(crate) fn replace_key(key: &DeviceKey) {
+    let running = signer().clone();
+    match running.filter(|running| !running.is_stopped()) {
+        Some(running) => running.replace_key(key.clone()),
+        None => start(key),
+    }
+}
+
 /// Stop the app signer: revoke every lease and release the key handle.
 pub(crate) fn stop() {
     if let Some(running) = signer().take() {

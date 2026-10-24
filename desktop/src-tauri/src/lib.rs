@@ -315,6 +315,9 @@ pub fn run() {
                         // Let the saved sign-ins come back first.
                         tokio::time::sleep(std::time::Duration::from_secs(15)).await;
                         crate::auth::agent_hosting::spawn_restore_pending(&ready_app);
+                        // A software key moves to the TPM / Secure Enclave
+                        // once every signed-in account is back.
+                        crate::auth::device_upgrade::spawn(&ready_app);
                     });
                 });
             }

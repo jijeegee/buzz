@@ -312,6 +312,16 @@ impl AppSigner {
         let _ = TcpStream::connect_timeout(&self.addr, Duration::from_secs(1));
     }
 
+    /// Sign with `key` from now on (the install's key was rotated). Leases,
+    /// URL and secrets stay, so running helpers keep working. Ignored once
+    /// stopped.
+    pub fn replace_key(&self, key: DeviceKey) {
+        let mut slot = lock(&self.key);
+        if !self.is_stopped() {
+            *slot = Some(key);
+        }
+    }
+
     fn lock_leases(&self) -> MutexGuard<'_, Leases> {
         lock(&self.leases)
     }
@@ -577,6 +587,30 @@ mod tests {
         assert!(verifies(&key, &proof, binding, "bzs_tok", body));
         assert!(!verifies(&key, &proof, binding, "bzs_other", body));
         signer.stop();
+    }
+
+    #[test]
+    fn a_replaced_key_signs_for_the_leases_already_handed_out() {
+        let dir = tempfile::tempdir().unwrap();
+        let old = file_key(&dir);
+        let new = DeviceKey::open_or_create_file(&dir.path().join("new.key")).unwrap();
+        let agent = Keys::generate();
+        let signer = AppSigner::start(old.clone()).unwrap();
+        let lease = signer.register(agent.public_key(), RELAY).unwrap();
+        let client = app(&lease);
+        signer.replace_key(new.clone());
+
+        let binding = "POST https://relay.example/auth/refresh";
+        let proof = client
+            .header_proof_at(unix_now(), "refresh", binding, Some("bzs_tok"), b"")
+            .unwrap();
+        assert!(verifies(&new, &proof, binding, "bzs_tok", b""));
+        assert!(!verifies(&old, &proof, binding, "bzs_tok", b""));
+
+        // A stopped signer never takes a key back.
+        signer.stop();
+        signer.replace_key(new);
+        assert!(lock(&signer.key).is_none());
     }
 
     #[test]

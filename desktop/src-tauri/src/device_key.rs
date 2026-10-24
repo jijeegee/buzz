@@ -207,6 +207,52 @@ pub(crate) fn ensure() -> Option<DeviceKey> {
     }
 }
 
+/// The hardware key the software key in use can move to (TPM or Secure
+/// Enclave; see `crate::auth::device_upgrade`). `None` when the key in use
+/// is not an unmarked software key or this machine has no usable hardware.
+/// Blocks; call from a blocking thread.
+pub(crate) fn hardware_upgrade() -> Option<DeviceKey> {
+    if cfg!(test) {
+        return None;
+    }
+    let current = current()?;
+    if current.kind() != kuzz_device_key_pkg::DeviceKeyKind::Software {
+        return None;
+    }
+    let dir = shared_store_dir()?;
+    match DeviceKey::hardware_upgrade(DEVICE_KEY_SCOPE, &FileStore::new(dir)) {
+        Ok(key) => key,
+        Err(error) => {
+            eprintln!("kuzz-desktop: warning: hardware device key not opened: {error}");
+            None
+        }
+    }
+}
+
+/// Switch to `hardware` once the relay holds it for every signed-in account:
+/// record it as the key in use (deleting the software key), then sign with
+/// it here and in the app signer. The switch in memory happens even when
+/// saving fails, because the relay already has the new key. Blocks.
+pub(crate) fn adopt_hardware(hardware: &DeviceKey) -> Result<(), String> {
+    let saved = match shared_store_dir() {
+        Some(dir) => DeviceKey::adopt_hardware(DEVICE_KEY_SCOPE, &FileStore::new(dir), hardware)
+            .map_err(|error| error.to_string()),
+        None => Err("no local data directory".into()),
+    };
+    {
+        let _opening = OPENING.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut slot = slot();
+        slot.key = Some(hardware.clone());
+        slot.failed_at = None;
+    }
+    crate::app_signer::replace_key(hardware);
+    eprintln!(
+        "kuzz-desktop: device key ready ({})",
+        hardware.kind().as_wire()
+    );
+    saved
+}
+
 /// [`ensure`] off the async runtime, waiting at most `limit` (a TPM that
 /// hangs, or a startup open holding the lock). `None` with a warning when
 /// the key is not ready in time; the open goes on in the background.

@@ -9,16 +9,19 @@ use axum::{
     http::{header, HeaderMap, StatusCode},
     response::{IntoResponse, Response},
 };
-use kuzz_db::identity::{ProfileUpdate, RefreshOutcome, RevokeReason};
+use kuzz_auth::device_proof::{rotate_binding, DevicePubkey};
+use kuzz_db::identity::{
+    DeviceKey, DeviceKeyRotation, ProfileUpdate, RefreshOutcome, RevokeReason,
+};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
 use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
-    auth_error, authenticate_session, authenticate_user_session, bad_request, internal,
-    json_object, not_found, optional_string, rate_limit, unavailable, validate_avatar_url,
-    validate_device_name, validate_display_name,
+    auth_error, authenticate_session, authenticate_user_session, authenticate_user_token,
+    bad_request, internal, json_object, not_found, optional_string, rate_limit, unavailable,
+    validate_avatar_url, validate_device_name, validate_display_name,
 };
 use crate::identity::{client_version, kv, publish_key_revocation, publish_revocations};
 use crate::state::AppState;
@@ -439,6 +442,132 @@ pub(super) async fn revoke_others(
         }
         Err(error) => internal("revoke_other_sessions", &error),
     }
+}
+
+/// `POST /auth/device/rotate` `{device_pubkey, device_key_kind, proof}`:
+/// move this session's device from its current key to a new hardware key
+/// (a software key upgraded to the TPM or Secure Enclave). The request is
+/// proven by the current key in every auth surface mode, and `proof` by the
+/// new key (purpose `rotate` over [`rotate_binding`] and the access token
+/// hash). Sessions and agents stay bound to the device, so they move with
+/// it; no one signs in again.
+pub(super) async fn rotate_device_key(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let binding = match authenticate_user_token(&state, &headers).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
+    // A stored key that no longer parses counts as keyless (fails closed).
+    let old = binding
+        .device_pubkey
+        .and_then(|key| DevicePubkey::from_sec1(&key).ok());
+    let (device_id, old) = match (binding.device_id, old) {
+        (Some(device), Some(old)) => (device, old),
+        _ => return conflict("device_key_required", "this device has no device key"),
+    };
+    if let Err(rejection) = crate::identity::device::check_request_proof_always(
+        &state,
+        &old,
+        &headers,
+        &binding.token_hash,
+    )
+    .await
+    {
+        return super::rejection_response(rejection);
+    }
+    if let Err(response) = rate_limit(
+        &state,
+        &format!("device-rotate:{}", binding.principal),
+        60,
+        10,
+    )
+    .await
+    {
+        return response;
+    }
+    let body = match json_object(&body) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let Some(new) = body
+        .get("device_pubkey")
+        .and_then(serde_json::Value::as_str)
+        .and_then(|raw| DevicePubkey::from_hex(raw).ok())
+    else {
+        return bad_request("device_pubkey must be a compressed P-256 key in hex");
+    };
+    if body
+        .get("device_key_kind")
+        .and_then(serde_json::Value::as_str)
+        != Some("hardware")
+    {
+        return bad_request("device_key_kind must be hardware");
+    }
+    if new == old {
+        return conflict("device_key_unchanged", "the new key is the current key");
+    }
+    let Some(proof) = body.get("proof").and_then(serde_json::Value::as_str) else {
+        return bad_request("proof is required");
+    };
+    let message = rotate_binding(&device_id.to_string(), &old, &new);
+    if let Err(reason) = crate::identity::device::check_rotation_proof(
+        &state,
+        &new,
+        proof,
+        &message,
+        &binding.token_hash,
+    )
+    .await
+    {
+        tracing::info!(principal = %binding.principal, device = %device_id, reason, "auth.device_rotate_refused");
+        return auth_error(
+            StatusCode::FORBIDDEN,
+            "device_proof_invalid",
+            "the new key did not prove the rotation",
+        );
+    }
+    let new_key = DeviceKey {
+        pubkey: new.as_bytes(),
+        kind: "hardware",
+    };
+    match state
+        .db
+        .rotate_device_key(&binding.principal, device_id, old.as_bytes(), new_key)
+        .await
+    {
+        Ok(DeviceKeyRotation::Rotated) => {
+            // Cached admissions of the old key go now; cached refusals of
+            // the new key (a race with the client switching) too.
+            state.identity.admissions.revoke(&[device_id], &[]);
+            crate::identity::admission::forget_login(&state, None, Some(*new.as_bytes()));
+            tracing::info!(
+                principal = %binding.principal,
+                device = %device_id,
+                old = %&old.to_hex()[..16],
+                new = %&new.to_hex()[..16],
+                "auth.device_rotate"
+            );
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(DeviceKeyRotation::NotFound) => not_found("device not found"),
+        Ok(DeviceKeyRotation::Keyless) => {
+            conflict("device_key_required", "this device has no device key")
+        }
+        Ok(DeviceKeyRotation::Changed) => {
+            conflict("device_key_changed", "the device key changed meanwhile")
+        }
+        Ok(DeviceKeyRotation::InUse) => {
+            conflict("device_key_in_use", "another device holds that key")
+        }
+        Err(error) => internal("rotate_device_key", &error),
+    }
+}
+
+fn conflict(code: &str, message: &str) -> Response {
+    auth_error(StatusCode::CONFLICT, code, message)
 }
 
 /// `GET /auth/me` — any access token.

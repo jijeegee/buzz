@@ -383,7 +383,7 @@ tokio::task_local! {
 
 /// Route trees whose device proof is checked in every mode
 /// ([`check_request_proof_always`]): each root and everything below it.
-const ALWAYS_PROVEN_ROOTS: &[&str] = &["/auth/agents", "/auth/pairing"];
+const ALWAYS_PROVEN_ROOTS: &[&str] = &["/auth/agents", "/auth/pairing", "/auth/device/rotate"];
 
 fn always_proven(path: &str) -> bool {
     ALWAYS_PROVEN_ROOTS.iter().any(|root| {
@@ -551,6 +551,30 @@ pub(crate) async fn check_request_proof_always(
             _ => TokenRejection::DeviceProofRequired,
         }
     })
+}
+
+/// The new key's possession proof of a device key rotation
+/// (`POST /auth/device/rotate`): purpose `rotate` over `binding`
+/// ([`kuzz_auth::device_proof::rotate_binding`]) and the access token hash,
+/// nonce burnt. `Err`: the refusal reason.
+pub(crate) async fn check_rotation_proof(
+    state: &AppState,
+    new: &DevicePubkey,
+    raw: &str,
+    binding: &str,
+    token_hash: &[u8; 32],
+) -> Result<(), &'static str> {
+    verify_proof(
+        state,
+        new,
+        raw,
+        kuzz_auth::device_proof::PURPOSE_ROTATE,
+        &[binding.to_owned()],
+        Some(token_hash),
+        None,
+    )
+    .await
+    .map_err(Refusal::as_str)
 }
 
 /// The device proof of `/auth/refresh` for refresh token `refresh_hash`.

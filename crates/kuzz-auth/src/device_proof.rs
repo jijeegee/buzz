@@ -163,6 +163,18 @@ pub struct ProofScope<'a> {
     pub body_hash: Option<&'a [u8; 32]>,
 }
 
+/// Purpose of the new key's possession proof in a device key rotation
+/// (`POST /auth/device/rotate`).
+pub const PURPOSE_ROTATE: &str = "rotate";
+
+/// What a rotation's new key signs over (purpose [`PURPOSE_ROTATE`], with
+/// the session's access token hash): the device row and both keys,
+/// `rotate:<device id>:<old key hex>:<new key hex>`. `device_id` is the
+/// lower-case hyphenated UUID.
+pub fn rotate_binding(device_id: &str, old: &DevicePubkey, new: &DevicePubkey) -> String {
+    format!("rotate:{device_id}:{}:{}", old.to_hex(), new.to_hex())
+}
+
 /// The exact text a device signs for a header proof:
 ///
 /// ```text
@@ -304,6 +316,40 @@ mod tests {
             hex::encode(signature.to_bytes())
         ))
         .expect("parse")
+    }
+
+    #[test]
+    fn a_rotation_proof_binds_the_device_and_both_keys() {
+        let (key, new) = device();
+        let old = DevicePubkey::from_sec1(
+            SigningKey::from_slice(&[9u8; 32])
+                .expect("key")
+                .verifying_key()
+                .to_encoded_point(true)
+                .as_bytes(),
+        )
+        .expect("old");
+        let device = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+        let binding = rotate_binding(device, &old, &new);
+        assert_eq!(
+            binding,
+            format!("rotate:{device}:{}:{}", old.to_hex(), new.to_hex())
+        );
+        let token = [2u8; 32];
+        let proof = sign(&key, &scope(PURPOSE_ROTATE, &binding, Some(&token)), 50);
+        assert_eq!(
+            proof.verify(&new, &scope(PURPOSE_ROTATE, &binding, Some(&token)), 50),
+            Ok(())
+        );
+        // Swapped keys or another device: another message.
+        let swapped = rotate_binding(device, &new, &old);
+        let other = rotate_binding("00000000-0000-0000-0000-000000000000", &old, &new);
+        for binding in [swapped, other] {
+            assert_eq!(
+                proof.verify(&new, &scope(PURPOSE_ROTATE, &binding, Some(&token)), 50),
+                Err(DeviceProofError::BadSignature)
+            );
+        }
     }
 
     #[test]
@@ -501,6 +547,29 @@ mod tests {
         assert_eq!(proof_message(&scope, ts, nonce), header["message"]);
         let proof = DeviceProof::parse(header["header"].as_str().expect("header")).expect("parse");
         assert_eq!(proof.verify(&public, &scope, ts), Ok(()));
+
+        let rotation = &vectors["rotation"];
+        assert_eq!(rotation["purpose"], PURPOSE_ROTATE);
+        assert_eq!(rotation["new_pubkey_hex"], public.to_hex());
+        let old_secret =
+            hex::decode(rotation["old_secret_hex"].as_str().expect("old")).expect("hex");
+        let old = DevicePubkey::from_sec1(
+            SigningKey::from_slice(&old_secret)
+                .expect("key")
+                .verifying_key()
+                .to_encoded_point(true)
+                .as_bytes(),
+        )
+        .expect("old");
+        assert_eq!(rotation["old_pubkey_hex"], old.to_hex());
+        assert_eq!(
+            rotation["binding"],
+            rotate_binding(
+                rotation["device_id"].as_str().expect("device"),
+                &old,
+                &public
+            )
+        );
 
         let tagged = vectors["event_tags"].as_array().expect("event_tags");
         assert_eq!(tagged.len(), 2);

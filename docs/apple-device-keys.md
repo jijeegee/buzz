@@ -22,8 +22,8 @@ Enclave on Apple platforms (this note). The relay records the result as
   never recorded the marker): the relay has the software key bound. With the
   marker present, the hardware key is used. With no key at all (fresh
   install), a new Secure Enclave key is created, at launch or sign-in.
-  Nothing is swapped mid-session. A new hardware key appears only after the
-  software key is gone (`DeviceKey::reset`) and the next sign-in binds it.
+  A software key in use moves to the hardware key at a later launch, for
+  every signed-in account at once (below).
 - Software fallback only when the Secure Enclave is unavailable to the binary:
   `errSecMissingEntitlement` (-34018), `errSecUnimplemented` (-4),
   `errSecNotAvailable` (-25291), or any creation failure on an Intel Mac. Any
@@ -166,30 +166,40 @@ Not covered: a `kuzz` CLI or `git-credential-nostr` started by hand in a
 terminal (not by the app) still has no way to the Secure Enclave key on a Mac
 and sends no device tag or proof.
 
-### Software to hardware upgrade (not implemented)
+### Software to hardware upgrade
 
-A Mac or PC with a software key bound on the relay keeps it (selection
-above). Moving it to the Secure Enclave or TPM at a later sign-in is not done,
-because all accounts and agents of an install share one device key:
+A Mac or PC whose relay rows hold a software key (made by a build that could
+not reach the TPM or Secure Enclave) moves to hardware at launch
+(`desktop/src-tauri/src/auth/device_upgrade.rs`). All accounts and agents of
+an install share one device key and the relay binds it per device row (one
+row per account), so every signed-in account moves at once:
 
-- Other signed-in accounts were bound to the software key. After a switch
-  their refresh and `/auth/*` proofs come from the new key and fail with
-  `device_proof_invalid` under `enforce`. The desktop treats that as a
-  terminal refresh failure that does not end the sign-in (`refresh.rs`), so
-  each such account asks to sign in again; its session is lost.
-- Agents registered with the software key as `host_device_pubkey` become
-  `wrong_host` under `enforce`: `kuzz-acp` exits 77 ("Runs on another
-  device") until each is registered again from this machine.
+1. `DeviceKey::hardware_upgrade` opens or creates the hardware key without
+   recording the marker; the software key stays in use.
+2. Once every account listed as signed in has its session back, the app holds
+   all their refresh locks and calls `POST /auth/device/rotate` for each:
+   the request carries the usual `auth` proof by the **old** key; the body is
+   `{"device_pubkey", "device_key_kind": "hardware", "proof"}`, where the
+   proof is the **new** key's header proof with purpose `rotate`, the access
+   token hash, no body, over `rotate:<device id>:<old hex>:<new hex>`
+   (`kuzz_auth::device_proof::rotate_binding`, shared vector `rotation`). The
+   relay swaps the row's key in place: sessions, refresh tokens and agents
+   hosted on the row (`host_device_id`) stay; cached admissions of the old key
+   are dropped. `204` moved; `401` old proof wrong; `403` new proof wrong;
+   `409 device_key_unchanged | device_key_changed | device_key_in_use`.
+3. When every row moved, `DeviceKey::adopt_hardware` records the marker and
+   deletes the software key; the app and its app signer (same leases) sign
+   with the hardware key from then on.
 
-Options, if wanted:
+Failures: if the first move fails nothing changed and the next launch tries
+again. A move failing after another succeeded is retried, then the install
+moves on anyway and that account asks to sign in again. A row an interrupted
+run already moved answers `device_key_unchanged` to a rotation proven by the
+new key, which counts as moved. Accounts signed out or needing sign-in are not
+moved; signing in again later makes a new device row for them.
 
-1. Per-session device keys: remember which device key each session and agent
-   was bound with and keep both keys until every one has re-bound.
-2. Upgrade only when exactly one account is signed in and it hosts no agents;
-   otherwise keep software (or ask, then re-sign-in every account and
-   re-register agents).
-3. A relay re-bind endpoint: prove with the old key, bind the new one, for
-   every session and agent at once.
+Not covered: a TPM that was cleared (the old key is gone, nothing can prove
+the move): sign in again.
 
 ## iOS (`mobile/ios/Runner/DeviceKeyPlugin.swift`)
 

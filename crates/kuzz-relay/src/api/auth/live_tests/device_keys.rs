@@ -867,3 +867,120 @@ async fn a_redis_override_switches_the_mode() {
     set_override(&inst, None).await;
     wait_mode(&inst, DeviceAdmissionMode::Off).await;
 }
+
+/// `POST /auth/device/rotate` with `body`, proven by `old` (when given);
+/// (status, error code).
+async fn rotate_with(
+    inst: &Instance,
+    token: &str,
+    old: Option<&SigningKey>,
+    body: &Value,
+) -> (u16, String) {
+    let body = body.to_string();
+    let mut request = inst
+        .post("/auth/device/rotate")
+        .bearer_auth(token)
+        .header("content-type", "application/json")
+        .body(body.clone());
+    if let Some(old) = old {
+        let binding = format!("POST {}/auth/device/rotate", public_url(inst));
+        request = request.header(
+            PROOF_HEADER,
+            proof(old, "auth", &binding, Some(token), Some(body.as_bytes())),
+        );
+    }
+    let response = request.send().await.expect("rotate");
+    let status = response.status().as_u16();
+    let body: Value = response.json().await.unwrap_or(Value::Null);
+    (status, body["code"].as_str().unwrap_or_default().to_owned())
+}
+
+/// The rotation body moving `device` from `old` to `new`, proven by `signer`.
+fn rotate_body(
+    device: uuid::Uuid,
+    old: &SigningKey,
+    new: &SigningKey,
+    signer: &SigningKey,
+    token: &str,
+) -> Value {
+    let key = |k: &SigningKey| {
+        kuzz_auth::device_proof::DevicePubkey::from_sec1(&pubkey_bytes(k)).expect("key")
+    };
+    let binding =
+        kuzz_auth::device_proof::rotate_binding(&device.to_string(), &key(old), &key(new));
+    json!({
+        "device_pubkey": pubkey_hex(new),
+        "device_key_kind": "hardware",
+        "proof": proof(signer, "rotate", &binding, Some(token), None),
+    })
+}
+
+/// A device moves from its key to a new one proven by both: the session and
+/// device row stay, the old key stops working and the new one works.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn a_device_key_rotates_when_both_keys_prove_it() {
+    let (inst, pool) = mode_instance(DeviceAdmissionMode::Enforce, &[]).await;
+    let old = device_key();
+    let new = device_key();
+    let pc = login_with(&inst, &uuid::Uuid::new_v4().to_string(), None, keyed(&old))
+        .await
+        .expect("login");
+    let access = pc.login.access.clone();
+    let device = pc.device_id;
+    let good = rotate_body(device, &old, &new, &new, &access);
+
+    assert_eq!(
+        rotate_with(&inst, &access, None, &good).await.0,
+        401,
+        "a bare (copied) token cannot rotate"
+    );
+    let stranger = device_key();
+    let unproven = rotate_body(device, &old, &new, &stranger, &access);
+    assert_eq!(
+        rotate_with(&inst, &access, Some(&old), &unproven).await,
+        (403, "device_proof_invalid".to_owned()),
+        "the new key must prove it"
+    );
+    let other_device = rotate_body(uuid::Uuid::new_v4(), &old, &new, &new, &access);
+    assert_eq!(
+        rotate_with(&inst, &access, Some(&old), &other_device).await.0,
+        403
+    );
+    let mut software = good.clone();
+    software["device_key_kind"] = json!("software");
+    assert_eq!(
+        rotate_with(&inst, &access, Some(&old), &software).await.0,
+        400
+    );
+    assert_eq!(device_row(&pool, device).await.0, Some(pubkey_bytes(&old)));
+
+    assert_eq!(rotate_with(&inst, &access, Some(&old), &good).await.0, 204);
+    let (key, kind, _, revoked) = device_row(&pool, device).await;
+    assert_eq!(key, Some(pubkey_bytes(&new)));
+    assert_eq!(kind.as_deref(), Some("hardware"));
+    assert!(!revoked);
+    assert_eq!(live_sessions(&pool, device).await, 1, "the session stays");
+
+    let origin = public_url(&inst);
+    assert_eq!(
+        me_with(&inst, &access, Some(&me_proof(&old, &origin, &access)))
+            .await
+            .0,
+        401,
+        "the old key no longer proves"
+    );
+    assert_eq!(
+        me_with(&inst, &access, Some(&me_proof(&new, &origin, &access)))
+            .await
+            .0,
+        200
+    );
+    // The old key cannot rotate the device any more.
+    let back = rotate_body(device, &new, &old, &old, &access);
+    assert_eq!(rotate_with(&inst, &access, Some(&old), &back).await.0, 401);
+
+    let refresh = pc.login.refresh.clone();
+    let proven = refresh_proof(&inst, &new, &refresh);
+    assert_eq!(refresh_with(&inst, &refresh, Some(&proven)).await.0, 200);
+}

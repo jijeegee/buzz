@@ -532,6 +532,48 @@ fn a_software_key_without_a_marker_stays_in_use_over_a_stray_hardware_key() {
         .is_none());
 }
 
+/// A rotation adopts the hardware key: marker first, then the software key
+/// goes, so later opens never fall back to it.
+#[test]
+fn adopting_a_rotated_hardware_key_retires_the_software_key() {
+    let scope = DEVICE_KEY_SCOPE;
+    let store = MemoryStore::default();
+    software::open_or_create(&store, scope).expect("seed");
+    adopt_marker(&store, scope, &vector_key().pubkey()).expect("adopt");
+    assert!(
+        store.load(scope).expect("load").is_none(),
+        "software key gone"
+    );
+    assert!(store
+        .load(&tpm_marker_scope(scope))
+        .expect("load")
+        .is_some());
+    assert!(unmarked_software_key(&store, scope)
+        .expect("load")
+        .is_none());
+
+    // A software key cannot be adopted as the hardware key.
+    let software =
+        DeviceKey::software(software::open_or_create(&store, scope).expect("key")).expect("key");
+    assert!(DeviceKey::adopt_hardware(scope, &store, &software).is_err());
+}
+
+/// Nothing to rotate: no software key, or the scope already has a marker.
+#[test]
+fn a_hardware_upgrade_needs_an_unmarked_software_key() {
+    let scope = format!("test-upgrade-{}", std::process::id());
+    let empty = MemoryStore::default();
+    assert!(DeviceKey::hardware_upgrade(&scope, &empty)
+        .expect("upgrade")
+        .is_none());
+    let marked = MemoryStore::default();
+    software::open_or_create(&marked, &scope).expect("seed");
+    record_tpm_marker(&marked, &scope, &vector_key().pubkey()).expect("marker");
+    assert!(DeviceKey::hardware_upgrade(&scope, &marked)
+        .expect("upgrade")
+        .is_none());
+}
+
 #[test]
 fn open_never_creates_a_key() {
     let scope = format!("test-opennever-{}", std::process::id());

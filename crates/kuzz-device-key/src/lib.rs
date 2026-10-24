@@ -190,7 +190,6 @@ fn validate_store_scope(scope: &str) -> Result<()> {
 }
 
 /// Record that `scope` has the TPM key `pubkey` (create-if-absent).
-#[cfg(any(windows, target_os = "macos", test))]
 fn record_tpm_marker(
     store: &dyn SoftwareKeyStore,
     scope: &str,
@@ -245,6 +244,13 @@ fn unmarked_software_key(
         .load(scope)?
         .map(|secret| software::signing_key(&secret))
         .transpose()
+}
+
+/// Record `pubkey` as the scope's hardware key and drop its software key.
+/// The marker goes first: once it exists the software key is never used.
+fn adopt_marker(store: &dyn SoftwareKeyStore, scope: &str, pubkey: &DevicePubkey) -> Result<()> {
+    record_tpm_marker(store, scope, pubkey)?;
+    store.delete(scope)
 }
 
 fn validate_scope(scope: &str) -> Result<()> {
@@ -368,6 +374,58 @@ impl DeviceKey {
                 .map(|secret| Self::software(software::signing_key(&secret)?))
                 .transpose()
         }
+    }
+
+    /// The hardware key a software device key of `scope` moves to (device
+    /// key rotation, relay `POST /auth/device/rotate`): the existing TPM or
+    /// Secure Enclave key, else a new one. No marker is recorded, so the
+    /// software key stays the one in use until [`Self::adopt_hardware`].
+    /// `Ok(None)`: nothing to move (no software key, or the scope already
+    /// uses hardware) or no usable hardware here.
+    pub fn hardware_upgrade(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Option<Self>> {
+        validate_scope(scope)?;
+        if unmarked_software_key(store, scope)?.is_none() {
+            return Ok(None);
+        }
+        #[cfg(any(windows, target_os = "macos"))]
+        {
+            let name = tpm_key_name(scope);
+            let key = match hw::open(&name) {
+                Ok(Some(key)) => key,
+                Ok(None) => match hw::create(&name) {
+                    Ok(key) => key,
+                    Err(hw::HwError::Unavailable(_)) => return Ok(None),
+                    Err(hw::HwError::Failed(error)) => return Err(error),
+                },
+                Err(hw::HwError::Unavailable(_)) => return Ok(None),
+                Err(hw::HwError::Failed(error)) => return Err(error),
+            };
+            let pubkey = DevicePubkey::from_sec1(&key.public_sec1()?)
+                .map_err(|_| DeviceKeyError::CorruptKey)?;
+            Ok(Some(Self {
+                backend: Arc::new(Backend::Hardware(Mutex::new(key))),
+                pubkey,
+            }))
+        }
+        #[cfg(not(any(windows, target_os = "macos")))]
+        {
+            Ok(None)
+        }
+    }
+
+    /// Finish a rotation to `hardware` (from [`Self::hardware_upgrade`]),
+    /// once the relay holds its key for every account: record its marker,
+    /// then delete the software key, so every later open picks `hardware`.
+    pub fn adopt_hardware(
+        scope: &str,
+        store: &dyn SoftwareKeyStore,
+        hardware: &Self,
+    ) -> Result<()> {
+        validate_scope(scope)?;
+        if hardware.kind() == DeviceKeyKind::Software {
+            return Err(DeviceKeyError::CorruptKey);
+        }
+        adopt_marker(store, scope, &hardware.pubkey)
     }
 
     /// Delete the device key of `scope` everywhere: the TPM key (Windows) or

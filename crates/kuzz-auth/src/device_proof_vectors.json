@@ -63,5 +63,14 @@
       },
       "message": "kuzz-device-event/v1\n[0,\"62c0a046dacce86ddd0343c6d3c7c79c2208ba0d9c9cf24a6d046d21d21f90f7\",1700000000,27235,[[\"u\",\"https://relay.example/api/v1/upload?a=1&b=/x\"],[\"method\",\"POST\"],[\"device\",\"031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e\",\"\"]],\"quote \\\" backslash \\\\ newline \\n tab \\t cr \\r bell \\u0007 del \u007f slash / \ud55c\uae00 \ud83d\ude00 ls \u2028\"]"
     }
-  ]
+  ],
+  "rotation": {
+    "_comment": "POST /auth/device/rotate: the new key's proof (purpose rotate, token hash, no body) binds the device row and both keys. Old key: P-256 secret 0x09 repeated 32 times; new key: the device key above.",
+    "purpose": "rotate",
+    "device_id": "6f9619ff-8b86-d011-b42d-00c04fc964ff",
+    "old_secret_hex": "0909090909090909090909090909090909090909090909090909090909090909",
+    "old_pubkey_hex": "027135fa4fd93a09dce98bbf681b4bfcf50e7c0d6354e62afb0bff2a3429617865",
+    "new_pubkey_hex": "031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e",
+    "binding": "rotate:6f9619ff-8b86-d011-b42d-00c04fc964ff:027135fa4fd93a09dce98bbf681b4bfcf50e7c0d6354e62afb0bff2a3429617865:031e18532fd4754c02f3041d9c75ceb33b83ffd81ac7ce4fe882ccb1c98bc5896e"
+  }
 }

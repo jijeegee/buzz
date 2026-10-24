@@ -277,6 +277,15 @@ async fn error_from(response: reqwest::Response) -> ApiError {
 }
 
 async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, ApiError> {
+    send_signed_by(request, None).await
+}
+
+/// [`send`] with the proof signed by `signer` instead of the device key in
+/// use (a key rotation proves with the key it replaces).
+async fn send_signed_by(
+    request: reqwest::RequestBuilder,
+    signer: Option<&crate::device_key::DeviceKey>,
+) -> Result<reqwest::Response, ApiError> {
     let (client, request) = request.timeout(AUTH_REQUEST_TIMEOUT).build_split();
     let mut request = request.map_err(|e| ApiError::network(&e))?;
     if request.url().path().starts_with("/auth/") {
@@ -286,7 +295,9 @@ async fn send(request: reqwest::RequestBuilder) -> Result<reqwest::Response, Api
     }
     let origin = crate::device_key::origin_of(request.url());
     let proof = proof_parts(&request);
-    let key = proof.as_ref().and_then(|_| crate::device_key::current());
+    let key = proof
+        .as_ref()
+        .and_then(|_| signer.cloned().or_else(crate::device_key::current));
     let retry = key.as_ref().and_then(|_| request.try_clone());
     let response = send_once(&client, request, key.as_ref(), &origin, proof.as_ref()).await?;
     let clock_moved = crate::device_key::note_server_time(&origin, response.headers());
@@ -839,6 +850,55 @@ pub(crate) async fn revoke_device(
     .await
 }
 
+/// `POST /auth/device/rotate`: move this device row (`device_id`) from
+/// `old` to the hardware key `new`. The request is proven by `old` (the key
+/// the relay has bound) and the body by `new` (purpose `rotate`), so the
+/// session, the device row and the agents hosted on it stay.
+pub(crate) async fn rotate_device_key(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    device_id: &str,
+    old: &crate::device_key::DeviceKey,
+    new: &crate::device_key::DeviceKey,
+) -> Result<(), ApiError> {
+    let device_id = uuid::Uuid::parse_str(device_id).map_err(|_| ApiError {
+        status: None,
+        code: None,
+        message: "invalid device id".into(),
+    })?;
+    let binding = kuzz_auth_pkg::device_proof::rotate_binding(
+        &device_id.to_string(),
+        &old.pubkey(),
+        &new.pubkey(),
+    );
+    let proof = crate::device_key::header_proof(
+        new,
+        origin,
+        crate::device_key::ProofRequest {
+            purpose: kuzz_auth_pkg::device_proof::PURPOSE_ROTATE,
+            binding,
+            token: Some(Zeroizing::new(access.to_owned())),
+            body: Vec::new(),
+        },
+    )
+    .await
+    .ok_or_else(|| ApiError {
+        status: None,
+        code: None,
+        message: "the new device key could not sign".into(),
+    })?;
+    let request = client
+        .post(format!("{origin}/auth/device/rotate"))
+        .header("Authorization", bearer(access))
+        .json(&serde_json::json!({
+            "device_pubkey": new.pubkey().to_hex(),
+            "device_key_kind": new.kind().as_wire(),
+            "proof": proof,
+        }));
+    send_signed_by(request, Some(old)).await.map(|_| ())
+}
+
 /// `POST <path>` with an empty JSON body (revoke-others, revoke-all, …).
 pub(crate) async fn post_empty(
     client: &reqwest::Client,
@@ -1159,6 +1219,109 @@ mod tests {
             Some(&key),
         );
         assert!(url.contains(&format!("device_pubkey={}", key.pubkey().to_hex())));
+    }
+
+    /// One request to a stub relay: its raw text, answered with `status`.
+    async fn one_request(status: u16) -> (String, tokio::task::JoinHandle<String>) {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let origin = format!("http://{}", listener.local_addr().unwrap());
+        let served = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut raw = Vec::new();
+            let mut buf = [0u8; 4096];
+            loop {
+                let n = stream.read(&mut buf).await.unwrap();
+                raw.extend_from_slice(&buf[..n]);
+                let text = String::from_utf8_lossy(&raw).into_owned();
+                if let Some((head, body)) = text.split_once("\r\n\r\n") {
+                    let length = head
+                        .lines()
+                        .find_map(|l| {
+                            l.to_ascii_lowercase()
+                                .strip_prefix("content-length: ")
+                                .map(str::to_owned)
+                        })
+                        .and_then(|v| v.trim().parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if body.len() >= length || n == 0 {
+                        break;
+                    }
+                }
+            }
+            let reply =
+                format!("HTTP/1.1 {status} X\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+            let _ = stream.write_all(reply.as_bytes()).await;
+            String::from_utf8_lossy(&raw).into_owned()
+        });
+        (origin, served)
+    }
+
+    #[tokio::test]
+    async fn a_rotation_is_proven_by_the_old_key_and_the_new_one() {
+        use kuzz_auth_pkg::device_proof::{
+            rotate_binding, DeviceProof, ProofScope, PURPOSE_ROTATE,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let old =
+            crate::device_key::DeviceKey::open_or_create_file(&dir.path().join("old.key")).unwrap();
+        let new =
+            crate::device_key::DeviceKey::open_or_create_file(&dir.path().join("new.key")).unwrap();
+        let device = "6f9619ff-8b86-d011-b42d-00c04fc964ff";
+        let (origin, served) = one_request(204).await;
+        rotate_device_key(
+            &reqwest::Client::new(),
+            &origin,
+            "bzs_acc",
+            device,
+            &old,
+            &new,
+        )
+        .await
+        .unwrap();
+        let raw = served.await.unwrap();
+        let (head, body) = raw.split_once("\r\n\r\n").unwrap();
+        assert!(head.starts_with("POST /auth/device/rotate "));
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs() as i64;
+        let token = kuzz_auth_pkg::hash_token("bzs_acc");
+
+        // The request: the old key, purpose auth, bound to the call and body.
+        let header = head
+            .lines()
+            .find_map(|l| {
+                l.split_once(": ")
+                    .filter(|(name, _)| name.eq_ignore_ascii_case("x-kuzz-device-proof"))
+                    .map(|(_, value)| value)
+            })
+            .unwrap();
+        let body_hash: [u8; 32] = <sha2::Sha256 as sha2::Digest>::digest(body.as_bytes()).into();
+        let binding = format!("POST {origin}/auth/device/rotate");
+        let scope = ProofScope {
+            purpose: "auth",
+            binding: &binding,
+            token_hash: Some(&token),
+            body_hash: Some(&body_hash),
+        };
+        let proof = DeviceProof::parse(header).unwrap();
+        assert!(proof.verify(&old.pubkey(), &scope, now).is_ok());
+        assert!(proof.verify(&new.pubkey(), &scope, now).is_err());
+
+        // The body: the new key, purpose rotate, over the row and both keys.
+        let body: serde_json::Value = serde_json::from_str(body).unwrap();
+        assert_eq!(body["device_pubkey"], new.pubkey().to_hex());
+        let rotation = rotate_binding(device, &old.pubkey(), &new.pubkey());
+        let scope = ProofScope {
+            purpose: PURPOSE_ROTATE,
+            binding: &rotation,
+            token_hash: Some(&token),
+            body_hash: None,
+        };
+        let proof = DeviceProof::parse(body["proof"].as_str().unwrap()).unwrap();
+        assert!(proof.verify(&new.pubkey(), &scope, now).is_ok());
+        assert!(proof.verify(&old.pubkey(), &scope, now).is_err());
     }
 
     #[test]
