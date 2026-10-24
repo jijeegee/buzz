@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:path_provider/path_provider.dart';
 
 import '../../shared/relay/relay.dart';
+import 'channel_room_store.dart';
 
 /// Identity a persisted channel head belongs to. Heads are never shared across
 /// accounts or relays.
@@ -29,17 +30,19 @@ class ChannelHeadScope {
 }
 
 /// Persists each channel's newest window response so reopening the app can
-/// paint a channel before the relay answers.
+/// paint a channel before the relay answers, and next to it the room's
+/// [RoomTail], which live events keep current for every joined room.
 ///
-/// This is a paint accelerator only: the relay's response always replaces the
-/// cached page. The store is fully derived from relay events, so it is
+/// The head is a paint accelerator only: the relay's response always replaces
+/// the cached page. The store is fully derived from relay events, so it is
 /// discarded rather than migrated when [schemaVersion] changes. It lives in
 /// the platform cache directory, which Android Auto Backup and iOS backups
 /// exclude and the OS may evict.
 class ChannelHeadCache {
   ChannelHeadCache(this._root, {this.maxChannels = maxChannelsPerScope});
 
-  static const schemaVersion = 1;
+  /// 2 added the room tail.
+  static const schemaVersion = 2;
 
   /// Room for the inbox preload's rooms (up to 48 rows) next to visited ones.
   static const maxChannelsPerScope = 64;
@@ -59,11 +62,37 @@ class ChannelHeadCache {
     return result;
   }
 
+  /// Counts clears; a write requested under an older count is dropped.
+  int get clearGeneration => _clearGeneration;
+
+  /// The stored head, or null when the room has none (a room known only from
+  /// live events has a tail but no head).
   Future<List<NostrEvent>?> load(ChannelHeadScope scope, String channelId) =>
       _serial(() async {
         final path = _entryPath(await _scopeDir(scope), channelId);
         return _readInIsolate(path, channelId);
       });
+
+  /// The room's stored tail, or null when nothing is stored for it.
+  Future<RoomTail?> loadTail(ChannelHeadScope scope, String channelId) =>
+      _serial(() async {
+        final path = _entryPath(await _scopeDir(scope), channelId);
+        return _readTailInIsolate(path, channelId);
+      });
+
+  /// Applies live [events] to the room's tail, keeping its head. Dropped when
+  /// a clear was requested after [generation] was read.
+  Future<void> applyLive(
+    ChannelHeadScope scope,
+    String channelId,
+    List<RoomLiveEvent> events, {
+    required int generation,
+    bool markGap = false,
+  }) => _serial(() async {
+    if (generation != _clearGeneration) return;
+    final dir = await _scopeDir(scope);
+    await _applyLiveInIsolate(dir, channelId, events, markGap, maxChannels);
+  });
 
   /// When [channelId]'s head was last written, or null when there is none or
   /// it predates this field. Reads do not change it (unlike the file's
@@ -74,7 +103,8 @@ class ChannelHeadCache {
         return _readStoredAt(path);
       });
 
-  /// Writes are dropped when a clear was requested after this call.
+  /// Writes the relay's newest page and rebuilds the tail from it. Writes are
+  /// dropped when a clear was requested after this call.
   Future<void> store(
     ChannelHeadScope scope,
     String channelId,
@@ -117,6 +147,72 @@ class ChannelHeadCache {
 Future<List<NostrEvent>?> _readInIsolate(String path, String channelId) =>
     Isolate.run(() => _readEntry(path, channelId));
 
+Future<RoomTail?> _readTailInIsolate(String path, String channelId) =>
+    Isolate.run(() => _readStored(path, channelId)?.tail);
+
+Future<void> _applyLiveInIsolate(
+  String dir,
+  String channelId,
+  List<RoomLiveEvent> events,
+  bool markGap,
+  int maxChannels,
+) => Isolate.run(
+  () => _applyLiveEntry(dir, channelId, events, markGap, maxChannels),
+);
+
+/// A stored entry; [events] stays encoded so tail writes pass it through.
+typedef _StoredEntry = ({List<dynamic>? events, int? storedAt, RoomTail tail});
+
+/// The entry at [path], or null when there is none or it cannot be used (an
+/// older schema, another channel, a torn write).
+_StoredEntry? _readStored(String path, String channelId) {
+  final file = File(path);
+  if (!file.existsSync()) return null;
+  try {
+    final decoded = jsonDecode(file.readAsStringSync());
+    if (decoded is! Map<String, dynamic> ||
+        decoded['v'] != ChannelHeadCache.schemaVersion ||
+        decoded['channel'] != channelId) {
+      return null;
+    }
+    final events = decoded['events'] as List<dynamic>?;
+    return (
+      events: events,
+      storedAt: (decoded['stored_at'] as num?)?.toInt(),
+      tail: RoomTail.fromJson(decoded, stored: _byId(events)),
+    );
+  } catch (_) {
+    return null;
+  }
+}
+
+Map<String, Map<String, dynamic>> _byId(List<dynamic>? events) => {
+  for (final event in (events ?? const []).cast<Map<String, dynamic>>())
+    if (event['id'] case final String id) id: event,
+};
+
+void _applyLiveEntry(
+  String dir,
+  String channelId,
+  List<RoomLiveEvent> events,
+  bool markGap,
+  int maxChannels,
+) {
+  final stored = _readStored(_entryPath(dir, channelId), channelId);
+  _writeEncodedEntry(
+    dir,
+    channelId,
+    events: stored?.events,
+    storedAt: stored?.storedAt,
+    tail: applyLiveEvents(
+      stored?.tail ?? RoomTail.empty,
+      events,
+      markGap: markGap,
+    ),
+    maxChannels: maxChannels,
+  );
+}
+
 Future<void> _writeInIsolate(
   String dir,
   String channelId,
@@ -140,8 +236,10 @@ List<NostrEvent>? _readEntry(String path, String channelId) {
       file.deleteSync();
       return null;
     }
+    final head = decoded['events'] as List?;
+    if (head == null) return null;
     final events = [
-      for (final json in decoded['events'] as List)
+      for (final json in head)
         NostrEvent.fromJson(json as Map<String, dynamic>),
     ];
     // Mark the entry as recently used for eviction.
@@ -184,16 +282,45 @@ void _writeEntry(
   List<NostrEvent> events,
   int maxChannels,
 ) {
+  final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  final stored = _readStored(_entryPath(dir, channelId), channelId);
+  _writeEncodedEntry(
+    dir,
+    channelId,
+    events: [for (final event in events) event.toJson()],
+    storedAt: now,
+    tail: roomTailFromHead(events, stored?.tail ?? RoomTail.empty, now: now),
+    maxChannels: maxChannels,
+  );
+}
+
+/// Writes one entry; [storedAt] is when [events] (the head) was fetched, and
+/// both are absent for a room known only from live events.
+void _writeEncodedEntry(
+  String dir,
+  String channelId, {
+  required List<dynamic>? events,
+  required int? storedAt,
+  required RoomTail tail,
+  required int maxChannels,
+}) {
   final directory = Directory(dir)..createSync(recursive: true);
   final path = _entryPath(dir, channelId);
   // `stored_at` stays near the start so [_readStoredAt] reads a few bytes.
-  final encoded = jsonEncode({
+  // Tail rows that are also head rows are stored once.
+  String encode({required bool withHead}) => jsonEncode({
     'v': ChannelHeadCache.schemaVersion,
-    'stored_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+    if (withHead && storedAt != null) 'stored_at': storedAt,
     'channel': channelId,
-    'events': [for (final event in events) event.toJson()],
+    if (withHead && events != null) 'events': events,
+    ...tail.toJson(storedIds: withHead ? _byId(events).keys.toSet() : const {}),
   });
-  if (utf8.encode(encoded).length > ChannelHeadCache.maxEntryBytes) {
+  bool fits(String encoded) =>
+      utf8.encode(encoded).length <= ChannelHeadCache.maxEntryBytes;
+  var encoded = encode(withHead: true);
+  // An oversized head is dropped rather than kept stale; the tail is smaller.
+  if (!fits(encoded)) encoded = encode(withHead: false);
+  if (!fits(encoded)) {
     final stale = File(path);
     if (stale.existsSync()) stale.deleteSync();
     return;

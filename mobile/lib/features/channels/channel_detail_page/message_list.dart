@@ -1028,13 +1028,11 @@ class _MessageList extends HookConsumerWidget {
     }
 
     // Build channel names map once for all message bubbles.
-    final channelsAsync = ref.watch(channelsProvider);
-    final channelNamesMap = <String, String>{};
-    channelsAsync.whenData((channels) {
-      for (final ch in channels) {
-        channelNamesMap[ch.name.toLowerCase()] = ch.id;
-      }
-    });
+    // Ignores activity times, so other rooms' messages do not rebuild.
+    final channelNamesMap = <String, String>{
+      for (final ch in ref.watch(channelListShape).list)
+        ch.name.toLowerCase(): ch.id,
+    };
 
     return QuoteJumpScope(
       channelId: channelId,

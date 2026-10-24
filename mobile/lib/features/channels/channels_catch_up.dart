@@ -1,0 +1,337 @@
+part of 'channels_provider.dart';
+
+/// How far a catch-up reaches back before the watermark, for events that
+/// arrive slightly out of order.
+const _catchUpSkewSeconds = 60;
+
+/// A watermark older than this is not caught up: every room is marked as
+/// possibly missing rows and reloads its newest page when it is next read.
+const _catchUpMaxAgeSeconds = 24 * 60 * 60;
+
+/// The relay's cap on a filter's limit.
+const _catchUpPageLimit = 1000;
+
+/// Pages read per 128-room chunk before its rooms count as unfilled.
+const _catchUpMaxPages = 3;
+
+const _catchUpPersistDelay = Duration(seconds: 5);
+const _catchUpWatermarkPrefix = 'kuzz-room-catch-up.v1';
+
+/// Event ids remembered to skip what the live feed already delivered.
+const _deliveredIdLimit = 4096;
+
+/// This device's clock in Unix seconds, replaceable in tests.
+@visibleForTesting
+int Function() roomCatchUpClock = _unixNow;
+
+int _unixNow() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+/// What the reconnect catch-up of the channel list's live feed remembers.
+class _RoomCatchUpState {
+  /// Per relay and account: the time through which every live event of the
+  /// fed rooms is known to have arrived. Never ahead of this device's clock.
+  final Map<ChannelHeadScope, int> watermarks = {};
+  final Set<ChannelHeadScope> loaded = {};
+
+  /// The scope whose feed was interrupted and is not caught up yet.
+  ChannelHeadScope? pending;
+
+  /// Counts interruptions, so a run knows whether another one happened
+  /// while it was fetching.
+  int pendingEpoch = 0;
+  bool running = false;
+
+  /// Rooms that a catch-up could not fill: their feed counts as starting
+  /// again at this time.
+  final Map<String, int> liveFloors = {};
+  final Set<String> deliveredIds = {};
+  Timer? persistTimer;
+  ChannelRoomStore? store;
+}
+
+/// Reconnect recovery for every room the channel list's live feed covers:
+/// one "everything since the watermark" query per 128 rooms, merged into the
+/// room stores and handed to open rooms, instead of each room reloading.
+extension _ChannelsNotifierCatchUp on ChannelsNotifier {
+  ChannelHeadScope? get _catchUpScope =>
+      _lifecycleRef.read(channelHeadScopeProvider);
+
+  /// Records [event] as delivered; false when it already was. Advances the
+  /// watermark while the feed is uninterrupted.
+  bool _noteDelivered(ChannelHeadScope scope, NostrEvent event) {
+    final ids = _catchUp.deliveredIds;
+    if (!ids.add(event.id)) return false;
+    if (ids.length > _deliveredIdLimit) ids.remove(ids.first);
+    // A future timestamp cannot vouch for anything not yet received.
+    _advanceWatermark(scope, min(event.createdAt, roomCatchUpClock()));
+    return true;
+  }
+
+  /// When the feed delivering a room's events became continuous, for its
+  /// stored tail: [liveSince], or later when a catch-up could not fill it.
+  int _roomLiveSince(String? channelId, int liveSince) =>
+      max(liveSince, _catchUp.liveFloors[channelId] ?? liveSince);
+
+  int? _watermark(ChannelHeadScope scope) {
+    final state = _catchUp;
+    if (state.loaded.add(scope)) {
+      try {
+        final stored = _lifecycleRef
+            .read(savedPrefsProvider)
+            .getString(_watermarkKey(scope));
+        final at = int.tryParse(stored ?? '');
+        if (at != null) {
+          state.watermarks[scope] = max(state.watermarks[scope] ?? at, at);
+        }
+      } catch (_) {
+        // Without storage the watermark lives for this session only.
+      }
+    }
+    return state.watermarks[scope];
+  }
+
+  /// The feed now starts with nothing to catch up from, unless [scope] has a
+  /// watermark from before.
+  void _startWatermark(ChannelHeadScope scope) {
+    if (_watermark(scope) == null) {
+      _catchUp.watermarks[scope] = roomCatchUpClock();
+    }
+  }
+
+  /// Moves the watermark to [at]; ignored while a catch-up is owed, since
+  /// nothing after the interruption vouches for what it missed.
+  void _advanceWatermark(
+    ChannelHeadScope scope,
+    int at, {
+    bool caughtUp = false,
+  }) {
+    final state = _catchUp;
+    if (!caughtUp && state.pending == scope) return;
+    final current = state.watermarks[scope];
+    if (current == null || at <= current) return;
+    state.watermarks[scope] = at;
+    _schedulePersist();
+  }
+
+  /// A relay round trip that started at [at] answered over the live socket,
+  /// so the feed delivered everything sent before it.
+  void _noteFeedAlive(int at) {
+    final scope = _catchUpScope;
+    if (scope == null || _catchUp.watermarks[scope] == null) return;
+    _advanceWatermark(scope, at);
+  }
+
+  /// The feed for the current scope was interrupted (a reconnect, or the
+  /// list starting again for a scope seen before): catch it up once its
+  /// subscriptions are back.
+  void _markCatchUpPending() {
+    final scope = _catchUpScope;
+    if (scope == null || _watermark(scope) == null) return;
+    _catchUp
+      ..pending = scope
+      ..pendingEpoch += 1;
+  }
+
+  /// When a new live chunk counts as continuous from: before the watermark
+  /// when a catch-up owed now will cover the time in between.
+  int _newChunkLiveSince() {
+    final now = roomCatchUpClock();
+    final scope = _catchUpScope;
+    if (scope == null || _catchUp.pending != scope) return now;
+    final watermark = _catchUp.watermarks[scope];
+    if (watermark == null || now - watermark > _catchUpMaxAgeSeconds) {
+      return now;
+    }
+    return min(now, max(0, watermark - _catchUpSkewSeconds));
+  }
+
+  /// Rooms with an established live chunk.
+  Set<String> _fedRoomIds() => {
+    for (final entry in _liveSubscriptionsByChunk.entries)
+      if (entry.value.unsubscribe != null)
+        for (final id in entry.key.split('\u0000'))
+          if (_desiredLiveChannelIds.contains(id)) id,
+  };
+
+  void _publishFedRooms() {
+    final store = _lifecycleRef.read(channelRoomStoreProvider);
+    _catchUp.store = store;
+    store.setFedRooms(_catchUpScope, _fedRoomIds());
+  }
+
+  /// Forgets the feed's rooms; safe while the notifier is disposing.
+  void _clearCatchUpFeed() {
+    _catchUp
+      ..pending = null
+      ..liveFloors.clear()
+      ..store?.setFedRooms(null, const {});
+  }
+
+  /// Runs the owed catch-up for the current scope, again if the feed is
+  /// interrupted while one is in flight.
+  Future<void> _runRoomCatchUp() async {
+    final state = _catchUp;
+    final scope = _catchUpScope;
+    if (scope == null || state.pending != scope || state.running) return;
+    state.running = true;
+    try {
+      while (_lifecycleRef.mounted &&
+          state.pending == scope &&
+          _catchUpScope == scope &&
+          _lifecycleRef.read(relaySessionProvider).status ==
+              SessionStatus.connected) {
+        final epoch = state.pendingEpoch;
+        if (!await _catchUpOnce(scope)) return;
+        if (state.pendingEpoch == epoch) state.pending = null;
+      }
+    } finally {
+      state.running = false;
+    }
+  }
+
+  /// Returns false when the run was abandoned (disconnect, scope switch).
+  Future<bool> _catchUpOnce(ChannelHeadScope scope) async {
+    final rooms = _fedRoomIds();
+    final startedAt = roomCatchUpClock();
+    final watermark = _watermark(scope) ?? startedAt;
+    final since = max(0, watermark - _catchUpSkewSeconds);
+    final gaps = <String>{};
+    final fetched = <NostrEvent>[];
+    if (startedAt - watermark > _catchUpMaxAgeSeconds) {
+      gaps.addAll(rooms);
+    } else {
+      final session = _lifecycleRef.read(relaySessionProvider.notifier);
+      for (final chunk in chunkChannelIdsForLiveSubscriptions(rooms)) {
+        try {
+          final (events, complete) = await _fetchCatchUpChunk(
+            session,
+            chunk,
+            since,
+          );
+          fetched.addAll(events);
+          if (!complete) gaps.addAll(chunk);
+        } catch (error) {
+          debugPrint('[ChannelsNotifier] room catch-up failed: $error');
+          gaps.addAll(chunk);
+        }
+        if (!_isCatchUpCurrent(scope)) return false;
+      }
+    }
+    await _applyCatchUp(scope, rooms, gaps, fetched, since, startedAt);
+    return _isCatchUpCurrent(scope);
+  }
+
+  bool _isCatchUpCurrent(ChannelHeadScope scope) =>
+      _lifecycleRef.mounted &&
+      _catchUpScope == scope &&
+      _lifecycleRef.read(relaySessionProvider).status ==
+          SessionStatus.connected;
+
+  /// Every event of [rooms] since [since], newest first, paging back from
+  /// the oldest row while pages come back full. The second value says
+  /// whether the pages reached [since].
+  Future<(List<NostrEvent>, bool)> _fetchCatchUpChunk(
+    RelaySessionNotifier session,
+    List<String> rooms,
+    int since,
+  ) async {
+    final events = <NostrEvent>[];
+    NostrEvent? cursor;
+    for (var page = 0; page < _catchUpMaxPages; page++) {
+      final rows = await session.queryRelay([
+        NostrFilter(
+          kinds: _globalLiveEventKinds,
+          tags: {'#h': rooms},
+          since: since,
+          until: cursor?.createdAt,
+          limit: _catchUpPageLimit,
+          extensions: {if (cursor != null) 'before_id': cursor.id},
+        ),
+      ]);
+      events.addAll(rows);
+      if (rows.length < _catchUpPageLimit) return (events, true);
+      // The relay orders by time, newest first, then by id ascending.
+      cursor = rows.reduce(
+        (oldest, row) =>
+            row.createdAt < oldest.createdAt ||
+                (row.createdAt == oldest.createdAt &&
+                    row.id.compareTo(oldest.id) > 0)
+            ? row
+            : oldest,
+      );
+    }
+    return (events, false);
+  }
+
+  Future<void> _applyCatchUp(
+    ChannelHeadScope scope,
+    Set<String> rooms,
+    Set<String> gaps,
+    List<NostrEvent> fetched,
+    int since,
+    int startedAt,
+  ) async {
+    final state = _catchUp;
+    final store = _lifecycleRef.read(channelRoomStoreProvider);
+    for (final room in gaps) {
+      state.liveFloors[room] = startedAt;
+    }
+    final chunkSince = <String, int>{
+      for (final entry in _liveSubscriptionsByChunk.entries)
+        for (final id in entry.key.split('\u0000')) id: entry.value.liveSince,
+    };
+    fetched.sort(
+      (a, b) => a.createdAt != b.createdAt
+          ? a.createdAt.compareTo(b.createdAt)
+          : a.id.compareTo(b.id),
+    );
+    final byRoom = <String, List<NostrEvent>>{};
+    final seen = <String>{};
+    for (final event in fetched) {
+      final room = event.channelId;
+      if (room == null || !rooms.contains(room) || !seen.add(event.id)) {
+        continue;
+      }
+      (byRoom[room] ??= []).add(event);
+      if (_desiredLiveChannelIds.contains(room)) {
+        _ingestLiveEvent(event, liveSince: chunkSince[room] ?? since);
+      }
+    }
+    _advanceWatermark(scope, startedAt, caughtUp: true);
+    if (gaps.isNotEmpty) store.markGap(scope, gaps);
+    try {
+      await store.flush();
+    } catch (error) {
+      debugPrint('[ChannelsNotifier] room catch-up store write failed: $error');
+    }
+    if (!_lifecycleRef.mounted || _catchUpScope != scope) return;
+    store.publishCatchUp(
+      RoomCatchUp(scope: scope, rooms: rooms, gaps: gaps, events: byRoom),
+    );
+  }
+
+  void _schedulePersist() {
+    final state = _catchUp;
+    if (state.persistTimer != null) return;
+    try {
+      final prefs = _lifecycleRef.read(savedPrefsProvider);
+      final store = _lifecycleRef.read(channelRoomStoreProvider);
+      // Captures no ref: it may fire after this notifier is disposed.
+      state.persistTimer = Timer(_catchUpPersistDelay, () async {
+        state.persistTimer = null;
+        final snapshot = Map.of(state.watermarks);
+        // A watermark only vouches for events the stores have written.
+        await store.flush();
+        for (final MapEntry(key: scope, value: at) in snapshot.entries) {
+          unawaited(prefs.setString(_watermarkKey(scope), '$at'));
+        }
+      });
+    } catch (_) {
+      // Without storage the watermark lives for this session only.
+    }
+  }
+
+  static String _watermarkKey(ChannelHeadScope scope) =>
+      '$_catchUpWatermarkPrefix:${storageScopeFor(scope.relayUrl)}:'
+      '${scope.pubkey}';
+}
