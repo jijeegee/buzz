@@ -46,7 +46,9 @@ export function accountAfterSignOut(
 
 /**
  * Accounts the profile menu lists, in the backend's most-recent order. A
- * signed-out account is left out: adding it again signs it back in.
+ * signed-out account is left out: adding it again signs it back in. (The
+ * backend already leaves out a local key nobody signed in with that owns no
+ * agents.)
  */
 export function menuAccounts(
   accounts: readonly AccountSummary[],

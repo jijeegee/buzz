@@ -128,6 +128,17 @@ class App extends HookConsumerWidget {
     );
     final schemeName = communityTheme.theme;
     final authState = ref.watch(authProvider);
+    // Leaving the signed-in app (here, or signed out from another device):
+    // screens opened over Home (Settings, a chat) must not stay on top of the
+    // sign-in page on an ended session.
+    ref.listen<AsyncValue<AuthState>>(authProvider, (previous, next) {
+      if (previous?.value?.status == AuthStatus.authenticated &&
+          next.value?.status != AuthStatus.authenticated) {
+        _mobileRootNavigatorKey.currentState?.popUntil(
+          (route) => route.isFirst,
+        );
+      }
+    });
 
     useEffect(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {

@@ -439,6 +439,22 @@ fn read_index(secrets: &dyn Secrets) -> Result<Option<String>, String> {
 }
 
 /// Local agents in the agent store under `data_dir` (0 when there is none).
+/// Whether `owner` owns a local agent on this computer.
+fn owns_local_agents(data_dir: &Path, owner: &PublicKey) -> bool {
+    let agents_dir = data_dir.join("agents");
+    let records = std::fs::read(agents_dir.join("managed-agents.json"))
+        .ok()
+        .and_then(|bytes| {
+            serde_json::from_slice::<Vec<crate::managed_agents::ManagedAgentRecord>>(&bytes).ok()
+        })
+        .unwrap_or_default();
+    crate::managed_agents::owns_any_agent(
+        &agents_dir.join(crate::managed_agents::AGENT_OWNERS_FILE),
+        &records,
+        &owner.to_hex(),
+    )
+}
+
 pub(crate) fn local_agent_count(data_dir: &Path) -> usize {
     std::fs::read(data_dir.join("agents").join("managed-agents.json"))
         .ok()
@@ -1409,8 +1425,8 @@ pub(crate) fn reconcile_on_launch(data_dir: &Path) {
     }
 }
 
-/// Launch: when the active account is signed out here but another account is
-/// still signed in, start as that one (most recently used first) instead of
+/// Launch: when the active account is signed out here (or only a local key)
+/// but another account is still signed in, start as that one (most recently used first) instead of
 /// on the signed-out screen. Runs before [`reconcile`], which then refills the
 /// active-account copy from the new active account's own slots.
 fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<(), String> {
@@ -1419,7 +1435,19 @@ fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<
         return Ok(());
     };
     let profiles = super::account_profiles::load(data_dir);
-    let Some(next) = launch_account_of(&registry, &profiles) else {
+    let Some(active) = registry.active_pubkey() else {
+        return Ok(());
+    };
+    // Older agents with no owner yet belong to the account active until now,
+    // recorded before it can stop being active (and before asking whether it
+    // owns agents).
+    let migrated = registry.owners_migrated;
+    ensure_owners_recorded(data_dir, &mut registry, &active);
+    let owns_agents = owns_local_agents(data_dir, &active);
+    let Some(next) = launch_account_of(&registry, &profiles, owns_agents) else {
+        if registry.owners_migrated != migrated {
+            save_registry(secrets, data_dir, &registry)?;
+        }
         return Ok(());
     };
     // Only an account whose key is on this computer can become active.
@@ -1435,10 +1463,15 @@ fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<
 
 /// The account to start as when the active one is signed out on every server
 /// it is listed on: the most recently used account still signed in on one of
-/// those servers. `None` keeps the active account. Pure.
+/// those servers. A key-only active account (a local key nobody signed in
+/// with, listed for any server) that owns no agents here gives way to the
+/// most recently used account signed in anywhere; one with agents is kept, as
+/// only the active account can see its agents or link it to Google. `None`
+/// keeps the active account. Pure.
 fn launch_account_of(
     registry: &Registry,
     profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
+    active_owns_agents: bool,
 ) -> Option<PublicKey> {
     let active = registry.active_pubkey()?;
     let hex = active.to_hex();
@@ -1447,7 +1480,26 @@ fn launch_account_of(
         .iter()
         .filter(|a| a.pubkey == hex)
         .collect();
-    if listed.is_empty() || listed.iter().any(|a| a.state != AccountState::SignedOut) {
+    if listed.is_empty() {
+        return None;
+    }
+    if listed.iter().all(|a| a.state == AccountState::KeyOnly) {
+        if active_owns_agents {
+            return None;
+        }
+        let mut candidates: Vec<&Account> = registry
+            .accounts
+            .iter()
+            .filter(|a| a.state == AccountState::SignedIn && a.pubkey != hex)
+            .collect();
+        super::account_profiles::most_recent_first(&mut candidates, |a| {
+            profiles.get(&a.pubkey).and_then(|p| p.last_used_at)
+        });
+        return candidates
+            .into_iter()
+            .find_map(|a| PublicKey::from_hex(&a.pubkey).ok());
+    }
+    if listed.iter().any(|a| a.state != AccountState::SignedOut) {
         return None;
     }
     listed
@@ -1663,19 +1715,29 @@ pub fn list_accounts(app: tauri::AppHandle) -> Result<Vec<AccountSummary>, Strin
         .map_err(|_| "account storage is unavailable")?;
     let registry = load_registry(&data_dir)?.unwrap_or_default();
     let profiles = super::account_profiles::load(&data_dir);
-    Ok(account_summaries(&registry, &profiles, &origin))
+    Ok(account_summaries(&registry, &profiles, &origin, |pubkey| {
+        PublicKey::from_hex(pubkey).is_ok_and(|key| owns_local_agents(&data_dir, &key))
+    }))
 }
 
-/// [`list_accounts`] without the app. Pure.
+/// [`list_accounts`] without the app. A key-only entry that is not active and
+/// owns no agents here is left out: it is a local key nobody signed in with
+/// (one is made on an install's first run), not an account. Pure.
 fn account_summaries(
     registry: &Registry,
     profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
     origin: &str,
+    owns_agents: impl Fn(&str) -> bool,
 ) -> Vec<AccountSummary> {
     let mut summaries: Vec<AccountSummary> = registry
         .accounts
         .iter()
         .filter(|a| a.origin == origin || a.origin == ANY_ORIGIN)
+        .filter(|a| {
+            a.state != AccountState::KeyOnly
+                || registry.active.as_ref() == Some(&a.pubkey)
+                || owns_agents(&a.pubkey)
+        })
         .map(|a| {
             let profile = profiles.get(&a.pubkey).cloned().unwrap_or_default();
             AccountSummary {

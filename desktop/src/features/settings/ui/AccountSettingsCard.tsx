@@ -77,7 +77,7 @@ function errorText(error: unknown, fallback: string): string {
  * on the signed-out screen.
  */
 function reloadIntoNewIdentity() {
-  identityReload.reload();
+  identityReload.reloadHome();
 }
 
 /** The sign-out text, naming the account that takes over if there is one. */
@@ -164,12 +164,12 @@ export function AccountSettingsCard({
 
   if (!status?.supported) return null;
 
-  const signIn = (existingTokenAccount = false) =>
+  const signIn = () =>
     run("settings.account.signInFailed", async () => {
       // A local-only account links its own key; otherwise the chosen Google
       // account decides which account opens.
-      const connect = !existingTokenAccount && needsGoogleProtection(status);
-      const next = await login.run(false, existingTokenAccount, connect);
+      const connect = needsGoogleProtection(status);
+      const next = await login.run(false, false, connect);
       if (!next) return;
       setStatus(next);
       if (
@@ -248,21 +248,6 @@ export function AccountSettingsCard({
                     ? t("settings.account.continueWithGoogle")
                     : t("settings.account.signInWithGoogle")}
             </Button>
-            {status.keyBackupSupported &&
-            !status.keyBackup &&
-            !status.legacyTokenAccount &&
-            status.state === "signed_out" ? (
-              <Button
-                data-testid="existing-token-sign-in"
-                disabled={busy !== null}
-                onClick={() => void signIn(true)}
-                type="button"
-                variant="outline"
-                title={t("onboarding.googleSignIn.olderAccountTitle")}
-              >
-                {t("onboarding.googleSignIn.olderAccount")}
-              </Button>
-            ) : null}
             {status.state === "restoring" ? (
               // Rule 6: a restore that keeps failing must not strand the user;
               // signing out (forgetting the stored session) stays reachable.
@@ -485,7 +470,7 @@ function ActiveAccount({
                     onClick={() =>
                       void run("settings.account.deleteFailed", async () => {
                         await deleteTokenAccount();
-                        identityReload.reload();
+                        identityReload.reloadHome();
                       })
                     }
                     type="button"

@@ -296,4 +296,14 @@ export const identityReload = {
     // Sockets first: a reload alone leaves them open in the native layer.
     void closeSocketsThenReload();
   },
+  /**
+   * [`reload`] onto Chats, for an account change the user made here. The
+   * reload keeps the URL hash, so the new identity would otherwise start on
+   * the page the change was made from (often Settings › Account). Changes
+   * from elsewhere keep the current page.
+   */
+  reloadHome(): void {
+    window.history.replaceState(null, "", "#/");
+    identityReload.reload();
+  },
 };

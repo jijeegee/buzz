@@ -5847,6 +5847,14 @@
   "@onboarding.signedOut.tryAgain": {
     "description": "Signed-out screen, button that reloads the app. Short."
   },
+  "onboarding.signedOut.otherAccounts": "Still signed in on this computer",
+  "@onboarding.signedOut.otherAccounts": {
+    "description": "Signed-out screen, heading above the other accounts that are still signed in and can be switched to."
+  },
+  "onboarding.signedOut.continueAs": "Continue as {name}",
+  "@onboarding.signedOut.continueAs": {
+    "description": "Signed-out screen, button that switches to another signed-in account. {name} is the account's name or email."
+  },
   "onboarding.termsLine.text": "By continuing you agree to the <terms>Terms of Service</terms>",
   "@onboarding.termsLine.text": {
     "description": "Small line under the Google sign-in button; <terms> is a link that opens the terms. Keep the tag. No period in English."

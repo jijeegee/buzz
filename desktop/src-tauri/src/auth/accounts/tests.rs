@@ -1158,10 +1158,13 @@ fn the_account_list_carries_profiles_most_recent_first() {
         Keys::generate().public_key(),
         Keys::generate().public_key(),
     );
+    let (unused, with_agents) = (Keys::generate().public_key(), Keys::generate().public_key());
     let mut registry = Registry::default();
     registry.upsert(ORIGIN, &a, AccountState::SignedIn);
     registry.upsert(ORIGIN, &b, AccountState::NeedsLogin);
     registry.upsert("https://other.test", &c, AccountState::SignedIn);
+    registry.upsert(ANY_ORIGIN, &unused, AccountState::KeyOnly);
+    registry.upsert(ANY_ORIGIN, &with_agents, AccountState::KeyOnly);
     registry.active = Some(a.to_hex());
     let mut profiles = std::collections::BTreeMap::new();
     profiles.insert(
@@ -1179,11 +1182,12 @@ fn the_account_list_carries_profiles_most_recent_first() {
             ..Default::default()
         },
     );
-    let list = account_summaries(&registry, &profiles, ORIGIN);
-    // Another server's account is not listed.
+    let agents_of = with_agents.to_hex();
+    let list = account_summaries(&registry, &profiles, ORIGIN, |p| p == agents_of);
+    // Another server's account is not listed, nor a local key with no agents.
     assert_eq!(
         list.iter().map(|x| x.pubkey.clone()).collect::<Vec<_>>(),
-        [b.to_hex(), a.to_hex()]
+        [b.to_hex(), a.to_hex(), with_agents.to_hex()]
     );
     assert_eq!(list[0].display_name.as_deref(), Some("B"));
     assert_eq!(list[0].state, AccountState::NeedsLogin);
@@ -1301,28 +1305,45 @@ fn a_launch_signed_out_here_starts_as_the_most_recent_signed_in_account() {
     profiles.insert(recent.to_hex(), used(20));
     profiles.insert(elsewhere.to_hex(), used(30));
     // The signed-out account's server decides: never another server's account.
-    assert_eq!(launch_account_of(&registry, &profiles), Some(recent));
+    assert_eq!(launch_account_of(&registry, &profiles, false), Some(recent));
 
-    // Still signed in (or key-only, or waiting for a fresh sign-in): kept.
-    for state in [
-        AccountState::SignedIn,
-        AccountState::KeyOnly,
-        AccountState::NeedsLogin,
-    ] {
+    // Still signed in (or waiting for a fresh sign-in): kept.
+    for state in [AccountState::SignedIn, AccountState::NeedsLogin] {
         let mut kept = registry.clone();
         kept.upsert(ORIGIN, &out, state);
-        assert_eq!(launch_account_of(&kept, &profiles), None, "{state:?}");
+        assert_eq!(
+            launch_account_of(&kept, &profiles, false),
+            None,
+            "{state:?}"
+        );
     }
     // Nobody else signed in there: the signed-out screen.
     let mut alone = Registry::default();
     alone.upsert(ORIGIN, &out, AccountState::SignedOut);
     alone.upsert(ORIGIN, &old, AccountState::SignedOut);
     alone.active = Some(out.to_hex());
-    assert_eq!(launch_account_of(&alone, &profiles), None);
+    assert_eq!(launch_account_of(&alone, &profiles, false), None);
     // No active account: nothing to change.
     let mut none = registry.clone();
     none.active = None;
-    assert_eq!(launch_account_of(&none, &profiles), None);
+    assert_eq!(launch_account_of(&none, &profiles, false), None);
+
+    // A local key nobody signed in with (listed for any server) gives way to
+    // the most recently used account signed in anywhere.
+    let mut local = Registry::default();
+    local.upsert(ANY_ORIGIN, &out, AccountState::KeyOnly);
+    local.upsert(ORIGIN, &old, AccountState::SignedIn);
+    local.upsert("https://other.test", &elsewhere, AccountState::SignedIn);
+    local.active = Some(out.to_hex());
+    assert_eq!(launch_account_of(&local, &profiles, false), Some(elsewhere));
+    // ...unless it owns agents here: only the active account sees them.
+    assert_eq!(launch_account_of(&local, &profiles, true), None);
+    // ...and is kept when nobody is signed in.
+    let mut only_local = Registry::default();
+    only_local.upsert(ANY_ORIGIN, &out, AccountState::KeyOnly);
+    only_local.upsert(ORIGIN, &old, AccountState::NeedsLogin);
+    only_local.active = Some(out.to_hex());
+    assert_eq!(launch_account_of(&only_local, &profiles, false), None);
 }
 
 #[test]
@@ -1347,6 +1368,65 @@ fn a_launch_signed_out_here_moves_the_list_to_the_signed_in_account() {
         saved.get(ORIGIN, &out.public_key()).map(|a| a.state),
         Some(AccountState::SignedOut)
     );
+}
+
+#[test]
+fn a_launch_as_a_local_key_moves_to_the_signed_in_account() {
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Mem::default();
+    let (local, next) = (Keys::generate(), Keys::generate());
+    for keys in [&local, &next] {
+        secrets.put(&identity_slot(&keys.public_key()), &nsec(keys));
+    }
+    let mut registry = Registry::default();
+    registry.upsert(ANY_ORIGIN, &local.public_key(), AccountState::KeyOnly);
+    registry.upsert(ORIGIN, &next.public_key(), AccountState::SignedIn);
+    registry.active = Some(local.public_key().to_hex());
+    save_registry(&secrets, dir.path(), &registry).unwrap();
+
+    start_as_signed_in_account(&secrets, dir.path()).unwrap();
+    let saved = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(saved.active_pubkey(), Some(next.public_key()));
+    // The local key is kept, still key-only.
+    assert_eq!(
+        saved.get(ANY_ORIGIN, &local.public_key()).map(|a| a.state),
+        Some(AccountState::KeyOnly)
+    );
+}
+
+#[test]
+fn a_launch_as_a_local_key_with_agents_keeps_it_active() {
+    let dir = tempfile::tempdir().unwrap();
+    let secrets = Mem::default();
+    let (local, next) = (Keys::generate(), Keys::generate());
+    for keys in [&local, &next] {
+        secrets.put(&identity_slot(&keys.public_key()), &nsec(keys));
+    }
+    // An older agent with no owner recorded yet: it belongs to the local key.
+    std::fs::create_dir_all(dir.path().join("agents")).unwrap();
+    std::fs::write(
+        dir.path().join("agents").join("managed-agents.json"),
+        format!(
+            r#"[{{"pubkey":"{}","name":"Scout","private_key_nsec":"","relay_url":"",
+            "acp_command":"kuzz-acp","agent_command":"goose","agent_args":[],
+            "mcp_command":"","turn_timeout_seconds":320,"system_prompt":null,
+            "created_at":"2026-01-01T00:00:00Z","updated_at":"2026-01-01T00:00:00Z",
+            "last_started_at":null,"last_stopped_at":null,"last_exit_code":null,
+            "last_error":null}}]"#,
+            Keys::generate().public_key().to_hex()
+        ),
+    )
+    .unwrap();
+    let mut registry = Registry::default();
+    registry.upsert(ANY_ORIGIN, &local.public_key(), AccountState::KeyOnly);
+    registry.upsert(ORIGIN, &next.public_key(), AccountState::SignedIn);
+    registry.active = Some(local.public_key().to_hex());
+    save_registry(&secrets, dir.path(), &registry).unwrap();
+
+    start_as_signed_in_account(&secrets, dir.path()).unwrap();
+    let saved = load_registry(dir.path()).unwrap().unwrap();
+    assert_eq!(saved.active_pubkey(), Some(local.public_key()));
+    assert!(saved.owners_migrated, "the agent's owner was recorded");
 }
 
 #[tokio::test]

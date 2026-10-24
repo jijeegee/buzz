@@ -9,6 +9,7 @@ const relayUrl = "wss://relay.test";
 const calls = [];
 let runtimes = [];
 let supported = true;
+let accounts = [];
 
 const tauriMock = {
   invoke(command, args) {
@@ -29,6 +30,10 @@ const tauriMock = {
         });
       case "list_managed_agent_runtimes":
         return Promise.resolve(runtimes);
+      case "list_accounts":
+        return Promise.resolve(accounts);
+      case "switch_account":
+        return Promise.resolve(null);
       case "plugin:event|listen":
         return Promise.resolve(1);
       case "plugin:event|unlisten":
@@ -138,5 +143,63 @@ test("Google being unreachable still leaves a way to retry", async () => {
     ),
   );
   supported = true;
+  await unmount();
+});
+
+test("another account still signed in here is offered to switch to", async () => {
+  const account = (pubkey, overrides) => ({
+    pubkey,
+    origin: "https://relay.test",
+    state: "signed_in",
+    active: false,
+    displayName: null,
+    kuzzName: null,
+    avatarUrl: null,
+    email: null,
+    lastUsedAt: null,
+    ...overrides,
+  });
+  accounts = [
+    account("a".repeat(64), { active: true, state: "signed_out" }),
+    account("b".repeat(64), { kuzzName: "Jiho" }),
+    account("c".repeat(64), { state: "needs_login", kuzzName: "Old" }),
+    account("d".repeat(64), { state: "key_only" }),
+  ];
+  const tokenAuth = await import("../../../shared/api/tokenAuth.ts");
+  const reloads = [];
+  const original = tokenAuth.identityReload.reload;
+  tokenAuth.identityReload.reload = () => reloads.push(true);
+  const { container, unmount } = await mount(true);
+  const section = container.querySelector(
+    "[data-testid='signed-out-other-accounts']",
+  );
+  assert.ok(section, "other signed-in accounts listed");
+  // Only the signed-in one: not the active, needs-login or key-only accounts.
+  assert.equal(section.querySelectorAll("button").length, 1);
+  assert.match(section.textContent, /Continue as Jiho/);
+  assert.doesNotMatch(section.textContent, /Old|Account /);
+  await act(async () =>
+    section
+      .querySelector(`[data-testid='signed-out-switch-${"b".repeat(64)}']`)
+      .click(),
+  );
+  for (let i = 0; i < 5; i += 1) {
+    await act(() => new Promise((resolve) => setTimeout(resolve, 5)));
+  }
+  const switched = calls.find((c) => c.command === "switch_account");
+  assert.equal(switched?.args.pubkey, "b".repeat(64));
+  assert.equal(reloads.length, 1, "reloads into the chosen account");
+  tokenAuth.identityReload.reload = original;
+  accounts = [];
+  await unmount();
+});
+
+test("no other signed-in account: only Google sign-in", async () => {
+  accounts = [];
+  const { container, unmount } = await mount(true);
+  assert.equal(
+    container.querySelector("[data-testid='signed-out-other-accounts']"),
+    null,
+  );
   await unmount();
 });
