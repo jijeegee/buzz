@@ -2,9 +2,8 @@
 //!
 //! The relay is the OIDC relying party: the IdP client secret lives only on
 //! the server, and clients prove they started the login with PKCE (see
-//! [`crate::token::verify_pkce`]). Providers implement [`OidcProvider`] so a
-//! second IdP (Apple, ...) is an added implementation plus an
-//! `identities.provider` CHECK extension; tests use a fake implementation.
+//! [`crate::token::verify_pkce`]). Providers implement [`OidcProvider`]:
+//! Google and Sign in with Apple; tests use a fake implementation.
 
 use std::time::{Duration, Instant};
 
@@ -12,6 +11,9 @@ use futures_util::future::BoxFuture;
 use jsonwebtoken::jwk::JwkSet;
 use serde::Deserialize;
 use tokio::sync::RwLock;
+
+mod apple;
+pub use apple::{first_sign_in_name, AppleConfig, AppleProvider};
 
 /// Identity asserted by a provider after a successful code exchange.
 #[derive(Debug, Clone, PartialEq, Eq)]

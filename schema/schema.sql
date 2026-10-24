@@ -2040,9 +2040,9 @@ CREATE UNIQUE INDEX principals_username_lower
 CREATE UNIQUE INDEX principals_single_relay
     ON principals (kind) WHERE kind = 'relay';
 
--- External identities. Adding a provider (Apple, ...) is a CHECK extension.
+-- External identities (Google, Sign in with Apple).
 CREATE TABLE identities (
-    provider      TEXT NOT NULL CHECK (provider IN ('google')),
+    provider      TEXT NOT NULL CHECK (provider IN ('google', 'apple')),
     subject       TEXT NOT NULL,
     principal_id  BYTEA NOT NULL REFERENCES principals(id) ON DELETE CASCADE,
     email         TEXT,
