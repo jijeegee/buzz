@@ -88,9 +88,11 @@ Database openMessageDb(String path) {
 }
 
 /// A connection for reads on the UI isolate: never writes, and gives up
-/// quickly rather than block a frame.
+/// quickly rather than block a frame. Opened read-write without creating the
+/// file, so it can map the WAL index even before the writer has run this
+/// session; `query_only` keeps it from writing.
 Database openMessageDbReader(String path) {
-  final db = sqlite3.open(path, mode: OpenMode.readOnly);
+  final db = sqlite3.open(path, mode: OpenMode.readWrite);
   db.execute('PRAGMA query_only = 1');
   db.execute('PRAGMA busy_timeout = 50');
   return db;
