@@ -284,6 +284,36 @@ pub(super) async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMa
     }
 }
 
+/// `POST /auth/sessions/end` — end only the calling session (its tokens),
+/// keeping the device, its key and its other sessions. Apps use this to clean
+/// up a sign-in that was replaced or never stored; `/auth/logout` would sign
+/// the whole device out, including the session that replaced it.
+pub(super) async fn end_session(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+) -> Response {
+    let binding = match authenticate_user_session(&state, &headers).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
+    let Some(session_id) = binding.session_id else {
+        return internal("end_session", &"user token without session");
+    };
+    match state
+        .db
+        .revoke_session(&binding.principal, session_id, RevokeReason::Logout)
+        .await
+    {
+        Ok(Some(revoked)) => {
+            publish_revocations(&state, &revoked, RevokeReason::Logout.as_str(), None).await;
+            tracing::info!(principal = %binding.principal, session = %session_id, "auth.session_end");
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(None) => not_found("session not found"),
+        Err(error) => internal("end_session", &error),
+    }
+}
+
 fn device_json(
     device: &kuzz_db::identity::DeviceRecord,
     current: Option<Uuid>,

@@ -668,10 +668,11 @@ class TokenSessionController {
 
   /// Best-effort revoke of a session whose refresh could not be saved. If
   /// this also fails, the relay's refresh-reuse detection revokes it when
-  /// the stale refresh is next presented.
+  /// the stale refresh is next presented. Only that session: a logout would
+  /// also end a newer sign-in of this device.
   Future<void> _revokeUnsaved(String accessToken) async {
     try {
-      await _api.logout(accessToken);
+      await _api.endSession(accessToken);
     } on AuthApiException catch (error) {
       debugPrint('Could not revoke unsaved session on $origin: $error');
     }

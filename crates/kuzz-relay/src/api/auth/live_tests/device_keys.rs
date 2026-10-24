@@ -276,6 +276,51 @@ async fn refresh_with(inst: &Instance, refresh: &str, proof: Option<&str>) -> (u
     (status, response.json().await.unwrap_or(Value::Null))
 }
 
+/// Ending a replaced sign-in ends only that session: the device, its key and
+/// the session that replaced it stay (a second sign-in on a Mac used
+/// `/auth/logout` for this and signed the whole device out).
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn ending_a_session_keeps_the_device() {
+    let (inst, pool) = mode_instance(DeviceAdmissionMode::Log, &[]).await;
+    let subject = uuid::Uuid::new_v4().to_string();
+    let install = uuid::Uuid::new_v4().to_string();
+    let pc = device_key();
+    let old = login_with(&inst, &subject, Some(&install), keyed(&pc))
+        .await
+        .expect("first sign-in");
+    let new = login_with(&inst, &subject, Some(&install), keyed(&pc))
+        .await
+        .expect("second sign-in");
+    assert_eq!(new.device_id, old.device_id);
+    assert_eq!(live_sessions(&pool, old.device_id).await, 2);
+
+    let ended = inst
+        .post("/auth/sessions/end")
+        .bearer_auth(&old.login.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(ended.status(), 204);
+    assert_eq!(
+        me_with(&inst, &old.login.access, None).await.1,
+        "token_revoked"
+    );
+    assert_eq!(me_with(&inst, &new.login.access, None).await.0, 200);
+    assert_eq!(live_sessions(&pool, old.device_id).await, 1);
+    let (key, _, _, revoked) = device_row(&pool, old.device_id).await;
+    assert_eq!(key, Some(pubkey_bytes(&pc)), "the device keeps its key");
+    assert!(!revoked, "the device stays signed in");
+
+    let again = inst
+        .post("/auth/sessions/end")
+        .bearer_auth(&old.login.access)
+        .send()
+        .await
+        .unwrap();
+    assert_eq!(again.status(), 401, "an ended session cannot end anything");
+}
+
 /// First login stores the key, the same key is the same device, a keyless
 /// install row takes the key, and another key on that install is a new row
 /// without the install id. Nothing is revoked on the way.

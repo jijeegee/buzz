@@ -228,6 +228,18 @@ class AuthApi {
     );
   }
 
+  /// End only this session (`POST /auth/sessions/end`); the device and its
+  /// other sessions stay signed in. For cleaning up a sign-in that was
+  /// superseded or never saved, where [logout] would sign the device out.
+  Future<void> endSession(String accessToken) async {
+    await _post(
+      '/auth/sessions/end',
+      const <String, Object?>{},
+      accessToken: accessToken,
+      expectBody: false,
+    );
+  }
+
   Future<Map<String, Object?>> _post(
     String path,
     Map<String, Object?> body, {

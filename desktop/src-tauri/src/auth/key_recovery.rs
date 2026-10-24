@@ -467,14 +467,15 @@ pub(crate) async fn complete<R: tauri::Runtime>(
     };
     // Signing in again to an account that still had a session here replaced
     // that session: end the old one on the server instead of orphaning it.
-    // Only now, once the new token is committed in its place.
+    // Only now, once the new token is committed in its place. Only that
+    // session: both share this device, so a logout would end the new one too.
     if let Some(old) = replaced {
         let client = state.http_client.clone();
         let origin = origin.to_owned();
         tauri::async_runtime::spawn(async move {
             match api::refresh(&client, &origin, &old).await {
                 Ok(replaced) => {
-                    if let Err(error) = api::logout(&client, &origin, &replaced.access).await {
+                    if let Err(error) = api::end_session(&client, &origin, &replaced.access).await {
                         eprintln!("kuzz-desktop: auth: replaced session not revoked: {error}");
                     }
                 }
