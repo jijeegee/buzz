@@ -113,6 +113,10 @@ pub struct AuthTokenConfig {
     pub exchange_grace: Duration,
     /// `AUTH_OIDC_GOOGLE_CLIENT_ID` / `AUTH_OIDC_GOOGLE_CLIENT_SECRET`.
     pub google: Option<GoogleOidcConfig>,
+    /// Sign in with Apple: `AUTH_OIDC_APPLE_SERVICES_ID`, `_TEAM_ID`,
+    /// `_KEY_ID`, `_PRIVATE_KEY` (the `.p8` PEM; `\n` escapes allowed) set
+    /// together, plus `_BUNDLE_ID` for the iOS app's native sign-in.
+    pub apple: Option<kuzz_auth::oidc::AppleConfig>,
     /// `AUTH_OIDC_FAKE` — dev builds only: a fake provider that logs in
     /// whatever subject the start URL names. Rejected in non-dev builds.
     pub fake_oidc: bool,
@@ -151,6 +155,7 @@ impl AuthTokenConfig {
             bot_ttl: Duration::from_secs(DEFAULT_BOT_TTL_SECS),
             exchange_grace: Duration::from_secs(DEFAULT_EXCHANGE_GRACE_SECS),
             google: None,
+            apple: None,
             fake_oidc: false,
             public_url: http_origin_from_relay_url(relay_url),
             mobile_redirect_schemes: vec![DEFAULT_MOBILE_REDIRECT_SCHEME.to_owned()],
@@ -195,6 +200,7 @@ impl AuthTokenConfig {
                 ))
             }
         };
+        config.apple = apple_config(&lookup)?;
         config.fake_oidc = parse_flag(&lookup, "AUTH_OIDC_FAKE")?;
         if config.fake_oidc && !cfg!(any(test, feature = "dev")) {
             return Err(ConfigError::InvalidValue(
@@ -334,6 +340,34 @@ pub fn http_origin_from_relay_url(relay_url: &str) -> String {
     origin.trim_end_matches('/').to_owned()
 }
 
+/// The Sign in with Apple credentials, all or none.
+fn apple_config(
+    lookup: &impl Fn(&str) -> Option<String>,
+) -> Result<Option<kuzz_auth::oidc::AppleConfig>, ConfigError> {
+    let services_id = non_empty(lookup, "AUTH_OIDC_APPLE_SERVICES_ID");
+    let team_id = non_empty(lookup, "AUTH_OIDC_APPLE_TEAM_ID");
+    let key_id = non_empty(lookup, "AUTH_OIDC_APPLE_KEY_ID");
+    let private_key = non_empty(lookup, "AUTH_OIDC_APPLE_PRIVATE_KEY");
+    let bundle_id = non_empty(lookup, "AUTH_OIDC_APPLE_BUNDLE_ID");
+    match (services_id, team_id, key_id, private_key) {
+        (Some(services_id), Some(team_id), Some(key_id), Some(private_key)) => {
+            Ok(Some(kuzz_auth::oidc::AppleConfig {
+                services_id,
+                bundle_id,
+                team_id,
+                key_id,
+                // Env files carry the PEM on one line.
+                private_key_pem: private_key.replace("\\n", "\n"),
+            }))
+        }
+        (None, None, None, None) if bundle_id.is_none() => Ok(None),
+        _ => Err(ConfigError::InvalidValue(
+            "AUTH_OIDC_APPLE_SERVICES_ID, AUTH_OIDC_APPLE_TEAM_ID, AUTH_OIDC_APPLE_KEY_ID and AUTH_OIDC_APPLE_PRIVATE_KEY must be set together"
+                .into(),
+        )),
+    }
+}
+
 fn non_empty(lookup: &impl Fn(&str) -> Option<String>, name: &str) -> Option<String> {
     lookup(name)
         .map(|v| v.trim().to_owned())
@@ -416,6 +450,34 @@ mod tests {
             config.operator_bootstrap_email.as_deref(),
             Some("Owner@Example.com")
         );
+    }
+
+    #[test]
+    fn apple_is_all_or_none_and_unescapes_the_key() {
+        let config = AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[
+                ("AUTH_OIDC_APPLE_SERVICES_ID", "app.kuzz.signin"),
+                ("AUTH_OIDC_APPLE_TEAM_ID", "TEAM"),
+                ("AUTH_OIDC_APPLE_KEY_ID", "KEY"),
+                ("AUTH_OIDC_APPLE_PRIVATE_KEY", "-----BEGIN-----\\nabc\\n-----END-----"),
+            ]),
+        )
+        .unwrap();
+        let apple = config.apple.as_ref().expect("apple");
+        assert_eq!(apple.private_key_pem, "-----BEGIN-----\nabc\n-----END-----");
+        assert_eq!(apple.bundle_id, None);
+        assert!(!format!("{config:?}").contains("abc"), "key is redacted");
+        assert!(AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[("AUTH_OIDC_APPLE_SERVICES_ID", "app.kuzz.signin")])
+        )
+        .is_err());
+        assert!(AuthTokenConfig::from_lookup(
+            "ws://h",
+            lookup(&[("AUTH_OIDC_APPLE_BUNDLE_ID", "app.kuzz.mobile")])
+        )
+        .is_err());
     }
 
     #[test]

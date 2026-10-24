@@ -142,3 +142,94 @@ async fn app_sign_in_and_browser_states_do_not_mix() {
         .expect("start");
     assert_eq!(response.status(), 400);
 }
+
+async fn display_name(inst: &Instance, access: &str) -> String {
+    let me: Value = inst
+        .get("/auth/me")
+        .bearer_auth(access)
+        .send()
+        .await
+        .expect("me")
+        .json()
+        .await
+        .expect("json");
+    me["display_name"].as_str().unwrap_or_default().to_owned()
+}
+
+/// Sign in with Apple's `form_post` callback, with the name Apple sends
+/// only on the first sign-in.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn form_post_callback_signs_in_and_keeps_the_first_sign_in_name() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let inst = instance(&host).await;
+    reset_login_limits(&inst).await;
+    let verifier = verifier();
+    let state = verifier[..24].to_owned();
+    let challenge = kuzz_auth::token::pkce_s256_challenge(&verifier);
+    let response = inst
+        .get_with(
+            "/auth/oidc/google/start",
+            &[
+                ("state", state.as_str()),
+                ("code_challenge", challenge.as_str()),
+                ("client", "cli"),
+                ("identity_mode", "token"),
+                ("redirect_uri", REDIRECT_URI),
+            ],
+        )
+        .send()
+        .await
+        .expect("start");
+    assert_eq!(response.status(), 302);
+    let subject = format!("anon-{}", uuid::Uuid::new_v4());
+    let form = url::form_urlencoded::Serializer::new(String::new())
+        .append_pair("code", &format!("{subject}||false"))
+        .append_pair("state", &state)
+        .append_pair("user", r#"{"name":{"firstName":"Ji","lastName":"Ho"}}"#)
+        .finish();
+    let response = inst
+        .post("/auth/oidc/google/callback")
+        .header("content-type", "application/x-www-form-urlencoded")
+        .body(form)
+        .send()
+        .await
+        .expect("callback");
+    assert_eq!(response.status(), 302);
+    let location = response.headers()["location"].to_str().unwrap().to_owned();
+    let code = query_param(&location, "code").expect("login code");
+    let login = complete(&inst, &code, &verifier).await;
+    assert_eq!(display_name(&inst, &login.access).await, "Ji Ho");
+}
+
+/// An app sign-in whose token carries no name takes the one the app sends.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn app_sign_in_takes_the_platform_name_when_the_token_has_none() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let inst = instance(&host).await;
+    reset_login_limits(&inst).await;
+    let verifier = verifier();
+    let (state, nonce) = app_start(&inst, &verifier).await;
+    let subject = format!("anon-{}", uuid::Uuid::new_v4());
+    let response = inst
+        .post("/auth/oidc/google/id-token")
+        .json(&json!({
+            "state": state,
+            "id_token": format!("{subject}||false|{nonce}"),
+            "name": "  Ji Ho  ",
+        }))
+        .send()
+        .await
+        .expect("id-token");
+    assert_eq!(response.status(), 200);
+    let body: Value = response.json().await.expect("json");
+    let login = complete(&inst, body["login_code"].as_str().unwrap(), &verifier).await;
+    assert_eq!(display_name(&inst, &login.access).await, "Ji Ho");
+}

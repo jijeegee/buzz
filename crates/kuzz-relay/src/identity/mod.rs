@@ -125,6 +125,14 @@ impl IdentityRuntime {
                     Err(error) => tracing::error!(%error, "Google OIDC provider unavailable"),
                 }
             }
+            if let Some(apple) = &config.apple {
+                match kuzz_auth::oidc::AppleProvider::new(apple.clone()) {
+                    Ok(provider) => {
+                        providers.insert("apple".into(), Arc::new(provider));
+                    }
+                    Err(error) => tracing::error!(%error, "Sign in with Apple unavailable"),
+                }
+            }
             #[cfg(any(test, feature = "dev"))]
             if config.fake_oidc {
                 providers.insert("google".into(), Arc::new(FakeOidcProvider));

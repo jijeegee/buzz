@@ -186,6 +186,8 @@ struct CallbackQuery {
     code: Option<String>,
     state: Option<String>,
     error: Option<String>,
+    /// Sign in with Apple's first-sign-in user JSON (`form_post` only).
+    user: Option<String>,
 }
 
 fn is_url_safe(value: &str) -> bool {
@@ -401,6 +403,31 @@ pub(super) async fn callback(
         Ok(query) => query,
         Err(_) => return bad_request("invalid query"),
     };
+    finish_callback(state, provider_name, query).await
+}
+
+/// `POST /auth/oidc/{provider}/callback`: the same callback as a form, as
+/// Sign in with Apple sends it (`response_mode=form_post`).
+pub(super) async fn callback_form(
+    State(state): State<Arc<AppState>>,
+    Path(provider_name): Path<String>,
+    body: Bytes,
+) -> Response {
+    if body.len() > 8 * 1024 {
+        return bad_request("callback form too large");
+    }
+    let query: CallbackQuery = match serde_urlencoded::from_bytes(&body) {
+        Ok(query) => query,
+        Err(_) => return bad_request("invalid form"),
+    };
+    finish_callback(state, provider_name, query).await
+}
+
+async fn finish_callback(
+    state: Arc<AppState>,
+    provider_name: String,
+    query: CallbackQuery,
+) -> Response {
     let Some(client_state) = query.state.filter(|s| s.len() <= MAX_STATE_LEN) else {
         return bad_request("missing state");
     };
@@ -434,7 +461,7 @@ pub(super) async fn callback(
         return fail("login_failed");
     };
     let callback_url = state.identity.config().callback_url(&provider_name);
-    let identity = match provider
+    let mut identity = match provider
         .exchange_code(&code, &callback_url, &pending.nonce)
         .await
     {
@@ -444,6 +471,12 @@ pub(super) async fn callback(
             return fail("login_failed");
         }
     };
+    if identity.name.is_none() {
+        identity.name = query
+            .user
+            .as_deref()
+            .and_then(kuzz_auth::oidc::first_sign_in_name);
+    }
     match issue_login_code(&state, &provider_name, &pending, &identity).await {
         Ok(code_token) => client_redirect(
             &pending.redirect_uri,
@@ -453,9 +486,11 @@ pub(super) async fn callback(
     }
 }
 
-/// `POST /auth/oidc/{provider}/id-token` `{state, id_token}`: finish an app
-/// sign-in `start`ed with `response=json`. Answers `{login_code}` for
-/// `complete`, exactly what `callback` hands a browser client.
+/// `POST /auth/oidc/{provider}/id-token` `{state, id_token, name?}`: finish
+/// an app sign-in `start`ed with `response=json`. Answers `{login_code}` for
+/// `complete`, exactly what `callback` hands a browser client. `name`: the
+/// display name the platform gave the app when the token carries none
+/// (Apple sends it only on the first sign-in).
 pub(super) async fn id_token(
     State(state): State<Arc<AppState>>,
     Path(provider_name): Path<String>,
@@ -508,7 +543,7 @@ pub(super) async fn id_token(
     let Some(provider) = state.identity.provider(&provider_name) else {
         return super::not_found("unknown provider");
     };
-    let identity = match provider.verify_id_token(id_token, &pending.nonce).await {
+    let mut identity = match provider.verify_id_token(id_token, &pending.nonce).await {
         Ok(identity) => identity,
         Err(kuzz_auth::oidc::OidcError::Unavailable(error)) => {
             tracing::warn!(%error, provider = %provider_name, "OIDC provider unavailable");
@@ -523,6 +558,14 @@ pub(super) async fn id_token(
             );
         }
     };
+    if identity.name.is_none() {
+        identity.name = body
+            .get("name")
+            .and_then(|v| v.as_str())
+            .map(str::trim)
+            .filter(|name| !name.is_empty() && !name.chars().any(char::is_control))
+            .map(|name| name.chars().take(64).collect());
+    }
     match issue_login_code(&state, &provider_name, &pending, &identity).await {
         Ok(code_token) => axum::Json(json!({ "login_code": code_token.expose() })).into_response(),
         Err(error) => {

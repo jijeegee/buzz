@@ -41,7 +41,8 @@ type Ws =
 const REDIRECT_URI: &str = "http://127.0.0.1:9999/cb";
 const GRACE_SECS: u64 = 2;
 
-/// Fake IdP: the callback `code` is `subject|email|verified`.
+/// Fake IdP: the callback `code` is `subject|email|verified`. A subject
+/// starting `anon-` carries no name, like Apple after the first sign-in.
 struct TestProvider;
 
 impl OidcProvider for TestProvider {
@@ -64,11 +65,12 @@ impl OidcProvider for TestProvider {
             let subject = parts.next().unwrap_or_default().to_owned();
             let email = parts.next().filter(|e| !e.is_empty()).map(str::to_owned);
             let email_verified = parts.next() == Some("true");
+            let named = !subject.starts_with("anon-");
             Ok(OidcIdentity {
                 subject,
                 email,
                 email_verified,
-                name: Some("Test User".into()),
+                name: named.then(|| "Test User".into()),
                 picture: None,
             })
         })
