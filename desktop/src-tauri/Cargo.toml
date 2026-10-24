@@ -85,6 +85,8 @@ tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-updater = "2"
 tauri-plugin-process = "2"
+# 2.7 needs tauri 2.12; keep the locked tauri.
+tauri-plugin-autostart = "~2.5"
 infer = "0.19"
 hex = "0.4"
 ed25519-dalek = "=3.0.0"

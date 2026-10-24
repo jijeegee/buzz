@@ -1314,6 +1314,10 @@
   "@settingsSignedInWithGoogle": {
     "description": "Settings page, Account section: label of the account row before the name or email loads; also a snackbar after connecting Google."
   },
+  "settingsGeneralSection": "General",
+  "@settingsGeneralSection": {
+    "description": "Settings, heading of the first section: general app settings such as the app language. Short."
+  },
   "settingsAppearanceSection": "Appearance",
   "@settingsAppearanceSection": {
     "description": "Settings page, heading of the section with the theme row. Short."

@@ -75,16 +75,12 @@ export const settingsNavGroups: Array<{
   labelKey: MessageKey;
   sections: SettingsSection[];
 }> = [
-  // Profile is how others see me; everything below is how my app works.
-  {
-    label: "Me",
-    labelKey: "settings.nav.groupMe",
-    sections: ["profile"],
-  },
+  // General first: Settings opens on it.
   {
     label: "Settings",
     labelKey: "settings.nav.groupSettings",
     sections: [
+      "general",
       "account",
       "devices",
       "notifications",
@@ -96,6 +92,12 @@ export const settingsNavGroups: Array<{
       "local-archive",
       "channel-templates",
     ],
+  },
+  // Profile is how others see me.
+  {
+    label: "Me",
+    labelKey: "settings.nav.groupMe",
+    sections: ["profile"],
   },
   {
     label: "Members",

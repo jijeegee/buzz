@@ -257,6 +257,7 @@ class SettingsPage extends HookConsumerWidget {
               children: isProfile
                   ? [profileHeader, const KuzzIdSettings()]
                   : [
+                      const _GeneralSection(),
                       _CommunitySection(invitePageBuilder: invitePageBuilder),
                       if (tokenOrigin != null)
                         _AccountSection(origin: tokenOrigin)
