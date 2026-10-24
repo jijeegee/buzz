@@ -2032,10 +2032,15 @@ CREATE TABLE principals (
     purge_after   TIMESTAMPTZ,
     discoverable  BOOLEAN NOT NULL DEFAULT true,
     -- Language the user picked in the app (migration 0087); NULL = English.
-    locale        TEXT CONSTRAINT principals_locale CHECK (locale ~ '^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$')
+    locale        TEXT CONSTRAINT principals_locale CHECK (locale ~ '^[a-z]{2,3}(-[A-Za-z0-9]{2,8}){0,2}$'),
+    -- Set when the 30-day purge after self-deletion removed the account's
+    -- personal data (migration 0094); the row stays as a disabled tombstone.
+    purged_at     TIMESTAMPTZ
 );
 CREATE UNIQUE INDEX principals_username_lower
     ON principals (lower(username)) WHERE username IS NOT NULL;
+CREATE INDEX principals_purge_due
+    ON principals (purge_after) WHERE purge_after IS NOT NULL AND purged_at IS NULL;
 -- Exactly one relay principal per deployment; concurrent first boots converge.
 CREATE UNIQUE INDEX principals_single_relay
     ON principals (kind) WHERE kind = 'relay';
@@ -2172,6 +2177,16 @@ CREATE TABLE key_registry (
 );
 CREATE INDEX key_registry_principal ON key_registry (principal_id);
 CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_device_id IS NOT NULL;
+
+-- Messaging keys of purged accounts (migration 0094): their key backup row is
+-- gone, but the key stays refused so it can never sign again.
+CREATE TABLE purged_account_keys (
+    pubkey     BYTEA PRIMARY KEY CHECK (length(pubkey) = 32),
+    purged_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('purged_account_keys', 'deployment-global messaging keys of purged accounts, refused forever');
 
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('key_registry', 'deployment-global agent key to owner account and host device binding');

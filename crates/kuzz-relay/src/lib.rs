@@ -2,6 +2,7 @@
 #![warn(missing_docs)]
 //! NIP-01 WebSocket relay for Kuzz private team communication.
 
+pub mod account_purge;
 mod admission;
 mod build_info;
 pub mod ip_connection_limit;

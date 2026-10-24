@@ -546,7 +546,7 @@ impl crate::Db {
     }
 
     /// Whether any of `pubkeys` is the key of a disabled (deleted or
-    /// operator-disabled) Google key account. Callers pass a signing key
+    /// operator-disabled) or purged Google key account. Callers pass a signing key
     /// and, for an agent, its proven NIP-OA owner.
     #[datastore_span(name = "key_account_disabled", system = "postgresql")]
     pub async fn key_account_disabled(&self, pubkeys: &[[u8; 32]]) -> Result<bool> {
@@ -554,7 +554,8 @@ impl crate::Db {
         Ok(sqlx::query_scalar(
             "SELECT EXISTS (SELECT 1 FROM account_key_backups b \
                JOIN principals p ON p.id = b.account_id \
-              WHERE b.pubkey = ANY($1) AND p.disabled_at IS NOT NULL)",
+              WHERE b.pubkey = ANY($1) AND p.disabled_at IS NOT NULL) \
+             OR EXISTS (SELECT 1 FROM purged_account_keys WHERE pubkey = ANY($1))",
         )
         .bind(keys)
         .fetch_one(&self.pool)

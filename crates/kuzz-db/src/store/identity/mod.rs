@@ -17,6 +17,7 @@ mod key_backup;
 mod pairing;
 mod principal;
 mod provider_tokens;
+mod purge;
 mod session;
 
 #[cfg(test)]
@@ -30,6 +31,9 @@ mod pairing_postgres_tests;
 
 #[cfg(test)]
 mod postgres_tests;
+
+#[cfg(test)]
+mod purge_postgres_tests;
 
 use chrono::{DateTime, Utc};
 use sqlx::{PgPool, Postgres, Transaction};
@@ -56,6 +60,7 @@ pub use principal::{
     ProfilePublishSnapshot, ProfileUpdate, MAX_PROFILE_COMMUNITIES,
 };
 pub use provider_tokens::ProviderRevokeTokenRecord;
+pub use purge::{PurgeCounts, PurgeOutcome};
 pub use session::{DeviceKey, DeviceKeyRotation, DeviceRecord, LoginSession, RefreshOutcome};
 
 /// Maximum live (non-revoked) devices per principal.

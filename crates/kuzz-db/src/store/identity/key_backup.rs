@@ -299,6 +299,16 @@ impl Db {
         if exists {
             return Ok(InitializeKeyBackup::BackupExists);
         }
+        // A purged account's key stays refused, even with its backup gone.
+        let purged: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM purged_account_keys WHERE pubkey = $1)",
+        )
+        .bind(backup.pubkey.as_slice())
+        .fetch_one(&mut *tx)
+        .await?;
+        if purged {
+            return Ok(InitializeKeyBackup::PubkeyInUse);
+        }
         let inserted: Option<Vec<u8>> = sqlx::query_scalar(
             "INSERT INTO account_key_backups (account_id, pubkey, version, key_id, nonce, ciphertext) \
              VALUES ($1,$2,$3,$4,$5,$6) ON CONFLICT DO NOTHING RETURNING account_id"
