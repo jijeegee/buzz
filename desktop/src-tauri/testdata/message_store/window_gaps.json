@@ -9,12 +9,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 100,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 1",
           "sig": ""
         },
@@ -23,12 +18,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 110,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 2",
           "sig": ""
         },
@@ -37,12 +27,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 120,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 3",
           "sig": ""
         },
@@ -51,12 +36,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 130,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 4",
           "sig": ""
         },
@@ -65,12 +45,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 140,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 5",
           "sig": ""
         },
@@ -79,12 +54,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 150,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 6",
           "sig": ""
         }
@@ -213,9 +183,7 @@
     },
     {
       "op": "coverage",
-      "channelIds": [
-        "room-a"
-      ],
+      "channelIds": ["room-a"],
       "expect": [
         {
           "channelId": "room-a",
@@ -346,10 +314,7 @@
     },
     {
       "op": "coverage",
-      "channelIds": [
-        "room-a",
-        "room-empty"
-      ],
+      "channelIds": ["room-a", "room-empty"],
       "expect": [
         {
           "channelId": "room-a",

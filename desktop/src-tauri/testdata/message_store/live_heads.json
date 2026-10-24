@@ -9,12 +9,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 100,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-l"
-            ]
-          ],
+          "tags": [["h", "room-l"]],
           "content": "message 48",
           "sig": ""
         }
@@ -36,16 +31,12 @@
     {
       "op": "beginLive",
       "wsId": 7,
-      "channelIds": [
-        "room-l"
-      ],
+      "channelIds": ["room-l"],
       "since": 150
     },
     {
       "op": "coverage",
-      "channelIds": [
-        "room-l"
-      ],
+      "channelIds": ["room-l"],
       "expect": [
         {
           "channelId": "room-l",
@@ -73,12 +64,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 250,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-l"
-            ]
-          ],
+          "tags": [["h", "room-l"]],
           "content": "message 49",
           "sig": ""
         },
@@ -87,12 +73,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 300,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-m"
-            ]
-          ],
+          "tags": [["h", "room-m"]],
           "content": "message 50",
           "sig": ""
         }
@@ -148,9 +129,7 @@
     },
     {
       "op": "coverage",
-      "channelIds": [
-        "room-l"
-      ],
+      "channelIds": ["room-l"],
       "expect": [
         {
           "channelId": "room-l",
