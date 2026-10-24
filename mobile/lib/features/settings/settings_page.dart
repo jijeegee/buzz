@@ -260,10 +260,6 @@ class SettingsPage extends HookConsumerWidget {
                   ? [profileHeader, const KuzzIdSettings()]
                   : [
                       const _GeneralSection(),
-                      _UpdatesSection(
-                        version: packageInfo.data?.version,
-                        buildNumber: packageInfo.data?.buildNumber,
-                      ),
                       _CommunitySection(invitePageBuilder: invitePageBuilder),
                       if (tokenOrigin != null)
                         _AccountSection(origin: tokenOrigin)
@@ -280,6 +276,10 @@ class SettingsPage extends HookConsumerWidget {
                       const PeopleSettings(),
                       const SupportSettings(),
                       const ExperimentsSettings(),
+                      _UpdatesSection(
+                        version: packageInfo.data?.version,
+                        buildNumber: packageInfo.data?.buildNumber,
+                      ),
                       const _SignOutSection(),
                       // The built-in server cannot be removed from the
                       // device.
