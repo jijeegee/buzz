@@ -36,6 +36,7 @@ class AccountProfile {
     this.email,
     this.discoverable = true,
     this.locale,
+    this.deviceKey,
   });
 
   factory AccountProfile.fromJson(Map<String, Object?> json) {
@@ -51,6 +52,7 @@ class AccountProfile {
     final email = json['email'];
     final discoverable = json['discoverable'];
     final locale = json['locale'];
+    final deviceKey = json['device_key'];
     return AccountProfile(
       principalId: principal,
       displayName: name is String ? name : '',
@@ -60,6 +62,7 @@ class AccountProfile {
       // Relays before people lookup send none; the account default is on.
       discoverable: discoverable is bool ? discoverable : true,
       locale: locale is String && locale.isNotEmpty ? locale : null,
+      deviceKey: deviceKey is bool ? deviceKey : null,
     );
   }
 
@@ -79,6 +82,11 @@ class AccountProfile {
   /// The app language saved on the account (`ko`, `zh-Hans`); server text
   /// such as moderation notices uses it. Older relays send none.
   final String? locale;
+
+  /// Whether this person session's device has a hardware device key.
+  /// `false` means it signed in before device keys and must sign in again;
+  /// `null` for bots and relays that do not say.
+  final bool? deviceKey;
 }
 
 /// Another person as the people endpoints return them
@@ -372,7 +380,9 @@ class AccountApi {
     final status = response.statusCode;
     if (status >= 200 && status < 300) return response;
     final code = _code(response);
-    if (code == 'token_revoked' || code == 'principal_disabled') {
+    if (code == 'token_revoked' ||
+        code == 'principal_disabled' ||
+        code == 'device_key_required') {
       // The session is dead on the relay. Presenting the refresh token lets
       // the session controller learn that (a terminal refresh signs it out
       // and the gate shows sign-in) instead of staying "signed in" until the

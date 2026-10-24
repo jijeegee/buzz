@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:kuzz/shared/auth/token/token.dart';
+import 'package:kuzz/shared/l10n/l10n.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:http/http.dart' as http;
 
@@ -148,6 +149,39 @@ void main() {
       await h.controller.restore();
       expect(h.status, TokenSessionStatus.signedOut);
       expect(h.store.data, isEmpty);
+    });
+
+    test('device_key_required is terminal and says why', () async {
+      final h = Harness(stored: stored1);
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'device_key_required'),
+      );
+      await h.controller.restore();
+      expect(h.status, TokenSessionStatus.signedOut);
+      expect(h.controller.state.endedCode, 'device_key_required');
+      expect(
+        h.controller.state.errorMessage,
+        appL10n.tokenSessionDeviceKeyRequired,
+      );
+      expect(h.store.data, isEmpty);
+    });
+
+    test('AuthApi.refresh: device_key_required is terminal, a refused '
+        'proof is transient', () async {
+      final h = Harness();
+      final api = AuthApi(origin: origin, client: h.server.client);
+      for (final (code, kind) in [
+        ('device_key_required', AuthFailureKind.terminal),
+        ('device_proof_required', AuthFailureKind.transient),
+      ]) {
+        h.server.refreshResponses.add(
+          (_) => FakeAuthServer.authError(401, code),
+        );
+        await expectLater(
+          api.refresh('bzr_1'),
+          throwsA(isA<AuthApiException>().having((e) => e.kind, code, kind)),
+        );
+      }
     });
 
     for (final status in [403, 404]) {

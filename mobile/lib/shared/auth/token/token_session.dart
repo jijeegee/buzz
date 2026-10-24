@@ -49,6 +49,7 @@ class TokenSessionState {
     this.principalId,
     this.errorMessage,
     this.nextRetryAt,
+    this.endedCode,
   });
 
   final TokenSessionStatus status;
@@ -60,11 +61,16 @@ class TokenSessionState {
   /// When the armed backoff retry fires ([TokenSessionStatus.retrying]).
   final DateTime? nextRetryAt;
 
+  /// The relay code that ended the session ([TokenSessionStatus.signedOut]
+  /// after a terminal refresh), e.g. `device_key_required`.
+  final String? endedCode;
+
   TokenSessionState withError(String? message) => TokenSessionState(
     status: status,
     principalId: principalId,
     errorMessage: message,
     nextRetryAt: nextRetryAt,
+    endedCode: endedCode,
   );
 
   @override
@@ -73,11 +79,12 @@ class TokenSessionState {
       other.status == status &&
       other.principalId == principalId &&
       other.errorMessage == errorMessage &&
-      other.nextRetryAt == nextRetryAt;
+      other.nextRetryAt == nextRetryAt &&
+      other.endedCode == endedCode;
 
   @override
   int get hashCode =>
-      Object.hash(status, principalId, errorMessage, nextRetryAt);
+      Object.hash(status, principalId, errorMessage, nextRetryAt, endedCode);
 
   @override
   String toString() =>
@@ -450,7 +457,10 @@ class TokenSessionController {
     } on AuthApiException catch (error) {
       if (!_isCurrent(generation)) return currentAccessToken;
       if (error.isTerminal) {
-        await _forget(errorMessage: _sessionEndedMessage(error));
+        await _forget(
+          errorMessage: _sessionEndedMessage(error),
+          endedCode: error.code,
+        );
         return null;
       }
       _onTransientFailure(error);
@@ -638,6 +648,7 @@ class TokenSessionController {
 
   Future<void> _forget({
     String? errorMessage,
+    String? endedCode,
     bool propagateDeleteFailure = false,
   }) async {
     _generation += 1;
@@ -651,6 +662,7 @@ class TokenSessionController {
       TokenSessionState(
         status: TokenSessionStatus.signedOut,
         errorMessage: errorMessage,
+        endedCode: endedCode,
       ),
     );
     try {
@@ -733,6 +745,7 @@ class TokenSessionController {
   static String _sessionEndedMessage(AuthApiException error) =>
       switch (error.code) {
         'principal_disabled' => appL10n.tokenSessionAccountDisabled,
+        'device_key_required' => appL10n.tokenSessionDeviceKeyRequired,
         _ => appL10n.tokenSessionEnded,
       };
 
