@@ -71,6 +71,7 @@ const prompt = (email) =>
   });
 
 let outcome;
+let provider = "google";
 function Harness() {
   const login = useGoogleLogin();
   return React.createElement(
@@ -82,7 +83,9 @@ function Harness() {
         "data-testid": "start",
         type: "button",
         onClick: () => {
-          outcome = login.run(false).then((result) => ({ result }));
+          outcome = login
+            .run(false, false, false, provider)
+            .then((result) => ({ result }));
         },
       },
       "Sign in",
@@ -139,6 +142,7 @@ test("a new Google account is created only after Create account", async () => {
   );
   await settle(() => dialog() !== null);
   assert.match(dialog().textContent, /Create your Kuzz account/);
+  assert.match(dialog().textContent, /this Google account/);
   assert.equal(
     document.querySelector("[data-testid='create-account-email']").textContent,
     "new@example.test",
@@ -192,5 +196,31 @@ test("closing the screen stops without creating anything", async () => {
   assert.equal(result, null);
   assert.equal(count("cancel_signup"), 1);
   assert.equal(count("confirm_signup"), 0);
+  await unmount();
+});
+
+test("an Apple ID with no account is named as one, and a different one is Apple again", async () => {
+  provider = "apple";
+  logins = [prompt("x@privaterelay.appleid.com"), status()];
+  const { container, unmount } = await mount();
+  await act(async () =>
+    fireEvent.click(container.querySelector("[data-testid='start']")),
+  );
+  await settle(() => dialog() !== null);
+  assert.match(dialog().textContent, /this Apple ID/);
+  assert.doesNotMatch(dialog().textContent, /Google/);
+  await act(async () =>
+    fireEvent.click(
+      document.querySelector("[data-testid='create-account-different']"),
+    ),
+  );
+  await outcome;
+  assert.deepEqual(
+    calls
+      .filter((c) => c.command === "login_with_google")
+      .map((c) => c.args.provider),
+    ["apple", "apple"],
+  );
+  provider = "google";
   await unmount();
 });

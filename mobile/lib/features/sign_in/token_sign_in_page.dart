@@ -15,7 +15,8 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
 
-/// "Sign in with Google" for relays with centralized token auth.
+/// "Sign in with Google" / "Sign in with Apple" for relays with centralized
+/// token auth.
 ///
 /// With a built-in server (`hasBuiltInServerProvider`, always on in the app)
 /// the page signs in to that server: there is no address field. Only without
@@ -31,6 +32,7 @@ class TokenSignInPage extends HookConsumerWidget {
     this.defaultCommunity = false,
     this.resumeSignedOut = false,
     this.connectGoogle = false,
+    this.signInProvider,
   });
 
   /// Ordinary first-device entry. Every page without [lockedOrigin] or
@@ -49,6 +51,10 @@ class TokenSignInPage extends HookConsumerWidget {
   /// Canonical origin of an existing token community to sign back in to.
   final String? lockedOrigin;
 
+  /// Signing back in to a known account: its own method (`google` or
+  /// `apple`, [Community.signInMethod]), the only button offered.
+  final String? signInProvider;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
@@ -65,15 +71,16 @@ class TokenSignInPage extends HookConsumerWidget {
           (lockedOrigin == null && configuredOrigin != null),
     );
     final dualMode = useState(false);
-    // The server offers Sign in with Apple (its NIP-11 provider list).
-    final appleOffered = useState(false);
+    // The method of the newest sign-in attempt; a wrong-account retry
+    // uses it again.
+    final lastProvider = useState(signInProvider ?? 'google');
     final fixedOrigin = initialOrigin != null;
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
-    // The Google account chosen belongs to another Kuzz account: the way
-    // forward is choosing a different Google account (the relay always asks
-    // Google for the account chooser), never switching identities.
+    // The Google account (or Apple ID) chosen belongs to another Kuzz
+    // account: the way forward is choosing a different one (the relay always
+    // asks for the account chooser), never switching identities.
     final accountMismatch = useState(false);
     // Fences relay checks: only the newest one may write its result.
     final checkGeneration = useRef(0);
@@ -84,21 +91,6 @@ class TokenSignInPage extends HookConsumerWidget {
         attemptGeneration.value++;
       };
     }, const []);
-    // A fixed server is never checked: read its providers once here.
-    useEffect(() {
-      final fixed = initialOrigin;
-      if (fixed == null) return null;
-      var live = true;
-      fetchTokenAuthDescriptor(fixed, ref.read(authHttpClientProvider))
-          .then((descriptor) {
-            if (live && context.mounted) {
-              appleOffered.value =
-                  descriptor?.oidcProviders.contains('apple') ?? false;
-            }
-          })
-          .catchError((Object _) {});
-      return () => live = false;
-    }, [initialOrigin]);
 
     final session = origin.value == null
         ? null
@@ -140,7 +132,6 @@ class TokenSignInPage extends HookConsumerWidget {
         message.value = l10n.signInRelayNoGoogleConfigured;
       } else {
         keyBackup.value = descriptor.keyBackup;
-        appleOffered.value = descriptor.oidcProviders.contains('apple');
         dualMode.value =
             descriptor.keyBackup && descriptor.existingTokenAccounts;
         origin.value = candidate;
@@ -173,13 +164,16 @@ class TokenSignInPage extends HookConsumerWidget {
       }
     }
 
-    /// Records the signed-in session as the active community. In locked
+    /// Records the signed-in session as the active community; a signing-key
+    /// community also records the [provider] it signed in with (null keeps
+    /// the recorded one). In locked
     /// mode the community already exists and `TokenSessionGate` owns
     /// identity changes.
     Future<void> enterCommunity(
       String sessionOrigin,
       String principal, {
       bool Function()? isCurrent,
+      String? provider,
     }) async {
       if (lockedOrigin != null && !resumeSignedOut) return;
       completing.value = true;
@@ -202,12 +196,13 @@ class TokenSignInPage extends HookConsumerWidget {
               .read(googleKeyBackupServiceProvider(sessionOrigin))
               .resolve(isCurrent: canCommit);
           if (!canCommit()) return;
-          await ref.read(signedCommunityAdmissionProvider)(community);
+          final signedIn = community.copyWith(signInProvider: provider);
+          await ref.read(signedCommunityAdmissionProvider)(signedIn);
           if (!canCommit()) return;
           await ref
               .read(authProvider.notifier)
               .authenticateWithCommunity(
-                community,
+                signedIn,
                 isCurrent: canCommit,
                 resumeSignedOut: resumeSignedOut,
               );
@@ -250,6 +245,7 @@ class TokenSignInPage extends HookConsumerWidget {
       try {
         message.value = null;
         accountMismatch.value = false;
+        lastProvider.value = provider;
         if (keyBackup.value) {
           try {
             await ref
@@ -275,7 +271,12 @@ class TokenSignInPage extends HookConsumerWidget {
         );
         final principal = controller.state.principalId;
         if (!signedIn || principal == null || !context.mounted) return;
-        await enterCommunity(sessionOrigin, principal, isCurrent: isCurrent);
+        await enterCommunity(
+          sessionOrigin,
+          principal,
+          isCurrent: isCurrent,
+          provider: provider,
+        );
       } finally {
         attemptBusy.value = false;
         if (context.mounted) completing.value = false;
@@ -289,6 +290,19 @@ class TokenSignInPage extends HookConsumerWidget {
         status == TokenSessionStatus.restoring ||
         status == TokenSessionStatus.signingIn;
     final errorText = message.value ?? session?.errorMessage;
+    // A known account signs back in with its own method only; connecting an
+    // older account is Google only.
+    final offersGoogle = signInProvider == null || signInProvider == 'google';
+    final offersApple =
+        !connectGoogle && (signInProvider == null || signInProvider == 'apple');
+    final signInWithApple = busy
+        ? null
+        : () => unawaited(signIn(provider: 'apple'));
+    final appleLabel = accountMismatch.value && lastProvider.value == 'apple'
+        ? l10n.signInUseDifferentApple
+        : resumeSignedOut
+        ? l10n.signInContinueWithApple
+        : l10n.signInWithApple;
     final restoredPrincipal =
         !keyBackup.value &&
             !resumeSignedOut &&
@@ -387,12 +401,12 @@ class TokenSignInPage extends HookConsumerWidget {
                       ),
                 child: Text(l10n.signInContinueSaved),
               )
-            else if (origin.value != null)
+            else if (origin.value != null && offersGoogle)
               FilledButton(
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
                 child: Text(
-                  accountMismatch.value
+                  accountMismatch.value && lastProvider.value == 'google'
                       ? l10n.signInUseDifferentGoogle
                       : resumeSignedOut || connectGoogle
                       ? l10n.settingsContinueWithGoogle
@@ -401,16 +415,20 @@ class TokenSignInPage extends HookConsumerWidget {
               ),
             if (restoredPrincipal == null &&
                 origin.value != null &&
-                appleOffered.value &&
-                !connectGoogle) ...[
-              const SizedBox(height: Grid.xxs),
-              OutlinedButton(
-                key: const Key('token-sign-in-apple'),
-                onPressed: busy
-                    ? null
-                    : () => unawaited(signIn(provider: 'apple')),
-                child: Text(l10n.signInWithApple),
-              ),
+                offersApple) ...[
+              if (offersGoogle) ...[
+                const SizedBox(height: Grid.xxs),
+                OutlinedButton(
+                  key: const Key('token-sign-in-apple'),
+                  onPressed: signInWithApple,
+                  child: Text(appleLabel),
+                ),
+              ] else
+                FilledButton(
+                  key: const Key('token-sign-in-apple'),
+                  onPressed: signInWithApple,
+                  child: Text(appleLabel),
+                ),
             ],
             if (restoredPrincipal == null && origin.value != null)
               const _TermsLine(),

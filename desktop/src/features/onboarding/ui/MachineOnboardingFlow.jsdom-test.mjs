@@ -103,7 +103,7 @@ async function mount(props = {}) {
 const KEY_WORDING =
   /identity key|existing key|different key|private key|\bnsec\b|npub|Nostr|Continue setup/i;
 
-test("the landing offers only Google sign-in, with no key wording", async () => {
+test("the landing offers only Google and Apple sign-in, with no key wording", async () => {
   statusBehavior = () => Promise.resolve(status());
   const { container, unmount } = await mount();
   await settle(
@@ -114,10 +114,10 @@ test("the landing offers only Google sign-in, with no key wording", async () => 
   assert.ok(
     container.querySelector("[data-testid='onboarding-google-sign-in']"),
   );
-  assert.match(
-    container.textContent,
-    /Sign in with your Google account to get started\./,
+  assert.ok(
+    container.querySelector("[data-testid='onboarding-apple-sign-in']"),
   );
+  assert.match(container.textContent, /Sign in to get started\./);
   assert.doesNotMatch(container.textContent, KEY_WORDING);
   assert.doesNotMatch(container.textContent, /\bkey\b|signing/i);
   await unmount();
@@ -196,10 +196,7 @@ test("a lost identity is restored through Google, not a key-import screen", asyn
     container.querySelector("[data-testid='onboarding-google-sign-in']"),
     "Google sign-in stays offered over a surviving session",
   );
-  assert.match(
-    container.textContent,
-    /Sign in with Google to restore your account\./,
-  );
+  assert.match(container.textContent, /Sign in to restore your account\./);
   assert.doesNotMatch(container.textContent, KEY_WORDING);
   await unmount();
 });

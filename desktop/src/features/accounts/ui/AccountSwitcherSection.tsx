@@ -3,12 +3,14 @@ import { Check, Plus } from "lucide-react";
 import type { WatchedUnread } from "@/features/accounts/inactiveAccountWatch/store";
 import { watchKey } from "@/features/accounts/inactiveAccountWatch/store";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
-import type { AccountSummary } from "@/shared/api/tokenAuth";
+import type { AccountSummary, SignInProvider } from "@/shared/api/tokenAuth";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
+import { SignInProviderIcon } from "@/shared/ui/SignInProviderIcon";
 import {
   accountEmailDetail,
   accountLabel,
+  accountProvider,
   canSwitchTo,
 } from "../lib/accountLabels";
 
@@ -20,24 +22,25 @@ const ROW_CLASS =
 /**
  * Profile menu › accounts on this computer, most recently used first: the
  * active one is checked, another signed-in one switches, one whose sign-in
- * ended signs in again, and "Add account" signs in another Google account
- * ("Add account with Apple": an Apple account, when the server offers it).
- * Other accounts show their unread dot or mention count (CommunityRail style).
+ * ended signs in again the way it signed in before, and "Add account" asks
+ * how to sign in (Google or Apple). Each row marks how it signs in; other
+ * accounts show their unread dot or mention count (CommunityRail style).
  */
 export function AccountSwitcherSection({
   accounts,
   busy,
   onSwitch,
   onSignIn,
-  onSignInWithApple,
+  onAdd,
   unread,
 }: {
   accounts: readonly AccountSummary[];
   busy: boolean;
   onSwitch: (account: AccountSummary) => void;
-  onSignIn: () => void;
-  /** Absent: the server does not offer Apple. */
-  onSignInWithApple?: () => void;
+  /** Sign in again, the way the account signed in before. */
+  onSignIn: (provider: SignInProvider) => void;
+  /** "Add account": opens the Google-or-Apple choice. */
+  onAdd: () => void;
   /** Watched accounts' unread state, keyed `origin|pubkey`. */
   unread?: ReadonlyMap<string, WatchedUnread>;
 }) {
@@ -69,7 +72,7 @@ export function AccountSwitcherSection({
             key={account.pubkey}
             onClick={() => {
               if (account.active && !needsSignIn) return;
-              if (needsSignIn) onSignIn();
+              if (needsSignIn) onSignIn(accountProvider(account));
               else onSwitch(account);
             }}
             role="menuitem"
@@ -95,6 +98,13 @@ export function AccountSwitcherSection({
                 </span>
               ) : null}
             </span>
+            {account.state === "key_only" ? null : (
+              <SignInProviderIcon
+                className="h-3.5 w-3.5"
+                provider={accountProvider(account)}
+                testId={`account-provider-${account.pubkey}`}
+              />
+            )}
             {mentions > 0 ? (
               <span
                 aria-label={t("accounts.switcher.mentions", {
@@ -128,7 +138,7 @@ export function AccountSwitcherSection({
         className={ROW_CLASS}
         data-testid="account-add"
         disabled={busy}
-        onClick={onSignIn}
+        onClick={onAdd}
         role="menuitem"
         type="button"
       >
@@ -137,24 +147,6 @@ export function AccountSwitcherSection({
         </span>
         <span className="flex-1">{t("accounts.switcher.add")}</span>
       </button>
-      {onSignInWithApple ? (
-        <button
-          className={ROW_CLASS}
-          data-testid="account-add-apple"
-          disabled={busy}
-          onClick={onSignInWithApple}
-          role="menuitem"
-          type="button"
-        >
-          <span className="flex h-6 w-6 shrink-0 items-center justify-center">
-            <Plus
-              aria-hidden="true"
-              className="h-4 w-4 text-muted-foreground"
-            />
-          </span>
-          <span className="flex-1">{t("accounts.switcher.addWithApple")}</span>
-        </button>
-      ) : null}
     </fieldset>
   );
 }

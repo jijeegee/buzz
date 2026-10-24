@@ -96,9 +96,15 @@ void main() {
   });
 
   // Relays before `/auth/me` carried the email send none.
-  for (final email in <String?>[null, 'jiho@example.com']) {
+  // Apple's private relay emails are long; the provider mark follows the
+  // method recorded at sign-in.
+  for (final (email, method) in <(String?, String)>[
+    (null, 'google'),
+    ('jiho@example.com', 'google'),
+    ('8hb88btmmm@privaterelay.appleid.com', 'apple'),
+  ]) {
     testWidgets(
-      'an account signed in with Google shows who is signed in and devices '
+      'an account signed in with $method shows who is signed in and devices '
       '(email: $email)',
       (tester) async {
         PackageInfo.setMockInitialValues(
@@ -118,7 +124,9 @@ void main() {
               relaySessionProvider.overrideWith(_DisconnectedSession.new),
               authProvider.overrideWith(_GoogleConnectedAuthNotifier.new),
               activeCommunityProvider.overrideWith(
-                (ref) async => _GoogleConnectedAuthNotifier.community,
+                (ref) async => _GoogleConnectedAuthNotifier.community.copyWith(
+                  signInProvider: method,
+                ),
               ),
               accountProfileProvider('https://relay.test').overrideWith(
                 (ref) async => AccountProfile(
@@ -154,6 +162,13 @@ void main() {
           find.descendant(
             of: account,
             matching: find.text(email ?? 'Signed in with Google'),
+          ),
+          findsOneWidget,
+        );
+        expect(
+          find.descendant(
+            of: account,
+            matching: find.byKey(Key('sign-in-method-$method')),
           ),
           findsOneWidget,
         );

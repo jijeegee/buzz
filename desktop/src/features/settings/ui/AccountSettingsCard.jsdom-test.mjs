@@ -117,6 +117,17 @@ const { deviceRobotTag } = await import("../../../shared/lib/deviceRobot.ts");
 const { GoogleSignInButton } = await import(
   "../../onboarding/ui/GoogleSignInButton.tsx"
 );
+// The "Add account" choice is a Dialog, which reads the theme.
+window.matchMedia ??= () => ({
+  matches: false,
+  addEventListener() {},
+  removeEventListener() {},
+  addListener() {},
+  removeListener() {},
+});
+const { ThemeProvider } = await import(
+  "../../../shared/theme/ThemeProvider.tsx"
+);
 const { BROWSER_RETURN_GRACE_MS } = await import(
   "../../../shared/hooks/useReturnedToApp.ts"
 );
@@ -170,7 +181,11 @@ async function mount(Component = AccountSettingsCard, props) {
       React.createElement(
         QueryClientProvider,
         { client: queryClient },
-        React.createElement(Component, props),
+        React.createElement(
+          ThemeProvider,
+          null,
+          React.createElement(Component, props),
+        ),
       ),
     );
   });
@@ -394,8 +409,12 @@ test("Google backup sessions do not offer token-agent revocation or identity del
     signingPubkey: "cd".repeat(32),
   });
   const { container, unmount } = await mount();
-  assert.match(container.textContent, /Signed in with Google/);
-  // Another Google account is added from the accounts list, not checked here.
+  assert.match(
+    container.textContent,
+    /You sign in to Kuzz with your Google account\./,
+  );
+  assert.match(container.textContent, /Signed in/);
+  // Another account is added from the accounts list, not checked here.
   assert.doesNotMatch(container.textContent, /Check Google sign-in/);
   assert.match(container.textContent, /Accounts on this computer/);
   assert.match(container.textContent, /Add account/);
@@ -416,10 +435,7 @@ test("new-device Google onboarding explicitly requests same-key recovery", async
     "[data-testid='onboarding-google-sign-in']",
   );
   assert.ok(button);
-  assert.match(
-    container.textContent,
-    /Sign in with your Google account to get started\./,
-  );
+  assert.match(container.textContent, /Sign in to get started\./);
   assert.doesNotMatch(container.textContent, /bkeyb|signing/i);
   await act(async () => fireEvent.click(button));
   assert.deepEqual(calls.find((c) => c.command === "login_with_google").args, {
@@ -720,7 +736,7 @@ test("the sign-out confirmation tells the user how to get back in", async () => 
   const dialog = document.querySelector('[role="alertdialog"]');
   assert.match(
     dialog.textContent,
-    /You'll be signed out on this computer\. Sign in with Google to get back to your conversations\. Nothing is deleted\./,
+    /You'll be signed out on this computer\. Sign in again to get back to your conversations\. Nothing is deleted\./,
   );
   assert.doesNotMatch(dialog.textContent, /agent/i, "no agent claims");
   await act(async () => fireEvent.click(dialogButton("Cancel")));
@@ -1009,26 +1025,78 @@ test("the card lists this computer's accounts to switch to or add, like the prof
   await unmount();
 });
 
-test("Add account in the card starts a Google sign-in for another account", async () => {
-  accounts = [account("cd".repeat(32), { active: true, displayName: "Jiho" })];
-  status = baseStatus({
-    state: "active",
-    principal: "ab".repeat(32),
-    keyBackup: true,
-    keyBackupSupported: true,
+for (const [choice, provider] of [
+  ["add-account-google", undefined],
+  ["add-account-apple", "apple"],
+]) {
+  test(`Add account in the card asks how, then signs in (${choice})`, async () => {
+    accounts = [
+      account("cd".repeat(32), { active: true, displayName: "Jiho" }),
+    ];
+    status = baseStatus({
+      state: "active",
+      principal: "ab".repeat(32),
+      keyBackup: true,
+      keyBackupSupported: true,
+    });
+    const { container, unmount } = await mount();
+    const add = container.querySelector(
+      "[data-testid='settings-accounts'] [data-testid='account-add']",
+    );
+    assert.ok(add);
+    await act(async () => fireEvent.click(add));
+    assert.equal(
+      calls.some((c) => c.command === "login_with_google"),
+      false,
+      "nothing starts before a choice",
+    );
+    const dialog = document.querySelector("[data-testid='add-account-dialog']");
+    assert.match(
+      dialog.textContent,
+      /Continue with Google.*Continue with Apple/,
+    );
+    await act(async () =>
+      fireEvent.click(document.querySelector(`[data-testid='${choice}']`)),
+    );
+    await settle(() => calls.some((c) => c.command === "login_with_google"));
+    const logins = calls.filter((c) => c.command === "login_with_google");
+    assert.equal(logins.length, 1);
+    assert.equal(logins[0].args.provider, provider);
+    assert.equal(
+      document.querySelector("[data-testid='add-account-dialog']"),
+      null,
+      "the choice closes",
+    );
+    accountSwitch.resetAccountSwitchForTests();
+    accounts = [];
+    await unmount();
   });
+}
+
+test("an Apple account whose sign-in ended signs in again with Apple", async () => {
+  accounts = [
+    account("cd".repeat(32), {
+      active: true,
+      state: "needs_login",
+      provider: "apple",
+    }),
+  ];
+  status = baseStatus({ state: "needs_login", keyBackup: true });
   const { container, unmount } = await mount();
-  const add = container.querySelector(
-    "[data-testid='settings-accounts'] [data-testid='account-add']",
+  await settle(() => /Apple ID/.test(container.textContent));
+  assert.match(
+    container.textContent,
+    /You sign in to Kuzz with your Apple ID\./,
   );
-  assert.ok(add);
-  await act(async () => fireEvent.click(add));
+  assert.doesNotMatch(container.textContent, /Google/);
+  await act(async () =>
+    fireEvent.click(container.querySelector("[data-testid='account-sign-in']")),
+  );
   await settle(() => calls.some((c) => c.command === "login_with_google"));
   assert.equal(
-    calls.filter((c) => c.command === "login_with_google").length,
-    1,
+    calls.find((c) => c.command === "login_with_google").args.provider,
+    "apple",
   );
-  accountSwitch.resetAccountSwitchForTests();
   accounts = [];
   await unmount();
 });

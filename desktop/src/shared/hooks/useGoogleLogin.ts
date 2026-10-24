@@ -17,13 +17,16 @@ type Phase = "opening" | "waiting" | "completing" | "signup" | null;
 /** The user's answer on the "Create your Kuzz account" screen. */
 export type SignupChoice = "create" | "different" | "close";
 
+/** What the "Create your Kuzz account" screen shows, with how it signed in. */
+export type SignupScreen = SignupPrompt & { provider: SignInProvider };
+
 /** Owns one native login attempt, including its browser-only cancellation. */
 export function useGoogleLogin() {
   const [phase, setPhase] = React.useState<Phase>(null);
   const [error, setError] = React.useState<string | null>(null);
   const current = React.useRef<string | null>(null);
   const mounted = React.useRef(true);
-  const [signup, setSignup] = React.useState<SignupPrompt | null>(null);
+  const [signup, setSignup] = React.useState<SignupScreen | null>(null);
   const answer = React.useRef<((choice: SignupChoice) => void) | null>(null);
   React.useEffect(() => {
     mounted.current = true;
@@ -37,7 +40,7 @@ export function useGoogleLogin() {
   }, []);
 
   /** Show the new-account screen and wait for the user's choice. */
-  function ask(prompt: SignupPrompt): Promise<SignupChoice> {
+  function ask(prompt: SignupScreen): Promise<SignupChoice> {
     return new Promise((resolve) => {
       answer.current = (choice) => {
         answer.current = null;
@@ -50,17 +53,20 @@ export function useGoogleLogin() {
   }
 
   /**
-   * A sign-in whose Google account has no Kuzz account yet: create it, pick
-   * another Google account (a fresh sign-in), or stop. Until "Create
-   * account" the server holds nothing for it.
+   * A sign-in whose Google or Apple account has no Kuzz account yet: create
+   * it, pick another account of the same `provider` (a fresh sign-in), or
+   * stop. Until "Create account" the server holds nothing for it.
    */
   async function settleSignup(
     first: TokenAuthStatus,
     again: () => Promise<TokenAuthStatus>,
+    provider: SignInProvider,
   ): Promise<TokenAuthStatus | null> {
     let result = first;
     while (result.signup) {
-      const choice = mounted.current ? await ask(result.signup) : "close";
+      const choice = mounted.current
+        ? await ask({ ...result.signup, provider })
+        : "close";
       if (choice === "create") {
         setPhase("completing");
         result = await confirmSignup();
@@ -116,7 +122,7 @@ export function useGoogleLogin() {
           connect,
           provider,
         );
-      const result = await settleSignup(await signIn(), signIn);
+      const result = await settleSignup(await signIn(), signIn, provider);
       return mounted.current && current.current === id ? result : null;
     } catch (cause) {
       const message = cause instanceof Error ? cause.message : String(cause);

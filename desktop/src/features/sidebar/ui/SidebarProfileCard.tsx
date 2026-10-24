@@ -3,6 +3,7 @@ import * as React from "react";
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
 import { useRememberAccountKuzzName } from "@/features/accounts/useRememberAccountKuzzName";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
+import { AddAccountDialog } from "@/features/accounts/ui/AddAccountDialog";
 import {
   anyWatchedUnread,
   useWatchedUnread,
@@ -25,6 +26,7 @@ import { CommunitySwitcher } from "@/features/communities/ui/CommunitySwitcher";
 import { useMyRelayMembershipLookupQuery } from "@/features/community-members/hooks";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
 import type { PresenceStatus, Profile, UserStatus } from "@/shared/api/types";
+import type { SignInProvider } from "@/shared/api/tokenAuth";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useT } from "@/shared/i18n";
 
@@ -81,6 +83,12 @@ export function SidebarProfileCard({
   const [profilePopoverOpen, setProfilePopoverOpen] = React.useState(false);
   const accountMenu = useAccountMenu({ open: profilePopoverOpen });
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
+  // "Add account" closes the menu, then asks Google or Apple here.
+  const [addAccountOpen, setAddAccountOpen] = React.useState(false);
+  const signIn = (provider: SignInProvider) => {
+    setProfilePopoverOpen(false);
+    void accountMenu.signIn(activePubkey, provider);
+  };
   const watchedUnread = useWatchedUnread();
   const otherAccountUnread = anyWatchedUnread(watchedUnread);
   useRememberAccountKuzzName(activePubkey, profile?.displayName);
@@ -117,18 +125,11 @@ export function SidebarProfileCard({
             accounts={accountMenu.accounts}
             busy={accountMenu.busy}
             unread={watchedUnread}
-            onSignIn={() => {
+            onSignIn={signIn}
+            onAdd={() => {
               setProfilePopoverOpen(false);
-              void accountMenu.signIn(activePubkey);
+              setAddAccountOpen(true);
             }}
-            onSignInWithApple={
-              accountMenu.appleSignIn
-                ? () => {
-                    setProfilePopoverOpen(false);
-                    void accountMenu.signIn(activePubkey, "apple");
-                  }
-                : undefined
-            }
             onSwitch={(account) => {
               setProfilePopoverOpen(false);
               void accountMenu.switchTo(account);
@@ -226,6 +227,11 @@ export function SidebarProfileCard({
           </span>
         </button>
       </ProfilePopover>
+      <AddAccountDialog
+        onChoose={signIn}
+        onOpenChange={setAddAccountOpen}
+        open={addAccountOpen}
+      />
       <CreateAccountDialog login={accountMenu.signupPrompt} />
     </div>
   );

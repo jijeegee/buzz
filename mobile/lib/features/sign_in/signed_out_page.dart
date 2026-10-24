@@ -17,9 +17,10 @@ import 'token_sign_in_page.dart';
 /// With the built-in server, [community] is always that server's entry
 /// (startup pinning) and there is no community chooser.
 ///
-/// Every community resumes through Google. A key-based community that was
-/// never linked links the key it retained at sign-out to the Google account
-/// used here (see `GoogleKeyBackupService`); no key is ever typed or shown.
+/// Every community resumes with the method it signed in with (Google or
+/// Apple, [Community.signInMethod]). A key-based community that was never
+/// linked links the key it retained at sign-out to the Google account used
+/// here (see `GoogleKeyBackupService`); no key is ever typed or shown.
 class SignedOutPage extends HookConsumerWidget {
   const SignedOutPage({super.key, required this.community, this.cleanupError});
 
@@ -83,6 +84,7 @@ class SignedOutPage extends HookConsumerWidget {
                 lockedOrigin: community.tokenAuth ? community.relayUrl : null,
                 backupOrigin: community.tokenAuth ? null : community.relayUrl,
                 resumeSignedOut: true,
+                signInProvider: community.signInMethod,
               ),
             ),
           ],

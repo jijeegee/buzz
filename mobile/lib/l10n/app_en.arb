@@ -336,77 +336,77 @@
   "@authCommunityConnectFailed": {
     "description": "Sign-in error when the server could not be reached."
   },
-  "googleBackupConnectFailed": "Couldn’t connect your Google account. Try again.",
+  "googleBackupConnectFailed": "Couldn’t connect your account. Try again.",
   "@googleBackupConnectFailed": {
-    "description": "Google sign-in error, general failure."
+    "description": "Sign-in error (Google or Apple), general failure."
   },
-  "googleBackupAccountLinkedElsewhere": "This Google account is linked to a different Kuzz account. Try a different Google account.",
+  "googleBackupAccountLinkedElsewhere": "This sign-in is linked to a different Kuzz account. Try a different account.",
   "@googleBackupAccountLinkedElsewhere": {
-    "description": "Google sign-in error when the chosen Google account belongs to another Kuzz account."
+    "description": "Sign-in error (Google or Apple) when the chosen Google account or Apple ID belongs to another Kuzz account."
   },
   "googleBackupReadSignInFailed": "Couldn’t read your sign-in on this device. Try again.",
   "@googleBackupReadSignInFailed": {
-    "description": "Google sign-in error when the saved sign-in on the phone could not be read."
+    "description": "Sign-in error (Google or Apple) when the saved sign-in on the phone could not be read."
   },
   "googleBackupDifferentSignIn": "This community already has a different sign-in on this device. Nothing was changed.",
   "@googleBackupDifferentSignIn": {
-    "description": "Google sign-in error when another kind of sign-in already exists for this community on the phone."
+    "description": "Sign-in error (Google or Apple) when another kind of sign-in already exists for this community on the phone."
   },
   "googleBackupSignInChanged": "Sign-in changed or was cancelled. Try again.",
   "@googleBackupSignInChanged": {
-    "description": "Google sign-in error when the sign-in was interrupted."
+    "description": "Sign-in error (Google or Apple) when the sign-in was interrupted."
   },
-  "googleBackupSignInWithGoogleFirst": "Sign in with Google first.",
+  "googleBackupSignInWithGoogleFirst": "Sign in first.",
   "@googleBackupSignInWithGoogleFirst": {
-    "description": "Google sign-in error when the account was not signed in with Google."
+    "description": "Sign-in error (Google or Apple) when the account was not signed in with Google or Apple. Short."
   },
   "googleBackupSignInAgain": "Sign in again.",
   "@googleBackupSignInAgain": {
-    "description": "Google sign-in error when the session is missing its account. Short."
+    "description": "Sign-in error (Google or Apple) when the session is missing its account. Short."
   },
   "googleBackupCommunitySignInFailed": "Couldn’t sign in to this community on this device. Nothing was changed.",
   "@googleBackupCommunitySignInFailed": {
-    "description": "Google sign-in error when the account on the phone does not match the account on the server."
+    "description": "Sign-in error (Google or Apple) when the account on the phone does not match the account on the server."
   },
   "googleBackupRestoreFailed": "Couldn’t restore this account. Try again later.",
   "@googleBackupRestoreFailed": {
-    "description": "Google sign-in error when the account could not be restored from the server."
+    "description": "Sign-in error (Google or Apple) when the account could not be restored from the server."
   },
-  "googleBackupAccountNotConnected": "This Google account isn’t connected to this community. Try a different Google account.",
+  "googleBackupAccountNotConnected": "This account isn’t connected to this community. Try a different account.",
   "@googleBackupAccountNotConnected": {
-    "description": "Google sign-in error when the chosen Google account has no account in this community."
+    "description": "Sign-in error (Google or Apple) when the chosen Google account or Apple ID has no account in this community."
   },
-  "googleBackupAccountChanged": "The Google account changed. Sign in again.",
+  "googleBackupAccountChanged": "The account changed. Sign in again.",
   "@googleBackupAccountChanged": {
-    "description": "Google sign-in error when the Google account changed during sign-in."
+    "description": "Sign-in error (Google or Apple) when the signed-in account changed during sign-in."
   },
   "googleBackupCommunityChanged": "This community changed during sign-in. Try again.",
   "@googleBackupCommunityChanged": {
-    "description": "Google sign-in error when the community data changed while signing in."
+    "description": "Sign-in error (Google or Apple) when the community data changed while signing in."
   },
-  "googleBackupSignInWithGoogleAgain": "Sign in with Google again.",
+  "googleBackupSignInWithGoogleAgain": "Sign in again.",
   "@googleBackupSignInWithGoogleAgain": {
-    "description": "Google sign-in error when the Google sign-in expired."
+    "description": "Sign-in error (Google or Apple) when the sign-in expired. Short."
   },
-  "googleBackupCommunityLinkedElsewhere": "This community is linked to a different Google account. Try a different Google account.",
+  "googleBackupCommunityLinkedElsewhere": "This community is linked to a different account. Try a different account.",
   "@googleBackupCommunityLinkedElsewhere": {
-    "description": "Google sign-in error when this community account uses another Google account."
+    "description": "Sign-in error (Google or Apple) when this community account uses another Google account or Apple ID."
   },
-  "googleBackupAccountModeConflict": "This Google account can’t be used with this community. Try a different Google account.",
+  "googleBackupAccountModeConflict": "This account can’t be used with this community. Try a different account.",
   "@googleBackupAccountModeConflict": {
-    "description": "Google sign-in error when the Google account uses a different kind of account."
+    "description": "Sign-in error (Google or Apple) when the chosen account uses a different kind of account."
   },
-  "googleBackupSecureConnectionRequired": "Signing in with Google needs a secure connection to this community.",
+  "googleBackupSecureConnectionRequired": "Signing in needs a secure connection to this community.",
   "@googleBackupSecureConnectionRequired": {
-    "description": "Google sign-in error when the server address is not secure (not https)."
+    "description": "Sign-in error (Google or Apple) when the server address is not secure (not https)."
   },
   "tokenSessionSignOutUnreachable": "Could not reach the relay to sign out. Try again.",
   "@tokenSessionSignOutUnreachable": {
     "description": "Error when signing out failed because the server could not be reached. 'Relay' means the server."
   },
-  "tokenSessionIdentityModeMismatch": "This Google account uses a different identity mode. Existing account data has been preserved.",
+  "tokenSessionIdentityModeMismatch": "This account uses a different identity mode. Existing account data has been preserved.",
   "@tokenSessionIdentityModeMismatch": {
-    "description": "Sign-in error when the Google account uses a different kind of account than this community."
+    "description": "Sign-in error when the Google account or Apple ID uses a different kind of account than this community."
   },
   "tokenSessionReadFailed": "Could not read the saved sign-in. Try again.",
   "@tokenSessionReadFailed": {
@@ -484,7 +484,7 @@
   },
   "tokenSessionOidcCancelled": "Sign-in was cancelled at the provider.",
   "@tokenSessionOidcCancelled": {
-    "description": "Sign-in screen, error when the user cancelled on the Google sign-in page."
+    "description": "Sign-in screen, error when the user cancelled on the Google or Apple sign-in page."
   },
   "tokenSessionOidcAccountDisabled": "This account has been disabled on this relay.",
   "@tokenSessionOidcAccountDisabled": {
@@ -492,7 +492,7 @@
   },
   "tokenSessionOidcNotVerified": "The provider could not verify this account.",
   "@tokenSessionOidcNotVerified": {
-    "description": "Sign-in screen, error when Google could not verify the account."
+    "description": "Sign-in screen, error when Google or Apple could not verify the account."
   },
   "tokenSessionOidcFailed": "Sign-in failed ({code}). Try again.",
   "@tokenSessionOidcFailed": {
@@ -893,7 +893,7 @@
   "@settingsDevicesSignOutOthersTitle": {
     "description": "Devices page, title of the confirmation dialog for signing out all other devices."
   },
-  "settingsDevicesSignOutOthersBody": "Every other computer and phone using your account is signed out and will need to sign in with Google again. This phone stays signed in, and your agents keep running.",
+  "settingsDevicesSignOutOthersBody": "Every other computer and phone using your account is signed out and will need to sign in again. This phone stays signed in, and your agents keep running.",
   "@settingsDevicesSignOutOthersBody": {
     "description": "Devices page, body of the confirmation dialog for signing out all other devices."
   },
@@ -942,7 +942,7 @@
   "@settingsDevicesDeleteAccountTitle": {
     "description": "Settings, bottom: title of the first account deletion dialog, which explains what happens."
   },
-  "settingsDevicesDeleteAccountBody": "Every device and agent is signed out now, including this phone. The account is removed after 30 days unless you sign in with Google again before then.",
+  "settingsDevicesDeleteAccountBody": "Every device and agent is signed out now, including this phone. The account is removed after 30 days unless you sign in again before then.",
   "@settingsDevicesDeleteAccountBody": {
     "description": "Settings, bottom: body of the first account deletion dialog."
   },
@@ -1312,7 +1312,11 @@
   },
   "settingsSignedInWithGoogle": "Signed in with Google",
   "@settingsSignedInWithGoogle": {
-    "description": "Settings page, Account section: label of the account row before the name or email loads; also a snackbar after connecting Google."
+    "description": "Settings page, Account section: label of the account row of a Google account before the name or email loads; also a snackbar after connecting Google."
+  },
+  "settingsSignedInWithApple": "Signed in with Apple",
+  "@settingsSignedInWithApple": {
+    "description": "Settings page, Account section: label of the account row of an account that signs in with Apple, before the name or email loads."
   },
   "settingsGeneralSection": "General",
   "@settingsGeneralSection": {
@@ -1394,11 +1398,11 @@
   "@settingsSignOutTitle": {
     "description": "Sign out confirmation dialog, title. Short."
   },
-  "settingsSignOutBody": "You’ll be signed out on this device. Sign in with Google to come back — your messages stay here.",
+  "settingsSignOutBody": "You’ll be signed out on this device. Sign in to come back — your messages stay here.",
   "@settingsSignOutBody": {
     "description": "Sign out confirmation dialog, body."
   },
-  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in with Google to come back — your communities and messages stay here.",
+  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in to come back — your communities and messages stay here.",
   "@settingsSignOutBodyCommunities": {
     "description": "Sign out confirmation dialog, body when the user has several communities."
   },
@@ -2095,7 +2099,7 @@
   "@signInConnectGoogleBody": {
     "description": "Connect Google page, explanation under 'Protect your account'. 'Kuzz' is the app name."
   },
-  "signInWelcomeBody": "Sign in with Google to get started. Kuzz keeps a protected copy of your account so the same Google account signs you in on your other devices.",
+  "signInWelcomeBody": "Sign in to get started. Kuzz keeps a protected copy of your account so the same sign-in works on your other devices.",
   "@signInWelcomeBody": {
     "description": "Sign-in page, text under 'Welcome to Kuzz'. 'Kuzz' is the app name."
   },
@@ -2160,13 +2164,21 @@
   "@signInUseDifferentGoogle": {
     "description": "Sign-in page, button shown after signing in with the wrong Google account."
   },
+  "signInUseDifferentApple": "Use a different Apple ID",
+  "@signInUseDifferentApple": {
+    "description": "Sign-in page, button shown after signing in with the wrong Apple ID. Use Apple's name for 'Apple ID' in this language."
+  },
   "signInWithGoogle": "Sign in with Google",
   "@signInWithGoogle": {
     "description": "Sign-in page, main Google sign-in button. Short."
   },
   "signInWithApple": "Sign in with Apple",
   "@signInWithApple": {
-    "description": "Sign-in page, button below the Google one, shown when the server offers Apple. Short."
+    "description": "Sign-in page, button below the Google one. Short."
+  },
+  "signInContinueWithApple": "Continue with Apple",
+  "@signInContinueWithApple": {
+    "description": "Sign-in page, button that signs an account that uses Apple back in. Short."
   },
   "signInUseExistingTokenAccount": "Use an existing token account",
   "@signInUseExistingTokenAccount": {
@@ -2182,7 +2194,7 @@
   },
   "signInTermsAgreement": "By continuing you agree to the {terms}",
   "@signInTermsAgreement": {
-    "description": "Sign-in page, small text under the Google button; {terms} is the underlined 'Terms of Service' link.",
+    "description": "Sign-in page, small text under the sign-in buttons; {terms} is the underlined 'Terms of Service' link.",
     "placeholders": {
       "terms": {
         "type": "String"

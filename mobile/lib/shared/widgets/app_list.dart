@@ -19,6 +19,7 @@ class AppListRow extends StatelessWidget {
     super.key,
     this.icon,
     required this.title,
+    this.titleMaxLines,
     this.subtitle,
     this.subtitleStyle,
     this.subtitleMaxLines,
@@ -31,6 +32,9 @@ class AppListRow extends StatelessWidget {
 
   final IconData? icon;
   final String title;
+
+  /// Ellipsises the title past this many lines; unlimited when null.
+  final int? titleMaxLines;
   final String? subtitle;
   final TextStyle? subtitleStyle;
   final int? subtitleMaxLines;
@@ -77,6 +81,10 @@ class AppListRow extends StatelessWidget {
                   style: context.textTheme.bodyLarge?.copyWith(
                     color: titleColor,
                   ),
+                  maxLines: titleMaxLines,
+                  overflow: titleMaxLines == null
+                      ? null
+                      : TextOverflow.ellipsis,
                 ),
                 if (subtitle != null) ...[
                   const SizedBox(height: Grid.quarter),

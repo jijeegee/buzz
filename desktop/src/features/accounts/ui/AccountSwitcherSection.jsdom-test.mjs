@@ -3,11 +3,19 @@ import test from "node:test";
 
 // The profile menu's account list bound to the real hook and the real Tauri
 // command names: most-recent order, the active account checked, a switch
-// reloads once with its overlay caption, an ended sign-in and "Add account"
-// both open Google sign-in.
+// reloads once with its overlay caption, an ended sign-in signs in again the
+// way the account signed in (Google or Apple), and "Add account" asks which.
 
 // The sign-in progress toast schedules frames.
 globalThis.requestAnimationFrame ??= (callback) => setTimeout(callback, 0);
+// The "Add account" choice is a Dialog, which reads the theme.
+window.matchMedia ??= () => ({
+  matches: false,
+  addEventListener() {},
+  removeEventListener() {},
+  addListener() {},
+  removeListener() {},
+});
 
 const calls = [];
 let accounts = [];
@@ -56,6 +64,10 @@ const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
 const { AccountSwitcherSection } = await import("./AccountSwitcherSection.tsx");
+const { AddAccountDialog } = await import("./AddAccountDialog.tsx");
+const { ThemeProvider } = await import(
+  "../../../shared/theme/ThemeProvider.tsx"
+);
 const { useAccountMenu } = await import("../useAccountMenu.ts");
 const tokenAuthApi = await import("../../../shared/api/tokenAuth.ts");
 const accountSwitch = await import("../lib/accountSwitch.ts");
@@ -82,15 +94,28 @@ function account(pubkey, overrides = {}) {
 
 let unread;
 
+// Wired like the sidebar profile card: "Add account" opens the choice.
 function Harness() {
   const menu = useAccountMenu({ open: true });
-  return React.createElement(AccountSwitcherSection, {
-    accounts: menu.accounts,
-    busy: menu.busy,
-    unread,
-    onSignIn: () => void menu.signIn(me),
-    onSwitch: (target) => void menu.switchTo(target),
-  });
+  const [adding, setAdding] = React.useState(false);
+  const signIn = (provider) => void menu.signIn(me, provider);
+  return React.createElement(
+    React.Fragment,
+    null,
+    React.createElement(AccountSwitcherSection, {
+      accounts: menu.accounts,
+      busy: menu.busy,
+      unread,
+      onSignIn: signIn,
+      onAdd: () => setAdding(true),
+      onSwitch: (target) => void menu.switchTo(target),
+    }),
+    React.createElement(AddAccountDialog, {
+      open: adding,
+      onOpenChange: setAdding,
+      onChoose: signIn,
+    }),
+  );
 }
 
 async function settle(predicate) {
@@ -112,7 +137,7 @@ async function mount() {
       React.createElement(
         QueryClientProvider,
         { client: queryClient },
-        React.createElement(Harness),
+        React.createElement(ThemeProvider, null, React.createElement(Harness)),
       ),
     );
   });
@@ -138,8 +163,12 @@ function standardAccounts() {
       displayName: "Jiho",
       email: "jiho@example.com",
     }),
-    account(work, { displayName: "Work" }),
-    account(ended, { state: "needs_login", email: "old@example.com" }),
+    account(work, { displayName: "Work", provider: "apple" }),
+    account(ended, {
+      state: "needs_login",
+      email: "old@example.com",
+      provider: "apple",
+    }),
     account(gone, { state: "signed_out", displayName: "Gone" }),
   ];
 }
@@ -159,6 +188,29 @@ test("the list keeps the backend's order, checks the active account and hides si
   assert.match(row(me).textContent, /Jiho.*jiho@example\.com/);
   assert.match(row(ended).textContent, /old@example\.com.*Sign in again/);
   assert.doesNotMatch(container.textContent, /\bkey\b|nsec|npub|relay/i);
+  // One method-neutral "Add account".
+  assert.equal(
+    container.querySelector("[data-testid='account-add']").textContent,
+    "Add account",
+  );
+  assert.doesNotMatch(container.textContent, /with Apple|with Google/);
+  await unmount();
+});
+
+test("each row marks how it signs in; one never recorded is Google", async () => {
+  accounts = [
+    ...standardAccounts(),
+    account("e".repeat(64), { state: "key_only", displayName: "Local" }),
+  ];
+  const { container, unmount } = await mount();
+  const mark = (pubkey) =>
+    container.querySelector(`[data-testid='account-provider-${pubkey}']`);
+  assert.equal(mark(me).dataset.provider, "google");
+  assert.equal(mark(me).getAttribute("aria-label"), "Google");
+  assert.equal(mark(work).dataset.provider, "apple");
+  assert.equal(mark(work).getAttribute("aria-label"), "Apple");
+  assert.equal(mark(ended).dataset.provider, "apple");
+  assert.equal(mark("e".repeat(64)), null, "a local key signs in no way");
   await unmount();
 });
 
@@ -244,16 +296,18 @@ test("a failed switch stays on the current account", async (t) => {
   await unmount();
 });
 
-test("an ended sign-in and Add account both open Google sign-in; a new account reloads", async (t) => {
+test("an ended sign-in signs in its own way; Add account asks first; a new account reloads", async (t) => {
   const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
   accounts = standardAccounts();
   const { container, row, unmount } = await mount();
   await act(async () => fireEvent.click(row(ended)));
   await settle(() => calls.some((c) => c.command === "login_with_google"));
+  const again = calls.find((c) => c.command === "login_with_google").args;
+  assert.equal(again.provider, "apple", "no choice: the way it signed in");
   assert.equal(
-    calls.find((c) => c.command === "login_with_google").args.connect,
+    again.connect,
     undefined,
-    "never links the current account to another Google account",
+    "never links the current account to another account",
   );
   assert.ok(
     container.querySelector("[data-testid='account-add']").disabled,
@@ -272,7 +326,22 @@ test("an ended sign-in and Add account both open Google sign-in; a new account r
       second.container.querySelector("[data-testid='account-add']"),
     ),
   );
+  assert.equal(
+    calls.some((c) => c.command === "login_with_google"),
+    false,
+    "nothing starts before a choice",
+  );
+  await act(async () =>
+    fireEvent.click(
+      document.querySelector("[data-testid='add-account-google']"),
+    ),
+  );
   await settle(() => finish !== undefined);
+  assert.equal(
+    calls.find((c) => c.command === "login_with_google").args.provider,
+    undefined,
+    "Google is the default method",
+  );
   await act(async () =>
     finish({
       origin: "http://127.0.0.1:3000",

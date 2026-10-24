@@ -5,11 +5,12 @@
 //! list rewrites its secure-storage index every time, and these details change
 //! far more often (every sign-in, restore and switch). Nothing here is secret
 //! and nothing depends on it; a missing or unreadable file only loses names.
-//! Name and avatar come from the relay's `/auth/me` (the Google profile), so
-//! an account has them even when its own UI was never opened here. The Kuzz
-//! profile name is recorded separately whenever the account is active, and
-//! menus prefer it: the account is a Kuzz account, Google is only how it
-//! signs in.
+//! Name and avatar come from the relay's `/auth/me` (the Google or Apple
+//! profile), so an account has them even when its own UI was never opened
+//! here. The Kuzz profile name is recorded separately whenever the account is
+//! active, and menus prefer it: the account is a Kuzz account, Google or Apple
+//! is only how it signs in (recorded here at each sign-in; the relay does not
+//! say).
 
 use std::collections::BTreeMap;
 use std::path::Path;
@@ -17,6 +18,10 @@ use std::sync::{Mutex, PoisonError};
 
 use nostr::PublicKey;
 use serde::{Deserialize, Serialize};
+use tauri::Manager;
+use zeroize::Zeroizing;
+
+use super::accounts::AccountState;
 
 /// File name inside the app data directory.
 pub(crate) const FILE_NAME: &str = "account-profiles.json";
@@ -26,7 +31,7 @@ const VERSION: u8 = 1;
 /// One account's display details. Every field is optional.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub(crate) struct AccountProfile {
-    /// The Google name from `/auth/me`.
+    /// The Google or Apple name from `/auth/me`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub display_name: Option<String>,
     /// The account's own Kuzz profile name, last seen while it was active.
@@ -39,6 +44,32 @@ pub(crate) struct AccountProfile {
     /// Unix seconds of the last sign-in or switch to it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub last_used_at: Option<i64>,
+    /// How it last signed in here: "google" or "apple". Absent: Google (every
+    /// account from before Sign in with Apple).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider: Option<String>,
+}
+
+/// One account on this computer, for the UI. Never carries secrets.
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AccountSummary {
+    pub pubkey: String,
+    pub origin: String,
+    /// `signed_in | needs_login | signed_out | key_only`
+    pub state: AccountState,
+    pub active: bool,
+    /// From [`AccountProfile`]; absent until first learned.
+    /// The Google or Apple name.
+    pub display_name: Option<String>,
+    /// The Kuzz profile name; menus prefer it.
+    pub kuzz_name: Option<String>,
+    pub avatar_url: Option<String>,
+    pub email: Option<String>,
+    /// Unix seconds of the last sign-in or switch to it.
+    pub last_used_at: Option<i64>,
+    /// "google" or "apple"; absent: Google.
+    pub provider: Option<String>,
 }
 
 #[derive(Serialize, Deserialize)]
@@ -135,6 +166,51 @@ pub(crate) fn learn_kuzz_name(data_dir: &Path, account: &PublicKey, name: &str) 
     }
 }
 
+/// Record a sign-in of `account` for the account menu: used now, how it
+/// signed in (`provider`), its email (from relays that send it), and in the
+/// background its `/auth/me` name and avatar. Best effort.
+pub(crate) fn remember_sign_in(
+    app: &tauri::AppHandle,
+    origin: &str,
+    account: PublicKey,
+    tokens: &super::api::LoginTokens,
+    provider: &str,
+) {
+    let Ok(data_dir) = app.path().app_data_dir() else {
+        return;
+    };
+    touch(&data_dir, &account);
+    learn_provider(&data_dir, &account, provider);
+    learn(&data_dir, &account, None, None, tokens.email.clone());
+    let client = app
+        .state::<crate::app_state::AppState>()
+        .http_client
+        .clone();
+    let origin = origin.to_owned();
+    let access = Zeroizing::new(tokens.access.0.to_string());
+    tauri::async_runtime::spawn(async move {
+        match super::api::me(&client, &origin, &access).await {
+            Ok(me) => learn(
+                &data_dir,
+                &account,
+                me.display_name,
+                me.avatar_url,
+                me.email,
+            ),
+            Err(error) => eprintln!("kuzz-desktop: accounts: profile not fetched: {error}"),
+        }
+    });
+}
+
+/// Record how `account` just signed in: "google" or "apple".
+pub(crate) fn learn_provider(data_dir: &Path, account: &PublicKey, provider: &str) {
+    if let Err(error) = update(data_dir, account, |profile| {
+        profile.provider = Some(provider.to_owned())
+    }) {
+        eprintln!("kuzz-desktop: accounts: sign-in method not saved: {error}");
+    }
+}
+
 /// Record that `account` was just signed into or switched to.
 pub(crate) fn touch(data_dir: &Path, account: &PublicKey) {
     let now = chrono::Utc::now().timestamp();
@@ -187,6 +263,11 @@ mod tests {
         assert_eq!(profile.email.as_deref(), Some("j@test"));
         assert_eq!(profile.kuzz_name.as_deref(), Some("akak"));
         assert!(profile.last_used_at.is_some());
+        assert_eq!(profile.provider, None, "unknown until a sign-in records it");
+        learn_provider(dir.path(), &account, "apple");
+        let profile = load(dir.path()).remove(&account.to_hex()).unwrap();
+        assert_eq!(profile.provider.as_deref(), Some("apple"));
+        assert_eq!(profile.email.as_deref(), Some("j@test"), "others are kept");
 
         std::fs::write(dir.path().join(FILE_NAME), b"{not json").unwrap();
         assert!(load(dir.path()).is_empty());

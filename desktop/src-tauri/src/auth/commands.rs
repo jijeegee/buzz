@@ -246,7 +246,7 @@ pub async fn login_with_google(
 #[tauri::command]
 pub async fn confirm_signup(app: AppHandle) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
-    let expired = "This sign-in has expired. Sign in with Google again.";
+    let expired = "This sign-in has expired. Sign in again.";
     let pending = state.token_auth.take_signup().ok_or(expired)?;
     let origin = state.current_auth_origin();
     if pending.origin != origin || pending.parked_at.elapsed() > SIGNUP_CONFIRM_WINDOW {
@@ -270,6 +270,7 @@ pub async fn confirm_signup(app: AppHandle) -> Result<TokenAuthStatus, String> {
     finish_sign_in(
         &app,
         &origin,
+        pending.provider,
         pending.providers,
         true,
         false,
@@ -294,7 +295,7 @@ pub fn cancel_google_login(app: AppHandle, attempt_id: String) -> bool {
 
 async fn login_inner(
     app: &AppHandle,
-    provider: &str,
+    provider: &'static str,
     connect: bool,
     existing_token_account: bool,
     attempt_id: &str,
@@ -417,6 +418,7 @@ async fn login_inner(
             }
             state.token_auth.park_signup(super::PendingSignup {
                 origin: origin.clone(),
+                provider,
                 providers: providers.clone(),
                 existing_token_account,
                 verifier: Zeroizing::new(pkce.verifier.to_string()),
@@ -435,6 +437,7 @@ async fn login_inner(
     finish_sign_in(
         app,
         &origin,
+        provider,
         providers,
         backup,
         connect,
@@ -445,10 +448,12 @@ async fn login_inner(
 }
 
 /// The end of a sign-in once the relay issued its session: key recovery,
-/// session storage, account switch, agents.
+/// session storage, account switch, agents. `provider`: how it signed in.
+#[allow(clippy::too_many_arguments)]
 async fn finish_sign_in(
     app: &AppHandle,
     origin: &str,
+    provider: &str,
     providers: Vec<String>,
     backup: bool,
     connect: bool,
@@ -551,7 +556,7 @@ async fn finish_sign_in(
     drop(_refresh_guard);
     spawn_refresh_loop(app, &origin, generation);
     if let Some(account) = signed_in_account {
-        remember_signed_in_profile(app, &origin, account, &tokens);
+        super::account_profiles::remember_sign_in(app, &origin, account, &tokens, provider);
     }
     emit_changed(app, &origin);
     // This device's agent keys that left at the last sign-out come back
@@ -576,37 +581,6 @@ async fn finish_sign_in(
     let mut status = current_status(&state, &origin, Some(providers));
     status.account_changed = account_changed;
     Ok(status)
-}
-
-/// Record a sign-in of `account` for the account menu: used now, its email
-/// (from relays that send it), and in the background its `/auth/me` name and
-/// avatar. Best effort.
-fn remember_signed_in_profile(
-    app: &AppHandle,
-    origin: &str,
-    account: PublicKey,
-    tokens: &api::LoginTokens,
-) {
-    let Ok(data_dir) = app.path().app_data_dir() else {
-        return;
-    };
-    super::account_profiles::touch(&data_dir, &account);
-    super::account_profiles::learn(&data_dir, &account, None, None, tokens.email.clone());
-    let client = app.state::<AppState>().http_client.clone();
-    let origin = origin.to_owned();
-    let access = Zeroizing::new(tokens.access.0.to_string());
-    tauri::async_runtime::spawn(async move {
-        match api::me(&client, &origin, &access).await {
-            Ok(me) => super::account_profiles::learn(
-                &data_dir,
-                &account,
-                me.display_name,
-                me.avatar_url,
-                me.email,
-            ),
-            Err(error) => eprintln!("kuzz-desktop: accounts: profile not fetched: {error}"),
-        }
-    });
 }
 
 /// Start `owner`'s local agents that start with the app, plus `resume` (the

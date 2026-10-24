@@ -51,6 +51,11 @@ class Community {
 
   /// Google account authorizing custody only; messaging still uses [nsec].
   final String? googleBackupAccountId;
+
+  /// How this account last signed in on this phone (`google` or `apple`),
+  /// recorded locally at sign-in. Absent on older records, which were all
+  /// Google: read it through [signInMethod].
+  final String? signInProvider;
   final DateTime addedAt;
 
   const Community({
@@ -67,6 +72,7 @@ class Community {
     this.tokenAuth = false,
     this.signedOut = false,
     this.googleBackupAccountId,
+    this.signInProvider,
     required this.addedAt,
   });
 
@@ -80,6 +86,7 @@ class Community {
     bool starterSetupIncomplete = false,
     bool tokenAuth = false,
     String? googleBackupAccountId,
+    String? signInProvider,
   }) {
     return Community(
       id: _uuid.v4(),
@@ -92,6 +99,7 @@ class Community {
       starterSetupIncomplete: starterSetupIncomplete,
       tokenAuth: tokenAuth,
       googleBackupAccountId: googleBackupAccountId,
+      signInProvider: signInProvider,
       addedAt: DateTime.now(),
     );
   }
@@ -109,6 +117,7 @@ class Community {
     bool? tokenAuth,
     bool? signedOut,
     String? googleBackupAccountId,
+    String? signInProvider,
   }) {
     return Community(
       id: id,
@@ -131,6 +140,7 @@ class Community {
       signedOut: signedOut ?? this.signedOut,
       googleBackupAccountId:
           googleBackupAccountId ?? this.googleBackupAccountId,
+      signInProvider: signInProvider ?? this.signInProvider,
       addedAt: addedAt,
     );
   }
@@ -151,6 +161,7 @@ class Community {
     if (signedOut) 'signedOut': true,
     if (googleBackupAccountId != null)
       'googleBackupAccountId': googleBackupAccountId,
+    if (signInProvider != null) 'signInProvider': signInProvider,
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -191,9 +202,14 @@ class Community {
       tokenAuth: json['authMode'] == 'token',
       signedOut: json['signedOut'] == true,
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
+      signInProvider: json['signInProvider'] as String?,
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }
+
+  /// The sign-in method to show and to resume with: [signInProvider], or
+  /// `google` for records made before it was recorded.
+  String get signInMethod => signInProvider ?? 'google';
 
   /// Gives the resumed session its own push lease, separate from old cleanup.
   Community resumeSession() => copyWith(

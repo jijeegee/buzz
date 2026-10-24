@@ -223,10 +223,12 @@ pub(crate) struct MeProfile {
     pub email: Option<String>,
 }
 
-/// A Google sign-in whose account does not exist yet: the relay created
-/// nothing and holds a ticket for [`commands::confirm_signup`].
+/// A sign-in whose account does not exist yet: the relay created nothing
+/// and holds a ticket for [`commands::confirm_signup`].
 pub(crate) struct PendingSignup {
     pub origin: String,
+    /// How it signed in: "google" or "apple".
+    pub provider: &'static str,
     pub providers: Vec<String>,
     pub existing_token_account: bool,
     pub verifier: Zeroizing<String>,

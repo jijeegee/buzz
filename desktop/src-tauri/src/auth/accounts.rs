@@ -25,6 +25,8 @@ use nostr::{Keys, PublicKey, ToBech32};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
 
+pub use super::account_profiles::AccountSummary;
+
 /// File name of the account list inside the app data directory.
 pub(crate) const FILE_NAME: &str = "accounts.json";
 
@@ -1682,26 +1684,6 @@ pub(crate) async fn after_active_changed<R: tauri::Runtime>(
     let _ = app.emit(ACTIVE_ACCOUNT_CHANGED_EVENT, current.to_hex());
 }
 
-/// One account on this computer, for the UI. Never carries secrets.
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct AccountSummary {
-    pub pubkey: String,
-    pub origin: String,
-    /// `signed_in | needs_login | signed_out | key_only`
-    pub state: AccountState,
-    pub active: bool,
-    /// From [`super::account_profiles`]; absent until first learned.
-    /// The Google name.
-    pub display_name: Option<String>,
-    /// The Kuzz profile name; menus prefer it.
-    pub kuzz_name: Option<String>,
-    pub avatar_url: Option<String>,
-    pub email: Option<String>,
-    /// Unix seconds of the last sign-in or switch to it.
-    pub last_used_at: Option<i64>,
-}
-
 /// Accounts on this computer for the current community (and key-only ones),
 /// most recently used first.
 #[tauri::command]
@@ -1750,6 +1732,7 @@ fn account_summaries(
                 avatar_url: profile.avatar_url,
                 email: profile.email,
                 last_used_at: profile.last_used_at,
+                provider: profile.provider,
             }
         })
         .collect();

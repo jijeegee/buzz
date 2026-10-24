@@ -194,6 +194,8 @@ void main() {
       expect(saved.nsec, keys.nsec);
       expect(saved.pubkey, keys.public);
       expect(saved.googleBackupAccountId, backup.account);
+      // The method it signed in with is recorded on this phone.
+      expect(saved.signInProvider, 'google');
     },
   );
 
@@ -217,8 +219,8 @@ void main() {
 
       expect(
         find.text(
-          'This Google account is linked to a different Kuzz account. '
-          'Try a different Google account.',
+          'This sign-in is linked to a different Kuzz account. '
+          'Try a different account.',
         ),
         findsOneWidget,
       );

@@ -10,7 +10,7 @@ const calls = [];
 let runtimes = [];
 let supported = true;
 let accounts = [];
-let providers = ["google"];
+const providers = ["google"];
 
 const tauriMock = {
   invoke(command, args) {
@@ -110,8 +110,8 @@ test("a signed-out computer shows the signed-out screen instead of chats", async
   const buttons = [...screen.querySelectorAll("button")];
   assert.deepEqual(
     buttons.map((button) => button.textContent.trim()),
-    ["Sign in with Google", "Terms of Service"],
-    "Sign in with Google is the only action (plus the terms link); no agent controls",
+    ["Sign in with Google", "Sign in with Apple", "Terms of Service"],
+    "signing in is the only action (plus the terms link); no agent controls",
   );
   // The signed-out account's agents stopped with it: none are reported.
   assert.doesNotMatch(screen.textContent, /agent/i);
@@ -137,7 +137,7 @@ test("Google being unreachable still leaves a way to retry", async () => {
   supported = false;
   runtimes = [];
   const { container, unmount } = await mount(true);
-  assert.match(container.textContent, /Google sign-in isn't available/);
+  assert.match(container.textContent, /Sign-in isn't available/);
   assert.ok(
     [...container.querySelectorAll("button")].some(
       (button) => button.textContent.trim() === "Try again",
@@ -205,8 +205,7 @@ test("no other signed-in account: only Google sign-in", async () => {
   await unmount();
 });
 
-test("a server that offers Apple adds Sign in with Apple", async () => {
-  providers = ["google", "apple"];
+test("Sign in with Apple is always offered, even before the server lists it", async () => {
   runtimes = [];
   const { container, unmount } = await mount(true);
   const apple = container.querySelector(
@@ -216,6 +215,5 @@ test("a server that offers Apple adds Sign in with Apple", async () => {
   await act(async () => apple.click());
   const login = calls.find((c) => c.command === "login_with_google");
   assert.equal(login?.args.provider, "apple");
-  providers = ["google"];
   await unmount();
 });

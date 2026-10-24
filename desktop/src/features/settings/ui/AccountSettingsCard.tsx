@@ -6,10 +6,12 @@ import {
   accountAfterSignOut,
   accountEmailDetail,
   accountLabel,
+  accountProvider,
 } from "@/features/accounts/lib/accountLabels";
 import { signOutActiveAccount } from "@/features/accounts/lib/signOutActiveAccount";
 import { useWatchedUnread } from "@/features/accounts/inactiveAccountWatch/useWatchedUnread";
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
+import { AddAccountDialog } from "@/features/accounts/ui/AddAccountDialog";
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { type MessageKey, t as translate, useT } from "@/shared/i18n";
@@ -25,6 +27,7 @@ import {
   revokeAllBotTokens,
   revokeAuthDevice,
   revokeOtherSessions,
+  type SignInProvider,
   takeTokenAuthNotices,
   type TokenAuthStatus,
 } from "@/shared/api/tokenAuth";
@@ -110,6 +113,10 @@ export function AccountSettingsCard({
   const login = useGoogleLogin();
   const [status, setStatus] = React.useState<TokenAuthStatus | null>(null);
   const [busy, setBusy] = React.useState<MessageKey | null>(null);
+  const accountsQuery = useQuery({
+    queryKey: ["accounts"],
+    queryFn: listAccounts,
+  });
 
   React.useEffect(() => {
     // Only settled statuses: the Profile panel may remount this card to move
@@ -164,12 +171,18 @@ export function AccountSettingsCard({
 
   if (!status?.supported) return null;
 
+  const active = accountsQuery.data?.find((account) => account.active);
+  const activeProvider = active ? accountProvider(active) : "google";
+
   const signIn = () =>
     run("settings.account.signInFailed", async () => {
       // A local-only account links its own key; otherwise the chosen Google
-      // account decides which account opens.
+      // account decides which account opens. An ended sign-in signs in again
+      // the way the account signed in before (Google or Apple).
       const connect = needsGoogleProtection(status);
-      const next = await login.run(false, false, connect);
+      const provider =
+        status.state === "needs_login" ? activeProvider : "google";
+      const next = await login.run(false, false, connect, provider);
       if (!next) return;
       setStatus(next);
       if (
@@ -194,7 +207,9 @@ export function AccountSettingsCard({
         description={
           protect
             ? t("settings.account.protectDescription")
-            : t("settings.account.description")
+            : activeProvider === "apple"
+              ? t("settings.account.descriptionApple")
+              : t("settings.account.description")
         }
         title={
           protect
@@ -278,6 +293,9 @@ function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
   const accountMenu = useAccountMenu({ open: true });
   const activePubkey = useIdentityQuery().data?.pubkey ?? null;
   const unread = useWatchedUnread();
+  const [addAccountOpen, setAddAccountOpen] = React.useState(false);
+  const signIn = (provider: SignInProvider) =>
+    void accountMenu.signIn(activePubkey, provider);
   return (
     <SettingsOptionRow className="items-start">
       <div className="min-w-0 flex-1" data-testid="settings-accounts">
@@ -287,16 +305,17 @@ function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
         <AccountSwitcherSection
           accounts={accountMenu.accounts}
           busy={accountMenu.busy || disabled}
-          onSignIn={() => void accountMenu.signIn(activePubkey)}
-          onSignInWithApple={
-            accountMenu.appleSignIn
-              ? () => void accountMenu.signIn(activePubkey, "apple")
-              : undefined
-          }
+          onSignIn={signIn}
+          onAdd={() => setAddAccountOpen(true)}
           onSwitch={(account) => void accountMenu.switchTo(account)}
           unread={unread}
         />
       </div>
+      <AddAccountDialog
+        onChoose={signIn}
+        onOpenChange={setAddAccountOpen}
+        open={addAccountOpen}
+      />
       <CreateAccountDialog login={accountMenu.signupPrompt} />
     </SettingsOptionRow>
   );

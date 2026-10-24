@@ -11,9 +11,10 @@ import {
 } from "./alert-dialog";
 
 /**
- * "Create your Kuzz account": the Google account just chosen has no Kuzz
- * account yet. Nothing exists until "Create account"; "Use a different
- * account" opens Google's account picker again, and closing stops here.
+ * "Create your Kuzz account": the Google account or Apple ID just chosen has
+ * no Kuzz account yet (the text names which). Nothing exists until "Create
+ * account"; "Use a different account" signs in the same way again, and
+ * closing stops here.
  */
 export function CreateAccountDialog({
   login,
@@ -33,7 +34,9 @@ export function CreateAccountDialog({
         <AlertDialogHeader>
           <AlertDialogTitle>{t("ui.createAccount.title")}</AlertDialogTitle>
           <AlertDialogDescription>
-            {t("ui.createAccount.description")}
+            {prompt?.provider === "apple"
+              ? t("ui.createAccount.descriptionApple")
+              : t("ui.createAccount.description")}
           </AlertDialogDescription>
         </AlertDialogHeader>
         {prompt?.email ? (
