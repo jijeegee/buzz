@@ -42,3 +42,28 @@ for entitlement in "${required_entitlements[@]}"; do
 done
 
 echo "Verified required macOS entitlements on $EXECUTABLE_PATH"
+
+# Sidecars must not carry restricted entitlements: without a provisioning
+# profile of their own macOS kills them at launch. Fix with
+# resign-macos-sidecars.sh.
+restricted_entitlements=(
+  com.apple.application-identifier
+  com.apple.developer.team-identifier
+  keychain-access-groups
+)
+
+for sidecar in "$APP_PATH"/Contents/MacOS/*; do
+  [[ "$sidecar" == "$EXECUTABLE_PATH" ]] && continue
+  [[ -f "$sidecar" && -x "$sidecar" ]] || continue
+  : > "$ENTITLEMENTS"
+  codesign --display --entitlements "$ENTITLEMENTS" --xml "$sidecar" 2>/dev/null || true
+  [[ -s "$ENTITLEMENTS" ]] || continue
+  for entitlement in "${restricted_entitlements[@]}"; do
+    if /usr/libexec/PlistBuddy -c "Print :$entitlement" "$ENTITLEMENTS" >/dev/null 2>&1; then
+      echo "Sidecar has restricted entitlement $entitlement: $sidecar" >&2
+      exit 1
+    fi
+  done
+done
+
+echo "Verified sidecars carry no restricted entitlements"
