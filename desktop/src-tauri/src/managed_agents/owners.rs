@@ -32,6 +32,17 @@ fn read_owners(path: &Path) -> BTreeMap<String, String> {
         .unwrap_or_default()
 }
 
+/// Whether `owner_hex` owns any of `records`, by attestation or by the owner
+/// recorded for it in the owners file at `path`.
+pub(crate) fn owns_any_agent(path: &Path, records: &[ManagedAgentRecord], owner_hex: &str) -> bool {
+    let recorded = read_owners(path);
+    records.iter().any(|record| {
+        attested_owner_hex(record)
+            .or_else(|| recorded.get(&record.pubkey.to_ascii_lowercase()).cloned())
+            .is_some_and(|owner| owner.eq_ignore_ascii_case(owner_hex))
+    })
+}
+
 /// The owner signed into `record`'s attestation, when it verifies.
 pub(crate) fn attested_owner_hex(record: &ManagedAgentRecord) -> Option<String> {
     let tag = record.auth_tag.as_deref()?;

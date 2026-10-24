@@ -74,7 +74,7 @@ test("sign-out switches to the first other signed-in account on the same server"
   assert.equal(accountAfterSignOut(list.slice(1)), null, "no active account");
 });
 
-test("the menu keeps the backend's most-recent order and leaves out signed-out and key-only accounts", () => {
+test("the menu keeps the backend's most-recent order and leaves out signed-out accounts", () => {
   const list = [
     account("a".repeat(64), { active: true }),
     account("b".repeat(64), { state: "signed_out" }),
@@ -83,23 +83,15 @@ test("the menu keeps the backend's most-recent order and leaves out signed-out a
   ];
   assert.deepEqual(
     menuAccounts(list).map((a) => a.pubkey[0]),
-    ["a", "c"],
-  );
-  assert.deepEqual(
-    menuAccounts([
-      account("d".repeat(64), { state: "key_only", active: true }),
-    ]).map((a) => a.pubkey[0]),
-    ["d"],
-    "the active key-only account is still shown",
+    ["a", "c", "d"],
   );
 });
 
-test("only another signed-in account is a direct switch", () => {
+test("only another signed-in (or key-only) account is a direct switch", () => {
   assert.equal(canSwitchTo(account("a".repeat(64))), true);
   assert.equal(
     canSwitchTo(account("a".repeat(64), { state: "key_only" })),
-    false,
-    "a local key nobody signed in with",
+    true,
   );
   assert.equal(
     canSwitchTo(account("a".repeat(64), { active: true })),

@@ -69,7 +69,7 @@ export function beginAccountAction(): AccountAction {
       } catch {
         // Only the overlay caption is lost.
       }
-      identityReload.reload();
+      identityReload.reloadHome();
     },
     cancel() {
       if (release()) identityReload.reload();

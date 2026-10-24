@@ -63,7 +63,7 @@ export function GoogleSignInButton({
       .then(async (next) => {
         if (!next) return;
         if (onComplete) await onComplete();
-        else identityReload.reload();
+        else identityReload.reloadHome();
       })
       .catch((error: unknown) => {
         setPending(false);

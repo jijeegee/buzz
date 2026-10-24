@@ -46,23 +46,22 @@ export function accountAfterSignOut(
 
 /**
  * Accounts the profile menu lists, in the backend's most-recent order. A
- * signed-out account is left out: adding it again signs it back in. So is a
- * key-only one unless it is the active account: it is a local key nobody
- * signed in with (one is made on an install's first run), not an account.
+ * signed-out account is left out: adding it again signs it back in. (The
+ * backend already leaves out a local key nobody signed in with that owns no
+ * agents.)
  */
 export function menuAccounts(
   accounts: readonly AccountSummary[],
 ): AccountSummary[] {
-  return accounts.filter(
-    (account) =>
-      account.state !== "signed_out" &&
-      (account.state !== "key_only" || account.active),
-  );
+  return accounts.filter((account) => account.state !== "signed_out");
 }
 
 /** Accounts the menu can switch to directly (others need a fresh sign-in). */
 export function canSwitchTo(account: AccountSummary): boolean {
-  return !account.active && account.state === "signed_in";
+  return (
+    !account.active &&
+    (account.state === "signed_in" || account.state === "key_only")
+  );
 }
 
 /**

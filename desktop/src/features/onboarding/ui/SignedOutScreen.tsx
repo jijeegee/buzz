@@ -1,7 +1,10 @@
 import * as React from "react";
 import { toast } from "sonner";
 
-import { beginAccountAction } from "@/features/accounts/lib/accountSwitch";
+import {
+  beginAccountAction,
+  SWITCH_INCOMPLETE_NOTICE,
+} from "@/features/accounts/lib/accountSwitch";
 import { accountLabel } from "@/features/accounts/lib/accountLabels";
 import {
   type AccountSummary,
@@ -47,9 +50,10 @@ export function SignedOutScreen() {
     setSwitching(true);
     const action = beginAccountAction();
     try {
-      await switchAccount(account.pubkey);
+      const incomplete = await switchAccount(account.pubkey);
       action.reload(
         t("accounts.switch.switchingTo", { name: accountLabel(account) }),
+        incomplete ? SWITCH_INCOMPLETE_NOTICE : null,
       );
     } catch (error) {
       action.cancel();

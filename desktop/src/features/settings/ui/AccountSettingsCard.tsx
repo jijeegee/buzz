@@ -77,7 +77,7 @@ function errorText(error: unknown, fallback: string): string {
  * on the signed-out screen.
  */
 function reloadIntoNewIdentity() {
-  identityReload.reload();
+  identityReload.reloadHome();
 }
 
 /** The sign-out text, naming the account that takes over if there is one. */
@@ -470,7 +470,7 @@ function ActiveAccount({
                     onClick={() =>
                       void run("settings.account.deleteFailed", async () => {
                         await deleteTokenAccount();
-                        identityReload.reload();
+                        identityReload.reloadHome();
                       })
                     }
                     type="button"
