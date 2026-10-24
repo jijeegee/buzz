@@ -4650,11 +4650,14 @@ dependencies = [
 name = "kuzz-device-key"
 version = "0.1.0"
 dependencies = [
+ "core-foundation 0.10.1",
  "hex",
  "kuzz-auth",
  "nostr 0.44.7",
  "p256",
  "rand 0.10.1",
+ "security-framework",
+ "security-framework-sys",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
