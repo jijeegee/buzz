@@ -15,6 +15,7 @@ import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
+import 'device_key_notice.dart';
 
 /// "Sign in with Google" / "Sign in with Apple" for relays with centralized
 /// token auth.
@@ -245,6 +246,7 @@ class TokenSignInPage extends HookConsumerWidget {
           context.mounted && generation == attemptGeneration.value;
       try {
         message.value = null;
+        ref.read(signInNoticeProvider.notifier).clear();
         accountMismatch.value = false;
         lastProvider.value = provider;
         if (keyBackup.value) {
@@ -290,7 +292,10 @@ class TokenSignInPage extends HookConsumerWidget {
         completing.value ||
         status == TokenSessionStatus.restoring ||
         status == TokenSessionStatus.signingIn;
-    final errorText = message.value ?? session?.errorMessage;
+    final errorText =
+        message.value ??
+        session?.errorMessage ??
+        ref.watch(signInNoticeProvider);
     // A known account signs back in with its own method only; connecting an
     // older account is Google only.
     final offersGoogle = signInProvider == null || signInProvider == 'google';

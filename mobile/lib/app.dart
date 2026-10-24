@@ -25,6 +25,7 @@ import 'features/profile/settings_profile_header.dart';
 import 'features/profile/profile_edit_page.dart';
 import 'features/profile/profile_text_editor.dart';
 import 'features/settings/settings_page.dart';
+import 'features/sign_in/device_key_notice.dart';
 import 'features/sign_in/token_session_gate.dart';
 import 'features/sign_in/token_sign_in_page.dart';
 import 'features/sign_in/signed_out_page.dart';
@@ -258,10 +259,12 @@ class App extends HookConsumerWidget {
         data: (state) => switch (state.status) {
           AuthStatus.authenticated => DeepLinkDispatcher(
             child: _TokenGateIfNeeded(
-              child: HomePage(
-                settingsPageBuilder: _buildSettingsPage,
-                profilePageBuilder: _buildProfilePage,
-                hasUnreadInbox: hasUnreadInbox,
+              child: DeviceKeyNotice(
+                child: HomePage(
+                  settingsPageBuilder: _buildSettingsPage,
+                  profilePageBuilder: _buildProfilePage,
+                  hasUnreadInbox: hasUnreadInbox,
+                ),
               ),
             ),
           ),

@@ -433,6 +433,10 @@
   "@tokenSessionEnded": {
     "description": "Error when the sign-in expired or was revoked."
   },
+  "tokenSessionDeviceKeyRequired": "This device needs to sign in again to finish a security update.",
+  "@tokenSessionDeviceKeyRequired": {
+    "description": "Sign-in screen message after the server ended a session that signed in before a security update; signing in again fixes it."
+  },
   "tokenSessionSignInExpired": "The sign-in expired. Try again.",
   "@tokenSessionSignInExpired": {
     "description": "Sign-in error when the sign-in attempt took too long."
@@ -2232,6 +2236,10 @@
   "signInReconnectingBanner": "Reconnecting to your relay…",
   "@signInReconnectingBanner": {
     "description": "Banner at the top of the app while reconnecting to the chat server."
+  },
+  "signInDeviceKeyBanner": "Sign in again to finish a security update",
+  "@signInDeviceKeyBanner": {
+    "description": "Banner at the top of the app when this phone signed in before a security update; next to a Sign in again button."
   },
   "signInUnreachableBanner": "Can’t reach your relay. Your sign-in is saved.",
   "@signInUnreachableBanner": {

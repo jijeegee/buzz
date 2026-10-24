@@ -57,6 +57,35 @@ void main() {
       expect((await api.me()).discoverable, isFalse);
     });
 
+    test('device_key is read when sent, null when absent', () async {
+      final api = await signedIn();
+      expect((await api.me()).deviceKey, isNull);
+
+      server.profile = {...server.profile, 'device_key': false};
+      expect((await api.me()).deviceKey, isFalse);
+
+      server.profile = {...server.profile, 'device_key': true};
+      expect((await api.me()).deviceKey, isTrue);
+    });
+
+    test('device_key_required ends the session through a refresh', () async {
+      final api = await signedIn();
+      server.failures['/auth/me'] = (_) => jsonResponse({
+        'error': 'sign in again',
+        'code': 'device_key_required',
+      }, status: 401);
+      server.auth.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'device_key_required'),
+      );
+
+      await expectLater(api.me(), throwsA(isA<AccountApiException>()));
+      final session = container
+          .read(tokenSessionControllerProvider(_origin))
+          .state;
+      expect(session.status, TokenSessionStatus.signedOut);
+      expect(session.endedCode, 'device_key_required');
+    });
+
     test('setUsername and setDiscoverable send only their field', () async {
       final api = await signedIn();
       final saved = await api.setUsername('ada_l');

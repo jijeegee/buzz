@@ -248,7 +248,9 @@ class AuthApi {
   ///
   /// Only a 400/401 here is a credential verdict, except a 401 refusing the
   /// device proof (`device_proof_required`/`device_proof_stale`), which is
-  /// transient like a failure to sign the proof at all. The refresh handler never
+  /// transient like a failure to sign the proof at all. `device_key_required`
+  /// (a session that signed in before device keys) stays terminal: no proof
+  /// can fix it, only a new sign-in. The refresh handler never
   /// answers 403/404; those come from the relay's unrouted fallback when
   /// `AUTH_TOKEN_ENABLED` is off (e.g. a rollback or misrouted proxy), so they
   /// are transient: the session stalls and is kept rather than wiped.
