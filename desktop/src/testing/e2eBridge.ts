@@ -39,6 +39,7 @@ import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audi
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
+import { handleMessageStoreMockCommand } from "./e2eMessageStore.ts";
 import {
   createMockSubscription,
   hasMockSubscription,
@@ -15657,6 +15658,14 @@ export function maybeInstallE2eTauriMocks() {
         window.localStorage.removeItem(key);
         return null;
       }
+      case "message_store_load_heads":
+      case "message_store_read_window":
+      case "message_store_read_around":
+      case "message_store_read_thread":
+      case "message_store_coverage":
+      case "message_store_begin_live":
+      case "message_store_clear_scope":
+        return handleMessageStoreMockCommand(command, payload);
       case "observed_unread_open_scope": {
         const request = payload as {
           request: {

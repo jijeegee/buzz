@@ -848,8 +848,8 @@ fn api_error(error: ApiError) -> String {
 /// mark it signed out, remove the agent keys the relay holds a copy of for
 /// this device, and when it was the active account switch to another
 /// account still signed in here (`switchedTo`), else the signed-out screen.
-/// The account's key leaves this computer (the server backup restores it on
-/// the next sign-in); communities and history stay. A network failure keeps
+/// The account's key and its stored messages on this server leave this
+/// computer (the server restores both on the next sign-in). A network failure keeps
 /// everything so the user can retry (the server-side session would otherwise
 /// stay alive unrevoked).
 #[tauri::command]
@@ -1052,8 +1052,9 @@ pub(crate) async fn sign_out_account(
     let target = account.or_else(|| state.token_auth.signing_pubkey(origin));
     crate::device_robot::clear_agent_host_devices(&state, origin, target).await;
     let result = sign_out_account_now(app, origin, account, revoke).await;
-    if result.is_err() {
-        crate::device_robot::spawn_publish_agent_host_devices(app);
+    match result {
+        Ok(_) => crate::message_store::purge_account(app, origin, target).await,
+        Err(_) => crate::device_robot::spawn_publish_agent_host_devices(app),
     }
     result
 }
@@ -1172,18 +1173,16 @@ async fn sign_out_account_now(
                     }
                 }
             };
-            {
-                if let Err(error) = revoked {
-                    // Nothing changed locally: keep it alive for a retry.
-                    restart_stopped();
-                    state.token_auth.inactive.start(
-                        &state.http_client,
-                        data_dir.clone(),
-                        origin,
-                        account,
-                    );
-                    return Err(error);
-                }
+            if let Err(error) = revoked {
+                // Nothing changed locally: keep it alive for a retry.
+                restart_stopped();
+                state.token_auth.inactive.start(
+                    &state.http_client,
+                    data_dir.clone(),
+                    origin,
+                    account,
+                );
+                return Err(error);
             }
         }
         state

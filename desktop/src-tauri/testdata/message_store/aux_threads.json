@@ -1,0 +1,342 @@
+{
+  "description": "Thread replies stay out of the timeline, broadcast replies stay in; deletes hide rows and overlays; newest summary wins.",
+  "steps": [
+    {
+      "op": "ingest",
+      "channelId": "room-a",
+      "events": [
+        {
+          "id": "1010101010101010101010101010101010101010101010101010101010101010",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 100,
+          "kind": 9,
+          "tags": [["h", "room-a"]],
+          "content": "message 16",
+          "sig": ""
+        },
+        {
+          "id": "1111111111111111111111111111111111111111111111111111111111111111",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 110,
+          "kind": 9,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "message 17",
+          "sig": ""
+        },
+        {
+          "id": "1212121212121212121212121212121212121212121212121212121212121212",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 120,
+          "kind": 40002,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010",
+              "",
+              "reply"
+            ],
+            ["broadcast", "1"]
+          ],
+          "content": "message 18",
+          "sig": ""
+        },
+        {
+          "id": "1313131313131313131313131313131313131313131313131313131313131313",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 130,
+          "kind": 9,
+          "tags": [["h", "room-a"]],
+          "content": "message 19",
+          "sig": ""
+        },
+        {
+          "id": "1414141414141414141414141414141414141414141414141414141414141414",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 140,
+          "kind": 7,
+          "tags": [
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010"
+            ]
+          ],
+          "content": "+",
+          "sig": ""
+        },
+        {
+          "id": "1515151515151515151515151515151515151515151515151515151515151515",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 150,
+          "kind": 40003,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1313131313131313131313131313131313131313131313131313131313131313"
+            ]
+          ],
+          "content": "edited",
+          "sig": ""
+        },
+        {
+          "id": "1616161616161616161616161616161616161616161616161616161616161616",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 135,
+          "kind": 9,
+          "tags": [["h", "room-a"]],
+          "content": "secret",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "ingest",
+      "events": [
+        {
+          "id": "1717171717171717171717171717171717171717171717171717171717171717",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 160,
+          "kind": 5,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1616161616161616161616161616161616161616161616161616161616161616"
+            ],
+            [
+              "e",
+              "1414141414141414141414141414141414141414141414141414141414141414"
+            ]
+          ],
+          "content": "",
+          "sig": ""
+        },
+        {
+          "id": "2121212121212121212121212121212121212121212121212121212121212121",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 115,
+          "kind": 39005,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010"
+            ]
+          ],
+          "content": "{\"reply_count\":2}",
+          "sig": ""
+        },
+        {
+          "id": "2020202020202020202020202020202020202020202020202020202020202020",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 105,
+          "kind": 39005,
+          "tags": [
+            ["h", "room-a"],
+            [
+              "e",
+              "1010101010101010101010101010101010101010101010101010101010101010"
+            ]
+          ],
+          "content": "{\"reply_count\":1}",
+          "sig": ""
+        },
+        {
+          "id": "2222222222222222222222222222222222222222222222222222222222222222",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 170,
+          "kind": 39006,
+          "tags": [["h", "room-a"]],
+          "content": "{}",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "claim",
+      "channelId": "room-a",
+      "class": "top",
+      "lo": {
+        "createdAt": 100,
+        "eventId": "1010101010101010101010101010101010101010101010101010101010101010"
+      },
+      "loIsStart": true,
+      "hi": {
+        "at": 200
+      }
+    },
+    {
+      "op": "readWindow",
+      "channelId": "room-a",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "startCursor": null,
+        "rowIds": [
+          "1313131313131313131313131313131313131313131313131313131313131313",
+          "1212121212121212121212121212121212121212121212121212121212121212",
+          "1010101010101010101010101010101010101010101010101010101010101010"
+        ],
+        "auxIds": [
+          "1515151515151515151515151515151515151515151515151515151515151515"
+        ],
+        "summaryIds": [
+          "2121212121212121212121212121212121212121212121212121212121212121"
+        ],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": false
+      }
+    },
+    {
+      "op": "readThread",
+      "rootId": "1010101010101010101010101010101010101010101010101010101010101010",
+      "cursor": null,
+      "limit": 10,
+      "expect": {
+        "rowIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111",
+          "1212121212121212121212121212121212121212121212121212121212121212"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "coveredThrough": null,
+        "liveCovered": false
+      }
+    },
+    {
+      "op": "readThread",
+      "rootId": "1010101010101010101010101010101010101010101010101010101010101010",
+      "cursor": null,
+      "limit": 1,
+      "expect": {
+        "rowIds": [
+          "1111111111111111111111111111111111111111111111111111111111111111"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 110,
+          "eventId": "1111111111111111111111111111111111111111111111111111111111111111"
+        },
+        "hasMore": true,
+        "coveredThrough": null,
+        "liveCovered": false
+      }
+    },
+    {
+      "op": "claimThread",
+      "rootId": "1010101010101010101010101010101010101010101010101010101010101010",
+      "lo": null,
+      "loIsStart": true,
+      "hi": {
+        "at": 300
+      }
+    },
+    {
+      "op": "readThread",
+      "rootId": "1010101010101010101010101010101010101010101010101010101010101010",
+      "cursor": {
+        "createdAt": 110,
+        "eventId": "1111111111111111111111111111111111111111111111111111111111111111"
+      },
+      "limit": 10,
+      "expect": {
+        "rowIds": [
+          "1212121212121212121212121212121212121212121212121212121212121212"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "coveredThrough": 300,
+        "liveCovered": false
+      }
+    },
+    {
+      "op": "readAround",
+      "channelId": "room-a",
+      "anchor": {
+        "createdAt": 120,
+        "eventId": "1212121212121212121212121212121212121212121212121212121212121212"
+      },
+      "before": 1,
+      "after": 1,
+      "expect": {
+        "rowIds": [
+          "1212121212121212121212121212121212121212121212121212121212121212",
+          "1010101010101010101010101010101010101010101010101010101010101010"
+        ],
+        "auxIds": [],
+        "summaryIds": [
+          "2121212121212121212121212121212121212121212121212121212121212121"
+        ],
+        "hasOlder": false,
+        "hasNewer": true,
+        "gapBelow": false,
+        "gapAbove": false
+      }
+    },
+    {
+      "op": "readAround",
+      "channelId": "room-a",
+      "anchor": {
+        "createdAt": 130
+      },
+      "before": 5,
+      "after": 5,
+      "expect": {
+        "rowIds": [
+          "1313131313131313131313131313131313131313131313131313131313131313",
+          "1212121212121212121212121212121212121212121212121212121212121212",
+          "1010101010101010101010101010101010101010101010101010101010101010"
+        ],
+        "auxIds": [
+          "1515151515151515151515151515151515151515151515151515151515151515"
+        ],
+        "summaryIds": [
+          "2121212121212121212121212121212121212121212121212121212121212121"
+        ],
+        "hasOlder": false,
+        "hasNewer": true,
+        "gapBelow": false,
+        "gapAbove": true
+      }
+    },
+    {
+      "op": "readAround",
+      "channelId": "room-a",
+      "anchor": {
+        "createdAt": 250
+      },
+      "before": 5,
+      "after": 5,
+      "expect": {
+        "rowIds": [],
+        "auxIds": [],
+        "summaryIds": [],
+        "hasOlder": true,
+        "hasNewer": true,
+        "gapBelow": true,
+        "gapAbove": true
+      }
+    }
+  ]
+}
