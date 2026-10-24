@@ -25,6 +25,12 @@ pub const AGENT_BACKUP_VERSION: u16 = 1;
 /// and master-key label, so a copy never opens as an account backup or for
 /// another owner.
 const AGENT_AAD_DOMAIN: &[u8] = b"kuzz/agent-key-backup/v1";
+/// AAD domain of provider revoke tokens (`provider_revoke_tokens`): binds
+/// provider, subject and master-key label, so a token never opens for
+/// another sign-in.
+const PROVIDER_TOKEN_AAD_DOMAIN: &[u8] = b"kuzz/provider-revoke-token/v1";
+/// Longest provider token accepted for encryption.
+const MAX_PROVIDER_TOKEN_BYTES: usize = 4096;
 /// Domain of the agent's registration signature ([`agent_register_message`]).
 pub const AGENT_REGISTER_DOMAIN: &str = "kuzz-agent-register/v1";
 
@@ -60,6 +66,17 @@ pub struct EncryptedKeyBackup {
     /// Random 96-bit AES-GCM nonce.
     pub nonce: Vec<u8>,
     /// Encrypted secret scalar and 128-bit authentication tag.
+    pub ciphertext: Vec<u8>,
+}
+
+/// An encrypted provider revoke token (`provider_revoke_tokens`).
+#[derive(Clone)]
+pub struct SealedProviderToken {
+    /// Operator-managed nonsecret master-key version label.
+    pub key_id: String,
+    /// Random 96-bit AES-GCM nonce.
+    pub nonce: Vec<u8>,
+    /// Encrypted token and 128-bit authentication tag.
     pub ciphertext: Vec<u8>,
 }
 
@@ -212,6 +229,64 @@ impl BackupMasterKey {
         )
     }
 
+    /// Encrypt the token that revokes the `provider`/`subject` sign-in.
+    pub fn seal_provider_token(
+        &self,
+        provider: &str,
+        subject: &str,
+        token: &str,
+    ) -> Result<SealedProviderToken, BackupError> {
+        if token.is_empty() || token.len() > MAX_PROVIDER_TOKEN_BYTES {
+            return Err(BackupError::Encryption);
+        }
+        let nonce = rand::random::<[u8; 12]>().to_vec();
+        let aad = provider_token_aad(provider, subject, &self.key_id);
+        let cipher =
+            Aes256Gcm::new_from_slice(self.key.as_ref()).map_err(|_| BackupError::Configuration)?;
+        let ciphertext = cipher
+            .encrypt(
+                Nonce::from_slice(&nonce),
+                Payload {
+                    msg: token.as_bytes(),
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| BackupError::Encryption)?;
+        Ok(SealedProviderToken {
+            key_id: self.key_id.clone(),
+            nonce,
+            ciphertext,
+        })
+    }
+
+    /// Recover a token sealed by [`Self::seal_provider_token`] for the same
+    /// `provider`/`subject`.
+    pub fn open_provider_token(
+        &self,
+        provider: &str,
+        subject: &str,
+        sealed: &SealedProviderToken,
+    ) -> Result<Zeroizing<String>, BackupError> {
+        if sealed.key_id != self.key_id || sealed.nonce.len() != 12 {
+            return Err(BackupError::Decryption);
+        }
+        let cipher =
+            Aes256Gcm::new_from_slice(self.key.as_ref()).map_err(|_| BackupError::Configuration)?;
+        let aad = provider_token_aad(provider, subject, &sealed.key_id);
+        let raw = cipher
+            .decrypt(
+                Nonce::from_slice(&sealed.nonce),
+                Payload {
+                    msg: &sealed.ciphertext,
+                    aad: &aad,
+                },
+            )
+            .map_err(|_| BackupError::Decryption)?;
+        String::from_utf8(raw)
+            .map(Zeroizing::new)
+            .map_err(|_| BackupError::Decryption)
+    }
+
     fn open(
         &self,
         account: &[u8; 32],
@@ -264,6 +339,16 @@ fn authenticated_data(domain: &[u8], account: &[u8; 32], envelope: &EncryptedKey
     aad.extend_from_slice(&envelope.pubkey);
     aad.extend_from_slice(&(envelope.key_id.len() as u32).to_be_bytes());
     aad.extend_from_slice(envelope.key_id.as_bytes());
+    aad
+}
+
+fn provider_token_aad(provider: &str, subject: &str, key_id: &str) -> Vec<u8> {
+    let mut aad = Vec::with_capacity(64 + provider.len() + subject.len() + key_id.len());
+    aad.extend_from_slice(PROVIDER_TOKEN_AAD_DOMAIN);
+    for field in [provider, subject, key_id] {
+        aad.extend_from_slice(&(field.len() as u32).to_be_bytes());
+        aad.extend_from_slice(field.as_bytes());
+    }
     aad
 }
 

@@ -642,6 +642,7 @@ async fn issue_login_code(
             )
             .await
     };
+    super::provider_revoke::remember(state, provider_name, identity).await;
     let login = match result {
         Ok(login) => Some(login),
         // Nothing was created: `complete` hands the client a signup ticket.

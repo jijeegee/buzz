@@ -13,7 +13,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use super::{
-    bool_or_string, GoogleProvider, OidcError, OidcIdentity, OidcProvider, JWKS_TTL,
+    bool_or_string, GoogleProvider, OidcError, OidcIdentity, OidcProvider, RevokeToken, JWKS_TTL,
     PROVIDER_TIMEOUT,
 };
 
@@ -21,6 +21,7 @@ const APPLE_ISSUER: &str = "https://appleid.apple.com";
 const APPLE_AUTH_ENDPOINT: &str = "https://appleid.apple.com/auth/authorize";
 const APPLE_TOKEN_ENDPOINT: &str = "https://appleid.apple.com/auth/token";
 const APPLE_JWKS_URI: &str = "https://appleid.apple.com/auth/keys";
+const APPLE_REVOKE_ENDPOINT: &str = "https://appleid.apple.com/auth/revoke";
 /// Lifetime of one client-secret JWT (Apple allows up to six months).
 const CLIENT_SECRET_TTL: Duration = Duration::from_secs(300);
 
@@ -70,6 +71,9 @@ impl std::fmt::Debug for AppleProvider {
 #[derive(Deserialize)]
 struct TokenResponse {
     id_token: String,
+    /// Kept (encrypted) to revoke the sign-in when the account is deleted.
+    #[serde(default)]
+    refresh_token: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -202,6 +206,7 @@ impl AppleProvider {
             email_verified: claims.email_verified,
             name: None,
             picture: None,
+            revoke_token: None,
         })
     }
 }
@@ -258,8 +263,14 @@ impl OidcProvider for AppleProvider {
             }
             let token: TokenResponse =
                 serde_json::from_slice(&body).map_err(|e| OidcError::Unavailable(e.to_string()))?;
-            self.validate_id_token(&token.id_token, &self.config.services_id, expected_nonce)
-                .await
+            let mut identity = self
+                .validate_id_token(&token.id_token, &self.config.services_id, expected_nonce)
+                .await?;
+            identity.revoke_token = token
+                .refresh_token
+                .filter(|t| !t.is_empty())
+                .map(RevokeToken::new);
+            Ok(identity)
         })
     }
 
@@ -280,6 +291,35 @@ impl OidcProvider for AppleProvider {
             };
             self.validate_id_token(id_token, bundle_id, expected_nonce)
                 .await
+        })
+    }
+
+    // Required by App Store review: deleting an account made with Sign in
+    // with Apple also ends the app's access to the Apple ID.
+    fn revoke<'a>(&'a self, token: &'a RevokeToken) -> BoxFuture<'a, Result<(), OidcError>> {
+        Box::pin(async move {
+            let client_secret = self.client_secret()?;
+            let form = url::form_urlencoded::Serializer::new(String::new())
+                .append_pair("client_id", &self.config.services_id)
+                .append_pair("client_secret", &client_secret)
+                .append_pair("token", token.expose())
+                .append_pair("token_type_hint", "refresh_token")
+                .finish();
+            let response = self
+                .http
+                .post(APPLE_REVOKE_ENDPOINT)
+                .header("content-type", "application/x-www-form-urlencoded")
+                .body(form)
+                .send()
+                .await
+                .map_err(|e| OidcError::Unavailable(e.to_string()))?;
+            let status = response.status();
+            if !status.is_success() {
+                return Err(OidcError::Exchange(format!(
+                    "revoke endpoint returned {status}"
+                )));
+            }
+            Ok(())
         })
     }
 }
@@ -387,6 +427,17 @@ zdVYDjm5xRINQdHC856J9XdJCIoyhRHmX0qzXW2gYGgkdaYQsiZZ72aGXQ==
         );
         assert_eq!(first_sign_in_name(r#"{"email":"a@b"}"#), None);
         assert_eq!(first_sign_in_name("not json"), None);
+    }
+
+    #[test]
+    fn token_response_keeps_the_refresh_token_when_sent() {
+        let with: TokenResponse =
+            serde_json::from_str(r#"{"id_token":"x","refresh_token":"r.1","access_token":"a"}"#)
+                .unwrap();
+        assert_eq!(with.refresh_token.as_deref(), Some("r.1"));
+        let without: TokenResponse = serde_json::from_str(r#"{"id_token":"x"}"#).unwrap();
+        assert_eq!(without.refresh_token, None);
+        assert!(!format!("{:?}", RevokeToken::new("r.1".into())).contains("r.1"));
     }
 
     #[test]

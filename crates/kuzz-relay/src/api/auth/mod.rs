@@ -23,6 +23,7 @@ mod oidc;
 mod operators;
 mod pairing;
 mod people;
+mod provider_revoke;
 mod session;
 
 #[cfg(test)]

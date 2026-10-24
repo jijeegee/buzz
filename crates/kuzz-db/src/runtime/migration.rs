@@ -512,6 +512,7 @@ mod postgres_tests {
             "key_registry",
             "agent_key_backups",
             "pairing_requests",
+            "provider_revoke_tokens",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -726,6 +727,13 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[86].version, 93);
+        assert!(migrations[86]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE provider_revoke_tokens"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE provider_revoke_tokens"));
         assert_eq!(migrations[83].version, 90);
         let pairing = migrations[83].sql.as_str();
         assert!(pairing.contains("CREATE TABLE pairing_requests"));
@@ -735,7 +743,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 84);
+        assert_eq!(migrations.len(), 87);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql
