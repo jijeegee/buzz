@@ -9,6 +9,11 @@
 --
 -- NULL means no event recorded yet (a row written without an event); the
 -- next event applies.
+--
+-- `users` is copied: apply this in every copy region before the primary, so
+-- the copies have the columns when the primary's rows carry them.
+SET LOCAL lock_timeout = '5s';
+
 ALTER TABLE users
     ADD COLUMN profile_event_at       TIMESTAMPTZ,
     ADD COLUMN profile_event_id       BYTEA,
@@ -18,25 +23,35 @@ ALTER TABLE users
 -- Existing rows record the newest stored event whose side effect finished
 -- (no outbox row left). Profile side effects are retried from now on, so an
 -- older failed one must not apply over the current fields; a newer failed one
--- still applies when retried.
+-- still applies when retried. One index probe per user
+-- (idx_events_community_pubkey_kind_created). A copy region gets the values
+-- from the primary.
 UPDATE users u
    SET profile_event_at = e.created_at, profile_event_id = e.id
-  FROM (SELECT DISTINCT ON (ev.community_id, ev.pubkey)
-               ev.community_id, ev.pubkey, ev.created_at, ev.id
+  FROM users w
+  CROSS JOIN LATERAL (
+        SELECT ev.created_at, ev.id
           FROM events ev
-         WHERE ev.kind = 0 AND ev.deleted_at IS NULL
+         WHERE ev.community_id = w.community_id AND ev.pubkey = w.pubkey
+           AND ev.kind = 0 AND ev.deleted_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM event_side_effects o
                             WHERE o.community_id = ev.community_id AND o.event_id = ev.id)
-         ORDER BY ev.community_id, ev.pubkey, ev.created_at DESC, ev.id ASC) e
- WHERE u.community_id = e.community_id AND u.pubkey = e.pubkey;
+         ORDER BY ev.created_at DESC, ev.id ASC
+         LIMIT 1) e
+ WHERE u.community_id = w.community_id AND u.pubkey = w.pubkey
+   AND NOT kuzz_is_global_copy();
 
 UPDATE users u
    SET add_policy_event_at = e.created_at, add_policy_event_id = e.id
-  FROM (SELECT DISTINCT ON (ev.community_id, ev.pubkey)
-               ev.community_id, ev.pubkey, ev.created_at, ev.id
+  FROM users w
+  CROSS JOIN LATERAL (
+        SELECT ev.created_at, ev.id
           FROM events ev
-         WHERE ev.kind = 10100 AND ev.deleted_at IS NULL
+         WHERE ev.community_id = w.community_id AND ev.pubkey = w.pubkey
+           AND ev.kind = 10100 AND ev.deleted_at IS NULL
            AND NOT EXISTS (SELECT 1 FROM event_side_effects o
                             WHERE o.community_id = ev.community_id AND o.event_id = ev.id)
-         ORDER BY ev.community_id, ev.pubkey, ev.created_at DESC, ev.id ASC) e
- WHERE u.community_id = e.community_id AND u.pubkey = e.pubkey;
+         ORDER BY ev.created_at DESC, ev.id ASC
+         LIMIT 1) e
+ WHERE u.community_id = w.community_id AND u.pubkey = w.pubkey
+   AND NOT kuzz_is_global_copy();

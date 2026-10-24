@@ -728,7 +728,12 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0076 is since_join (#113), stacked separately.
-        assert_eq!(migrations.len(), 88);
+        assert_eq!(migrations.len(), 89);
+        assert_eq!(migrations[88].version, 90);
+        assert!(migrations[88]
+            .sql
+            .as_str()
+            .contains("ADD COLUMN profile_event_at"));
         assert_eq!(migrations[87].version, 89);
         assert!(migrations[87]
             .sql
