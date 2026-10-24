@@ -99,6 +99,12 @@ export type MessageComposerProps = {
     threadHeadId: string | null;
   } | null;
   onPrepareSendChannel?: (pubkeys?: string[]) => Promise<string | null>;
+  /**
+   * Whether a send mentioning `pubkeys` stays in this conversation, so the own
+   * message can be drawn before `onPrepareSendChannel` runs. Without it, a
+   * send with mentions waits for preparation (it may move to a new chat).
+   */
+  sendStaysInChannel?: (pubkeys: readonly string[]) => boolean;
   onPreparingMentionSendChange?: (isPreparing: boolean) => void;
   onSend: (
     content: string,

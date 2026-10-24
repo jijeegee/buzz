@@ -557,3 +557,36 @@ for (const action of ["edit", "delete", "navigation", "return", "unmount"]) {
       assert.deepEqual(s.control.currentRefs, otherRefs);
   });
 }
+
+// A 1:1 always addresses its own agent; mentioning someone already in it does
+// not move the send, so the own message draws before preparation finishes.
+for (const stays of [true, false]) {
+  test(`1:1 send ${stays ? "to its own people draws at once" : "that may move to a new chat waits to draw"}`, async () => {
+    const s = await setup();
+    const previews = [];
+    s.options.channelType = "dm";
+    s.options.onPreviewSendRef = {
+      current: (input) => {
+        previews.push(input);
+        return { localKey: "local-1", discard: () => {} };
+      },
+    };
+    const preparation = deferred();
+    s.options.onPrepareSendChannel = () => preparation.promise;
+    s.options.sendStaysInChannel = (pubkeys) => {
+      assert.deepEqual(Array.from(pubkeys), [KEY]);
+      return stays;
+    };
+    s.rerender();
+    const { promise } = await start(s);
+    await s.flush();
+    assert.equal(previews.length, stays ? 1 : 0);
+    assert.equal(s.events("SEND").length, 0);
+    preparation.resolve("general");
+    await s.flush();
+    await promise;
+    assert.equal(s.events("SEND").length, 1);
+    // The drawn row is the one the send publishes into.
+    assert.equal(s.events("SEND")[0][7], stays ? "local-1" : undefined);
+  });
+}

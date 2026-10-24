@@ -76,6 +76,7 @@ export function useMentionSendFlow({
   emojiAutocomplete,
   mentions,
   onPrepareSendChannel,
+  sendStaysInChannel,
   onAddressedAgentsComposerCleared,
   onAddressedAgentsSendFailed,
   onAddressedAgentsSendSucceeded,
@@ -439,12 +440,17 @@ export function useMentionSendFlow({
         clearedRevision = getComposerRevision();
       }
       // Draw the own message now, before preparation and the relay, unless the
-      // send can still stop to ask (a 1:1 mention may need a new chat) or must
-      // upload first. Abandoned sends discard it in `finally`; a handed-off
+      // send can still stop to ask (a 1:1 mention of someone outside it needs
+      // a new chat) or must upload first. Mentioning the 1:1's own people
+      // (its agent, always addressed there) stays put and draws at once. Abandoned sends discard it in `finally`; a handed-off
       // send keeps it, marked failed, when the relay does not accept it.
       const preview =
         draft.queuedAttachments.length === 0 &&
-        !(onPrepareSendChannel && mentionPubkeys.length > 0)
+        !(
+          onPrepareSendChannel &&
+          mentionPubkeys.length > 0 &&
+          !sendStaysInChannel?.(mentionPubkeys)
+        )
           ? (() => {
               const { content, mediaTags } = buildOutgoingMessage(
                 draft.trimmed,
@@ -764,6 +770,7 @@ export function useMentionSendFlow({
       onPrepareSendChannel,
       onPreviewSendRef,
       onSendRef,
+      sendStaysInChannel,
       richText.setContent,
       setContent,
       startAgentDetached,

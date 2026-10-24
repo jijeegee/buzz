@@ -70,7 +70,10 @@ import { useSearchHighlightProps } from "@/features/channels/ui/useSearchHighlig
 import { useChannelIntro } from "@/features/channels/ui/useChannelIntro";
 import type { ChannelPaneProps } from "@/features/channels/ui/ChannelPane.types";
 import * as agentSessionSelection from "@/features/channels/ui/agentSessionSelection";
-import { usePrepareDmSendChannel } from "@/features/channels/ui/usePrepareDmSendChannel";
+import {
+  peopleOutsideDm,
+  usePrepareDmSendChannel,
+} from "@/features/channels/ui/usePrepareDmSendChannel";
 import { useStartChatConfirm } from "@/features/channels/ui/StartChatConfirm";
 import { useChatTitle } from "@/features/channels/useChatTitle";
 import { useChannelPaneMessages } from "@/features/channels/ui/useChannelPaneMessages";
@@ -222,6 +225,13 @@ export const ChannelPane = React.memo(function ChannelPane({
     activeChannel,
     currentPubkey,
     startChatConfirm.confirm,
+  );
+  const dmSendStaysInChannel = React.useCallback(
+    (pubkeys: readonly string[]) =>
+      activeChannel?.channelType === "dm" &&
+      peopleOutsideDm(activeChannel.participantPubkeys, pubkeys, currentPubkey)
+        .length === 0,
+    [activeChannel, currentPubkey],
   );
   const mainComposerMedia = useMediaUpload({ deferUploadsUntilSend: true });
   const searchHighlightProps = useSearchHighlightProps(
@@ -863,6 +873,7 @@ export const ChannelPane = React.memo(function ChannelPane({
                           ? prepareDmSendChannel
                           : undefined
                       }
+                      sendStaysInChannel={dmSendStaysInChannel}
                       onPreviewSend={composerQuotes.previewMain}
                       onSend={composerQuotes.sendMain}
                       {...{ profiles, recentMentionPubkeys: recentMentions }}

@@ -91,6 +91,7 @@ function MessageComposerImpl({
   onEditLastOwnMessage,
   onEditSave,
   onPrepareSendChannel,
+  sendStaysInChannel,
   onPreparingMentionSendChange,
   onSend,
   onPreviewSend,
@@ -390,6 +391,7 @@ function MessageComposerImpl({
     onAddressedAgentsSendSucceeded:
       addressedMentionRestore.onAddressedAgentsSendSucceeded,
     onPrepareSendChannel,
+    sendStaysInChannel,
     onSendRef,
     onPreviewSendRef,
     richText,
