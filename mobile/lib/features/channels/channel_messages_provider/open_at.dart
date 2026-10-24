@@ -115,7 +115,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
       _windowStore = replaceNewestChannelWindow(_windowStore, page);
       _windowGeneration++;
-      _persistHead(response);
+      _persistHead(response, page);
       _pruneOffWindowReplies();
       _reconcilePageSummaries(page, pageVersion);
       _reachedOldest = !channelWindowHasMore(_windowStore);

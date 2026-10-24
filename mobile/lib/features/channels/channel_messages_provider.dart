@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
+import 'channel_page_records.dart';
 import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
@@ -15,6 +16,7 @@ import 'thread_reply_ownership.dart';
 import 'timeline_message.dart';
 import 'window_anchor.dart';
 
+part 'channel_messages_provider/local_store.dart';
 part 'channel_messages_provider/open_at.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
@@ -84,6 +86,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ChannelMessagesNotifier(this.channelId);
 
   bool get _summaryMounted => ref.mounted;
+  Ref get _storeRef => ref;
   RelaySessionNotifier get _summarySession =>
       ref.read(relaySessionProvider.notifier);
 
@@ -235,7 +238,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             since: _currentUnixSeconds(),
             limit: 200,
           ),
-          _handleLiveEvent,
+          _onSubscriptionEvent,
         );
         if (!_isCurrentInit(initVersion)) {
           unsubscribe();
@@ -320,7 +323,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         page,
         retainLiveSummaryRootIds: _liveSummaryRootsDuringInitialWindowQuery,
       );
-      _persistHead(response);
+      _persistHead(response, page);
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       _pruneOffWindowReplies();
       _usingChannelWindow = true;
@@ -347,68 +350,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final history = await session.fetchHistory(
         NostrFilters.messages(channelId),
       );
+      recordLoadedEvents(ref, history);
       _relayHistoryArrived = true;
       history.sort(compareChannelTimelineEventsChronologically);
       return history;
     }
   }
 
-  /// Paints the persisted newest page while the relay query is in flight.
-  /// Relay-loaded or live state always wins, and the next relay page replaces
-  /// the cached rows.
-  Future<void> _restoreCachedHead(ChannelHeadScope scope) async {
-    try {
-      final events = await ref
-          .read(channelHeadCacheProvider)
-          .load(scope, channelId);
-      if (events == null ||
-          !ref.mounted ||
-          _relayHistoryArrived ||
-          _lastKnownMessages != null ||
-          _readHeadScope() != scope) {
-        return;
-      }
-      _windowStore = replaceNewestChannelWindow(
-        _windowStore,
-        parseChannelWindowResponse(events, channelId, null),
-      );
-      final messages = flattenChannelWindowEvents(_windowStore);
-      _cachedHeadIds = {for (final event in messages) event.id};
-      _lastKnownMessages = messages;
-      state = AsyncData(messages);
-    } catch (error) {
-      debugPrint(
-        '[ChannelMessagesNotifier] cached head unavailable for $channelId: $error',
-      );
-    }
-  }
-
-  ChannelHeadScope? _readHeadScope() {
-    try {
-      return ref.read(channelHeadScopeProvider);
-    } catch (_) {
-      return null;
-    }
-  }
-
   /// Whether the visible rows are a persisted head awaiting the relay page.
   /// Such rows cannot be paged or used as unread targets yet.
   bool get isShowingCachedHead => _cachedHeadIds.isNotEmpty;
-
-  void _persistHead(List<NostrEvent> response) {
-    final scope = _readHeadScope();
-    if (scope == null) return;
-    unawaited(
-      ref
-          .read(channelHeadCacheProvider)
-          .store(scope, channelId, response)
-          .catchError((Object error) {
-            debugPrint(
-              '[ChannelMessagesNotifier] failed to persist head for $channelId: $error',
-            );
-          }),
-    );
-  }
 
   Future<ChannelWindowPage> _fetchWindowPage(
     RelaySessionNotifier session,
@@ -418,12 +369,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final events = await session.queryRelay([
       _channelWindowFilter(cursor, direction: direction),
     ]);
-    return parseChannelWindowResponse(
+    final page = parseChannelWindowResponse(
       events,
       channelId,
       cursor,
       direction: direction,
     );
+    recordChannelWindowPage(ref, channelId, events, page);
+    return page;
   }
 
   /// One window page: older pages run back from [cursor] (`until` +
@@ -1095,6 +1048,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             limit: ids.length,
           ),
         );
+    recordLoadedEvents(ref, events);
     for (final event in events) {
       if (event.channelId == channelId &&
           _retainedDeepLinkEventIds.contains(event.id)) {
@@ -1170,6 +1124,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final older = await session.fetchHistory(
       NostrFilters.messages(channelId, limit: 100, until: oldest),
     );
+    recordLoadedEvents(ref, older);
     if (older.isEmpty) {
       _reachedOldest = true;
       return false;

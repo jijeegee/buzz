@@ -5,6 +5,10 @@ import 'dart:math';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/message_db/coverage.dart';
+import '../../shared/message_db/event_rows.dart';
+import '../../shared/message_db/message_db.dart';
+import '../../shared/message_db/message_store.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
@@ -266,21 +270,35 @@ String? _overlayTarget(NostrEvent event) {
   return target;
 }
 
-/// Collects live events per room and writes them to each room's stored tail
-/// in batches, so a busy feed costs one disk write per room per [debounce].
+/// The one entry point for storing received events on this device. Live
+/// events are collected per room and written in batches, so a busy feed costs
+/// one disk write per room (stored tail) and one transaction per account
+/// (message database) per [debounce]. Fetched pages go to the message
+/// database at once, with the coverage they prove ([recordPage]).
 class ChannelRoomStore {
   ChannelRoomStore(
     this._cache, {
+    MessageStore? messages,
     this.debounce = const Duration(seconds: 2),
     int Function()? clock,
-  }) : _clock = clock ?? _nowSeconds;
+  }) : _messages = messages,
+       _clock = clock ?? _nowSeconds;
 
   /// Pending events that force a write before [debounce] runs out.
   static const maxPendingEvents = 500;
 
   final ChannelHeadCache _cache;
+  final MessageStore? _messages;
   final Duration debounce;
   final int Function() _clock;
+
+  /// Rows waiting for the message database, per account, with the store
+  /// generation they were queued under (a clear since drops them).
+  Map<MessageScope, ({int generation, List<MessageRow> rows})> _dbPending = {};
+  int _dbPendingCount = 0;
+
+  /// The reconnect time last recorded in each account's database.
+  final Map<MessageScope, int> _liveSinceRecorded = {};
 
   Map<(ChannelHeadScope, String), List<RoomLiveEvent>> _pending = {};
   int _pendingCount = 0;
@@ -294,12 +312,15 @@ class ChannelRoomStore {
   /// Records that the live feed (re)connected now.
   void markLive() => _liveSince = _clock();
 
-  /// Queues [event] for its room's tail. [liveSince] is when the delivering
-  /// subscription was requested; the later of it and the last reconnect
-  /// counts. Kinds the tail does not keep are ignored.
+  /// Queues [event] for the message database and its room's tail.
+  /// [liveSince] is when the delivering subscription was requested; the later
+  /// of it and the last reconnect counts. Kinds the tail does not keep only
+  /// go to the database.
   void ingest(ChannelHeadScope scope, NostrEvent event, {int? liveSince}) {
     final channelId = event.channelId;
-    if (channelId == null || !_storesKind(event.kind)) return;
+    if (channelId == null) return;
+    _queueRows(scope, [event]);
+    if (!_storesKind(event.kind)) return;
     final generation = _cache.clearGeneration;
     if (_pending.isEmpty) {
       _pendingGeneration = generation;
@@ -318,7 +339,63 @@ class ChannelRoomStore {
         .putIfAbsent((scope, channelId), () => [])
         .add(RoomLiveEvent(event, liveSince: since, receivedAt: now));
     _pendingCount++;
-    if (_pendingCount >= maxPendingEvents) {
+    _scheduleFlush();
+  }
+
+  /// Queues [events] for the message database only, without coverage: live
+  /// events of a room's own subscription, events loaded by id, and history
+  /// from the legacy websocket path.
+  void record(ChannelHeadScope scope, Iterable<NostrEvent> events) {
+    if (_queueRows(scope, events)) _scheduleFlush();
+  }
+
+  /// Writes a fetched page's [events] and the coverage [claims] it proves in
+  /// one transaction, without waiting for the batch. [channelId] names the
+  /// room of events that carry no `h` tag.
+  Future<void> recordPage(
+    ChannelHeadScope scope,
+    Iterable<NostrEvent> events, {
+    required String channelId,
+    List<CoverageClaim> claims = const [],
+  }) async {
+    final messages = _messages;
+    if (messages == null) return;
+    final rows = messageRowsFor(
+      events,
+      receivedAt: _clock(),
+      channelId: channelId,
+    );
+    try {
+      await messages.write(
+        _messageScope(scope),
+        MessageDbWrite(rows: rows, claims: claims),
+      );
+    } catch (error) {
+      debugPrint(
+        '[ChannelRoomStore] failed to store a page of $channelId: $error',
+      );
+    }
+  }
+
+  /// Whether any row was queued.
+  bool _queueRows(ChannelHeadScope scope, Iterable<NostrEvent> events) {
+    final messages = _messages;
+    if (messages == null) return false;
+    final rows = messageRowsFor(events, receivedAt: _clock());
+    if (rows.isEmpty) return false;
+    final key = _messageScope(scope);
+    final pending = _dbPending.putIfAbsent(
+      key,
+      () => (generation: messages.generation, rows: []),
+    );
+    pending.rows.addAll(rows);
+    _dbPendingCount += rows.length;
+    return true;
+  }
+
+  void _scheduleFlush() {
+    if (_pendingCount >= maxPendingEvents ||
+        _dbPendingCount >= maxPendingEvents) {
       unawaited(flush());
     } else {
       _timer ??= Timer(debounce, () => unawaited(flush()));
@@ -329,12 +406,16 @@ class ChannelRoomStore {
   Future<void> flush() async {
     _timer?.cancel();
     _timer = null;
-    if (_pending.isEmpty) return;
+    final dbBatch = _dbPending;
+    _dbPending = {};
+    _dbPendingCount = 0;
     final batch = _pending;
     final generation = _pendingGeneration;
     _pending = {};
     _pendingCount = 0;
     await Future.wait([
+      for (final MapEntry(key: scope, value: pending) in dbBatch.entries)
+        _writeRows(scope, pending.rows, pending.generation),
       for (final MapEntry(key: room, value: events) in batch.entries)
         _cache
             .applyLive(
@@ -355,6 +436,40 @@ class ChannelRoomStore {
     ]);
   }
 
+  /// One transaction per account per flush.
+  Future<void> _writeRows(
+    MessageScope scope,
+    List<MessageRow> rows,
+    int generation,
+  ) async {
+    final liveSince = _liveSince;
+    final recordLive =
+        liveSince != null && _liveSinceRecorded[scope] != liveSince;
+    try {
+      await _messages!.write(
+        scope,
+        MessageDbWrite(
+          rows: rows,
+          sync: recordLive
+              ? SyncStateUpdate(origin: scope.relayUrl, liveSince: liveSince)
+              : null,
+        ),
+        generation: generation,
+      );
+      if (recordLive) _liveSinceRecorded[scope] = liveSince;
+    } catch (error) {
+      // Coverage is never inferred from live events, so lost rows only cost
+      // a refetch; they cannot be mistaken for a complete range.
+      debugPrint(
+        '[ChannelRoomStore] failed to store ${rows.length} live events: '
+        '$error',
+      );
+    }
+  }
+
+  static MessageScope _messageScope(ChannelHeadScope scope) =>
+      MessageScope(relayUrl: scope.relayUrl, pubkey: scope.pubkey);
+
   static bool _storesKind(int kind) =>
       EventKind.channelTimelineContentKinds.contains(kind) ||
       kind == EventKind.deletion ||
@@ -366,7 +481,10 @@ class ChannelRoomStore {
 }
 
 final channelRoomStoreProvider = Provider<ChannelRoomStore>((ref) {
-  final store = ChannelRoomStore(ref.watch(channelHeadCacheProvider));
+  final store = ChannelRoomStore(
+    ref.watch(channelHeadCacheProvider),
+    messages: ref.watch(messageStoreProvider),
+  );
   ref.listen(relaySessionProvider.select((session) => session.status), (
     _,
     status,
