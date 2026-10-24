@@ -906,7 +906,7 @@
   "onboarding.signedOut.note": "Используйте аккаунт Google, с которым входили раньше.",
   "onboarding.signedOut.unavailable": "Вход через Google сейчас недоступен.",
   "onboarding.signedOut.tryAgain": "Повторить",
-  "onboarding.termsLine.text": "Продолжая, вы принимаете <terms>Условия использования</terms>",
+  "onboarding.termsLine.text": "Продолжая, вы принимаете <terms>Условия использования</terms> и <privacy>Политику конфиденциальности</privacy>",
   "onboarding.claimInvite.expired": "Срок действия кода приглашения истёк — попросите новый.",
   "onboarding.claimInvite.exhausted": "Лимит использований приглашения исчерпан. Попросите новое приглашение.",
   "onboarding.welcomeKickoff.leadStartFailed": "Не удалось запустить {name} для знакомства в Welcome.",

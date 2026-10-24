@@ -907,7 +907,7 @@
   "onboarding.signedOut.note": "Dùng tài khoản Google bạn đã đăng nhập trước đây.",
   "onboarding.signedOut.unavailable": "Hiện không thể đăng nhập bằng Google.",
   "onboarding.signedOut.tryAgain": "Thử lại",
-  "onboarding.termsLine.text": "Khi tiếp tục, bạn đồng ý với <terms>Điều khoản dịch vụ</terms>",
+  "onboarding.termsLine.text": "Khi tiếp tục, bạn đồng ý với <terms>Điều khoản dịch vụ</terms> và <privacy>Chính sách quyền riêng tư</privacy>",
   "onboarding.claimInvite.expired": "Mã mời này đã hết hạn — hãy xin mã mới.",
   "onboarding.claimInvite.exhausted": "Lời mời này đã hết lượt dùng. Hãy xin lời mời mới.",
   "onboarding.welcomeKickoff.leadStartFailed": "Không thể khởi động {name} cho phần mở đầu Welcome.",

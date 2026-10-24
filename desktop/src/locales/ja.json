@@ -1231,7 +1231,7 @@
   "onboarding.signedOut.note": "以前ログインしたGoogleアカウントを使ってください。",
   "onboarding.signedOut.unavailable": "現在Googleでのログインは利用できません。",
   "onboarding.signedOut.tryAgain": "もう一度試す",
-  "onboarding.termsLine.text": "続行すると<terms>利用規約</terms>に同意したことになります",
+  "onboarding.termsLine.text": "続行すると<terms>利用規約</terms>と<privacy>プライバシーポリシー</privacy>に同意したことになります",
   "onboarding.starterChannels.setupFailedReason": "スターターグループを設定できませんでした",
   "onboarding.starterChannels.setupFailed": "スターターグループを設定できませんでした",
   "onboarding.claimInvite.expired": "この招待コードは期限切れです — 新しいコードをもらってください。",

@@ -2192,11 +2192,14 @@
   "@signInSigningIn": {
     "description": "Screen-reader label of the spinner while signing in."
   },
-  "signInTermsAgreement": "By continuing you agree to the {terms}",
+  "signInTermsAgreement": "By continuing you agree to the {terms} and {privacy}",
   "@signInTermsAgreement": {
-    "description": "Sign-in page, small text under the sign-in buttons; {terms} is the underlined 'Terms of Service' link.",
+    "description": "Sign-in page, small text under the sign-in buttons; {terms} is the underlined 'Terms of Service' link and {privacy} the underlined 'Privacy Policy' link.",
     "placeholders": {
       "terms": {
+        "type": "String"
+      },
+      "privacy": {
         "type": "String"
       }
     }
@@ -2204,6 +2207,10 @@
   "signInTermsOfService": "Terms of Service",
   "@signInTermsOfService": {
     "description": "Sign-in page, the underlined link text inside 'By continuing you agree to the …'."
+  },
+  "signInPrivacyPolicy": "Privacy Policy",
+  "@signInPrivacyPolicy": {
+    "description": "Sign-in page, the second underlined link text inside 'By continuing you agree to the … and …'."
   },
   "signInUpdatingAccount": "Updating your account",
   "@signInUpdatingAccount": {

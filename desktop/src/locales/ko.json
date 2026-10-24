@@ -1231,7 +1231,7 @@
   "onboarding.signedOut.note": "이전에 로그인했던 Google 계정을 사용하세요.",
   "onboarding.signedOut.unavailable": "지금은 Google 로그인을 사용할 수 없어요.",
   "onboarding.signedOut.tryAgain": "다시 시도",
-  "onboarding.termsLine.text": "계속하면 <terms>서비스 약관</terms>에 동의하게 돼요",
+  "onboarding.termsLine.text": "계속하면 <terms>서비스 약관</terms>과 <privacy>개인정보처리방침</privacy>에 동의하게 돼요",
   "onboarding.starterChannels.setupFailedReason": "기본 그룹을 만들지 못했어요",
   "onboarding.starterChannels.setupFailed": "기본 그룹을 만들지 못했어요",
   "onboarding.claimInvite.expired": "초대 코드가 만료됐어요. 새 코드를 요청하세요.",

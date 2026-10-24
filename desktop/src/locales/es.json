@@ -907,7 +907,7 @@
   "onboarding.signedOut.note": "Usa la cuenta de Google con la que iniciaste sesión antes.",
   "onboarding.signedOut.unavailable": "El inicio de sesión con Google no está disponible ahora.",
   "onboarding.signedOut.tryAgain": "Reintentar",
-  "onboarding.termsLine.text": "Al continuar, aceptas los <terms>Términos del servicio</terms>",
+  "onboarding.termsLine.text": "Al continuar, aceptas los <terms>Términos del servicio</terms> y la <privacy>Política de privacidad</privacy>",
   "onboarding.claimInvite.expired": "Este código de invitación caducó. Pide uno nuevo.",
   "onboarding.claimInvite.exhausted": "Esta invitación alcanzó su límite de usos. Pide una nueva.",
   "onboarding.welcomeKickoff.leadStartFailed": "No se pudo iniciar a {name} para la bienvenida en Welcome.",

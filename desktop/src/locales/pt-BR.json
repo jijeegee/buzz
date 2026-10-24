@@ -907,7 +907,7 @@
   "onboarding.signedOut.note": "Use a mesma conta do Google com que você entrou antes.",
   "onboarding.signedOut.unavailable": "O login com o Google não está disponível agora.",
   "onboarding.signedOut.tryAgain": "Tentar de novo",
-  "onboarding.termsLine.text": "Ao continuar, você aceita os <terms>Termos de Serviço</terms>",
+  "onboarding.termsLine.text": "Ao continuar, você aceita os <terms>Termos de Serviço</terms> e a <privacy>Política de Privacidade</privacy>",
   "onboarding.claimInvite.expired": "Este código de convite expirou — peça um novo.",
   "onboarding.claimInvite.exhausted": "Este convite atingiu o limite de usos. Peça um novo convite.",
   "onboarding.welcomeKickoff.leadStartFailed": "Não foi possível iniciar {name} para a apresentação no Welcome.",

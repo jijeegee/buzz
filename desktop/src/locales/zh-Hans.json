@@ -1231,7 +1231,7 @@
   "onboarding.signedOut.note": "请使用之前登录过的 Google 账号。",
   "onboarding.signedOut.unavailable": "Google 登录目前不可用。",
   "onboarding.signedOut.tryAgain": "重试",
-  "onboarding.termsLine.text": "继续即表示你同意<terms>服务条款</terms>",
+  "onboarding.termsLine.text": "继续即表示你同意<terms>服务条款</terms>和<privacy>隐私政策</privacy>",
   "onboarding.starterChannels.setupFailedReason": "设置入门群组失败",
   "onboarding.starterChannels.setupFailed": "无法设置入门群组",
   "onboarding.claimInvite.expired": "此邀请码已过期，请索取新的邀请码。",
