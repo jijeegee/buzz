@@ -1409,8 +1409,8 @@ pub(crate) fn reconcile_on_launch(data_dir: &Path) {
     }
 }
 
-/// Launch: when the active account is signed out here but another account is
-/// still signed in, start as that one (most recently used first) instead of
+/// Launch: when the active account is signed out here (or only a local key)
+/// but another account is still signed in, start as that one (most recently used first) instead of
 /// on the signed-out screen. Runs before [`reconcile`], which then refills the
 /// active-account copy from the new active account's own slots.
 fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<(), String> {
@@ -1435,7 +1435,9 @@ fn start_as_signed_in_account(secrets: &dyn Secrets, data_dir: &Path) -> Result<
 
 /// The account to start as when the active one is signed out on every server
 /// it is listed on: the most recently used account still signed in on one of
-/// those servers. `None` keeps the active account. Pure.
+/// those servers. A key-only active account (a local key nobody signed in
+/// with, listed for any server) gives way to the most recently used account
+/// signed in anywhere. `None` keeps the active account. Pure.
 fn launch_account_of(
     registry: &Registry,
     profiles: &std::collections::BTreeMap<String, super::account_profiles::AccountProfile>,
@@ -1447,7 +1449,23 @@ fn launch_account_of(
         .iter()
         .filter(|a| a.pubkey == hex)
         .collect();
-    if listed.is_empty() || listed.iter().any(|a| a.state != AccountState::SignedOut) {
+    if listed.is_empty() {
+        return None;
+    }
+    if listed.iter().all(|a| a.state == AccountState::KeyOnly) {
+        let mut candidates: Vec<&Account> = registry
+            .accounts
+            .iter()
+            .filter(|a| a.state == AccountState::SignedIn && a.pubkey != hex)
+            .collect();
+        super::account_profiles::most_recent_first(&mut candidates, |a| {
+            profiles.get(&a.pubkey).and_then(|p| p.last_used_at)
+        });
+        return candidates
+            .into_iter()
+            .find_map(|a| PublicKey::from_hex(&a.pubkey).ok());
+    }
+    if listed.iter().any(|a| a.state != AccountState::SignedOut) {
         return None;
     }
     listed
