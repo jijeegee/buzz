@@ -13,6 +13,7 @@ import 'install_id_store.dart';
 import 'refresh_token_store.dart';
 import 'relay_origin.dart';
 import 'token_session.dart';
+import 'google_account_picker.dart';
 import 'web_auth_launcher.dart';
 
 /// HTTP client for `/auth/*` and NIP-11 detection. Account calls carry this
@@ -43,6 +44,12 @@ final keyBackupRefreshTokenStoreProvider = Provider<RefreshTokenStore>(
 /// System-browser launcher for OIDC. Override in tests.
 final webAuthLauncherProvider = Provider<WebAuthLauncher>(
   (ref) => const FlutterWebAuth2Launcher(),
+);
+
+/// The phone's own Google account picker (Android), or `null` for the
+/// browser only. Override in tests.
+final googleAccountPickerProvider = Provider<GoogleAccountPicker?>(
+  (ref) => platformGoogleAccountPicker(),
 );
 
 /// Clock for token expiry. Override in tests.
@@ -77,6 +84,7 @@ final tokenSessionControllerProvider =
         ),
         store: ref.watch(refreshTokenStoreProvider),
         launcher: ref.watch(webAuthLauncherProvider),
+        accountPicker: ref.watch(googleAccountPickerProvider),
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
         deviceName: ref.watch(authDeviceNameProvider),
@@ -97,6 +105,7 @@ final keyBackupSessionControllerProvider =
         ),
         store: ref.watch(keyBackupRefreshTokenStoreProvider),
         launcher: ref.watch(webAuthLauncherProvider),
+        accountPicker: ref.watch(googleAccountPickerProvider),
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
         deviceName: ref.watch(authDeviceNameProvider),

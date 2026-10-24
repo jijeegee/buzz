@@ -2,6 +2,7 @@
 library;
 
 export 'auth_api.dart';
+export 'google_account_picker.dart';
 export 'install_id_store.dart';
 export 'oidc_login.dart';
 export 'pkce.dart';
