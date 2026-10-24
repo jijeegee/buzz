@@ -4925,11 +4925,14 @@ dependencies = [
 name = "kuzz-device-key"
 version = "0.1.0"
 dependencies = [
+ "core-foundation 0.10.1",
  "hex",
  "kuzz-auth",
  "nostr 0.44.7",
  "p256",
  "rand 0.10.2",
+ "security-framework 3.7.0",
+ "security-framework-sys",
  "sha2 0.11.0",
  "thiserror 2.0.18",
  "windows-sys 0.61.2",

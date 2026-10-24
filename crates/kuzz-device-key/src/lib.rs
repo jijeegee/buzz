@@ -1,11 +1,13 @@
 //! The Kuzz device key: one P-256 key pair per install and scope, kept in
-//! the TPM where Windows has one and otherwise in software, and the device
-//! proofs it signs for the relay (wire format in
-//! [`kuzz_auth::device_proof`]).
+//! hardware where the machine has it (the TPM on Windows, the Secure
+//! Enclave on macOS) and otherwise in software, and the device proofs it
+//! signs for the relay (wire format in [`kuzz_auth::device_proof`]).
 //!
 //! - [`DeviceKey::open_or_create`]: Windows TPM (CNG Microsoft Platform
 //!   Crypto Provider, key `Kuzz-Device-<scope>`, ECDSA P-256,
-//!   non-exportable, per Windows user), else a software key in the caller's
+//!   non-exportable, per Windows user) or macOS Secure Enclave (data
+//!   protection keychain, label `Kuzz-Device-<scope>`, ECDSA P-256,
+//!   non-exportable, this Mac only), else a software key in the caller's
 //!   [`SoftwareKeyStore`].
 //! - [`DeviceKey::open_or_create_file`]: a software key in a file the caller
 //!   names (headless CLI), mode 0600 on Unix.
@@ -15,22 +17,30 @@
 //!
 //! # When the key is software
 //!
-//! - Off Windows (until Secure Enclave / Keystore backends exist).
+//! - Off Windows and macOS (Android and iOS keep their device keys in the
+//!   mobile app, not in this crate).
 //! - On Windows only when the TPM is truly unavailable: the Platform Crypto
 //!   Provider does not open, there is no TPM, it is disabled, or it cannot
 //!   make P-256 keys (the exact status codes are listed on
 //!   [`DeviceKey::open_or_create`]). Any other TPM failure (busy, not ready,
 //!   access denied, lockout) is an error for the caller to retry later; it
 //!   never quietly produces a software key.
+//! - On macOS only when the Secure Enclave is unavailable to this binary:
+//!   it is not signed with a keychain access group (unsigned dev builds,
+//!   command-line tools), or the Mac has none (codes on
+//!   [`DeviceKey::open_or_create`]). Other failures (keychain locked, ...)
+//!   are errors to retry, as on Windows.
 //! - When the scope already has a software key in the store (made earlier
-//!   on a machine without a usable TPM): an existing key is never replaced.
+//!   on a machine without usable hardware, or before the hardware backend
+//!   existed): an existing key is never replaced.
 //! - [`DeviceKey::open_or_create_file`], always.
 //!
-//! Never after a TPM key was used: opening or creating a TPM key records a
-//! marker (scope `<scope>#tpm`, the SHA-256 of the TPM public key) in the
-//! store, and with a marker present an unavailable TPM is an error, not a
-//! software key. [`DeviceKey::reset`] (with the user's consent, e.g. after
-//! the TPM was cleared) removes the TPM key, the store key and the marker.
+//! Never after a hardware key was used: opening or creating a TPM or
+//! Secure Enclave key records a marker (scope `<scope>#tpm` on both, the
+//! SHA-256 of the hardware public key) in the store, and with a marker
+//! present unavailable hardware is an error, not a software key.
+//! [`DeviceKey::reset`] (with the user's consent, e.g. after the TPM was
+//! cleared) removes the hardware key, the store key and the marker.
 //!
 //! # Cost
 //!
@@ -44,16 +54,26 @@
 #![cfg_attr(not(windows), forbid(unsafe_code))]
 #![cfg_attr(windows, deny(unsafe_code))]
 
+#[cfg(target_os = "macos")]
+mod secure_enclave;
 mod software;
 #[cfg(windows)]
 mod tpm;
+
+/// The hardware backend: one interface over the TPM and the Secure Enclave.
+#[cfg(target_os = "macos")]
+use secure_enclave as hw;
+#[cfg(windows)]
+mod hw {
+    pub(crate) use crate::tpm::{create, open, TpmError as HwError, TpmKey as HwKey};
+}
 
 #[cfg(test)]
 mod tests;
 
 use std::path::Path;
 use std::sync::Arc;
-#[cfg(windows)]
+#[cfg(any(windows, target_os = "macos"))]
 use std::sync::Mutex;
 
 use kuzz_auth::device_proof::{event_proof_message, proof_message, ProofScope, DEVICE_TAG};
@@ -76,6 +96,14 @@ pub enum DeviceKeyError {
         op: &'static str,
         /// Its status code (HRESULT bits).
         code: u32,
+    },
+    /// A Security.framework (keychain / Secure Enclave) call failed.
+    #[error("Secure Enclave key operation {op} failed: {code}")]
+    SecureEnclave {
+        /// The failing call.
+        op: &'static str,
+        /// Its `OSStatus` (0 when the call failed without one).
+        code: i32,
     },
     /// A [`SoftwareKeyStore`] backend (e.g. an app's OS keyring) failed.
     #[error("device key store: {0}")]
@@ -102,6 +130,8 @@ pub type Result<T> = std::result::Result<T, DeviceKeyError>;
 pub enum DeviceKeyKind {
     /// Non-exportable key in the TPM.
     Tpm,
+    /// Non-exportable key in the macOS Secure Enclave.
+    SecureEnclave,
     /// Software key (a [`SoftwareKeyStore`] or a file).
     Software,
 }
@@ -110,7 +140,7 @@ impl DeviceKeyKind {
     /// The login body's `device_key_kind` value: `hardware` or `software`.
     pub fn as_wire(self) -> &'static str {
         match self {
-            Self::Tpm => "hardware",
+            Self::Tpm | Self::SecureEnclave => "hardware",
             Self::Software => "software",
         }
     }
@@ -125,9 +155,9 @@ pub struct DeviceKey {
 
 enum Backend {
     Software(p256::ecdsa::SigningKey),
-    // One TPM call at a time per handle.
-    #[cfg(windows)]
-    Tpm(Mutex<tpm::TpmKey>),
+    // One hardware call at a time per handle.
+    #[cfg(any(windows, target_os = "macos"))]
+    Hardware(Mutex<hw::HwKey>),
 }
 
 impl std::fmt::Debug for DeviceKey {
@@ -145,7 +175,8 @@ pub const DEVICE_KEY_SCOPE: &str = "kuzz-device-v1";
 /// Longest accepted scope.
 const MAX_SCOPE_LEN: usize = 64;
 
-/// Suffix of the store scope recording that `<scope>` has a TPM key.
+/// Suffix of the store scope recording that `<scope>` has a hardware key
+/// (TPM or Secure Enclave; the name predates the Secure Enclave backend).
 const TPM_MARKER_SUFFIX: &str = "#tpm";
 
 /// The store scope of `scope`'s TPM marker.
@@ -159,7 +190,7 @@ fn validate_store_scope(scope: &str) -> Result<()> {
 }
 
 /// Record that `scope` has the TPM key `pubkey` (create-if-absent).
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 fn record_tpm_marker(
     store: &dyn SoftwareKeyStore,
     scope: &str,
@@ -176,7 +207,7 @@ fn record_tpm_marker(
 /// The software key standing in for an unavailable TPM (`error`): the
 /// store key of `scope` (created when `create`), unless the scope's TPM
 /// marker says a TPM key was used here, in which case `error`.
-#[cfg(any(windows, test))]
+#[cfg(any(windows, target_os = "macos", test))]
 fn software_fallback(
     store: &dyn SoftwareKeyStore,
     scope: &str,
@@ -208,8 +239,8 @@ fn validate_scope(scope: &str) -> Result<()> {
     }
 }
 
-/// The CNG key name of `scope`.
-#[cfg(windows)]
+/// The CNG key name (Windows) or keychain label (macOS) of `scope`.
+#[cfg(any(windows, target_os = "macos"))]
 fn tpm_key_name(scope: &str) -> String {
     format!("Kuzz-Device-{scope}")
 }
@@ -234,62 +265,72 @@ impl DeviceKey {
     /// failure to open an existing TPM key, is [`DeviceKeyError::Tpm`].
     /// Using a TPM key records its marker in `store`.
     ///
+    /// On macOS: the same order and rules with the Secure Enclave in place
+    /// of the TPM. Unavailable means the keychain lookup or
+    /// `SecKeyCreateRandomKey` returned `errSecMissingEntitlement` (-34018:
+    /// no keychain access group, as in unsigned builds and CLI tools),
+    /// `errSecUnimplemented` (-4) or `errSecNotAvailable` (-25291), or, on
+    /// Intel Macs (which may have no Secure Enclave), that creation failed
+    /// at all. Every other failure is [`DeviceKeyError::SecureEnclave`].
+    ///
     /// Elsewhere: the key of `scope` in `store`, created when absent.
     pub fn open_or_create(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
         validate_scope(scope)?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
             let name = tpm_key_name(scope);
-            match tpm::open(&name) {
-                Ok(Some(key)) => return Self::from_tpm(key, scope, store),
+            match hw::open(&name) {
+                Ok(Some(key)) => return Self::from_hardware(key, scope, store),
                 Ok(None) => {}
-                Err(tpm::TpmError::Unavailable(error)) => {
+                Err(hw::HwError::Unavailable(error)) => {
                     return Self::from_fallback(software_fallback(store, scope, error, true)?)
                 }
-                Err(tpm::TpmError::Failed(error)) => return Err(error),
+                Err(hw::HwError::Failed(error)) => return Err(error),
             }
             if let Some(secret) = store.load(scope)? {
                 return Self::software(software::signing_key(&secret)?);
             }
-            match tpm::create(&name) {
-                Ok(key) => Self::from_tpm(key, scope, store),
+            match hw::create(&name) {
+                Ok(key) => Self::from_hardware(key, scope, store),
                 // No key exists yet, so the software key replaces nothing;
                 // the relay sees `software` from `kind()`.
-                Err(tpm::TpmError::Unavailable(error)) => {
+                Err(hw::HwError::Unavailable(error)) => {
                     Self::from_fallback(software_fallback(store, scope, error, true)?)
                 }
-                Err(tpm::TpmError::Failed(error)) => Err(error),
+                Err(hw::HwError::Failed(error)) => Err(error),
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             Self::software(software::open_or_create(store, scope)?)
         }
     }
 
-    /// Open the existing device key of `scope` (TPM, else `store`) without
-    /// ever creating one: for child processes of the app that made it.
-    /// `Ok(None)` when there is none. An unavailable TPM with a TPM marker
-    /// in `store` is an error, as in [`Self::open_or_create`].
+    /// Open the existing device key of `scope` (TPM or Secure Enclave, else
+    /// `store`) without ever creating one: for child processes of the app
+    /// that made it. `Ok(None)` when there is none. Unavailable hardware
+    /// with a hardware marker in `store` is an error, as in
+    /// [`Self::open_or_create`] (on macOS: a binary without the app's
+    /// keychain access group after the app made a Secure Enclave key).
     pub fn open(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Option<Self>> {
         validate_scope(scope)?;
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "macos"))]
         {
-            match tpm::open(&tpm_key_name(scope)) {
-                Ok(Some(key)) => Self::from_tpm(key, scope, store).map(Some),
+            match hw::open(&tpm_key_name(scope)) {
+                Ok(Some(key)) => Self::from_hardware(key, scope, store).map(Some),
                 Ok(None) => store
                     .load(scope)?
                     .map(|secret| Self::software(software::signing_key(&secret)?))
                     .transpose(),
-                Err(tpm::TpmError::Unavailable(error)) => {
+                Err(hw::HwError::Unavailable(error)) => {
                     software_fallback(store, scope, error, false)?
                         .map(Self::software)
                         .transpose()
                 }
-                Err(tpm::TpmError::Failed(error)) => Err(error),
+                Err(hw::HwError::Failed(error)) => Err(error),
             }
         }
-        #[cfg(not(windows))]
+        #[cfg(not(any(windows, target_os = "macos")))]
         {
             store
                 .load(scope)?
@@ -298,18 +339,18 @@ impl DeviceKey {
         }
     }
 
-    /// Delete the device key of `scope` everywhere: the TPM key (Windows),
-    /// the store key and the TPM marker. Only with the user's consent, e.g.
+    /// Delete the device key of `scope` everywhere: the TPM key (Windows) or
+    /// Secure Enclave key (macOS), the store key and the hardware marker. Only with the user's consent, e.g.
     /// to recover after the TPM was cleared; the next
     /// [`Self::open_or_create`] makes a new key, which the relay sees as a
     /// new device. Missing pieces are fine; an unavailable TPM has no key.
     pub fn reset(scope: &str, store: &dyn SoftwareKeyStore) -> Result<()> {
         validate_scope(scope)?;
-        #[cfg(windows)]
-        match tpm::open(&tpm_key_name(scope)) {
+        #[cfg(any(windows, target_os = "macos"))]
+        match hw::open(&tpm_key_name(scope)) {
             Ok(Some(key)) => key.delete()?,
-            Ok(None) | Err(tpm::TpmError::Unavailable(_)) => {}
-            Err(tpm::TpmError::Failed(error)) => return Err(error),
+            Ok(None) | Err(hw::HwError::Unavailable(_)) => {}
+            Err(hw::HwError::Failed(error)) => return Err(error),
         }
         store.delete(scope)?;
         // The marker goes last: while any key piece may remain, it keeps
@@ -334,19 +375,19 @@ impl DeviceKey {
         })
     }
 
-    #[cfg(windows)]
+    #[cfg(any(windows, target_os = "macos"))]
     fn from_fallback(key: Option<p256::ecdsa::SigningKey>) -> Result<Self> {
         // `create` fallbacks always yield a key.
         Self::software(key.ok_or(DeviceKeyError::CorruptKey)?)
     }
 
-    #[cfg(windows)]
-    fn from_tpm(key: tpm::TpmKey, scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
+    #[cfg(any(windows, target_os = "macos"))]
+    fn from_hardware(key: hw::HwKey, scope: &str, store: &dyn SoftwareKeyStore) -> Result<Self> {
         let pubkey =
             DevicePubkey::from_sec1(&key.public_sec1()?).map_err(|_| DeviceKeyError::CorruptKey)?;
         record_tpm_marker(store, scope, &pubkey)?;
         Ok(Self {
-            backend: Arc::new(Backend::Tpm(Mutex::new(key))),
+            backend: Arc::new(Backend::Hardware(Mutex::new(key))),
             pubkey,
         })
     }
@@ -361,7 +402,9 @@ impl DeviceKey {
         match *self.backend {
             Backend::Software(_) => DeviceKeyKind::Software,
             #[cfg(windows)]
-            Backend::Tpm(_) => DeviceKeyKind::Tpm,
+            Backend::Hardware(_) => DeviceKeyKind::Tpm,
+            #[cfg(target_os = "macos")]
+            Backend::Hardware(_) => DeviceKeyKind::SecureEnclave,
         }
     }
 
@@ -373,8 +416,8 @@ impl DeviceKey {
                 let signature: p256::ecdsa::Signature = key.sign(msg);
                 Ok(signature.to_bytes().into())
             }
-            #[cfg(windows)]
-            Backend::Tpm(key) => {
+            #[cfg(any(windows, target_os = "macos"))]
+            Backend::Hardware(key) => {
                 let digest: [u8; 32] = sha2::Sha256::digest(msg).into();
                 // A poisoned lock only means another signer panicked; the
                 // handle itself holds no Rust state to corrupt.
@@ -488,6 +531,15 @@ impl DeviceKey {
         };
         self.header_proof_hashed(ts, nonce, &scope)
     }
+}
+
+/// A DER ECDSA signature (Security.framework's X9.62 output) as raw
+/// `r || s`, the form every backend returns.
+#[cfg(any(target_os = "macos", test))]
+fn raw_signature_from_der(der: &[u8]) -> Result<[u8; 64]> {
+    p256::ecdsa::Signature::from_der(der)
+        .map(|signature| signature.to_bytes().into())
+        .map_err(|_| DeviceKeyError::CorruptKey)
 }
 
 fn unix_now() -> i64 {

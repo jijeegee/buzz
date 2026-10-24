@@ -246,7 +246,24 @@ fn scopes_are_validated() {
 #[test]
 fn kinds_map_to_the_login_wire_values() {
     assert_eq!(DeviceKeyKind::Tpm.as_wire(), "hardware");
+    assert_eq!(DeviceKeyKind::SecureEnclave.as_wire(), "hardware");
     assert_eq!(DeviceKeyKind::Software.as_wire(), "software");
+}
+
+/// The Secure Enclave returns DER; the proof wants the raw `r || s` every
+/// other backend signs.
+#[test]
+fn a_der_signature_becomes_the_raw_form() {
+    use p256::ecdsa::signature::Signer as _;
+    let key = p256::ecdsa::SigningKey::from_slice(&[7; 32]).expect("key");
+    let signature: p256::ecdsa::Signature = key.sign(b"message");
+    let der = signature.to_der();
+    let raw: [u8; 64] = signature.to_bytes().into();
+    assert_eq!(raw_signature_from_der(der.as_bytes()).expect("der"), raw);
+    assert!(matches!(
+        raw_signature_from_der(&raw),
+        Err(DeviceKeyError::CorruptKey)
+    ));
 }
 
 #[test]
@@ -713,5 +730,120 @@ mod windows_tpm {
             })
             .collect();
         stats("software sign", signs);
+    }
+}
+
+#[cfg(target_os = "macos")]
+mod macos_secure_enclave {
+    use super::*;
+
+    fn test_name(label: &str) -> (String, String) {
+        let scope = format!("test-{label}-{}", std::process::id());
+        let name = tpm_key_name(&scope);
+        (scope, name)
+    }
+
+    /// Deletes the test key `0` when dropped, also when the test panics.
+    struct Cleanup(String);
+
+    impl Drop for Cleanup {
+        fn drop(&mut self) {
+            if let Ok(Some(key)) = secure_enclave::open(&self.0) {
+                key.delete().expect("delete test key");
+            }
+            assert!(
+                matches!(
+                    secure_enclave::open(&self.0),
+                    Ok(None) | Err(secure_enclave::HwError::Unavailable(_))
+                ),
+                "test key deleted"
+            );
+        }
+    }
+
+    #[test]
+    fn only_no_secure_enclave_codes_allow_a_software_key() {
+        // errSecMissingEntitlement, errSecUnimplemented, errSecNotAvailable.
+        for code in [-34018, -4, -25291] {
+            assert!(secure_enclave::UNAVAILABLE.contains(&code), "{code}");
+        }
+        // errSecInteractionNotAllowed, errSecAuthFailed, errSecItemNotFound,
+        // errSecParam: retry later, never a software key.
+        for code in [-25308, -25293, -25300, -50] {
+            assert!(!secure_enclave::UNAVAILABLE.contains(&code), "{code}");
+        }
+    }
+
+    /// A software key already in the store wins over making a Secure
+    /// Enclave key: an install that signed in before this backend keeps its
+    /// key. Runs unsigned too (the Secure Enclave is then unavailable).
+    #[test]
+    fn an_existing_store_key_is_used_before_creating_a_secure_enclave_key() {
+        let (scope, name) = test_name("storewins");
+        let _cleanup = Cleanup(name.clone());
+        let store = MemoryStore::default();
+        let expected = software::open_or_create(&store, &scope).expect("seed");
+        let key = DeviceKey::open_or_create(&scope, &store).expect("open");
+        assert_eq!(key.kind(), DeviceKeyKind::Software);
+        assert_eq!(
+            key.pubkey().as_bytes().as_slice(),
+            expected.verifying_key().to_encoded_point(true).as_bytes()
+        );
+        assert!(matches!(
+            secure_enclave::open(&name),
+            Ok(None) | Err(secure_enclave::HwError::Unavailable(_))
+        ));
+    }
+
+    /// Creates, uses and deletes a `Kuzz-Device-test-*` Secure Enclave key.
+    /// Needs the test binary signed with a keychain access group (see
+    /// `docs/apple-device-keys.md`); unsigned, it gets a software key.
+    #[test]
+    #[ignore = "needs a Secure Enclave and a signed test binary; creates and deletes a test key"]
+    fn a_secure_enclave_key_signs_proofs_the_server_accepts() {
+        let (scope, name) = test_name("roundtrip");
+        let name_for_check = name.clone();
+        let _cleanup = Cleanup(name);
+        let store = MemoryStore::default();
+        assert!(DeviceKey::open(&scope, &store).expect("open").is_none());
+        let key = DeviceKey::open_or_create(&scope, &store).expect("create");
+        assert_eq!(key.kind(), DeviceKeyKind::SecureEnclave);
+        // Only the marker: the SHA-256 of the Secure Enclave public key.
+        let expected: [u8; 32] = sha2::Sha256::digest(key.pubkey().as_bytes()).into();
+        {
+            let keys = store.keys.lock().expect("lock");
+            assert_eq!(keys.len(), 1);
+            assert_eq!(keys.get(&format!("{scope}#tpm")), Some(&expected));
+        }
+        let again = DeviceKey::open_or_create(&scope, &store).expect("open");
+        assert_eq!(again.pubkey(), key.pubkey());
+        let child = DeviceKey::open(&scope, &store).expect("open").expect("key");
+        assert_eq!(child.pubkey(), key.pubkey());
+
+        let raw = key
+            .header_proof("auth", "GET https://relay.example/auth/me", Some("tok"))
+            .expect("proof");
+        let token_hash = kuzz_auth::hash_token("tok");
+        let proof_scope = ProofScope {
+            purpose: "auth",
+            binding: "GET https://relay.example/auth/me",
+            token_hash: Some(&token_hash),
+            body_hash: None,
+        };
+        let proof = DeviceProof::parse(&raw).expect("parse");
+        assert_eq!(proof.verify(&key.pubkey(), &proof_scope, now()), Ok(()));
+
+        let keys = Keys::generate();
+        let event = key
+            .add_event_tag(auth_event(&keys))
+            .expect("tag")
+            .sign_with_keys(&keys)
+            .expect("sign");
+        assert_eq!(verify_event_device_tag(&event), Ok(Some(key.pubkey())));
+
+        drop((key, again, child));
+        DeviceKey::reset(&scope, &store).expect("reset");
+        assert!(matches!(secure_enclave::open(&name_for_check), Ok(None)));
+        assert!(store.keys.lock().expect("lock").is_empty());
     }
 }

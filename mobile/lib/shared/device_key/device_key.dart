@@ -6,13 +6,13 @@ import 'package:flutter/services.dart';
 import 'device_proof.dart';
 
 /// This install's device key: a P-256 key pair kept in the Android Keystore
-/// (StrongBox when the phone has one, else the TEE). The private key never
-/// leaves the secure hardware; the app only asks it for signatures, so a
-/// person key or token copied to another phone is useless there
-/// (device-bound keys plan §2.1, PR D).
+/// (StrongBox when the phone has one, else the TEE) or the iOS Secure
+/// Enclave. The private key never leaves the secure hardware; the app only
+/// asks it for signatures, so a person key or token copied to another phone
+/// is useless there (device-bound keys plan §2.1, PR D).
 ///
-/// iOS and other platforms have no implementation yet: [info] and [sign]
-/// return `null`, and callers then send no device proof (as older apps do).
+/// Other platforms have no implementation: [info] and [sign] return `null`,
+/// and callers then send no device proof (as older apps do).
 abstract class DeviceKey {
   /// The public key and storage kind, creating the key on first use, or
   /// `null` when this platform has no device key.
@@ -34,7 +34,8 @@ class DeviceKeyInfo {
   /// SEC1 compressed public key (33 bytes).
   final Uint8List publicKey;
 
-  /// Whether the key lives in secure hardware (StrongBox or TEE).
+  /// Whether the key lives in secure hardware (StrongBox, TEE or Secure
+  /// Enclave).
   final bool hardware;
 
   /// Lower-case hex of [publicKey], as the relay expects it.
@@ -44,11 +45,15 @@ class DeviceKeyInfo {
   String get kind => hardware ? 'hardware' : 'software';
 }
 
-/// [DeviceKey] backed by the `kuzz/device_key` platform channel (Android).
+/// [DeviceKey] backed by the `kuzz/device_key` platform channel (Android
+/// `DeviceKeyPlugin.kt`, iOS `DeviceKeyPlugin.swift`). Both answer
+/// `getOrCreate` with `publicKey` (65-byte SEC1 uncompressed) and `hardware`
+/// (bool), and `sign` with a DER ECDSA P-256/SHA-256 signature.
 class PlatformDeviceKey implements DeviceKey {
   PlatformDeviceKey({MethodChannel? channel, bool? supported})
     : _channel = channel ?? const MethodChannel('kuzz/device_key'),
-      _supported = supported ?? (!kIsWeb && Platform.isAndroid);
+      _supported =
+          supported ?? (!kIsWeb && (Platform.isAndroid || Platform.isIOS));
 
   final MethodChannel _channel;
   bool _supported;
