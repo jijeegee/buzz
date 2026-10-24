@@ -2,11 +2,17 @@ import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:hooks_riverpod/misc.dart' show Override;
+import 'package:kuzz/features/channels/channel_head_cache.dart';
+import 'package:kuzz/features/channels/channel_live_events.dart';
+import 'package:kuzz/features/channels/channel_messages_provider.dart';
+import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/room_goals_provider.dart';
@@ -16,6 +22,7 @@ import 'package:kuzz/shared/relay/relay.dart';
 
 part 'channels_provider_live_cases.dart';
 part 'channels_provider_terminal_cases.dart';
+part 'channels_provider_room_store_cases.dart';
 
 /// Tests for [ChannelsNotifier] in the pure-Nostr world.
 ///
@@ -1610,6 +1617,7 @@ void main() {
 
   _liveSubscriptionTests();
   _terminalSubscriptionTests();
+  _roomStoreFeedTests();
 
   test('retains channel-list member snapshots for immediate reuse', () async {
     final joinedAt = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);
@@ -2540,6 +2548,7 @@ ProviderContainer _buildContainer({
   required _FakeRelaySession session,
   ReadStateNotifier Function() readState = _ReadyReadState.new,
   ChannelMutesNotifier Function()? mutes,
+  List<Override> overrides = const [],
 }) {
   return ProviderContainer(
     retry: (_, _) => null,
@@ -2551,6 +2560,7 @@ ProviderContainer _buildContainer({
       // Route the pubkey through a mutable notifier so tests can switch the
       // signing identity mid-flight the way an account change does at runtime.
       myPubkeyProvider.overrideWith((ref) => ref.watch(_testPubkeyProvider)),
+      ...overrides,
     ],
   );
 }
