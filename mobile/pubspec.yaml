@@ -53,6 +53,7 @@ dependencies:
   local_auth: ^3.0.2
   flutter_web_auth_2: ^5.1.0
   crypto: ^3.0.7
+  sqlite3: ^3.0.0
 
 dev_dependencies:
   flutter_test:
