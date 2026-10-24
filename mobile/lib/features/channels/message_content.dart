@@ -31,7 +31,7 @@ import '../../shared/custom_emoji/custom_emoji_render.dart';
 import '../../shared/emoji/emoji_data_provider.dart';
 import '../../shared/emoji/emoji_only.dart';
 import 'channel_hash_links.dart';
-import 'channels_provider.dart';
+import 'channel_list_selectors.dart';
 import 'media_viewer_page.dart';
 import 'message_content/link_normalizer.dart';
 import 'message_media.dart';
@@ -185,8 +185,7 @@ class MessageContent extends HookConsumerWidget {
     final resolvedChannelNames = channelNames.isNotEmpty
         ? channelNames
         : <String, String>{
-            for (final channel
-                in ref.watch(channelsProvider).asData?.value ?? const [])
+            for (final channel in ref.watch(channelListShape).list)
               // `#name` resolves to groups only, never a chat of people.
               if (!channel.isPersonChat) channel.name.toLowerCase(): channel.id,
           };
