@@ -5,6 +5,7 @@ import '../../shared/relay/relay.dart';
 import 'channel_head_cache.dart';
 import 'channel_messages_provider.dart';
 import 'channel_page_records.dart';
+import 'channel_room_store.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
 
@@ -114,10 +115,10 @@ Map<ThreadRepliesArgs, List<NostrEvent>> splitThreadWindows(
 typedef ChannelPreloadTarget = ({String channelId, int latestAt});
 
 /// Loads the newest page of rooms and threads in the background so opening
-/// them paints at once. Rooms are written to the persisted [ChannelHeadCache],
-/// which an opening room paints before its own relay page replaces it; no
-/// room notifier is created. Threads are kept in [preloadedThreadsProvider],
-/// which an opening thread shows only until its full scan lands.
+/// them paints at once. Rooms are written to the message database, which an
+/// opening room paints from; no room notifier is created. Threads are kept
+/// in [preloadedThreadsProvider], which an opening thread shows only until
+/// its full scan lands.
 class ChannelPreloader {
   ChannelPreloader(this._ref, {DateTime Function()? now})
     : _now = now ?? DateTime.now;
@@ -142,12 +143,12 @@ class ChannelPreloader {
 
   /// Loads the newest window of up to [maxChannelWindowsPerRequest] rooms in
   /// one request. Skips rooms that are open or loaded in memory, tried within
-  /// [preloadRetryAfter], or whose persisted head was written after their
-  /// newest message. Resolves to the rooms stored.
+  /// [preloadRetryAfter], or stored through their newest message. Resolves
+  /// to the rooms stored.
   Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
     final scope = _ref.read(channelHeadScopeProvider);
     if (scope == null) return const [];
-    final cache = _ref.read(channelHeadCacheProvider);
+    final store = _ref.read(channelRoomStoreProvider);
     final cold = <String>[];
     for (final target in targets) {
       final channelId = target.channelId;
@@ -157,11 +158,7 @@ class ChannelPreloader {
           _ref.exists(channelMessagesProvider(channelId))) {
         continue;
       }
-      final storedAt = await cache.storedAt(scope, channelId);
-      if (storedAt != null &&
-          storedAt.millisecondsSinceEpoch ~/ 1000 >= target.latestAt) {
-        continue;
-      }
+      if (store.isStoredThrough(scope, channelId, target.latestAt)) continue;
       cold.add(channelId);
     }
     if (cold.isEmpty) return const [];
@@ -182,6 +179,7 @@ class ChannelPreloader {
     }
     if (_ref.read(channelHeadScopeProvider) != scope) return const [];
     final stored = <String>[];
+    final writes = <Future<void>>[];
     for (final MapEntry(key: channelId, value: window) in splitChannelWindows(
       events,
       cold,
@@ -193,13 +191,17 @@ class ChannelPreloader {
         debugPrint('[ChannelPreloader] invalid window for $channelId: $error');
         continue;
       }
-      // The message database keeps every page, open room or not.
-      recordChannelWindowPage(_ref, channelId, window, page);
-      // A room opened meanwhile persists its own, newer page.
-      if (_ref.exists(channelMessagesProvider(channelId))) continue;
-      await cache.store(scope, channelId, window);
+      writes.add(recordChannelWindowPage(_ref, channelId, window, page));
+      // The newest rows are stored: a room the live feed covers stays
+      // complete from them on.
+      store.clearGap(
+        scope,
+        channelId,
+        at: page.rows.firstOrNull?.event.createdAt,
+      );
       stored.add(channelId);
     }
+    await Future.wait(writes);
     return stored;
   }
 

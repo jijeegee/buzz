@@ -4,10 +4,12 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:sqlite3/sqlite3.dart';
 
 import '../../shared/message_db/coverage.dart';
 import '../../shared/message_db/event_rows.dart';
 import '../../shared/message_db/message_db.dart';
+import '../../shared/message_db/message_reads.dart';
 import '../../shared/message_db/message_store.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
@@ -303,6 +305,14 @@ class ChannelRoomStore {
   Map<MessageScope, ({int generation, List<MessageRow> rows})> _dbPending = {};
   int _dbPendingCount = 0;
 
+  /// Rows sent to the database whose transaction has not finished, per
+  /// account: reads include them with [_dbPending].
+  final Map<MessageScope, List<List<MessageRow>>> _dbInFlight = {};
+
+  /// Live range changes sent with a write that has not finished.
+  final Map<MessageScope, List<Map<String, _RangeChange>>> _rangesInFlight = {};
+  final Map<MessageScope, List<Set<String>>> _keepInFlight = {};
+
   /// Watermarks waiting for the next write, per account.
   Map<MessageScope, int> _watermarks = {};
 
@@ -407,20 +417,151 @@ class ChannelRoomStore {
     }
   }
 
-  /// The room's newest page was fetched: if the live feed covers it, its
-  /// live range starts now (an open one is kept).
-  void clearGap(ChannelHeadScope scope, String channelId) {
+  /// The room's newest rows were fetched: if the live feed covers it, its
+  /// live range starts at [at] (by default now; an open one is kept). [at]
+  /// may be the newest fetched row's time: the fetch proved nothing newer
+  /// existed then, and the feed delivers everything after.
+  void clearGap(ChannelHeadScope scope, String channelId, {int? at}) {
     _tailGapRooms.remove((scope, channelId));
     if (_messages == null || !feeds(scope, channelId)) return;
+    final from = at == null ? _clock() : min(at, _clock());
     final changes = _rangeChanges.putIfAbsent(_messageScope(scope), () => {});
     switch (changes[channelId]) {
       case _RangeStart():
         return;
       case _RangeEnd():
-        changes[channelId] = _RangeStart(_clock(), replace: true);
+        changes[channelId] = _RangeStart(from, replace: true);
       case null:
-        changes[channelId] = _RangeStart(_clock(), replace: false);
+        changes[channelId] = _RangeStart(from, replace: false);
     }
+  }
+
+  /// The newest stored page of [channelId], read synchronously, or null when
+  /// nothing complete is stored (or there is no database to read).
+  StoredTimelinePage? readNewest(ChannelHeadScope scope, String channelId) =>
+      _read<StoredTimelinePage?>(
+        scope,
+        (db, liveFrom) =>
+            readNewestStoredPage(db, channelId, liveFrom: liveFrom(channelId)),
+      );
+
+  /// The stored rows just older than [before], when they are known complete.
+  StoredTimelinePage? readOlder(
+    ChannelHeadScope scope,
+    String channelId,
+    CoverageCursor before,
+  ) => _read<StoredTimelinePage?>(
+    scope,
+    (db, liveFrom) => readOlderStoredPage(
+      db,
+      channelId,
+      before,
+      liveFrom: liveFrom(channelId),
+    ),
+  );
+
+  /// Whether [channelId]'s newest message, sent at [latestAt], is stored with
+  /// a complete range under it.
+  bool isStoredThrough(
+    ChannelHeadScope scope,
+    String channelId,
+    int latestAt,
+  ) =>
+      _read(
+        scope,
+        (db, liveFrom) => isStoredThroughIn(
+          db,
+          channelId,
+          latestAt,
+          liveFrom: liveFrom(channelId),
+        ),
+      ) ??
+      false;
+
+  /// Stored rows of [channelId] (or of its thread [rootId]) sent at or
+  /// before [before], newest first, after the ones still queued.
+  List<NostrEvent> readRowsBefore(
+    ChannelHeadScope scope,
+    String channelId, {
+    required int before,
+    String? rootId,
+  }) => [
+    ...unflushed(scope, channelId).where(
+      (event) =>
+          event.createdAt <= before &&
+          EventKind.channelTimelineContentKinds.contains(event.kind) &&
+          (rootId == null
+              ? isRoomTailRow(event)
+              : event.id == rootId || event.threadReference.rootId == rootId),
+    ),
+    ...?_read(
+      scope,
+      (db, _) =>
+          readStoredRowsBefore(db, channelId, before: before, rootId: rootId),
+    ),
+  ];
+
+  /// Whether [channelId]'s live range is open: the live feed has delivered
+  /// it continuously since that time. Counts range changes not yet written.
+  bool hasOpenLiveRange(ChannelHeadScope scope, String channelId) =>
+      _read(scope, (db, liveFrom) => liveFrom(channelId) != null) ?? false;
+
+  /// The events of [channelId] received but not yet in the database, in
+  /// arrival order.
+  List<NostrEvent> unflushed(ChannelHeadScope scope, String channelId) {
+    final messages = _messages;
+    if (messages == null) return const [];
+    final key = _messageScope(scope);
+    final pending = _dbPending[key];
+    return [
+      for (final batch in [
+        ...?_dbInFlight[key],
+        if (pending != null && !messages.isCleared(key, pending.generation))
+          pending.rows,
+      ])
+        for (final row in batch)
+          if (row.channelId == channelId) row.event,
+    ];
+  }
+
+  /// Runs [query] on [scope]'s read connection. Its second argument gives a
+  /// room's live range start, counting changes not yet written. Null when
+  /// there is no database or the read fails (a skipped paint, not an error).
+  T? _read<T>(
+    ChannelHeadScope scope,
+    T Function(Database db, int? Function(String channelId) liveFrom) query,
+  ) {
+    final messages = _messages;
+    if (messages == null) return null;
+    final key = _messageScope(scope);
+    final db = messages.reader(key);
+    if (db == null) return null;
+    try {
+      return query(db, (channelId) => _liveFromNow(key, channelId, db));
+    } on SqliteException catch (error) {
+      debugPrint('[ChannelRoomStore] stored rows unreadable: $error');
+      return null;
+    }
+  }
+
+  int? _liveFromNow(MessageScope key, String channelId, Database db) {
+    // Newest changes first: queued, then those being written.
+    for (final changes in [
+      _rangeChanges[key],
+      ...?_rangesInFlight[key]?.reversed,
+    ]) {
+      switch (changes?[channelId]) {
+        case _RangeEnd():
+          return null;
+        case _RangeStart(:final at, :final replace):
+          return replace ? at : readLiveFrom(db, channelId) ?? at;
+        case null:
+      }
+    }
+    for (final keep in [_keepRanges[key], ...?_keepInFlight[key]]) {
+      if (keep != null && !keep.contains(channelId)) return null;
+    }
+    return readLiveFrom(db, channelId);
   }
 
   /// The watermark stored for [scope]'s physical server, or null when none
@@ -541,15 +682,16 @@ class ChannelRoomStore {
       receivedAt: _clock(),
       channelId: channelId,
     );
+    final key = _messageScope(scope);
+    final inFlight = _dbInFlight.putIfAbsent(key, () => [])..add(rows);
     try {
-      await messages.write(
-        _messageScope(scope),
-        MessageDbWrite(rows: rows, claims: claims),
-      );
+      await messages.write(key, MessageDbWrite(rows: rows, claims: claims));
     } catch (error) {
       debugPrint(
         '[ChannelRoomStore] failed to store a page of $channelId: $error',
       );
+    } finally {
+      inFlight.remove(rows);
     }
   }
 
@@ -663,6 +805,11 @@ class ChannelRoomStore {
     final liveSince = _liveSince;
     final recordLive =
         liveSince != null && _liveSinceRecorded[scope] != liveSince;
+    final inFlight = _dbInFlight.putIfAbsent(scope, () => [])..add(rows);
+    final rangesInFlight = _rangesInFlight.putIfAbsent(scope, () => [])
+      ..add(ranges);
+    final keepInFlight = _keepInFlight.putIfAbsent(scope, () => []);
+    if (keep != null) keepInFlight.add(keep);
     final write = MessageDbWrite(
       rows: rows,
       liveFrom: {
@@ -723,6 +870,10 @@ class ChannelRoomStore {
       }
       _timer ??= Timer(debounce, () => unawaited(flush()));
       return false;
+    } finally {
+      inFlight.remove(rows);
+      rangesInFlight.remove(ranges);
+      if (keep != null) keepInFlight.remove(keep);
     }
   }
 

@@ -105,6 +105,12 @@ extension _RoomReconnect on ChannelMessagesNotifier {
   void _restart() {
     final ref = _storeRef;
     _awaitingCatchUp = false;
+    if (_storedWindow != _StoredWindow.none) {
+      // Painted from the database and not settled yet: keep the rows and
+      // ask only for what is missing.
+      _initFuture = _init(fromStore: true);
+      return;
+    }
     if (!_usingChannelWindow || !_windowStore.isMiddle) {
       _reachedOldest = false;
       _windowStore = const ChannelWindowStore.empty();

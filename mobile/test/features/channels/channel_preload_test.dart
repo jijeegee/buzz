@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/shared/message_db/coverage.dart';
+import 'package:kuzz/shared/message_db/event_rows.dart';
 import 'package:kuzz/shared/message_db/message_db.dart';
 import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -14,6 +16,13 @@ const _scope = ChannelHeadScope(
   relayUrl: 'https://relay.example',
   pubkey: 'me',
 );
+
+const _messageScope = MessageScope(
+  relayUrl: 'https://relay.example',
+  pubkey: 'me',
+);
+
+String _dbPath(Directory root) => '${root.path}/${_messageScope.relativePath}';
 
 /// Answers batched window requests the way the relay does: each requested
 /// room or thread in order, closed by its bounds overlay.
@@ -146,16 +155,16 @@ void main() {
     setUp(() async {
       root = await Directory.systemTemp.createTemp('channel_preload_test');
       messagesRoot = await Directory.systemTemp.createTemp('preload_messages');
-      messages = MessageStore(() async => messagesRoot.path);
+      messages = MessageStore(
+        () async => messagesRoot.path,
+        rootPath: messagesRoot.path,
+      );
       session = _WindowSession();
       now = DateTime(2026, 1, 1, 12);
       container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => session),
           channelHeadScopeProvider.overrideWithValue(_scope),
-          channelHeadCacheProvider.overrideWithValue(
-            ChannelHeadCache(() async => root),
-          ),
           messageStoreProvider.overrideWithValue(messages),
           channelPreloaderProvider.overrideWith(
             (ref) => ChannelPreloader(ref, now: () => now),
@@ -171,50 +180,51 @@ void main() {
       await messagesRoot.delete(recursive: true);
     });
 
-    test('stores preloaded rooms and threads in the message database', () async {
-      final preloader = container.read(channelPreloaderProvider);
-      await preloader.preloadRooms([(channelId: 'room-1', latestAt: 100)]);
-      await preloader.preloadThreads([
-        const ThreadRepliesArgs(channelId: 'room-1', rootId: 'root'),
-      ]);
-      await messages.settled();
+    test(
+      'stores preloaded rooms and threads in the message database',
+      () async {
+        final preloader = container.read(channelPreloaderProvider);
+        await preloader.preloadRooms([(channelId: 'room-1', latestAt: 100)]);
+        await preloader.preloadThreads([
+          const ThreadRepliesArgs(channelId: 'room-1', rootId: 'root'),
+        ]);
+        await messages.settled();
 
-      final db = openMessageDbReader(
-        '${messagesRoot.path}/${const MessageScope(relayUrl: 'https://relay.example', pubkey: 'me').relativePath}',
-      );
-      addTearDown(db.close);
-      expect(
-        db
-            .select('SELECT id, channel_id FROM events ORDER BY id')
-            .map((row) => (row['id'], row['channel_id'])),
-        [
-          ('room-1-message', 'room-1'),
-          // The aux event has no room tag; its window names the room.
-          ('room-1-reaction', 'room-1'),
-          ('root-reply', 'room-1'),
-        ],
-      );
-      expect(
-        db
-            .select(
-              'SELECT stream, lo_at, hi_at, hi_id FROM coverage '
-              'ORDER BY stream',
-            )
-            .map(
-              (row) =>
-                  (row['stream'], row['lo_at'], row['hi_at'], row['hi_id']),
-            ),
-        [
-          // has_more false: the room's whole history is this page.
-          ('', -1, 100, 'room-1-message'),
-          // A preloaded thread page proves only the span of its rows.
-          ('root:window', 100, 100, 'root-reply'),
-        ],
-      );
-    });
+        final db = openMessageDbReader(_dbPath(messagesRoot));
+        addTearDown(db.close);
+        expect(
+          db
+              .select('SELECT id, channel_id FROM events ORDER BY id')
+              .map((row) => (row['id'], row['channel_id'])),
+          [
+            ('room-1-message', 'room-1'),
+            // The aux event has no room tag; its window names the room.
+            ('room-1-reaction', 'room-1'),
+            ('root-reply', 'room-1'),
+          ],
+        );
+        expect(
+          db
+              .select(
+                'SELECT stream, lo_at, hi_at, hi_id FROM coverage '
+                'ORDER BY stream',
+              )
+              .map(
+                (row) =>
+                    (row['stream'], row['lo_at'], row['hi_at'], row['hi_id']),
+              ),
+          [
+            // has_more false: the room's whole history is this page.
+            ('', -1, 100, 'room-1-message'),
+            // A preloaded thread page proves only the span of its rows.
+            ('root:window', 100, 100, 'root-reply'),
+          ],
+        );
+      },
+    );
 
     test(
-      'loads up to twelve rooms in one request and stores each head',
+      'loads up to twelve rooms in one request and stores each page',
       () async {
         final preloader = container.read(channelPreloaderProvider);
         session.hidden.add('room-3');
@@ -229,22 +239,48 @@ void main() {
         expect(filter.extensions['top_level'], isTrue);
         expect(stored, hasLength(11));
         expect(stored, isNot(contains('room-3')));
-        final head = await container
-            .read(channelHeadCacheProvider)
-            .load(_scope, 'room-5');
-        expect(head?.map((event) => event.id), [
-          'room-5-message',
-          'room-5-reaction',
-          'room-5-bounds',
-        ]);
+        await messages.settled();
+        final db = openMessageDbReader(_dbPath(messagesRoot));
+        addTearDown(db.close);
+        expect(
+          db
+              .select(
+                "SELECT id FROM events WHERE channel_id = 'room-5' ORDER BY id",
+              )
+              .map((row) => row['id']),
+          ['room-5-message', 'room-5-reaction'],
+        );
       },
     );
 
-    test('skips fresh heads and rooms tried within five minutes', () async {
+    test('skips rooms stored through their newest message and rooms tried '
+        'within five minutes', () async {
       final preloader = container.read(channelPreloaderProvider);
-      await container.read(channelHeadCacheProvider).store(_scope, 'fresh', [
-        _event('cached', 9),
-      ]);
+      await messages.write(
+        _messageScope,
+        MessageDbWrite(
+          rows: messageRowsFor([
+            _event(
+              'cached',
+              9,
+              tags: [
+                ['h', 'fresh'],
+              ],
+              createdAt: 1,
+            ),
+          ], receivedAt: 1),
+          claims: const [
+            CoverageClaim(
+              channelId: 'fresh',
+              stream: CoverageStream.main,
+              range: CoverageRange(
+                CoverageCursor.start,
+                CoverageCursor(1, 'cached'),
+              ),
+            ),
+          ],
+        ),
+      );
 
       await preloader.preloadRooms([
         (channelId: 'fresh', latestAt: 1),
@@ -254,7 +290,7 @@ void main() {
         'cold',
       ]);
 
-      // A head older than the room's newest message is reloaded.
+      // A room stored only up to before its newest message is reloaded.
       final future = DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600;
       await preloader.preloadRooms([
         (channelId: 'fresh', latestAt: future),
