@@ -110,8 +110,13 @@ test("a signed-out computer shows the signed-out screen instead of chats", async
   const buttons = [...screen.querySelectorAll("button")];
   assert.deepEqual(
     buttons.map((button) => button.textContent.trim()),
-    ["Sign in with Google", "Sign in with Apple", "Terms of Service"],
-    "signing in is the only action (plus the terms link); no agent controls",
+    [
+      "Sign in with Google",
+      "Sign in with Apple",
+      "Terms of Service",
+      "Privacy Policy",
+    ],
+    "signing in is the only action (plus the policy links); no agent controls",
   );
   // The signed-out account's agents stopped with it: none are reported.
   assert.doesNotMatch(screen.textContent, /agent/i);

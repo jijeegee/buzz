@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -489,45 +490,69 @@ class TokenSignInPage extends HookConsumerWidget {
   }
 }
 
-/// "By continuing you agree to the Terms of Service", opening the terms.
-class _TermsLine extends StatelessWidget {
+/// "By continuing you agree to the Terms of Service and Privacy Policy",
+/// each link opening its page on kuzz.app.
+class _TermsLine extends StatefulWidget {
   const _TermsLine();
 
   @override
+  State<_TermsLine> createState() => _TermsLineState();
+}
+
+class _TermsLineState extends State<_TermsLine> {
+  late final _termsTap = TapGestureRecognizer()
+    ..onTap = () => _open(kuzzTermsUrl);
+  late final _privacyTap = TapGestureRecognizer()
+    ..onTap = () => _open(kuzzPrivacyUrl);
+
+  void _open(String url) => unawaited(
+    launchUrl(
+      Uri.parse(url),
+      mode: LaunchMode.externalApplication,
+    ).catchError((Object _) => false),
+  );
+
+  @override
+  void dispose() {
+    _termsTap.dispose();
+    _privacyTap.dispose();
+    super.dispose();
+  }
+
+  @override
   Widget build(BuildContext context) {
-    final color = context.colors.onSurfaceVariant;
-    // One sentence with the link text inside it, so languages can move it.
-    final terms = context.l10n.signInTermsOfService;
-    final sentence = context.l10n.signInTermsAgreement(terms);
-    final linkStart = sentence.indexOf(terms);
-    final before = linkStart < 0 ? sentence : sentence.substring(0, linkStart);
-    final after = linkStart < 0
-        ? ''
-        : sentence.substring(linkStart + terms.length);
-    return Semantics(
-      link: true,
-      child: TextButton(
-        key: const Key('token-sign-in-terms'),
-        onPressed: () => unawaited(
-          launchUrl(
-            Uri.parse(kuzzTermsUrl),
-            mode: LaunchMode.externalApplication,
-          ).catchError((Object _) => false),
-        ),
-        child: Text.rich(
-          TextSpan(
-            text: before,
-            children: [
-              if (linkStart >= 0)
-                TextSpan(
-                  text: terms,
-                  style: const TextStyle(decoration: TextDecoration.underline),
-                ),
-              if (after.isNotEmpty) TextSpan(text: after),
-            ],
-          ),
-          textAlign: TextAlign.center,
-          style: context.textTheme.bodySmall?.copyWith(color: color),
+    final l10n = context.l10n;
+    // One sentence with the link texts inside it, so languages can move them.
+    final links = [
+      (text: l10n.signInTermsOfService, tap: _termsTap),
+      (text: l10n.signInPrivacyPolicy, tap: _privacyTap),
+    ];
+    final sentence = l10n.signInTermsAgreement(links[0].text, links[1].text);
+    final found = [
+      for (final link in links)
+        if (sentence.indexOf(link.text) case final start when start >= 0)
+          (start: start, link: link),
+    ]..sort((a, b) => a.start.compareTo(b.start));
+    const underline = TextStyle(decoration: TextDecoration.underline);
+    final spans = <InlineSpan>[];
+    var at = 0;
+    for (final (:start, :link) in found) {
+      if (start < at) continue;
+      if (start > at) spans.add(TextSpan(text: sentence.substring(at, start)));
+      spans.add(
+        TextSpan(text: link.text, style: underline, recognizer: link.tap),
+      );
+      at = start + link.text.length;
+    }
+    if (at < sentence.length) spans.add(TextSpan(text: sentence.substring(at)));
+    return Padding(
+      key: const Key('token-sign-in-terms'),
+      padding: const EdgeInsets.symmetric(vertical: Grid.xs),
+      child: Text.rich(
+        TextSpan(children: spans),
+        textAlign: TextAlign.center,
+        style: context.textTheme.bodySmall?.copyWith(
+          color: context.colors.onSurfaceVariant,
         ),
       ),
     );

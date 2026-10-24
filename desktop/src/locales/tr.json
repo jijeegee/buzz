@@ -907,7 +907,7 @@
   "onboarding.signedOut.note": "Daha önce giriş yaptığınız Google hesabını kullanın.",
   "onboarding.signedOut.unavailable": "Google ile giriş şu anda kullanılamıyor.",
   "onboarding.signedOut.tryAgain": "Tekrar dene",
-  "onboarding.termsLine.text": "Devam ederek <terms>Hizmet Şartları</terms>'nı kabul etmiş olursunuz",
+  "onboarding.termsLine.text": "Devam ederek <terms>Hizmet Şartları</terms>'nı ve <privacy>Gizlilik Politikası</privacy>'nı kabul etmiş olursunuz",
   "onboarding.claimInvite.expired": "Bu davet kodunun süresi doldu — yeni bir kod isteyin.",
   "onboarding.claimInvite.exhausted": "Bu davet kullanım sınırına ulaştı. Yeni bir davet isteyin.",
   "onboarding.welcomeKickoff.leadStartFailed": "Welcome tanışması için {name} başlatılamadı.",

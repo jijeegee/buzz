@@ -907,7 +907,7 @@
   "onboarding.signedOut.note": "Gunakan akun Google yang Anda pakai sebelumnya.",
   "onboarding.signedOut.unavailable": "Masuk dengan Google sedang tidak tersedia.",
   "onboarding.signedOut.tryAgain": "Coba lagi",
-  "onboarding.termsLine.text": "Dengan melanjutkan, Anda menyetujui <terms>Ketentuan Layanan</terms>",
+  "onboarding.termsLine.text": "Dengan melanjutkan, Anda menyetujui <terms>Ketentuan Layanan</terms> dan <privacy>Kebijakan Privasi</privacy>",
   "onboarding.claimInvite.expired": "Kode undangan ini sudah kedaluwarsa — minta yang baru.",
   "onboarding.claimInvite.exhausted": "Undangan ini sudah mencapai batas penggunaan. Minta undangan baru.",
   "onboarding.welcomeKickoff.leadStartFailed": "Gagal memulai {name} untuk pembukaan Welcome.",
