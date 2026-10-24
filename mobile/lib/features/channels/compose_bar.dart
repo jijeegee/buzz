@@ -40,6 +40,7 @@ import 'camera_capture_cleanup.dart';
 import 'channel.dart';
 import 'channel_hash_links.dart';
 import 'group_avatar.dart';
+import 'channel_list_selectors.dart';
 import 'channel_management_provider.dart';
 import 'channels_provider.dart';
 import 'emoji_picker.dart';

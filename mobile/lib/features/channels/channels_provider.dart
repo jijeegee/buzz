@@ -14,10 +14,12 @@ import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
 import '../goals/goal_provider.dart';
 import 'channel.dart';
+import 'channel_head_cache.dart';
 import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_room_store.dart';
 import 'huddle_channel_filter.dart';
 import 'timeline_message.dart' show SystemEvent, SystemEventType;
 import '../../shared/read_state/read_state_provider.dart';
@@ -30,6 +32,7 @@ part 'channel_directory.dart';
 part 'channel_push_cache.dart';
 part 'channel_member_snapshots.dart';
 part 'channels_provider_lifecycle.dart';
+part 'global_feed.dart';
 
 const _channelTypeOrder = {'stream': 0, 'forum': 1, 'dm': 2};
 const _unreadCatchUpLimit = 1000;

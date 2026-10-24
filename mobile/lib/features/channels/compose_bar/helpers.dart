@@ -30,11 +30,10 @@ void _useComposerFocusRestorer({
 
 void _useComposerChannelNames(
   _MarkdownEditingController controller,
-  AsyncValue<List<Channel>> channelsAsync,
+  List<Channel> channels,
 ) {
   final channelNames = {
-    for (final channel in channelsAsync.asData?.value ?? const <Channel>[])
-      channel.name.toLowerCase(): channel.id,
+    for (final channel in channels) channel.name.toLowerCase(): channel.id,
   };
   final channelNamesKey = channelNames.entries
       .map((entry) => '${entry.key}\u0000${entry.value}')

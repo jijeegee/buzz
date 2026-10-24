@@ -58,6 +58,7 @@ import 'channel_link_navigation.dart';
 import 'agent_activity/working_bots_provider.dart';
 import 'channel_management_provider.dart';
 import 'channel_sections/channel_sections_provider.dart';
+import 'channel_list_selectors.dart';
 import 'channel_messages_provider.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
@@ -399,7 +400,8 @@ class ChannelDetailPage extends HookConsumerWidget {
     // Captured per build so a send carries the quote shown when it started.
     final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
     final detailsAsync = ref.watch(channelDetailsProvider(channel.id));
-    final channelsAsync = ref.watch(channelsProvider);
+    // Only this room's entry: other rooms' messages must not rebuild it.
+    final listedEntry = ref.watch(listedChannel(channel.id));
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
     final opensThreadDirectly =
         initialThreadRootId != null &&
@@ -472,16 +474,17 @@ class ChannelDetailPage extends HookConsumerWidget {
               e.pubkey.toLowerCase() != currentPubkey.toLowerCase(),
         )
         .toList();
-    final baseChannel =
-        channelsAsync
-            .whenData(
-              (channels) => channels.firstWhere(
-                (candidate) => candidate.id == channel.id,
-                orElse: () => channel,
-              ),
-            )
-            .value ??
-        channel;
+    final baseChannel = listedEntry ?? channel;
+    // Formatting the window is the costly part of a build: redo it only
+    // when the events or the viewer change.
+    final timelineEvents = messagesState.value;
+    final timelineMessages = useMemoized(
+      () => formatTimeline(
+        timelineEvents ?? const [],
+        currentPubkey: currentPubkey,
+      ),
+      [timelineEvents, currentPubkey],
+    );
     final shownOwnerView = this.ownerView;
     final mergedChannel =
         detailsAsync.whenData(baseChannel.mergeDetails).value ?? baseChannel;
@@ -1249,10 +1252,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                                     if (openPhase.value == _OpenPhase.opening) {
                                       return const SizedBox.shrink();
                                     }
-                                    final messages = formatTimeline(
-                                      events,
-                                      currentPubkey: currentPubkey,
-                                    );
+                                    final messages = timelineMessages;
                                     final summaries = ref
                                         .read(
                                           channelMessagesProvider(

@@ -131,10 +131,11 @@ void _liveSubscriptionTests() {
         _channelA,
         _channelB,
       ]);
-      expect(
-        session.subscribeFilters.single.kinds,
-        EventKind.channelEventKinds,
-      );
+      // Thread summaries keep stored room tails' reply counts current.
+      expect(session.subscribeFilters.single.kinds, [
+        ...EventKind.channelEventKinds,
+        EventKind.channelThreadSummary,
+      ]);
       expect(session.subscribeFilters.single.limit, 0);
 
       session.resumePausedSubscribe();
