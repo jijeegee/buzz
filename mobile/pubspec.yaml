@@ -1,7 +1,7 @@
 name: kuzz
 description: Kuzz mobile client
 publish_to: 'none'
-version: 0.6.4+1
+version: 0.6.5+1
 
 environment:
   sdk: ^3.11.4
