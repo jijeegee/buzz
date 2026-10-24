@@ -2,6 +2,7 @@
 
 use crate::error::Result;
 use crate::Db;
+use chrono::{DateTime, Utc};
 use kuzz_core::CommunityId;
 use kuzz_datastore_tracing::datastore_span;
 use sqlx::PgPool;
@@ -180,6 +181,98 @@ pub async fn update_user_profile(
     query = query.bind(pubkey);
     query.execute(pool).await?;
     Ok(())
+}
+
+/// The replaceable event a side effect applies to a `users` row.
+#[derive(Debug, Clone, Copy)]
+pub struct ProfileEvent {
+    /// The event's `created_at`.
+    pub created_at: DateTime<Utc>,
+    /// The event id.
+    pub id: [u8; 32],
+}
+
+/// The `WHERE` condition that lets `$at`/`$id` replace the event recorded in
+/// `<column>_event_at`/`<column>_event_id`: NIP-01 replaceable order (a newer
+/// `created_at`, or the same one with a smaller id). A re-run of the recorded
+/// event does not pass.
+fn replaces(column: &str, at: u32, id: u32) -> String {
+    format!(
+        "({column}_event_at IS NULL OR ${at} > {column}_event_at \
+          OR (${at} = {column}_event_at AND ${id} < {column}_event_id))"
+    )
+}
+
+/// Write a kind:0 profile into the user's row unless the row already shows
+/// this event or one that replaces it. Fields are absolute state: `None` or an
+/// empty string clears display name, avatar and about. `nip05_handle` `None`
+/// keeps the stored handle (a contested handle is skipped).
+///
+/// Returns whether the event was applied. The caller ensures the row exists.
+#[allow(clippy::too_many_arguments)]
+pub async fn update_user_profile_for_event(
+    pool: &PgPool,
+    community_id: CommunityId,
+    pubkey: &[u8],
+    event: ProfileEvent,
+    display_name: &str,
+    avatar_url: &str,
+    about: &str,
+    nip05_handle: Option<&str>,
+) -> Result<bool> {
+    let sql = format!(
+        "UPDATE users SET display_name = $3, avatar_url = $4, about = $5, \
+                nip05_handle = CASE WHEN $6 THEN $7 ELSE nip05_handle END, \
+                profile_event_at = $8, profile_event_id = $9 \
+         WHERE community_id = $1 AND pubkey = $2 AND {}",
+        replaces("profile", 8, 9)
+    );
+    let empty_to_none = |val: &str| Some(val.to_owned()).filter(|s| !s.is_empty());
+    let result = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(empty_to_none(display_name))
+        .bind(empty_to_none(avatar_url))
+        .bind(empty_to_none(about))
+        .bind(nip05_handle.is_some())
+        .bind(nip05_handle.and_then(empty_to_none))
+        .bind(event.created_at)
+        .bind(event.id.as_slice())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() == 1)
+}
+
+/// [`set_channel_add_policy`] from a kind:10100 agent profile, unless the row
+/// already shows this event or one that replaces it. Returns whether the
+/// event was applied. The caller ensures the row exists.
+pub async fn set_channel_add_policy_for_event(
+    pool: &PgPool,
+    community_id: CommunityId,
+    pubkey: &[u8],
+    event: ProfileEvent,
+    policy: &str,
+) -> Result<bool> {
+    if !matches!(policy, "anyone" | "owner_only" | "nobody") {
+        return Err(crate::error::DbError::InvalidData(format!(
+            "invalid channel_add_policy: {policy}"
+        )));
+    }
+    let sql = format!(
+        "UPDATE users SET channel_add_policy = $3::channel_add_policy, \
+                add_policy_event_at = $4, add_policy_event_id = $5 \
+         WHERE community_id = $1 AND pubkey = $2 AND {}",
+        replaces("add_policy", 4, 5)
+    );
+    let result = sqlx::query(sqlx::AssertSqlSafe(sql))
+        .bind(community_id.as_uuid())
+        .bind(pubkey)
+        .bind(policy)
+        .bind(event.created_at)
+        .bind(event.id.as_slice())
+        .execute(pool)
+        .await?;
+    Ok(result.rows_affected() == 1)
 }
 
 /// Look up a user by their full NIP-05 handle (exact match, case-insensitive).
@@ -604,6 +697,53 @@ impl Db {
         crate::user::is_agent_owner(&self.pool, community_id, target_pubkey, actor_pubkey).await
     }
 
+    /// Write a kind:0 profile unless a replacing event is already shown
+    /// ([`update_user_profile_for_event`]). Returns whether it was applied.
+    #[allow(clippy::too_many_arguments)]
+    #[datastore_span(name = "update_user_profile_for_event", system = "postgresql")]
+    pub async fn update_user_profile_for_event(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        event: crate::user::ProfileEvent,
+        display_name: &str,
+        avatar_url: &str,
+        about: &str,
+        nip05_handle: Option<&str>,
+    ) -> Result<bool> {
+        crate::user::update_user_profile_for_event(
+            &self.pool,
+            community_id,
+            pubkey,
+            event,
+            display_name,
+            avatar_url,
+            about,
+            nip05_handle,
+        )
+        .await
+    }
+
+    /// Set the channel_add_policy from a kind:10100 event unless a replacing
+    /// event is already shown. Returns whether it was applied.
+    #[datastore_span(name = "set_channel_add_policy_for_event", system = "postgresql")]
+    pub async fn set_channel_add_policy_for_event(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+        event: crate::user::ProfileEvent,
+        policy: &str,
+    ) -> Result<bool> {
+        crate::user::set_channel_add_policy_for_event(
+            &self.pool,
+            community_id,
+            pubkey,
+            event,
+            policy,
+        )
+        .await
+    }
+
     /// Set the channel_add_policy for a user.
     #[datastore_span(name = "set_channel_add_policy", system = "postgresql")]
     pub async fn set_channel_add_policy(
@@ -885,5 +1025,72 @@ mod postgres_tests {
 
         assert_eq!(result.0, "owner_only");
         assert!(result.1.is_none(), "owner should be None when never set");
+    }
+
+    /// Profile events apply in NIP-01 replaceable order: a re-run, an older
+    /// event, or the same second with a larger id is skipped.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn profile_events_apply_in_replaceable_order() {
+        let db = setup_db().await;
+        let community = make_community(&db.pool).await;
+        let pk = random_pubkey();
+        ensure_user(&db.pool, community, &pk)
+            .await
+            .expect("ensure user");
+        let at = |secs: i64| DateTime::from_timestamp(1_700_000_000 + secs, 0).unwrap();
+        let event = |secs: i64, id: u8| ProfileEvent {
+            created_at: at(secs),
+            id: [id; 32],
+        };
+        let write = |event, name: &'static str| {
+            let pool = db.pool.clone();
+            let pk = pk.clone();
+            async move {
+                update_user_profile_for_event(&pool, community, &pk, event, name, "", "", None)
+                    .await
+                    .expect("write profile")
+            }
+        };
+        let name = || async {
+            get_user(&db.pool, community, &pk)
+                .await
+                .unwrap()
+                .unwrap()
+                .display_name
+        };
+
+        assert!(write(event(10, 5), "second").await);
+        assert!(
+            !write(event(10, 5), "second again").await,
+            "a re-run is skipped"
+        );
+        assert!(
+            !write(event(5, 1), "first").await,
+            "an older event is skipped"
+        );
+        assert!(!write(event(10, 9), "larger id").await);
+        assert_eq!(name().await.as_deref(), Some("second"));
+        assert!(write(event(10, 2), "smaller id").await);
+        assert!(write(event(11, 9), "newer").await);
+        assert_eq!(name().await.as_deref(), Some("newer"));
+
+        // The agent profile keeps its own order.
+        let policy = |event, policy| {
+            let pool = db.pool.clone();
+            let pk = pk.clone();
+            async move {
+                set_channel_add_policy_for_event(&pool, community, &pk, event, policy)
+                    .await
+                    .expect("write policy")
+            }
+        };
+        assert!(policy(event(3, 1), "nobody").await, "independent of kind:0");
+        assert!(!policy(event(2, 1), "anyone").await);
+        let (current, _) = get_agent_channel_policy(&db.pool, community, &pk)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(current, "nobody");
     }
 }
