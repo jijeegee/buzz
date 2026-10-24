@@ -32,6 +32,7 @@ mod mesh_llm;
 #[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
 mod message_routing;
+mod message_store;
 mod migration;
 #[cfg(test)]
 mod model_tests;
@@ -254,6 +255,7 @@ pub fn run() {
         .manage(native_relay_client::NativeRelayClient::default())
         .manage(observed_unread::ObservedUnreadStore::default())
         .manage(channel_head_cache::ChannelHeadCacheStore::default())
+        .manage(message_store::MessageStore::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             #[cfg(any(target_os = "macos", windows))]
@@ -337,6 +339,8 @@ pub fn run() {
                 let secrets = crate::auth::accounts::shared_secrets();
                 crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
+                // Stored messages of accounts no longer listed here.
+                crate::message_store::remove_orphans(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("kuzz-desktop: fatal: identity resolution failed: {e}");
@@ -896,6 +900,13 @@ pub fn run() {
             channel_head_cache::channel_head_cache_load,
             channel_head_cache::channel_head_cache_store,
             channel_head_cache::channel_head_cache_clear,
+            message_store::commands::message_store_load_heads,
+            message_store::commands::message_store_read_window,
+            message_store::commands::message_store_read_around,
+            message_store::commands::message_store_read_thread,
+            message_store::commands::message_store_coverage,
+            message_store::commands::message_store_begin_live,
+            message_store::commands::message_store_clear_scope,
             list_personas,
             create_persona,
             update_persona,
