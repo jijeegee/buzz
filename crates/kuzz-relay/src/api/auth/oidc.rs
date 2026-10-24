@@ -8,6 +8,12 @@
 //! `signup_token`; the account exists only once the client posts that token
 //! to `signup`. Dropping the token leaves nothing behind. Clients that do not
 //! send the flag keep the original create-on-callback behavior.
+//!
+//! App sign-in: an app that signs in with the platform's own account picker
+//! (Android Credential Manager, Sign in with Apple on iOS) calls `start` with
+//! `response=json`, gets the nonce to hand that picker, and posts the
+//! id_token it returns to `id-token` instead of opening a browser. From the
+//! login code on, both paths are the same.
 
 use std::sync::Arc;
 
@@ -37,6 +43,8 @@ const LOGIN_CODE_TTL_SECS: u64 = 60;
 const SIGNUP_TTL_SECS: u64 = 600;
 /// Bound on the `state` value echoed through the provider.
 const MAX_STATE_LEN: usize = 256;
+/// Bound on an app sign-in id_token (Google's and Apple's are ~1-2 KB).
+const MAX_ID_TOKEN_LEN: usize = 8 * 1024;
 /// Minimum client `state` entropy (characters).
 const MIN_STATE_LEN: usize = 16;
 /// `start` requests per minute per peer IP.
@@ -71,6 +79,9 @@ struct PendingLogin {
     /// The client asks before an unknown identity becomes an account.
     #[serde(default)]
     confirm_signup: bool,
+    /// Started for app sign-in: only `id-token` can finish it.
+    #[serde(default)]
+    app_sign_in: bool,
 }
 
 /// One-time login code record stored between `callback` and `complete`.
@@ -141,6 +152,8 @@ struct StartQuery {
     /// `<app>/<version>`: the `X-Kuzz-Client` value of an app whose browser
     /// cannot send the header.
     kuzz_client: Option<String>,
+    /// `json`: app sign-in; answer with the nonce instead of redirecting.
+    response: Option<String>,
 }
 
 fn token_identity_mode() -> String {
@@ -287,9 +300,17 @@ pub(super) async fn start(
     else {
         return bad_request("redirect_uri is not allowed for this client");
     };
+    let app_sign_in = match query.response.as_deref() {
+        None => false,
+        Some("json") if client == "mobile" => true,
+        Some(_) => return bad_request("response=json requires client=mobile"),
+    };
     // Too old to sign in: back to the app, which shows "Update Kuzz".
     let declared = client_version::declared(&headers).or(query.kuzz_client.as_deref());
     if let Err(min) = client_version::check_current(declared, Some(client.as_str())).await {
+        if app_sign_in {
+            return client_version::update_required_response(&min);
+        }
         return client_redirect(
             &redirect_uri,
             &[
@@ -333,6 +354,7 @@ pub(super) async fn start(
         device_pubkey,
         nonce: nonce.clone(),
         confirm_signup,
+        app_sign_in,
     };
     let Ok(pending_json) = serde_json::to_string(&pending) else {
         return unavailable();
@@ -352,6 +374,9 @@ pub(super) async fn start(
             tracing::warn!(%error, "OIDC pending store unavailable");
             return unavailable();
         }
+    }
+    if app_sign_in {
+        return axum::Json(json!({ "nonce": nonce })).into_response();
     }
     let callback_url = state.identity.config().callback_url(&provider_name);
     redirect(&provider.authorization_url(&callback_url, &client_state, &nonce))
@@ -388,6 +413,9 @@ pub(super) async fn callback(
     if pending.provider != provider_name {
         return bad_request("login state belongs to another provider");
     }
+    if pending.app_sign_in {
+        return bad_request("login state was started for app sign-in");
+    }
     let fail = |error: &str| {
         client_redirect(
             &pending.redirect_uri,
@@ -411,7 +439,108 @@ pub(super) async fn callback(
             return fail("login_failed");
         }
     };
+    match issue_login_code(&state, &provider_name, &pending, &identity).await {
+        Ok(code_token) => client_redirect(
+            &pending.redirect_uri,
+            &[("code", code_token.expose()), ("state", &client_state)],
+        ),
+        Err(error) => fail(error),
+    }
+}
 
+/// `POST /auth/oidc/{provider}/id-token` `{state, id_token}`: finish an app
+/// sign-in `start`ed with `response=json`. Answers `{login_code}` for
+/// `complete`, exactly what `callback` hands a browser client.
+pub(super) async fn id_token(
+    State(state): State<Arc<AppState>>,
+    Path(provider_name): Path<String>,
+    extensions: Extensions,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    if let Err(response) = rate_limit_client(
+        &state,
+        &extensions,
+        &headers,
+        "auth:login:complete",
+        LOGIN_COMPLETE_PER_IP,
+        LOGIN_COMPLETE_GLOBAL,
+    )
+    .await
+    {
+        return response;
+    }
+    let body = match json_object(&body) {
+        Ok(body) => body,
+        Err(response) => return response,
+    };
+    let (Some(client_state), Some(id_token)) = (
+        body.get("state")
+            .and_then(|v| v.as_str())
+            .filter(|s| s.len() <= MAX_STATE_LEN),
+        body.get("id_token")
+            .and_then(|v| v.as_str())
+            .filter(|t| t.len() <= MAX_ID_TOKEN_LEN),
+    ) else {
+        return bad_request("state and id_token are required");
+    };
+    let pending = match kv::take(&state.redis_pool, "oidc:pending", client_state).await {
+        Ok(Some(json)) => serde_json::from_str::<PendingLogin>(&json).ok(),
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(%error, "OIDC pending store unavailable");
+            return unavailable();
+        }
+    };
+    // Consumed above: one id_token per nonce.
+    let Some(pending) = pending.filter(|p| p.app_sign_in && p.provider == provider_name) else {
+        return auth_error(
+            StatusCode::BAD_REQUEST,
+            "invalid_grant",
+            "unknown or expired login state",
+        );
+    };
+    let Some(provider) = state.identity.provider(&provider_name) else {
+        return super::not_found("unknown provider");
+    };
+    let identity = match provider.verify_id_token(id_token, &pending.nonce).await {
+        Ok(identity) => identity,
+        Err(kuzz_auth::oidc::OidcError::Unavailable(error)) => {
+            tracing::warn!(%error, provider = %provider_name, "OIDC provider unavailable");
+            return unavailable();
+        }
+        Err(error) => {
+            tracing::warn!(%error, provider = %provider_name, "app sign-in id_token rejected");
+            return auth_error(
+                StatusCode::UNAUTHORIZED,
+                "login_failed",
+                "the sign-in could not be verified",
+            );
+        }
+    };
+    match issue_login_code(&state, &provider_name, &pending, &identity).await {
+        Ok(code_token) => axum::Json(json!({ "login_code": code_token.expose() })).into_response(),
+        Err(error) => {
+            let status = match error {
+                "principal_disabled" => StatusCode::FORBIDDEN,
+                "account_mode_conflict" => StatusCode::CONFLICT,
+                "unsupported_client" => StatusCode::BAD_REQUEST,
+                _ => StatusCode::SERVICE_UNAVAILABLE,
+            };
+            auth_error(status, error, "sign-in failed")
+        }
+    }
+}
+
+/// The provider vouched for `identity`: sign it in (or hold it for a
+/// confirmed signup) and store the one-time login code `complete` redeems.
+/// `Err` is the error code the client is shown.
+async fn issue_login_code(
+    state: &Arc<AppState>,
+    provider_name: &str,
+    pending: &PendingLogin,
+    identity: &kuzz_auth::oidc::OidcIdentity,
+) -> Result<kuzz_auth::TokenSecret, &'static str> {
     let display_name = identity
         .name
         .clone()
@@ -422,7 +551,7 @@ pub(super) async fn callback(
         state
             .db
             .login_existing_key_identity(
-                &provider_name,
+                provider_name,
                 &identity.subject,
                 identity.email.as_deref(),
                 &name,
@@ -433,7 +562,7 @@ pub(super) async fn callback(
         state
             .db
             .login_key_identity(
-                &provider_name,
+                provider_name,
                 &identity.subject,
                 identity.email.as_deref(),
                 &name,
@@ -446,7 +575,7 @@ pub(super) async fn callback(
         state
             .db
             .login_existing_token_identity(
-                &provider_name,
+                provider_name,
                 &identity.subject,
                 identity.email.as_deref(),
                 &name,
@@ -457,7 +586,7 @@ pub(super) async fn callback(
         state
             .db
             .login_identity(
-                &provider_name,
+                provider_name,
                 &identity.subject,
                 identity.email.as_deref(),
                 &name,
@@ -470,31 +599,31 @@ pub(super) async fn callback(
         // Nothing was created: `complete` hands the client a signup ticket.
         Err(kuzz_db::DbError::AccessDenied(message)) if message == "signup_required" => None,
         Err(kuzz_db::DbError::AccessDenied(message)) if message == "account_mode_conflict" => {
-            return fail("account_mode_conflict");
+            return Err("account_mode_conflict");
         }
         Err(kuzz_db::DbError::AccessDenied(message)) if message == "unsupported_client" => {
-            return fail("unsupported_client");
+            return Err("unsupported_client");
         }
         Err(error) => {
             tracing::error!(%error, "identity login failed");
-            return fail("server_error");
+            return Err("server_error");
         }
     };
     if let Some(login) = &login {
         if login.disabled {
-            return fail("principal_disabled");
+            return Err("principal_disabled");
         }
         if login.created {
             tracing::info!(principal = %login.principal, "auth.account_created");
         }
         if pending.identity_mode == "token" {
-            bootstrap_operator(&state, &login.principal, &identity).await;
+            bootstrap_operator(state, &login.principal, identity).await;
         }
     }
 
     let (code_token, code_hash) = generate_token(TokenKind::LoginCode);
     let record = LoginCodeRecord {
-        identity_mode: pending.identity_mode,
+        identity_mode: pending.identity_mode.clone(),
         principal: login
             .as_ref()
             .map(|login| login.principal.to_hex())
@@ -506,7 +635,7 @@ pub(super) async fn callback(
         device_pubkey: pending.device_pubkey.clone(),
         email: identity.email.clone(),
         signup: login.is_none().then(|| PendingSignup {
-            provider: provider_name.clone(),
+            provider: provider_name.to_owned(),
             subject: identity.subject.clone(),
             email: identity.email.clone(),
             display_name: name.clone(),
@@ -514,7 +643,7 @@ pub(super) async fn callback(
         }),
     };
     let Ok(record_json) = serde_json::to_string(&record) else {
-        return fail("server_error");
+        return Err("server_error");
     };
     match kv::put_new(
         &state.redis_pool,
@@ -526,12 +655,9 @@ pub(super) async fn callback(
     .await
     {
         Ok(true) => {}
-        Ok(false) | Err(_) => return fail("server_error"),
+        Ok(false) | Err(_) => return Err("server_error"),
     }
-    client_redirect(
-        &pending.redirect_uri,
-        &[("code", code_token.expose()), ("state", &client_state)],
-    )
+    Ok(code_token)
 }
 
 /// Operator bootstrap (plan §3.3 B8), evaluated on **every** login: verified

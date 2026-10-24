@@ -21,6 +21,7 @@ use crate::identity::AuthTokenConfig;
 use crate::state::AppState;
 
 mod agent_keys;
+mod app_sign_in;
 mod audio;
 mod device_http;
 mod device_keys;
@@ -70,6 +71,23 @@ impl OidcProvider for TestProvider {
                 name: Some("Test User".into()),
                 picture: None,
             })
+        })
+    }
+
+    /// App sign-in: the id_token is `subject|email|verified|nonce`.
+    fn verify_id_token<'a>(
+        &'a self,
+        id_token: &'a str,
+        expected_nonce: &'a str,
+    ) -> futures_util::future::BoxFuture<'a, Result<OidcIdentity, OidcError>> {
+        Box::pin(async move {
+            let (claims, nonce) = id_token
+                .rsplit_once('|')
+                .ok_or_else(|| OidcError::InvalidIdToken("malformed".into()))?;
+            if nonce != expected_nonce {
+                return Err(OidcError::InvalidIdToken("nonce mismatch".into()));
+            }
+            self.exchange_code(claims, "", "").await
         })
     }
 }
