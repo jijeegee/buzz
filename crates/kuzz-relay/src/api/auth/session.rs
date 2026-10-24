@@ -224,10 +224,14 @@ pub(super) async fn refresh(
     }
 }
 
-/// Access tokens one refresh token gets while the primary is down, per
-/// [`OUTAGE_TOKEN_WINDOW`]. An app refreshes about once per access-token
-/// lifetime; this leaves room for retries and a second app on the device.
-const OUTAGE_TOKENS_PER_REFRESH: i64 = 6;
+/// Lifetime of an outage token, at most. Short, so that once the primary is
+/// back an app moves to a token the primary knows soon: until then its
+/// sign-in requests answer 503.
+const OUTAGE_TOKEN_TTL: chrono::Duration = chrono::Duration::minutes(20);
+/// Outage tokens one refresh token gets per [`OUTAGE_TOKEN_WINDOW`]. An app
+/// refreshes a few times per token lifetime at most; this leaves room for
+/// retries and a second app on the device.
+const OUTAGE_TOKENS_PER_REFRESH: i64 = 12;
 /// Window of [`OUTAGE_TOKENS_PER_REFRESH`].
 const OUTAGE_TOKEN_WINDOW: chrono::Duration = chrono::Duration::hours(1);
 
@@ -260,7 +264,11 @@ pub(crate) async fn outage_refresh(state: &AppState, headers: &HeaderMap, body: 
     if let Err(response) = limit_response(limited) {
         return response;
     }
-    let (access, _, access_issued, _) = issue_session_tokens(state);
+    let (access, _, mut access_issued, _) = issue_session_tokens(state);
+    let outage_expiry = chrono::Utc::now() + OUTAGE_TOKEN_TTL;
+    access_issued.expires_at = access_issued
+        .expires_at
+        .map_or(Some(outage_expiry), |at| Some(at.min(outage_expiry)));
     let outcome = match state
         .db
         .give_outage_access_token(

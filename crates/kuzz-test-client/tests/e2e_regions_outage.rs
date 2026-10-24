@@ -198,7 +198,7 @@ async fn while_down() {
     );
     let access = answer["access"].as_str().expect("access").to_owned();
     let expires_in = answer["expires_in"].as_u64().expect("expires_in");
-    assert!(expires_in > 0 && expires_in <= 3600, "{expires_in}");
+    assert!(expires_in > 0 && expires_in <= 1200, "{expires_in}");
     let read = jp_read(&access).await;
     assert_ne!(read, 401, "jp does not take its own outage token");
     assert!(matches!(read, 200 | 403), "{read}");
@@ -216,6 +216,10 @@ async fn while_down() {
     let (again, answer) = refresh(alive).await;
     assert_eq!(again, 200, "{answer}");
     assert_ne!(answer["access"].as_str(), Some(access.as_str()));
+
+    let mut saved = saved;
+    saved["outage_access"] = Value::String(access.clone());
+    std::fs::write(state_file(), saved.to_string()).expect("state file");
 
     // A logged-out session stays logged out.
     let (status, answer) = refresh(saved["gone"].as_str().unwrap()).await;
@@ -240,6 +244,15 @@ async fn after() {
     let saved: Value =
         serde_json::from_str(&std::fs::read_to_string(state_file()).unwrap()).unwrap();
     let alive = saved["alive"].as_str().unwrap();
+    // kr does not know the outage token: jp answers a sign-in request with
+    // it itself, with 503 (retry) rather than kr's 401 (signed out).
+    let me = reqwest::Client::new()
+        .get(format!("{}/auth/me", http(&jp_url())))
+        .bearer_auth(saved["outage_access"].as_str().unwrap())
+        .send()
+        .await
+        .expect("me");
+    assert_eq!(me.status(), 503);
     let mut last = (0, Value::Null);
     for _ in 0..60 {
         last = refresh(alive).await;
@@ -255,4 +268,11 @@ async fn after() {
     let access = answer["access"].as_str().unwrap();
     let read = jp_read(access).await;
     assert!(matches!(read, 200 | 403), "{read}");
+    let me = reqwest::Client::new()
+        .get(format!("{}/auth/me", http(&jp_url())))
+        .bearer_auth(access)
+        .send()
+        .await
+        .expect("me");
+    assert_eq!(me.status(), 200, "a token kr gave out is forwarded again");
 }

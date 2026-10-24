@@ -800,14 +800,16 @@ async fn outage_tokens_follow_the_session() {
     )
     .await
     .unwrap();
-    assert_eq!(
-        db.give_outage_access_token(&short_refresh.hash, &token(1), 6, window)
-            .await
-            .unwrap(),
-        OutageRefreshOutcome::Issued {
-            expires_at: short_refresh.expires_at.unwrap()
-        }
-    );
+    // Postgres keeps microseconds.
+    let OutageRefreshOutcome::Issued { expires_at } = db
+        .give_outage_access_token(&short_refresh.hash, &token(1), 6, window)
+        .await
+        .unwrap()
+    else {
+        panic!("expected a token");
+    };
+    let off = expires_at - short_refresh.expires_at.unwrap();
+    assert!(off.num_milliseconds().abs() < 1, "{off}");
 
     assert!(matches!(
         db.give_outage_access_token(&refresh.hash, &token(1), 2, window)

@@ -151,10 +151,11 @@ fn plain_error(status: StatusCode, message: &str) -> Response {
     (status, Json(json!({ "error": message }))).into_response()
 }
 
-/// Whether a refresh that the primary failed should get an outage token
-/// here (S5-6): on, a refresh, and this region's copy has fallen behind, so
-/// the primary has stopped sending changes too. A primary that only
-/// answered badly while the copy keeps up is not down; the app retries.
+/// Whether a refresh that could not be sent to the primary should get an
+/// outage token here (S5-6): on, a refresh, and this region's copy has
+/// fallen behind, so the primary has stopped sending changes too. A primary
+/// that cannot be reached while the copy keeps up is not down; the app
+/// retries.
 fn outage_refresh_applies(state: &AppState, method: &Method, path: &str) -> bool {
     state.config.outage_tokens
         && method == Method::POST
@@ -162,11 +163,41 @@ fn outage_refresh_applies(state: &AppState, method: &Method, path: &str) -> bool
         && crate::region_global_read::copy_lagging(state)
 }
 
+/// A request signed with an access token this region gave out while the
+/// primary was down (S5-6) is not forwarded: the primary does not know the
+/// token and would answer `invalid_token`, which apps take as signed out.
+/// 503 makes the app retry, and its next refresh reaches the primary.
+async fn outage_token_held(state: &AppState, headers: &HeaderMap) -> Option<Response> {
+    let token = headers
+        .get(axum::http::header::AUTHORIZATION)?
+        .to_str()
+        .ok()?
+        .strip_prefix("Bearer ")?;
+    let token = kuzz_auth::TokenSecret::new(token.trim().to_owned());
+    if token.kind() != Some(kuzz_auth::TokenKind::UserAccess) {
+        return None;
+    }
+    match state.db.is_outage_access_token(&token.hash()).await {
+        Ok(false) => None,
+        Ok(true) => {
+            metrics::counter!("kuzz_outage_tokens_held_total").increment(1);
+            Some(plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE))
+        }
+        Err(error) => {
+            tracing::warn!(%error, "outage token lookup failed");
+            Some(plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE))
+        }
+    }
+}
+
 /// Entry side middleware: in a region holding the global copy, send a
 /// global write to the primary and return its answer.
 pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next: Next) -> Response {
     if !state.config.global_copy || !forwards(request.method(), request.uri().path()) {
         return next.run(request).await;
+    }
+    if let Some(response) = outage_token_held(&state, request.headers()).await {
+        return response;
     }
     let (parts, body) = request.into_parts();
     let Ok(body) = axum::body::to_bytes(body, REQUEST_BODY_LIMIT).await else {
@@ -207,18 +238,17 @@ pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next:
             let reason = match &error {
                 CallError::Off => "off",
                 CallError::UnknownRegion => "unknown_region",
-                CallError::Unreachable(_) => "unreachable",
+                CallError::Unreachable(_) | CallError::NotSent(_) => "unreachable",
                 CallError::Status(..) => "status",
             };
             metrics::counter!("kuzz_region_http_forward_failures_total", "reason" => reason)
                 .increment(1);
             tracing::warn!(reason, "Could not forward a global write to the primary");
-            let primary_down = match &error {
-                CallError::Unreachable(_) => true,
-                CallError::Status(status, _) => status.is_server_error(),
-                CallError::Off | CallError::UnknownRegion => false,
-            };
-            if primary_down && outage_refresh_applies(&state, &parts.method, parts.uri.path()) {
+            // Only when the primary never got the request: after a timeout or
+            // an error answer it may have rotated the refresh token already,
+            // and handing back the old one would trip its reuse check later.
+            let not_sent = matches!(error, CallError::NotSent(_));
+            if not_sent && outage_refresh_applies(&state, &parts.method, parts.uri.path()) {
                 return crate::api::auth::outage_refresh(&state, &parts.headers, &body).await;
             }
             return plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE);
@@ -233,11 +263,6 @@ pub async fn forward(State(state): State<Arc<AppState>>, request: Request, next:
     ) else {
         return plain_error(StatusCode::BAD_GATEWAY, UNREACHABLE);
     };
-    // The primary's relay answered but could not serve it (its database is
-    // down, say).
-    if status.is_server_error() && outage_refresh_applies(&state, &parts.method, parts.uri.path()) {
-        return crate::api::auth::outage_refresh(&state, &parts.headers, &body).await;
-    }
     metrics::counter!("kuzz_region_http_forwarded_total").increment(1);
     let mut response = Response::new(Body::from(body));
     *response.status_mut() = status;

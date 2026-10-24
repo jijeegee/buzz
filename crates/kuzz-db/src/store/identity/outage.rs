@@ -132,6 +132,18 @@ pub(super) async fn give_outage_access_token(
 }
 
 impl crate::Db {
+    /// Whether `token_hash` is an access token this region gave out while
+    /// the primary was down (the primary does not know it).
+    #[datastore_span(name = "is_outage_access_token", system = "postgresql")]
+    pub async fn is_outage_access_token(&self, token_hash: &[u8; 32]) -> Result<bool> {
+        Ok(sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM outage_access_tokens WHERE token_hash = $1)",
+        )
+        .bind(token_hash.as_slice())
+        .fetch_one(&self.pool)
+        .await?)
+    }
+
     /// Record an access token for refresh token `refresh_hash` without
     /// writing any global table (the primary is down). At most `max` per
     /// refresh token within `window`.
