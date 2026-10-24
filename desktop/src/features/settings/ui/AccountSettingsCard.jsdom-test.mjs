@@ -431,28 +431,17 @@ test("new-device Google onboarding explicitly requests same-key recovery", async
   await unmount();
 });
 
-test("previously signed-out token users have an explicit existing-account route", async () => {
+test("signed-out screens offer no older token-account route", async () => {
+  // Our server has only Google key-backup accounts; the token route dead-ends
+  // (agents with keys block it) and is an internal mode users never see.
   for (const Component of [AccountSettingsCard, GoogleSignInButton]) {
     status = baseStatus({ keyBackupSupported: true });
     const { container, unmount } = await mount(Component);
-    const button = container.querySelector(
-      "[data-testid='existing-token-sign-in']",
+    assert.equal(
+      container.querySelector("[data-testid='existing-token-sign-in']"),
+      null,
     );
-    assert.ok(
-      button,
-      "existing account recovery remains reachable before mode is known",
-    );
-    assert.equal(button.textContent, "Sign in to an older Kuzz account");
-    await act(async () => fireEvent.click(button));
-    assert.deepEqual(
-      calls.find((c) => c.command === "login_with_google").args,
-      {
-        allowRestore: false,
-        existingTokenAccount: true,
-        attemptId: calls.find((c) => c.command === "login_with_google").args
-          .attemptId,
-      },
-    );
+    assert.doesNotMatch(container.textContent, /older Kuzz account/);
     await unmount();
   }
 });

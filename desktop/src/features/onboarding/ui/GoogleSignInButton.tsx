@@ -56,10 +56,10 @@ export function GoogleSignInButton({
   if (!status.supported) return <>{unavailable}</>;
   if (status.state === "active" && !showWhenSignedIn) return null;
 
-  function signIn(existingTokenAccount = false) {
+  function signIn() {
     setPending(true);
     login
-      .run(existingTokenAccount ? false : allowRestore, existingTokenAccount)
+      .run(allowRestore)
       .then(async (next) => {
         if (!next) return;
         if (onComplete) await onComplete();
@@ -98,22 +98,6 @@ export function GoogleSignInButton({
       </Button>
       <GoogleLoginProgress login={login} />
       <TermsAgreementLine />
-      {status.keyBackupSupported &&
-      !status.keyBackup &&
-      !status.legacyTokenAccount &&
-      status.state === "signed_out" ? (
-        <Button
-          className="w-full"
-          data-testid="existing-token-sign-in"
-          disabled={disabled || pending}
-          onClick={() => signIn(true)}
-          type="button"
-          variant="outline"
-          title={t("onboarding.googleSignIn.olderAccountTitle")}
-        >
-          {t("onboarding.googleSignIn.olderAccount")}
-        </Button>
-      ) : null}
     </div>
   );
 }

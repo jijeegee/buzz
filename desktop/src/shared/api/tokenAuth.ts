@@ -293,6 +293,9 @@ export function tokenIdentityChanged(
  */
 export const identityReload = {
   reload(): void {
+    // The reload keeps the URL hash. A new identity starts on its chats, not
+    // on the page the change was made from (often Settings › Account).
+    window.history.replaceState(null, "", "#/");
     // Sockets first: a reload alone leaves them open in the native layer.
     void closeSocketsThenReload();
   },
