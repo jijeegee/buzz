@@ -29,6 +29,7 @@ import os.log
     keychainAccessGroup: pushKeychainAccessGroup
   )
   private var qrScannerChannel: FlutterMethodChannel?
+  private var backupExclusionChannel: FlutterMethodChannel?
   private var inlinePhotoPickerSupportChannel: FlutterMethodChannel?
   private var ageSignalChannel: FlutterMethodChannel?
   var requestPlatformAgeSignal: @MainActor (UIViewController) async throws -> [String: Any] =
@@ -82,6 +83,13 @@ import os.log
     )
     qrScannerChannel?.setMethodCallHandler { call, result in
       Self.handleQrScannerMethodCall(call, result: result)
+    }
+    backupExclusionChannel = FlutterMethodChannel(
+      name: "kuzz/backup_exclusion",
+      binaryMessenger: messenger
+    )
+    backupExclusionChannel?.setMethodCallHandler { call, result in
+      Self.handleBackupExclusionMethodCall(call, result: result)
     }
     inlinePhotoPickerSupportChannel = FlutterMethodChannel(
       name: "kuzz/inline_photo_picker",
@@ -346,6 +354,33 @@ import os.log
     "status": "noSignal",
     "ageUpper": NSNull(),
   ]
+
+  /// Keeps a directory (the local message database) out of iCloud and
+  /// device backups; it is rebuilt from the server.
+  private static func handleBackupExclusionMethodCall(
+    _ call: FlutterMethodCall,
+    result: @escaping FlutterResult
+  ) {
+    guard call.method == "exclude", let path = call.arguments as? String else {
+      result(FlutterMethodNotImplemented)
+      return
+    }
+    var url = URL(fileURLWithPath: path, isDirectory: true)
+    var values = URLResourceValues()
+    values.isExcludedFromBackup = true
+    do {
+      try url.setResourceValues(values)
+      result(nil)
+    } catch {
+      result(
+        FlutterError(
+          code: "exclude_failed",
+          message: "Unable to exclude the directory from backup.",
+          details: error.localizedDescription
+        )
+      )
+    }
+  }
 
   private static func handleQrScannerMethodCall(
     _ call: FlutterMethodCall,
