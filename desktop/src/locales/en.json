@@ -12055,6 +12055,22 @@
   "@meshCompute.usage.idleYet": {
     "description": "Settings > Share compute status: sharing is on and nobody has used it yet."
   },
+  "accounts.deviceKey.title": "Sign in again to finish a security update",
+  "@accounts.deviceKey.title": {
+    "description": "Sidebar card title when this computer's sign-in is from before a security update and must be renewed once. Short."
+  },
+  "accounts.deviceKey.requiredTitle": "This device needs to sign in again to finish a security update.",
+  "@accounts.deviceKey.requiredTitle": {
+    "description": "Sidebar card title and Settings > Account hint when the server ended this computer's sign-in because it is from before a security update."
+  },
+  "accounts.deviceKey.action": "Sign in again",
+  "@accounts.deviceKey.action": {
+    "description": "Sidebar security update card: link that signs this account out and opens Google sign-in again. Short."
+  },
+  "accounts.deviceKey.dismiss": "Dismiss security update notice",
+  "@accounts.deviceKey.dismiss": {
+    "description": "Sidebar security update card: accessible label of the close button."
+  },
   "accounts.newSignIn.title": "New sign-in: {device}",
   "@accounts.newSignIn.title": {
     "description": "Sidebar card title when the account was just signed in on another device. {device} is that device's name. Short."

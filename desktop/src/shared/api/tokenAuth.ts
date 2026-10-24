@@ -37,6 +37,11 @@ export type TokenAuthStatus = {
    */
   deviceSignedOut?: boolean;
   /**
+   * The active session's device has no key yet (signed in before device
+   * keys): it should sign in once more. Absent on older relays and builds.
+   */
+  deviceKeyMissing?: boolean;
+  /**
    * The sign-in opened a different account than the one active before
    * (another Google account, or a protect whose Google account already held
    * an account). The app reloads into it.

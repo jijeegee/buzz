@@ -49,6 +49,7 @@ import {
 } from "@/features/sidebar/ui/sidebarLoadingSkeleton";
 import { useDeferredModalOpen } from "@/shared/ui/deferredModalOpen";
 import { SidebarUpdateCard } from "@/features/settings/SidebarUpdateCard";
+import { DeviceKeyNoticeCard } from "@/features/accounts/deviceKey/DeviceKeyNoticeCard";
 import { NewSignInNoticeCard } from "@/features/accounts/newSignIn/NewSignInNoticeCard";
 import { useUpdaterContext } from "@/features/settings/hooks/UpdaterProvider";
 import { shouldShowSidebarUpdateCard } from "@/features/settings/sidebarUpdateCardVisibility";
@@ -544,6 +545,7 @@ export function AppSidebar({
                 />
               </div>
             ) : null}
+            <DeviceKeyNoticeCard />
             <NewSignInNoticeCard pubkey={currentPubkey} />
             <HuddleProfileControl
               channels={channels}
