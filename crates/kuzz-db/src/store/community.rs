@@ -382,7 +382,10 @@ impl Db {
     ///
     /// `id` (`KUZZ_COMMUNITY_ID`) is the id every region of the service uses
     /// for it. A new community is created with it; an existing one with
-    /// another id is an error, never silently kept.
+    /// another id is an error, never silently kept. So is an id whose
+    /// community has another host: the service name changed without
+    /// `communities.host` (docs/regions-runbook.md, "Changing the service
+    /// name").
     #[datastore_span(
         name = "ensure_configured_community_for_bootstrap",
         system = "postgresql"
@@ -392,6 +395,20 @@ impl Db {
         normalized_host: &str,
         id: Option<uuid::Uuid>,
     ) -> Result<EnsuredCommunityRecord> {
+        if let Some(id) = id {
+            let named: Option<String> =
+                sqlx::query_scalar("SELECT host FROM communities WHERE id = $1")
+                    .bind(id)
+                    .fetch_optional(&self.pool)
+                    .await?;
+            if let Some(host) = named.filter(|host| !host.eq_ignore_ascii_case(normalized_host)) {
+                return Err(DbError::InvalidData(format!(
+                    "community {id} is {host:?}, not {normalized_host:?}: when the service \
+                     name changes, change communities.host first (docs/regions-runbook.md, \
+                     \"Changing the service name\")"
+                )));
+            }
+        }
         let record = self
             .ensure_configured_community_with_operation(
                 normalized_host,
@@ -444,6 +461,29 @@ impl Db {
             host,
             created,
         })
+    }
+
+    /// An active community other than `normalized_host` that has users, if
+    /// any: a deployment that starts under a new host without
+    /// `KUZZ_COMMUNITY_ID` would otherwise make a new, empty community and
+    /// leave everyone's data under the old name.
+    #[datastore_span(name = "community_with_users_elsewhere", system = "postgresql")]
+    pub async fn community_with_users_elsewhere(
+        &self,
+        normalized_host: &str,
+    ) -> Result<Option<(Uuid, String)>> {
+        let row = sqlx::query(
+            "SELECT c.id, c.host FROM communities c \
+             WHERE lower(c.host) <> lower($1) AND c.deletion_state = 'active' \
+               AND c.deleted_at IS NULL AND c.archived_at IS NULL \
+               AND EXISTS (SELECT 1 FROM users u WHERE u.community_id = c.id) \
+             ORDER BY c.created_at LIMIT 1",
+        )
+        .bind(normalized_host)
+        .fetch_optional(&self.pool)
+        .await?;
+        row.map(|row| Ok((row.try_get("id")?, row.try_get("host")?)))
+            .transpose()
     }
 
     /// Atomically creates a community and its initial owner.
@@ -1130,6 +1170,41 @@ mod postgres_tests {
             .await
             .expect("unset");
         assert_eq!(*unset.id.as_uuid(), id);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn bootstrap_refuses_a_renamed_service_without_its_host() {
+        let db = setup_db().await;
+        let old = format!("old-name-{}.example", Uuid::new_v4().simple());
+        let new = format!("new-name-{}.example", Uuid::new_v4().simple());
+        let id = Uuid::new_v4();
+        db.ensure_configured_community_for_bootstrap(&old, Some(id))
+            .await
+            .expect("created");
+        let err = db
+            .ensure_configured_community_for_bootstrap(&new, Some(id))
+            .await
+            .expect_err("the id's community has the old host");
+        assert!(err.to_string().contains("change communities.host"), "{err}");
+        assert!(db.lookup_community_by_host(&new).await.unwrap().is_none());
+        // Host case does not count as a rename.
+        db.ensure_configured_community_for_bootstrap(&old.to_uppercase(), Some(id))
+            .await
+            .expect("same host");
+
+        // A community with users is found from another host.
+        sqlx::query("INSERT INTO users (community_id, pubkey) VALUES ($1, $2)")
+            .bind(id)
+            .bind(vec![7u8; 32])
+            .execute(&db.pool)
+            .await
+            .unwrap();
+        assert!(db
+            .community_with_users_elsewhere(&new)
+            .await
+            .unwrap()
+            .is_some());
     }
 
     #[tokio::test]
