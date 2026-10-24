@@ -7,6 +7,7 @@ import 'package:kuzz/shared/community/community.dart';
 import 'package:kuzz/shared/community/community_provider.dart';
 import 'package:kuzz/shared/community/community_storage.dart';
 import 'package:kuzz/shared/community/community_token_session.dart';
+import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -17,8 +18,19 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../community/community_storage_test.dart';
 import 'token/token_auth_test_fakes.dart';
 
+/// Records which accounts' stored messages were cleared.
+class _RecordingMessageStore extends MessageStore {
+  _RecordingMessageStore() : super(() async => throw StateError('no disk'));
+
+  final cleared = <MessageScope>[];
+
+  @override
+  Future<void> clear(MessageScope scope) async => cleared.add(scope);
+}
+
 class _Harness {
   final storage = CommunityStorage(secure: FakeSecureStorage());
+  final messages = _RecordingMessageStore();
   final keys = nostr.Keys.generate();
   final snapshots = <List<Community>>[];
   final ended = <String>[];
@@ -53,6 +65,7 @@ class _Harness {
     container = ProviderContainer(
       overrides: [
         communityStorageProvider.overrideWithValue(storage),
+        messageStoreProvider.overrideWithValue(messages),
         // The signed-out page offers Google; keep its session stores fake.
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
@@ -232,6 +245,23 @@ void main() {
       expect(h.ended, [h.second.id, h.first.id]);
     },
   );
+
+  test('signing out one account deletes only its stored messages', () async {
+    final h = _Harness();
+    await h.start();
+
+    await h.container.read(authProvider.notifier).signOutCommunity(h.second.id);
+    expect(h.messages.cleared, [
+      MessageScope(relayUrl: 'https://second.test', pubkey: h.keys.public),
+    ]);
+
+    await h.container.read(authProvider.notifier).signOut();
+    expect(h.messages.cleared.map((scope) => scope.relayUrl), [
+      'https://second.test',
+      'https://first.test',
+      'https://second.test',
+    ]);
+  });
 
   test(
     'logout retains every key and membership; restart and switching stay signed out',

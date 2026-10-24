@@ -8,6 +8,7 @@ import '../../features/channels/channel_head_cache.dart';
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
+import '../message_db/message_store.dart';
 import '../push/push_bridge.dart';
 import '../push/push_subscription.dart';
 import 'default_community.dart';
@@ -288,6 +289,25 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           debugPrint('[AuthNotifier] failed to clear channel heads: $error');
         }),
       );
+      // Each signed-out account's stored messages go with it; accounts that
+      // stay signed in keep theirs.
+      for (final community in targets) {
+        final scope = messageScopeOf(
+          relayUrl: community.relayUrl,
+          pubkey: community.pubkey,
+          nsec: community.nsec,
+        );
+        if (scope == null) continue;
+        unawaited(
+          ref.read(messageStoreProvider).clear(scope).catchError((
+            Object error,
+          ) {
+            debugPrint(
+              '[AuthNotifier] failed to clear stored messages: $error',
+            );
+          }),
+        );
+      }
       final activeId = await storage.loadActiveId();
       final active =
           signedOut.where((item) => item.id == activeId).firstOrNull ??
