@@ -501,3 +501,110 @@ test("live messages patch the shown server chats list in place, once per event",
     h.restore();
   }
 });
+
+test("a closed cached room's live row lands in its window store and survives projection", async () => {
+  const h = await mount(channels(2));
+  try {
+    const { channelWindowKey } = await import(
+      "@/features/messages/lib/messageQueryKeys"
+    );
+    const { emptyChannelWindowStore, replaceNewestChannelWindow } =
+      await import("@/features/messages/lib/channelWindowStore");
+    const { projectChannelWindowMessages } = await import(
+      "@/features/messages/lib/projectChannelWindow"
+    );
+    const history = message("history", {
+      created_at: 100,
+      tags: [["h", "channel-1"]],
+    });
+    h.queryClient.setQueryData(
+      channelWindowKey("channel-1"),
+      replaceNewestChannelWindow(emptyChannelWindowStore(), {
+        startCursor: null,
+        rows: [{ event: history, thread: null }],
+        aux: [],
+        nextCursor: null,
+        hasMore: false,
+      }),
+    );
+    h.queryClient.setQueryData(h.channelMessagesKey("channel-1"), [history]);
+
+    const live = message("live", { tags: [["h", "channel-1"]] });
+    await h.deliver(h.subscriptions[1], live);
+
+    const window = h.queryClient.getQueryData(channelWindowKey("channel-1"));
+    assert.deepEqual(
+      window.liveOverlay.map((event) => event.id),
+      ["live"],
+    );
+    // The next projection (e.g. entering the room) used to drop the row.
+    projectChannelWindowMessages(h.queryClient, "channel-1");
+    assert.deepEqual(
+      h.queryClient
+        .getQueryData(h.channelMessagesKey("channel-1"))
+        .map((event) => event.id),
+      ["history", "live"],
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test("a never-opened room's live row creates no timeline cache", async () => {
+  const h = await mount(channels(2));
+  try {
+    const { channelWindowKey } = await import(
+      "@/features/messages/lib/messageQueryKeys"
+    );
+    await h.deliver(
+      h.subscriptions[1],
+      message("live", { tags: [["h", "channel-1"]] }),
+    );
+    assert.equal(
+      h.queryClient.getQueryData(h.channelMessagesKey("channel-1")),
+      undefined,
+    );
+    assert.deepEqual(
+      h.queryClient
+        .getQueryData(channelWindowKey("channel-1"))
+        .liveOverlay.map((event) => event.id),
+      ["live"],
+    );
+  } finally {
+    h.restore();
+  }
+});
+
+test("a room some surface renders is not bounded like a closed room", async () => {
+  const h = await mount(channels(2));
+  const { QueryObserver } = await import("@tanstack/react-query");
+  const key = h.channelMessagesKey("channel-1");
+  h.queryClient.setQueryData(key, []);
+  const observer = new QueryObserver(h.queryClient, {
+    queryKey: key,
+    queryFn: () => [],
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    const { CLOSED_CHANNEL_OVERLAY_CAP } = await import(
+      "@/features/messages/lib/channelWindowStore"
+    );
+    for (let i = 0; i <= CLOSED_CHANNEL_OVERLAY_CAP; i += 1) {
+      await h.deliver(
+        h.subscriptions[1],
+        message(`live-${String(i).padStart(2, "0")}`, {
+          created_at: 1_000 + i,
+          tags: [["h", "channel-1"]],
+        }),
+      );
+    }
+    assert.equal(
+      h.queryClient.getQueryData(key).length,
+      CLOSED_CHANNEL_OVERLAY_CAP + 1,
+    );
+  } finally {
+    unsubscribe();
+    h.restore();
+  }
+});

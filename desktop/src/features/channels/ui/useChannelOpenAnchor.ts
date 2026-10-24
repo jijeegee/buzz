@@ -21,6 +21,8 @@ type OpenPlan = {
   /** Where the anchor's row sits when it is a remembered position. */
   anchorTopPx: number | null;
   pagesFetched: number;
+  /** Oldest loaded row seen while seeking, to notice lost older pages. */
+  seekOldestAt: number | null;
   /** Where the reader left this channel last time, read once per visit. */
   remembered: ReadingPosition | null;
   /**
@@ -76,14 +78,28 @@ export function useChannelOpenAnchor({
       anchorMessageId: null,
       anchorTopPx: null,
       pagesFetched: 0,
+      seekOldestAt: null,
       remembered: pubkey ? readingPositionStore.get(pubkey, channelId) : null,
       landsAtLatest: hasPendingLandAtLatest(channelId),
     };
   }
   const plan = planRef.current;
 
+  const oldestLoadedAt = messages?.[0]?.created_at ?? null;
   let needsOlder = false;
-  if (plan && !plan.decided && messages !== undefined) {
+  // Decide only between page fetches: a page still in flight may hold the
+  // row to open at, and counts against the seek budget already.
+  if (plan && !plan.decided && messages !== undefined && !isFetchingOlder) {
+    // A newest-window refresh (subscribe settle, reconnect) replaces every
+    // older page fetched so far; seek again instead of stalling on them.
+    if (
+      plan.seekOldestAt !== null &&
+      oldestLoadedAt !== null &&
+      oldestLoadedAt > plan.seekOldestAt
+    ) {
+      plan.pagesFetched = 0;
+    }
+    plan.seekOldestAt = oldestLoadedAt;
     const decide = (
       anchorMessageId: string | null,
       anchorTopPx: number | null = null,
@@ -138,11 +154,12 @@ export function useChannelOpenAnchor({
     readingPositionStore.set(pubkey, plan.channelId, null);
   }, [plan, pubkey, staleRemembered]);
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: seek again when the loaded range changes
   React.useEffect(() => {
     if (!needsOlder || isFetchingOlder || !plan) return;
     plan.pagesFetched += 1;
     void fetchOlder();
-  }, [fetchOlder, isFetchingOlder, needsOlder, plan]);
+  }, [fetchOlder, isFetchingOlder, needsOlder, oldestLoadedAt, plan]);
 
   return {
     anchorMessageId: plan?.decided ? plan.anchorMessageId : null,

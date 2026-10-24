@@ -13,9 +13,11 @@ import {
 import { ChatListLiveSync } from "@/features/chats/chatListSync";
 import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
-import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
+import {
+  applyLiveChannelEvent,
+  isChannelTimelineObserved,
+} from "@/features/messages/lib/applyLiveChannelEvent";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
-import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import {
   getChannelIdFromTags,
   isThreadReply,
@@ -224,6 +226,15 @@ export function useLiveChannelUpdates(
         channels
           .filter((channel) => isChatRoom(channel))
           .map((channel) => [channel.id, channel]),
+      ),
+    [channels],
+  );
+  const forumChannelIds = React.useMemo(
+    () =>
+      new Set(
+        channels
+          .filter((channel) => channel.channelType === "forum")
+          .map((channel) => channel.id),
       ),
     [channels],
   );
@@ -445,20 +456,17 @@ export function useLiveChannelUpdates(
       }
     }
 
-    // Merge into the timeline cache for the active channel.
-    // useChannelSubscription also writes to this cache, but there's a
-    // race window where it hasn't connected yet. Writes are idempotent
-    // (mergeTimelineCacheMessages deduplicates by event ID).
-    queryClient.setQueryData<RelayEvent[]>(
-      channelMessagesKey(channelId),
-      (current) => {
-        if (!current) {
-          return current;
-        }
-
-        return mergeTimelineCacheMessages(current, event);
-      },
-    );
+    // Every room's store takes its live events, open or not, so a closed
+    // room's rows survive the next window projection and a reopened room
+    // shows them at once. The open room's own subscription applies the same
+    // idempotent writes; this covers the window before it connects.
+    if (!forumChannelIds.has(channelId)) {
+      applyLiveChannelEvent(queryClient, channelId, event, {
+        isOpen:
+          channelId === activeChannelId ||
+          isChannelTimelineObserved(queryClient, channelId),
+      });
+    }
   });
 
   React.useEffect(() => {
