@@ -546,6 +546,8 @@ async fn log_mode_lets_unproven_uses_through() {
         response.headers().contains_key(SERVER_TIME_HEADER),
         "the server clock is sent while the surface is on"
     );
+    let body: Value = response.json().await.unwrap();
+    assert_eq!(body["device_key"], true, "a keyed sign-in reports its key");
     let proven = me_proof(&key, &origin, &pc.login.access);
     assert_eq!(me_with(&inst, &pc.login.access, Some(&proven)).await.0, 200);
     let wrong_key = me_proof(&device_key(), &origin, &pc.login.access);
@@ -694,7 +696,7 @@ async fn enforce_mode_requires_the_device_proof() {
         .expect("make the device keyless");
     assert_eq!(
         me_with(&inst, &keyless.login.access, None).await,
-        (401, "device_proof_required".to_owned())
+        (401, "device_key_required".to_owned())
     );
     let any_key = me_proof(&device_key(), &origin, &keyless.login.access);
     assert_eq!(
@@ -706,7 +708,7 @@ async fn enforce_mode_requires_the_device_proof() {
     let (status, body) = refresh_with(&inst, &keyless.login.refresh, None).await;
     assert_eq!(
         (status, body["code"].as_str()),
-        (401, Some("device_proof_required"))
+        (401, Some("device_key_required"))
     );
 }
 
@@ -848,12 +850,22 @@ async fn a_redis_override_switches_the_mode() {
         .await
         .expect("login");
     assert_eq!(me_with(&inst, &keyless.login.access, None).await.0, 200);
+    let body: Value = inst
+        .get("/auth/me")
+        .bearer_auth(&keyless.login.access)
+        .send()
+        .await
+        .unwrap()
+        .json()
+        .await
+        .unwrap();
+    assert_eq!(body["device_key"], false, "an older app's sign-in has no key");
 
     set_override(&inst, Some("enforce")).await;
     wait_mode(&inst, DeviceAdmissionMode::Enforce).await;
     assert_eq!(
         me_with(&inst, &keyless.login.access, None).await,
-        (401, "device_proof_required".to_owned())
+        (401, "device_key_required".to_owned())
     );
 
     set_override(&inst, Some("on")).await;

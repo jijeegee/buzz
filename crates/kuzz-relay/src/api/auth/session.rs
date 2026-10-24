@@ -625,6 +625,10 @@ pub(super) async fn me(State(state): State<Arc<AppState>>, headers: HeaderMap) -
         "locale": principal.locale,
         "email": email,
         "device_id": binding.device_id,
+        // Whether this person session's device has a key. A keyless one
+        // (signed in before the app had device keys) must sign in again
+        // before device checks are enforced; apps prompt for it. Bots: null.
+        "device_key": binding.bot_id.is_none().then_some(binding.device_pubkey.is_some()),
         "bot": bot,
         "operator": binding.is_operator,
         // Always 1 until message keys can be replaced; clients compare it.

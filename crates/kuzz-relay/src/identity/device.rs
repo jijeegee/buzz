@@ -478,6 +478,7 @@ async fn check_header(
     .map_err(|refusal| match refusal {
         Refusal::Unavailable => TokenRejection::Unavailable,
         Refusal::Stale => TokenRejection::DeviceProofStale,
+        Refusal::Keyless => TokenRejection::DeviceKeyRequired,
         _ => TokenRejection::DeviceProofRequired,
     })
 }
@@ -548,6 +549,7 @@ pub(crate) async fn check_request_proof_always(
         match refusal {
             Refusal::Unavailable => TokenRejection::Unavailable,
             Refusal::Stale => TokenRejection::DeviceProofStale,
+            Refusal::Keyless => TokenRejection::DeviceKeyRequired,
             _ => TokenRejection::DeviceProofRequired,
         }
     })
