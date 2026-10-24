@@ -9,6 +9,7 @@ import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
 import '../l10n/l10n.dart';
+import '../message_db/message_store.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
@@ -391,6 +392,23 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
             developer.log('Failed to clear channel heads: $error');
           }),
         );
+        // Only this account's stored messages: other accounts on the same
+        // server keep theirs.
+        final removed = current[removedIndex];
+        final scope = messageScopeOf(
+          relayUrl: removed.relayUrl,
+          pubkey: removed.pubkey,
+          nsec: removed.nsec,
+        );
+        if (scope != null) {
+          unawaited(
+            ref.read(messageStoreProvider).clear(scope).catchError((
+              Object error,
+            ) {
+              developer.log('Failed to clear stored messages: $error');
+            }),
+          );
+        }
       }
 
       final updatedList = current.where((w) => w.id != id).toList();

@@ -4,6 +4,8 @@ import 'dart:io';
 import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/shared/message_db/message_db.dart';
+import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -138,9 +140,13 @@ void main() {
     late _WindowSession session;
     late ProviderContainer container;
     late DateTime now;
+    late Directory messagesRoot;
+    late MessageStore messages;
 
     setUp(() async {
       root = await Directory.systemTemp.createTemp('channel_preload_test');
+      messagesRoot = await Directory.systemTemp.createTemp('preload_messages');
+      messages = MessageStore(() async => messagesRoot.path);
       session = _WindowSession();
       now = DateTime(2026, 1, 1, 12);
       container = ProviderContainer(
@@ -150,6 +156,7 @@ void main() {
           channelHeadCacheProvider.overrideWithValue(
             ChannelHeadCache(() async => root),
           ),
+          messageStoreProvider.overrideWithValue(messages),
           channelPreloaderProvider.overrideWith(
             (ref) => ChannelPreloader(ref, now: () => now),
           ),
@@ -159,7 +166,51 @@ void main() {
 
     tearDown(() async {
       container.dispose();
+      await messages.close();
       if (await root.exists()) await root.delete(recursive: true);
+      await messagesRoot.delete(recursive: true);
+    });
+
+    test('stores preloaded rooms and threads in the message database', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      await preloader.preloadRooms([(channelId: 'room-1', latestAt: 100)]);
+      await preloader.preloadThreads([
+        const ThreadRepliesArgs(channelId: 'room-1', rootId: 'root'),
+      ]);
+      await messages.settled();
+
+      final db = openMessageDbReader(
+        '${messagesRoot.path}/${const MessageScope(relayUrl: 'https://relay.example', pubkey: 'me').relativePath}',
+      );
+      addTearDown(db.close);
+      expect(
+        db
+            .select('SELECT id, channel_id FROM events ORDER BY id')
+            .map((row) => (row['id'], row['channel_id'])),
+        [
+          ('room-1-message', 'room-1'),
+          // The aux event has no room tag; its window names the room.
+          ('room-1-reaction', 'room-1'),
+          ('root-reply', 'room-1'),
+        ],
+      );
+      expect(
+        db
+            .select(
+              'SELECT stream, lo_at, hi_at, hi_id FROM coverage '
+              'ORDER BY stream',
+            )
+            .map(
+              (row) =>
+                  (row['stream'], row['lo_at'], row['hi_at'], row['hi_id']),
+            ),
+        [
+          // has_more false: the room's whole history is this page.
+          ('', -1, 100, 'room-1-message'),
+          // A preloaded thread page proves only the span of its rows.
+          ('root:window', 100, 100, 'root-reply'),
+        ],
+      );
     });
 
     test(

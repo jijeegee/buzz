@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 12+. The local message database is derived from the server and
+     can be large; it is never copied to a backup or to a new device. -->
+<data-extraction-rules>
+    <cloud-backup>
+        <exclude domain="file" path="messages/" />
+    </cloud-backup>
+    <device-transfer>
+        <exclude domain="file" path="messages/" />
+    </device-transfer>
+</data-extraction-rules>

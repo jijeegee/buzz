@@ -69,6 +69,8 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         subscriptionVersion != _subscriptionVersion) {
       return;
     }
+    // The room store tracks reconnects from the first subscription on.
+    _lifecycleRef.read(channelRoomStoreProvider);
 
     if (_subscriptionRelayBaseUrl != relayBaseUrl) {
       _clearRetainedLiveChunks();
@@ -99,7 +101,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       try {
         final unsubscribe = await session.subscribe(
           NostrFilter(
-            kinds: EventKind.channelEventKinds,
+            kinds: _globalLiveEventKinds,
             tags: {'#h': chunk},
             limit: 0,
           ),
@@ -112,8 +114,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 !_desiredLiveChannelIds.contains(event.channelId)) {
               return;
             }
-            _handleLiveEvent(event);
-            _lifecycleRef.read(channelLiveEventsProvider).emit(event);
+            _ingestLiveEvent(event, liveSince: subscription.liveSince);
           },
           onClosed: (message) =>
               _handleLiveChunkClosed(chunkKey, generation, message),
@@ -271,5 +272,8 @@ class _LiveChunkSubscription {
   _LiveChunkSubscription(this.generation);
 
   final int generation;
+
+  /// When this chunk was requested: it delivers nothing sent before.
+  final int liveSince = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   void Function()? unsubscribe;
 }

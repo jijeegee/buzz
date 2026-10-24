@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/identity_names/identity_names.dart';
 import '../../shared/identity_names/identity_names_provider.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
+import 'channel_list_selectors.dart';
 import 'channel_management_provider.dart';
 import 'channels_provider.dart';
 
@@ -18,13 +19,14 @@ import 'channels_provider.dart';
 final channelIdentityNamesProvider = Provider.autoDispose
     .family<IdentityNames, String>((ref, channelId) {
       final sources = ref.watch(identityNameSourcesProvider);
-      final members =
+      final List<ChannelMember> members =
           watchLatestChannelMembers(ref, channelId) ??
-          (ref.watch(channelsProvider).asData == null
-              ? const <ChannelMember>[]
-              : ref
-                    .read(channelsProvider.notifier)
-                    .cachedMembersForChannel(channelId));
+          ref.watch(
+            cachedChannelMembers(
+              ref.read(channelsProvider.notifier),
+              channelId,
+            ),
+          );
       final names = sources.scope(
         [for (final member in members) member.pubkey],
         // The roster's own bot roles stay available offline, when the

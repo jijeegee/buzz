@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/shared/community/community.dart';
 import 'package:kuzz/shared/community/community_provider.dart';
 import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/push/push_subscription.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -42,7 +43,7 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  ProviderContainer createContainer() {
+  ProviderContainer createContainer({MessageStore? messages}) {
     Future<void> writeSnapshot(List<Community> communities) async {
       snapshots.add(List.of(communities));
     }
@@ -61,6 +62,7 @@ void main() {
         communityPushLeaseRevocationTriggerProvider.overrideWithValue(
           revocationTrigger,
         ),
+        if (messages != null) messageStoreProvider.overrideWithValue(messages),
       ],
     );
   }
@@ -428,6 +430,35 @@ void main() {
       expect(revocationTriggers, 1);
     });
 
+    test('removing an account deletes only its stored messages', () async {
+      final messages = _RecordingMessageStore();
+      container = createContainer(messages: messages);
+      await container.read(communityListProvider.future);
+      final keys = nostr.Keys.generate();
+      final removed = Community.create(
+        name: 'Removed',
+        relayUrl: 'https://removed.example.com',
+        nsec: keys.nsec,
+      );
+      final kept = Community.create(
+        name: 'Kept',
+        relayUrl: 'https://other.example.com',
+        nsec: nostr.Keys.generate().nsec,
+      );
+      final notifier = container.read(communityListProvider.notifier);
+      await notifier.addCommunity(removed);
+      await notifier.addCommunity(kept);
+
+      await notifier.removeCommunity(removed.id);
+
+      expect(messages.cleared, [
+        MessageScope(
+          relayUrl: 'https://removed.example.com',
+          pubkey: keys.public,
+        ),
+      ]);
+    });
+
     test('remote tombstone attempt cannot block local removal', () async {
       final remoteAttempt = Completer<void>();
       revocationTrigger = () {
@@ -721,4 +752,14 @@ void main() {
       expect(await communityStorage.loadActiveId(), 'nonexistent-id');
     });
   });
+}
+
+/// Records which accounts' stored messages were cleared.
+class _RecordingMessageStore extends MessageStore {
+  _RecordingMessageStore() : super(() async => throw StateError('no disk'));
+
+  final cleared = <MessageScope>[];
+
+  @override
+  Future<void> clear(MessageScope scope) async => cleared.add(scope);
 }
