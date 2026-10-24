@@ -168,26 +168,57 @@ fn outage_refresh_applies(state: &AppState, method: &Method, path: &str) -> bool
 /// token and would answer `invalid_token`, which apps take as signed out.
 /// 503 makes the app retry, and its next refresh reaches the primary.
 async fn outage_token_held(state: &AppState, headers: &HeaderMap) -> Option<Response> {
-    let token = headers
+    let value = headers
         .get(axum::http::header::AUTHORIZATION)?
         .to_str()
-        .ok()?
-        .strip_prefix("Bearer ")?;
+        .ok()?;
+    let (scheme, token) = value.split_once(' ')?;
+    if !scheme.eq_ignore_ascii_case("bearer") {
+        return None;
+    }
     let token = kuzz_auth::TokenSecret::new(token.trim().to_owned());
     if token.kind() != Some(kuzz_auth::TokenKind::UserAccess) {
         return None;
     }
-    match state.db.is_outage_access_token(&token.hash()).await {
-        Ok(false) => None,
-        Ok(true) => {
-            metrics::counter!("kuzz_outage_tokens_held_total").increment(1);
-            Some(plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE))
-        }
-        Err(error) => {
-            tracing::warn!(%error, "outage token lookup failed");
-            Some(plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE))
-        }
+    let hash = token.hash();
+    let unavailable = |error: &dyn std::fmt::Display| {
+        tracing::warn!(%error, "outage token lookup failed");
+        Some(plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE))
+    };
+    match state.db.is_outage_access_token(&hash).await {
+        Ok(false) => return None,
+        Ok(true) => {}
+        Err(error) => return unavailable(&error),
     }
+    // An outage token that no longer works gets the answer any dead token
+    // gets; only a live one is told to retry.
+    let record = match state.db.lookup_access_token(&hash).await {
+        Ok(Some(record)) => record,
+        Ok(None) => return Some(token_refused("invalid_token", "authentication failed")),
+        Err(error) => return unavailable(&error),
+    };
+    use kuzz_db::identity::AccessTokenRejection as Rejection;
+    Some(match record.check(chrono::Utc::now()) {
+        Ok(()) => {
+            metrics::counter!("kuzz_outage_tokens_held_total").increment(1);
+            plain_error(StatusCode::SERVICE_UNAVAILABLE, UNREACHABLE)
+        }
+        Err(Rejection::Expired) => token_refused("token_expired", "token expired"),
+        Err(Rejection::Revoked) => token_refused("token_revoked", "session revoked"),
+        Err(Rejection::PrincipalDisabled) => {
+            token_refused("principal_disabled", "account disabled")
+        }
+        Err(Rejection::InvalidForBot) => token_refused("invalid_token", "authentication failed"),
+    })
+}
+
+/// A 401 in the auth API's shape.
+fn token_refused(code: &str, message: &str) -> Response {
+    (
+        StatusCode::UNAUTHORIZED,
+        Json(json!({ "error": message, "code": code })),
+    )
+        .into_response()
 }
 
 /// Entry side middleware: in a region holding the global copy, send a
