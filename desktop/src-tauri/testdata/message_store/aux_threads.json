@@ -10,12 +10,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 100,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 16",
           "sig": ""
         },
@@ -25,10 +20,7 @@
           "created_at": 110,
           "kind": 9,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1010101010101010101010101010101010101010101010101010101010101010",
@@ -51,20 +43,14 @@
           "created_at": 120,
           "kind": 40002,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1010101010101010101010101010101010101010101010101010101010101010",
               "",
               "reply"
             ],
-            [
-              "broadcast",
-              "1"
-            ]
+            ["broadcast", "1"]
           ],
           "content": "message 18",
           "sig": ""
@@ -74,12 +60,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 130,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "message 19",
           "sig": ""
         },
@@ -103,10 +84,7 @@
           "created_at": 150,
           "kind": 40003,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1313131313131313131313131313131313131313131313131313131313131313"
@@ -120,12 +98,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 135,
           "kind": 9,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "secret",
           "sig": ""
         }
@@ -140,10 +113,7 @@
           "created_at": 160,
           "kind": 5,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1616161616161616161616161616161616161616161616161616161616161616"
@@ -162,10 +132,7 @@
           "created_at": 115,
           "kind": 39005,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1010101010101010101010101010101010101010101010101010101010101010"
@@ -180,10 +147,7 @@
           "created_at": 105,
           "kind": 39005,
           "tags": [
-            [
-              "h",
-              "room-a"
-            ],
+            ["h", "room-a"],
             [
               "e",
               "1010101010101010101010101010101010101010101010101010101010101010"
@@ -197,12 +161,7 @@
           "pubkey": "abababababababababababababababababababababababababababababababab",
           "created_at": 170,
           "kind": 39006,
-          "tags": [
-            [
-              "h",
-              "room-a"
-            ]
-          ],
+          "tags": [["h", "room-a"]],
           "content": "{}",
           "sig": ""
         }
