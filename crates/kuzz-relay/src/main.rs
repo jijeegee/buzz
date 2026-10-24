@@ -449,7 +449,7 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Ok(n) => {
                         info!(region = %region.id, "Room directory: {n} rooms given this region as home")
                     }
-                    Err(e) => warn!("Room directory backfill failed (retried next start): {e}"),
+                    Err(e) => warn!("Room directory backfill failed (retried in ten minutes): {e}"),
                 }
                 if let Some(key) = config
                     .region_key
@@ -800,6 +800,28 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                         metrics::counter!("kuzz_partition_audit_failures_total").increment(1);
                         warn!(%error, "Periodic partition catalog audit failed")
                     }
+                }
+            }
+        });
+    }
+
+    // Rooms without a room directory row get this region as home again
+    // every ten minutes, not only at start. The directory trigger reads the
+    // claimed region, so rooms that older relays make between the migration
+    // and the claim during a rolling deploy get no row until the next pass.
+    // A copy region (S5) writes no directory rows: its rooms are reserved at
+    // the primary when they are made (S4-6).
+    if !state.config.global_copy {
+        let directory_state = Arc::clone(&state);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(std::time::Duration::from_secs(10 * 60));
+            interval.tick().await;
+            loop {
+                interval.tick().await;
+                match directory_state.db.backfill_room_directory().await {
+                    Ok(0) => {}
+                    Ok(n) => info!("Room directory: {n} rooms without a row given this region"),
+                    Err(error) => warn!(%error, "Periodic room directory backfill failed"),
                 }
             }
         });
