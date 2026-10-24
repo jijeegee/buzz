@@ -1,4 +1,4 @@
-import type { AccountSummary } from "@/shared/api/tokenAuth";
+import type { AccountSummary, SignInProvider } from "@/shared/api/tokenAuth";
 import { t } from "@/shared/i18n";
 
 type Labelled = Pick<
@@ -8,7 +8,7 @@ type Labelled = Pick<
 
 /**
  * The name an account goes by in menus: its Kuzz profile name, else its
- * Google name, else its email, else a short id.
+ * Google or Apple name, else its email, else a short id.
  */
 export function accountLabel(account: Labelled): string {
   const name = account.kuzzName?.trim() || account.displayName?.trim();
@@ -54,6 +54,13 @@ export function menuAccounts(
   accounts: readonly AccountSummary[],
 ): AccountSummary[] {
   return accounts.filter((account) => account.state !== "signed_out");
+}
+
+/** How an account signs in; one never recorded is a Google account. */
+export function accountProvider(
+  account: Pick<AccountSummary, "provider">,
+): SignInProvider {
+  return account.provider === "apple" ? "apple" : "google";
 }
 
 /** Accounts the menu can switch to directly (others need a fresh sign-in). */

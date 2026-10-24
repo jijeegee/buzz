@@ -3203,13 +3203,13 @@
   "@ui.previewFeature.disabledWarning": {
     "description": "Warning toast when opening a preview feature that is turned off; {name} is the feature name. 'Settings → Experiments' is the path to the settings page."
   },
-  "ui.googleLogin.failed": "Google sign-in failed. Try again.",
+  "ui.googleLogin.failed": "Sign-in failed. Try again.",
   "@ui.googleLogin.failed": {
-    "description": "Error under the Sign in with Google button when sign-in fails."
+    "description": "Error under the sign-in buttons (Google or Apple) when sign-in fails."
   },
   "ui.googleLogin.cancelFailed": "Could not cancel sign-in. Try again.",
   "@ui.googleLogin.cancelFailed": {
-    "description": "Error on the sign-in screen when cancelling a Google sign-in in progress fails."
+    "description": "Error on the sign-in screen when cancelling a sign-in in progress (Google or Apple) fails."
   },
   "ui.auxiliaryPanel.close": "Close panel",
   "@ui.auxiliaryPanel.close": {
@@ -3301,15 +3301,19 @@
   },
   "ui.createAccount.title": "Create your Kuzz account",
   "@ui.createAccount.title": {
-    "description": "Title of the dialog shown after choosing a Google account that has no Kuzz account yet."
+    "description": "Title of the dialog shown after choosing a Google account or Apple ID that has no Kuzz account yet."
   },
   "ui.createAccount.description": "There's no Kuzz account for this Google account yet.",
   "@ui.createAccount.description": {
-    "description": "Text in the 'Create your Kuzz account' dialog, above the Google email address."
+    "description": "Text in the 'Create your Kuzz account' dialog after a Google sign-in, above the email address."
+  },
+  "ui.createAccount.descriptionApple": "There's no Kuzz account for this Apple ID yet.",
+  "@ui.createAccount.descriptionApple": {
+    "description": "Text in the 'Create your Kuzz account' dialog after a Sign in with Apple, above the email address. Apple ID is Apple's name for the account."
   },
   "ui.createAccount.useDifferent": "Use a different account",
   "@ui.createAccount.useDifferent": {
-    "description": "Button in the 'Create your Kuzz account' dialog that opens Google's account picker again."
+    "description": "Button in the 'Create your Kuzz account' dialog that signs in again the same way (Google or Apple) to pick another account."
   },
   "ui.createAccount.create": "Create account",
   "@ui.createAccount.create": {
@@ -3317,15 +3321,15 @@
   },
   "ui.googleLogin.finishing": "Finishing sign-in in Kuzz…",
   "@ui.googleLogin.finishing": {
-    "description": "Status line on the sign-in screen after Google sign-in completed in the browser."
+    "description": "Status line on the sign-in screen after Google or Apple sign-in completed in the browser."
   },
   "ui.googleLogin.openingBrowser": "Opening your browser…",
   "@ui.googleLogin.openingBrowser": {
-    "description": "Status line on the sign-in screen while the web browser opens for Google sign-in."
+    "description": "Status line on the sign-in screen while the web browser opens for Google or Apple sign-in."
   },
   "ui.googleLogin.finishInBrowser": "Finish signing in in your browser.",
   "@ui.googleLogin.finishInBrowser": {
-    "description": "Status line on the sign-in screen while the user signs in with Google in the web browser."
+    "description": "Status line on the sign-in screen while the user signs in with Google or Apple in the web browser."
   },
   "ui.hoverCopy.copied": "Copied {label}",
   "@ui.hoverCopy.copied": {
@@ -4347,9 +4351,9 @@
   "@onboarding.machine.useExistingKey": {
     "description": "Onboarding welcome screen (test builds), secondary button. Short."
   },
-  "onboarding.machine.restoreWithGoogle": "Sign in with Google to restore your account.",
+  "onboarding.machine.restoreWithGoogle": "Sign in to restore your account.",
   "@onboarding.machine.restoreWithGoogle": {
-    "description": "Onboarding welcome screen, note above the Google button when the local account was lost."
+    "description": "Onboarding welcome screen, note above the Google and Apple sign-in buttons when the local account was lost."
   },
   "onboarding.machine.signInUnreachable": "We couldn’t reach Kuzz sign-in. Check your internet connection and try again.",
   "@onboarding.machine.signInUnreachable": {
@@ -5543,17 +5547,17 @@
   "@onboarding.profileStep.continueWithoutSaving": {
     "description": "Onboarding, name step, button shown after saving failed. Short."
   },
-  "onboarding.googleSignIn.failed": "Google sign-in failed.",
+  "onboarding.googleSignIn.failed": "Sign-in failed.",
   "@onboarding.googleSignIn.failed": {
-    "description": "Google sign-in button, error toast when sign-in failed without details."
+    "description": "Google or Apple sign-in button, error toast when sign-in failed without details."
   },
-  "onboarding.googleSignIn.note": "Sign in with your Google account to get started.",
+  "onboarding.googleSignIn.note": "Sign in to get started.",
   "@onboarding.googleSignIn.note": {
-    "description": "Google sign-in button, default text above the button."
+    "description": "Onboarding, default text above the Sign in with Google and Sign in with Apple buttons."
   },
   "onboarding.googleSignIn.signingIn": "Signing in…",
   "@onboarding.googleSignIn.signingIn": {
-    "description": "Google sign-in button text while signing in. Short."
+    "description": "Google or Apple sign-in button text while signing in. Short."
   },
   "onboarding.googleSignIn.button": "Sign in with Google",
   "@onboarding.googleSignIn.button": {
@@ -5561,7 +5565,7 @@
   },
   "onboarding.googleSignIn.appleButton": "Sign in with Apple",
   "@onboarding.googleSignIn.appleButton": {
-    "description": "Onboarding sign-in: button below Sign in with Google, shown when the server offers Apple. Short."
+    "description": "Onboarding sign-in: button below Sign in with Google. Short."
   },
   "onboarding.googleSignIn.olderAccount": "Sign in to an older Kuzz account",
   "@onboarding.googleSignIn.olderAccount": {
@@ -5673,7 +5677,7 @@
   },
   "onboarding.membershipDenied.signOutFailed": "Couldn't sign out. Try again.",
   "@onboarding.membershipDenied.signOutFailed": {
-    "description": "Not-a-member screen, error when signing out to switch Google account failed."
+    "description": "Not-a-member screen, error when signing out to switch account failed."
   },
   "onboarding.membershipDenied.invalidNsec": "That doesn't look like a valid nsec. Paste an nsec1 key.",
   "@onboarding.membershipDenied.invalidNsec": {
@@ -5723,9 +5727,9 @@
   "@onboarding.membershipDenied.haveInvite": {
     "description": "Not-a-member screen, small link that opens the invite form. Short."
   },
-  "onboarding.membershipDenied.differentGoogleAccount": "Use a different Google account",
+  "onboarding.membershipDenied.differentGoogleAccount": "Use a different account",
   "@onboarding.membershipDenied.differentGoogleAccount": {
-    "description": "Not-a-member screen, small link that signs out to pick another Google account. Short."
+    "description": "Not-a-member screen, small link that signs out to pick another account (Google or Apple). Short."
   },
   "onboarding.membershipDenied.differentKey": "Use a different key",
   "@onboarding.membershipDenied.differentKey": {
@@ -5835,17 +5839,17 @@
   "@onboarding.signedOut.title": {
     "description": "Signed-out screen, title."
   },
-  "onboarding.signedOut.body": "Sign in with Google to get back to your conversations. Nothing was deleted.",
+  "onboarding.signedOut.body": "Sign in to get back to your conversations. Nothing was deleted.",
   "@onboarding.signedOut.body": {
     "description": "Signed-out screen, text under the title."
   },
-  "onboarding.signedOut.note": "Use the Google account you signed in with before.",
+  "onboarding.signedOut.note": "Use the account you signed in with before.",
   "@onboarding.signedOut.note": {
-    "description": "Signed-out screen, text above the Google sign-in button."
+    "description": "Signed-out screen, text above the Google and Apple sign-in buttons."
   },
-  "onboarding.signedOut.unavailable": "Google sign-in isn't available right now.",
+  "onboarding.signedOut.unavailable": "Sign-in isn't available right now.",
   "@onboarding.signedOut.unavailable": {
-    "description": "Signed-out screen, message when the server does not offer Google sign-in."
+    "description": "Signed-out screen, message when the server does not offer sign-in."
   },
   "onboarding.signedOut.tryAgain": "Try again",
   "@onboarding.signedOut.tryAgain": {
@@ -5861,7 +5865,7 @@
   },
   "onboarding.termsLine.text": "By continuing you agree to the <terms>Terms of Service</terms>",
   "@onboarding.termsLine.text": {
-    "description": "Small line under the Google sign-in button; <terms> is a link that opens the terms. Keep the tag. No period in English."
+    "description": "Small line under the sign-in buttons; <terms> is a link that opens the terms. Keep the tag. No period in English."
   },
   "onboarding.starterChannels.setupFailedReason": "Failed to set up starter groups",
   "@onboarding.starterChannels.setupFailedReason": {
@@ -11097,7 +11101,11 @@
   },
   "settings.account.description": "You sign in to Kuzz with your Google account.",
   "@settings.account.description": {
-    "description": "Settings > Account, text under the section title."
+    "description": "Settings > Account, text under the section title for an account that signs in with Google."
+  },
+  "settings.account.descriptionApple": "You sign in to Kuzz with your Apple ID.",
+  "@settings.account.descriptionApple": {
+    "description": "Settings > Account, text under the section title for an account that signs in with Apple. Apple ID is Apple's name for the account."
   },
   "settings.account.protectDescription": "Continue with Google so you can sign in to Kuzz on other computers and get back into your account if this one is lost. Your Kuzz server keeps a protected copy for this.",
   "@settings.account.protectDescription": {
@@ -11119,11 +11127,11 @@
   "@settings.account.notSignedIn": {
     "description": "Settings > Account, status line when nobody is signed in."
   },
-  "settings.account.needsLoginHintKept": "Sign in with Google again to manage your account. Kuzz and your agents keep working.",
+  "settings.account.needsLoginHintKept": "Sign in again to manage your account. Kuzz and your agents keep working.",
   "@settings.account.needsLoginHintKept": {
     "description": "Settings > Account, grey text under 'Your sign-in has ended' when the account still works."
   },
-  "settings.account.needsLoginHint": "Sign in with Google again to keep using this community and its agents.",
+  "settings.account.needsLoginHint": "Sign in again to keep using this community and its agents.",
   "@settings.account.needsLoginHint": {
     "description": "Settings > Account, grey text under 'Your sign-in has ended'."
   },
@@ -11155,9 +11163,9 @@
   "@settings.account.signOut": {
     "description": "Settings > Account, button and confirm-dialog button that signs out of this account. Short."
   },
-  "settings.account.signedInWithGoogle": "Signed in with Google",
+  "settings.account.signedInWithGoogle": "Signed in",
   "@settings.account.signedInWithGoogle": {
-    "description": "Settings > Account, shown in place of the account name or email when they are unknown."
+    "description": "Settings > Account, shown in place of the account name or email when they are unknown. Short."
   },
   "settings.account.accountsOnThisComputer": "Accounts on this computer",
   "@settings.account.accountsOnThisComputer": {
@@ -11171,7 +11179,7 @@
   "@settings.account.signOutTitle": {
     "description": "Settings > Account, sign-out confirm dialog title when the account name is unknown."
   },
-  "settings.account.signOutDescription": "You'll be signed out on this computer. Sign in with Google to get back to your conversations. Nothing is deleted.",
+  "settings.account.signOutDescription": "You'll be signed out on this computer. Sign in again to get back to your conversations. Nothing is deleted.",
   "@settings.account.signOutDescription": {
     "description": "Settings > Account, sign-out confirm dialog text."
   },
@@ -11227,7 +11235,7 @@
   "@settings.account.deleteTitle": {
     "description": "Settings > Account, delete-account confirm dialog title."
   },
-  "settings.account.deleteDescription": "Every device and agent is signed out now. The account is removed after 30 days unless you sign in with Google again before then.",
+  "settings.account.deleteDescription": "Every device and agent is signed out now. The account is removed after 30 days unless you sign in again before then.",
   "@settings.account.deleteDescription": {
     "description": "Settings > Account, delete-account confirm dialog text."
   },
@@ -11267,7 +11275,7 @@
   "@settings.device.cardTitle": {
     "description": "Settings > Devices & security, card title over the device list, agent access and this computer's data."
   },
-  "settings.device.signInHint": "Sign in with Google under Account to see your devices.",
+  "settings.device.signInHint": "Sign in under Account to see your devices.",
   "@settings.device.signInHint": {
     "description": "Settings > Devices, shown when not signed in."
   },
@@ -11287,7 +11295,7 @@
   "@settings.device.signOutOthersTitle": {
     "description": "Settings > Devices, confirm dialog title."
   },
-  "settings.device.signOutOthersDescription": "Every other computer and phone using your account is signed out and will need to sign in with Google again. This computer stays signed in, and your agents keep running.",
+  "settings.device.signOutOthersDescription": "Every other computer and phone using your account is signed out and will need to sign in again. This computer stays signed in, and your agents keep running.",
   "@settings.device.signOutOthersDescription": {
     "description": "Settings > Devices, 'Sign out other devices?' confirm dialog text."
   },
@@ -11563,7 +11571,7 @@
   "@settings.signOut.hintKeyBackup": {
     "description": "Settings > Delete local data, text next to the button (test-only key mode)."
   },
-  "settings.signOut.hint": "Signs out every account on this computer, stops all agents, and deletes their settings and work folders. No account is deleted — sign in with Google again to get back in.",
+  "settings.signOut.hint": "Signs out every account on this computer, stops all agents, and deletes their settings and work folders. No account is deleted — sign in again to get back in.",
   "@settings.signOut.hint": {
     "description": "Settings > Delete local data, text next to the button."
   },
@@ -11587,7 +11595,7 @@
   "@settings.signOut.dialogDescriptionKeyBackup": {
     "description": "Delete local data confirm dialog text (test-only key mode)."
   },
-  "settings.signOut.dialogDescription": "Every account on this computer is signed out and every agent stops. Agent settings, agent work folders and saved data are deleted, then Kuzz restarts. No account is deleted — sign in with Google again to get back in.",
+  "settings.signOut.dialogDescription": "Every account on this computer is signed out and every agent stops. Agent settings, agent work folders and saved data are deleted, then Kuzz restarts. No account is deleted — sign in again to get back in.",
   "@settings.signOut.dialogDescription": {
     "description": "Delete local data confirm dialog text."
   },
@@ -12081,11 +12089,27 @@
   },
   "accounts.switcher.add": "Add account",
   "@accounts.switcher.add": {
-    "description": "Profile menu > accounts list, last item: sign in with another Google account. Short."
+    "description": "Profile menu > accounts list, last item: add another account; opens a choice of Continue with Google or Continue with Apple. Short."
   },
-  "accounts.switcher.addWithApple": "Add account with Apple",
-  "@accounts.switcher.addWithApple": {
-    "description": "Profile menu > accounts list, item after Add account: sign in with an Apple account. Shown only when the server offers Apple. Short."
+  "accounts.add.title": "Add account",
+  "@accounts.add.title": {
+    "description": "Title of the small dialog opened by Add account in the profile menu or Settings > Account, asking how to sign in. Short."
+  },
+  "accounts.add.google": "Continue with Google",
+  "@accounts.add.google": {
+    "description": "Add account dialog, button that signs in another account with Google. Short."
+  },
+  "accounts.add.apple": "Continue with Apple",
+  "@accounts.add.apple": {
+    "description": "Add account dialog, button that signs in another account with Apple. Short."
+  },
+  "accounts.provider.google": "Google",
+  "@accounts.provider.google": {
+    "description": "Profile menu > accounts list, screen-reader label and tooltip of the small Google logo on an account that signs in with Google. Brand name."
+  },
+  "accounts.provider.apple": "Apple",
+  "@accounts.provider.apple": {
+    "description": "Profile menu > accounts list, screen-reader label and tooltip of the small Apple logo on an account that signs in with Apple. Brand name."
   },
   "accounts.fallbackName": "Account {id}",
   "@accounts.fallbackName": {
@@ -12109,7 +12133,7 @@
   },
   "accounts.menu.finishInBrowser": "Finish signing in in your browser…",
   "@accounts.menu.finishInBrowser": {
-    "description": "Loading toast while the user signs in with Google in the web browser, with a Cancel button."
+    "description": "Loading toast while the user signs in with Google or Apple in the web browser, with a Cancel button."
   },
   "accounts.menu.switchFailed": "Could not switch accounts.",
   "@accounts.menu.switchFailed": {
@@ -12119,9 +12143,9 @@
   "@accounts.menu.signedIn": {
     "description": "Success toast after signing in again to the account already in use."
   },
-  "accounts.menu.googleSignInFailed": "Google sign-in failed. Try again.",
+  "accounts.menu.googleSignInFailed": "Sign-in failed. Try again.",
   "@accounts.menu.googleSignInFailed": {
-    "description": "Error toast when adding an account with Google sign-in fails."
+    "description": "Error toast when adding an account with Google or Apple sign-in fails."
   },
   "notifications.titleInChannel": "{prefix} in {channel}",
   "@notifications.titleInChannel": {

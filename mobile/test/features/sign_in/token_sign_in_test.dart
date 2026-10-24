@@ -176,27 +176,48 @@ void main() {
     },
   );
 
-  testWidgets('a server that offers Apple adds Sign in with Apple', (
+  testWidgets('the first sign-in always offers Google and Apple', (
     tester,
   ) async {
     final h = _Harness(builtInOrigin: _origin);
-    h.server.nip11 = (_) => jsonResponse({
-      'kuzz_token_auth': {
-        'version': 1,
-        'bearer': true,
-        'oidc_providers': ['google', 'apple'],
-      },
-    });
     await h.pump(tester, const TokenSignInPage());
-
     expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
     expect(find.text('Sign in with Apple'), findsOneWidget);
   });
 
-  testWidgets('a Google-only server shows no Apple button', (tester) async {
+  testWidgets('an Apple account signs back in with Apple only', (tester) async {
     final h = _Harness(builtInOrigin: _origin);
-    await h.pump(tester, const TokenSignInPage());
-    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    await h.pump(
+      tester,
+      const TokenSignInPage(
+        lockedOrigin: _origin,
+        resumeSignedOut: true,
+        signInProvider: 'apple',
+      ),
+    );
+    expect(find.byKey(const Key('token-sign-in-google')), findsNothing);
+    expect(
+      find.descendant(
+        of: find.byKey(const Key('token-sign-in-apple')),
+        matching: find.text('Continue with Apple'),
+      ),
+      findsOneWidget,
+    );
+  });
+
+  testWidgets('a Google account signs back in with Google only', (
+    tester,
+  ) async {
+    final h = _Harness(builtInOrigin: _origin);
+    await h.pump(
+      tester,
+      const TokenSignInPage(
+        lockedOrigin: _origin,
+        resumeSignedOut: true,
+        signInProvider: 'google',
+      ),
+    );
+    expect(find.text('Continue with Google'), findsOneWidget);
     expect(find.byKey(const Key('token-sign-in-apple')), findsNothing);
   });
 

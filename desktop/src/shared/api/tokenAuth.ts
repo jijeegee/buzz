@@ -118,7 +118,7 @@ export type AccountSummary = {
   origin: string;
   state: "signed_in" | "needs_login" | "signed_out" | "key_only";
   active: boolean;
-  /** The Google name. */
+  /** The Google or Apple name. */
   displayName: string | null;
   /** The Kuzz profile name; menus prefer it. */
   kuzzName: string | null;
@@ -126,6 +126,11 @@ export type AccountSummary = {
   email: string | null;
   /** Unix seconds of the last sign-in or switch to it. */
   lastUsedAt: number | null;
+  /**
+   * How it last signed in here, recorded on this computer. Absent: Google
+   * (every account from before Sign in with Apple).
+   */
+  provider?: SignInProvider | null;
 };
 
 /** A signed-in account watched in the background (not the open one). */

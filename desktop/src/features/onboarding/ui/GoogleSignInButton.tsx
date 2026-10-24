@@ -15,8 +15,9 @@ import { Spinner } from "@/shared/ui/spinner";
 import { TermsAgreementLine } from "./TermsAgreementLine";
 
 /**
- * "Sign in with Google" for onboarding. Rendered only when the community's
- * relay offers Google onboarding and this device is not signed in yet.
+ * "Sign in with Google" and "Sign in with Apple" for onboarding. Rendered only
+ * when the community's relay offers token sign-in and this device is not
+ * signed in yet. Apple is always offered; a relay without it says so.
  * Native code restores the same signing key or links the existing key.
  */
 export function GoogleSignInButton({
@@ -99,23 +100,21 @@ export function GoogleSignInButton({
           ? t("onboarding.googleSignIn.signingIn")
           : t("onboarding.googleSignIn.button")}
       </Button>
-      {status.providers.includes("apple") ? (
-        <Button
-          className="h-10 w-full"
-          data-testid="onboarding-apple-sign-in"
-          disabled={disabled || pending !== null}
-          onClick={() => signIn("apple")}
-          type="button"
-          variant="outline"
-        >
-          {pending === "apple" ? (
-            <Spinner aria-hidden className="h-4 w-4 border-2" />
-          ) : null}
-          {pending === "apple"
-            ? t("onboarding.googleSignIn.signingIn")
-            : t("onboarding.googleSignIn.appleButton")}
-        </Button>
-      ) : null}
+      <Button
+        className="h-10 w-full"
+        data-testid="onboarding-apple-sign-in"
+        disabled={disabled || pending !== null}
+        onClick={() => signIn("apple")}
+        type="button"
+        variant="outline"
+      >
+        {pending === "apple" ? (
+          <Spinner aria-hidden className="h-4 w-4 border-2" />
+        ) : null}
+        {pending === "apple"
+          ? t("onboarding.googleSignIn.signingIn")
+          : t("onboarding.googleSignIn.appleButton")}
+      </Button>
       <GoogleLoginProgress login={login} />
       <TermsAgreementLine />
     </div>

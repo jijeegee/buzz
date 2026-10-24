@@ -4,7 +4,6 @@ import { toast } from "sonner";
 
 import {
   type AccountSummary,
-  getTokenAuthStatus,
   listAccounts,
   type SignInProvider,
   switchAccount,
@@ -28,8 +27,8 @@ function errorText(error: unknown, fallback: string): string {
 
 /**
  * The profile menu's accounts: list, switch, and add (or sign in again).
- * Lives with the sidebar card, not the menu, so a Google sign-in keeps going
- * after the menu closes.
+ * Lives with the sidebar card, not the menu, so a sign-in (and the "Add
+ * account" choice of Google or Apple) keeps going after the menu closes.
  */
 export function useAccountMenu({ open }: { open: boolean }) {
   const query = useQuery({
@@ -38,11 +37,6 @@ export function useAccountMenu({ open }: { open: boolean }) {
     staleTime: 0,
   });
   const { refetch } = query;
-  const status = useQuery({
-    queryKey: ["token-auth-status"],
-    queryFn: getTokenAuthStatus,
-    staleTime: 60_000,
-  });
   React.useEffect(() => {
     if (open) void refetch();
   }, [open, refetch]);
@@ -110,7 +104,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
   }, []);
 
   /**
-   * Google (or Apple) sign-in for another account (or a fresh sign-in for
+   * Google or Apple sign-in for another account (or a fresh sign-in for
    * one whose sign-in ended). The account it opens becomes the active one.
    */
   const signIn = React.useCallback(
@@ -153,8 +147,6 @@ export function useAccountMenu({ open }: { open: boolean }) {
     busy: busy || login.pending,
     switchTo,
     signIn,
-    /** The server offers Sign in with Apple. */
-    appleSignIn: status.data?.providers.includes("apple") ?? false,
     /** For the "Create your Kuzz account" screen. */
     signupPrompt: { signup: login.signup, answerSignup: login.answerSignup },
   };

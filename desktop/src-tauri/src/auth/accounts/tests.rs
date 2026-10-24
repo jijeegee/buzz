@@ -1172,6 +1172,7 @@ fn the_account_list_carries_profiles_most_recent_first() {
         AccountProfile {
             display_name: Some("B".into()),
             last_used_at: Some(20),
+            provider: Some("apple".into()),
             ..Default::default()
         },
     );
@@ -1191,7 +1192,9 @@ fn the_account_list_carries_profiles_most_recent_first() {
     );
     assert_eq!(list[0].display_name.as_deref(), Some("B"));
     assert_eq!(list[0].state, AccountState::NeedsLogin);
+    assert_eq!(list[0].provider.as_deref(), Some("apple"));
     assert!(list[1].active && list[1].display_name.is_none());
+    assert_eq!(list[1].provider, None, "unknown: Google");
 }
 
 #[test]

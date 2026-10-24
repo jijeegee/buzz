@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// Local data deletion for Google accounts: no key backup gate, no private key
-// fetched or shown, plain "sign in with Google again" copy, and the typed
+// Local data deletion for Google and Apple accounts: no key backup gate, no
+// private key fetched or shown, plain "sign in again" copy, and the typed
 // phrase still guards the wipe. The E2E-only key seam keeps the backup gate.
 
 const calls = [];
@@ -59,10 +59,10 @@ async function openDialog(container) {
 
 test("Google accounts delete local data without any key backup step", async () => {
   const { container, unmount } = await mount();
-  assert.match(container.textContent, /sign in with Google again/);
+  assert.match(container.textContent, /sign in again to get back in/);
   assert.doesNotMatch(container.textContent, /\bkey\b|backup/i);
   const dialog = await openDialog(container);
-  assert.match(dialog.textContent, /sign in with Google again to get back in/);
+  assert.match(dialog.textContent, /sign in again to get back in/);
   assert.doesNotMatch(dialog.textContent, /\bkey\b|backup|nsec/i);
   assert.equal(
     dialog.querySelector("[data-testid='signout-backup-confirm']"),

@@ -28,6 +28,7 @@ import '../../shared/widgets/ios_glass_navigation_button.dart';
 import '../../shared/widgets/ios_glass_navigation_action.dart';
 import '../../shared/widgets/immediate_page_route.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../../shared/widgets/sign_in_method_icon.dart';
 import 'account_actions.dart';
 import 'account_page.dart';
 import 'agents_settings.dart';

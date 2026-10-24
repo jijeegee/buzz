@@ -20,6 +20,12 @@ class _AccountSection extends ConsumerWidget {
     final username = profile?.username;
     final email = profile?.email;
     final hasName = name != null && name.isNotEmpty;
+    // Recorded on this phone at sign-in; older records are all Google.
+    final method =
+        ref.watch(activeCommunityProvider).value?.signInMethod ?? 'google';
+    final signedInWith = method == 'apple'
+        ? context.l10n.settingsSignedInWithApple
+        : context.l10n.settingsSignedInWithGoogle;
     void openDevices() => unawaited(
       Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -40,14 +46,16 @@ class _AccountSection extends ConsumerWidget {
                 icon: LucideIcons.user,
                 // Name over email, like desktop; the email alone when the
                 // account has no name, and a plain label before either loads.
-                title: hasName
-                    ? name
-                    : email ?? context.l10n.settingsSignedInWithGoogle,
+                // Long emails (Apple's private relay) ellipsise.
+                title: hasName ? name : email ?? signedInWith,
+                titleMaxLines: 1,
                 subtitle: hasName
-                    ? email ?? context.l10n.settingsSignedInWithGoogle
+                    ? email ?? signedInWith
                     : email == null
                     ? null
-                    : context.l10n.settingsSignedInWithGoogle,
+                    : signedInWith,
+                subtitleMaxLines: 1,
+                trailing: SignInMethodIcon(method: method),
               )
             else
               AppListRow(

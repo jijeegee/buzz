@@ -5,6 +5,7 @@ import {
   accountAfterSignOut,
   accountEmailDetail,
   accountLabel,
+  accountProvider,
   agentsOfAccount,
   canSwitchTo,
   menuAccounts,
@@ -107,6 +108,13 @@ test("only another signed-in (or key-only) account is a direct switch", () => {
     canSwitchTo(account("a".repeat(64), { state: "signed_out" })),
     false,
   );
+});
+
+test("an account signs in with Apple only when recorded; otherwise Google", () => {
+  assert.equal(accountProvider(account("a", { provider: "apple" })), "apple");
+  assert.equal(accountProvider(account("a", { provider: "google" })), "google");
+  assert.equal(accountProvider(account("a", { provider: null })), "google");
+  assert.equal(accountProvider(account("a")), "google");
 });
 
 test("each account sees only its own agents, never an ownerless one", () => {
