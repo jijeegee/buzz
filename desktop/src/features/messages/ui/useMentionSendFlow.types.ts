@@ -26,6 +26,12 @@ export type UseMentionSendFlowOptions = {
   emojiAutocomplete: Pick<UseEmojiAutocompleteResult, "clearEmojis">;
   mentions: UseMentionsResult;
   onPrepareSendChannel?: (pubkeys?: string[]) => Promise<string | null>;
+  /**
+   * Whether a send mentioning `pubkeys` stays in this conversation, so the own
+   * message can be drawn before `onPrepareSendChannel` runs. Without it, a
+   * send with mentions waits for preparation (it may move to a new chat).
+   */
+  sendStaysInChannel?: (pubkeys: readonly string[]) => boolean;
   onAddressedAgentsComposerCleared?: (pubkeys: readonly string[]) => string;
   onAddressedAgentsSendFailed?: (pubkeys: readonly string[]) => void;
   onAddressedAgentsSendSucceeded?: (
