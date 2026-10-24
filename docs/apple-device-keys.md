@@ -127,16 +127,16 @@ To get `hardware` on macOS:
 ### Sidecars: the app signer
 
 `kuzz-acp`, `kuzz`, `git-credential-nostr` and `kuzz-dev-mcp` open the same
-device key. On Windows they reach the per-user TPM key. On macOS they cannot
-reach the Secure Enclave key (command-line executables cannot carry the
-keychain access group without a profile of their own), so the desktop app
-signs for the runners it spawns:
+device key. On macOS they cannot reach the Secure Enclave key (command-line
+executables cannot carry the keychain access group without a profile of
+their own), so the desktop app signs for the runners it spawns. Windows does
+the same, so both platforms take one path (the runners could open the TPM
+key there, but do not when the app spawned them):
 
 - Once the app opened its device key it starts a loopback **app signer**
   (`crates/kuzz-token-broker/src/app_signer.rs`, desktop
-  `desktop/src-tauri/src/app_signer.rs`) on `127.0.0.1:<random port>`. It
-  runs on every desktop platform; helpers that open the key themselves never
-  ask it, so Windows TPM behaviour is unchanged.
+  `desktop/src-tauri/src/app_signer.rs`) on `127.0.0.1:<random port>`, on
+  every desktop platform.
 - Each spawned `kuzz-acp` gets its own lease in `KUZZ_APP_SIGNER_URL` and
   `KUZZ_APP_SIGNER_SECRET` (random 32-byte bearer secret, constant-time
   compare, scoped to that agent and relay, revoked when the process ends;
@@ -154,8 +154,8 @@ signs for the runners it spawns:
 - Bounds: 8 KiB requests, 5 s read limit, 16 connections, 600 requests per
   minute per lease, 256 leases. Unknown paths `404`, bad secret `401`, refused
   content `403`, stopped `503`. The secret is never logged.
-- Helper resolution (`DeviceSigner::from_env`): own device key, else the app
-  signer from the env, else (agent children) the `kuzz-acp` device broker,
+- Helper resolution (`DeviceSigner::from_env`): the app signer from the env
+  (the key is then not opened), else the own device key, else (agent children) the `kuzz-acp` device broker,
   else none. A signing failure is never fatal: the request goes out without a
   tag or proof, with a warning.
 - `kuzz-acp` hands its agent children its own device broker, never the app

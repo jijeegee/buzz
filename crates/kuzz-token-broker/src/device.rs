@@ -139,9 +139,9 @@ pub enum DeviceSigner {
 }
 
 impl DeviceSigner {
-    /// Pick the signer, in order: the key `open` returns; else the desktop
-    /// app signer from `lookup` (set by the app on the processes it spawns);
-    /// else (managed-agent children only) the `kuzz-acp` device broker. The
+    /// Pick the signer, in order: the desktop app signer from `lookup` (set
+    /// by the app on the processes it spawns; `open` is then not called);
+    /// else the key `open` returns; else (managed-agent children only) the `kuzz-acp` device broker. The
     /// second value is a reason worth a warning: a key that failed to open
     /// with nothing to stand in for it. A machine without a key yet is not
     /// worth one.
@@ -149,16 +149,13 @@ impl DeviceSigner {
         lookup: impl Fn(&str) -> Option<String>,
         open: impl FnOnce() -> Result<Option<DeviceKey>, DeviceKeyError>,
     ) -> (Option<Self>, Option<String>) {
-        let warning = match open() {
-            Ok(Some(key)) => return (Some(Self::Key(key)), None),
-            Ok(None) => None,
-            Err(error) => Some(format!("device key unavailable: {error}")),
-        };
         let get = |name: &str| {
             lookup(name)
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty())
         };
+        // Spawned by the app: always sign through it, on every platform, so
+        // Windows takes the same path macOS must take.
         if let (Some(url), Some(secret)) = (get(APP_SIGNER_URL_ENV), get(APP_SIGNER_SECRET_ENV)) {
             return (
                 Some(Self::App {
@@ -168,6 +165,11 @@ impl DeviceSigner {
                 None,
             );
         }
+        let warning = match open() {
+            Ok(Some(key)) => return (Some(Self::Key(key)), None),
+            Ok(None) => None,
+            Err(error) => Some(format!("device key unavailable: {error}")),
+        };
         if stored_session_disabled(&lookup) {
             if let (Some(url), Some(secret)) =
                 (get(DEVICE_BROKER_URL_ENV), get(DEVICE_BROKER_SECRET_ENV))
@@ -569,7 +571,7 @@ mod tests {
     }
 
     #[test]
-    fn a_helper_whose_key_fails_falls_back_to_the_app_signer() {
+    fn a_helper_the_app_spawned_signs_through_the_app() {
         let dir = tempfile::tempdir().unwrap();
         let key = file_key(&dir);
         let agent = Keys::generate();
@@ -583,17 +585,15 @@ mod tests {
         vars.push((DEVICE_BROKER_URL_ENV.into(), "http://127.0.0.1:9".into()));
         vars.push((DEVICE_BROKER_SECRET_ENV.into(), "s".into()));
         let lookup = |name: &str| vars.iter().find(|(k, _)| k == name).map(|(_, v)| v.clone());
-        // The own key still comes first (Windows: the TPM, as before).
-        let (own, _) = DeviceSigner::resolve(lookup, || Ok(Some(key.clone())));
-        assert!(matches!(own, Some(DeviceSigner::Key(_))));
+        // Spawned by the app, the app signer wins even over a key this
+        // process could open (Windows signs the way macOS must).
+        let (own, _) =
+            DeviceSigner::resolve(lookup, || -> Result<Option<DeviceKey>, DeviceKeyError> {
+                panic!("the key is not opened when the app signs")
+            });
+        assert!(matches!(own, Some(DeviceSigner::App { .. })));
 
-        // macOS helper without the keychain access group: open fails.
-        let (fallback, warning) = DeviceSigner::resolve(lookup, || {
-            Err(DeviceKeyError::SecureEnclave {
-                op: "open",
-                code: -34018,
-            })
-        });
+        let (fallback, warning) = DeviceSigner::resolve(lookup, || Ok(Some(key.clone())));
         assert!(warning.is_none());
         let fallback = fallback.expect("app signer");
         assert!(matches!(fallback, DeviceSigner::App { .. }));

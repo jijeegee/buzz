@@ -66,8 +66,9 @@ pub fn wrong_host_exit_requested() -> bool {
 static DEVICE: OnceLock<DeviceSigner> = OnceLock::new();
 
 /// Resolve this process's device signer once (on a blocking thread): the
-/// shared device key (existing only), else the desktop app signer from the
-/// environment ([`DeviceSigner::from_env`]). `None`, with a log line, when
+/// desktop app signer from the environment when the app spawned this
+/// process, else the shared device key (existing only)
+/// ([`DeviceSigner::from_env`]). `None`, with a log line, when
 /// there is neither.
 pub async fn init() -> Option<&'static DeviceSigner> {
     if let Some(signer) = DEVICE.get() {
@@ -82,7 +83,7 @@ pub async fn init() -> Option<&'static DeviceSigner> {
                     "device key opened"
                 ),
                 DeviceSigner::App { .. } => {
-                    tracing::info!("device key not reachable here; signing through the app")
+                    tracing::info!("signing through the app")
                 }
                 DeviceSigner::Broker { .. } => tracing::info!("signing through a device broker"),
             }
