@@ -11,10 +11,12 @@ const _globalLiveEventKinds = [
 /// its stored tail (open or not), then room activity updates the list and
 /// its listeners.
 extension _ChannelsNotifierGlobalFeed on ChannelsNotifier {
-  /// [liveSince] is when the delivering subscription was requested.
+  /// [liveSince] is when the delivering feed became continuous. An event
+  /// already delivered (a catch-up overlapping the live feed) is skipped.
   void _ingestLiveEvent(NostrEvent event, {required int liveSince}) {
     final scope = _lifecycleRef.read(channelHeadScopeProvider);
     if (scope != null) {
+      if (!_noteDelivered(scope, event)) return;
       _lifecycleRef
           .read(channelRoomStoreProvider)
           .ingest(scope, event, liveSince: liveSince);

@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
+import 'channel_room_store.dart';
 import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
@@ -16,6 +17,7 @@ import 'timeline_message.dart';
 import 'window_anchor.dart';
 
 part 'channel_messages_provider/open_at.dart';
+part 'channel_messages_provider/reconnect.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
 // Channel history keeps partial reply evidence; full threads stay route-scoped.
@@ -36,6 +38,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   void Function()? _unsubscribe;
   bool _reachedOldest = false;
   bool _initInFlight = false;
+  bool _needsInit = true;
+  bool _awaitingCatchUp = false;
   bool _usingChannelWindow = false;
   bool _initialWindowQueryInFlight = false;
   int _initVersion = 0;
@@ -84,6 +88,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ChannelMessagesNotifier(this.channelId);
 
   bool get _summaryMounted => ref.mounted;
+  Ref get _messagesRef => ref;
   RelaySessionNotifier get _summarySession =>
       ref.read(relaySessionProvider.notifier);
 
@@ -132,7 +137,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   @override
   AsyncValue<List<NostrEvent>> build() {
-    final sessionState = ref.watch(relaySessionProvider);
     ref.onCancel(() {
       _hasListeners = false;
       _deletionOwnerQueue.pause();
@@ -173,45 +177,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       );
     }
 
-    if (sessionState.status != SessionStatus.connected) {
-      _initVersion++;
-      _initInFlight = false;
-      _initialWindowQueryInFlight = false;
-      _liveSummaryRootsDuringInitialWindowQuery.clear();
+    // Reconnects do not rebuild ([_listenForReconnects]).
+    _listenForReconnects();
+    _needsInit = true;
+    if (ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      _stopInit();
       return AsyncData(_lastKnownMessages ?? const []);
     }
-
-    // A window opened at a message survives a reconnect: [_init] pages on
-    // from its newest row instead of replacing what the reader is looking at.
-    if (!_usingChannelWindow || !_windowStore.isMiddle) {
-      _reachedOldest = false;
-      _windowStore = const ChannelWindowStore.empty();
-      // A reconnect window can lag a confirmed thread query and contains only
-      // top-level rows. Keep known replies as summary evidence, including
-      // their deletion markers so a reset cannot resurrect a deleted reply.
-      for (final event in _lastKnownMessages ?? const <NostrEvent>[]) {
-        if (event.threadReference.parentId != null ||
-            event.kind == EventKind.deletion ||
-            event.kind == EventKind.nip29DeleteEvent) {
-          _mergeWindowEventIntoStore(event);
-        }
-      }
-      // Unconfirmed own sends (in flight or failed) are in no relay page yet.
-      for (final event in localSends.own) {
-        if (event.threadReference.parentId == null &&
-            EventKind.channelTimelineContentKinds.contains(event.kind)) {
-          _windowStore = mergeLiveChannelWindowEvent(
-            _windowStore,
-            event,
-            isTimelineRow: true,
-          );
-        }
-      }
-      _usingChannelWindow = false;
-    }
-    _initialWindowQueryInFlight = false;
-    _liveSummaryRootsDuringInitialWindowQuery.clear();
-    _initFuture = _init();
+    _restart();
     if (_lastKnownMessages case final cached? when cached.isNotEmpty) {
       return AsyncData(cached);
     }
@@ -251,6 +224,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
       if (_usingChannelWindow && _windowStore.isMiddle) {
         await _refreshMiddleAfterReconnect(session, initVersion);
+        if (_isCurrentInit(initVersion)) _needsInit = false;
         return;
       }
 
@@ -285,6 +259,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _reconcileRetainedSummaryPayloads(merged);
       _reconcileRetainedAggregates(historyVersion);
       state = AsyncData(merged);
+      _needsInit = false;
       _summaryRefreshes.resume();
     } catch (e, st) {
       if (!_isCurrentInit(initVersion)) return;
@@ -398,6 +373,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   void _persistHead(List<NostrEvent> response) {
     final scope = _readHeadScope();
     if (scope == null) return;
+    ref.read(channelRoomStoreProvider).clearGap(scope, channelId);
     unawaited(
       ref
           .read(channelHeadCacheProvider)

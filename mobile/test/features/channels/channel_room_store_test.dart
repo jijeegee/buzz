@@ -140,7 +140,7 @@ void main() {
       root = await Directory.systemTemp.createTemp('channel_room_store_test');
       cache = ChannelHeadCache(() async => root);
       now = 1000;
-      store = ChannelRoomStore(cache, clock: () => now)..markLive();
+      store = ChannelRoomStore(cache, clock: () => now);
     });
 
     tearDown(() async {
@@ -206,16 +206,37 @@ void main() {
       expect(formatTimeline(tail.events).single.content, 'hello');
     });
 
-    test('a tail stored before a reconnect has a gap', () async {
+    test('a feed bridged across a reconnect keeps the tail whole', () async {
+      store.ingest(_scope, _row('a', createdAt: 1001), liveSince: 900);
+      await store.flush();
+
+      // The catch-up covered the time offline: the feed still counts from 900.
+      now = 2000;
+      store.ingest(_scope, _row('b', createdAt: 2001), liveSince: 900);
+      await store.flush();
+
+      final tail = (await cache.loadTail(_scope, _channelId))!;
+      expect(tail.gap, isFalse);
+      expect(_ids(tail.rows), ['a', 'b']);
+    });
+
+    test('a gap a catch-up could not fill reaches the tail', () async {
       store.ingest(_scope, _row('a', createdAt: 1001));
       await store.flush();
 
-      now = 2000;
-      store.markLive();
-      store.ingest(_scope, _row('b', createdAt: 2001));
+      store.markGap(_scope, {_channelId});
+      expect(store.hasGap(_scope, _channelId), isTrue);
+      store.ingest(_scope, _row('b', createdAt: 1002), liveSince: 900);
       await store.flush();
 
       expect((await cache.loadTail(_scope, _channelId))!.gap, isTrue);
+      expect(store.hasGap(_scope, _channelId), isFalse);
+    });
+
+    test('a fetched newest page clears a marked gap', () {
+      store.markGap(_scope, {_channelId});
+      store.clearGap(_scope, _channelId);
+      expect(store.hasGap(_scope, _channelId), isFalse);
     });
 
     test('a subscription requested after the last write marks a gap', () async {

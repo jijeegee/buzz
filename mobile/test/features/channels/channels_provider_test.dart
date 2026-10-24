@@ -19,10 +19,13 @@ import 'package:kuzz/features/channels/room_goals_provider.dart';
 import 'package:kuzz/features/goals/goal_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 part 'channels_provider_live_cases.dart';
 part 'channels_provider_terminal_cases.dart';
 part 'channels_provider_room_store_cases.dart';
+part 'channels_provider_catch_up_cases.dart';
 
 /// Tests for [ChannelsNotifier] in the pure-Nostr world.
 ///
@@ -1618,6 +1621,7 @@ void main() {
   _liveSubscriptionTests();
   _terminalSubscriptionTests();
   _roomStoreFeedTests();
+  _roomCatchUpTests();
 
   test('retains channel-list member snapshots for immediate reuse', () async {
     final joinedAt = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);
@@ -2656,6 +2660,11 @@ class _FakeRelaySession extends RelaySessionNotifier {
 
   final List<NostrFilter> historyFilters = [];
   final List<List<NostrFilter>> queryBatches = [];
+
+  /// Reconnect catch-up queries of the channel list's rooms, and what each
+  /// returns (nothing by default).
+  final List<NostrFilter> catchUpFilters = [];
+  List<NostrEvent> Function(NostrFilter filter)? catchUpResults;
   Object? messageBatchError;
   Object? latestBatchError;
   Object? messageHistoryError;
@@ -2913,7 +2922,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
         _hiddenDmStarted = null;
         await paused.future;
       }
-      return hiddenDmEvents;
+      return List.of(hiddenDmEvents);
     }
     if (filter.kinds.contains(EventKind.huddleStarted)) {
       // Claim the parked slot so the newer refresh's own Huddle query runs
@@ -2926,7 +2935,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
         _huddleStartsStarted = null;
         await paused.future;
       }
-      return huddleStarts;
+      return List.of(huddleStarts);
     }
     if (filter.kinds.contains(39000)) {
       final ids = filter.tags['#d']?.toSet();
@@ -2939,7 +2948,8 @@ class _FakeRelaySession extends RelaySessionNotifier {
     // Per-filter websocket fallback of a message batch.
     messageHistoryCount++;
     if (messageHistoryError case final error?) throw error;
-    return const [];
+    // Growable: room history sorts what it gets.
+    return <NostrEvent>[];
   }
 
   @override
@@ -3015,6 +3025,12 @@ class _FakeRelaySession extends RelaySessionNotifier {
         return const [];
       }
       return filter.until == null ? directorySnapshot : const [];
+    }
+    if (filters case [final filter]
+        when filter.since != null &&
+            filter.kinds.contains(EventKind.channelThreadSummary)) {
+      catchUpFilters.add(filter);
+      return catchUpResults?.call(filter) ?? const [];
     }
     queryBatches.add(filters);
     if (messageBatchError case final error?) throw error;

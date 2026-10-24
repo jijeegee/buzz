@@ -286,17 +286,58 @@ class ChannelRoomStore {
   int _pendingCount = 0;
   int _pendingGeneration = 0;
 
-  /// Rooms whose last write failed: their next write marks a gap.
-  final Set<(ChannelHeadScope, String)> _failedRooms = {};
+  /// Rooms whose next write marks a gap: their last write failed, or a
+  /// catch-up could not fill them while their events were queued.
+  final Set<(ChannelHeadScope, String)> _gapRooms = {};
   Timer? _timer;
-  int? _liveSince;
 
-  /// Records that the live feed (re)connected now.
-  void markLive() => _liveSince = _clock();
+  ChannelHeadScope? _fedScope;
+  Set<String> _fedRooms = const {};
+  final List<void Function(RoomCatchUp)> _catchUpListeners = [];
+
+  /// Records which rooms the channel list's live feed covers for [scope].
+  /// Their reconnect recovery is its catch-up ([publishCatchUp]).
+  void setFedRooms(ChannelHeadScope? scope, Set<String> rooms) {
+    _fedScope = scope;
+    _fedRooms = Set.unmodifiable(rooms);
+  }
+
+  /// Whether the channel list's live feed covers [channelId] in [scope].
+  bool feeds(ChannelHeadScope? scope, String channelId) =>
+      scope != null && scope == _fedScope && _fedRooms.contains(channelId);
+
+  /// Registers [listener] for catch-up results; returns its remover.
+  void Function() listenCatchUps(void Function(RoomCatchUp) listener) {
+    _catchUpListeners.add(listener);
+    return () => _catchUpListeners.remove(listener);
+  }
+
+  /// Tells open rooms what a reconnect catch-up fetched and left unfilled.
+  void publishCatchUp(RoomCatchUp catchUp) {
+    for (final listener in List.of(_catchUpListeners)) {
+      listener(catchUp);
+    }
+  }
+
+  /// Marks [rooms] as possibly missing rows: known at once through [hasGap],
+  /// and written to each tail with its next live write.
+  void markGap(ChannelHeadScope scope, Set<String> rooms) {
+    for (final room in rooms) {
+      _gapRooms.add((scope, room));
+    }
+  }
+
+  /// Whether a gap marked for [channelId] is still waiting for its write.
+  bool hasGap(ChannelHeadScope scope, String channelId) =>
+      _gapRooms.contains((scope, channelId));
+
+  /// Forgets a marked gap once the room's newest page was fetched.
+  void clearGap(ChannelHeadScope scope, String channelId) =>
+      _gapRooms.remove((scope, channelId));
 
   /// Queues [event] for its room's tail. [liveSince] is when the delivering
-  /// subscription was requested; the later of it and the last reconnect
-  /// counts. Kinds the tail does not keep are ignored.
+  /// feed became continuous (by default, now). Kinds the tail does not keep
+  /// are ignored.
   void ingest(ChannelHeadScope scope, NostrEvent event, {int? liveSince}) {
     final channelId = event.channelId;
     if (channelId == null || !_storesKind(event.kind)) return;
@@ -310,13 +351,11 @@ class ChannelRoomStore {
       _pendingGeneration = generation;
     }
     final now = _clock();
-    final reconnectedAt = _liveSince;
-    final since = liveSince == null
-        ? reconnectedAt ?? now
-        : max(liveSince, reconnectedAt ?? liveSince);
     _pending
         .putIfAbsent((scope, channelId), () => [])
-        .add(RoomLiveEvent(event, liveSince: since, receivedAt: now));
+        .add(
+          RoomLiveEvent(event, liveSince: liveSince ?? now, receivedAt: now),
+        );
     _pendingCount++;
     if (_pendingCount >= maxPendingEvents) {
       unawaited(flush());
@@ -342,11 +381,11 @@ class ChannelRoomStore {
               room.$2,
               events,
               generation: generation,
-              markGap: _failedRooms.remove(room),
+              markGap: _gapRooms.remove(room),
             )
             .catchError((Object error) {
               // The events are lost to the tail; its next write says so.
-              _failedRooms.add(room);
+              _gapRooms.add(room);
               debugPrint(
                 '[ChannelRoomStore] failed to store live events for '
                 '${room.$2}: $error',
@@ -365,14 +404,30 @@ class ChannelRoomStore {
   static int _nowSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 }
 
+/// What one reconnect catch-up of the channel list's rooms found.
+@immutable
+class RoomCatchUp {
+  const RoomCatchUp({
+    required this.scope,
+    required this.rooms,
+    required this.gaps,
+    required this.events,
+  });
+
+  final ChannelHeadScope scope;
+
+  /// Rooms the catch-up was for.
+  final Set<String> rooms;
+
+  /// Rooms it could not fill: rows sent while offline may be missing.
+  final Set<String> gaps;
+
+  /// The events it fetched, by room, oldest first.
+  final Map<String, List<NostrEvent>> events;
+}
+
 final channelRoomStoreProvider = Provider<ChannelRoomStore>((ref) {
   final store = ChannelRoomStore(ref.watch(channelHeadCacheProvider));
-  ref.listen(relaySessionProvider.select((session) => session.status), (
-    _,
-    status,
-  ) {
-    if (status == SessionStatus.connected) store.markLive();
-  }, fireImmediately: true);
   ref.onDispose(() => unawaited(store.flush()));
   return store;
 });
