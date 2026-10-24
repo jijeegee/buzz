@@ -146,6 +146,9 @@ class AppRelease {
   final bool required;
 }
 
+/// Result of one [AppUpdateNotifier.check].
+enum AppUpdateCheck { available, upToDate, failed }
+
 /// Where the update flow stands.
 enum AppUpdatePhase { idle, downloading, installing, failed }
 
@@ -204,7 +207,7 @@ class AppUpdateNotifier extends Notifier<AppUpdateState> {
 
   AppLifecycleListener? _lifecycle;
   DateTime? _lastCheck;
-  bool _checking = false;
+  Future<AppUpdateCheck>? _inFlight;
 
   @override
   AppUpdateState build() {
@@ -231,15 +234,17 @@ class AppUpdateNotifier extends Notifier<AppUpdateState> {
     unawaited(check());
   }
 
-  /// Asks the relay which build this app should run.
-  Future<void> check() async {
+  /// Asks the relay which build this app should run. A call while a check
+  /// is running shares that check's result.
+  Future<AppUpdateCheck> check() =>
+      _inFlight ??= _check().whenComplete(() => _inFlight = null);
+
+  Future<AppUpdateCheck> _check() async {
     final platform = appUpdatePlatform;
     final origin = appBuiltInServerOrigin();
     if (platform == null || origin == null || origin == unsetServerOrigin) {
-      return;
+      return AppUpdateCheck.failed;
     }
-    if (_checking) return;
-    _checking = true;
     _lastCheck = DateTime.now();
     try {
       final current = await appVersion();
@@ -253,19 +258,19 @@ class AppUpdateNotifier extends Notifier<AppUpdateState> {
             headers: {'Cache-Control': 'no-cache', 'X-Kuzz-Pubkey': ?pubkey},
           )
           .timeout(const Duration(seconds: 15));
-      if (response.statusCode != 200) return;
+      if (response.statusCode != 200) return AppUpdateCheck.failed;
       final release = AppRelease.fromJson(
         jsonDecode(response.body) as Map<String, dynamic>,
       );
-      if (!release.updateAvailable) return;
+      if (!release.updateAvailable) return AppUpdateCheck.upToDate;
       state = state.copyWith(
         release: release,
         forced: state.forced || release.required,
       );
+      return AppUpdateCheck.available;
     } catch (error) {
       debugPrint('[AppUpdate] check failed: $error');
-    } finally {
-      _checking = false;
+      return AppUpdateCheck.failed;
     }
   }
 

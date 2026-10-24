@@ -1318,6 +1318,30 @@
   "@settingsGeneralSection": {
     "description": "Settings, heading of the first section: general app settings such as the app language. Short."
   },
+  "settingsUpdatesSection": "Updates",
+  "@settingsUpdatesSection": {
+    "description": "Settings, heading of the section with the installed app version and the update check. Short."
+  },
+  "settingsInstalledVersion": "Version",
+  "@settingsInstalledVersion": {
+    "description": "Settings > Updates: row label; the installed app version (e.g. v0.6.3) is shown next to it. Short."
+  },
+  "settingsCheckForUpdates": "Check for updates",
+  "@settingsCheckForUpdates": {
+    "description": "Settings > Updates: row that asks the server whether a newer app version exists. Short."
+  },
+  "settingsCheckingForUpdates": "Checking…",
+  "@settingsCheckingForUpdates": {
+    "description": "Settings > Updates: shown under 'Check for updates' while the check runs. Short."
+  },
+  "settingsUpToDate": "You're on the latest version.",
+  "@settingsUpToDate": {
+    "description": "Settings > Updates: shown under 'Check for updates' when no newer version exists. Short."
+  },
+  "settingsUpdateCheckFailed": "Couldn't check. Try again.",
+  "@settingsUpdateCheckFailed": {
+    "description": "Settings > Updates: shown under 'Check for updates' when the check failed (e.g. offline). Short."
+  },
   "settingsAppearanceSection": "Appearance",
   "@settingsAppearanceSection": {
     "description": "Settings page, heading of the section with the theme row. Short."

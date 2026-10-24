@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 
+import '../../shared/app_update/app_update.dart';
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/default_community.dart';
@@ -43,6 +44,7 @@ part 'settings_page/account_section.dart';
 part 'settings_page/community_section.dart';
 part 'settings_page/connection_section.dart';
 part 'settings_page/notifications_section.dart';
+part 'settings_page/updates_section.dart';
 
 Widget _emptyProfileEditPage(BuildContext context) => const SizedBox.shrink();
 
@@ -258,6 +260,10 @@ class SettingsPage extends HookConsumerWidget {
                   ? [profileHeader, const KuzzIdSettings()]
                   : [
                       const _GeneralSection(),
+                      _UpdatesSection(
+                        version: packageInfo.data?.version,
+                        buildNumber: packageInfo.data?.buildNumber,
+                      ),
                       _CommunitySection(invitePageBuilder: invitePageBuilder),
                       if (tokenOrigin != null)
                         _AccountSection(origin: tokenOrigin)
@@ -286,37 +292,7 @@ class SettingsPage extends HookConsumerWidget {
                     ],
             ),
           ),
-          if (!isProfile && packageInfo.hasData)
-            _VersionFooter(
-              version: packageInfo.data!.version,
-              buildNumber: packageInfo.data!.buildNumber,
-            ),
         ],
-      ),
-    );
-  }
-}
-
-class _VersionFooter extends StatelessWidget {
-  const _VersionFooter({required this.version, required this.buildNumber});
-
-  final String version;
-  final String buildNumber;
-
-  @override
-  Widget build(BuildContext context) {
-    return SafeArea(
-      top: false,
-      child: Padding(
-        padding: const EdgeInsets.only(bottom: Grid.xs, top: Grid.xxs),
-        child: Center(
-          child: Text(
-            buildNumber.isEmpty ? 'v$version' : 'v$version ($buildNumber)',
-            style: context.textTheme.bodySmall?.copyWith(
-              color: context.colors.onSurfaceVariant.withValues(alpha: 0.6),
-            ),
-          ),
-        ),
       ),
     );
   }

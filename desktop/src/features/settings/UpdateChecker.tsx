@@ -1,4 +1,6 @@
+import { getVersion } from "@tauri-apps/api/app";
 import { openUrl } from "@tauri-apps/plugin-opener";
+import * as React from "react";
 import { useUpdaterContext } from "./hooks/UpdaterProvider";
 import { useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
@@ -10,6 +12,19 @@ import { SettingsSectionHeader } from "./ui/SettingsSectionHeader";
 export function UpdateChecker() {
   const t = useT();
   const { status, checkForUpdate, installAndRelaunch } = useUpdaterContext();
+  const [version, setVersion] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    let cancelled = false;
+    getVersion()
+      .then((value) => {
+        if (!cancelled) setVersion(value);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   return (
     <section className="min-w-0" data-testid="settings-updates">
@@ -17,6 +32,19 @@ export function UpdateChecker() {
         title={t("settings.updates.title")}
         description={t("settings.updates.description")}
       />
+
+      <SettingsOptionGroup title={t("settings.updates.versionGroup")}>
+        <SettingsOptionRow data-testid="settings-updates-version">
+          <div className="min-w-0">
+            <p className="text-sm font-medium">
+              {t("settings.updates.currentVersion")}
+            </p>
+          </div>
+          <p className="text-sm text-muted-foreground">
+            {version ? `v${version}` : ""}
+          </p>
+        </SettingsOptionRow>
+      </SettingsOptionGroup>
 
       <SettingsOptionGroup title={t("settings.updates.statusGroup")}>
         {status.state === "idle" && (

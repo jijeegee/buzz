@@ -54,14 +54,13 @@ type SettingsViewProps = SettingsPanelProps & {
 
 /**
  * Sections Kuzz does not offer: hosted communities are Block's Builderlab
- * service, updates have no Kuzz release feed yet, and compute, group
+ * service, and compute, group
  * templates, custom emoji, local archive and mobile pairing are upstream
  * tools Kuzz users don't need.
  */
 export const FORK_HIDDEN_SETTINGS_SECTIONS: ReadonlySet<SettingsSection> =
   new Set<SettingsSection>([
     "hosted-communities",
-    "updates",
     "compute",
     "channel-templates",
     "custom-emoji",
