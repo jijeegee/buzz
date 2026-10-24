@@ -48,6 +48,8 @@ pub const REPLAY_SCOPE: &str = "kuzz:region-link";
 /// Per-call deadline. Shorter than the apps' send retry, so an app retries
 /// against a fresh attempt rather than racing a stalled one.
 pub const CALL_TIMEOUT: Duration = Duration::from_secs(10);
+/// Time to connect to another region, within [`CALL_TIMEOUT`].
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// How the entry region admitted the user a call is made for.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -375,6 +377,9 @@ fn http_client() -> Option<&'static reqwest::Client> {
         .get_or_init(|| {
             reqwest::Client::builder()
                 .timeout(CALL_TIMEOUT)
+                // A host that does not answer fails as a connect error, so
+                // callers know the request was never sent (S5-6).
+                .connect_timeout(CONNECT_TIMEOUT)
                 .redirect(reqwest::redirect::Policy::none())
                 .build()
                 .ok()
@@ -402,8 +407,11 @@ pub enum CallError {
     Off,
     /// The target region is not registered here.
     UnknownRegion,
-    /// Could not reach the target, or it timed out.
+    /// Could not reach the target, or it timed out. The target may have
+    /// run the request.
     Unreachable(String),
+    /// Could not connect to the target: it never got the request.
+    NotSent(String),
     /// The target answered with an error status.
     Status(StatusCode, Value),
 }
@@ -483,7 +491,11 @@ pub async fn call_within(
         .record(started.elapsed().as_secs_f64());
     let response = result.map_err(|e| {
         metrics::counter!("kuzz_region_link_call_failures_total", "target" => target_region.to_string(), "reason" => "unreachable").increment(1);
-        CallError::Unreachable(e.to_string())
+        if e.is_connect() {
+            CallError::NotSent(e.to_string())
+        } else {
+            CallError::Unreachable(e.to_string())
+        }
     })?;
     let status = response.status();
     let value: Value = response.json().await.unwrap_or(Value::Null);

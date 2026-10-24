@@ -393,6 +393,13 @@ pub struct Config {
     /// those checks are then asked of the primary and fail closed.
     pub global_copy_max_lag: Duration,
 
+    /// Outage tokens (`KUZZ_OUTAGE_TOKENS`, default on; stage S5-6). In a
+    /// copy region, when a refresh cannot reach the primary and the copy has
+    /// fallen behind [`Config::global_copy_max_lag`], the region checks the
+    /// refresh token against its copy and gives out a short access token of
+    /// its own instead of failing. Off: such refreshes fail with 503.
+    pub outage_tokens: bool,
+
     /// This region's link key (`KUZZ_REGION_KEY`, hex or nsec), required when
     /// [`Config::region_link`] is on. One key per region: other regions know
     /// it by its public half in `regions.link_pubkey`.
@@ -1411,6 +1418,7 @@ impl Config {
                 .unwrap_or(30)
                 .max(1),
         );
+        let outage_tokens = parse_bool("KUZZ_OUTAGE_TOKENS", true)?;
         if global_copy && (!region_link || region_id == primary_region) {
             return Err(ConfigError::InvalidValue(
                 "KUZZ_GLOBAL_COPY=on is for a region other than the primary, with KUZZ_REGION_LINK=on"
@@ -1658,6 +1666,7 @@ impl Config {
             region_link,
             global_copy,
             global_copy_max_lag,
+            outage_tokens,
             region_key,
             community_id,
             ephemeral_ttl_override,

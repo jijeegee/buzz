@@ -732,3 +732,149 @@ async fn relogin_with_install_id_is_not_blocked_by_the_device_limit() {
         .unwrap();
     assert_eq!(back.device_id, mine.device_id);
 }
+
+/// S5-6: a region gives out access tokens for a live refresh token without
+/// rotating it, at most `max` per window; the token check reads them, and a
+/// revoked session or disabled account stops them.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn outage_tokens_follow_the_session() {
+    let db = Db::from_pool(pool().await);
+    let user = new_user(&db).await;
+    let refresh = token(24);
+    let login = db
+        .complete_login(&user, "phone", "mobile", None, refresh, token(1))
+        .await
+        .expect("login");
+    let window = Duration::hours(1);
+
+    assert_eq!(
+        db.give_outage_access_token(&rand::random(), &token(1), 6, window)
+            .await
+            .unwrap(),
+        OutageRefreshOutcome::Unknown,
+        "a refresh token the copy lacks is not refused as invalid"
+    );
+
+    let first = token(1);
+    let OutageRefreshOutcome::Issued { expires_at } = db
+        .give_outage_access_token(&refresh.hash, &first, 2, window)
+        .await
+        .unwrap()
+    else {
+        panic!("expected a token");
+    };
+    assert_eq!(Some(expires_at), first.expires_at);
+    let record = db
+        .lookup_access_token(&first.hash)
+        .await
+        .unwrap()
+        .expect("the token check finds it");
+    assert_eq!(record.principal, user);
+    assert_eq!(record.kind, AccessTokenKind::User);
+    assert_eq!(record.session_id, Some(login.session_id));
+    assert_eq!(record.device_id, Some(login.device_id));
+    assert!(record.check(Utc::now()).is_ok());
+    let used_at: Option<chrono::DateTime<Utc>> =
+        sqlx::query_scalar("SELECT used_at FROM refresh_tokens WHERE token_hash = $1")
+            .bind(refresh.hash.as_slice())
+            .fetch_one(db.pool())
+            .await
+            .unwrap();
+    assert!(used_at.is_none(), "the refresh token is not rotated");
+
+    // Capped at the refresh token's own expiry.
+    let short_refresh_user = new_user(&db).await;
+    let short_refresh = token(0);
+    let short_refresh = IssuedToken {
+        expires_at: Some(Utc::now() + Duration::minutes(10)),
+        ..short_refresh
+    };
+    db.complete_login(
+        &short_refresh_user,
+        "p",
+        "mobile",
+        None,
+        short_refresh,
+        token(1),
+    )
+    .await
+    .unwrap();
+    // Postgres keeps microseconds.
+    let OutageRefreshOutcome::Issued { expires_at } = db
+        .give_outage_access_token(&short_refresh.hash, &token(1), 6, window)
+        .await
+        .unwrap()
+    else {
+        panic!("expected a token");
+    };
+    let off = expires_at - short_refresh.expires_at.unwrap();
+    assert!(off.num_milliseconds().abs() < 1, "{off}");
+
+    assert!(matches!(
+        db.give_outage_access_token(&refresh.hash, &token(1), 2, window)
+            .await
+            .unwrap(),
+        OutageRefreshOutcome::Issued { .. }
+    ));
+    assert_eq!(
+        db.give_outage_access_token(&refresh.hash, &token(1), 2, window)
+            .await
+            .unwrap(),
+        OutageRefreshOutcome::TooMany
+    );
+
+    db.revoke_device(&user, login.device_id, RevokeReason::Logout)
+        .await
+        .unwrap();
+    assert_eq!(
+        db.lookup_access_token(&first.hash)
+            .await
+            .unwrap()
+            .expect("still found")
+            .check(Utc::now()),
+        Err(AccessTokenRejection::Revoked),
+        "logging out ends outage tokens too"
+    );
+    assert_eq!(
+        db.give_outage_access_token(&refresh.hash, &token(1), 6, window)
+            .await
+            .unwrap(),
+        OutageRefreshOutcome::SessionRevoked
+    );
+
+    // A used refresh token is left to the primary.
+    let rotating = new_user(&db).await;
+    let r1 = token(24);
+    db.complete_login(&rotating, "p", "mobile", None, r1, token(1))
+        .await
+        .unwrap();
+    db.rotate_refresh_token(&r1.hash, token(24), token(1), Duration::zero())
+        .await
+        .unwrap();
+    assert_eq!(
+        db.give_outage_access_token(&r1.hash, &token(1), 6, window)
+            .await
+            .unwrap(),
+        OutageRefreshOutcome::Used
+    );
+
+    let disabled = new_user(&db).await;
+    let r2 = token(24);
+    db.complete_login(&disabled, "p", "mobile", None, r2, token(1))
+        .await
+        .unwrap();
+    let given = token(1);
+    db.give_outage_access_token(&r2.hash, &given, 6, window)
+        .await
+        .unwrap();
+    db.disable_principal(&disabled, None).await.unwrap();
+    assert_eq!(
+        db.lookup_access_token(&given.hash)
+            .await
+            .unwrap()
+            .unwrap()
+            .check(Utc::now()),
+        Err(AccessTokenRejection::PrincipalDisabled)
+    );
+}

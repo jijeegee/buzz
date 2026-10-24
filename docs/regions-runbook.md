@@ -234,6 +234,57 @@ keeps growing is a region that stopped copying.
   time. Room messages are not affected. A room deleted in that time keeps
   its row in the room directory.
 
+## When the primary is down
+
+Sign-in, the admin API and invites are served by the primary, so while it is
+down they fail with 503 in every region. Room messages keep working.
+
+Refreshes are the exception (S5-6). An app refreshes its access token about
+once an hour; without this, everyone would be signed out an hour into an
+outage. When a copy region cannot reach the primary for `POST /auth/refresh`
+because it could not connect at all (so the primary never saw the request), and
+its copy has fallen behind `KUZZ_GLOBAL_COPY_MAX_LAG_SECS`, it answers the
+refresh itself. A timeout or an error answer from the primary is not enough:
+the primary may have rotated the token already.
+- It checks the refresh token against its copy. A logged-out session, a
+  disabled account or an expired token is refused as usual.
+- A refresh token the copy lacks (newer than the copy) or one already used
+  gets 503, and the app tries again later.
+- It gives out an access token recorded in its own `outage_access_tokens`
+  table. The token works **only in that region** and lasts 20 minutes, or
+  until the refresh token expires. The refresh token is not rotated.
+- At most 12 such tokens per refresh token per hour, in each region.
+
+Watch `kuzz_outage_tokens_total` by `outcome`. Many `too_many` or `unknown`
+answers mean apps are stuck; many `issued` from one region with no outage
+means the copy is lagging for another reason (see `primary check`).
+
+When the primary is back, refreshes go to it again and rotate as usual.
+Tokens given out during the outage keep working in their region until they
+expire. The primary does not know them, so the region answers a forwarded
+request (profile, devices, logout) carrying one with 503 instead of sending it
+on; the app retries, and its next refresh (within 20 minutes) gets a token the
+primary knows. Rows are deleted a day after they expire.
+
+Limits:
+- Refresh-token reuse detection is off for those refreshes: a stolen refresh
+  token gets up to 12 access tokens an hour in each region until the primary
+  is back, or until the session is revoked there and the revocation reaches
+  the copy. If the regions are cut off from each other while the primary
+  still serves its own users, a logout done there does not reach the copy
+  until the link is back.
+- A logout reaches open connections that use an outage token only at their
+  next recheck (up to 10 minutes), not at once.
+- An app that starts during the outage cannot finish signing in (it reads
+  `/auth/me` from the primary); running apps stay signed in.
+- Logging out with an outage token after the primary is back answers 503.
+- A session revoked at the primary while the copy lags is still accepted until
+  the revocation reaches the copy.
+- Bot tokens are not covered; hosted bots stop when their token expires.
+
+`KUZZ_OUTAGE_TOKENS=off` turns it off; refreshes then fail with 503 while
+the primary is down.
+
 ## Removing a region
 
 1. Move its rooms to other regions (S6-3/S6-4). `kuzz-admin regions list`
@@ -268,6 +319,7 @@ and take effect on restart.
 | S3 routing | no setting: active while `regions` has more than one row | No migrations. With one region nothing is looked up. |
 | S4 region link | `KUZZ_REGION_LINK=off` | 0084–0086. Rows left in `region_outbox` only close connections and can be deleted. `user_block_versions` rows are tombstones. |
 | S5 global copy | only with the link (see below) | 0087: the guard triggers stay on the copy's tables. |
+| S5 outage tokens | `KUZZ_OUTAGE_TOKENS=off` | 0089: `outage_access_tokens`, this region's own table. Tokens already given out keep working until they expire (20 minutes at most); delete its rows to end them at once. |
 
 **Apps.** Apps that opted into order numbers (`?kuzz_seq=1`) keep getting
 them from history and `OK` frames. With the envelope off, a live message
@@ -308,6 +360,7 @@ Turn the link off in the primary only once no other region is left.
 The two-region tests cover these:
 - a link failing and coming back (`a_link_down_fails_retryably_and_never_splits_the_room`);
 - a copy that stops and restarts (`e2e_regions_lag.rs`).
+- the primary's relay stopping and coming back while apps refresh (`e2e_regions_outage.rs`).
 
 They do not cover:
 - restarting a relay while messages flow (planned with the tangle tests, S4-8);

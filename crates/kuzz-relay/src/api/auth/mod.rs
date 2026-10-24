@@ -21,6 +21,8 @@ mod operators;
 mod people;
 mod session;
 
+pub(crate) use session::outage_refresh;
+
 #[cfg(test)]
 mod live_tests;
 #[cfg(test)]
