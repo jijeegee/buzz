@@ -192,6 +192,42 @@ void main() {
     await h.unmount(tester);
   });
 
+  testWidgets('a sign-out closes screens left open over home', (tester) async {
+    final h = _AppHarness();
+    await h.storeSignedInCommunity();
+    h.server.refreshResponses.add(
+      (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
+    );
+    await h.pump(tester);
+    expect(find.byType(HomePage), findsOneWidget);
+
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(HomePage)),
+        rootNavigator: true,
+      ).push(
+        MaterialPageRoute<void>(
+          builder: (_) => const Scaffold(key: Key('stale-page')),
+        ),
+      ),
+    );
+    await frames(tester);
+    expect(find.byKey(const Key('stale-page')), findsOneWidget);
+
+    // As a remote sign-out does: this device only, from outside the screen.
+    final community = (await h.storage.loadAll()).single;
+    await h.container
+        .read(authProvider.notifier)
+        .signOutCommunity(community.id, deviceOnly: true);
+    // Past the page's closing transition.
+    await tester.pump(const Duration(seconds: 1));
+    await frames(tester);
+
+    expect(find.byKey(const Key('stale-page')), findsNothing);
+    expect(find.byType(HomePage), findsNothing);
+    await h.unmount(tester);
+  });
+
   testWidgets('the shared add-community route opens relay sign-in', (
     tester,
   ) async {
