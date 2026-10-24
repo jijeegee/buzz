@@ -22,7 +22,8 @@ kuzz-core = { workspace = true }
 base64       = { workspace = true }
 chrono       = { workspace = true }
 dashmap      = { workspace = true }
-jsonwebtoken = { workspace = true }
+# `use_pem`: Sign in with Apple signs its client secret with the team's `.p8` key.
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
 nostr        = { workspace = true }
 # Device keys (TPM / Secure Enclave / Keystore all speak P-256).
 p256         = { version = "0.13", default-features = false, features = ["ecdsa", "std"] }
