@@ -7,10 +7,7 @@ import {
   type ChannelWindowStore,
 } from "./channelWindowStore";
 import { reconcileChannelWindowMessages } from "./channelWindowReconciliation";
-import {
-  channelHeadHydration,
-  withStrictStoreProof,
-} from "./storeChannelHeads";
+import { channelHeadHydration, withServerRefresh } from "./storeChannelHeads";
 
 /** Keep the rendered timeline cache aligned with its authoritative window. */
 export function projectChannelWindowMessages(
@@ -48,9 +45,8 @@ export async function refreshChannelWindowMessages(
   if (seeded) {
     await query.promise?.catch(() => {});
   }
-  // The refetch reads the store first and asks the server unless an open
-  // live segment proves the head (see `withStrictStoreProof`).
-  await withStrictStoreProof(queryClient, channelId, () =>
+  // The refetch asks the server, not the store (see `withServerRefresh`).
+  await withServerRefresh(queryClient, channelId, () =>
     queryClient.invalidateQueries(
       { queryKey, exact: true, refetchType: "active" },
       { cancelRefetch: !seeded, throwOnError: true },

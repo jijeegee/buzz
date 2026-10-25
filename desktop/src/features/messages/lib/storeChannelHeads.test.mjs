@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { JSDOM } from "jsdom";
 import React from "react";
 import {
+  applyStoreHead,
   consumeHydratedChannel,
   hasPersistedHydratedChannel,
   hydrateChannelHeads,
@@ -314,7 +315,7 @@ test("a room mounted during a slow store load still takes the seeded path", asyn
   client.clear();
 });
 
-test("a subscribe refresh trusts live coverage only", async () => {
+test("a subscribe refresh always asks the server", async () => {
   install();
   const client = newClient();
   await hydrateChannelHeads(client, scope);
@@ -327,14 +328,11 @@ test("a subscribe refresh trusts live coverage only", async () => {
     replacement,
   ]);
 
+  // Live coverage does not either: the store does not sync thread summaries.
   store.coverage = { liveCovered: true };
   store.window = storedPage([replacement, root]);
   await refreshChannelWindowMessages(client, channelId);
-  assert.equal(serverCalls(), 1);
-  assert.deepEqual(
-    client.getQueryData(channelMessagesKey(channelId)).map((e) => e.id),
-    [root.id, replacement.id],
-  );
+  assert.equal(serverCalls(), 2);
   view.unmount();
   client.clear();
 });
@@ -444,5 +442,66 @@ test("older pages come from the store until its run ends, then from the server",
   };
   await pageOlderMessagesUntilRowFloor(client, channelId, () => true);
   assert.equal(serverCalls(), 1);
+  client.clear();
+});
+
+test("a stored head keeps live thread summaries it cannot supersede", () => {
+  const client = new QueryClient();
+  const live = (createdAt) => ({
+    createdAt,
+    summary: {
+      replyCount: 1,
+      descendantCount: 1,
+      lastReplyAt: createdAt,
+      participantPubkeys: [],
+    },
+  });
+  const summary = (createdAt) => ({
+    id: "9".repeat(64),
+    pubkey: "e".repeat(64),
+    created_at: createdAt,
+    kind: 39005,
+    tags: [
+      ["h", channelId],
+      ["e", root.id],
+    ],
+    content: JSON.stringify({
+      reply_count: 2,
+      descendant_count: 2,
+      last_reply_at: createdAt,
+      participants: [],
+    }),
+    sig: "",
+  });
+  const other = "7".repeat(64);
+  const seed = () =>
+    client.setQueryData(channelWindowKey(channelId), {
+      pages: [],
+      liveOverlay: [],
+      liveAux: [],
+      liveSummaries: { [root.id]: live(20), [other]: live(20) },
+    });
+  const liveRoots = () =>
+    Object.keys(
+      client.getQueryData(channelWindowKey(channelId)).liveSummaries,
+    ).sort();
+
+  // The store keeps no live summaries: an older stored one supersedes none.
+  seed();
+  applyStoreHead(
+    client,
+    channelId,
+    storeWindowPage(storedPage([root], { summaries: [summary(19)] }), null),
+  );
+  assert.deepEqual(liveRoots(), [root.id, other].sort());
+
+  // A stored summary at least as new as the live one replaces it.
+  seed();
+  applyStoreHead(
+    client,
+    channelId,
+    storeWindowPage(storedPage([root], { summaries: [summary(20)] }), null),
+  );
+  assert.deepEqual(liveRoots(), [other]);
   client.clear();
 });

@@ -95,7 +95,15 @@ const emptyState = (): State => ({
 
 const isHex64 = (value: unknown): value is string =>
   typeof value === "string" && /^[0-9a-fA-F]{64}$/.test(value);
-const hexId = (value: unknown) => (isHex64(value) ? value.toLowerCase() : null);
+/**
+ * The mock relay seeds readable `mock-*` event ids that a real relay never
+ * sends (ids are verified hex there). Keep them storable, or a stored window
+ * would silently miss those rows while its claim still proves it.
+ */
+const isMockSeedId = (value: unknown): value is string =>
+  typeof value === "string" && /^mock-[\w.-]+$/.test(value);
+const hexId = (value: unknown) =>
+  isHex64(value) ? value.toLowerCase() : isMockSeedId(value) ? value : null;
 
 /** Position order: positive when `a` is newer (relay order). */
 function cmpPos(aAt: number, aId: string, bAt: number, bId: string) {

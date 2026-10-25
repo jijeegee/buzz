@@ -43,23 +43,24 @@ const seededProofs = new WeakMap<QueryClient, Map<string, StoreHeadProof>>();
 /** Rooms whose newest page came from the server in the background. */
 const paintableChannels = new WeakMap<QueryClient, Set<string>>();
 
-/** Rooms being refreshed after a (re)subscribe: only live coverage proves them. */
-const strictRefreshes = new WeakMap<QueryClient, Map<string, number>>();
+/** Rooms being refreshed after a (re)subscribe: the server answers them. */
+const serverRefreshes = new WeakMap<QueryClient, Map<string, number>>();
 
 /**
- * Run `refresh` with the room's store reads proven by live coverage only.
- * A subscribe or reconnect refresh closes the interval before the live
- * subscription started; a last-message time read earlier cannot prove it.
+ * Run `refresh` with the room's query answered by the server, never the
+ * store. A subscribe or reconnect refresh closes the interval before the
+ * live subscription started, including thread summaries (39005) the store
+ * does not sync, so even live coverage cannot prove it.
  */
-export async function withStrictStoreProof<T>(
+export async function withServerRefresh<T>(
   queryClient: QueryClient,
   channelId: string,
   refresh: () => Promise<T>,
 ): Promise<T> {
-  let counts = strictRefreshes.get(queryClient);
+  let counts = serverRefreshes.get(queryClient);
   if (!counts) {
     counts = new Map();
-    strictRefreshes.set(queryClient, counts);
+    serverRefreshes.set(queryClient, counts);
   }
   counts.set(channelId, (counts.get(channelId) ?? 0) + 1);
   try {
@@ -71,15 +72,8 @@ export async function withStrictStoreProof<T>(
   }
 }
 
-/** The last-message time a store read may use as proof for this room now. */
-export function storeProofLastMessageAt(
-  queryClient: QueryClient,
-  channelId: string,
-  lastMessageAt: string | null,
-): string | null {
-  return strictRefreshes.get(queryClient)?.has(channelId)
-    ? null
-    : lastMessageAt;
+function isServerRefresh(queryClient: QueryClient, channelId: string) {
+  return serverRefreshes.get(queryClient)?.has(channelId) ?? false;
 }
 
 export function storeScopeFor(
@@ -128,6 +122,12 @@ export function isProvenStoreHead(
   );
 }
 
+/** `created_at` of the stored 39005 behind each mapped page's summaries. */
+const storedSummaryTimes = new WeakMap<
+  ChannelWindowPage,
+  Map<string, number>
+>();
+
 /** Map a store page onto the window-store page shape. */
 export function storeWindowPage(
   page: MessageStoreWindowPage,
@@ -137,16 +137,20 @@ export function storeWindowPage(
     string,
     ChannelWindowPage["rows"][number]["thread"]
   >();
+  const summaryTimes = new Map<string, number>();
   for (const event of page.summaries) {
     const parsed = parseLiveThreadSummary(event);
-    if (parsed) summaries.set(parsed.rootId, parsed.live.summary);
+    if (parsed) {
+      summaries.set(parsed.rootId, parsed.live.summary);
+      summaryTimes.set(parsed.rootId, parsed.live.createdAt);
+    }
   }
   // A gap means the server holds what lies below: keep paging from the
   // last stored row (the next store read reaches the gap and asks the server).
   const nextCursor = page.gap
     ? (page.nextCursor ?? startCursor)
     : page.nextCursor;
-  return {
+  const mapped: ChannelWindowPage = {
     startCursor,
     rows: page.rows.map((event) => ({
       event,
@@ -156,6 +160,25 @@ export function storeWindowPage(
     nextCursor,
     hasMore: nextCursor !== null,
   };
+  storedSummaryTimes.set(mapped, summaryTimes);
+  return mapped;
+}
+
+/**
+ * Live 39005 summaries a stored page cannot supersede: the store keeps only
+ * the summaries server windows carried, so a live one stays unless the
+ * page's stored summary for that root is at least as new.
+ */
+function keptLiveSummaries(
+  current: ChannelWindowStore,
+  page: ChannelWindowPage,
+): ChannelWindowStore["liveSummaries"] {
+  const stored = storedSummaryTimes.get(page) ?? new Map<string, number>();
+  return Object.fromEntries(
+    Object.entries(current.liveSummaries).filter(
+      ([rootId, live]) => live.createdAt > (stored.get(rootId) ?? -1),
+    ),
+  );
 }
 
 /**
@@ -172,11 +195,13 @@ export function applyStoreHead(
   const windowKey = channelWindowKey(channelId);
   const messagesKey = channelMessagesKey(channelId);
   // Merge, don't replace: live events may already sit on this store.
-  const window = replaceNewestChannelWindow(
+  const current =
     queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
-      emptyChannelWindowStore(),
-    page,
-  );
+    emptyChannelWindowStore();
+  const window = {
+    ...replaceNewestChannelWindow(current, page),
+    liveSummaries: keptLiveSummaries(current, page),
+  };
   const messages = reconcileChannelWindowMessages(
     window,
     queryClient.getQueryData<RelayEvent[]>(messagesKey) ?? [],
@@ -224,12 +249,13 @@ export async function storedChannelMessages(
   queryClient: QueryClient,
   channel: Pick<Channel, "id" | "lastMessageAt">,
 ): Promise<RelayEvent[] | null> {
-  const lastMessageAt = storeProofLastMessageAt(
-    queryClient,
-    channel.id,
-    channel.lastMessageAt,
-  );
+  const lastMessageAt = channel.lastMessageAt;
   await channelHeadHydration(queryClient);
+  if (isServerRefresh(queryClient, channel.id)) {
+    // Drop any unconsumed seed: the server's page supersedes it.
+    consumeHydratedChannel(queryClient, channel.id, null);
+    return null;
+  }
   if (consumeHydratedChannel(queryClient, channel.id, lastMessageAt)) {
     return (
       queryClient.getQueryData<RelayEvent[]>(channelMessagesKey(channel.id)) ??
