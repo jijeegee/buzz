@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/misc.dart' show KeepAliveLink;
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
+import 'channel_page_records.dart';
 import 'pending_local_messages_provider.dart';
 import 'thread_window.dart';
 import 'window_anchor.dart';
@@ -203,6 +204,12 @@ final threadRepliesProvider = FutureProvider.autoDispose
             rootId: args.rootId,
           );
           if (page != null) {
+            recordThreadWindowPage(
+              ref,
+              args,
+              page.events,
+              hasMore: page.hasMore,
+            );
             final folded = window.foldNewest(page);
             if (queryVersion != null) {
               channelMessages?.failThreadQuery(args.rootId, queryVersion);
@@ -223,6 +230,7 @@ final threadRepliesProvider = FutureProvider.autoDispose
       }
       try {
         final replies = await fetchCompleteThreadReplies(session, args);
+        recordCompleteThread(ref, args, replies);
         // A complete scan holds the whole thread: nothing older to page.
         window.replaceComplete(replies);
         // Explicit markers also settle unacknowledged local sends, whose
@@ -394,7 +402,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     WindowPageDirection direction,
   ) async {
     final session = ref.read(relaySessionProvider.notifier);
-    return parseThreadWindowPage(
+    final page = parseThreadWindowPage(
       await session.queryRelay([
         threadWindowFilter(
           channelId: args.channelId,
@@ -407,6 +415,17 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       rootId: args.rootId,
       direction: direction,
     );
+    if (page != null && ref.mounted) {
+      recordThreadWindowPage(
+        ref,
+        args,
+        page.events,
+        start: cursor,
+        direction: direction,
+        hasMore: page.hasMore,
+      );
+    }
+    return page;
   }
 
   void replaceComplete(List<NostrEvent> replies) {
@@ -445,6 +464,13 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
         rootId: args.rootId,
       );
       if (!ref.mounted || page == null) return false;
+      recordThreadWindowPage(
+        ref,
+        args,
+        page.events,
+        start: cursor,
+        hasMore: page.hasMore,
+      );
       // A newest-page reload may have restarted the window meanwhile; this
       // page then no longer borders what is held.
       if (state?.state.olderCursor != cursor) return false;

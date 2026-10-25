@@ -312,11 +312,13 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
         generation == _initVersion &&
         _threadQueryVersions[root] == version;
     try {
+      final thread = ThreadRepliesArgs(channelId: channelId, rootId: root);
       final replies = await fetchCompleteThreadReplies(
         _summarySession,
-        ThreadRepliesArgs(channelId: channelId, rootId: root),
+        thread,
         isCurrent: current,
       );
+      if (_summaryMounted) recordCompleteThread(_storeRef, thread, replies);
       if (current()) {
         cacheCompleteThreadQuery(
           root,

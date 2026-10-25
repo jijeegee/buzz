@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_head_cache.dart';
 import 'channel_messages_provider.dart';
+import 'channel_page_records.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
 
@@ -185,12 +186,15 @@ class ChannelPreloader {
       events,
       cold,
     ).entries) {
+      final ChannelWindowPage page;
       try {
-        parseChannelWindowResponse(window, channelId, null);
+        page = parseChannelWindowResponse(window, channelId, null);
       } catch (error) {
         debugPrint('[ChannelPreloader] invalid window for $channelId: $error');
         continue;
       }
+      // The message database keeps every page, open room or not.
+      recordChannelWindowPage(_ref, channelId, window, page);
       // A room opened meanwhile persists its own, newer page.
       if (_ref.exists(channelMessagesProvider(channelId))) continue;
       await cache.store(scope, channelId, window);
@@ -237,6 +241,7 @@ class ChannelPreloader {
         final windows = splitThreadWindows(events, chunk);
         final store = _ref.read(preloadedThreadsProvider.notifier);
         for (final MapEntry(key: thread, value: replies) in windows.entries) {
+          recordThreadWindowPage(_ref, thread, replies);
           // A thread opened meanwhile has its full scan.
           if (_ref.exists(threadRepliesProvider(thread))) continue;
           store.seed(thread, replies);

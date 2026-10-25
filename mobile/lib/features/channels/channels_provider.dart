@@ -14,10 +14,12 @@ import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
 import '../goals/goal_provider.dart';
 import 'channel.dart';
+import 'channel_head_cache.dart';
 import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_room_store.dart';
 import 'huddle_channel_filter.dart';
 import 'timeline_message.dart' show SystemEvent, SystemEventType;
 import '../../shared/read_state/read_state_provider.dart';
@@ -29,7 +31,9 @@ import 'unread_badge/should_notify_for_event.dart';
 part 'channel_directory.dart';
 part 'channel_push_cache.dart';
 part 'channel_member_snapshots.dart';
+part 'channels_catch_up.dart';
 part 'channels_provider_lifecycle.dart';
+part 'global_feed.dart';
 
 const _channelTypeOrder = {'stream': 0, 'forum': 1, 'dm': 2};
 const _unreadCatchUpLimit = 1000;
@@ -72,6 +76,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   final Set<String> _terminallyClosedLiveChunks = {};
   String? _subscriptionRelayBaseUrl;
   Timer? _backstopTimer;
+  final _catchUp = _RoomCatchUpState();
   final Map<String, int> _latestObservedByChannel = {};
   final Map<String, Map<String, ObservedUnreadEvent>>
   _observedUnreadEventsByChannel = {};
@@ -143,6 +148,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         // A new authenticated connection can change relay admission policy.
         // Ordinary refreshes must not retry an unchanged terminal rejection.
         _terminallyClosedLiveChunks.clear();
+        // The live feed missed what was sent while offline.
+        _markCatchUpPending();
         unawaited(_backstopRefresh());
       }
     });
@@ -165,6 +172,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       _metadataRefreshTimer = null;
     });
 
+    // A scope seen before (this session or the last) catches its rooms up
+    // from where its feed stopped.
+    _markCatchUpPending();
     if (sessionState.status != SessionStatus.connected) {
       // Keep the prior community's cache visible until the new relay connects.
       if (_hasLoaded) return state.value ?? const [];
@@ -178,11 +188,13 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     bool subscribeLive = false,
     bool fetchLastMessage = true,
     bool fetchDirectory = false,
+    bool catchUpUnread = true,
   }) async {
     final channels = await _fetchChannels(
       subscribeLive: subscribeLive,
       fetchLastMessage: fetchLastMessage,
       fetchDirectory: fetchDirectory,
+      catchUpUnread: catchUpUnread,
     );
     _hasLoaded = true;
     return channels;
@@ -192,6 +204,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     bool subscribeLive = false,
     bool fetchLastMessage = true,
     bool fetchDirectory = false,
+    bool catchUpUnread = true,
   }) async {
     final myPk = ref.read(myPubkeyProvider);
     if (myPk == null) throw StateError('No signing identity available');
@@ -220,6 +233,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
     // Step 2: pull metadata for joined channels. A user with no memberships
     // must still continue to directory discovery below.
+    // This one goes over the live socket, so its answer also proves the feed
+    // delivered everything sent before it (the membership query is HTTP).
+    final metasRequestedAt = roomCatchUpClock();
     final memberMetas = memberChannelIds.isEmpty
         ? const <NostrEvent>[]
         : await _fenced(
@@ -228,6 +244,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
               NostrFilters.channelMetadata(memberChannelIds.toList()),
             ),
           );
+    if (memberChannelIds.isNotEmpty) _noteFeedAlive(metasRequestedAt);
 
     // Step 3: fetch the open-channel directory. The relay filters this global
     // kind:39000 query by the caller's access, but the client still rejects
@@ -459,7 +476,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     // part of the provider's readiness path. Every refresh queues a generation;
     // a later refresh or scope switch retires older queued/in-flight work.
     if (subscribeLive) {
-      unawaited(_subscribeLive(channels, fence));
+      unawaited(_subscribeLive(channels, fence, catchUpUnread: catchUpUnread));
     }
     // Guard the provider-state write in `retryDirectory` and `build`: the
     // caller assigns whatever this returns, so the last check belongs here.
@@ -913,7 +930,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   }
 
   /// Backstop refresh that preserves existing state on transient failure.
-  Future<void> _backstopRefresh() async {
+  /// The periodic one skips the per-room unread catch-up: the live feed and
+  /// the reconnect catch-up keep unread state current.
+  Future<void> _backstopRefresh({bool catchUpUnread = true}) async {
     try {
       final sessionState = ref.read(relaySessionProvider);
       final prevChannels = state.value ?? const [];
@@ -925,6 +944,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         subscribeLive: sessionState.status == SessionStatus.connected,
         fetchLastMessage: false,
         fetchDirectory: false,
+        catchUpUnread: catchUpUnread,
       );
       for (var i = 0; i < channels.length; i++) {
         final prev = prevLastMessage[channels[i].id];
@@ -937,6 +957,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       return;
     } catch (error) {
       debugPrint('[ChannelsNotifier] backstop refresh failed: $error');
+      // The live chunks were replayed on reconnect; catch up without the list.
+      unawaited(_runRoomCatchUp());
     }
   }
 

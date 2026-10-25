@@ -98,6 +98,7 @@ part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
+part 'channel_detail_page_test/other_room_rebuild_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -540,6 +541,7 @@ void main() {
   openAtTests();
   threadOpenAtTests();
   ownerViewTests();
+  otherRoomRebuildTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();
