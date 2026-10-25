@@ -166,29 +166,107 @@ class ChannelRoomStore {
     }
   }
 
-  /// The newest stored page of [channelId], read synchronously, or null when
-  /// nothing complete is stored (or there is no database to read).
-  StoredTimelinePage? readNewest(MessageScope scope, String channelId) =>
-      _read<StoredTimelinePage?>(
-        scope,
-        (db, liveFrom) =>
-            readNewestStoredPage(db, channelId, liveFrom: liveFrom(channelId)),
-      );
+  /// The newest stored page of [channelId] (or with [rootId], of that
+  /// thread's replies), read synchronously, or null when nothing complete is
+  /// stored (or there is no database to read).
+  StoredTimelinePage? readNewest(
+    MessageScope scope,
+    String channelId, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
+    scope,
+    (db, liveFrom) => readNewestStoredPage(
+      db,
+      channelId,
+      rootId: rootId,
+      liveFrom: liveFrom(channelId),
+    ),
+  );
 
   /// The stored rows just older than [before], when they are known complete.
   StoredTimelinePage? readOlder(
     MessageScope scope,
     String channelId,
-    CoverageCursor before,
-  ) => _read<StoredTimelinePage?>(
+    CoverageCursor before, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
     scope,
     (db, liveFrom) => readOlderStoredPage(
       db,
       channelId,
       before,
+      rootId: rootId,
       liveFrom: liveFrom(channelId),
     ),
   );
+
+  /// The stored rows just newer than [after], oldest first, when they are
+  /// known complete.
+  StoredTimelinePage? readNewer(
+    MessageScope scope,
+    String channelId,
+    CoverageCursor after, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
+    scope,
+    (db, liveFrom) => readNewerStoredPage(
+      db,
+      channelId,
+      after,
+      rootId: rootId,
+      liveFrom: liveFrom(channelId),
+    ),
+  );
+
+  /// What the stored main timeline proves about the first row after the
+  /// read marker [readAt] that [counts] (see [readFirstStoredAfter]). Rows
+  /// still queued for the database count too.
+  StoredFirstAfter readFirstAfter(
+    MessageScope scope,
+    String channelId,
+    int readAt,
+    bool Function(NostrEvent row) counts,
+  ) {
+    final stored =
+        _read<StoredFirstAfter>(
+          scope,
+          (db, liveFrom) => readFirstStoredAfter(
+            db,
+            channelId,
+            readAt,
+            counts,
+            liveFrom: liveFrom(channelId),
+          ),
+        ) ??
+        (known: false, row: null);
+    NostrEvent? first = stored.row;
+    for (final event in unflushed(scope, channelId)) {
+      if (!isMainTimelineRow(event) ||
+          event.createdAt <= readAt ||
+          !counts(event)) {
+        continue;
+      }
+      if (first == null || event.createdAt < first.createdAt) first = event;
+    }
+    // A queued row proves nothing about older rows the range lacks.
+    return (known: stored.known, row: first);
+  }
+
+  /// When stored main-timeline row [id] was sent, or null when unknown.
+  int? createdAtOf(MessageScope scope, String channelId, String id) {
+    for (final event in unflushed(scope, channelId)) {
+      if (event.id == id && isMainTimelineRow(event)) return event.createdAt;
+    }
+    return _read<int?>(
+      scope,
+      (db, _) => readStoredCreatedAt(db, channelId, id),
+    );
+  }
+
+  /// When [channelId]'s open live range starts, counting range changes not
+  /// yet written; null when it has none (or there is no database).
+  int? liveFromOf(MessageScope scope, String channelId) =>
+      _read<int?>(scope, (db, liveFrom) => liveFrom(channelId));
 
   /// Whether [channelId]'s newest message, sent at [latestAt], is stored with
   /// a complete range under it.
@@ -230,7 +308,7 @@ class ChannelRoomStore {
   /// Whether [channelId]'s live range is open: the live feed has delivered
   /// it continuously since that time. Counts range changes not yet written.
   bool hasOpenLiveRange(MessageScope scope, String channelId) =>
-      _read(scope, (db, liveFrom) => liveFrom(channelId) != null) ?? false;
+      liveFromOf(scope, channelId) != null;
 
   /// The events of [channelId] received but not yet in the database, in
   /// arrival order.

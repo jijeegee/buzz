@@ -209,6 +209,196 @@ void main() {
     );
   });
 
+  group('thread pages', () {
+    setUp(() {
+      write([
+        testEvent('root', createdAt: 5),
+        testEvent('main', createdAt: 25),
+        testReply('r1', 'root', createdAt: 10),
+        testReply('r2', 'root', createdAt: 20),
+        testReply('r3', 'root', createdAt: 30),
+        testReply('r4', 'root', createdAt: 40),
+        testOverlay('like', EventKind.reaction, 'r4', createdAt: 41),
+      ]);
+    });
+
+    test('main coverage does not cover a thread', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(50))]);
+      expect(readNewestStoredPage(db, testChannel, rootId: 'root'), isNull);
+      expect(ids(readNewestStoredPage(db, testChannel)), ['main', 'root']);
+    });
+
+    test('thread and window ranges merge; rows are replies only', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            CoverageCursor.start,
+            at(20, 'r2'),
+            stream: CoverageStream.thread('root'),
+          ),
+          claim(
+            at(20, 'r2'),
+            at(40, 'r4'),
+            stream: CoverageStream.threadWindow('root'),
+          ),
+        ],
+      );
+      final page = readNewestStoredPage(db, testChannel, rootId: 'root');
+      expect(ids(page), ['r4', 'r3', 'r2', 'r1']);
+      expect(page!.reachesStart, isTrue);
+      expect(page.reachesLive, isFalse);
+      expect([for (final o in page.overlays) o.id], ['like']);
+    });
+
+    test('the live range and all-stream ranges cover a thread', () {
+      write(
+        const [],
+        claims: [
+          claim(CoverageCursor.start, at(25), stream: CoverageStream.all),
+        ],
+      );
+      final page = readNewestStoredPage(
+        db,
+        testChannel,
+        rootId: 'root',
+        liveFrom: 26,
+      );
+      expect(ids(page), ['r4', 'r3', 'r2', 'r1']);
+      expect(page!.reachesLive, isTrue);
+    });
+
+    test('older and newer pages stay inside one range', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            at(20, 'r2'),
+            at(40, 'r4'),
+            stream: CoverageStream.threadWindow('root'),
+          ),
+        ],
+      );
+      final older = readOlderStoredPage(
+        db,
+        testChannel,
+        at(40, 'r4'),
+        rootId: 'root',
+      );
+      expect(ids(older), ['r3', 'r2']);
+      expect(older!.reachesStart, isFalse);
+      expect(
+        readOlderStoredPage(db, testChannel, at(20, 'r2'), rootId: 'root'),
+        isNull,
+      );
+
+      final newer = readNewerStoredPage(
+        db,
+        testChannel,
+        at(20, 'r2'),
+        rootId: 'root',
+      );
+      expect(ids(newer), ['r3', 'r4']);
+      expect(newer!.reachesLive, isFalse);
+      // Above the range: not known complete.
+      expect(
+        readNewerStoredPage(db, testChannel, at(40, 'r4'), rootId: 'root'),
+        isNull,
+      );
+    });
+
+    test('a newer page reaching the live range reaches live', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            CoverageCursor.start,
+            at(29),
+            stream: CoverageStream.thread('root'),
+          ),
+        ],
+      );
+      final newer = readNewerStoredPage(
+        db,
+        testChannel,
+        at(20, 'r2'),
+        rootId: 'root',
+        liveFrom: 30,
+      );
+      expect(ids(newer), ['r3', 'r4']);
+      expect(newer!.reachesLive, isTrue);
+
+      final cut = readNewerStoredPage(
+        db,
+        testChannel,
+        at(10, 'r1'),
+        rootId: 'root',
+        liveFrom: 30,
+        limit: 2,
+      );
+      expect(ids(cut), ['r2', 'r3']);
+      expect(cut!.reachesLive, isFalse);
+    });
+  });
+
+  group('first stored row after a read marker', () {
+    bool all(NostrEvent row) => true;
+
+    setUp(() {
+      write([
+        testEvent('before', createdAt: 10),
+        testEvent('mine', createdAt: 20),
+        testEvent('theirs', createdAt: 30),
+        testReply('reply', 'before', createdAt: 25),
+      ]);
+    });
+
+    test('the first counting main row inside the range holding the marker', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      final first = readFirstStoredAfter(
+        db,
+        testChannel,
+        15,
+        (row) => row.id != 'mine',
+      );
+      expect(first.known, isTrue);
+      expect(first.row?.id, 'theirs');
+    });
+
+    test('rows at the marker second are read', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      expect(readFirstStoredAfter(db, testChannel, 20, all).row?.id, 'theirs');
+    });
+
+    test('none counting: known only when the range reaches live', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      bool none(NostrEvent row) => false;
+      expect(readFirstStoredAfter(db, testChannel, 15, none).known, isFalse);
+      final live = readFirstStoredAfter(
+        db,
+        testChannel,
+        15,
+        none,
+        liveFrom: 30,
+      );
+      expect(live.known, isTrue);
+      expect(live.row, isNull);
+    });
+
+    test('a marker outside every stored range is unknown', () {
+      write(const [], claims: [claim(at(25), at(30, 'theirs'))]);
+      final first = readFirstStoredAfter(db, testChannel, 15, all);
+      expect(first.known, isFalse);
+      expect(first.row, isNull);
+    });
+
+    test('created_at of a stored main row', () {
+      expect(readStoredCreatedAt(db, testChannel, 'theirs'), 30);
+      expect(readStoredCreatedAt(db, testChannel, 'reply'), isNull);
+      expect(readStoredCreatedAt(db, testChannel, 'missing'), isNull);
+    });
+  });
+
   group('store reader', () {
     const scope = MessageScope(relayUrl: 'https://one.example', pubkey: 'a');
     late MessageStore store;

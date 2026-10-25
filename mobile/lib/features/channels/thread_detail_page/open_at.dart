@@ -145,3 +145,54 @@ RoomPositionReading? _threadReadingPosition(
     edge: reading.itemLeadingEdge,
   );
 }
+
+/// Keeps [dock] at the composer dock's measured [height]. Null until the
+/// first report, and the list stays out of sight until then: a list shown
+/// first without the dock's padding would move every reply when it came.
+void _setDockHeight(ValueNotifier<double?> dock, double height) {
+  final previous = dock.value;
+  if (previous != null && (height - previous).abs() < 0.5) return;
+  dock.value = height;
+}
+
+/// Whether the read marker is known: the one kept on the device counts
+/// before the server's arrives, and a later one keeps the opened position.
+bool _readAtKnown(ReadStateState readState, String channelId) =>
+    readState.isReady || readState.effectiveTimestamp(channelId) != null;
+
+/// An open the relay did not answer, while connected, waits out of sight
+/// and asks again after [_threadOpenRetryDelay]: the newest replies are
+/// never drawn first. Offline they show as before.
+const _threadOpenRetryDelay = Duration(seconds: 8);
+
+typedef _ThreadOpenRetry = ({
+  int retries,
+  void Function(ValueNotifier<_ThreadOpenPhase>, ObjectRef<bool>) failed,
+});
+
+_ThreadOpenRetry _useThreadOpenRetry(WidgetRef ref) {
+  final retries = useState(0);
+  final timer = useRef<Timer?>(null);
+  useEffect(
+    () =>
+        () => timer.value?.cancel(),
+    const [],
+  );
+  void failed(
+    ValueNotifier<_ThreadOpenPhase> phase,
+    ObjectRef<bool> didStartOpening,
+  ) {
+    if (ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      phase.value = _ThreadOpenPhase.none;
+      return;
+    }
+    timer.value?.cancel();
+    timer.value = Timer(_threadOpenRetryDelay, () {
+      if (phase.value != _ThreadOpenPhase.opening) return;
+      didStartOpening.value = false;
+      retries.value++;
+    });
+  }
+
+  return (retries: retries.value, failed: failed);
+}

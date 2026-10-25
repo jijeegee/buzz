@@ -60,6 +60,9 @@ extension _LocalStore on ChannelMessagesNotifier {
       _storedWindow = _isStoredWindowCovered(scope)
           ? _StoredWindow.covered
           : _StoredWindow.unchecked;
+      _paintedOffline =
+          _storeRef.read(relaySessionProvider).status !=
+          SessionStatus.connected;
       _lastKnownMessages = flattenChannelWindowEvents(_windowStore);
       return true;
     } catch (error) {
@@ -113,7 +116,10 @@ extension _LocalStore on ChannelMessagesNotifier {
       ),
     ]);
     if (!_isCurrentInit(initVersion)) return true;
-    if (events.length >= _storedCatchUpLimit) return false;
+    if (events.length >= _storedCatchUpLimit) {
+      _holdCatchUpRows(events);
+      return false;
+    }
     recordRoomScan(
       _storeRef,
       channelId,
@@ -123,6 +129,7 @@ extension _LocalStore on ChannelMessagesNotifier {
           : CoverageCursor(newest.createdAt, newest.id),
     );
     events.sort(compareChannelTimelineEventsChronologically);
+    _holdCatchUpRows(events);
     for (final event in events) {
       _handleLiveEvent(event);
     }
@@ -141,6 +148,96 @@ extension _LocalStore on ChannelMessagesNotifier {
     ]);
     _summaryRefreshes.resume();
     _publishSummaryChange();
+  }
+
+  /// Rows painted while offline stay where they are when what was sent
+  /// meanwhile arrives: [events] newer than every shown row wait behind the
+  /// Latest button (see [holdNewerChannelWindow]). Once per offline paint.
+  void _holdCatchUpRows(List<NostrEvent> events) {
+    if (!_paintedOffline) return;
+    _paintedOffline = false;
+    _windowStore = holdNewerChannelWindow(_windowStore, events);
+  }
+
+  /// Whether the stored rows need nothing from the server up to now: the
+  /// channel list's live feed covers the room with its range open, and the
+  /// relay is connected.
+  bool _roomCoveredNow(MessageScope scope) =>
+      _storeRef.read(relaySessionProvider).status == SessionStatus.connected &&
+      _roomStore.feeds(scope, channelId) &&
+      _roomStore.hasOpenLiveRange(scope, channelId);
+
+  /// The window opened at [cursor] from stored rows, when both sides of it
+  /// are known complete; null sends it to the server.
+  ({ChannelWindowPage older, ChannelWindowPage newer})? _storedMiddlePages(
+    ChannelPageCursor cursor,
+  ) {
+    final scope = _readHeadScope();
+    if (scope == null) return null;
+    try {
+      final at = CoverageCursor(cursor.createdAt, cursor.eventId);
+      final older = _roomStore.readOlder(scope, channelId, at);
+      if (older == null || older.rows.isEmpty) return null;
+      final newer = _storedNewerPage(cursor);
+      if (newer == null) return null;
+      return (older: _storedWindowPage(older, cursor), newer: newer);
+    } catch (error) {
+      debugPrint(
+        '[ChannelMessagesNotifier] stored window unusable for $channelId: $error',
+      );
+      return null;
+    }
+  }
+
+  /// The stored rows just newer than [cursor], when known complete. They
+  /// reach the present only while the room is covered now; otherwise newer
+  /// pages continue from the server.
+  ChannelWindowPage? _storedNewerPage(ChannelPageCursor cursor) {
+    final scope = _readHeadScope();
+    if (scope == null) return null;
+    try {
+      final stored = _roomStore.readNewer(
+        scope,
+        channelId,
+        CoverageCursor(cursor.createdAt, cursor.eventId),
+      );
+      if (stored == null) return null;
+      final reachesLive = stored.reachesLive && _roomCoveredNow(scope);
+      if (stored.rows.isEmpty && !reachesLive) return null;
+      final page = _storedWindowPage(stored, cursor);
+      return ChannelWindowPage(
+        startCursor: cursor,
+        rows: page.rows,
+        aux: page.aux,
+        nextCursor: reachesLive ? null : ChannelPageCursor.of(stored.rows.last),
+        hasMore: !reachesLive,
+        direction: WindowPageDirection.newer,
+      );
+    } catch (error) {
+      debugPrint(
+        '[ChannelMessagesNotifier] stored newer rows unusable for $channelId: $error',
+      );
+      return null;
+    }
+  }
+
+  /// The newest stored page when the room is covered now: [jumpToLatest]
+  /// needs no request then.
+  ChannelWindowPage? _storedNewestIfCovered() {
+    final scope = _readHeadScope();
+    if (scope == null) return null;
+    try {
+      final stored = _roomStore.readNewest(scope, channelId);
+      if (stored == null || !stored.reachesLive || !_roomCoveredNow(scope)) {
+        return null;
+      }
+      return _storedWindowPage(stored, null);
+    } catch (error) {
+      debugPrint(
+        '[ChannelMessagesNotifier] stored newest rows unusable for $channelId: $error',
+      );
+      return null;
+    }
   }
 
   /// The stored rows just older than [cursor], when the database knows them
