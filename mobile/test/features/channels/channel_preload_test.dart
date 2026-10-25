@@ -1,7 +1,14 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart';
+import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
+import 'package:kuzz/features/channels/channel_room_store.dart';
+import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
+import 'package:kuzz/features/channels/window_anchor.dart';
+import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/message_db/coverage.dart';
 import 'package:kuzz/shared/message_db/event_rows.dart';
@@ -10,6 +17,8 @@ import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+
+import 'window_relay_fixture.dart';
 
 const _scope = MessageScope(relayUrl: 'https://relay.example', pubkey: 'me');
 
@@ -360,4 +369,144 @@ void main() {
       isEmpty,
     );
   });
+
+  group('read marker windows', () {
+    const roomId = 'marker-room';
+    final rows = [
+      for (var n = 1; n <= 80; n++) fixtureRow(roomId, n, 1000 + n),
+    ];
+    late Directory messagesRoot;
+    late MessageStore messages;
+    late _MarkerSession session;
+    late ProviderContainer container;
+
+    setUp(() async {
+      messagesRoot = await Directory.systemTemp.createTemp('marker_messages');
+      messages = MessageStore(
+        () async => messagesRoot.path,
+        rootPath: messagesRoot.path,
+      );
+      session = _MarkerSession(roomId, rows);
+      container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => session),
+          messageScopeProvider.overrideWithValue(_scope),
+          messageStoreProvider.overrideWithValue(messages),
+          channelsProvider.overrideWith(
+            () => _UnreadChannels({
+              roomId: [_unread(rows[60])],
+              // Read already: nothing to load.
+              'read-room': [],
+            }),
+          ),
+          readStateProvider.overrideWith(
+            () => _MarkerReadState({roomId: 1050, 'read-room': 2000}),
+          ),
+        ],
+      );
+    });
+
+    tearDown(() async {
+      container.dispose();
+      await messages.close();
+      await messagesRoot.delete(recursive: true);
+    });
+
+    test('stores the pages on both sides of the read marker', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      expect(await preloader.preloadReadMarkers(), 1);
+      expect(session.requests, hasLength(1));
+      final filters = session.requests.single;
+      expect(filters, hasLength(2));
+      expect(filters[0].until, 1050);
+      expect(filters[0].extensions['before_id'], zeroEventId);
+      expect(filters[1].since, 1050);
+      expect(filters[1].extensions['after_id'], zeroEventId);
+      await messages.settled();
+
+      final store = container.read(channelRoomStoreProvider);
+      final at = CoverageCursor(1050, zeroEventId);
+      final older = store.readOlder(_scope, roomId, at);
+      final newer = store.readNewer(_scope, roomId, at);
+      expect(older?.rows.first.createdAt, 1050);
+      expect(newer?.rows.first.createdAt, 1051);
+
+      // Stored now, and tried: no second request.
+      expect(await preloader.preloadReadMarkers(), 0);
+      expect(session.requests, hasLength(1));
+    });
+
+    test('waits for its turn and stops when told to', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      expect(
+        await preloader.preloadReadMarkers(beforeRequest: () async => false),
+        0,
+      );
+      expect(session.requests, isEmpty);
+    });
+  });
+}
+
+ObservedUnreadEvent _unread(NostrEvent event) => makeObservedUnreadEvent(
+  id: event.id,
+  createdAt: event.createdAt,
+  rootId: null,
+  highPriority: false,
+  channelType: 'stream',
+  isThreadedReply: false,
+);
+
+class _UnreadChannels extends ChannelsNotifier {
+  _UnreadChannels(Map<String, List<ObservedUnreadEvent>> unread)
+    : _unread = {
+        for (final entry in unread.entries)
+          entry.key: {for (final event in entry.value) event.id: event},
+      };
+
+  final Map<String, Map<String, ObservedUnreadEvent>> _unread;
+
+  @override
+  Map<String, Map<String, ObservedUnreadEvent>>
+  get observedUnreadEventsByChannel => _unread;
+
+  @override
+  Future<List<Channel>> build() => SynchronousFuture(const []);
+}
+
+class _MarkerReadState extends ReadStateNotifier {
+  _MarkerReadState(this._contexts);
+
+  final Map<String, int> _contexts;
+
+  @override
+  ReadStateState build() => ReadStateState(
+    isReady: true,
+    pubkey: 'me',
+    contexts: _contexts,
+    version: 0,
+  );
+}
+
+/// Serves each window filter of one room as the relay would.
+class _MarkerSession extends RelaySessionNotifier {
+  _MarkerSession(this.channelId, this.rows);
+
+  final String channelId;
+  final List<NostrEvent> rows;
+  final List<List<NostrFilter>> requests = [];
+
+  @override
+  SessionState build() => const SessionState(status: SessionStatus.connected);
+
+  @override
+  Future<List<NostrEvent>> queryRelay(
+    List<NostrFilter> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    requests.add(filters);
+    return [
+      for (final filter in filters)
+        ...serveChannelWindow(channelId, rows, filter),
+    ];
+  }
 }

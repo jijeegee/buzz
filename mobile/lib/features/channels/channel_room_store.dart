@@ -218,6 +218,51 @@ class ChannelRoomStore {
     ),
   );
 
+  /// What the stored main timeline proves about the first row after the
+  /// read marker [readAt] that [counts] (see [readFirstStoredAfter]). Rows
+  /// still queued for the database count too.
+  StoredFirstAfter readFirstAfter(
+    MessageScope scope,
+    String channelId,
+    int readAt,
+    bool Function(NostrEvent row) counts,
+  ) {
+    final stored =
+        _read<StoredFirstAfter>(
+          scope,
+          (db, liveFrom) => readFirstStoredAfter(
+            db,
+            channelId,
+            readAt,
+            counts,
+            liveFrom: liveFrom(channelId),
+          ),
+        ) ??
+        (known: false, row: null);
+    NostrEvent? first = stored.row;
+    for (final event in unflushed(scope, channelId)) {
+      if (!isMainTimelineRow(event) ||
+          event.createdAt <= readAt ||
+          !counts(event)) {
+        continue;
+      }
+      if (first == null || event.createdAt < first.createdAt) first = event;
+    }
+    // A queued row proves nothing about older rows the range lacks.
+    return (known: stored.known, row: first);
+  }
+
+  /// When stored main-timeline row [id] was sent, or null when unknown.
+  int? createdAtOf(MessageScope scope, String channelId, String id) {
+    for (final event in unflushed(scope, channelId)) {
+      if (event.id == id && isMainTimelineRow(event)) return event.createdAt;
+    }
+    return _read<int?>(
+      scope,
+      (db, _) => readStoredCreatedAt(db, channelId, id),
+    );
+  }
+
   /// When [channelId]'s open live range starts, counting range changes not
   /// yet written; null when it has none (or there is no database).
   int? liveFromOf(MessageScope scope, String channelId) =>

@@ -383,4 +383,52 @@ void main() {
       expect(reopenNewerChannelWindowEdge(head), same(head));
     });
   });
+
+  group('holdNewerChannelWindow', () {
+    test('rows newer than every shown one wait behind the newer edge', () {
+      final rows = _rows(40);
+      final shown = rows.sublist(0, 30);
+      final head = replaceNewestChannelWindow(
+        const ChannelWindowStore.empty(),
+        _fetch(shown, null, limit: 50),
+      );
+      final missed = rows.sublist(30);
+      final held = holdNewerChannelWindow(head, missed);
+      expect(held.isMiddle, isTrue);
+      expect(held.hasNewer, isTrue);
+      // The shown rows stay exactly as they were.
+      expect(_flatIds(held), _flatIds(head));
+
+      // What was missed arrives live and waits; paging on shows it once.
+      var store = held;
+      for (final event in missed) {
+        store = mergeLiveChannelWindowEvent(store, event, isTimelineRow: true);
+      }
+      expect(_flatIds(store), _flatIds(head));
+      expect(store.heldLive, hasLength(missed.length));
+      store = _pageToPresent(rows, store);
+      expect(_flatIds(store), _chronological(rows));
+    });
+
+    test('nothing newer, a middle window or no rows: unchanged', () {
+      final rows = _rows(20);
+      final head = replaceNewestChannelWindow(
+        const ChannelWindowStore.empty(),
+        _fetch(rows, null, limit: 50),
+      );
+      expect(holdNewerChannelWindow(head, rows.take(5)), same(head));
+      final reply = _rowAt(
+        900,
+        5000,
+        tags: [
+          ['e', rows.first.id, '', 'reply'],
+        ],
+      );
+      expect(holdNewerChannelWindow(head, [reply]), same(head));
+      final middle = _openAt(rows, _anchor(rows[3].createdAt, rows[3].id));
+      expect(holdNewerChannelWindow(middle, [_rowAt(901, 5001)]), same(middle));
+      const empty = ChannelWindowStore.empty();
+      expect(holdNewerChannelWindow(empty, [_rowAt(902, 5002)]), same(empty));
+    });
+  });
 }

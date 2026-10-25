@@ -4,9 +4,19 @@ part of '../channel_messages_provider.dart';
 /// paging from there toward the present (NIP-CW newer direction).
 extension _OpenAtWindow on ChannelMessagesNotifier {
   Future<bool> _openAt({required int createdAt, String? eventId}) async {
+    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
+    final cursor = ChannelPageCursor(
+      createdAt: anchor.createdAt,
+      eventId: anchor.eventId,
+    );
+    // Rows stored around the message open the window without the relay,
+    // also while a painted window is still being checked: what was sent
+    // meanwhile joins it like live rows.
+    if (await _openStoredAt(cursor, eventId)) return true;
     while (_initInFlight) {
       await _initFuture;
     }
+    if (await _openStoredAt(cursor, eventId)) return true;
     if (!_summaryMounted || !_usingChannelWindow || isShowingCachedHead) {
       return false;
     }
@@ -16,11 +26,6 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     if (!_summaryMounted || !_usingChannelWindow || _initInFlight) return false;
     final initVersion = _initVersion;
     final opVersion = ++_windowOpVersion;
-    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
-    final cursor = ChannelPageCursor(
-      createdAt: anchor.createdAt,
-      eventId: anchor.eventId,
-    );
     final session = _summarySession;
     try {
       final pageVersion = ++_threadQuerySerial;
@@ -51,6 +56,59 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     }
   }
 
+  /// Opens the window at [cursor] from stored rows when the database has
+  /// both sides of it; false leaves the window as it is.
+  Future<bool> _openStoredAt(ChannelPageCursor cursor, String? eventId) async {
+    // A newest page in flight would replace the window; wait for it unless
+    // the window is painted from the database, which it then only settles.
+    if (_initInFlight && _storedWindow == _StoredWindow.none) return false;
+    if (!_summaryMounted || !_usingChannelWindow) return false;
+    final pages = _storedMiddlePages(cursor);
+    if (pages == null) return false;
+    // Newer pages past the stored ones come from the relay.
+    if (pages.newer.hasMore && !await _supportsNewerWindowsSoon()) {
+      return false;
+    }
+    if (!_summaryMounted ||
+        !_usingChannelWindow ||
+        (_initInFlight && _storedWindow == _StoredWindow.none)) {
+      return false;
+    }
+    // The database may have changed during the check above.
+    final current = _storedMiddlePages(cursor);
+    if (current == null) return false;
+    ++_windowOpVersion;
+    try {
+      _windowStore = openMiddleChannelWindow(
+        _windowStore,
+        current.older,
+        current.newer,
+        anchorId: eventId,
+      );
+    } catch (error) {
+      debugPrint(
+        '[ChannelMessagesNotifier] stored window rejected for $channelId: $error',
+      );
+      return false;
+    }
+    _windowGeneration++;
+    _pruneOffWindowReplies();
+    final pageVersion = ++_threadQuerySerial;
+    _reconcilePageSummaries(current.older, pageVersion);
+    _reconcilePageSummaries(current.newer, pageVersion);
+    _reachedOldest = !channelWindowHasMore(_windowStore);
+    _publishWindow([...current.older.rows, ...current.newer.rows]);
+    return true;
+  }
+
+  /// [_relaySupportsNewerWindows] without waiting when the relay document
+  /// is already known.
+  Future<bool> _supportsNewerWindowsSoon() async {
+    final known = _storeRef.read(relayInfoProvider).value;
+    if (known != null) return known.supports(newerWindowExtension);
+    return _relaySupportsNewerWindows();
+  }
+
   Future<bool> _canOpenAt() async {
     while (_initInFlight) {
       await _initFuture;
@@ -78,11 +136,14 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     _loadingNewer = true;
     try {
       final pageVersion = ++_threadQuerySerial;
-      final page = await _fetchWindowPage(
-        session,
-        cursor,
-        direction: WindowPageDirection.newer,
-      );
+      // Stored rows first, up to where the stored range ends.
+      final page =
+          _storedNewerPage(cursor) ??
+          await _fetchWindowPage(
+            session,
+            cursor,
+            direction: WindowPageDirection.newer,
+          );
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
       _windowStore = appendNewerChannelWindow(_windowStore, page);
       _reconcilePageSummaries(page, pageVersion);
@@ -108,6 +169,15 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     final initVersion = _initVersion;
     final opVersion = ++_windowOpVersion;
     final session = _summarySession;
+    if (_storedNewestIfCovered() case final stored?) {
+      _windowStore = replaceNewestChannelWindow(_windowStore, stored);
+      _windowGeneration++;
+      _pruneOffWindowReplies();
+      _reconcilePageSummaries(stored, ++_threadQuerySerial);
+      _reachedOldest = !channelWindowHasMore(_windowStore);
+      _publishWindow(stored.rows);
+      return true;
+    }
     try {
       final pageVersion = ++_threadQuerySerial;
       final response = await session.queryRelay([_channelWindowFilter(null)]);

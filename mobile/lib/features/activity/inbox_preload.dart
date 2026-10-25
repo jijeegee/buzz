@@ -104,6 +104,8 @@ Future<void> runInboxPreload(
   final firstRooms = _rooms(first);
   await preloader.preloadRooms(firstRooms);
   await preloader.preloadThreads(_threads(first), beforeRequest: waitReady);
+  // Rooms with unread messages open at the first of them.
+  await preloader.preloadReadMarkers(beforeRequest: waitIdle);
 
   final loaded = {for (final room in firstRooms) room.channelId};
   final rooms = [
