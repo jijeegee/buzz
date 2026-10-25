@@ -8,6 +8,7 @@ import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
 import 'channel_page_records.dart';
 import 'pending_local_messages_provider.dart';
+import 'thread_stored_pages.dart';
 import 'thread_window.dart';
 import 'window_anchor.dart';
 
@@ -95,7 +96,7 @@ final threadRepliesStaleProvider = NotifierProvider.autoDispose
     );
 
 final threadRepliesProvider = FutureProvider.autoDispose
-    .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) async {
+    .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
       // Closing the thread page releases the last listener. Keep the replies
       // for [threadRepliesRetention] instead of dropping them at once.
       //
@@ -171,127 +172,199 @@ final threadRepliesProvider = FutureProvider.autoDispose
           refresh();
         }
       });
-      final session = ref.read(relaySessionProvider.notifier);
       final channelProvider = channelMessagesProvider(args.channelId);
       final channelMessages = ref.exists(channelProvider)
           ? ref.read(channelProvider.notifier)
           : null;
-      final cachedReplyIds = channelMessages?.cachedThreadReplyIds(args.rootId);
       final unconfirmedIds = channelMessages?.unconfirmedThreadReplyIds(
         args.rootId,
       );
-      final queryVersion = channelMessages?.beginThreadQuery(args.rootId);
-      if (queryVersion != null) {
-        ref.onDispose(
-          () => channelMessages?.failThreadQuery(args.rootId, queryVersion),
-        );
-      }
-      // Newest replies first, like desktop: one window page folded into what
-      // this thread already holds; older pages load on scroll-up. Sends still
-      // awaiting proof need the complete scan below to settle, and a relay
-      // that serves no window falls back to it too.
       final window = ref.read(threadWindowProvider(args).notifier);
-      if (unconfirmedIds == null || unconfirmedIds.isEmpty) {
-        try {
-          final page = parseThreadWindowPage(
-            await session.queryRelay([
-              threadWindowFilter(
-                channelId: args.channelId,
-                rootId: args.rootId,
-              ),
-            ]),
-            channelId: args.channelId,
-            rootId: args.rootId,
-          );
-          if (page != null) {
-            recordThreadWindowPage(
-              ref,
-              args,
-              page.events,
-              hasMore: page.hasMore,
-            );
-            final folded = window.foldNewest(page);
-            if (queryVersion != null) {
-              channelMessages?.failThreadQuery(args.rootId, queryVersion);
-            }
-            if (ref.mounted && ref.exists(channelProvider)) {
-              ref
-                  .read(channelProvider.notifier)
-                  .cacheConfirmedThreadReplies(page.events);
-            }
-            return folded.events;
-          }
-        } catch (_) {
-          if (queryVersion != null) {
-            channelMessages?.failThreadQuery(args.rootId, queryVersion);
-          }
-          rethrow;
-        }
+      // A thread the message database holds complete opens from it: the
+      // first build returns its stored replies, so the page's first frame
+      // shows them with no request. Sends still awaiting proof need the
+      // complete scan to settle.
+      final opened = window.takeStoredOpen();
+      if (opened != null &&
+          (unconfirmedIds == null || unconfirmedIds.isEmpty)) {
+        _cacheStoredReplies(ref, args, opened);
+        return opened;
       }
-      try {
-        final replies = await fetchCompleteThreadReplies(session, args);
-        recordCompleteThread(ref, args, replies);
-        // A complete scan holds the whole thread: nothing older to page.
-        window.replaceComplete(replies);
-        // Explicit markers also settle unacknowledged local sends, whose
-        // absence cannot prove deletion even in an insertion-complete scan.
-        final missingIds =
-            unconfirmedIds?.difference(
-              replies.map((event) => event.id).toSet(),
-            ) ??
-            <String>{};
-        final deletions = <NostrEvent>[];
-        // One bounded request per scan keeps opening a thread responsive even
-        // when many sends are awaiting ACKs. Excess IDs remain provisional.
-        final targets =
-            channelMessages?.nextThreadDeletionProofTargets(missingIds) ??
-            const <String>[];
-        // Per-target limits keep repeated markers from crowding another ID out.
-        if (targets.isNotEmpty) {
-          deletions.addAll(
-            await session.queryRelay([
-              for (final target in targets)
-                NostrFilter(
-                  kinds: const [EventKind.deletion, EventKind.nip29DeleteEvent],
-                  tags: {
-                    '#h': [args.channelId],
-                    '#e': [target],
-                  },
-                  limit: 1,
-                ),
-            ]),
-          );
-        }
-        if (ref.mounted && ref.exists(channelProvider)) {
-          final channel = ref.read(channelProvider.notifier);
-          final deletedTargets = {
-            for (final event in deletions)
-              for (final tag in event.tags)
-                if (tag.length > 1 && tag[0] == 'e') tag[1],
-          };
-          final applied = channel.cacheCompleteThreadQuery(
-            args.rootId,
-            cachedReplyIds ?? {},
-            replies,
-            provisionalReplyIds: missingIds.difference(deletedTargets),
-            queryVersion: queryVersion,
-          );
-          if (deletions.isNotEmpty) {
-            channel.cacheThreadDeletions(
-              deletions,
-              scopedTargetIds: targets.toSet(),
-              reconciledTargetIds: applied ? missingIds : const {},
-            );
-          }
-        }
-        return replies;
-      } catch (_) {
+      return _loadThreadReplies(
+        ref,
+        args,
+        channelMessages: channelMessages,
+        unconfirmedIds: unconfirmedIds,
+        window: window,
+      );
+    });
+
+/// Hands stored replies to the room's reply cache, as a fetched page's are.
+void _cacheStoredReplies(
+  Ref ref,
+  ThreadRepliesArgs args,
+  List<NostrEvent> events,
+) {
+  final replies = storedThreadReplies(args, events);
+  if (replies.isEmpty) return;
+  // The room's messages are another provider: not while this one builds.
+  scheduleMicrotask(() {
+    if (!ref.mounted) return;
+    final channel = channelMessagesProvider(args.channelId);
+    if (!ref.exists(channel)) return;
+    ref.read(channel.notifier).cacheConfirmedThreadReplies(replies);
+  });
+}
+
+/// [before] when the room's live range read again after a request is the
+/// same one: the feed kept the room complete throughout.
+int? _unchangedLiveFrom(int? before, int? after) =>
+    before != null && before == after ? before : null;
+
+/// The thread's replies when the first build could not return them stored.
+Future<List<NostrEvent>> _loadThreadReplies(
+  Ref ref,
+  ThreadRepliesArgs args, {
+  required ChannelMessagesNotifier? channelMessages,
+  required Set<String>? unconfirmedIds,
+  required ThreadWindowNotifier window,
+}) async {
+  final session = ref.read(relaySessionProvider.notifier);
+  final channelProvider = channelMessagesProvider(args.channelId);
+  if (unconfirmedIds == null || unconfirmedIds.isEmpty) {
+    // A refresh (a live reply, a reconnect) of a thread the database
+    // still holds complete reads it again instead of the relay.
+    final stored = readStoredNewestThreadPage(ref, args);
+    if (stored != null && stored.covered) {
+      // The window is another provider: not while this one builds.
+      await Future<void>.value();
+      if (!ref.mounted) return const [];
+      final folded = window.foldNewest(stored.page);
+      _cacheStoredReplies(ref, args, folded.events);
+      return folded.events;
+    }
+  }
+  final cachedReplyIds = channelMessages?.cachedThreadReplyIds(args.rootId);
+  final queryVersion = channelMessages?.beginThreadQuery(args.rootId);
+  if (queryVersion != null) {
+    ref.onDispose(
+      () => channelMessages?.failThreadQuery(args.rootId, queryVersion),
+    );
+  }
+  // Newest replies first, like desktop: one window page folded into what
+  // this thread already holds; older pages load on scroll-up. Sends still
+  // awaiting proof need the complete scan below to settle, and a relay
+  // that serves no window falls back to it too.
+  if (unconfirmedIds == null || unconfirmedIds.isEmpty) {
+    try {
+      final liveBefore = fedLiveFrom(ref, args.channelId);
+      final page = parseThreadWindowPage(
+        await session.queryRelay([
+          threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
+        ]),
+        channelId: args.channelId,
+        rootId: args.rootId,
+      );
+      if (page != null) {
+        recordThreadWindowPage(
+          ref,
+          args,
+          page.events,
+          hasMore: page.hasMore,
+          liveFrom: _unchangedLiveFrom(
+            liveBefore,
+            fedLiveFrom(ref, args.channelId),
+          ),
+        );
+        final folded = window.foldNewest(page);
         if (queryVersion != null) {
           channelMessages?.failThreadQuery(args.rootId, queryVersion);
         }
-        rethrow;
+        if (ref.mounted && ref.exists(channelProvider)) {
+          ref
+              .read(channelProvider.notifier)
+              .cacheConfirmedThreadReplies(page.events);
+        }
+        return folded.events;
       }
-    });
+    } catch (_) {
+      if (queryVersion != null) {
+        channelMessages?.failThreadQuery(args.rootId, queryVersion);
+      }
+      rethrow;
+    }
+  }
+  try {
+    final liveBefore = fedLiveFrom(ref, args.channelId);
+    final replies = await fetchCompleteThreadReplies(session, args);
+    recordCompleteThread(
+      ref,
+      args,
+      replies,
+      liveFrom: _unchangedLiveFrom(
+        liveBefore,
+        fedLiveFrom(ref, args.channelId),
+      ),
+    );
+    // A complete scan holds the whole thread: nothing older to page.
+    window.replaceComplete(replies);
+    // Explicit markers also settle unacknowledged local sends, whose
+    // absence cannot prove deletion even in an insertion-complete scan.
+    final missingIds =
+        unconfirmedIds?.difference(replies.map((event) => event.id).toSet()) ??
+        <String>{};
+    final deletions = <NostrEvent>[];
+    // One bounded request per scan keeps opening a thread responsive even
+    // when many sends are awaiting ACKs. Excess IDs remain provisional.
+    final targets =
+        channelMessages?.nextThreadDeletionProofTargets(missingIds) ??
+        const <String>[];
+    // Per-target limits keep repeated markers from crowding another ID out.
+    if (targets.isNotEmpty) {
+      deletions.addAll(
+        await session.queryRelay([
+          for (final target in targets)
+            NostrFilter(
+              kinds: const [EventKind.deletion, EventKind.nip29DeleteEvent],
+              tags: {
+                '#h': [args.channelId],
+                '#e': [target],
+              },
+              limit: 1,
+            ),
+        ]),
+      );
+    }
+    if (ref.mounted && ref.exists(channelProvider)) {
+      final channel = ref.read(channelProvider.notifier);
+      final deletedTargets = {
+        for (final event in deletions)
+          for (final tag in event.tags)
+            if (tag.length > 1 && tag[0] == 'e') tag[1],
+      };
+      final applied = channel.cacheCompleteThreadQuery(
+        args.rootId,
+        cachedReplyIds ?? {},
+        replies,
+        provisionalReplyIds: missingIds.difference(deletedTargets),
+        queryVersion: queryVersion,
+      );
+      if (deletions.isNotEmpty) {
+        channel.cacheThreadDeletions(
+          deletions,
+          scopedTargetIds: targets.toSet(),
+          reconciledTargetIds: applied ? missingIds : const {},
+        );
+      }
+    }
+    return replies;
+  } catch (_) {
+    if (queryVersion != null) {
+      channelMessages?.failThreadQuery(args.rootId, queryVersion);
+    }
+    rethrow;
+  }
+}
 
 /// The replies one thread holds in newest-first windows, and how far back
 /// they reach. Lives as long as the thread's query (see
@@ -309,8 +382,28 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   bool _loadingNewer = false;
   int _windowGeneration = 0;
 
+  /// The replies [build] opened from the message database, until the
+  /// thread query takes them.
+  List<NostrEvent>? _storedOpen;
+
+  /// Opens at the newest stored replies when the message database holds the
+  /// thread complete up to now; otherwise empty until the query's first page.
   @override
-  ThreadWindow? build() => null;
+  ThreadWindow? build() {
+    final stored = readStoredNewestThreadPage(ref, args);
+    if (stored == null || !stored.covered) return null;
+    final window = mergeNewestThreadPage(null, stored.page);
+    _storedOpen = window.events;
+    return window;
+  }
+
+  /// The replies [build] opened from the message database, once: the thread
+  /// query returns them instead of asking the relay.
+  List<NostrEvent>? takeStoredOpen() {
+    final opened = _storedOpen;
+    _storedOpen = null;
+    return opened;
+  }
 
   bool get hasOlder => state?.state.hasOlder ?? false;
 
@@ -333,6 +426,21 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   /// false, leaving the window as it was, when the relay lacks
   /// `nip-cw-newer` or serves no window.
   Future<bool> openAt({required int createdAt, String? eventId}) async {
+    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
+    final cursor = ThreadWindowCursor(
+      createdAt: anchor.createdAt,
+      eventId: anchor.eventId,
+    );
+    // Both sides of the reply stored complete: no request.
+    final stored = readStoredThreadMiddle(ref, args, cursor);
+    if (stored != null) {
+      final generation = ++_windowGeneration;
+      // Callers may be laying out: change the window right after.
+      await Future<void>.value();
+      if (!ref.mounted || generation != _windowGeneration) return false;
+      state = mergeMiddleThreadPages(state, stored.older, stored.newer);
+      return true;
+    }
     final info = await ref.read(relayInfoProvider.future);
     // An unreadable document is not proof of no support: retry next time.
     if (info == null) ref.invalidate(relayInfoProvider);
@@ -340,11 +448,6 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       return false;
     }
     final generation = ++_windowGeneration;
-    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
-    final cursor = ThreadWindowCursor(
-      createdAt: anchor.createdAt,
-      eventId: anchor.eventId,
-    );
     try {
       final pages = await Future.wait([
         for (final direction in WindowPageDirection.values)
@@ -373,7 +476,10 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     if (cursor == null) return false;
     _loadingNewer = true;
     try {
-      final page = await _fetchPage(cursor, WindowPageDirection.newer);
+      final stored = readStoredNewerThreadPage(ref, args, cursor);
+      if (stored != null) await Future<void>.value();
+      final page =
+          stored ?? await _fetchPage(cursor, WindowPageDirection.newer);
       if (!ref.mounted || page == null) return false;
       // openAt or jumpToLatest may have replaced the window meanwhile.
       if (state?.state.newerCursor != cursor) return false;
@@ -389,7 +495,14 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   Future<bool> jumpToLatest() async {
     if (!hasNewer) return false;
     final generation = ++_windowGeneration;
-    final page = await _fetchPage(null, WindowPageDirection.older);
+    final stored = readStoredNewestThreadPage(ref, args);
+    final ThreadWindowPage? page;
+    if (stored != null && stored.covered) {
+      await Future<void>.value();
+      page = stored.page;
+    } else {
+      page = await _fetchPage(null, WindowPageDirection.older);
+    }
     if (!ref.mounted || page == null || generation != _windowGeneration) {
       return false;
     }
@@ -451,6 +564,14 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     if (cursor == null) return false;
     _loadingOlder = true;
     try {
+      final stored = readStoredOlderThreadPage(ref, args, cursor);
+      if (stored != null) {
+        // Callers may be laying out: change the window right after.
+        await Future<void>.value();
+        if (!ref.mounted || state?.state.olderCursor != cursor) return false;
+        state = mergeOlderThreadPage(state, stored);
+        return stored.events.isNotEmpty;
+      }
       final session = ref.read(relaySessionProvider.notifier);
       final page = parseThreadWindowPage(
         await session.queryRelay([

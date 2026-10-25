@@ -166,29 +166,62 @@ class ChannelRoomStore {
     }
   }
 
-  /// The newest stored page of [channelId], read synchronously, or null when
-  /// nothing complete is stored (or there is no database to read).
-  StoredTimelinePage? readNewest(MessageScope scope, String channelId) =>
-      _read<StoredTimelinePage?>(
-        scope,
-        (db, liveFrom) =>
-            readNewestStoredPage(db, channelId, liveFrom: liveFrom(channelId)),
-      );
+  /// The newest stored page of [channelId] (or with [rootId], of that
+  /// thread's replies), read synchronously, or null when nothing complete is
+  /// stored (or there is no database to read).
+  StoredTimelinePage? readNewest(
+    MessageScope scope,
+    String channelId, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
+    scope,
+    (db, liveFrom) => readNewestStoredPage(
+      db,
+      channelId,
+      rootId: rootId,
+      liveFrom: liveFrom(channelId),
+    ),
+  );
 
   /// The stored rows just older than [before], when they are known complete.
   StoredTimelinePage? readOlder(
     MessageScope scope,
     String channelId,
-    CoverageCursor before,
-  ) => _read<StoredTimelinePage?>(
+    CoverageCursor before, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
     scope,
     (db, liveFrom) => readOlderStoredPage(
       db,
       channelId,
       before,
+      rootId: rootId,
       liveFrom: liveFrom(channelId),
     ),
   );
+
+  /// The stored rows just newer than [after], oldest first, when they are
+  /// known complete.
+  StoredTimelinePage? readNewer(
+    MessageScope scope,
+    String channelId,
+    CoverageCursor after, {
+    String? rootId,
+  }) => _read<StoredTimelinePage?>(
+    scope,
+    (db, liveFrom) => readNewerStoredPage(
+      db,
+      channelId,
+      after,
+      rootId: rootId,
+      liveFrom: liveFrom(channelId),
+    ),
+  );
+
+  /// When [channelId]'s open live range starts, counting range changes not
+  /// yet written; null when it has none (or there is no database).
+  int? liveFromOf(MessageScope scope, String channelId) =>
+      _read<int?>(scope, (db, liveFrom) => liveFrom(channelId));
 
   /// Whether [channelId]'s newest message, sent at [latestAt], is stored with
   /// a complete range under it.
@@ -230,7 +263,7 @@ class ChannelRoomStore {
   /// Whether [channelId]'s live range is open: the live feed has delivered
   /// it continuously since that time. Counts range changes not yet written.
   bool hasOpenLiveRange(MessageScope scope, String channelId) =>
-      _read(scope, (db, liveFrom) => liveFrom(channelId) != null) ?? false;
+      liveFromOf(scope, channelId) != null;
 
   /// The events of [channelId] received but not yet in the database, in
   /// arrival order.

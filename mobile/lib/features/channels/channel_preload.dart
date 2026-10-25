@@ -8,6 +8,7 @@ import 'channel_page_records.dart';
 import 'channel_room_store.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
+import 'thread_stored_pages.dart';
 
 /// Newest messages loaded per preloaded room, about one chat screen.
 const channelPreloadMessages = 20;
@@ -206,9 +207,10 @@ class ChannelPreloader {
   }
 
   /// Loads the newest replies of threads, [maxThreadWindowsPerRequest] per
-  /// request. Skips threads whose replies are already in memory or that were
-  /// tried within [preloadRetryAfter]. [beforeRequest] runs before each
-  /// request and stops the preload when it resolves to false.
+  /// request. Skips threads whose replies are already in memory or stored
+  /// complete up to now, or that were tried within [preloadRetryAfter].
+  /// [beforeRequest] runs before each request and stops the preload when it
+  /// resolves to false.
   Future<int> preloadThreads(
     List<ThreadRepliesArgs> threads, {
     Future<bool> Function()? beforeRequest,
@@ -216,7 +218,8 @@ class ChannelPreloader {
     final cold = <ThreadRepliesArgs>[
       for (final thread in threads.toSet())
         if (!_recentlyAttempted('thread:${thread.rootId}') &&
-            !_ref.exists(threadRepliesProvider(thread)))
+            !_ref.exists(threadRepliesProvider(thread)) &&
+            readStoredNewestThreadPage(_ref, thread)?.covered != true)
           thread,
     ];
     var loaded = 0;
@@ -235,6 +238,10 @@ class ChannelPreloader {
         _attemptedAt['thread:${thread.rootId}'] = attemptedAt;
       }
       try {
+        final liveBefore = {
+          for (final thread in chunk)
+            thread.channelId: fedLiveFrom(_ref, thread.channelId),
+        };
         final events = await _ref
             .read(relaySessionProvider.notifier)
             .queryRelay([
@@ -243,7 +250,17 @@ class ChannelPreloader {
         final windows = splitThreadWindows(events, chunk);
         final store = _ref.read(preloadedThreadsProvider.notifier);
         for (final MapEntry(key: thread, value: replies) in windows.entries) {
-          recordThreadWindowPage(_ref, thread, replies);
+          final liveFrom = liveBefore[thread.channelId];
+          recordThreadWindowPage(
+            _ref,
+            thread,
+            replies,
+            liveFrom:
+                liveFrom != null &&
+                    liveFrom == fedLiveFrom(_ref, thread.channelId)
+                ? liveFrom
+                : null,
+          );
           // A thread opened meanwhile has its full scan.
           if (_ref.exists(threadRepliesProvider(thread))) continue;
           store.seed(thread, replies);

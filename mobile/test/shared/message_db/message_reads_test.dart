@@ -209,6 +209,138 @@ void main() {
     );
   });
 
+  group('thread pages', () {
+    setUp(() {
+      write([
+        testEvent('root', createdAt: 5),
+        testEvent('main', createdAt: 25),
+        testReply('r1', 'root', createdAt: 10),
+        testReply('r2', 'root', createdAt: 20),
+        testReply('r3', 'root', createdAt: 30),
+        testReply('r4', 'root', createdAt: 40),
+        testOverlay('like', EventKind.reaction, 'r4', createdAt: 41),
+      ]);
+    });
+
+    test('main coverage does not cover a thread', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(50))]);
+      expect(readNewestStoredPage(db, testChannel, rootId: 'root'), isNull);
+      expect(ids(readNewestStoredPage(db, testChannel)), ['main', 'root']);
+    });
+
+    test('thread and window ranges merge; rows are replies only', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            CoverageCursor.start,
+            at(20, 'r2'),
+            stream: CoverageStream.thread('root'),
+          ),
+          claim(
+            at(20, 'r2'),
+            at(40, 'r4'),
+            stream: CoverageStream.threadWindow('root'),
+          ),
+        ],
+      );
+      final page = readNewestStoredPage(db, testChannel, rootId: 'root');
+      expect(ids(page), ['r4', 'r3', 'r2', 'r1']);
+      expect(page!.reachesStart, isTrue);
+      expect(page.reachesLive, isFalse);
+      expect([for (final o in page.overlays) o.id], ['like']);
+    });
+
+    test('the live range and all-stream ranges cover a thread', () {
+      write(
+        const [],
+        claims: [
+          claim(CoverageCursor.start, at(25), stream: CoverageStream.all),
+        ],
+      );
+      final page = readNewestStoredPage(
+        db,
+        testChannel,
+        rootId: 'root',
+        liveFrom: 26,
+      );
+      expect(ids(page), ['r4', 'r3', 'r2', 'r1']);
+      expect(page!.reachesLive, isTrue);
+    });
+
+    test('older and newer pages stay inside one range', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            at(20, 'r2'),
+            at(40, 'r4'),
+            stream: CoverageStream.threadWindow('root'),
+          ),
+        ],
+      );
+      final older = readOlderStoredPage(
+        db,
+        testChannel,
+        at(40, 'r4'),
+        rootId: 'root',
+      );
+      expect(ids(older), ['r3', 'r2']);
+      expect(older!.reachesStart, isFalse);
+      expect(
+        readOlderStoredPage(db, testChannel, at(20, 'r2'), rootId: 'root'),
+        isNull,
+      );
+
+      final newer = readNewerStoredPage(
+        db,
+        testChannel,
+        at(20, 'r2'),
+        rootId: 'root',
+      );
+      expect(ids(newer), ['r3', 'r4']);
+      expect(newer!.reachesLive, isFalse);
+      // Above the range: not known complete.
+      expect(
+        readNewerStoredPage(db, testChannel, at(40, 'r4'), rootId: 'root'),
+        isNull,
+      );
+    });
+
+    test('a newer page reaching the live range reaches live', () {
+      write(
+        const [],
+        claims: [
+          claim(
+            CoverageCursor.start,
+            at(29),
+            stream: CoverageStream.thread('root'),
+          ),
+        ],
+      );
+      final newer = readNewerStoredPage(
+        db,
+        testChannel,
+        at(20, 'r2'),
+        rootId: 'root',
+        liveFrom: 30,
+      );
+      expect(ids(newer), ['r3', 'r4']);
+      expect(newer!.reachesLive, isTrue);
+
+      final cut = readNewerStoredPage(
+        db,
+        testChannel,
+        at(10, 'r1'),
+        rootId: 'root',
+        liveFrom: 30,
+        limit: 2,
+      );
+      expect(ids(cut), ['r2', 'r3']);
+      expect(cut!.reachesLive, isFalse);
+    });
+  });
+
   group('store reader', () {
     const scope = MessageScope(relayUrl: 'https://one.example', pubkey: 'a');
     late MessageStore store;
