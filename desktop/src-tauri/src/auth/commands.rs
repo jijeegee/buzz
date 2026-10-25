@@ -875,9 +875,9 @@ fn api_error(error: ApiError) -> String {
 /// this device, and when it was the active account switch to another
 /// account still signed in here (`switchedTo`), else the signed-out screen.
 /// The account's key and its stored messages on this server leave this
-/// computer (the server restores both on the next sign-in). A network failure keeps
-/// everything so the user can retry (the server-side session would otherwise
-/// stay alive unrevoked).
+/// computer (the server restores both on the next sign-in). A network failure
+/// keeps everything so the user can retry (the server-side session would
+/// otherwise stay alive unrevoked).
 #[tauri::command]
 pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuthStatus, String> {
     let state = app.state::<AppState>();
@@ -885,7 +885,7 @@ pub async fn logout(app: AppHandle, account: Option<String>) -> Result<TokenAuth
     let account = account
         .map(|hex| PublicKey::from_hex(&hex).map_err(|_| "invalid account".to_string()))
         .transpose()?;
-    let signed_out = sign_out_account(&app, &origin, account, true).await?;
+    let signed_out = super::user_sign_out::sign_out_by_user(&app, &origin, account, true).await?;
     let support = state.token_auth.cached_support(&origin).flatten();
     let mut status = current_status(&state, &origin, support);
     status.switched_to = signed_out.switched_to.map(|key| key.to_hex());
@@ -1002,7 +1002,7 @@ pub async fn logout_on_this_device(app: AppHandle) -> Result<TokenAuthStatus, St
     // revoked below is the newest one.
     drop(state.token_auth.refresh_lock(&origin).lock_owned().await);
     let pending = pending_revocation(&state, &origin);
-    let signed_out = sign_out_account(&app, &origin, None, false).await?;
+    let signed_out = super::user_sign_out::sign_out_by_user(&app, &origin, None, false).await?;
     if let Some(pending) = pending {
         let client = state.http_client.clone();
         let revoke_origin = origin.clone();
@@ -1078,9 +1078,8 @@ pub(crate) async fn sign_out_account(
     let target = account.or_else(|| state.token_auth.signing_pubkey(origin));
     crate::device_robot::clear_agent_host_devices(&state, origin, target).await;
     let result = sign_out_account_now(app, origin, account, revoke).await;
-    match result {
-        Ok(_) => crate::message_store::purge_account(app, origin, target).await,
-        Err(_) => crate::device_robot::spawn_publish_agent_host_devices(app),
+    if result.is_err() {
+        crate::device_robot::spawn_publish_agent_host_devices(app);
     }
     result
 }
@@ -1669,6 +1668,7 @@ pub async fn delete_account(app: AppHandle) -> Result<TokenAuthStatus, String> {
         .await
         .map_err(api_error)?;
     forget_session(&state.token_auth, &origin, &KeyringRefreshStore).await?;
+    super::user_sign_out::forget_messages(&app, &origin, Some(session.principal)).await;
     emit_changed(&app, &origin);
     let support = state.token_auth.cached_support(&origin).flatten();
     Ok(current_status(&state, &origin, support))

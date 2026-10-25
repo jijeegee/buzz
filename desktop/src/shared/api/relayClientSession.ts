@@ -7,9 +7,12 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_TYPING_INDICATOR,
   KIND_USER_STATUS,
-  CHANNEL_EVENT_KINDS,
   KIND_CHANNEL_THREAD_SUMMARY,
 } from "@/shared/constants/kinds";
+import {
+  messageStoreSocketConfig,
+  uiKindsOnly,
+} from "@/shared/api/messageStoreLive";
 import {
   getTextPayload,
   parseRelayFrame,
@@ -25,6 +28,7 @@ import {
   buildChannelAuxDeletionFilter,
   buildChannelFilter,
   buildChannelHistoryFilter,
+  buildChannelLiveFilter,
   buildGlobalStreamFilter,
 } from "@/shared/api/relayChannelFilters";
 import {
@@ -347,17 +351,12 @@ export class RelayClient {
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    // 39005 rides only this window-store subscription — CHANNEL_EVENT_KINDS'
-    // other consumers (unread tracking, cache merges) must never see
-    // summary overlays.
+    // 39005 reaches only this window-store consumer — CHANNEL_EVENT_KINDS'
+    // other consumers (unread tracking, cache merges) must never see summary
+    // overlays. Sync-only kinds feed the local message store alone.
     return this.subscribe(
-      {
-        kinds: [...CHANNEL_EVENT_KINDS, KIND_CHANNEL_THREAD_SUMMARY],
-        "#h": [channelId],
-        limit: 1000,
-        since: Math.floor(Date.now() / 1_000),
-      },
-      onEvent,
+      buildChannelLiveFilter(channelId, [KIND_CHANNEL_THREAD_SUMMARY]),
+      uiKindsOnly(onEvent, KIND_CHANNEL_THREAD_SUMMARY),
     );
   }
 
@@ -579,7 +578,7 @@ export class RelayClient {
       const wsId = await invoke<number>("plugin:websocket|connect", {
         url: this.relayUrl,
         onMessage: this.onMessageChannel,
-        config: {},
+        config: await messageStoreSocketConfig(this.relayUrl),
       });
       if (generation !== this.connectionGeneration) {
         void closeWebSocket(wsId, "stale connection attempt");

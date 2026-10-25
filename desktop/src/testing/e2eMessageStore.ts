@@ -16,11 +16,13 @@ import type {
 } from "@/shared/api/tauriMessageStore";
 import type { RelayEvent } from "@/shared/api/types";
 
-// Keep in sync with `message_store/mod.rs`.
-const SYNC_KINDS = new Set([
+// Same list as `message_store/mod.rs` (checked against
+// `src-tauri/testdata/sync_kinds.json` by `kinds.test.mjs`).
+export const MOCK_SYNC_KINDS = [
   5, 7, 9, 9005, 40001, 40002, 40003, 40008, 40099, 43001, 43002, 43003, 43004,
   43005, 43006, 45001, 45003, 48100, 48101, 48102, 48103,
-]);
+] as const;
+const SYNC_KINDS = new Set<number>(MOCK_SYNC_KINDS);
 const SYNC_KINDS_VERSION = 1;
 const WINDOW_ROW_KINDS = new Set([
   9, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 48100,
@@ -356,19 +358,29 @@ export class MockScopeStore {
     return id;
   }
 
+  /** One open segment's rooms gain `all` [since, closedAt]; then it closes. */
+  closeSegment(segmentId: number, closedAt: number) {
+    const segment = this.state.segments.find(
+      (candidate) => candidate.id === segmentId && candidate.closedAt === null,
+    );
+    if (!segment) return;
+    const claim: MockClaim = {
+      lo: { createdAt: segment.startedAt, eventId: TIME_FLOOR_ID },
+      loIsStart: false,
+      hi: { at: closedAt },
+    };
+    for (const channelId of segment.channelIds) {
+      this.claimRoom(channelId, "all", claim);
+    }
+    segment.closedAt = Math.max(closedAt, segment.startedAt);
+    this.save(this.state);
+  }
+
   closeLive(wsId: number | null, closedAt: number) {
     for (const segment of this.state.segments) {
       if (segment.closedAt !== null) continue;
       if (wsId !== null && segment.wsId !== wsId) continue;
-      const claim: MockClaim = {
-        lo: { createdAt: segment.startedAt, eventId: TIME_FLOOR_ID },
-        loIsStart: false,
-        hi: { at: closedAt },
-      };
-      for (const channelId of segment.channelIds) {
-        this.claimRoom(channelId, "all", claim);
-      }
-      segment.closedAt = Math.max(closedAt, segment.startedAt);
+      this.closeSegment(segment.id, closedAt);
     }
     this.save(this.state);
   }
@@ -675,6 +687,12 @@ export function createMockMessageStore(storage: ScopeStorage) {
 }
 
 let bridgeStore: ReturnType<typeof createMockMessageStore> | null = null;
+
+/** The bridge's (localStorage-backed) store for one scope. */
+export function mockMessageStoreScope(scope: MessageStoreScope) {
+  bridgeStore ??= createMockMessageStore(window.localStorage);
+  return bridgeStore.scope(scope);
+}
 
 /** The `message_store_*` Tauri commands, for `e2eBridge.ts`. */
 export function handleMessageStoreMockCommand(
