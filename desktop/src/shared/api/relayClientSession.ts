@@ -352,9 +352,8 @@ export class RelayClient {
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    // 39005 reaches only this window-store consumer — CHANNEL_EVENT_KINDS'
-    // other consumers (unread tracking, cache merges) must never see summary
-    // overlays. Sync-only kinds feed the local message store alone.
+    // 39005 reaches only this window-store consumer, never unread tracking or
+    // cache merges; sync-only kinds feed the local message store alone.
     return this.subscribe(
       buildChannelLiveFilter(channelId, [KIND_CHANNEL_THREAD_SUMMARY]),
       uiKindsOnly(onEvent, KIND_CHANNEL_THREAD_SUMMARY),
