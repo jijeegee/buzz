@@ -39,6 +39,7 @@ pub(crate) mod refresh;
 pub(crate) mod restore;
 pub(crate) mod service;
 pub(crate) mod signed_out;
+mod user_sign_out;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;

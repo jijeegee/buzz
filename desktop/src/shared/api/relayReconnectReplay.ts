@@ -154,7 +154,12 @@ export async function replayReconnectHistoryPages({
     if (!isActive()) return false;
 
     for (const event of events) {
-      if (shouldDispatchSubscriptionEvent(subscription, event)) {
+      // Repair pages carry every synced kind (the local store keeps them);
+      // a subscription only ever sees the kinds it asked for.
+      if (
+        subscription.filter.kinds.includes(event.kind) &&
+        shouldDispatchSubscriptionEvent(subscription, event)
+      ) {
         subscription.onEvent(event);
       }
     }

@@ -11,7 +11,9 @@ mod classify;
 pub(crate) mod commands;
 mod coverage;
 mod ingest;
+pub(crate) mod live;
 mod read;
+pub(crate) mod record;
 mod schema;
 #[cfg(test)]
 mod tests;
@@ -26,13 +28,14 @@ use std::{
 use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Manager, Runtime};
 
 /// Every kind the store keeps for a room: window rows, reactions, edits,
 /// deletes, legacy messages, forum posts, job and huddle lifecycle events.
-/// The one list the repair, catch-up and live filters share (wired in the
-/// write-path change); bump [`SYNC_KINDS_VERSION`] whenever it changes so
-/// coverage proven under the old list is ignored.
+/// The one list the window-adjacent repair, catch-up and live filters share
+/// (`CHANNEL_SYNC_KINDS` in `kinds.ts`, checked against
+/// `testdata/sync_kinds.json`); bump [`SYNC_KINDS_VERSION`] whenever it
+/// changes so coverage proven under the old list is ignored.
 pub(crate) const SYNC_KINDS: [u32; 21] = [
     5, 7, 9, 9005, 40001, 40002, 40003, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006,
     45001, 45003, 48100, 48101, 48102, 48103,
@@ -76,7 +79,7 @@ pub(crate) fn is_hex64(value: &str) -> bool {
     value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
 }
 
-fn store_dir(app: &AppHandle) -> Result<PathBuf, String> {
+fn store_dir<R: Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
     app.path()
         .app_data_dir()
         .map(|dir| dir.join(STORE_DIR))
@@ -150,6 +153,30 @@ impl Actor {
     }
 }
 
+/// Fire-and-forget access to one scope's thread, pinned to the actor that was
+/// open when it was made: once the scope is purged its jobs are dropped, so a
+/// late write can never recreate a deleted account's file.
+#[derive(Clone)]
+pub(crate) struct ScopeWriter {
+    actor: Arc<Actor>,
+}
+
+impl ScopeWriter {
+    /// Queues `f` after everything sent before it. Failures are logged only:
+    /// the store never fails the read or socket that feeds it.
+    pub(crate) fn submit<F>(&self, f: F)
+    where
+        F: FnOnce(&mut Connection) -> Result<(), String> + Send + 'static,
+    {
+        let job: Job = Box::new(move |conn| {
+            if let Err(error) = f(conn) {
+                eprintln!("kuzz-desktop: message store: write failed: {error}");
+            }
+        });
+        let _ = self.actor.send(job);
+    }
+}
+
 /// Tauri state: the open scopes.
 #[derive(Default)]
 pub(crate) struct MessageStore {
@@ -178,6 +205,14 @@ impl MessageStore {
         {
             actors.remove(stem);
         }
+    }
+
+    /// A writer for `scope`, opening it if needed.
+    pub(crate) fn writer(&self, dir: &Path, scope: &StoreScope) -> Result<ScopeWriter, String> {
+        let stem = scope.file_stem()?;
+        Ok(ScopeWriter {
+            actor: self.actor(dir, &stem)?,
+        })
     }
 
     /// Runs `f` on the scope's thread, after everything sent before it.
@@ -222,7 +257,7 @@ impl MessageStore {
         Ok(())
     }
 
-    fn shut_down_all(&self) {
+    pub(crate) fn shut_down_all(&self) {
         let actors: Vec<Arc<Actor>> = self
             .actors
             .lock()
@@ -236,6 +271,25 @@ impl MessageStore {
     }
 }
 
+/// [`MessageStore::writer`] for the app's store. `None` (logged) when the
+/// store cannot open, so callers carry on without it.
+pub(crate) fn writer_for<R: Runtime>(
+    app: &AppHandle<R>,
+    scope: &StoreScope,
+) -> Option<ScopeWriter> {
+    let result = store_dir(app).and_then(|dir| match app.try_state::<MessageStore>() {
+        Some(store) => store.writer(&dir, scope),
+        None => Err("message store not managed".to_string()),
+    });
+    match result {
+        Ok(writer) => Some(writer),
+        Err(error) => {
+            eprintln!("kuzz-desktop: message store: no writer: {error}");
+            None
+        }
+    }
+}
+
 async fn purge_blocking(app: &AppHandle, stem: String) -> Result<(), String> {
     let dir = store_dir(app)?;
     let app = app.clone();
@@ -244,18 +298,33 @@ async fn purge_blocking(app: &AppHandle, stem: String) -> Result<(), String> {
         .map_err(|error| format!("message store purge task failed: {error}"))?
 }
 
-/// Per-account logout: the account's stored messages on `origin` leave this
-/// computer with its key. Best effort; launch cleanup retries orphans.
-pub(crate) async fn purge_account(
-    app: &AppHandle,
-    origin: &str,
-    account: Option<nostr::PublicKey>,
-) {
-    let Some(account) = account else {
-        return;
-    };
-    let result = match file_stem(&account.to_hex(), origin) {
-        Ok(stem) => purge_blocking(app, stem).await,
+impl MessageStore {
+    /// Deletes `account`'s stored messages on `origin`. Blocking.
+    pub(crate) fn purge_account_in(
+        &self,
+        dir: &Path,
+        origin: &str,
+        account: &nostr::PublicKey,
+    ) -> Result<(), String> {
+        self.purge(dir, &file_stem(&account.to_hex(), origin)?)
+    }
+}
+
+/// A sign-out the user asked for: the account's stored messages on `origin`
+/// leave this computer with its key. Best effort; launch cleanup retries
+/// orphans. Callers: `auth::user_sign_out` only.
+pub(crate) async fn purge_account(app: &AppHandle, origin: &str, account: nostr::PublicKey) {
+    let result = match store_dir(app) {
+        Ok(dir) => {
+            let (app, origin) = (app.clone(), origin.to_string());
+            tauri::async_runtime::spawn_blocking(move || {
+                app.state::<MessageStore>()
+                    .purge_account_in(&dir, &origin, &account)
+            })
+            .await
+            .map_err(|error| format!("message store purge task failed: {error}"))
+            .and_then(|result| result)
+        }
         Err(error) => Err(error),
     };
     if let Err(error) = result {

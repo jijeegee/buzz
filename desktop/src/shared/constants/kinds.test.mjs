@@ -72,3 +72,20 @@ test("isConversationalUnreadKind_unknownKind_countsAsConversational", () => {
   // (e.g. a future conversational kind) is kept.
   assert.equal(isConversationalUnreadKind(12345), true);
 });
+
+test("channelSyncKinds_matchTheNativeStoreList", async () => {
+  // The native store's SYNC_KINDS (checked against the same file by
+  // `message_store::tests::sync_kinds_match_the_shared_list`).
+  const { readFile } = await import("node:fs/promises");
+  const shared = JSON.parse(
+    await readFile(
+      new URL("../../../src-tauri/testdata/sync_kinds.json", import.meta.url),
+      "utf8",
+    ),
+  );
+  const { CHANNEL_SYNC_KINDS } = await import("./kinds.ts");
+  const { MOCK_SYNC_KINDS } = await import("../../testing/e2eMessageStore.ts");
+  const sorted = (kinds) => [...kinds].sort((a, b) => a - b);
+  assert.deepEqual(sorted(CHANNEL_SYNC_KINDS), shared.kinds);
+  assert.deepEqual(sorted(MOCK_SYNC_KINDS), shared.kinds);
+});

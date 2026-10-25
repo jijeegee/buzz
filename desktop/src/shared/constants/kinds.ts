@@ -130,6 +130,22 @@ export const CHANNEL_EVENT_KINDS = [
   KIND_HUDDLE_ENDED, // 48103 — huddle lifecycle overlay
 ] as const;
 
+// Every kind the local message store keeps for a room. The live room
+// subscriptions request exactly these so a live segment proves the room;
+// `SYNC_KINDS` in `src-tauri/src/message_store/mod.rs` is the same list, and
+// both are checked against `src-tauri/testdata/sync_kinds.json`. Consumers of
+// those subscriptions still see only CHANNEL_EVENT_KINDS (see
+// `messageStoreLive.ts`).
+export const CHANNEL_SYNC_KINDS = [
+  ...CHANNEL_EVENT_KINDS,
+  KIND_JOB_REQUEST, // 43001
+  KIND_JOB_ACCEPTED, // 43002
+  KIND_JOB_PROGRESS, // 43003
+  KIND_JOB_RESULT, // 43004
+  KIND_JOB_CANCEL, // 43005
+  KIND_JOB_ERROR, // 43006
+] as const;
+
 // Auxiliary (non-row) timeline kinds: events that overlay onto or hide an
 // existing message rather than rendering their own row — reactions, edits, and
 // deletions. History fetches request the visible content kinds only, so the

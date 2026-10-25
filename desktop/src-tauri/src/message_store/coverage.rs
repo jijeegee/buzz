@@ -61,7 +61,6 @@ pub(crate) enum Upper {
     /// Everything created at or before this time (a head fetch, a socket close).
     At(i64),
     /// Everything strictly older than this cursor (a page fetched with it).
-    #[cfg_attr(not(test), allow(dead_code))] // Wired by the write-path change.
     Before(Cursor),
 }
 
