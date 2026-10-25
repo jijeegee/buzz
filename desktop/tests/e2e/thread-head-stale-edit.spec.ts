@@ -136,21 +136,30 @@ test("thread head reflects the channel-window edit even before thread aux loads"
   await expect(headBody).toContainText("these PRs?");
   await expect(headBody).not.toContainText("these two PRs?");
 
-  // The thread-aux fetch must actually be held: this proves the edited head
-  // above came purely from the channel-window overlay, not from a backfill that
-  // slipped in. (Guards against the fetch never having been dispatched.)
+  // The thread's replies must not have landed from the server: either its
+  // fetch is held, or the local store answered the thread (it proves this
+  // thread's newest page, so the server is never asked). Either way the
+  // edited head above came from the channel-window overlay alone. (Guards
+  // against the thread never having been loaded.)
   await expect
     .poll(() =>
-      page.evaluate(
-        () =>
-          (
-            window as Window & {
-              __KUZZ_E2E_THREAD_REPLIES_PENDING__?: () => number;
-            }
-          ).__KUZZ_E2E_THREAD_REPLIES_PENDING__?.() ?? 0,
-      ),
+      page.evaluate(() => {
+        const testWindow = window as Window & {
+          __KUZZ_E2E_THREAD_REPLIES_PENDING__?: () => number;
+          __KUZZ_E2E_COMMAND_PAYLOADS__?: Array<{ command: string }>;
+        };
+        const pending = testWindow.__KUZZ_E2E_THREAD_REPLIES_PENDING__?.() ?? 0;
+        const commands = (testWindow.__KUZZ_E2E_COMMAND_PAYLOADS__ ?? []).map(
+          (entry) => entry.command,
+        );
+        return (
+          pending > 0 ||
+          (commands.includes("message_store_read_thread_head") &&
+            !commands.includes("get_thread_windows"))
+        );
+      }),
     )
-    .toBeGreaterThan(0);
+    .toBe(true);
 
   await waitForAnimations(page);
   await page.screenshot({ path: `${SHOT}/thread-head-edited.png` });

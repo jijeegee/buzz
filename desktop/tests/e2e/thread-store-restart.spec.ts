@@ -13,6 +13,12 @@ type MockState = {
   threadCoverage: Record<string, MockRange[]>;
   summaries: Record<string, { createdAt: number; payload: unknown }>;
 };
+type SeedMessage = {
+  content: string;
+  createdAt: number;
+  id: string;
+  parentEventId?: string;
+};
 type EmitWindow = Window & {
   __KUZZ_E2E_EMIT_MOCK_MESSAGE__?: (input: {
     channelName: string;
@@ -47,27 +53,32 @@ async function storeThread(page: Page) {
       typeof (window as EmitWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
       "function",
   );
-  await page.evaluate(
+  const seeded = await page.evaluate(
     ({ rootId, rootText, replyText }) => {
       const emit = (window as EmitWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
       if (!emit) throw new Error("emitter missing");
       // Older than the restart catch-up's lookback, so only the thread's own
       // claims can prove its replies.
       const base = Math.floor(Date.now() / 1000) - 4_000;
-      emit({
-        channelName: "general",
-        content: rootText,
-        createdAt: base,
-        id: rootId,
-      });
+      const events: SeedMessage[] = [
+        { content: rootText, createdAt: base, id: rootId },
+      ];
+      emit({ channelName: "general", ...events[0] });
       for (let index = 0; index < 3; index += 1) {
-        emit({
+        const reply = emit({
           channelName: "general",
           content: `${replyText} ${index}`,
           createdAt: base + 10 + index,
           parentEventId: rootId,
+        }) as { id: string };
+        events.push({
+          content: `${replyText} ${index}`,
+          createdAt: base + 10 + index,
+          id: reply.id,
+          parentEventId: rootId,
         });
       }
+      return events;
     },
     { rootId: ROOT_ID, rootText: ROOT_TEXT, replyText: REPLY_TEXT },
   );
@@ -101,7 +112,7 @@ async function storeThread(page: Page) {
   );
   // The relay's windows carry a 39005 summary per thread root, which the
   // store keeps; the mock relay sends none, so store the one it would have.
-  return Object.fromEntries(
+  const store = Object.fromEntries(
     Object.entries(saved).map(([key, value]) => {
       const state = JSON.parse(value) as MockState;
       const now = Math.floor(Date.now() / 1000);
@@ -128,10 +139,19 @@ async function storeThread(page: Page) {
       return [key, JSON.stringify(state)];
     }),
   );
+  return { store, seeded };
 }
 
-/** Restart with `store`; the relay's thread windows are held for 5 s. */
-async function restartWithStore(page: Page, store: Record<string, string>) {
+/**
+ * Restart with `store`; the relay's thread windows are held for 5 s. The
+ * mock relay forgets everything on reload, unlike a real one: `relay` is
+ * what it holds again (sent before the room opens).
+ */
+async function restartWithStore(
+  page: Page,
+  store: Record<string, string>,
+  relay: SeedMessage[],
+) {
   await page.addInitScript((saved) => {
     for (const [key, value] of Object.entries(saved)) {
       window.localStorage.setItem(key, value);
@@ -146,6 +166,15 @@ async function restartWithStore(page: Page, store: Record<string, string>) {
   }, store);
   // A fresh start at the root route: nothing reopens the thread by itself.
   await page.goto("/");
+  await page.waitForFunction(
+    () =>
+      typeof (window as EmitWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__ ===
+      "function",
+  );
+  await page.evaluate((events) => {
+    const emit = (window as EmitWindow).__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+    for (const event of events) emit?.({ channelName: "general", ...event });
+  }, relay);
   await page.getByTestId("channel-general").click();
   await expect(page.getByText(ROOT_TEXT)).toBeVisible();
   await expect(threadPanel(page)).toHaveCount(0);
@@ -230,8 +259,8 @@ async function threadWindowCalls(page: Page) {
 test("restart opens a thread at its final position from proven stored replies", async ({
   page,
 }) => {
-  const store = await storeThread(page);
-  await restartWithStore(page, store);
+  const { store, seeded } = await storeThread(page);
+  await restartWithStore(page, store, seeded);
   const newest = `${REPLY_TEXT} 2`;
   await startFrameSampler(page, newest);
   await openThread(page);
@@ -257,7 +286,7 @@ test("restart opens a thread at its final position from proven stored replies", 
 test("restart never paints stored replies the store cannot prove", async ({
   page,
 }) => {
-  const store = await storeThread(page);
+  const { store, seeded } = await storeThread(page);
   // Drop the thread's claims: the stored replies prove nothing now (the
   // restart catch-up's complete run starts after them).
   const cut = Object.fromEntries(
@@ -267,10 +296,10 @@ test("restart never paints stored replies the store cannot prove", async ({
       return [key, JSON.stringify(state)];
     }),
   );
-  await restartWithStore(page, cut);
+  // The relay holds the root only, so its thread window lacks the replies.
+  await restartWithStore(page, cut, seeded.slice(0, 1));
   await startFrameSampler(page, `${REPLY_TEXT} 2`);
   await openThread(page);
-  // The relay reset on reload, so it answers without these replies.
   await expect.poll(() => threadWindowCalls(page)).toBeGreaterThan(0);
   await page.waitForTimeout(6_000);
   const frames = await stopFrameSampler(page);
