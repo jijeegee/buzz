@@ -9,6 +9,7 @@ import {
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
 import { pageOlderMessagesUntilRowFloor } from "@/features/messages/lib/pageOlderMessages";
+import type { OlderPageOutcome } from "@/features/channels/ui/useChannelOpenAnchor";
 import type { Channel } from "@/shared/api/types";
 
 export function useFetchOlderMessages(channel: Channel | null) {
@@ -49,33 +50,45 @@ export function useFetchOlderMessages(channel: Channel | null) {
       emptyChannelWindowStore(),
   });
 
-  const fetchOlder = useCallback(async () => {
-    if (!channelId || isFetchingOlderRef.current) {
-      return;
-    }
+  /** Append one older page; resolves to where it came from. */
+  const fetchOlderPage = useCallback(async (): Promise<OlderPageOutcome> => {
+    if (!channelId) return "none";
+    if (isFetchingOlderRef.current) return "busy";
     const store =
       queryClient.getQueryData<ChannelWindowStore>(
         channelWindowKey(channelId),
       ) ?? emptyChannelWindowStore();
     if (!channelWindowHasMore(store)) {
-      return;
+      return "none";
     }
 
     isFetchingOlderRef.current = true;
     setIsFetchingOlder(true);
     try {
-      await pageOlderMessagesUntilRowFloor(
+      const result = await pageOlderMessagesUntilRowFloor(
         queryClient,
         channelId,
         () => channelId === channel?.id,
       );
+      return result.source ?? "none";
     } catch (error) {
       console.error("Failed to fetch older messages", channelId, error);
+      return "failed";
     } finally {
       isFetchingOlderRef.current = false;
       setIsFetchingOlder(false);
     }
   }, [channel?.id, channelId, queryClient]);
 
-  return { fetchOlder, isFetchingOlder, hasOlderMessages, historyExhausted };
+  const fetchOlder = useCallback(async () => {
+    await fetchOlderPage();
+  }, [fetchOlderPage]);
+
+  return {
+    fetchOlder,
+    fetchOlderPage,
+    isFetchingOlder,
+    hasOlderMessages,
+    historyExhausted,
+  };
 }

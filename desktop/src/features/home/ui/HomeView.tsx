@@ -509,7 +509,7 @@ export function HomeView({
     serverUnread,
   ]);
   // Rooms behind the top chat-list rows load in the background.
-  useInboxPreload(viewItems, filter === "conversations");
+  useInboxPreload(viewItems, filter === "conversations", getChannelReadAt);
   // Resolve selection before filtering so unread-only can retain its active row.
   const selectedItemFromAll = React.useMemo(
     () =>

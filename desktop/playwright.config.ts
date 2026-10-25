@@ -128,6 +128,7 @@ export default defineConfig({
         "**/channel-window-mock-paging.spec.ts",
         "**/channel-store-restart.spec.ts",
         "**/thread-store-restart.spec.ts",
+        "**/open-position.spec.ts",
         "**/message-store-live-writes.spec.ts",
         "**/live-broadcast-reply-timeline.spec.ts",
         "**/markdown-parse-cache.spec.ts",

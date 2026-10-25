@@ -89,7 +89,7 @@ import { useChannelProfilePanel } from "./useChannelProfilePanel";
 import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
-import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
+import { isRelayOffline, useChannelOpenAnchor } from "./useChannelOpenAnchor";
 import {
   type ReadingPosition,
   readingPositionStore,
@@ -235,7 +235,13 @@ export function ChannelScreen({
     effectiveOpenThreadHeadId,
   );
   useChannelSubscription(activeChannel);
-  const { fetchOlder, hasOlderMessages, historyExhausted, isFetchingOlder } =
+  const {
+    fetchOlder,
+    fetchOlderPage,
+    hasOlderMessages,
+    historyExhausted,
+    isFetchingOlder,
+  } =
     useFetchOlderMessages(activeChannel);
   const latestActiveMessage = React.useMemo(() => {
     const messages = messagesQuery.data;
@@ -656,7 +662,8 @@ export function ChannelScreen({
     firstUnreadMessageId,
     hasOlderMessages,
     isFetchingOlder,
-    fetchOlder,
+    fetchOlderPage,
+    isOffline: isRelayOffline,
     opensElsewhere: Boolean(targetMessageId) || isHuddleTranscript,
   });
   const handleReadingPositionChange = React.useCallback(

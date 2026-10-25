@@ -32,7 +32,7 @@ import {
   refreshChannelWindowMessages,
 } from "@/features/messages/lib/projectChannelWindow";
 import { reconcileChannelWindowMessages } from "@/features/messages/lib/channelWindowReconciliation";
-import { storedChannelMessages } from "@/features/messages/lib/storeChannelHeads";
+import { loadRoomHead } from "@/features/messages/lib/storeChannelHeads";
 import {
   isMatchingPendingMessage,
   mergeMessages,
@@ -59,7 +59,7 @@ import {
   removeReaction,
   sendChannelMessage,
 } from "@/shared/api/tauri";
-import { getChannelWindowEvents } from "@/shared/api/channelWindow";
+import type { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
@@ -91,8 +91,13 @@ import {
   mergeLiveChannelWindowEvent,
   mergeLiveThreadSummary,
   replaceNewestChannelWindow,
+  type ChannelWindowPage,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
+import {
+  storedPagesBelowHead,
+  withStoredBelow,
+} from "@/features/messages/lib/pageOlderMessages";
 import {
   parseChannelWindowResponse,
   parseLiveThreadSummary,
@@ -744,6 +749,7 @@ export function reconcileFetchedChannelWindow(
   events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
   previousMessages: RelayEvent[],
   signal: AbortSignal,
+  storedBelow: ChannelWindowPage[] = [],
 ): RelayEvent[] {
   // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
   // therefore win while this older request is still in flight. Never let that
@@ -754,7 +760,10 @@ export function reconcileFetchedChannelWindow(
   const current =
     queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
     emptyChannelWindowStore();
-  const next = replaceNewestChannelWindow(current, page);
+  const next = withStoredBelow(
+    replaceNewestChannelWindow(current, page),
+    storedBelow,
+  );
   queryClient.setQueryData(windowKey, next);
   return reconcileChannelWindowMessages(next, previousMessages);
 }
@@ -767,20 +776,25 @@ export function useChannelMessagesQuery(channel: Channel | null) {
     queryKey,
     queryFn: async ({ signal }) => {
       if (!channel) throw new Error("No group selected.");
-      // Inside proven local coverage the store answers; the server is asked
-      // only when it cannot prove the room's current head.
-      const stored = await storedChannelMessages(queryClient, channel);
-      signal.throwIfAborted();
-      if (stored) return stored;
+      // The store inside proven coverage, else the server (see loadRoomHead).
       const previousMessages =
         queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
-      const events = await getChannelWindowEvents(channel.id);
+      const head = await loadRoomHead(queryClient, channel, previousMessages);
+      signal.throwIfAborted();
+      if ("stored" in head) return head.stored;
+      const below = await storedPagesBelowHead(
+        queryClient,
+        channel.id,
+        head.events,
+      );
+      signal.throwIfAborted();
       return reconcileFetchedChannelWindow(
         queryClient,
         channel.id,
-        events,
+        head.events,
         previousMessages,
         signal,
+        below,
       );
     },
     staleTime: 5 * 60 * 1_000,

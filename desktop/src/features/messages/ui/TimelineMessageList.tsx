@@ -549,8 +549,11 @@ function VirtualizedTimelineRows({
   );
   const onAtBottomStateChangeRef = React.useRef(onAtBottomStateChange);
   onAtBottomStateChangeRef.current = onAtBottomStateChange;
-  const { land: landAtAnchor, cancel: cancelAnchorLanding } =
-    useVirtualizedAnchorLanding(hostRef, listRef, onAtBottomStateChangeRef);
+  const {
+    land: landAtAnchor,
+    landAtBottom,
+    cancel: cancelAnchorLanding,
+  } = useVirtualizedAnchorLanding(hostRef, listRef, onAtBottomStateChangeRef);
 
   const updatePinnedDayLabel = React.useCallback(
     (offset: number) => {
@@ -705,9 +708,9 @@ function VirtualizedTimelineRows({
           )
         : -1;
       if (anchorIndex < 0 || !landAtAnchor(anchorIndex, initialAnchorTopPx))
-        settleAtBottom();
+        landAtBottom(settleAtBottom);
     }
-  }, [isPrepend, items.length, keys, settleAtBottom]);
+  }, [isPrepend, items.length, keys, landAtBottom, settleAtBottom]);
 
   const messageItemIndexById = React.useMemo(() => {
     const byId = new Map<string, number>();

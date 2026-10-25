@@ -8,6 +8,7 @@ import {
   type MessageStoreWindowPage,
   readMessageStoreWindow,
 } from "@/shared/api/tauriMessageStore";
+import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import { reconcileChannelWindowMessages } from "./channelWindowReconciliation";
 import { parseLiveThreadSummary } from "./channelWindowResponse";
@@ -236,6 +237,56 @@ export async function readProvenStoreHead(
     return storeWindowPage(page, null);
   } catch (error) {
     console.warn("Failed to read the stored room head", channelId, error);
+    return null;
+  }
+}
+
+/**
+ * The room query's answer: stored rows inside proven coverage, else the
+ * server's newest window. An open (no rows yet, not a server refresh) the
+ * server cannot answer, as when offline, shows the stored rows unproven; the
+ * reconnect refresh replaces them. Refreshes still fail.
+ */
+export async function loadRoomHead(
+  queryClient: QueryClient,
+  channel: Pick<Channel, "id" | "lastMessageAt">,
+  previousMessages: readonly RelayEvent[],
+): Promise<{ stored: RelayEvent[] } | { events: RelayEvent[] }> {
+  const stored = await storedChannelMessages(queryClient, channel);
+  if (stored) return { stored };
+  try {
+    return { events: await getChannelWindowEvents(channel.id) };
+  } catch (error) {
+    const fallback =
+      previousMessages.length === 0 && !isServerRefresh(queryClient, channel.id)
+        ? await unprovenStoredChannelMessages(queryClient, channel.id)
+        : null;
+    if (fallback) return { stored: fallback };
+    throw error;
+  }
+}
+
+/**
+ * The room's stored newest rows with no proof that they are current: what an
+ * open shows when the server cannot answer (offline). Null when none.
+ */
+async function unprovenStoredChannelMessages(
+  queryClient: QueryClient,
+  channelId: string,
+): Promise<RelayEvent[] | null> {
+  const scope = storeScopeFor(queryClient);
+  if (!scope) return null;
+  try {
+    const page = await readMessageStoreWindow(
+      scope,
+      channelId,
+      null,
+      STORE_HEAD_ROWS,
+    );
+    if (page.rows.length === 0) return null;
+    return applyStoreHead(queryClient, channelId, storeWindowPage(page, null));
+  } catch (error) {
+    console.warn("Failed to read stored rows", channelId, error);
     return null;
   }
 }
