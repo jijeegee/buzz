@@ -518,10 +518,11 @@ export function useChannelsQuery<TData = Channel[]>(options?: {
     relayUrl,
   ]);
 
-  // Reconnect catch-up reaches every joined room, subscribed or not.
+  // Only full-list observers publish the registry. A room's selected slice
+  // must never replace the list used to catch up all joined rooms.
   React.useEffect(() => {
-    if (relayUrl && query.data) publishJoinedRooms(relayUrl, query.data);
-  }, [query.data, relayUrl]);
+    if (relayUrl && fullList) publishJoinedRooms(relayUrl, fullList);
+  }, [fullList, relayUrl]);
 
   return query;
 }
