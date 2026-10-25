@@ -221,12 +221,10 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     );
 
     // Step 1: find the channels I'm a member of via kind:39002.
-    final membershipsRequestedAt = roomCatchUpClock();
     final memberships = await _fenced(
       fence,
       _fetchChannelMemberships(session, myPk),
     );
-    _noteFeedAlive(membershipsRequestedAt);
     final memberChannelIds = memberships
         .map((e) => e.getTagValue('d'))
         .whereType<String>()
@@ -235,6 +233,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
     // Step 2: pull metadata for joined channels. A user with no memberships
     // must still continue to directory discovery below.
+    // This one goes over the live socket, so its answer also proves the feed
+    // delivered everything sent before it (the membership query is HTTP).
+    final metasRequestedAt = roomCatchUpClock();
     final memberMetas = memberChannelIds.isEmpty
         ? const <NostrEvent>[]
         : await _fenced(
@@ -243,6 +244,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
               NostrFilters.channelMetadata(memberChannelIds.toList()),
             ),
           );
+    if (memberChannelIds.isNotEmpty) _noteFeedAlive(metasRequestedAt);
 
     // Step 3: fetch the open-channel directory. The relay filters this global
     // kind:39000 query by the caller's access, but the client still rejects
