@@ -173,7 +173,7 @@ export function useThreadReplies(
           queryClient,
           activeChannel.id,
           openThreadRootId,
-          { mustInclude: target },
+          { mustInclude: target, lastMessageAt: activeChannel.lastMessageAt },
         );
         if (events) {
           // Same contract as the full read: a link's reply that is not there

@@ -59,6 +59,23 @@ pub(crate) struct ThreadPage {
     pub(crate) live_covered: bool,
 }
 
+/// Thread replies newest first, within one covered run (like [`WindowPage`]).
+#[derive(Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ThreadHeadPage {
+    pub(crate) rows: Vec<Value>,
+    pub(crate) aux: Vec<Value>,
+    pub(crate) summaries: Vec<Value>,
+    pub(crate) next_cursor: Option<Cursor>,
+    pub(crate) has_more: bool,
+    /// Stopped at the lower end of the run before `limit` or the thread start.
+    pub(crate) gap: bool,
+    /// The run's replies are complete up to this time (absent when live or none).
+    pub(crate) covered_through: Option<i64>,
+    /// The run is continued by an open live segment of the root's room.
+    pub(crate) live_covered: bool,
+}
+
 #[derive(Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct RangeView {
@@ -376,15 +393,7 @@ pub(crate) fn thread(
         .filter(|range| range.lo_is_start)
         .map(|range| range.hi_at)
         .max();
-    let root: Option<(String, i64)> = conn
-        .query_row(
-            "SELECT channel_id, created_at FROM events WHERE id=?1",
-            [root_id],
-            |row| Ok((row.get(0)?, row.get(1)?)),
-        )
-        .optional()
-        .map_err(db("read thread root"))?;
-    if let Some((channel_id, created_at)) = root {
+    if let Some((channel_id, created_at)) = thread_root(conn, root_id)? {
         let all = normalize(
             room_ranges(conn, &channel_id, Class::All)?,
             SYNC_KINDS_VERSION,
@@ -407,6 +416,104 @@ pub(crate) fn thread(
         has_more,
         covered_through: through.filter(|at| *at != LIVE_HI),
         live_covered: through == Some(LIVE_HI),
+    })
+}
+
+fn thread_root(conn: &Connection, root_id: &str) -> Result<Option<(String, i64)>, String> {
+    conn.query_row(
+        "SELECT channel_id, created_at FROM events WHERE id=?1",
+        [root_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    )
+    .optional()
+    .map_err(db("read thread root"))
+}
+
+/// A thread's covered runs: its own claims, plus its room's `all` runs (live
+/// included) at or above the root. The run holding the root counts from the
+/// thread start, since replies are newer than their root.
+fn thread_runs(conn: &Connection, root_id: &str) -> Result<Vec<Range>, String> {
+    let mut ranges = normalize(thread_ranges(conn, root_id)?, SYNC_KINDS_VERSION);
+    if let Some((channel_id, root_at)) = thread_root(conn, root_id)? {
+        let all = normalize(
+            room_ranges(conn, &channel_id, Class::All)?,
+            SYNC_KINDS_VERSION,
+        );
+        for run in with_live(&all, live_since(conn, &channel_id)?, SYNC_KINDS_VERSION) {
+            if run.contains(root_at, root_id) {
+                ranges.push(Range {
+                    lo_at: 0,
+                    lo_id: String::new(),
+                    lo_is_start: true,
+                    ..run
+                });
+            } else if run.hi_at >= root_at {
+                ranges.push(run);
+            }
+        }
+    }
+    Ok(normalize(ranges, SYNC_KINDS_VERSION))
+}
+
+/// Replies of `root_id` strictly older than `before` (or from the newest),
+/// newest first, within one covered run: the thread's [`window`].
+pub(crate) fn thread_head(
+    conn: &Connection,
+    root_id: &str,
+    before: Option<&Cursor>,
+    limit: usize,
+) -> Result<ThreadHeadPage, String> {
+    let runs = thread_runs(conn, root_id)?;
+    let run = match before {
+        Some(cursor) => run_containing(&runs, cursor.created_at, &cursor.event_id),
+        None => runs.last(),
+    };
+    let mut rows = match run {
+        Some(run) => {
+            let mut statement = conn
+                .prepare_cached(
+                    "SELECT raw, created_at, id FROM events
+                     WHERE root_id=?1 AND role IN (1, 2) AND deleted=0 AND created_at <= ?2
+                       AND (?3 IS NULL OR created_at < ?3 OR (created_at = ?3 AND id > ?4))
+                       AND (?5 OR created_at > ?6 OR (created_at = ?6 AND id <= ?7))
+                     ORDER BY created_at DESC, id ASC LIMIT ?8",
+                )
+                .map_err(db("prepare thread head"))?;
+            collect_rows(
+                &mut statement,
+                params![
+                    root_id,
+                    run.hi_at,
+                    before.map(|cursor| cursor.created_at),
+                    before.map(|cursor| cursor.event_id.as_str()),
+                    run.lo_is_start,
+                    run.lo_at,
+                    run.lo_id,
+                    (limit + 1) as i64
+                ],
+            )?
+        }
+        None => Vec::new(),
+    };
+    let full = rows.len() > limit;
+    rows.truncate(limit);
+    let last = rows
+        .last()
+        .map(|row| row.cursor.clone())
+        .or_else(|| before.cloned());
+    let reached_start = run.is_some_and(|run| run.lo_is_start) && !full;
+    let next_cursor = if reached_start { None } else { last };
+    let hi_at = run.map(|run| run.hi_at);
+    let row_ids = ids(&rows);
+    Ok(ThreadHeadPage {
+        aux: aux_for(conn, &row_ids)?,
+        summaries: summaries_for(conn, &row_ids)?,
+        rows: rows.into_iter().map(|row| row.event).collect(),
+        has_more: next_cursor.is_some(),
+        next_cursor,
+        gap: !full && !reached_start,
+        covered_through: hi_at.filter(|at| *at != LIVE_HI),
+        live_covered: hi_at == Some(LIVE_HI),
     })
 }
 

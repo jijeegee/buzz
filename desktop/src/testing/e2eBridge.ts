@@ -15744,6 +15744,7 @@ export function maybeInstallE2eTauriMocks() {
       case "message_store_read_window":
       case "message_store_read_around":
       case "message_store_read_thread":
+      case "message_store_read_thread_head":
       case "message_store_coverage":
       case "message_store_begin_live":
       case "message_store_clear_scope":

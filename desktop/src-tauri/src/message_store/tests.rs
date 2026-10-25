@@ -132,6 +132,15 @@ fn run_step(conn: &mut Connection, step: &Value) -> Option<Value> {
             );
             serde_json::to_value(page.unwrap())
         }
+        "readThreadHead" => {
+            let page = read::thread_head(
+                conn,
+                &text("rootId"),
+                cursor(&step["before"]).as_ref(),
+                int("limit") as usize,
+            );
+            serde_json::to_value(page.unwrap())
+        }
         "coverage" => {
             let rooms: Vec<String> = serde_json::from_value(step["channelIds"].clone()).unwrap();
             let coverage: Vec<_> = rooms

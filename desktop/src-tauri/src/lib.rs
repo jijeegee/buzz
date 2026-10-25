@@ -903,6 +903,7 @@ pub fn run() {
             message_store::commands::message_store_read_window,
             message_store::commands::message_store_read_around,
             message_store::commands::message_store_read_thread,
+            message_store::commands::message_store_read_thread_head,
             message_store::commands::message_store_coverage,
             message_store::commands::message_store_begin_live,
             message_store::commands::message_store_clear_scope,

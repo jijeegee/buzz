@@ -11,6 +11,7 @@ import type {
   MessageStoreRoomCoverage,
   MessageStoreRoomHead,
   MessageStoreScope,
+  MessageStoreThreadHeadPage,
   MessageStoreThreadPage,
   MessageStoreWindowPage,
 } from "@/shared/api/tauriMessageStore";
@@ -620,6 +621,74 @@ export class MockScopeStore {
     };
   }
 
+  /** Mirrors `read::thread_runs`: thread claims plus the root's `all` runs. */
+  private threadRuns(root: string): Range[] {
+    const ranges = [...normalize(this.state.threadCoverage[root] ?? [])];
+    const rootRow = this.state.events[root];
+    if (rootRow) {
+      const { all } = this.topRuns(rootRow.channelId);
+      for (const run of withLive(all, this.liveSince(rootRow.channelId))) {
+        if (contains(run, rootRow.createdAt, root)) {
+          ranges.push({ ...run, loAt: 0, loId: "", loIsStart: true });
+        } else if (run.hiAt >= rootRow.createdAt) {
+          ranges.push(run);
+        }
+      }
+    }
+    return normalize(ranges);
+  }
+
+  readThreadHead(
+    rootId: string,
+    before: MessageStoreCursor | null,
+    limit: number,
+  ): MessageStoreThreadHeadPage {
+    const root = rootId.toLowerCase();
+    const runs = this.threadRuns(root);
+    const run = before
+      ? runs.find((range) => contains(range, before.createdAt, before.eventId))
+      : runs[runs.length - 1];
+    let rows = run
+      ? Object.values(this.state.events)
+          .filter(
+            (row) =>
+              row.rootId === root &&
+              (row.role === 1 || row.role === 2) &&
+              !row.deleted &&
+              row.createdAt <= run.hiAt &&
+              (!before ||
+                cmpPos(
+                  row.createdAt,
+                  row.id,
+                  before.createdAt,
+                  before.eventId,
+                ) < 0) &&
+              (run.loIsStart ||
+                cmpPos(row.createdAt, row.id, run.loAt, run.loId) >= 0),
+          )
+          .sort((a, b) => b.createdAt - a.createdAt || cmpStr(a.id, b.id))
+          .slice(0, limit + 1)
+      : [];
+    const full = rows.length > limit;
+    rows = rows.slice(0, limit);
+    const last = rows[rows.length - 1];
+    const lastCursor = last
+      ? { createdAt: last.createdAt, eventId: last.id }
+      : before;
+    const reachedStart = Boolean(run?.loIsStart) && !full;
+    const nextCursor = reachedStart ? null : (lastCursor ?? null);
+    const hiAt = run?.hiAt ?? null;
+    return {
+      rows: rows.map((row) => row.raw),
+      ...this.overlays(rows),
+      nextCursor,
+      hasMore: nextCursor !== null,
+      gap: !full && !reachedStart,
+      coveredThrough: hiAt === LIVE_HI ? null : hiAt,
+      liveCovered: hiAt === LIVE_HI,
+    };
+  }
+
   coverage(channelId: string): MessageStoreRoomCoverage {
     const { effective, all, runs } = this.topRuns(channelId);
     const view = (cls: "top" | "all", ranges: Range[]): MessageStoreRange[] =>
@@ -757,6 +826,14 @@ export function handleMessageStoreMockCommand(
         .readThread(
           args.rootId as string,
           (args.cursor as MessageStoreCursor | null) ?? null,
+          clamp(args.limit, 50),
+        );
+    case "message_store_read_thread_head":
+      return bridgeStore
+        .scope(args.scope)
+        .readThreadHead(
+          args.rootId as string,
+          (args.before as MessageStoreCursor | null) ?? null,
           clamp(args.limit, 50),
         );
     case "message_store_coverage":

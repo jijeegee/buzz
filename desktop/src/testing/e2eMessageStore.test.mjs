@@ -51,6 +51,8 @@ function runStep(store, step) {
       );
     case "readThread":
       return store.readThread(step.rootId, step.cursor, step.limit);
+    case "readThreadHead":
+      return store.readThreadHead(step.rootId, step.before, step.limit);
     case "coverage":
       return step.channelIds.map((channelId) => store.coverage(channelId));
     case "loadHeads":

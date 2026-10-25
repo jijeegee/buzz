@@ -39,6 +39,21 @@ export type MessageStoreThreadPage = {
   liveCovered: boolean;
 };
 
+/** Thread replies from the local store, newest first. Never crosses a gap. */
+export type MessageStoreThreadHeadPage = {
+  rows: RelayEvent[];
+  aux: RelayEvent[];
+  summaries: RelayEvent[];
+  nextCursor: MessageStoreCursor | null;
+  hasMore: boolean;
+  /** Stopped at the edge of local coverage: ask the server below `nextCursor`. */
+  gap: boolean;
+  /** Replies are complete up to this time (null when live or unproven). */
+  coveredThrough: number | null;
+  /** An open live segment of the root's room continues the replies. */
+  liveCovered: boolean;
+};
+
 export type MessageStoreRange = {
   class: "top" | "all";
   loAt: number;
@@ -109,6 +124,20 @@ export function readMessageStoreThread(
     scope,
     rootId,
     cursor,
+    limit,
+  });
+}
+
+export function readMessageStoreThreadHead(
+  scope: MessageStoreScope,
+  rootId: string,
+  before: MessageStoreCursor | null,
+  limit: number,
+): Promise<MessageStoreThreadHeadPage> {
+  return invokeTauri("message_store_read_thread_head", {
+    scope,
+    rootId,
+    before,
     limit,
   });
 }

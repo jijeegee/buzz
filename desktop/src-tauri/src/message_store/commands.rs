@@ -8,7 +8,7 @@ use tauri::{AppHandle, State};
 use super::{
     coverage::Cursor,
     ingest,
-    read::{self, AroundPage, RoomCoverage, RoomHead, ThreadPage, WindowPage},
+    read::{self, AroundPage, RoomCoverage, RoomHead, ThreadHeadPage, ThreadPage, WindowPage},
     store_dir, MessageStore, StoreScope,
 };
 
@@ -106,6 +106,25 @@ pub(crate) async fn message_store_read_thread(
     store
         .call(&dir, &scope, move |conn| {
             read::thread(conn, &root_id.to_ascii_lowercase(), cursor.as_ref(), limit)
+        })
+        .await
+}
+
+/// Replies of one thread below `before` (or the newest), newest first.
+#[tauri::command]
+pub(crate) async fn message_store_read_thread_head(
+    scope: StoreScope,
+    root_id: String,
+    before: Option<Cursor>,
+    limit: u32,
+    app: AppHandle,
+    store: State<'_, MessageStore>,
+) -> Result<ThreadHeadPage, String> {
+    let limit = page_limit(limit);
+    let dir = store_dir(&app)?;
+    store
+        .call(&dir, &scope, move |conn| {
+            read::thread_head(conn, &root_id.to_ascii_lowercase(), before.as_ref(), limit)
         })
         .await
 }

@@ -15,6 +15,7 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
+import { readProvenStoreThread } from "@/features/messages/lib/storeThreadReplies";
 import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
 import {
   getChannelWindowEvents,
@@ -171,12 +172,24 @@ export async function preloadThreads(
   ) => Promise<boolean> = async () => true,
 ): Promise<number> {
   let loaded = 0;
-  const cold = threads.filter(
-    (thread) =>
-      queryClient.getQueryData(
-        threadRepliesKey(thread.channelId, thread.rootId),
-      ) === undefined,
-  );
+  const cold: PreloadThread[] = [];
+  for (const thread of threads) {
+    const key = threadRepliesKey(thread.channelId, thread.rootId);
+    if (queryClient.getQueryData(key) !== undefined) continue;
+    // Threads the store proves current are seeded from it, with no request.
+    const stored = await readProvenStoreThread(
+      queryClient,
+      thread.channelId,
+      thread.rootId,
+      THREAD_PRELOAD_REPLIES,
+    );
+    if (stored) {
+      seedThreadPages(queryClient, [stored]);
+      loaded += 1;
+    } else {
+      cold.push(thread);
+    }
+  }
   for (
     let start = 0;
     start < cold.length;
