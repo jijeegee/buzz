@@ -97,8 +97,7 @@ globalThis.__TAURI_INTERNALS__ = {
         })),
       );
     }
-    if (command === "channel_head_cache_load") return Promise.resolve([]);
-    if (command === "channel_head_cache_store") return Promise.resolve(null);
+    if (command === "message_store_load_heads") return Promise.resolve([]);
     return Promise.reject(new Error(`unmocked Tauri command: ${command}`));
   },
   transformCallback: () => Math.random(),
@@ -110,7 +109,7 @@ const { preloadChannelMessages, preloadChannelsMessages, preloadThreads } =
 const { getRememberedRouteEvent } = await import("./lib/routeEventCache.ts");
 const { threadWindowStateKey } = await import("./lib/threadWindowCache.ts");
 const { hasPersistedHydratedChannel, hydrateChannelHeads } = await import(
-  "./lib/channelHeadCache.ts"
+  "./lib/storeChannelHeads.ts"
 );
 const { channelMessagesKey, channelWindowKey, threadRepliesKey } = await import(
   "./lib/messageQueryKeys.ts"
@@ -151,7 +150,7 @@ test("loads a cold room's newest page and lets it paint on open", async () => {
   assert.equal(hasPersistedHydratedChannel(client, ROOM), true);
 });
 
-test("background loads never rank as visits in the persisted-head cache", async () => {
+test("background loads wait for the stored-head seed", async () => {
   const client = newClient();
   await hydrateChannelHeads(client, {
     pubkey: "a".repeat(64),
@@ -160,7 +159,7 @@ test("background loads never rank as visits in the persisted-head cache", async 
   assert.equal(await preloadChannelMessages(client, ROOM, 20), true);
   assert.deepEqual(
     calls.map((call) => call.command),
-    ["channel_head_cache_load", "get_channel_window"],
+    ["message_store_load_heads", "get_channel_window"],
   );
 });
 

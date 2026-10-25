@@ -9,7 +9,7 @@ const ANCHOR_STABLE_FRAMES = 2;
 const ANCHOR_MAX_FRAMES = 30;
 
 /**
- * Opens the list at a row instead of the bottom without a visible move: the
+ * Opens the list at a row (or the bottom) without a visible move: the
  * list stays hidden while Virtua measures the rows around the anchor and is
  * re-aimed every frame, then shown once the anchor holds still. The row goes
  * just under the top chrome, or `topPx` from the scroller top when reopening
@@ -78,5 +78,51 @@ export function useVirtualizedAnchorLanding(
     [hostRef, listRef, onAtBottomStateChangeRef, reveal],
   );
 
-  return { land, cancel: reveal };
+  /**
+   * Opens the list at the bottom the same way: hidden while `settle` pins it
+   * to the floor every frame (rows measure in, the composer padding lands),
+   * shown once the floor holds still. The first visible frame is final.
+   */
+  const landAtBottom = React.useCallback(
+    (settle: () => void) => {
+      const host = hostRef.current;
+      const list = listRef.current;
+      if (!host || !list) {
+        settle();
+        return;
+      }
+      host.style.visibility = "hidden";
+      settle();
+      let frame = 0;
+      let stableFrames = 0;
+      let lastSize = Number.NaN;
+      let lastOffset = Number.NaN;
+      const step = () => {
+        frameRef.current = null;
+        frame += 1;
+        const size = list.scrollSize;
+        const offset = list.scrollOffset;
+        stableFrames =
+          Math.abs(size - lastSize) < 0.5 && Math.abs(offset - lastOffset) < 0.5
+            ? stableFrames + 1
+            : 0;
+        lastSize = size;
+        lastOffset = offset;
+        if (
+          stableFrames >= ANCHOR_STABLE_FRAMES ||
+          frame >= ANCHOR_MAX_FRAMES
+        ) {
+          reveal();
+          onAtBottomStateChangeRef.current?.(true);
+          return;
+        }
+        settle();
+        frameRef.current = requestAnimationFrame(step);
+      };
+      frameRef.current = requestAnimationFrame(step);
+    },
+    [hostRef, listRef, onAtBottomStateChangeRef, reveal],
+  );
+
+  return { land, landAtBottom, cancel: reveal };
 }

@@ -1,6 +1,7 @@
 import {
   CHANNEL_AUX_EVENT_KINDS,
   CHANNEL_EVENT_KINDS,
+  CHANNEL_SYNC_KINDS,
   CHANNEL_TIMELINE_CONTENT_KINDS,
   KIND_DELETION,
   KIND_NIP29_DELETE_EVENT,
@@ -39,6 +40,22 @@ export function buildChannelFilter(
   }
 
   return filter;
+}
+
+/**
+ * Live room subscription from now: every kind the local message store syncs,
+ * so the native socket tap can count it as a live segment for the room.
+ */
+export function buildChannelLiveFilter(
+  channelId: string,
+  extraKinds: readonly number[] = [],
+): RelaySubscriptionFilter {
+  return {
+    kinds: [...CHANNEL_SYNC_KINDS, ...extraKinds],
+    "#h": [channelId],
+    limit: 1000,
+    since: Math.floor(Date.now() / 1_000),
+  };
 }
 
 /**

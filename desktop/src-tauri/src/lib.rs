@@ -6,7 +6,6 @@ mod archive;
 mod auth;
 mod build_identity;
 mod builderlab;
-mod channel_head_cache;
 mod commands;
 mod deep_link;
 mod device_key;
@@ -32,6 +31,7 @@ mod mesh_llm;
 #[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
 mod message_routing;
+mod message_store;
 mod migration;
 #[cfg(test)]
 mod model_tests;
@@ -39,6 +39,7 @@ mod models;
 mod native_relay_client;
 mod native_websocket;
 mod native_websocket_batch;
+mod native_websocket_store_tap;
 mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;
@@ -253,7 +254,7 @@ pub fn run() {
         .manage(archive::sync::ArchiveSyncState::default())
         .manage(native_relay_client::NativeRelayClient::default())
         .manage(observed_unread::ObservedUnreadStore::default())
-        .manage(channel_head_cache::ChannelHeadCacheStore::default())
+        .manage(message_store::MessageStore::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             #[cfg(any(target_os = "macos", windows))]
@@ -337,6 +338,10 @@ pub fn run() {
                 let secrets = crate::auth::accounts::shared_secrets();
                 crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
+                // Stored messages of accounts no longer listed here.
+                crate::message_store::remove_orphans(&data_dir);
+                // The old room-head paint cache; rooms now read the store.
+                crate::message_store::remove_legacy_head_cache(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("kuzz-desktop: fatal: identity resolution failed: {e}");
@@ -785,6 +790,7 @@ pub fn run() {
             get_forum_thread,
             get_thread_replies,
             get_channel_reconnect_repair,
+            channels_catch_up,
             get_channel_window,
             get_channel_windows,
             get_thread_windows,
@@ -893,9 +899,14 @@ pub fn run() {
             unread_catch_up::unread_catch_up,
             observed_unread::observed_unread_open_scope,
             observed_unread::observed_unread_ingest,
-            channel_head_cache::channel_head_cache_load,
-            channel_head_cache::channel_head_cache_store,
-            channel_head_cache::channel_head_cache_clear,
+            message_store::commands::message_store_load_heads,
+            message_store::commands::message_store_read_window,
+            message_store::commands::message_store_read_around,
+            message_store::commands::message_store_read_thread,
+            message_store::commands::message_store_read_thread_head,
+            message_store::commands::message_store_coverage,
+            message_store::commands::message_store_begin_live,
+            message_store::commands::message_store_clear_scope,
             list_personas,
             create_persona,
             update_persona,

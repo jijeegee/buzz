@@ -10,6 +10,10 @@ import {
   type ThreadWindowPage,
 } from "@/shared/api/threadWindow";
 import type { RelayEvent, ThreadCursor } from "@/shared/api/types";
+import {
+  readProvenStoreThread,
+  readStoredOlderThreadPage,
+} from "./storeThreadReplies";
 
 /** Replies a thread opens with: about one panel of conversation. */
 export const THREAD_PAGE_ROWS = 50;
@@ -186,32 +190,87 @@ async function fetchThreadPage(
   return page ?? null;
 }
 
+/** The page below `cursor`: stored replies when the store has them, else the server. */
+async function loadOlderThreadPage(
+  queryClient: QueryClient,
+  channelId: string,
+  rootId: string,
+  cursor: ThreadCursor,
+): Promise<ThreadWindowPage | null> {
+  return (
+    (await readStoredOlderThreadPage(
+      queryClient,
+      channelId,
+      rootId,
+      cursor,
+      THREAD_PAGE_ROWS,
+    )) ?? fetchThreadPage(channelId, rootId, cursor, THREAD_PAGE_ROWS)
+  );
+}
+
 /**
- * Load a thread's newest page and fold it into the cache. When `mustInclude`
- * is given (a link opens on that reply), older pages are walked until it is
- * loaded. Resolves to null when the relay serves no window for this thread
+ * Load a thread's newest page and fold it into the cache. The store answers
+ * when it proves the page current (no request); otherwise the server does.
+ * When `mustInclude` is given (a link opens on that reply), older pages are
+ * walked until it is loaded. Resolves to null when the relay serves no window for this thread
  * (root outside the channel, or no access); callers fall back to the full read.
  */
 export async function loadNewestThreadReplies(
   queryClient: QueryClient,
   channelId: string,
   rootId: string,
-  options: { limitRows?: number; mustInclude?: string | null } = {},
+  options: {
+    limitRows?: number;
+    mustInclude?: string | null;
+    /** The room's last activity, for the store proof (default: channel list). */
+    lastMessageAt?: string | null;
+  } = {},
 ): Promise<RelayEvent[] | null> {
-  const page = await fetchThreadPage(
+  const limitRows = options.limitRows ?? THREAD_PAGE_ROWS;
+  const target = options.mustInclude ?? null;
+  const stored = await readProvenStoreThread(
+    queryClient,
     channelId,
     rootId,
-    null,
-    options.limitRows ?? THREAD_PAGE_ROWS,
+    limitRows,
+    options.lastMessageAt,
   );
+  if (stored) {
+    const walked = await walkToTarget(
+      queryClient,
+      channelId,
+      rootId,
+      stored,
+      target,
+    );
+    // A link's reply the store lacks may be newer than the room's known
+    // activity: the server answers instead.
+    if (walked.reached) return walked.events;
+  }
+  const page = await fetchThreadPage(channelId, rootId, null, limitRows);
   if (!page) return null;
+  return (await walkToTarget(queryClient, channelId, rootId, page, target))
+    .events;
+}
+
+/**
+ * Fold a newest page in and walk older pages until `target` is loaded.
+ * The paging state is saved only when the target (if any) was reached: a
+ * walked-past cursor saved without the walked replies would hide them.
+ */
+async function walkToTarget(
+  queryClient: QueryClient,
+  channelId: string,
+  rootId: string,
+  page: ThreadWindowPage,
+  target: string | null,
+): Promise<{ events: RelayEvent[]; reached: boolean }> {
   const stateKey = threadWindowStateKey(channelId, rootId);
   let { events, state } = mergeNewestThreadPage(
     queryClient.getQueryData<RelayEvent[]>(threadRepliesKey(channelId, rootId)),
     queryClient.getQueryData<ThreadWindowState>(stateKey),
     page,
   );
-  const target = options.mustInclude;
   for (
     let walked = 0;
     target &&
@@ -221,21 +280,18 @@ export async function loadNewestThreadReplies(
     !events.some((event) => event.id === target);
     walked += 1
   ) {
-    const older = await fetchThreadPage(
+    const older = await loadOlderThreadPage(
+      queryClient,
       channelId,
       rootId,
       state.olderCursor,
-      THREAD_PAGE_ROWS,
     );
     if (!older) break;
     ({ events, state } = mergeOlderThreadPage(events, state, older));
   }
-  // A link whose reply was not reached keeps the cache as it was: saving the
-  // walked-past cursor without the walked replies would hide them for good.
-  if (!target || events.some((event) => event.id === target)) {
-    queryClient.setQueryData(stateKey, state);
-  }
-  return events;
+  const reached = !target || events.some((event) => event.id === target);
+  if (reached) queryClient.setQueryData(stateKey, state);
+  return { events, reached };
 }
 
 /** Load the page before the oldest cached reply into the thread cache. */
@@ -247,11 +303,11 @@ export async function loadOlderThreadReplies(
   const stateKey = threadWindowStateKey(channelId, rootId);
   const state = queryClient.getQueryData<ThreadWindowState>(stateKey);
   if (!state?.hasOlder || !state.olderCursor) return;
-  const page = await fetchThreadPage(
+  const page = await loadOlderThreadPage(
+    queryClient,
     channelId,
     rootId,
     state.olderCursor,
-    THREAD_PAGE_ROWS,
   );
   if (!page) return;
   // A newest-page reload may have restarted the cache meanwhile; this page

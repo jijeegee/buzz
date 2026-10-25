@@ -1,20 +1,13 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
-use crate::{app_state::AppState, models::ChannelPageCursor, relay::query_relay};
+use crate::{
+    app_state::AppState,
+    message_store::{record, WINDOW_ROW_KINDS},
+    models::ChannelPageCursor,
+};
 
-const TIMELINE_KINDS: [u32; 11] = [
-    9,
-    40002,
-    40008,
-    40099,
-    43001,
-    43002,
-    43003,
-    43004,
-    43005,
-    43006,
-    kuzz_core_pkg::kind::KIND_HUDDLE_STARTED,
-];
+/// Rows a window renders; the store's `top` coverage proves exactly these.
+const TIMELINE_KINDS: [u32; 11] = WINDOW_ROW_KINDS;
 
 fn build_channel_window_filter(
     channel_id: &str,
@@ -35,12 +28,14 @@ fn build_channel_window_filter(
     serde_json::Value::Object(filter)
 }
 
-/// Fetch one server-assembled channel window over the existing `/query` bridge.
+/// Fetch one server-assembled channel window over the existing `/query`
+/// bridge, and store it with what it proves.
 #[tauri::command]
 pub async fn get_channel_window(
     channel_id: String,
     limit_rows: Option<u32>,
     cursor: Option<ChannelPageCursor>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let filter = build_channel_window_filter(
@@ -48,11 +43,14 @@ pub async fn get_channel_window(
         limit_rows.unwrap_or(50).min(200),
         cursor.as_ref(),
     );
-    Ok(query_relay(&state, &[filter])
-        .await?
+    let (events, recorder) = record::query(&app, &state, &[filter]).await?;
+    let events: Vec<serde_json::Value> = events
         .iter()
         .filter_map(|event| serde_json::to_value(event).ok())
-        .collect())
+        .collect();
+    let cursor = cursor.as_ref().map(|c| (c.created_at, c.event_id.as_str()));
+    recorder.window(&channel_id, &events, cursor);
+    Ok(events)
 }
 
 /// Most rooms one batched window request may carry.
@@ -103,12 +101,14 @@ fn split_channel_windows(
     entries
 }
 
-/// Fetch the newest window of several channels in one `/query` round trip.
-/// Channels the relay skips (no access) are absent from the result.
+/// Fetch the newest window of several channels in one `/query` round trip,
+/// storing each room's window with its own claim. Channels the relay skips
+/// (no access) are absent from the result.
 #[tauri::command]
 pub async fn get_channel_windows(
     channel_ids: Vec<String>,
     limit_rows: Option<u32>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<ChannelWindowBatchEntry>, String> {
     let mut seen = std::collections::HashSet::new();
@@ -125,8 +125,12 @@ pub async fn get_channel_windows(
         .iter()
         .map(|channel_id| build_channel_window_filter(channel_id, cap, None))
         .collect();
-    let events = query_relay(&state, &filters).await?;
-    Ok(split_channel_windows(events, &channel_ids))
+    let (events, recorder) = record::query(&app, &state, &filters).await?;
+    let entries = split_channel_windows(events, &channel_ids);
+    for entry in &entries {
+        recorder.window(&entry.channel_id, &entry.events, None);
+    }
+    Ok(entries)
 }
 
 #[cfg(test)]

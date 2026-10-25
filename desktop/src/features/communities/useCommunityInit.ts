@@ -61,6 +61,7 @@ import { clearMarkdownNodeCache } from "@/shared/ui/markdown/nodeCache";
 import { resetMessageLinkMetadataCache } from "@/shared/ui/markdown/useMessageLinkMetadata";
 import { resetVideoPlayerState } from "@/shared/ui/videoPlayerState";
 import { resetFailedSends } from "@/features/messages/lib/failedSends";
+import { resetJoinedRooms } from "@/shared/api/channelCatchUp";
 
 import {
   initFirstCommunity,
@@ -121,6 +122,7 @@ async function resetCommunityState({
   clearSearchHitEventCache();
   clearMarkdownNodeCache();
   resetMessageLinkMetadataCache();
+  resetJoinedRooms();
 }
 
 type CommunityInitResult =

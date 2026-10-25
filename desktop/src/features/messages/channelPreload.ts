@@ -4,15 +4,26 @@ import type { QueryClient } from "@tanstack/react-query";
 import { reconcileFetchedChannelWindow } from "@/features/messages/hooks";
 import {
   channelHeadHydration,
+  hasPersistedHydratedChannel,
+  isStoreSeededChannel,
   markPaintableChannelSnapshot,
-} from "@/features/messages/lib/channelHeadCache";
-import type { ChannelWindowStore } from "@/features/messages/lib/channelWindowStore";
+} from "@/features/messages/lib/storeChannelHeads";
+import {
+  channelWindowHasMore,
+  type ChannelWindowStore,
+} from "@/features/messages/lib/channelWindowStore";
+import { pageOlderMessagesUntilRowFloor } from "@/features/messages/lib/pageOlderMessages";
+import {
+  MAX_STORED_SEEK_PAGES,
+  MAX_UNREAD_SEEK_PAGES,
+} from "@/features/channels/ui/useChannelOpenAnchor";
 import {
   channelMessagesKey,
   channelWindowKey,
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
+import { readProvenStoreThread } from "@/features/messages/lib/storeThreadReplies";
 import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
 import {
   getChannelWindowEvents,
@@ -23,7 +34,7 @@ import {
   getThreadWindows,
   MAX_THREAD_WINDOWS_PER_REQUEST,
 } from "@/shared/api/threadWindow";
-import type { RelayEvent } from "@/shared/api/types";
+import type { Channel, RelayEvent } from "@/shared/api/types";
 
 const MESSAGES_STALE_MS = 5 * 60 * 1_000;
 const MESSAGES_GC_MS = CONVERSATION_CACHE_GC_MS;
@@ -76,7 +87,10 @@ export async function preloadChannelsMessages(
     const events = pages.get(channelId);
     // A room the relay skipped stays cold; opening it loads as usual.
     if (!events) continue;
-    if (queryClient.getQueryData(channelMessagesKey(channelId)) !== undefined) {
+    if (
+      queryClient.getQueryData(channelMessagesKey(channelId)) !== undefined &&
+      !isStoreSeededChannel(queryClient, channelId)
+    ) {
       continue;
     }
     if (await storeChannelPage(queryClient, channelId, async () => events)) {
@@ -86,9 +100,63 @@ export async function preloadChannelsMessages(
   return loaded;
 }
 
+/** A room to load older history for, down to its read marker. */
+export type UnreadAnchorTarget = { channelId: string; readAt: number };
+
 /**
- * A room that already has messages cached (open, visited, or restored from the
- * persisted head) is not reloaded, but it may paint that copy while opening
+ * Page each room's cached window older (store first, then the server) until
+ * it reaches the room's read marker, so opening at the first unread needs no
+ * seek. Bounded like the open's own seek; rooms with no newest page loaded
+ * are skipped. Resolves to the rooms whose read marker is now loaded.
+ */
+export async function preloadUnreadAnchors(
+  queryClient: QueryClient,
+  targets: readonly UnreadAnchorTarget[],
+  shouldContinue: () => boolean = () => true,
+): Promise<string[]> {
+  const reached: string[] = [];
+  for (const { channelId, readAt } of targets) {
+    let serverPages = 0;
+    let storedPages = 0;
+    for (;;) {
+      if (!shouldContinue()) return reached;
+      const window = queryClient.getQueryData<ChannelWindowStore>(
+        channelWindowKey(channelId),
+      );
+      const oldest = window?.pages.at(-1)?.rows.at(-1)?.event.created_at;
+      if (!window || oldest === undefined) break;
+      if (oldest <= readAt || !channelWindowHasMore(window)) {
+        reached.push(channelId);
+        break;
+      }
+      if (
+        serverPages >= MAX_UNREAD_SEEK_PAGES ||
+        storedPages >= MAX_STORED_SEEK_PAGES
+      ) {
+        break;
+      }
+      let source: "store" | "server" | undefined;
+      try {
+        ({ source } = await pageOlderMessagesUntilRowFloor(
+          queryClient,
+          channelId,
+          shouldContinue,
+        ));
+      } catch (error) {
+        console.warn("Unread history preload failed", channelId, error);
+        break;
+      }
+      if (source === "store") storedPages += 1;
+      else if (source === "server") serverPages += 1;
+      else break;
+    }
+  }
+  return reached;
+}
+
+/**
+ * A room that already has messages cached (open, visited, or a proven stored
+ * head) is not reloaded, but it may paint that copy while opening
  * revalidates it, so opening never holds a skeleton over known rows.
  */
 function keepCachedChannel(queryClient: QueryClient, channelId: string) {
@@ -96,6 +164,15 @@ function keepCachedChannel(queryClient: QueryClient, channelId: string) {
     channelMessagesKey(channelId),
   );
   if (cached === undefined) return false;
+  if (isStoreSeededChannel(queryClient, channelId)) {
+    // A stored head paints only when the store proves it current; reload the
+    // others from the server.
+    const lastMessageAt =
+      queryClient
+        .getQueryData<Channel[]>(["channels"])
+        ?.find((channel) => channel.id === channelId)?.lastMessageAt ?? null;
+    return hasPersistedHydratedChannel(queryClient, channelId, lastMessageAt);
+  }
   // Live events or an optimistic send can seed this cache before any relay
   // page lands; only a relay-delivered newest page is safe to paint.
   const newestPage = queryClient
@@ -122,7 +199,6 @@ async function storeChannelPage(
         await loadEvents(),
         [],
         signal,
-        false,
       ),
     retry: PRELOAD_RETRY,
     staleTime: MESSAGES_STALE_MS,
@@ -158,12 +234,24 @@ export async function preloadThreads(
   ) => Promise<boolean> = async () => true,
 ): Promise<number> {
   let loaded = 0;
-  const cold = threads.filter(
-    (thread) =>
-      queryClient.getQueryData(
-        threadRepliesKey(thread.channelId, thread.rootId),
-      ) === undefined,
-  );
+  const cold: PreloadThread[] = [];
+  for (const thread of threads) {
+    const key = threadRepliesKey(thread.channelId, thread.rootId);
+    if (queryClient.getQueryData(key) !== undefined) continue;
+    // Threads the store proves current are seeded from it, with no request.
+    const stored = await readProvenStoreThread(
+      queryClient,
+      thread.channelId,
+      thread.rootId,
+      THREAD_PRELOAD_REPLIES,
+    );
+    if (stored) {
+      seedThreadPages(queryClient, [stored]);
+      loaded += 1;
+    } else {
+      cold.push(thread);
+    }
+  }
   for (
     let start = 0;
     start < cold.length;

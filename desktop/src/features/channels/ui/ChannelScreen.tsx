@@ -51,7 +51,7 @@ import {
   getThreadReference,
   isThreadReply,
 } from "@/features/messages/lib/threading";
-import { hasPersistedHydratedChannel } from "@/features/messages/lib/channelHeadCache";
+import { hasPersistedHydratedChannel } from "@/features/messages/lib/storeChannelHeads";
 import { resolveTimelineQueryLoadingState } from "@/features/messages/lib/timelineLoadingState";
 import { useFetchOlderMessages } from "@/features/messages/useFetchOlderMessages";
 import { useIndependentThreadPanel } from "@/features/messages/useIndependentThreadPanel";
@@ -89,7 +89,7 @@ import { useChannelProfilePanel } from "./useChannelProfilePanel";
 import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
-import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
+import { isRelayOffline, useChannelOpenAnchor } from "./useChannelOpenAnchor";
 import {
   type ReadingPosition,
   readingPositionStore,
@@ -235,7 +235,13 @@ export function ChannelScreen({
     effectiveOpenThreadHeadId,
   );
   useChannelSubscription(activeChannel);
-  const { fetchOlder, hasOlderMessages, historyExhausted, isFetchingOlder } =
+  const {
+    fetchOlder,
+    fetchOlderPage,
+    hasOlderMessages,
+    historyExhausted,
+    isFetchingOlder,
+  } =
     useFetchOlderMessages(activeChannel);
   const latestActiveMessage = React.useMemo(() => {
     const messages = messagesQuery.data;
@@ -656,7 +662,8 @@ export function ChannelScreen({
     firstUnreadMessageId,
     hasOlderMessages,
     isFetchingOlder,
-    fetchOlder,
+    fetchOlderPage,
+    isOffline: isRelayOffline,
     opensElsewhere: Boolean(targetMessageId) || isHuddleTranscript,
   });
   const handleReadingPositionChange = React.useCallback(
@@ -681,7 +688,11 @@ export function ChannelScreen({
         isError: messagesQuery.isError,
       },
       activeChannelId !== null &&
-        hasPersistedHydratedChannel(queryClient, activeChannelId),
+        hasPersistedHydratedChannel(
+          queryClient,
+          activeChannelId,
+          activeChannel?.lastMessageAt ?? null,
+        ),
     );
   settledChannelIdRef.current = settledChannelId;
   // Hold the skeleton while the open position is still being found, so the

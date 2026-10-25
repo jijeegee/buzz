@@ -1,4 +1,5 @@
 import * as React from "react";
+import { publishJoinedRooms } from "@/shared/api/channelCatchUp";
 import { toast } from "sonner";
 import {
   useMutation,
@@ -506,6 +507,11 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     ownerPubkey,
     relayUrl,
   ]);
+
+  // Reconnect catch-up reaches every joined room, subscribed or not.
+  React.useEffect(() => {
+    if (relayUrl && query.data) publishJoinedRooms(relayUrl, query.data);
+  }, [query.data, relayUrl]);
 
   return query;
 }

@@ -20,7 +20,7 @@ import { removeSelfProfileCachesForRelay } from "@/features/profile/lib/selfProf
 import { removeUserLabelCacheForRelay } from "@/features/profile/lib/userLabelStorage";
 import { removeChannelSnapshotForRelay } from "@/features/channels/channelSnapshot";
 import { removeProjectSnapshotForRelay } from "@/features/projects/projectSnapshot";
-import { clearChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
+import { clearMessageStoreScope } from "@/shared/api/tauriMessageStore";
 import { getIdentity } from "@/shared/api/tauriIdentity";
 import { clearSavedCommunitySnapshot } from "@/features/agents/activeAgentTurnsStore";
 import { readmitRelay } from "@/features/agents/managedAgentRelayCleanup";
@@ -271,13 +271,13 @@ function useCommunitiesInternal(): UseCommunitiesReturn {
       removeProjectSnapshotForRelay(removed.relayUrl);
       void getIdentity()
         .then((identity) =>
-          clearChannelHeadCache({
+          clearMessageStoreScope({
             pubkey: identity.pubkey,
             relayUrl: removed.relayUrl,
           }),
         )
         .catch((error) => {
-          console.warn("Failed to clear persisted channel heads", error);
+          console.warn("Failed to clear stored messages", error);
         });
       clearSavedCommunitySnapshot(id);
       removeCommunityDestination(id);
