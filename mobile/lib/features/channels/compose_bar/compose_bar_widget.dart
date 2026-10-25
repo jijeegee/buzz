@@ -247,21 +247,18 @@ class ComposeBar extends HookConsumerWidget {
     // Channel autocomplete state ----------------------------------------------
     final channelQuery = useState<String?>(null);
     final channelStartIdx = useState(-1);
-    final channelsAsync = ref.watch(channelsProvider);
-    _useComposerChannelNames(controller, channelsAsync);
+    // Ignores activity times, so other rooms' messages do not rebuild.
+    final channelList = ref.watch(channelListShape).list;
+    _useComposerChannelNames(controller, channelList);
 
     final membersAsync = ref.watch(channelMembersProvider(channelId));
     final sessionStatus = ref.watch(relaySessionProvider).status;
-    final cachedMembers = channelsAsync.asData == null
-        ? const <ChannelMember>[]
-        : ref
-              .read(channelsProvider.notifier)
-              .cachedMembersForChannel(channelId);
+    final cachedMembers = ref.watch(
+      cachedChannelMembers(ref.read(channelsProvider.notifier), channelId),
+    );
     final currentPubkey = ref.watch(currentPubkeyProvider);
     final userCache = ref.watch(userCacheProvider);
-    final isDmChannel =
-        channelsAsync.asData?.value.any((c) => c.id == channelId && c.isDm) ??
-        false;
+    final isDmChannel = channelList.any((c) => c.id == channelId && c.isDm);
 
     // Preload profiles for channel members, mentionable agents, and their
     // owners so @mention suggestions show names ("managed by …" included).
@@ -421,8 +418,7 @@ class ComposeBar extends HookConsumerWidget {
     }, [suggestions.length, mentionQuery.value]);
 
     // Filter channels against the query.
-    final channels = channelsAsync.asData?.value ?? <Channel>[];
-    final channelSuggestions = filterChannels(channels, channelQuery.value);
+    final channelSuggestions = filterChannels(channelList, channelQuery.value);
 
     // Automatic thread agent mentions (desktop "Automatically mention agents").
     final agentDisplayNames = ref.watch(agentDirectoryDisplayNamesProvider);
@@ -438,7 +434,7 @@ class ComposeBar extends HookConsumerWidget {
         members: membersAsync.asData?.value ?? cachedMembers,
         relayAgents: relayAgents ?? const [],
         sharedChannelIds: {
-          for (final c in channelsAsync.asData?.value ?? const <Channel>[])
+          for (final c in channelList)
             if (c.isMember && !c.isArchived) c.id,
         },
         userCache: userCache,
@@ -606,7 +602,7 @@ class ComposeBar extends HookConsumerWidget {
             members: membersAsync.asData?.value ?? const [],
             relayAgents: relayAgents ?? const [],
             sharedChannelIds: {
-              for (final c in channels)
+              for (final c in channelList)
                 if (c.isMember && !c.isArchived) c.id,
             },
             userCache: userCache,

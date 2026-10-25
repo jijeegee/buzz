@@ -6,10 +6,12 @@ import {
   INBOX_PRELOAD_MESSAGES,
   inboxPreloadTargetKey,
   inboxPreloadTargets,
+  inboxUnreadAnchorTargets,
 } from "@/features/home/lib/inboxPreload";
 import {
   preloadChannelsMessages,
   preloadThreads,
+  preloadUnreadAnchors,
 } from "@/features/messages/channelPreload";
 import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
 
@@ -22,11 +24,17 @@ const RETRY_AFTER_MS = 5 * 60 * 1_000;
 /**
  * Background-loads the rooms behind the top chat-list rows (one batched
  * request), then the newest replies of their threads (four per request), so
- * opening them paints at once. After the first pass it pauses while the user
+ * opening them paints at once. The most recent rooms with unread also load
+ * their history down to the read marker, so they open at the first unread
+ * with no seek. After the first pass it pauses while the user
  * types or clicks, while a room is loading in the foreground, and while the
  * app is hidden.
  */
-export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
+export function useInboxPreload(
+  items: readonly InboxItem[],
+  enabled: boolean,
+  readAtFor: (channelId: string) => number | null = () => null,
+) {
   const queryClient = useQueryClient();
   const lastInputAtRef = React.useRef(0);
   const attemptedAtRef = React.useRef(new Map<string, number>());
@@ -46,11 +54,18 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   }, [enabled]);
 
   const targets = React.useMemo(() => inboxPreloadTargets(items), [items]);
-  const targetsKey = targets.map(inboxPreloadTargetKey).join("|");
+  const anchors = React.useMemo(
+    () => inboxUnreadAnchorTargets(items, readAtFor),
+    [items, readAtFor],
+  );
+  const targetsKey = [
+    ...targets.map(inboxPreloadTargetKey),
+    ...anchors.map((anchor) => `anchor:${anchor.channelId}:${anchor.readAt}`),
+  ].join("|");
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: keyed by the target list, not each re-sorted row array
   React.useEffect(() => {
-    if (!enabled || targets.length === 0) return;
+    if (!enabled || (targets.length === 0 && anchors.length === 0)) return;
     let cancelled = false;
     const sleepers = new Map<ReturnType<typeof setTimeout>, () => void>();
     const sleep = (ms: number) =>
@@ -78,9 +93,14 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     const pending = targets.filter(
       (target) => !attemptedAtRef.current.has(inboxPreloadTargetKey(target)),
     );
+    const anchorKey = (anchor: { channelId: string; readAt: number }) =>
+      `anchor:${anchor.channelId}:${anchor.readAt}`;
+    const pendingAnchors = anchors.filter(
+      (anchor) => !attemptedAtRef.current.has(anchorKey(anchor)),
+    );
 
     void (async () => {
-      if (pending.length === 0) return;
+      if (pending.length === 0 && pendingAnchors.length === 0) return;
       // The first pass after launch starts at once: that is when the rooms
       // are about to be opened. Later passes yield to the user.
       const firstPass = firstPassRef.current;
@@ -92,10 +112,24 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
         if (target.thread) continue;
         attemptedAtRef.current.set(inboxPreloadTargetKey(target), Date.now());
       }
+      for (const anchor of pendingAnchors) {
+        attemptedAtRef.current.set(anchorKey(anchor), Date.now());
+      }
       await preloadChannelsMessages(
         queryClient,
-        [...new Set(pending.map((target) => target.channelId))],
+        [
+          ...new Set([
+            ...pending.map((target) => target.channelId),
+            ...pendingAnchors.map((anchor) => anchor.channelId),
+          ]),
+        ],
         INBOX_PRELOAD_MESSAGES,
+      );
+      if (cancelled) return;
+      await preloadUnreadAnchors(
+        queryClient,
+        pendingAnchors,
+        () => !cancelled && (firstPass || !isBusy()),
       );
       if (cancelled) return;
       await preloadThreads(

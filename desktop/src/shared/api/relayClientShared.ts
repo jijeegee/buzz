@@ -81,6 +81,17 @@ type LiveSubscription = {
   onRemoved?: () => void;
   lastSeenCreatedAt?: number;
   /**
+   * The connection generation this subscription last reached EOSE on, while
+   * its live delivery was unbroken. A reconnect catch-up may stand in for its
+   * repair walk only if it was live on an earlier connection.
+   */
+  liveGeneration?: number;
+  /**
+   * A CLOSED broke this subscription's live delivery: it takes repair walks
+   * until one completes.
+   */
+  liveGap?: boolean;
+  /**
    * Lower bound of a reconnect backfill window that has not yet completed.
    *
    * Events on the restored live REQ advance `lastSeenCreatedAt` regardless of

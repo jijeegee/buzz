@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { useAppShell } from "@/app/AppShellContext";
+import { useAppShellRoom } from "@/app/AppShellContext";
 import { isThreadReply } from "@/features/messages/lib/threading";
 import type { FeedItem } from "@/shared/api/types";
 
@@ -23,7 +23,7 @@ export function useChannelOpenReadState(
   activeReadAt: string | null,
 ) {
   const { feedItemState, locallyUnreadFeedItems, markChannelRead } =
-    useAppShell();
+    useAppShellRoom();
 
   React.useEffect(() => {
     if (!activeChannelId || isChannelMember === false) return;

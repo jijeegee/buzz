@@ -7,7 +7,7 @@ import {
   type ChannelWindowStore,
 } from "./channelWindowStore";
 import { reconcileChannelWindowMessages } from "./channelWindowReconciliation";
-import { channelHeadHydration } from "./channelHeadCache";
+import { channelHeadHydration, withServerRefresh } from "./storeChannelHeads";
 
 /** Keep the rendered timeline cache aligned with its authoritative window. */
 export function projectChannelWindowMessages(
@@ -28,7 +28,7 @@ export async function refreshChannelWindowMessages(
   channelId: string,
 ) {
   const queryKey = channelMessagesKey(channelId);
-  // Sequence behind persisted-head hydration. While the channel query is parked
+  // Sequence behind stored-head hydration. While the channel query is parked
   // on that gate it has no data, so TanStack would dedupe this invalidation
   // onto it — and that fetch returns the seeded snapshot, never asking the
   // relay. A seeded query is recognisable by data at `dataUpdatedAt` 0; let its
@@ -45,9 +45,12 @@ export async function refreshChannelWindowMessages(
   if (seeded) {
     await query.promise?.catch(() => {});
   }
-  await queryClient.invalidateQueries(
-    { queryKey, exact: true, refetchType: "active" },
-    { cancelRefetch: !seeded, throwOnError: true },
+  // The refetch asks the server, not the store (see `withServerRefresh`).
+  await withServerRefresh(queryClient, channelId, () =>
+    queryClient.invalidateQueries(
+      { queryKey, exact: true, refetchType: "active" },
+      { cancelRefetch: !seeded, throwOnError: true },
+    ),
   );
   projectChannelWindowMessages(queryClient, channelId);
 }

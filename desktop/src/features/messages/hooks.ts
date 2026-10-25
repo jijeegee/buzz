@@ -32,12 +32,7 @@ import {
   refreshChannelWindowMessages,
 } from "@/features/messages/lib/projectChannelWindow";
 import { reconcileChannelWindowMessages } from "@/features/messages/lib/channelWindowReconciliation";
-import {
-  channelHeadCacheScope,
-  channelHeadHydration,
-  consumeHydratedChannel,
-} from "@/features/messages/lib/channelHeadCache";
-import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
+import { loadRoomHead } from "@/features/messages/lib/storeChannelHeads";
 import {
   isMatchingPendingMessage,
   mergeMessages,
@@ -64,7 +59,7 @@ import {
   removeReaction,
   sendChannelMessage,
 } from "@/shared/api/tauri";
-import { getChannelWindowEvents } from "@/shared/api/channelWindow";
+import type { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
@@ -96,8 +91,13 @@ import {
   mergeLiveChannelWindowEvent,
   mergeLiveThreadSummary,
   replaceNewestChannelWindow,
+  type ChannelWindowPage,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
+import {
+  storedPagesBelowHead,
+  withStoredBelow,
+} from "@/features/messages/lib/pageOlderMessages";
 import {
   parseChannelWindowResponse,
   parseLiveThreadSummary,
@@ -749,8 +749,7 @@ export function reconcileFetchedChannelWindow(
   events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
   previousMessages: RelayEvent[],
   signal: AbortSignal,
-  // Background loads must not rank as visits in the persisted-head LRU.
-  persistHead = true,
+  storedBelow: ChannelWindowPage[] = [],
 ): RelayEvent[] {
   // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
   // therefore win while this older request is still in flight. Never let that
@@ -761,14 +760,11 @@ export function reconcileFetchedChannelWindow(
   const current =
     queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
     emptyChannelWindowStore();
-  const next = replaceNewestChannelWindow(current, page);
+  const next = withStoredBelow(
+    replaceNewestChannelWindow(current, page),
+    storedBelow,
+  );
   queryClient.setQueryData(windowKey, next);
-  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
-  if (scope) {
-    void storeChannelHeadCache(scope, channelId, events).catch((error) => {
-      console.warn("Failed to persist channel head", channelId, error);
-    });
-  }
   return reconcileChannelWindowMessages(next, previousMessages);
 }
 
@@ -780,22 +776,25 @@ export function useChannelMessagesQuery(channel: Channel | null) {
     queryKey,
     queryFn: async ({ signal }) => {
       if (!channel) throw new Error("No group selected.");
-      // Persisted heads seed asynchronously; wait for that seed so a channel
-      // opened during boot takes the hydrated path instead of racing it with
-      // a cold relay fetch.
-      await channelHeadHydration(queryClient);
-      if (consumeHydratedChannel(queryClient, channel.id)) {
-        return queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
-      }
+      // The store inside proven coverage, else the server (see loadRoomHead).
       const previousMessages =
         queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
-      const events = await getChannelWindowEvents(channel.id);
+      const head = await loadRoomHead(queryClient, channel, previousMessages);
+      signal.throwIfAborted();
+      if ("stored" in head) return head.stored;
+      const below = await storedPagesBelowHead(
+        queryClient,
+        channel.id,
+        head.events,
+      );
+      signal.throwIfAborted();
       return reconcileFetchedChannelWindow(
         queryClient,
         channel.id,
-        events,
+        head.events,
         previousMessages,
         signal,
+        below,
       );
     },
     staleTime: 5 * 60 * 1_000,

@@ -90,7 +90,7 @@ type AppShellContextValue = {
   onOpenSettings: ((section: SettingsSection) => void) | null;
 };
 
-const AppShellContext = React.createContext<AppShellContextValue>({
+const DEFAULT_APP_SHELL: AppShellContextValue = {
   markAllChannelsRead: () => {},
   markChannelRead: () => {},
   markChannelUnread: () => {},
@@ -131,7 +131,62 @@ const AppShellContext = React.createContext<AppShellContextValue>({
     unreadSet: EMPTY_SET,
   },
   onOpenSettings: null,
-});
+};
+
+const AppShellContext =
+  React.createContext<AppShellContextValue>(DEFAULT_APP_SHELL);
+
+/**
+ * What the open room reads from the shell. Every key must keep its identity
+ * when another room gets a live event, so the room does not re-render for it:
+ * live feed/unread projections and `markAllChannelsRead` are left out on
+ * purpose. `readStateVersion` stays, as the freshness signal for the read
+ * getters.
+ */
+const ROOM_KEYS = [
+  "clearChannelUnreadSource",
+  "markChannelRead",
+  "markChannelUnread",
+  "getChannelReadAt",
+  "getMessageReadAt",
+  "markMessageRead",
+  "setContextParentResolver",
+  "openBrowseChannels",
+  "openCreateChannel",
+  "openChannelManagement",
+  "followThread",
+  "unfollowThread",
+  "isNotifiedForThread",
+  "recordThreadInteraction",
+  "isThreadMuted",
+  "readStateVersion",
+  "mirrorThreadRead",
+  "locallyUnreadFeedItems",
+  "feedItemState",
+] as const satisfies readonly (keyof AppShellContextValue)[];
+
+type AppShellRoomValue = Pick<AppShellContextValue, (typeof ROOM_KEYS)[number]>;
+
+function pickRoomValue(value: AppShellContextValue): AppShellRoomValue {
+  return Object.fromEntries(
+    ROOM_KEYS.map((key) => [key, value[key]]),
+  ) as AppShellRoomValue;
+}
+
+const AppShellRoomContext = React.createContext<AppShellRoomValue>(
+  pickRoomValue(DEFAULT_APP_SHELL),
+);
+
+function useStableRoomValue(value: AppShellContextValue): AppShellRoomValue {
+  const ref = React.useRef<AppShellRoomValue | null>(null);
+  const previous = ref.current;
+  if (previous && ROOM_KEYS.every((key) => previous[key] === value[key])) {
+    return previous;
+  }
+  const next = pickRoomValue(value);
+  ref.current = next;
+  return next;
+}
 
 export function AppShellProvider({
   children,
@@ -140,13 +195,21 @@ export function AppShellProvider({
   children: React.ReactNode;
   value: AppShellContextValue;
 }) {
+  const roomValue = useStableRoomValue(value);
   return (
     <AppShellContext.Provider value={value}>
-      {children}
+      <AppShellRoomContext.Provider value={roomValue}>
+        {children}
+      </AppShellRoomContext.Provider>
     </AppShellContext.Provider>
   );
 }
 
 export function useAppShell() {
   return React.useContext(AppShellContext);
+}
+
+/** The shell's room-scoped slice; unchanged by other rooms' live events. */
+export function useAppShellRoom() {
+  return React.useContext(AppShellRoomContext);
 }

@@ -760,8 +760,10 @@ export function MessageThreadPanel({
             isHuddleTranscript={isHuddleTranscript}
             onRetry={onRetryThreadReplies}
             renderSkeleton={() => (
+              // Shown only after a short grace: a proven store read paints
+              // the replies before it, with no skeleton flash.
               <div
-                className="space-y-2.5 pt-1"
+                className="timeline-skeleton-grace space-y-2.5 pt-1"
                 data-testid="message-thread-replies-loading"
               >
                 <ThreadMessageSkeleton />

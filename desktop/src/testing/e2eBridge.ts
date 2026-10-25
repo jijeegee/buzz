@@ -38,8 +38,23 @@ import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audioMediaLoadScheduler";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
+import {
+  type MockCatchUpFilter,
+  mockChannelsCatchUp,
+} from "./e2eBridgeCatchUp.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
 import {
+  handleMessageStoreMockCommand,
+  MOCK_SYNC_KINDS,
+  mockMessageStoreScope,
+} from "./e2eMessageStore.ts";
+import {
+  recordMockRepair,
+  recordMockThreadPages,
+  recordMockWindow,
+} from "./e2eMessageStoreRecord.ts";
+import {
+  createMockStoreTap,
   createMockSubscription,
   hasMockSubscription,
 } from "./e2eBridgeSubscriptions.ts";
@@ -1133,6 +1148,7 @@ type MockFilter = {
 type MockSocket = {
   handler: WsHandler;
   subscriptions: Map<string, MockSubscription>;
+  storeTap?: ReturnType<typeof createMockStoreTap>;
 };
 
 function createMockRelayMembershipEvent(): RelayEvent {
@@ -6038,7 +6054,11 @@ function buildMockChannelWindowBounds(
     pubkey: DEFAULT_MOCK_IDENTITY.pubkey,
     created_at: Math.floor(Date.now() / 1000),
     kind: KIND_CHANNEL_WINDOW_BOUNDS,
-    tags: [["d", boundsKey]],
+    // Like the relay's: tagged with its room, which the store claim requires.
+    tags: [
+      ["h", args.channelId],
+      ["d", boundsKey],
+    ],
     content: JSON.stringify({ has_more: hasMore, next_cursor: nextCursor }),
     sig: "mocksig".repeat(20).slice(0, 128),
   };
@@ -6065,10 +6085,8 @@ async function handleGetChannelReconnectRepair(
   },
   config: E2eConfig | undefined,
 ): Promise<RelayEvent[]> {
-  const kinds = new Set([
-    5, 7, 9, 9005, 40001, 40002, 40003, 40008, 40099, 45001, 45003, 48100,
-    48101, 48102, 48103,
-  ]);
+  // Every synced kind, like `CHANNEL_REPAIR_KINDS`.
+  const kinds = new Set<number>(MOCK_SYNC_KINDS);
   const filter: Record<string, unknown> = {
     "#h": [args.channelId],
     kinds: [...kinds],
@@ -6094,6 +6112,31 @@ async function handleGetChannelReconnectRepair(
         right.created_at - left.created_at || left.id.localeCompare(right.id),
     )
     .slice(0, args.limit);
+}
+
+/** One catch-up page over several rooms, like `channels_catch_up` asks. */
+async function queryMockCatchUpPage(
+  filter: MockCatchUpFilter,
+  config: E2eConfig | undefined,
+): Promise<RelayEvent[]> {
+  if (getIdentity(config)) return relayQuery(config, [filter]);
+  const kinds = new Set(filter.kinds);
+  return filter["#h"]
+    .flatMap((channelId) => getMockMessageStore(channelId))
+    .filter(
+      (event) =>
+        kinds.has(event.kind) &&
+        event.created_at >= filter.since &&
+        (filter.until === undefined ||
+          event.created_at < filter.until ||
+          (event.created_at === filter.until &&
+            (filter.before_id === undefined || event.id > filter.before_id))),
+    )
+    .sort(
+      (left, right) =>
+        right.created_at - left.created_at || left.id.localeCompare(right.id),
+    )
+    .slice(0, filter.limit);
 }
 
 async function handleGetChannelWindow(
@@ -11215,7 +11258,56 @@ async function connectRealSocket(args: { url?: string; onMessage: unknown }) {
   });
 }
 
-async function connectMockSocket(args: { onMessage: unknown }) {
+/** Scope of the signed-in mock account on the configured relay. */
+function mockStoreScope(config: E2eConfig | undefined) {
+  return {
+    pubkey: getActiveIdentity(config)?.pubkey ?? MOCK_IDENTITY_PUBKEY,
+    relayUrl: getRelayWsUrl(config),
+  };
+}
+
+const mockOrigin = (url: string) =>
+  url
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/^wss:\/\//i, "https://")
+    .replace(/^ws:\/\//i, "http://")
+    .toLowerCase();
+
+/** Mirror of `writer_for_connect`: a store tap only for a scope naming this
+ * server and the signed-in account. */
+function mockSocketStoreTap(
+  wsId: number,
+  url: string | undefined,
+  config: { storeScope?: { pubkey?: string; relayUrl?: string } } | undefined,
+) {
+  const scope = config?.storeScope;
+  const signedIn = mockStoreScope(getConfig()).pubkey;
+  if (
+    !scope?.pubkey ||
+    !scope.relayUrl ||
+    !url ||
+    mockOrigin(scope.relayUrl) !== mockOrigin(url) ||
+    scope.pubkey.trim().toLowerCase() !== signedIn.toLowerCase()
+  ) {
+    return undefined;
+  }
+  try {
+    const store = mockMessageStoreScope({
+      pubkey: scope.pubkey,
+      relayUrl: scope.relayUrl,
+    });
+    return createMockStoreTap(store, wsId, MOCK_SYNC_KINDS);
+  } catch {
+    return undefined;
+  }
+}
+
+async function connectMockSocket(args: {
+  url?: string;
+  onMessage: unknown;
+  config?: { storeScope?: { pubkey?: string; relayUrl?: string } };
+}) {
   relayWebsocketConnectAttemptStarts.push(Date.now());
   if (mockWebsocketUnavailable) {
     throw new Error("mock relay unavailable");
@@ -11230,11 +11322,26 @@ async function connectMockSocket(args: { onMessage: unknown }) {
   }
 
   const wsId = nextSocketId++;
-  const handler = resolveHandler(args.onMessage);
+  const appHandler = resolveHandler(args.onMessage);
+  const storeTap = mockSocketStoreTap(wsId, args.url, args.config);
+  // Frame delivery: the store sees each frame before the app does.
+  const handler: WsHandler = storeTap
+    ? (message) => {
+        const frame = message as { type?: string; data?: unknown };
+        storeTap.incoming(
+          frame.type === "Text" && typeof frame.data === "string"
+            ? frame.data
+            : null,
+        );
+        if (frame.type === "Close") storeTap.finish();
+        appHandler(message);
+      }
+    : appHandler;
 
   mockSockets.set(wsId, {
     handler,
     subscriptions: new Map(),
+    storeTap,
   });
 
   if (getConfig()?.mock?.websocketAuthBeforeConnectResolves) {
@@ -11300,6 +11407,7 @@ function sendToMockSocket(args: {
   if (args.message.type !== "Text" || !args.message.data) {
     return;
   }
+  socket.storeTap?.outgoing(args.message.data);
 
   const [type, ...rest] = JSON.parse(args.message.data) as [
     string,
@@ -14955,21 +15063,49 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleGetChannelMessagesBefore>[0],
           activeConfig,
         );
-      case "get_channel_reconnect_repair":
-        return handleGetChannelReconnectRepair(
-          payload as Parameters<typeof handleGetChannelReconnectRepair>[0],
+      // Fetch writes (`message_store/record.rs`): each read is stored in the
+      // scope it was made for, with what its request and bounds prove.
+      case "get_channel_reconnect_repair": {
+        const args = payload as Parameters<
+          typeof handleGetChannelReconnectRepair
+        >[0];
+        const scope = mockStoreScope(activeConfig);
+        const events = await handleGetChannelReconnectRepair(
+          args,
           activeConfig,
         );
-      case "get_channel_window":
-        return handleGetChannelWindow(
-          payload as Parameters<typeof handleGetChannelWindow>[0],
-          activeConfig,
-        );
-      case "get_thread_windows":
-        return handleGetThreadWindows(
-          payload as Parameters<typeof handleGetThreadWindows>[0],
-          activeConfig,
-        );
+        recordMockRepair(scope, args.channelId, events, args);
+        return events;
+      }
+      case "channels_catch_up": {
+        const args = payload as {
+          wsId: number;
+          channelIds: string[];
+          dispatchChannelIds: string[];
+        };
+        return mockChannelsCatchUp({
+          store: mockMessageStoreScope(mockStoreScope(activeConfig)),
+          tap: mockSockets.get(args.wsId)?.storeTap,
+          channelIds: args.channelIds,
+          dispatchChannelIds: args.dispatchChannelIds,
+          syncKinds: MOCK_SYNC_KINDS,
+          query: (filter) => queryMockCatchUpPage(filter, activeConfig),
+        });
+      }
+      case "get_channel_window": {
+        const args = payload as Parameters<typeof handleGetChannelWindow>[0];
+        const scope = mockStoreScope(activeConfig);
+        const events = await handleGetChannelWindow(args, activeConfig);
+        recordMockWindow(scope, args.channelId, events, args.cursor ?? null);
+        return events;
+      }
+      case "get_thread_windows": {
+        const args = payload as Parameters<typeof handleGetThreadWindows>[0];
+        const scope = mockStoreScope(activeConfig);
+        const pages = await handleGetThreadWindows(args, activeConfig);
+        recordMockThreadPages(scope, pages, args.threads);
+        return pages;
+      }
       case "get_channel_windows": {
         // Batched newest windows: each channel's events are exactly what
         // `get_channel_window` returns for it, bounds event included.
@@ -14977,15 +15113,15 @@ export function maybeInstallE2eTauriMocks() {
           channelIds: string[];
           limitRows?: number | null;
         };
+        const scope = mockStoreScope(activeConfig);
         const windows = [];
         for (const channelId of args.channelIds) {
-          windows.push({
-            channel_id: channelId,
-            events: await handleGetChannelWindow(
-              { channelId, limitRows: args.limitRows, cursor: null },
-              activeConfig,
-            ),
-          });
+          const events = await handleGetChannelWindow(
+            { channelId, limitRows: args.limitRows, cursor: null },
+            activeConfig,
+          );
+          recordMockWindow(scope, channelId, events, null);
+          windows.push({ channel_id: channelId, events });
         }
         return windows;
       }
@@ -15604,59 +15740,15 @@ export function maybeInstallE2eTauriMocks() {
         return mockPersonaCatalogPublications();
       case "fetch_team_catalog":
         return mockTeamCatalogPublications();
-      case "channel_head_cache_load": {
-        const args = payload as {
-          scope: { pubkey: string; relayUrl: string };
-          limit: number;
-        };
-        const key = `kuzz-e2e-channel-head:${args.scope.pubkey.toLowerCase()}:${args.scope.relayUrl.toLowerCase().replace(/\/$/, "")}`;
-        const entries = JSON.parse(
-          window.localStorage.getItem(key) ?? "[]",
-        ) as Array<{
-          channelId: string;
-          events: RelayEvent[];
-          savedAt: number;
-          lastVisitedAt: number;
-        }>;
-        return entries
-          .sort((left, right) => right.lastVisitedAt - left.lastVisitedAt)
-          .slice(0, args.limit);
-      }
-      case "channel_head_cache_store": {
-        const args = payload as {
-          scope: { pubkey: string; relayUrl: string };
-          channelId: string;
-          events: RelayEvent[];
-        };
-        const key = `kuzz-e2e-channel-head:${args.scope.pubkey.toLowerCase()}:${args.scope.relayUrl.toLowerCase().replace(/\/$/, "")}`;
-        const entries = JSON.parse(
-          window.localStorage.getItem(key) ?? "[]",
-        ) as Array<{
-          channelId: string;
-          events: RelayEvent[];
-          savedAt: number;
-          lastVisitedAt: number;
-        }>;
-        const now = Math.floor(Date.now() / 1000);
-        const next = entries
-          .filter((entry) => entry.channelId !== args.channelId)
-          .concat({
-            channelId: args.channelId,
-            events: args.events,
-            savedAt: now,
-            lastVisitedAt: now,
-          })
-          .sort((left, right) => right.lastVisitedAt - left.lastVisitedAt)
-          .slice(0, 32);
-        window.localStorage.setItem(key, JSON.stringify(next));
-        return null;
-      }
-      case "channel_head_cache_clear": {
-        const args = payload as { scope: { pubkey: string; relayUrl: string } };
-        const key = `kuzz-e2e-channel-head:${args.scope.pubkey.toLowerCase()}:${args.scope.relayUrl.toLowerCase().replace(/\/$/, "")}`;
-        window.localStorage.removeItem(key);
-        return null;
-      }
+      case "message_store_load_heads":
+      case "message_store_read_window":
+      case "message_store_read_around":
+      case "message_store_read_thread":
+      case "message_store_read_thread_head":
+      case "message_store_coverage":
+      case "message_store_begin_live":
+      case "message_store_clear_scope":
+        return handleMessageStoreMockCommand(command, payload);
       case "observed_unread_open_scope": {
         const request = payload as {
           request: {

@@ -8,7 +8,9 @@ use tauri::{
     Emitter, Manager, Runtime,
 };
 
+use crate::message_store::ScopeWriter;
 use crate::native_websocket_batch::{is_auth_challenge, FrameBatch, BATCH_MAX_SERIALIZED_BYTES};
+use crate::native_websocket_store_tap::{writer_for_connect, StoreTap};
 use tokio::sync::{mpsc, oneshot, Mutex};
 use tokio_tungstenite::{
     connect_async,
@@ -109,6 +111,8 @@ struct SendRequest {
 struct ConnectionHandle {
     sender: mpsc::Sender<SendRequest>,
     cancel: CancellationToken,
+    /// Present on the main relay session's socket only.
+    tap: Option<Arc<StoreTap>>,
     task: Mutex<Option<tauri::async_runtime::JoinHandle<()>>>,
 }
 
@@ -128,6 +132,11 @@ impl Default for WebSocketManager {
 }
 
 impl WebSocketManager {
+    /// The store tap of an open socket, if it stores into a scope.
+    pub(crate) async fn tap_for(&self, id: Id) -> Option<Arc<StoreTap>> {
+        self.connections.lock().await.get(&id)?.tap.clone()
+    }
+
     async fn remove(&self, id: Id) -> Option<Arc<ConnectionHandle>> {
         self.connections.lock().await.remove(&id)
     }
@@ -156,9 +165,12 @@ async fn open_connection(
     manager: &WebSocketManager,
     url: &str,
     on_message: Channel<InvokeResponseBody>,
+    store: Option<(crate::message_store::StoreScope, ScopeWriter)>,
 ) -> Result<Id, String> {
     let connect_cancel = manager.connect_cancel.lock().await.clone();
-    let mut request = url.into_client_request().map_err(|error| error.to_string())?;
+    let mut request = url
+        .into_client_request()
+        .map_err(|error| error.to_string())?;
     if let Ok(value) = HeaderValue::from_str(&app_identity()) {
         request.headers_mut().insert(APP_HEADER, value);
     }
@@ -191,9 +203,11 @@ async fn open_connection(
     };
     let (sender, receiver) = mpsc::channel(SEND_QUEUE_CAPACITY);
     let cancel = CancellationToken::new();
+    let tap = store.map(|(scope, writer)| Arc::new(StoreTap::new(id, scope, writer)));
     let handle = Arc::new(ConnectionHandle {
         sender,
         cancel: cancel.clone(),
+        tap: tap.clone(),
         task: Mutex::new(None),
     });
     let mut task_slot = handle.task.lock().await;
@@ -207,6 +221,7 @@ async fn open_connection(
         cancel,
         on_message,
         task_manager,
+        tap,
     ));
     *task_slot = Some(task);
     drop(task_slot);
@@ -220,12 +235,13 @@ async fn connect<R: Runtime>(
     manager: tauri::State<'_, WebSocketManager>,
     url: String,
     on_message: Channel<InvokeResponseBody>,
-    _config: Option<serde_json::Value>,
+    config: Option<serde_json::Value>,
 ) -> Result<Id, String> {
     // Every webview socket (the main relay session and read-only account
     // watchers) opens here: only the built-in server may be reached.
     crate::relay::ensure_relay_allowed("websocket connect", &url)?;
-    let result = open_connection(manager.inner(), &url, on_message).await;
+    let store = writer_for_connect(&app, &url, config.as_ref());
+    let result = open_connection(manager.inner(), &url, on_message, store).await;
     if matches!(&result, Err(error) if error == UPDATE_REQUIRED) {
         // The updater shows the forced-update screen on this event.
         let _ = app.emit(UPDATE_REQUIRED, ());
@@ -257,6 +273,9 @@ pub(crate) async fn send_message(
         .get(&id)
         .cloned()
         .ok_or_else(|| format!("WebSocket connection {id} not found"))?;
+    if let (Some(tap), WebSocketMessage::Text(text)) = (&handle.tap, &message) {
+        tap.outgoing(text);
+    }
     let (result_tx, result_rx) = oneshot::channel();
     tokio::time::timeout(
         WRITE_TIMEOUT,
@@ -314,10 +333,18 @@ async fn run_connection<S>(
     cancel: CancellationToken,
     on_message: Channel<InvokeResponseBody>,
     manager: WebSocketManager,
+    tap: Option<Arc<StoreTap>>,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
     let mut batch = FrameBatch::default();
+    // The store is always handed a frame's events before the webview gets it.
+    let flush = |batch: &mut FrameBatch| {
+        if let Some(tap) = &tap {
+            tap.flush();
+        }
+        batch.flush(&on_message);
+    };
     loop {
         tokio::select! {
             _ = cancel.cancelled() => {
@@ -330,7 +357,7 @@ async fn run_connection<S>(
                 ).await;
                 break;
             }
-            _ = batch.due() => batch.flush(&on_message),
+            _ = batch.due() => flush(&mut batch),
             request = receiver.recv() => {
                 let Some(request) = request else { break };
                 let result = tokio::time::timeout(WRITE_TIMEOUT, socket.send(request.message))
@@ -354,6 +381,13 @@ async fn run_connection<S>(
                     OutboundMessage::Text(payload) => is_auth_challenge(payload),
                     _ => false,
                 };
+                if let Some(tap) = &tap {
+                    match &message {
+                        OutboundMessage::Text(payload) => tap.incoming(Some(payload)),
+                        OutboundMessage::Close(_) | OutboundMessage::Error(_) => {}
+                        _ => tap.incoming(None),
+                    }
+                }
                 let Ok(frame) = serde_json::to_string(&message) else { continue };
 
                 // Flush before appending when the frame would carry the batch
@@ -362,13 +396,13 @@ async fn run_connection<S>(
                 // fetch path. A frame that exceeds the bound alone is delivered
                 // alone, exactly as it is today.
                 if batch.projected_len(&frame) > BATCH_MAX_SERIALIZED_BYTES {
-                    batch.flush(&on_message);
+                    flush(&mut batch);
                 }
                 batch.push(frame);
                 // Ordering is FIFO in all cases: buffered frames are flushed
                 // together with the frame that forced the flush, never after it.
                 if terminal || urgent {
-                    batch.flush(&on_message);
+                    flush(&mut batch);
                 }
                 if terminal { break; }
             }
@@ -376,7 +410,10 @@ async fn run_connection<S>(
     }
     // A terminal frame already flushed; this covers cancellation and send
     // failure, which must not strand frames the relay already delivered.
-    batch.flush(&on_message);
+    if let Some(tap) = &tap {
+        tap.finish();
+    }
+    flush(&mut batch);
     manager.remove(id).await;
 }
 
@@ -479,6 +516,7 @@ mod tests {
                 cancel.clone(),
                 channel,
                 manager,
+                None,
             ));
             Self {
                 server,
@@ -506,6 +544,67 @@ mod tests {
         fn deliveries(&self) -> Vec<String> {
             self.deliveries.lock().unwrap().clone()
         }
+    }
+
+    #[tokio::test]
+    async fn room_events_reach_the_store_before_the_webview() {
+        use crate::message_store::{MessageStore, StoreScope};
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::default();
+        let scope = StoreScope {
+            pubkey: "01".repeat(32),
+            relay_url: "wss://relay.example".to_string(),
+        };
+        let writer = store.writer(dir.path(), &scope).unwrap();
+        // At each delivery, ask the store (in order) how many events it holds.
+        let seen_at_delivery = Arc::new(std::sync::Mutex::new(Vec::<i64>::new()));
+        let (probe, seen) = (writer.clone(), seen_at_delivery.clone());
+        let channel = Channel::new(move |_: InvokeResponseBody| {
+            let seen = seen.clone();
+            probe.submit(move |conn| {
+                let count = conn
+                    .query_row("SELECT COUNT(*) FROM events", [], |row| row.get(0))
+                    .map_err(|error| error.to_string())?;
+                seen.lock().unwrap().push(count);
+                Ok(())
+            });
+            Ok(())
+        });
+        let (client_io, server_io) = duplex(64 * 1024);
+        let (client, mut server) = tokio::join!(
+            WebSocketStream::from_raw_socket(client_io, Role::Client, None),
+            WebSocketStream::from_raw_socket(server_io, Role::Server, None),
+        );
+        let (_sender, receiver) = mpsc::channel(SEND_QUEUE_CAPACITY);
+        let tap = Arc::new(StoreTap::new(1, scope.clone(), writer));
+        let cancel = CancellationToken::new();
+        let task = tokio::spawn(run_connection(
+            1,
+            client,
+            receiver,
+            cancel.clone(),
+            channel,
+            WebSocketManager::default(),
+            Some(tap),
+        ));
+        let frame = serde_json::json!(["EVENT", "live-1", {"id": "0a".repeat(32),
+            "pubkey": "0b".repeat(32), "created_at": 10, "kind": 9,
+            "tags": [["h", "room"]], "content": "x", "sig": ""}]);
+        server
+            .send(Message::Text(frame.to_string().into()))
+            .await
+            .unwrap();
+        tokio::time::timeout(Duration::from_secs(2), async {
+            while seen_at_delivery.lock().unwrap().is_empty() {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
+        })
+        .await
+        .expect("frame delivered");
+        assert_eq!(seen_at_delivery.lock().unwrap()[0], 1);
+        cancel.cancel();
+        let _ = task.await;
+        store.shut_down_all();
     }
 
     #[tokio::test(start_paused = true)]
@@ -615,6 +714,7 @@ mod tests {
         let handle = Arc::new(ConnectionHandle {
             sender,
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(None),
         });
         manager.connections.lock().await.insert(1, handle.clone());
@@ -625,6 +725,7 @@ mod tests {
             handle.cancel.clone(),
             channel,
             manager.clone(),
+            None,
         ));
         *handle.task.lock().await = Some(task);
 
@@ -685,7 +786,7 @@ mod tests {
         });
 
         let manager = WebSocketManager::default();
-        let id = open_connection(&manager, &format!("ws://{address}"), silent_channel())
+        let id = open_connection(&manager, &format!("ws://{address}"), silent_channel(), None)
             .await
             .unwrap();
         send_message(&manager, id, WebSocketMessage::Text("live-probe".into()))
@@ -725,7 +826,7 @@ mod tests {
         });
 
         let manager = WebSocketManager::default();
-        let error = open_connection(&manager, &format!("ws://{address}"), silent_channel())
+        let error = open_connection(&manager, &format!("ws://{address}"), silent_channel(), None)
             .await
             .unwrap_err();
         assert_eq!(error, UPDATE_REQUIRED);
@@ -749,6 +850,7 @@ mod tests {
         let handle = Arc::new(ConnectionHandle {
             sender,
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(None),
         });
         manager.connections.lock().await.insert(1, handle.clone());
@@ -759,6 +861,7 @@ mod tests {
             handle.cancel.clone(),
             silent_channel(),
             manager.clone(),
+            None,
         ));
         *handle.task.lock().await = Some(task);
 
@@ -789,6 +892,7 @@ mod tests {
         let handle = Arc::new(ConnectionHandle {
             sender,
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(Some(tauri::async_runtime::spawn(async move {
                 let _guard = DropGuard(task_dropped);
                 ready_tx.send(()).unwrap();
@@ -816,6 +920,7 @@ mod tests {
         let handle = Arc::new(ConnectionHandle {
             sender,
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(Some(tauri::async_runtime::spawn(async {
                 std::future::pending::<()>().await;
             }))),
@@ -853,6 +958,7 @@ mod tests {
         let blocked = Arc::new(ConnectionHandle {
             sender: blocked_sender,
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(None),
         });
         manager.connections.lock().await.insert(1, blocked);
@@ -861,6 +967,7 @@ mod tests {
         let healthy = Arc::new(ConnectionHandle {
             sender: healthy_sender.clone(),
             cancel: CancellationToken::new(),
+            tap: None,
             task: Mutex::new(None),
         });
         manager.connections.lock().await.insert(2, healthy);

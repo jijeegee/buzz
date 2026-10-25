@@ -58,7 +58,12 @@ import 'channel_link_navigation.dart';
 import 'agent_activity/working_bots_provider.dart';
 import 'channel_management_provider.dart';
 import 'channel_sections/channel_sections_provider.dart';
+import 'channel_list_selectors.dart';
 import 'channel_messages_provider.dart';
+import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_room_store.dart';
+import '../../shared/message_db/message_store.dart' show messageScopeProvider;
+import 'unread_badge/should_notify_for_event.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'channels_provider.dart';
@@ -123,6 +128,7 @@ part 'channel_detail_page/message_bubble.dart';
 part 'channel_detail_page/banners.dart';
 part 'channel_detail_page/app_bar.dart';
 part 'channel_detail_page/direct_thread.dart';
+part 'channel_detail_page/open_target.dart';
 
 /// Fetch deep-link targets that may be outside the loaded channel window.
 Future<void> _loadDeepLinkEvents(
@@ -291,59 +297,6 @@ enum InitialThreadRouteBehavior {
   replaceCurrentRoute,
 }
 
-/// Where a channel page is in opening its timeline at a message.
-enum _OpenPhase {
-  /// The timeline opens at the newest rows, as it always did.
-  none,
-
-  /// Waiting for the window around the message; nothing is drawn yet.
-  opening,
-
-  /// The window is in; the list settles its first position out of sight.
-  positioning,
-
-  /// The list shows the window opened at the message.
-  opened,
-}
-
-/// The messages a page may open at; the oldest one found is used.
-class _OpenTarget {
-  const _OpenTarget({
-    required this.ids,
-    required this.isUnread,
-    this.knownCreatedAt = const {},
-    this.edge,
-  });
-
-  final Set<String> ids;
-  final bool isUnread;
-  final Map<String, int> knownCreatedAt;
-
-  /// Where a saved position had its row, when the target is one.
-  final double? edge;
-}
-
-/// The message the timeline window was opened at.
-class _OpenedAt {
-  const _OpenedAt({
-    required this.messageId,
-    required this.createdAt,
-    required this.isUnread,
-    this.edge,
-  });
-
-  final String messageId;
-  final int createdAt;
-
-  /// The first unread message: it gets the "New messages" divider and sits
-  /// at the top of the timeline rather than near its middle.
-  final bool isUnread;
-
-  /// A saved position's row goes back where it was: its bottom edge as a
-  /// fraction of the timeline's height from the bottom.
-  final double? edge;
-}
-
 /// Channel pages on screen or under other routes, oldest first.
 final _openChannelPages = <BuildContext>{};
 
@@ -399,7 +352,8 @@ class ChannelDetailPage extends HookConsumerWidget {
     // Captured per build so a send carries the quote shown when it started.
     final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
     final detailsAsync = ref.watch(channelDetailsProvider(channel.id));
-    final channelsAsync = ref.watch(channelsProvider);
+    // Only this room's entry: other rooms' messages must not rebuild it.
+    final listedEntry = ref.watch(listedChannel(channel.id));
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
     final opensThreadDirectly =
         initialThreadRootId != null &&
@@ -418,8 +372,11 @@ class ChannelDetailPage extends HookConsumerWidget {
     final initialOldestOrdinaryUnreadCreatedAtRef = useRef<int?>(null);
     final initialForcedUnreadMessageIdsRef = useRef<Set<String>>(const {});
     final didCaptureInitialReadAt = useRef(false);
-    if (readState.isReady && !didCaptureInitialReadAt.value) {
-      final channelReadAt = readState.effectiveTimestamp(channel.id);
+    // The marker kept on the device counts before the server's arrives; a
+    // later one from another device leaves the opened position as it is.
+    final channelReadAt = readState.effectiveTimestamp(channel.id);
+    final readAtKnown = readState.isReady || channelReadAt != null;
+    if (readAtKnown && !didCaptureInitialReadAt.value) {
       final ordinaryUnreadEvents = [
         for (final event
             in channelsNotifier
@@ -441,13 +398,22 @@ class ChannelDetailPage extends HookConsumerWidget {
                       0))
             event,
       ]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      // The database may know an older one than the channel list has seen.
+      final stored = channelReadAt == null
+          ? null
+          : _storedFirstUnread(
+              ref,
+              channel.id,
+              channelReadAt,
+              (id) => readState.effectiveTimestamp(msgContextKey(id)),
+            );
+      final oldest = _olderUnread(ordinaryUnreadEvents.firstOrNull, stored);
       initialOrdinaryUnreadMessageIdsRef.value = {
         for (final event in ordinaryUnreadEvents) event.id,
+        ?oldest?.id,
       };
-      initialOldestOrdinaryUnreadMessageIdRef.value =
-          ordinaryUnreadEvents.firstOrNull?.id;
-      initialOldestOrdinaryUnreadCreatedAtRef.value =
-          ordinaryUnreadEvents.firstOrNull?.createdAt;
+      initialOldestOrdinaryUnreadMessageIdRef.value = oldest?.id;
+      initialOldestOrdinaryUnreadCreatedAtRef.value = oldest?.createdAt;
       initialForcedUnreadMessageIdsRef.value = {
         for (final entry in readState.forcedUnreadContexts.entries)
           if (entry.value == channel.id && entry.key.startsWith('msg:'))
@@ -472,16 +438,17 @@ class ChannelDetailPage extends HookConsumerWidget {
               e.pubkey.toLowerCase() != currentPubkey.toLowerCase(),
         )
         .toList();
-    final baseChannel =
-        channelsAsync
-            .whenData(
-              (channels) => channels.firstWhere(
-                (candidate) => candidate.id == channel.id,
-                orElse: () => channel,
-              ),
-            )
-            .value ??
-        channel;
+    final baseChannel = listedEntry ?? channel;
+    // Formatting the window is the costly part of a build: redo it only
+    // when the events or the viewer change.
+    final timelineEvents = messagesState.value;
+    final timelineMessages = useMemoized(
+      () => formatTimeline(
+        timelineEvents ?? const [],
+        currentPubkey: currentPubkey,
+      ),
+      [timelineEvents, currentPubkey],
+    );
     final shownOwnerView = this.ownerView;
     final mergedChannel =
         detailsAsync.whenData(baseChannel.mergeDetails).value ?? baseChannel;
@@ -771,9 +738,9 @@ class ChannelDetailPage extends HookConsumerWidget {
                     initialOldestOrdinaryUnreadCreatedAtRef.value!,
               },
             )
-          // Unread messages are only known once the read state is: until
+          // Unread messages are only known once a read marker is: until
           // then a saved position could hide them.
-          : readState.isReady && savedPosition != null
+          : readAtKnown && savedPosition != null
           ? _OpenTarget(
               ids: {savedPosition.id},
               isUnread: false,
@@ -790,6 +757,20 @@ class ChannelDetailPage extends HookConsumerWidget {
     );
     final openedAt = useRef<_OpenedAt?>(null);
     final didStartOpening = useRef(false);
+    final openRetries = useState(0);
+    final openRetry = useRef<Timer?>(null);
+    useEffect(
+      () =>
+          () => openRetry.value?.cancel(),
+      const [],
+    );
+    final holdsForNewerRows = _useNewerRowsHold(
+      notifier: messagesNotifier,
+      hasOpenTarget: openTarget != null,
+      connected: sessionStatus == SessionStatus.connected,
+      listedLastMessageAt: resolvedChannel.lastMessageAt,
+      events: messagesState.value,
+    );
     // Without newer pages there is no window to open at: draw the newest rows
     // now rather than after the message is found.
     useEffect(() {
@@ -828,7 +809,8 @@ class ChannelDetailPage extends HookConsumerWidget {
               target.knownCreatedAt[id] ??
               (loaded.where((event) => event.id == id).firstOrNull ??
                       messagesNotifier.deepLinkEvent(id))
-                  ?.createdAt;
+                  ?.createdAt ??
+              _storedCreatedAt(ref, channel.id, id);
           // Wait for the by-id load before giving up on a target.
           if (createdAt == null && deepLinkLoads.value == 0) return null;
           if (createdAt != null) anchors.add((id: id, createdAt: createdAt));
@@ -863,11 +845,24 @@ class ChannelDetailPage extends HookConsumerWidget {
               roomPositions?.clear(channel.id);
             }
           }
+          if (!opened &&
+              target != null &&
+              ref.read(relaySessionProvider).status ==
+                  SessionStatus.connected) {
+            // Stay out of sight and ask again; never the newest rows first.
+            openRetry.value = Timer(_openRetryDelay, () {
+              if (!context.mounted) return;
+              if (openPhase.value != _OpenPhase.opening) return;
+              didStartOpening.value = false;
+              openRetries.value++;
+            });
+            return;
+          }
           openPhase.value = opened ? _OpenPhase.positioning : _OpenPhase.none;
         }),
       );
       return null;
-    }, [deepLinkLoads.value, messagesState.value]);
+    }, [deepLinkLoads.value, messagesState.value, openRetries.value]);
     final isOpenedAtMessage =
         openPhase.value == _OpenPhase.positioning ||
         openPhase.value == _OpenPhase.opened;
@@ -1218,6 +1213,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                                     showInitialConnectionSkeleton ||
                                     showConnectionSkeleton.value ||
                                     messagesState.isLoading ||
+                                    holdsForNewerRows ||
                                     openPhase.value == _OpenPhase.opening ||
                                     openPhase.value == _OpenPhase.positioning,
                                 shimmerEnabled:
@@ -1246,13 +1242,11 @@ class ChannelDetailPage extends HookConsumerWidget {
                                     ),
                                   ),
                                   data: (events) {
-                                    if (openPhase.value == _OpenPhase.opening) {
+                                    if (openPhase.value == _OpenPhase.opening ||
+                                        holdsForNewerRows) {
                                       return const SizedBox.shrink();
                                     }
-                                    final messages = formatTimeline(
-                                      events,
-                                      currentPubkey: currentPubkey,
-                                    );
+                                    final messages = timelineMessages;
                                     final summaries = ref
                                         .read(
                                           channelMessagesProvider(

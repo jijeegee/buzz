@@ -4,6 +4,33 @@ import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'window_anchor.dart';
 
+/// One NIP-CW window page of [channelId]: the newest without a [cursor];
+/// older pages run back from it (`until` + `before_id`), newer pages forward
+/// from it (`since` + `after_id`).
+NostrFilter channelWindowFilter(
+  String channelId,
+  ChannelPageCursor? cursor, {
+  WindowPageDirection direction = WindowPageDirection.older,
+  int limit = 50,
+}) {
+  final newer = direction == WindowPageDirection.newer;
+  return NostrFilter(
+    kinds: EventKind.channelTimelineContentKinds,
+    tags: {
+      '#h': [channelId],
+    },
+    limit: limit,
+    until: newer ? null : cursor?.createdAt,
+    since: newer ? cursor?.createdAt : null,
+    extensions: {
+      'top_level': true,
+      'include_summaries': true,
+      'include_aux': true,
+      if (cursor != null) newer ? 'after_id' : 'before_id': cursor.eventId,
+    },
+  );
+}
+
 class ChannelPageCursor {
   final int createdAt;
   final String eventId;
@@ -462,6 +489,68 @@ ChannelWindowStore reopenNewerChannelWindowEdge(ChannelWindowStore current) {
     liveOverlay: current.liveOverlay,
     liveAux: current.liveAux,
     liveThreadSummaries: current.liveThreadSummaries,
+  );
+}
+
+/// Holds back the [arriving] rows newer than every row a window opened at
+/// the newest row shows: the window becomes one opened at its newest shown
+/// row, so they wait past a gap (behind the Latest button) instead of moving
+/// the rows on screen. Kept as it is when none is newer, for a window opened
+/// at a message, and for one with no rows.
+ChannelWindowStore holdNewerChannelWindow(
+  ChannelWindowStore current,
+  Iterable<NostrEvent> arriving,
+) {
+  if (current.isMiddle || current.pages.isEmpty) return current;
+  NostrEvent? newest;
+  for (final event in [
+    for (final page in current.pages)
+      for (final row in page.rows) row.event,
+    ...current.liveOverlay.where(_isMainTimelineRow),
+  ]) {
+    if (newest == null || _compareRelayOrder(event, newest) < 0) {
+      newest = event;
+    }
+  }
+  if (newest == null) return current;
+  final shown = newest;
+  if (!arriving.any(
+    (event) =>
+        EventKind.channelTimelineContentKinds.contains(event.kind) &&
+        _isMainTimelineRow(event) &&
+        _compareRelayOrder(event, shown) < 0,
+  )) {
+    return current;
+  }
+  final at = windowAnchorCursor(
+    createdAt: newest.createdAt,
+    eventId: newest.id,
+  );
+  final anchor = ChannelPageCursor(
+    createdAt: at.createdAt,
+    eventId: at.eventId,
+  );
+  final first = current.pages.first;
+  return _placeLive(
+    ChannelWindowStore(
+      pages: [
+        ChannelWindowPage(
+          startCursor: anchor,
+          rows: first.rows,
+          aux: first.aux,
+          nextCursor: first.nextCursor,
+          hasMore: first.hasMore,
+        ),
+        ...current.pages.skip(1),
+      ],
+      anchorCursor: anchor,
+      hasNewer: true,
+      newerCursor: anchor,
+      liveOverlay: const [],
+      liveAux: current.liveAux,
+      liveThreadSummaries: current.liveThreadSummaries,
+    ),
+    [...current.liveOverlay, ...current.heldLive],
   );
 }
 

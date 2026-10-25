@@ -2,20 +2,31 @@ import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
 import 'dart:async';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:hooks_riverpod/misc.dart' show Override;
+import 'package:kuzz/features/channels/channel_live_events.dart';
+import 'package:kuzz/features/channels/channel_messages_provider.dart';
+import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/room_goals_provider.dart';
 import 'package:kuzz/features/goals/goal_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/message_db/coverage.dart';
+import 'package:kuzz/shared/message_db/message_db.dart';
+import 'package:kuzz/shared/message_db/message_db_writer.dart';
+import 'package:kuzz/shared/message_db/message_store.dart';
 
 part 'channels_provider_live_cases.dart';
 part 'channels_provider_terminal_cases.dart';
+part 'channels_provider_room_store_cases.dart';
+part 'channels_provider_catch_up_cases.dart';
 
 /// Tests for [ChannelsNotifier] in the pure-Nostr world.
 ///
@@ -1610,6 +1621,8 @@ void main() {
 
   _liveSubscriptionTests();
   _terminalSubscriptionTests();
+  _roomStoreFeedTests();
+  _roomCatchUpTests();
 
   test('retains channel-list member snapshots for immediate reuse', () async {
     final joinedAt = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);
@@ -2540,6 +2553,7 @@ ProviderContainer _buildContainer({
   required _FakeRelaySession session,
   ReadStateNotifier Function() readState = _ReadyReadState.new,
   ChannelMutesNotifier Function()? mutes,
+  List<Override> overrides = const [],
 }) {
   return ProviderContainer(
     retry: (_, _) => null,
@@ -2551,6 +2565,7 @@ ProviderContainer _buildContainer({
       // Route the pubkey through a mutable notifier so tests can switch the
       // signing identity mid-flight the way an account change does at runtime.
       myPubkeyProvider.overrideWith((ref) => ref.watch(_testPubkeyProvider)),
+      ...overrides,
     ],
   );
 }
@@ -2646,6 +2661,11 @@ class _FakeRelaySession extends RelaySessionNotifier {
 
   final List<NostrFilter> historyFilters = [];
   final List<List<NostrFilter>> queryBatches = [];
+
+  /// Reconnect catch-up queries of the channel list's rooms, and what each
+  /// returns (nothing by default).
+  final List<NostrFilter> catchUpFilters = [];
+  List<NostrEvent> Function(NostrFilter filter)? catchUpResults;
   Object? messageBatchError;
   Object? latestBatchError;
   Object? messageHistoryError;
@@ -2903,7 +2923,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
         _hiddenDmStarted = null;
         await paused.future;
       }
-      return hiddenDmEvents;
+      return List.of(hiddenDmEvents);
     }
     if (filter.kinds.contains(EventKind.huddleStarted)) {
       // Claim the parked slot so the newer refresh's own Huddle query runs
@@ -2916,7 +2936,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
         _huddleStartsStarted = null;
         await paused.future;
       }
-      return huddleStarts;
+      return List.of(huddleStarts);
     }
     if (filter.kinds.contains(39000)) {
       final ids = filter.tags['#d']?.toSet();
@@ -2929,7 +2949,8 @@ class _FakeRelaySession extends RelaySessionNotifier {
     // Per-filter websocket fallback of a message batch.
     messageHistoryCount++;
     if (messageHistoryError case final error?) throw error;
-    return const [];
+    // Growable: room history sorts what it gets.
+    return <NostrEvent>[];
   }
 
   @override
@@ -3005,6 +3026,12 @@ class _FakeRelaySession extends RelaySessionNotifier {
         return const [];
       }
       return filter.until == null ? directorySnapshot : const [];
+    }
+    if (filters case [final filter]
+        when filter.since != null &&
+            filter.kinds.contains(EventKind.channelThreadSummary)) {
+      catchUpFilters.add(filter);
+      return catchUpResults?.call(filter) ?? const [];
     }
     queryBatches.add(filters);
     if (messageBatchError case final error?) throw error;

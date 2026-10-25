@@ -15,8 +15,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   /// to reconcile membership changes without downloading the global directory.
   Future<void> _subscribeLive(
     List<Channel> channels,
-    _ChannelRefreshFence fence,
-  ) {
+    _ChannelRefreshFence fence, {
+    bool catchUpUnread = true,
+  }) {
     final channelIds = {
       for (final channel in channels)
         if (channel.isMember && !channel.isArchived) channel.id,
@@ -38,6 +39,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         subscriptionVersion,
         channels,
         fence,
+        catchUpUnread: catchUpUnread,
       ),
     );
     _liveSubscriptionQueue = sync
@@ -60,14 +62,21 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     String relayBaseUrl,
     int subscriptionVersion,
     List<Channel> channels,
-    _ChannelRefreshFence fence,
-  ) async {
+    _ChannelRefreshFence fence, {
+    required bool catchUpUnread,
+  }) async {
     if (!_lifecycleRef.mounted) return;
     fence.ensureCurrent();
     if (_lifecycleRef.read(relaySessionProvider).status !=
             SessionStatus.connected ||
         subscriptionVersion != _subscriptionVersion) {
       return;
+    }
+    final scope = _catchUpScope;
+    if (scope != null) {
+      _catchUp.store = _lifecycleRef.read(channelRoomStoreProvider);
+      // Not awaited: subscribing never waits for the database.
+      unawaited(_startWatermark(scope));
     }
 
     if (_subscriptionRelayBaseUrl != relayBaseUrl) {
@@ -99,7 +108,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       try {
         final unsubscribe = await session.subscribe(
           NostrFilter(
-            kinds: EventKind.channelEventKinds,
+            kinds: _globalLiveEventKinds,
             tags: {'#h': chunk},
             limit: 0,
           ),
@@ -112,8 +121,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 !_desiredLiveChannelIds.contains(event.channelId)) {
               return;
             }
-            _handleLiveEvent(event);
-            _lifecycleRef.read(channelLiveEventsProvider).emit(event);
+            _ingestLiveEvent(event);
           },
           onClosed: (message) =>
               _handleLiveChunkClosed(chunkKey, generation, message),
@@ -161,12 +169,17 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     }
 
     fence.ensureCurrent();
-    unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+    if (catchUpUnread) {
+      unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+    }
+    _publishFedRooms();
+    // Every chunk is subscribed: what a reconnect missed can be fetched now.
+    unawaited(_runRoomCatchUp());
 
     _backstopTimer?.cancel();
     _backstopTimer = Timer.periodic(
       ChannelsNotifier._backstopInterval,
-      (_) => _backstopRefresh(),
+      (_) => _backstopRefresh(catchUpUnread: false),
     );
   }
 
@@ -183,6 +196,8 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     ).any((chunk) => _liveChunkKey(chunk) == chunkKey)) {
       _terminallyClosedLiveChunks.add(chunkKey);
     }
+    // Its rooms recover on their own until a chunk covers them again.
+    _publishFedRooms();
     debugPrint(
       '[ChannelsNotifier] live subscription closed by relay: $message',
     );
@@ -227,6 +242,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       _liveSubscriptionsByChunk.remove(entry.key);
       entry.value.unsubscribe?.call();
     }
+    _publishFedRooms();
   }
 
   void _clearRetainedLiveChunks() {
@@ -244,6 +260,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     _subscriptionRelayBaseUrl = null;
     _backstopTimer?.cancel();
     _backstopTimer = null;
+    _clearCatchUpFeed();
   }
 }
 

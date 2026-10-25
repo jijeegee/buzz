@@ -1,6 +1,10 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
-use crate::{app_state::AppState, models::ThreadCursor, relay::query_relay};
+use crate::{
+    app_state::AppState,
+    message_store::record::{self, Claim},
+    models::ThreadCursor,
+};
 
 /// Conversation kinds a thread window may page (NIP-CW thread mode).
 const THREAD_ROW_KINDS: [u32; 2] = [9, 40002];
@@ -26,6 +30,9 @@ pub struct ThreadWindowPage {
     has_more: bool,
     /// Cursor for the next older page, when `has_more`.
     next_cursor: Option<ThreadCursor>,
+    /// What the page proves for the local store (from the raw bounds).
+    #[serde(skip)]
+    claim: Option<Claim>,
 }
 
 fn build_thread_window_filter(request: &ThreadWindowRequest, limit: u32) -> serde_json::Value {
@@ -63,6 +70,7 @@ fn tag_value(event: &nostr::Event, name: &str) -> Option<String> {
 fn split_thread_windows(
     events: Vec<nostr::Event>,
     requests: &[ThreadWindowRequest],
+    fetched_at: i64,
 ) -> Vec<ThreadWindowPage> {
     let mut pages = Vec::new();
     let mut segment = Vec::new();
@@ -78,14 +86,19 @@ fn split_thread_windows(
         else {
             continue;
         };
-        if !requests
+        let Some(request) = requests
             .iter()
-            .any(|r| r.channel_id == channel_id && r.root_id == root_id)
-        {
+            .find(|r| r.channel_id == channel_id && r.root_id == root_id)
+        else {
             continue;
-        }
+        };
         let bounds: serde_json::Value =
             serde_json::from_str(&event.content).unwrap_or(serde_json::Value::Null);
+        let request_cursor = request
+            .cursor
+            .as_ref()
+            .map(|c| (c.created_at, c.event_id.as_str()));
+        let claim = record::bounds_claim(&bounds, request_cursor, fetched_at);
         let has_more = bounds["has_more"].as_bool().unwrap_or(false);
         let next_cursor = bounds["next_cursor"].as_object().and_then(|cursor| {
             Some(ThreadCursor {
@@ -99,17 +112,20 @@ fn split_thread_windows(
             events,
             has_more: has_more && next_cursor.is_some(),
             next_cursor: if has_more { next_cursor } else { None },
+            claim,
         });
     }
     pages
 }
 
 /// Fetch newest-first reply pages for up to four threads in one `/query`
-/// round trip. Threads the relay skips (no access) are absent from the result.
+/// round trip, storing each with its thread coverage. Threads the relay skips
+/// (no access) are absent from the result.
 #[tauri::command]
 pub async fn get_thread_windows(
     threads: Vec<ThreadWindowRequest>,
     limit_rows: Option<u32>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<ThreadWindowPage>, String> {
     if threads.len() > MAX_BATCH_THREADS {
@@ -125,8 +141,17 @@ pub async fn get_thread_windows(
         .iter()
         .map(|thread| build_thread_window_filter(thread, limit))
         .collect();
-    let events = query_relay(&state, &filters).await?;
-    Ok(split_thread_windows(events, &threads))
+    let (events, recorder) = record::query(&app, &state, &filters).await?;
+    let pages = split_thread_windows(events, &threads, recorder.fetched_at);
+    for page in &pages {
+        recorder.thread(
+            &page.channel_id,
+            &page.root_id,
+            &page.events,
+            page.claim.clone(),
+        );
+    }
+    Ok(pages)
 }
 
 #[cfg(test)]
@@ -177,6 +202,7 @@ mod tests {
                 bounds(&keys, "c", "rb", r#"{"has_more":false,"next_cursor":null}"#),
             ],
             &[request("c", "ra"), request("c", "rb")],
+            100,
         );
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].root_id, "ra");
@@ -205,6 +231,7 @@ mod tests {
                 bounds(&keys, "c", "rx", r#"{"has_more":false}"#),
             ],
             &[request("c", "ra")],
+            100,
         );
         assert!(pages.is_empty());
     }
