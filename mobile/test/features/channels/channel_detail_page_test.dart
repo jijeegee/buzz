@@ -29,6 +29,8 @@ import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:kuzz/features/channels/channel_hash_links.dart';
 import 'package:kuzz/features/agents/owner_view/owner_view.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
+import 'package:kuzz/features/chats/chat_list_provider.dart';
+import 'package:kuzz/features/chats/chats_page.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
@@ -106,6 +108,7 @@ part 'channel_detail_page_test/thread_stored_open_tests.dart';
 part 'channel_detail_page_test/room_stored_open_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
 part 'channel_detail_page_test/other_room_rebuild_tests.dart';
+part 'channel_detail_page_test/cold_chat_entry_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
 const _huddleChannelId = '8d764100-fd8f-44cf-9c98-6d8fbd739b8c';
@@ -264,6 +267,8 @@ Widget _buildTestable({
   ReadStateNotifier? readStateNotifier,
   _FakeMessagesNotifier? messagesNotifier,
   bool realMessages = false,
+  bool realChannels = false,
+  Future<ChannelDetails> Function()? loadChannelDetails,
   RelayInfo? relayInfo,
   _FakeTypingNotifier? typingNotifier,
   _FakeTypingNotifier? huddleTypingNotifier,
@@ -325,11 +330,14 @@ Widget _buildTestable({
       profileProvider.overrideWith(() => _FakeProfileNotifier()),
       if (presenceCache != null)
         presenceCacheProvider.overrideWith(() => presenceCache),
-      channelsProvider.overrideWith(() => fakeChannelsNotifier),
+      if (!realChannels)
+        channelsProvider.overrideWith(() => fakeChannelsNotifier),
       channelStarsProvider.overrideWith(_FakeChannelStarsNotifier.new),
       channelMutesProvider.overrideWith(_FakeChannelMutesNotifier.new),
       channelDetailsProvider(_channelId).overrideWith(
-        (ref) async => ChannelDetails.fromChannel(resolvedChannel),
+        (ref) async => loadChannelDetails != null
+            ? loadChannelDetails()
+            : ChannelDetails.fromChannel(resolvedChannel),
       ),
       channelCanvasProvider(_channelId).overrideWith(
         (ref) async => ChannelCanvas(
@@ -551,6 +559,7 @@ void main() {
   roomStoredOpenTests();
   ownerViewTests();
   otherRoomRebuildTests();
+  coldChatEntryTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
     _testPrefs = await SharedPreferences.getInstance();

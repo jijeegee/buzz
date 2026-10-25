@@ -180,7 +180,6 @@ class ThreadDetailPage extends HookConsumerWidget {
     );
     final relayReplyState = ref.watch(threadRepliesProvider(repliesArgs));
     final repliesState = ref.watch(threadRepliesWithLocalProvider(repliesArgs));
-    final relayRepliesAvailable = relayReplyState.value != null;
     // The thread query is one-shot and asks only for content kinds, so a
     // reaction, edit, or deletion that lands while the thread is open never
     // reaches it — a new pill (and its burst) only showed up after leaving and
@@ -196,6 +195,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     // channel store still caches but the page dropped (deleted meanwhile), or
     // one older than the window with a gap before it, must not come back.
     final windowState = ref.watch(threadWindowProvider(repliesArgs))?.state;
+    final relayRepliesAvailable =
+        relayReplyState.value != null || windowState != null;
     final windowNotifier = ref.read(threadWindowProvider(repliesArgs).notifier);
     // Replies after the loaded ones remain on the relay: the window was opened
     // at a reply and has not paged up to the newest one yet.
@@ -215,11 +216,10 @@ class ThreadDetailPage extends HookConsumerWidget {
             currentPubkey: currentPubkey,
           );
     final hasFetchedReplies = fetchedReplies != null;
-    // A terminal query error cannot produce a more authoritative list. Keep
-    // loading states provisional, but let the hydrated route snapshot drive
-    // the one-shot target jump when the relay query has definitively failed.
+    // A stored window can position immediately while its query refreshes.
+    // Without one, keep loading provisional until data or a terminal error.
     final canUseMessagesForInitialTarget =
-        relayReplyState.value != null ||
+        relayRepliesAvailable ||
         (relayReplyState.hasError && !relayReplyState.retrying);
     final liveDeletionHidesHead = _isDeletedBy(
       liveChannelEvents,
