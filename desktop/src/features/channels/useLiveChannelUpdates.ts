@@ -25,8 +25,9 @@ import {
   shouldNotifyForEvent,
 } from "@/features/notifications/lib/shouldNotify";
 import { relayClient } from "@/shared/api/relayClient";
+import { buildChannelLiveFilter } from "@/shared/api/relayChannelFilters";
+import { uiKindsOnly } from "@/shared/api/messageStoreLive";
 import {
-  CHANNEL_EVENT_KINDS,
   CHANNEL_MESSAGE_EVENT_KINDS,
   HOME_MENTION_EVENT_KINDS,
   KIND_DELETION,
@@ -517,17 +518,12 @@ export function useLiveChannelUpdates(
         activeSubs.set(channelId, entry);
         entry.pending = relayClient
           .subscribeLive(
-            {
-              kinds: [...CHANNEL_EVENT_KINDS],
-              "#h": [channelId],
-              limit: 1000,
-              since: Math.floor(Date.now() / 1_000),
-            },
-            (event) => {
+            buildChannelLiveFilter(channelId),
+            uiKindsOnly((event) => {
               if (activeSubs.get(channelId) === entry) {
                 handleIncomingMessage(withChannelTagFallback(event, channelId));
               }
-            },
+            }),
             undefined,
             undefined,
             entry.controller.signal,

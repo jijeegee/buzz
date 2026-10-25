@@ -387,3 +387,13 @@ fn orphan_cleanup_keeps_listed_accounts() {
         .collect();
     assert_eq!(left, HashSet::from([names[0].clone(), names[3].clone()]));
 }
+
+#[test]
+fn sync_kinds_match_the_shared_list() {
+    // `kinds.ts` (CHANNEL_SYNC_KINDS) is checked against the same file.
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("testdata/sync_kinds.json");
+    let shared: Value = serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    let kinds: Vec<u32> = serde_json::from_value(shared["kinds"].clone()).unwrap();
+    assert_eq!(kinds, super::SYNC_KINDS.to_vec());
+    assert_eq!(shared["version"], super::SYNC_KINDS_VERSION);
+}
