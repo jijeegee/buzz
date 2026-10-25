@@ -148,7 +148,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     );
     final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
     final appView = View.of(context);
-    final composerDockHeight = useState(0.0);
+    final composerDockHeight = useState<double?>(null);
     final composerFocusNode = useFocusNode();
     final restoreComposerFocus = useRef<VoidCallback?>(null);
     final settledImeBottomInset = useState(
@@ -403,7 +403,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     );
     final isOpenHidden =
         openPhase.value == _ThreadOpenPhase.opening ||
-        openPhase.value == _ThreadOpenPhase.positioning;
+        openPhase.value == _ThreadOpenPhase.positioning ||
+        composerDockHeight.value == null;
     final supportsOpenAt = useState<bool?>(null);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
@@ -608,13 +609,13 @@ class ThreadDetailPage extends HookConsumerWidget {
     // A reversed list measures from its bottom padding, so changing it moves
     // every reply on screen. Follow the dock and keyboard only at the newest
     // reply; while reading above it, keep the inset it had when it left.
-    final liveBottomInset = composerDockHeight.value + settledImeLift;
+    final liveBottomInset = (composerDockHeight.value ?? 0) + settledImeLift;
     final detachedBottomInset = useRef(liveBottomInset);
     if (isAtLatest.value) detachedBottomInset.value = liveBottomInset;
     final timelineBottomInset = isAtLatest.value
         ? liveBottomInset
         : detachedBottomInset.value;
-    final navigationBottomInset = composerDockHeight.value + settledImeLift;
+    final navigationBottomInset = liveBottomInset;
 
     final isPositioning = openPhase.value == _ThreadOpenPhase.positioning;
     final isOpenedWindow =
@@ -1266,8 +1267,7 @@ class ThreadDetailPage extends HookConsumerWidget {
 
     void updateComposerDockHeight(double height) {
       listViewport.reportAfterLayout();
-      if ((height - composerDockHeight.value).abs() < 0.5) return;
-      composerDockHeight.value = height;
+      _setDockHeight(composerDockHeight, height);
     }
 
     useEffect(() {

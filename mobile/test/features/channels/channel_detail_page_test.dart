@@ -34,6 +34,7 @@ import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
+import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/features/channels/channel_window.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_storage.dart';
@@ -76,6 +77,10 @@ import 'package:kuzz/shared/deeplink/pending_deep_link_provider.dart';
 import 'package:kuzz/shared/emoji/emoji_burst.dart';
 import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
 import 'package:kuzz/shared/huddle/huddle.dart';
+import 'package:kuzz/shared/message_db/coverage.dart';
+import 'package:kuzz/shared/message_db/event_rows.dart';
+import 'package:kuzz/shared/message_db/message_db.dart';
+import 'package:kuzz/shared/message_db/message_store.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/app_list_card.dart';
@@ -97,6 +102,7 @@ part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
+part 'channel_detail_page_test/thread_stored_open_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
 part 'channel_detail_page_test/other_room_rebuild_tests.dart';
 
@@ -540,6 +546,7 @@ void main() {
   quoteTests();
   openAtTests();
   threadOpenAtTests();
+  threadStoredOpenTests();
   ownerViewTests();
   otherRoomRebuildTests();
   setUp(() async {

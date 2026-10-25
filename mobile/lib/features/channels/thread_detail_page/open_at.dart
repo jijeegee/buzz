@@ -145,3 +145,12 @@ RoomPositionReading? _threadReadingPosition(
     edge: reading.itemLeadingEdge,
   );
 }
+
+/// Keeps [dock] at the composer dock's measured [height]. Null until the
+/// first report, and the list stays out of sight until then: a list shown
+/// first without the dock's padding would move every reply when it came.
+void _setDockHeight(ValueNotifier<double?> dock, double height) {
+  final previous = dock.value;
+  if (previous != null && (height - previous).abs() < 0.5) return;
+  dock.value = height;
+}

@@ -95,6 +95,11 @@ List<NostrEvent> _threadWindowRows(
 /// Stores a thread window's [events] and the coverage they prove for the
 /// thread-window stream. [hasMore] is null when the page's bounds are not at
 /// hand (a preload): the rows then only prove the span between them.
+///
+/// [liveFrom] is the room's open live range when it stayed the same from
+/// before the request until now ([fedLiveFrom]): a newest page then also
+/// proves the stretch between its newest row and that range, since anything
+/// sent there later reached this device through the live feed.
 void recordThreadWindowPage(
   Ref ref,
   ThreadRepliesArgs thread,
@@ -102,8 +107,9 @@ void recordThreadWindowPage(
   ThreadWindowCursor? start,
   WindowPageDirection direction = WindowPageDirection.older,
   bool? hasMore,
+  int? liveFrom,
 }) {
-  final claim = windowPageClaim(
+  var claim = windowPageClaim(
     channelId: thread.channelId,
     stream: CoverageStream.threadWindow(thread.rootId),
     rows: _threadWindowRows(thread.rootId, events).map(_cursorOf),
@@ -113,40 +119,95 @@ void recordThreadWindowPage(
     newer: direction == WindowPageDirection.newer,
     hasMore: hasMore ?? true,
   );
+  if (liveFrom != null &&
+      start == null &&
+      direction == WindowPageDirection.older) {
+    claim = _reachingLive(
+      claim?.range ?? (hasMore == false ? _emptyThread : null),
+      thread,
+      CoverageStream.threadWindow(thread.rootId),
+      liveFrom,
+    );
+  }
   _recordPage(ref, thread.channelId, events, claims: [?claim]);
 }
 
 /// Stores a complete scan of a thread's [replies]: every reply up to the
-/// newest one's second, for both thread streams.
+/// newest one's second, for both thread streams, and on to the room's open
+/// live range when [liveFrom] (as for [recordThreadWindowPage]) is given.
 void recordCompleteThread(
   Ref ref,
   ThreadRepliesArgs thread,
-  List<NostrEvent> replies,
-) {
-  final claims = completeThreadClaims(thread, replies);
+  List<NostrEvent> replies, {
+  int? liveFrom,
+}) {
+  final claims = completeThreadClaims(thread, replies, liveFrom: liveFrom);
   _recordPage(ref, thread.channelId, replies, claims: claims);
 }
 
 List<CoverageClaim> completeThreadClaims(
   ThreadRepliesArgs thread,
-  List<NostrEvent> replies,
-) {
+  List<NostrEvent> replies, {
+  int? liveFrom,
+}) {
   var newest = -1;
   for (final reply in replies) {
     if (reply.createdAt > newest) newest = reply.createdAt;
   }
-  if (newest < 0) return const [];
-  final range = CoverageRange(
-    CoverageCursor.start,
-    CoverageCursor.endOfSecond(newest),
-  );
+  final range = newest < 0
+      ? (liveFrom == null ? null : _emptyThread)
+      : CoverageRange(CoverageCursor.start, CoverageCursor.endOfSecond(newest));
+  if (range == null) return const [];
   return [
     for (final stream in [
       CoverageStream.thread(thread.rootId),
       CoverageStream.threadWindow(thread.rootId),
     ])
-      CoverageClaim(channelId: thread.channelId, stream: stream, range: range),
+      ?liveFrom == null
+          ? CoverageClaim(
+              channelId: thread.channelId,
+              stream: stream,
+              range: range,
+            )
+          : _reachingLive(range, thread, stream, liveFrom),
   ];
+}
+
+/// A thread with no replies, before its range is stretched to the live one.
+const _emptyThread = CoverageRange(CoverageCursor.start, CoverageCursor.start);
+
+/// [range] stretched up to the room's live range opened at [liveFrom].
+CoverageClaim? _reachingLive(
+  CoverageRange? range,
+  ThreadRepliesArgs thread,
+  String stream,
+  int liveFrom,
+) {
+  if (range == null) return null;
+  final live = CoverageCursor.endOfSecond(liveFrom - 1);
+  return CoverageClaim(
+    channelId: thread.channelId,
+    stream: stream,
+    range: CoverageRange(range.lo, range.hi < live ? live : range.hi),
+  );
+}
+
+/// [channelId]'s open live range when the channel list's live feed covers
+/// it now. Read before a request and again with its response: an unchanged
+/// value says the feed kept the room complete from it on throughout.
+int? fedLiveFrom(Ref ref, String channelId) {
+  final scope = _scope(ref);
+  if (scope == null) return null;
+  try {
+    if (ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      return null;
+    }
+    final store = ref.read(channelRoomStoreProvider);
+    if (!store.feeds(scope, channelId)) return null;
+    return store.liveFromOf(scope, channelId);
+  } catch (_) {
+    return null;
+  }
 }
 
 /// Stores events loaded without a coverage claim (by id, or from the legacy
