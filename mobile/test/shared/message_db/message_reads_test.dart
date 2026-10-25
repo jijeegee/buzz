@@ -341,6 +341,64 @@ void main() {
     });
   });
 
+  group('first stored row after a read marker', () {
+    bool all(NostrEvent row) => true;
+
+    setUp(() {
+      write([
+        testEvent('before', createdAt: 10),
+        testEvent('mine', createdAt: 20),
+        testEvent('theirs', createdAt: 30),
+        testReply('reply', 'before', createdAt: 25),
+      ]);
+    });
+
+    test('the first counting main row inside the range holding the marker', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      final first = readFirstStoredAfter(
+        db,
+        testChannel,
+        15,
+        (row) => row.id != 'mine',
+      );
+      expect(first.known, isTrue);
+      expect(first.row?.id, 'theirs');
+    });
+
+    test('rows at the marker second are read', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      expect(readFirstStoredAfter(db, testChannel, 20, all).row?.id, 'theirs');
+    });
+
+    test('none counting: known only when the range reaches live', () {
+      write(const [], claims: [claim(CoverageCursor.start, at(30, 'theirs'))]);
+      bool none(NostrEvent row) => false;
+      expect(readFirstStoredAfter(db, testChannel, 15, none).known, isFalse);
+      final live = readFirstStoredAfter(
+        db,
+        testChannel,
+        15,
+        none,
+        liveFrom: 30,
+      );
+      expect(live.known, isTrue);
+      expect(live.row, isNull);
+    });
+
+    test('a marker outside every stored range is unknown', () {
+      write(const [], claims: [claim(at(25), at(30, 'theirs'))]);
+      final first = readFirstStoredAfter(db, testChannel, 15, all);
+      expect(first.known, isFalse);
+      expect(first.row, isNull);
+    });
+
+    test('created_at of a stored main row', () {
+      expect(readStoredCreatedAt(db, testChannel, 'theirs'), 30);
+      expect(readStoredCreatedAt(db, testChannel, 'reply'), isNull);
+      expect(readStoredCreatedAt(db, testChannel, 'missing'), isNull);
+    });
+  });
+
   group('store reader', () {
     const scope = MessageScope(relayUrl: 'https://one.example', pubkey: 'a');
     late MessageStore store;

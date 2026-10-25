@@ -65,7 +65,9 @@ extension _RoomReconnect on ChannelMessagesNotifier {
       return;
     }
     _awaitingCatchUp = false;
-    for (final event in catchUp.events[channelId] ?? const <NostrEvent>[]) {
+    final events = catchUp.events[channelId] ?? const <NostrEvent>[];
+    _holdCatchUpRows(events);
+    for (final event in events) {
       _handleLiveEvent(event);
     }
     if (catchUp.gaps.contains(channelId)) {

@@ -205,6 +205,52 @@ StoredTimelinePage? readNewerStoredPage(
   return null;
 }
 
+/// What the stored main timeline proves about [channelId]'s first row after
+/// [readAt] (a read marker, in seconds) that [counts]: [StoredFirstAfter.known]
+/// when the range holding the marker runs complete up to that row, or up to
+/// the open live range with no such row ([StoredFirstAfter.row] null).
+StoredFirstAfter readFirstStoredAfter(
+  Database db,
+  String channelId,
+  int readAt,
+  bool Function(NostrEvent row) counts, {
+  int? liveFrom,
+  int limit = 200,
+}) {
+  final after = CoverageCursor.endOfSecond(readAt);
+  for (final range in storedCoverage(db, channelId, liveFrom: liveFrom)) {
+    if (!(range.lo <= after && after < range.hi)) continue;
+    final rows = _rowsIn(
+      db,
+      channelId,
+      CoverageStream.main,
+      range,
+      after: after,
+      limit: limit,
+    );
+    for (final row in rows) {
+      if (counts(row)) return (known: true, row: row);
+    }
+    final complete = rows.length < limit && range.hi == _openEnd;
+    return (known: complete, row: null);
+  }
+  return (known: false, row: null);
+}
+
+/// See [readFirstStoredAfter].
+typedef StoredFirstAfter = ({bool known, NostrEvent? row});
+
+/// When stored main-timeline row [id] of [channelId] was sent, or null when
+/// it is not stored (or deleted).
+int? readStoredCreatedAt(Database db, String channelId, String id) {
+  final result = db.select(
+    'SELECT created_at FROM events WHERE id = ? AND channel_id = ? '
+    "AND stream = '' AND deleted = 0",
+    [id, channelId],
+  );
+  return result.isEmpty ? null : result.single['created_at'] as int;
+}
+
 /// Whether [channelId]'s newest message, sent at [latestAt], is stored with
 /// a complete range under it.
 bool isStoredThroughIn(

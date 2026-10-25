@@ -338,7 +338,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     final readState = ref.watch(readStateProvider);
     // The unread replies of a top-level thread as it opens.
     final initialUnreadReplies = useRef<List<ObservedUnreadEvent>?>(null);
-    if (initialUnreadReplies.value == null && readState.isReady) {
+    if (initialUnreadReplies.value == null &&
+        _readAtKnown(readState, channelId)) {
       final channelReadAt = readState.effectiveTimestamp(channelId);
       initialUnreadReplies.value =
           threadHead.rootId != null
@@ -386,10 +387,9 @@ class ThreadDetailPage extends HookConsumerWidget {
           isUnread: true,
         );
       }
-      // Unread replies are only known once the read state is: until then a
-      // saved position could hide them.
+      // A saved position waits for the read marker: it could hide unread.
       final saved = savedPosition;
-      if (!readState.isReady || saved == null) return null;
+      if (!_readAtKnown(readState, channelId) || saved == null) return null;
       return _ThreadOpenTarget(
         id: saved.id,
         createdAt: saved.createdAt,
@@ -408,6 +408,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     final supportsOpenAt = useState<bool?>(null);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
+    final retry = _useThreadOpenRetry(ref);
     final openedCreatedAt = useRef<int?>(null);
     // Bumped when this page replaces the window, so its list is drawn anew.
     final listGeneration = useState(0);
@@ -478,10 +479,7 @@ class ThreadDetailPage extends HookConsumerWidget {
               .catchError((Object _) => false)
               .then((opened) {
                 if (!context.mounted) return;
-                if (!opened) {
-                  openPhase.value = _ThreadOpenPhase.none;
-                  return;
-                }
+                if (!opened) return retry.failed(openPhase, didStartOpening);
                 // A saved reply deleted since is not remembered any longer.
                 final events = ref.read(threadWindowProvider(repliesArgs));
                 if (target.edge != null &&
@@ -498,6 +496,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         supportsOpenAt.value,
         canUseMessagesForInitialTarget,
         relayRepliesAvailable,
+        retry.retries,
       ],
     );
     // The window shows once the thread query is in too; a query that failed

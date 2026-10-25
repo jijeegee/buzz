@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/channel_room_store.dart';
+import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/shared/message_db/coverage.dart';
 import 'package:kuzz/shared/message_db/event_rows.dart';
 import 'package:kuzz/shared/message_db/message_db.dart';
@@ -40,6 +41,9 @@ void main() {
         relaySessionProvider.overrideWith(() => session),
         messageScopeProvider.overrideWithValue(_scope),
         messageStoreProvider.overrideWithValue(messages),
+        relayInfoProvider.overrideWith(
+          (ref) async => RelayInfo(supportedExtensions: {newerWindowExtension}),
+        ),
       ],
     );
   });
@@ -206,6 +210,103 @@ void main() {
     expect(ids(), ['a']);
     expect(session.queryFilters, isEmpty);
   });
+
+  group('opening at a message', () {
+    final rows = [
+      for (var n = 1; n <= 6; n++) _event(String.fromCharCode(96 + n), n * 10),
+    ];
+
+    ChannelMessagesNotifier notifier() =>
+        container.read(channelMessagesProvider(_channelId).notifier);
+
+    test('a stored message in a covered room opens with no request', () async {
+      await seed(
+        rows,
+        ranges: [(CoverageCursor.start, at(60, 'f'))],
+        liveFrom: 60,
+      );
+      feedRoom();
+      container.read(channelMessagesProvider(_channelId));
+      await session.subscribed;
+      await _pump();
+      final generation = notifier().windowGeneration;
+
+      expect(await notifier().openAt(createdAt: 20, eventId: 'b'), isTrue);
+      expect(session.queryFilters, isEmpty);
+      expect(notifier().isInMiddleWindow, isTrue);
+      expect(notifier().anchorId, 'b');
+      expect(notifier().hasNewer, isFalse);
+      expect(notifier().windowGeneration, generation + 1);
+      expect(ids(), ['a', 'b', 'c', 'd', 'e', 'f']);
+
+      // Back to the newest rows: the covered room needs no request either.
+      expect(await notifier().jumpToLatest(), isTrue);
+      expect(session.queryFilters, isEmpty);
+      expect(notifier().isInMiddleWindow, isFalse);
+      expect(ids(), ['a', 'b', 'c', 'd', 'e', 'f']);
+    });
+
+    test('a room still being checked opens at once; what was sent meanwhile '
+        'waits behind the newer edge', () async {
+      await seed(rows, ranges: [(CoverageCursor.start, at(60, 'f'))]);
+      final gate = Completer<void>();
+      session.gate = gate;
+      session.queryResults.add([_event('g', 70)]);
+      container.read(channelMessagesProvider(_channelId));
+      await session.subscribed;
+      await _pump();
+      expect(notifier().isShowingCachedHead, isTrue);
+
+      expect(await notifier().openAt(createdAt: 20, eventId: 'b'), isTrue);
+      // Only the check since the newest stored row went out.
+      expect(session.queryFilters, hasLength(1));
+      expect(session.queryFilters.single.since, 60);
+      expect(notifier().isInMiddleWindow, isTrue);
+      expect(notifier().hasNewer, isTrue);
+
+      gate.complete();
+      await _pump();
+      expect(notifier().isShowingCachedHead, isFalse);
+      expect(ids(), ['a', 'b', 'c', 'd', 'e', 'f']);
+      expect([for (final e in notifier().heldLiveEvents) e.id], ['g']);
+    });
+
+    test('a message the database lacks still asks the relay', () async {
+      await seed(rows, ranges: [(at(30, 'c'), at(60, 'f'))], liveFrom: 60);
+      feedRoom();
+      container.read(channelMessagesProvider(_channelId));
+      await session.subscribed;
+      await _pump();
+      // The relay answers with nothing usable: the open fails.
+      expect(await notifier().openAt(createdAt: 15), isFalse);
+      expect(session.queryFilters, hasLength(2));
+    });
+  });
+
+  test('rows sent while the room was painted offline wait behind the newer '
+      'edge', () async {
+    await seed(
+      [_event('a', 10), _event('b', 20)],
+      ranges: [(CoverageCursor.start, at(20, 'b'))],
+    );
+    session.startOffline = true;
+    container.read(channelMessagesProvider(_channelId));
+    final notifier = container.read(
+      channelMessagesProvider(_channelId).notifier,
+    );
+    expect(ids(), ['a', 'b']);
+
+    session.queryResults.add([_event('c', 30), _event('d', 40)]);
+    session.connect();
+    await session.subscribed;
+    await _pump();
+    expect(session.queryFilters.single.since, 20);
+    expect(ids(), ['a', 'b']);
+    expect(notifier.hasNewer, isTrue);
+    expect([
+      for (final e in notifier.heldLiveEvents) e.id,
+    ], unorderedEquals(['c', 'd']));
+  });
 }
 
 NostrEvent _event(String id, int createdAt) => NostrEvent(
@@ -266,11 +367,17 @@ class _Session extends RelaySessionNotifier {
   final List<NostrFilter> queryFilters = [];
   final List<NostrFilter> historyFilters = [];
   final Completer<void> _subscribed = Completer();
+  Completer<void>? gate;
+  bool startOffline = false;
 
   Future<void> get subscribed => _subscribed.future;
 
+  void connect() => state = const SessionState(status: SessionStatus.connected);
+
   @override
-  SessionState build() => const SessionState(status: SessionStatus.connected);
+  SessionState build() => SessionState(
+    status: startOffline ? SessionStatus.disconnected : SessionStatus.connected,
+  );
 
   @override
   Future<List<NostrEvent>> queryRelay(
@@ -278,6 +385,9 @@ class _Session extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     queryFilters.addAll(filters);
+    final results = queryResults.isEmpty ? null : queryResults.removeFirst();
+    await gate?.future;
+    if (results != null) return results;
     if (queryResults.isEmpty) return const [];
     return queryResults.removeFirst();
   }

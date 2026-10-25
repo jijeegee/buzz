@@ -1,14 +1,18 @@
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/message_db/coverage.dart';
+import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/message_db/message_store.dart';
 import 'channel_messages_provider.dart';
 import 'channel_page_records.dart';
 import 'channel_room_store.dart';
 import 'channel_window.dart';
+import 'channels_provider.dart';
 import 'thread_replies_provider.dart';
 import 'thread_stored_pages.dart';
+import 'window_anchor.dart';
 
 /// Newest messages loaded per preloaded room, about one chat screen.
 const channelPreloadMessages = 20;
@@ -21,6 +25,9 @@ const maxChannelWindowsPerRequest = 12;
 
 /// The relay serves at most four thread windows per `/query`.
 const maxThreadWindowsPerRequest = 4;
+
+/// Rooms with unread messages whose read marker window is preloaded.
+const maxReadMarkerRooms = 20;
 
 /// A room or thread that failed or was skipped is not retried sooner.
 const preloadRetryAfter = Duration(minutes: 5);
@@ -69,11 +76,21 @@ NostrFilter threadPreloadFilter(ThreadRepliesArgs thread) => NostrFilter(
 Map<String, List<NostrEvent>> splitChannelWindows(
   List<NostrEvent> events,
   Iterable<String> channelIds,
+) => {
+  for (final (channelId, window) in splitChannelWindowRuns(events, channelIds))
+    channelId: window,
+};
+
+/// [splitChannelWindows] keeping every window in response order, for
+/// requests that ask one room for more than one window.
+List<(String, List<NostrEvent>)> splitChannelWindowRuns(
+  List<NostrEvent> events,
+  Iterable<String> channelIds,
 ) {
   final wanted = {
     for (final channelId in channelIds) channelId.toLowerCase(): channelId,
   };
-  final windows = <String, List<NostrEvent>>{};
+  final windows = <(String, List<NostrEvent>)>[];
   var segment = <NostrEvent>[];
   for (final event in events) {
     segment.add(event);
@@ -81,7 +98,7 @@ Map<String, List<NostrEvent>> splitChannelWindows(
     final channelId = wanted[event.getTagValue('h')?.toLowerCase()];
     final window = segment;
     segment = [];
-    if (channelId != null) windows[channelId] = window;
+    if (channelId != null) windows.add((channelId, window));
   }
   return windows;
 }
@@ -204,6 +221,133 @@ class ChannelPreloader {
     }
     await Future.wait(writes);
     return stored;
+  }
+
+  /// Loads the window around the read marker of up to [maxReadMarkerRooms]
+  /// rooms with unread messages, newest unread first, so a room opening at
+  /// its first unread message paints it at once: the older and the newer
+  /// page from the marker, [maxChannelWindowsPerRequest] windows a request.
+  /// Skips rooms that are open or loaded in memory, tried within
+  /// [preloadRetryAfter], or stored around their marker already.
+  /// [beforeRequest] as in [preloadThreads]. Resolves to the rooms stored.
+  Future<int> preloadReadMarkers({
+    Future<bool> Function()? beforeRequest,
+  }) async {
+    final scope = _ref.read(messageScopeProvider);
+    if (scope == null) return 0;
+    final targets = _readMarkerTargets(scope);
+    var loaded = 0;
+    const roomsPerRequest = maxChannelWindowsPerRequest ~/ 2;
+    for (var start = 0; start < targets.length; start += roomsPerRequest) {
+      if (beforeRequest != null && !await beforeRequest()) return loaded;
+      final chunk = targets.sublist(
+        start,
+        (start + roomsPerRequest).clamp(0, targets.length),
+      );
+      final cursors = <String, ChannelPageCursor>{};
+      final attemptedAt = _now();
+      for (final (channelId, readAt) in chunk) {
+        _attemptedAt['marker:$channelId'] = attemptedAt;
+        final anchor = windowAnchorCursor(createdAt: readAt);
+        cursors[channelId] = ChannelPageCursor(
+          createdAt: anchor.createdAt,
+          eventId: anchor.eventId,
+        );
+      }
+      final List<NostrEvent> events;
+      try {
+        events = await _ref.read(relaySessionProvider.notifier).queryRelay([
+          for (final MapEntry(key: channelId, value: cursor) in cursors.entries)
+            for (final direction in WindowPageDirection.values)
+              channelWindowFilter(channelId, cursor, direction: direction),
+        ]);
+      } catch (error) {
+        debugPrint('[ChannelPreloader] read marker preload failed: $error');
+        continue;
+      }
+      if (_ref.read(messageScopeProvider) != scope) return loaded;
+      final stored = <String>{};
+      final writes = <Future<void>>[];
+      for (final (channelId, window) in splitChannelWindowRuns(
+        events,
+        cursors.keys,
+      )) {
+        final page = _parseMarkerWindow(window, channelId, cursors[channelId]!);
+        if (page == null) continue;
+        writes.add(recordChannelWindowPage(_ref, channelId, window, page));
+        stored.add(channelId);
+      }
+      await Future.wait(writes);
+      loaded += stored.length;
+    }
+    return loaded;
+  }
+
+  /// The rooms [preloadReadMarkers] loads, with their read markers.
+  List<(String, int)> _readMarkerTargets(MessageScope scope) {
+    final readState = _ref.read(readStateProvider);
+    final unread = _ref
+        .read(channelsProvider.notifier)
+        .observedUnreadEventsByChannel;
+    final forums = {
+      for (final channel in _ref.read(channelsProvider).value ?? const [])
+        if (channel.isForum) channel.id,
+    };
+    final store = _ref.read(channelRoomStoreProvider);
+    final rooms = <(String, int, int)>[];
+    for (final MapEntry(key: channelId, value: events) in unread.entries) {
+      final readAt = readState.effectiveTimestamp(channelId);
+      if (readAt == null ||
+          forums.contains(channelId) ||
+          _recentlyAttempted('marker:$channelId') ||
+          _ref.exists(channelMessagesProvider(channelId))) {
+        continue;
+      }
+      var newest = 0;
+      for (final event in events.values) {
+        if (event.rootId == null && event.createdAt > newest) {
+          newest = event.createdAt;
+        }
+      }
+      if (newest <= readAt) continue;
+      final at = CoverageCursor(readAt, zeroEventId);
+      try {
+        if (store.readOlder(scope, channelId, at) != null &&
+            store.readNewer(scope, channelId, at) != null) {
+          continue;
+        }
+      } catch (_) {
+        // Unreadable here: load it.
+      }
+      rooms.add((channelId, readAt, newest));
+    }
+    rooms.sort((a, b) => b.$3.compareTo(a.$3));
+    return [
+      for (final (channelId, readAt, _) in rooms.take(maxReadMarkerRooms))
+        (channelId, readAt),
+    ];
+  }
+
+  /// One window of a read marker request, whichever way it runs.
+  ChannelWindowPage? _parseMarkerWindow(
+    List<NostrEvent> window,
+    String channelId,
+    ChannelPageCursor cursor,
+  ) {
+    for (final direction in WindowPageDirection.values) {
+      try {
+        return parseChannelWindowResponse(
+          window,
+          channelId,
+          cursor,
+          direction: direction,
+        );
+      } catch (_) {
+        // The other direction, or invalid.
+      }
+    }
+    debugPrint('[ChannelPreloader] invalid marker window for $channelId');
+    return null;
   }
 
   /// Loads the newest replies of threads, [maxThreadWindowsPerRequest] per

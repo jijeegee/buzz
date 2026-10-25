@@ -103,6 +103,7 @@ part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
 part 'channel_detail_page_test/thread_stored_open_tests.dart';
+part 'channel_detail_page_test/room_stored_open_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
 part 'channel_detail_page_test/other_room_rebuild_tests.dart';
 
@@ -547,6 +548,7 @@ void main() {
   openAtTests();
   threadOpenAtTests();
   threadStoredOpenTests();
+  roomStoredOpenTests();
   ownerViewTests();
   otherRoomRebuildTests();
   setUp(() async {

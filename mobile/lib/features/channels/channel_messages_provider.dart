@@ -57,6 +57,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   _StoredWindow _storedWindow = _StoredWindow.none;
   bool _storedReachesLive = false;
   NostrEvent? _storedNewest;
+  bool _paintedOffline = false;
 
   /// Rows of the pages the next newest page replaced; they leave the list
   /// unless that page still has them.
@@ -380,24 +381,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   NostrFilter _channelWindowFilter(
     ChannelPageCursor? cursor, {
     WindowPageDirection direction = WindowPageDirection.older,
-  }) {
-    final newer = direction == WindowPageDirection.newer;
-    return NostrFilter(
-      kinds: EventKind.channelTimelineContentKinds,
-      tags: {
-        '#h': [channelId],
-      },
-      limit: 50,
-      until: newer ? null : cursor?.createdAt,
-      since: newer ? cursor?.createdAt : null,
-      extensions: {
-        'top_level': true,
-        'include_summaries': true,
-        'include_aux': true,
-        if (cursor != null) newer ? 'after_id' : 'before_id': cursor.eventId,
-      },
-    );
-  }
+  }) => channelWindowFilter(channelId, cursor, direction: direction);
 
   void _handleLiveEvent(
     NostrEvent event, {
