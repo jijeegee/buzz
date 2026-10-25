@@ -59,7 +59,6 @@ class _FlakyMessageStore extends MessageStore {
 void _roomCatchUpTests() {
   group('reconnect catch-up', () {
     late Directory root;
-    late ChannelHeadCache cache;
     late _FlakyMessageStore messages;
     late ChannelRoomStore roomStore;
     late List<RoomCatchUp> catchUps;
@@ -67,13 +66,12 @@ void _roomCatchUpTests() {
 
     void openStores() {
       messages = _FlakyMessageStore(() async => '${root.path}/messages');
-      roomStore = ChannelRoomStore(cache, messages: messages);
+      roomStore = ChannelRoomStore(messages: messages);
       roomStore.listenCatchUps(catchUps.add);
     }
 
     setUp(() async {
       root = await Directory.systemTemp.createTemp('channels_catch_up');
-      cache = ChannelHeadCache(() async => Directory('${root.path}/heads'));
       catchUps = [];
       openStores();
       now = _catchUpNow;
@@ -81,7 +79,7 @@ void _roomCatchUpTests() {
     });
 
     /// When [room]'s live range starts in the database, or null: a hole.
-    Future<int?> liveFrom(ChannelHeadScope scope, String room) =>
+    Future<int?> liveFrom(MessageScope scope, String room) =>
         messages.read<int?>(
           MessageScope(relayUrl: scope.relayUrl, pubkey: scope.pubkey),
           LiveFromRead(room),
@@ -111,13 +109,12 @@ void _roomCatchUpTests() {
         session: session,
         overrides: [
           channelRoomStoreProvider.overrideWithValue(roomStore),
-          channelHeadCacheProvider.overrideWithValue(cache),
           ...overrides,
         ],
       );
       addTearDown(container.dispose);
       await container.read(channelsProvider.future);
-      final scope = container.read(channelHeadScopeProvider)!;
+      final scope = container.read(messageScopeProvider)!;
       await _eventually(() => rooms.every((id) => roomStore.feeds(scope, id)));
       return (container, session);
     }
@@ -152,15 +149,19 @@ void _roomCatchUpTests() {
       expect(filter.limit, 1000);
       expect(filter.kinds, contains(EventKind.channelThreadSummary));
       await roomStore.flush();
-      final scope = container.read(channelHeadScopeProvider)!;
+      final scope = container.read(messageScopeProvider)!;
       for (final (room, id) in [
         (_channelA, 'missed-a'),
         (_channelB, 'missed-b'),
         (_channelD, 'missed-d'),
       ]) {
-        final tail = await cache.loadTail(scope, room);
-        expect(tail!.rows.map((event) => event.id), [id]);
-        expect(tail.gap, isFalse);
+        expect(
+          messages
+              .reader(scope)!
+              .select('SELECT id FROM events WHERE channel_id = ?', [room])
+              .map((row) => row['id']),
+          [id],
+        );
       }
       expect(catchUps.single.gaps, isEmpty);
       // No room reloaded: none was even created.
@@ -193,7 +194,7 @@ void _roomCatchUpTests() {
             .map((event) => event.id);
         expect(ids, containsAll(['missed-a', 'my-pending']));
         // Its live range, started by its first page, continues.
-        final scope = container.read(channelHeadScopeProvider)!;
+        final scope = container.read(messageScopeProvider)!;
         expect(await roomStore.hasGap(scope, _channelA), isFalse);
         await roomStore.flush();
         expect(await liveFrom(scope, _channelA), isNotNull);
@@ -210,7 +211,7 @@ void _roomCatchUpTests() {
           .addLocalMessage(
             _missed(_channelA, 'my-pending', pubkey: 'me', createdAt: 999995),
           );
-      final scope = container.read(channelHeadScopeProvider)!;
+      final scope = container.read(messageScopeProvider)!;
       // Room B's newest page was fetched earlier: it has a live range.
       roomStore.clearGap(scope, _channelB);
       await roomStore.flush();
@@ -256,7 +257,7 @@ void _roomCatchUpTests() {
 
       expect(session.catchUpFilters, isEmpty);
       expect(catchUps.single.gaps, {_channelA, _channelB});
-      final scope = container.read(channelHeadScopeProvider)!;
+      final scope = container.read(messageScopeProvider)!;
       expect(await roomStore.hasGap(scope, _channelA), isTrue);
     });
 
@@ -301,7 +302,7 @@ void _roomCatchUpTests() {
         'watermark where it was', () async {
       final (container, session) = await start([_channelA, _channelB]);
       await roomStore.flush();
-      final scope = container.read(channelHeadScopeProvider)!;
+      final scope = container.read(messageScopeProvider)!;
       expect(await roomStore.loadWatermark(scope), _catchUpNow);
       session.catchUpResults = (_) => [_missed(_channelA, 'missed-a')];
       messages.failWrites = true;

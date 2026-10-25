@@ -14,7 +14,7 @@ import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
 import '../goals/goal_provider.dart';
 import 'channel.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;

@@ -5,7 +5,6 @@ import 'dart:math';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
-import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
 import '../l10n/l10n.dart';
@@ -14,7 +13,6 @@ import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
 import '../push/push_subscription.dart';
-import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
 import 'community.dart';
 import 'community_storage.dart';
@@ -382,16 +380,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       }
       await storage.remove(id);
       if (removedIndex >= 0) {
-        final relayUrl = RelayConfig(
-          baseUrl: current[removedIndex].relayUrl,
-        ).baseUrl;
-        unawaited(
-          ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
-            Object error,
-          ) {
-            developer.log('Failed to clear channel heads: $error');
-          }),
-        );
         // Only this account's stored messages: other accounts on the same
         // server keep theirs.
         final removed = current[removedIndex];

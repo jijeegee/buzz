@@ -1,7 +1,6 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/shared/message_db/coverage.dart';
 import 'package:kuzz/shared/message_db/message_db.dart';
@@ -12,7 +11,7 @@ import 'package:sqlite3/sqlite3.dart';
 
 const _roomA = 'room-a';
 const _roomB = 'room-b';
-const _scope = ChannelHeadScope(relayUrl: 'https://relay.test', pubkey: 'me');
+const _scope = MessageScope(relayUrl: 'https://relay.test', pubkey: 'me');
 const _messageScope = MessageScope(
   relayUrl: 'https://relay.test',
   pubkey: 'me',
@@ -71,11 +70,7 @@ void main() {
     root = Directory.systemTemp.createTempSync('room_store_catch_up_test');
     messages = _FlakyMessageStore(() async => '${root.path}/messages');
     now = 1000;
-    store = ChannelRoomStore(
-      ChannelHeadCache(() async => Directory('${root.path}/heads')),
-      messages: messages,
-      clock: () => now,
-    );
+    store = ChannelRoomStore(messages: messages, clock: () => now);
     store.setFedRooms(_scope, {_roomA, _roomB});
   });
 
@@ -157,10 +152,7 @@ void main() {
     expect(await ids(), ['a']);
     expect(await store.loadWatermark(_scope), 990);
     // Keyed by the physical server.
-    const other = ChannelHeadScope(
-      relayUrl: 'https://relay-2.test',
-      pubkey: 'me',
-    );
+    const other = MessageScope(relayUrl: 'https://relay-2.test', pubkey: 'me');
     expect(await store.loadWatermark(other), isNull);
   });
 
@@ -255,10 +247,7 @@ void main() {
 
     final reopened = MessageStore(() async => '${root.path}/messages');
     addTearDown(reopened.close);
-    final restarted = ChannelRoomStore(
-      ChannelHeadCache(() async => Directory('${root.path}/heads')),
-      messages: reopened,
-    );
+    final restarted = ChannelRoomStore(messages: reopened);
 
     expect(await restarted.loadWatermark(_scope), 1234);
   });

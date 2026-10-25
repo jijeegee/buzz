@@ -77,7 +77,7 @@ extension _RoomReconnect on ChannelMessagesNotifier {
 
   /// The message database ends a room's live range when rows may be missing
   /// that no catch-up could bring (an interrupted feed, a failed write).
-  Future<void> _restartIfRoomHasGap(ChannelHeadScope scope) async {
+  Future<void> _restartIfRoomHasGap(MessageScope scope) async {
     final initVersion = _initVersion;
     final bool gap;
     try {
@@ -105,6 +105,12 @@ extension _RoomReconnect on ChannelMessagesNotifier {
   void _restart() {
     final ref = _storeRef;
     _awaitingCatchUp = false;
+    if (_storedWindow != _StoredWindow.none) {
+      // Painted from the database and not settled yet: keep the rows and
+      // ask only for what is missing.
+      _initFuture = _init(fromStore: true);
+      return;
+    }
     if (!_usingChannelWindow || !_windowStore.isMiddle) {
       _reachedOldest = false;
       _windowStore = const ChannelWindowStore.empty();

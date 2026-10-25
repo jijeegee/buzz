@@ -29,27 +29,24 @@ class _RoomCatchUpState {
   /// fed rooms is known to have arrived. Never ahead of this device's clock.
   /// Stored in the message database (sync_state, by physical server) with
   /// the events it vouches for; see [ChannelRoomStore.advanceWatermark].
-  final Map<ChannelHeadScope, int> watermarks = {};
+  final Map<MessageScope, int> watermarks = {};
 
   /// Each scope's read of its stored watermark, once per session.
-  final Map<ChannelHeadScope, Future<void>> loads = {};
-  final Set<ChannelHeadScope> loaded = {};
+  final Map<MessageScope, Future<void>> loads = {};
+  final Set<MessageScope> loaded = {};
 
   /// When each scope's feed first subscribed this session, and the
   /// [pendingEpoch] then: with nothing stored, the watermark starts there.
-  final Map<ChannelHeadScope, (int, int)> feedStarts = {};
+  final Map<MessageScope, (int, int)> feedStarts = {};
 
   /// The scope whose feed was interrupted and is not caught up yet.
-  ChannelHeadScope? pending;
+  MessageScope? pending;
 
   /// Counts interruptions, so a run knows whether another one happened
   /// while it was fetching.
   int pendingEpoch = 0;
   bool running = false;
 
-  /// Rooms that a catch-up could not fill: their feed counts as starting
-  /// again at this time.
-  final Map<String, int> liveFloors = {};
   final Set<String> deliveredIds = {};
   ChannelRoomStore? store;
 }
@@ -58,12 +55,11 @@ class _RoomCatchUpState {
 /// one "everything since the watermark" query per 128 rooms, merged into the
 /// room stores and handed to open rooms, instead of each room reloading.
 extension _ChannelsNotifierCatchUp on ChannelsNotifier {
-  ChannelHeadScope? get _catchUpScope =>
-      _lifecycleRef.read(channelHeadScopeProvider);
+  MessageScope? get _catchUpScope => _lifecycleRef.read(messageScopeProvider);
 
   /// Records [event] as delivered; false when it already was. Advances the
   /// watermark while the feed is uninterrupted.
-  bool _noteDelivered(ChannelHeadScope scope, NostrEvent event) {
+  bool _noteDelivered(MessageScope scope, NostrEvent event) {
     final ids = _catchUp.deliveredIds;
     if (!ids.add(event.id)) return false;
     if (ids.length > _deliveredIdLimit) ids.remove(ids.first);
@@ -72,15 +68,10 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
     return true;
   }
 
-  /// When the feed delivering a room's events became continuous, for its
-  /// stored tail: [liveSince], or later when a catch-up could not fill it.
-  int _roomLiveSince(String? channelId, int liveSince) =>
-      max(liveSince, _catchUp.liveFloors[channelId] ?? liveSince);
-
-  int? _watermark(ChannelHeadScope scope) => _catchUp.watermarks[scope];
+  int? _watermark(MessageScope scope) => _catchUp.watermarks[scope];
 
   /// Reads [scope]'s stored watermark (once per session).
-  Future<void> _loadWatermark(ChannelHeadScope scope) {
+  Future<void> _loadWatermark(MessageScope scope) {
     final state = _catchUp;
     final store = _lifecycleRef.read(channelRoomStoreProvider);
     return state.loads[scope] ??= () async {
@@ -97,7 +88,7 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
 
   /// The feed now starts with nothing to catch up from, unless [scope] has a
   /// watermark from before (this session or a stored one).
-  Future<void> _startWatermark(ChannelHeadScope scope) async {
+  Future<void> _startWatermark(MessageScope scope) async {
     final state = _catchUp;
     final (startedAt, epoch) = state.feedStarts[scope] ??= (
       roomCatchUpClock(),
@@ -120,11 +111,7 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
 
   /// Moves the watermark to [at]; ignored while a catch-up is owed, since
   /// nothing after the interruption vouches for what it missed.
-  void _advanceWatermark(
-    ChannelHeadScope scope,
-    int at, {
-    bool caughtUp = false,
-  }) {
+  void _advanceWatermark(MessageScope scope, int at, {bool caughtUp = false}) {
     final state = _catchUp;
     if (!caughtUp && state.pending == scope) return;
     final current = state.watermarks[scope];
@@ -161,19 +148,6 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
       ..pendingEpoch += 1;
   }
 
-  /// When a new live chunk counts as continuous from: before the watermark
-  /// when a catch-up owed now will cover the time in between.
-  int _newChunkLiveSince() {
-    final now = roomCatchUpClock();
-    final scope = _catchUpScope;
-    if (scope == null || _catchUp.pending != scope) return now;
-    final watermark = _catchUp.watermarks[scope];
-    if (watermark == null || now - watermark > _catchUpMaxAgeSeconds) {
-      return now;
-    }
-    return min(now, max(0, watermark - _catchUpSkewSeconds));
-  }
-
   /// Rooms with an established live chunk.
   Set<String> _fedRoomIds() => {
     for (final entry in _liveSubscriptionsByChunk.entries)
@@ -192,7 +166,6 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
   void _clearCatchUpFeed() {
     _catchUp
       ..pending = null
-      ..liveFloors.clear()
       ..store?.setFedRooms(null, const {});
   }
 
@@ -221,7 +194,7 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
   }
 
   /// Returns false when the run was abandoned (disconnect, scope switch).
-  Future<bool> _catchUpOnce(ChannelHeadScope scope) async {
+  Future<bool> _catchUpOnce(MessageScope scope) async {
     final rooms = _fedRoomIds();
     final startedAt = roomCatchUpClock();
     final watermark = _watermark(scope) ?? startedAt;
@@ -252,7 +225,7 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
     return _isCatchUpCurrent(scope);
   }
 
-  bool _isCatchUpCurrent(ChannelHeadScope scope) =>
+  bool _isCatchUpCurrent(MessageScope scope) =>
       _lifecycleRef.mounted &&
       _catchUpScope == scope &&
       _lifecycleRef.read(relaySessionProvider).status ==
@@ -295,22 +268,14 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
   }
 
   Future<void> _applyCatchUp(
-    ChannelHeadScope scope,
+    MessageScope scope,
     Set<String> rooms,
     Set<String> gaps,
     List<NostrEvent> fetched,
     int since,
     int startedAt,
   ) async {
-    final state = _catchUp;
     final store = _lifecycleRef.read(channelRoomStoreProvider);
-    for (final room in gaps) {
-      state.liveFloors[room] = startedAt;
-    }
-    final chunkSince = <String, int>{
-      for (final entry in _liveSubscriptionsByChunk.entries)
-        for (final id in entry.key.split('\u0000')) id: entry.value.liveSince,
-    };
     fetched.sort(
       (a, b) => a.createdAt != b.createdAt
           ? a.createdAt.compareTo(b.createdAt)
@@ -325,7 +290,7 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
       }
       (byRoom[room] ??= []).add(event);
       if (_desiredLiveChannelIds.contains(room)) {
-        _ingestLiveEvent(event, liveSince: chunkSince[room] ?? since);
+        _ingestLiveEvent(event);
       }
     }
     // The events, the unfilled rooms' holes and the watermark land in one
@@ -341,9 +306,6 @@ extension _ChannelsNotifierCatchUp on ChannelsNotifier {
       // Nothing of it was stored: any room may be missing rows.
       unfilled = rooms;
       store.markGap(scope, rooms);
-      for (final room in rooms) {
-        state.liveFloors[room] = startedAt;
-      }
     }
     if (!_lifecycleRef.mounted || _catchUpScope != scope) return;
     store.publishCatchUp(

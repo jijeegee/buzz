@@ -5,7 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/message_db/coverage.dart';
 import '../../shared/relay/relay.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_room_store.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
@@ -13,7 +13,7 @@ import 'thread_window.dart';
 import 'window_anchor.dart';
 
 /// Writes fetched pages to the message database with the coverage each one
-/// proves. Reads are unchanged: nothing here affects what a room shows.
+/// proves, which is what lets a room read them back instead of asking again.
 
 CoverageCursor _cursorOf(NostrEvent event) =>
     CoverageCursor(event.createdAt, event.id);
@@ -37,15 +37,45 @@ CoverageClaim? channelWindowPageClaim(
 }
 
 /// Stores a channel window [response] (as the relay sent it) and the
-/// coverage its parsed [page] proves.
-void recordChannelWindowPage(
+/// coverage its parsed [page] proves. Resolves once written.
+Future<void> recordChannelWindowPage(
   Ref ref,
   String channelId,
   List<NostrEvent> response,
   ChannelWindowPage page,
 ) {
   final claim = channelWindowPageClaim(channelId, page);
-  _recordPage(ref, channelId, response, claims: [?claim]);
+  return _recordPage(ref, channelId, response, claims: [?claim]);
+}
+
+/// Stores a complete scan of every kind in [channelId] from [from] on (a
+/// `since` query that came back under its limit): its events are every
+/// event between [from] and the newest of them.
+void recordRoomScan(
+  Ref ref,
+  String channelId,
+  List<NostrEvent> events, {
+  required CoverageCursor from,
+}) {
+  CoverageCursor? newest;
+  for (final event in events) {
+    final cursor = _cursorOf(event);
+    if (newest == null || newest < cursor) newest = cursor;
+  }
+  final range = newest == null ? null : CoverageRange(from, newest);
+  _recordPage(
+    ref,
+    channelId,
+    events,
+    claims: [
+      if (range != null && range.isValid)
+        CoverageClaim(
+          channelId: channelId,
+          stream: CoverageStream.all,
+          range: range,
+        ),
+    ],
+  );
 }
 
 /// The replies of [rootId] among a thread window's events: the thread's
@@ -131,28 +161,29 @@ void recordLoadedEvents(Ref ref, Iterable<NostrEvent> events) {
   }
 }
 
-void _recordPage(
+Future<void> _recordPage(
   Ref ref,
   String channelId,
   List<NostrEvent> events, {
   required List<CoverageClaim> claims,
 }) {
   final scope = _scope(ref);
-  if (scope == null) return;
+  if (scope == null) return Future.value();
   try {
-    unawaited(
-      ref
-          .read(channelRoomStoreProvider)
-          .recordPage(scope, events, channelId: channelId, claims: claims),
-    );
+    final written = ref
+        .read(channelRoomStoreProvider)
+        .recordPage(scope, events, channelId: channelId, claims: claims);
+    unawaited(written);
+    return written;
   } catch (error) {
     debugPrint('[ChannelPageRecords] failed to store a page: $error');
+    return Future.value();
   }
 }
 
-ChannelHeadScope? _scope(Ref ref) {
+MessageScope? _scope(Ref ref) {
   try {
-    return ref.read(channelHeadScopeProvider);
+    return ref.read(messageScopeProvider);
   } catch (_) {
     // A disposed provider's ref; the page is not stored.
     return null;

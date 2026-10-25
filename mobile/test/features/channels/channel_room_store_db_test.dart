@@ -2,7 +2,6 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_page_records.dart';
 import 'package:kuzz/features/channels/channel_room_store.dart';
 import 'package:kuzz/features/channels/channel_window.dart';
@@ -14,14 +13,13 @@ import 'package:kuzz/shared/relay/relay.dart';
 import 'package:sqlite3/sqlite3.dart';
 
 const _room = 'room-a';
-const _scope = ChannelHeadScope(relayUrl: 'https://relay.test', pubkey: 'me');
+const _scope = MessageScope(relayUrl: 'https://relay.test', pubkey: 'me');
 const _messageScope = MessageScope(
   relayUrl: 'https://relay.test',
   pubkey: 'me',
 );
 
-/// ChannelRoomStore writes every received event to the message database,
-/// next to (not instead of) the #288 stored tail; reads are unchanged.
+/// ChannelRoomStore writes every received event to the message database.
 void main() {
   late Directory root;
   late MessageStore messages;
@@ -32,11 +30,7 @@ void main() {
     root = Directory.systemTemp.createTempSync('room_store_db_test');
     messages = MessageStore(() async => '${root.path}/messages');
     now = 1000;
-    store = ChannelRoomStore(
-      ChannelHeadCache(() async => Directory('${root.path}/heads')),
-      messages: messages,
-      clock: () => now,
-    );
+    store = ChannelRoomStore(messages: messages, clock: () => now);
   });
 
   tearDown(() async {
@@ -100,11 +94,6 @@ void main() {
       ).map((row) => (row['origin'], row['live_since'])),
       [('https://relay.test', 1000)],
     );
-    // The #288 tail is unchanged: it keeps rows only.
-    final tail = await ChannelHeadCache(
-      () async => Directory('${root.path}/heads'),
-    ).loadTail(_scope, _room);
-    expect(tail!.rows.map((event) => event.id), ['msg']);
   });
 
   test('events loaded without a page are stored without coverage', () async {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -5,6 +7,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'features/age_gate/age_signal_push_bootstrap.dart';
 import 'features/invites/invite_join_provider.dart';
+import 'shared/message_db/message_store.dart';
 import 'shared/push/push_bridge.dart';
 import 'shared/relay/relay_closed_policy.dart';
 import 'shared/relay/service_scope_migration.dart';
@@ -22,8 +25,26 @@ Future<void> runKuzzApp(Widget app) async {
   // Before anything reads address-keyed storage: move it to the service
   // scope so a server address change keeps sign-in and settings.
   await migrateServiceScopedStorage(prefs: prefs);
+  // Known before the first frame, so an opening room reads its stored rows
+  // synchronously instead of painting a skeleton first.
+  final messagesRoot = await resolveMessagesRoot().then<String?>(
+    (path) => path,
+    onError: (Object error) {
+      debugPrint('[main] messages directory unavailable: $error');
+      return null;
+    },
+  );
 
-  runApp(buildRootProviderScope(prefs: prefs, child: app));
+  // Rooms read the message database now; the old per-room head files go.
+  unawaited(deleteLegacyChannelHeads());
+
+  runApp(
+    buildRootProviderScope(
+      prefs: prefs,
+      messagesRoot: messagesRoot,
+      child: app,
+    ),
+  );
 }
 
 /// The app's root scope, shared with tests so its production wiring is
@@ -31,6 +52,7 @@ Future<void> runKuzzApp(Widget app) async {
 ProviderScope buildRootProviderScope({
   required SharedPreferences prefs,
   required Widget child,
+  String? messagesRoot,
 }) => ProviderScope(
   // A relay statement deadline cannot resolve on retry — the same expensive
   // query would re-run and hit the same limit. Return null (no retry) for
@@ -39,6 +61,8 @@ ProviderScope buildRootProviderScope({
   retry: relayProviderRetry,
   overrides: [
     savedPrefsProvider.overrideWithValue(prefs),
+    if (messagesRoot != null)
+      messagesRootProvider.overrideWithValue(messagesRoot),
     inviteJoinRecoveryProvider.overrideWith(
       (ref) =>
           (scope) => buildMobileInviteJoinRecovery(ref, scope),

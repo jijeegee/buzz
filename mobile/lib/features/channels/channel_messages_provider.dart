@@ -3,9 +3,11 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/message_db/coverage.dart';
+import '../../shared/message_db/message_reads.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
-import 'channel_head_cache.dart';
+import '../../shared/message_db/message_store.dart';
 import 'channel_page_records.dart';
 import 'channel_room_store.dart';
 import 'local_send_store.dart';
@@ -31,10 +33,12 @@ const _channelLiveEventKinds = [
   EventKind.channelThreadSummary,
 ];
 
-/// Provides the message list for a specific channel. Registers a live
-/// subscription first, then syncs history via the server-assembled channel
-/// window fast path, falling back to the legacy websocket history path when the
-/// relay does not return a valid NIP-CW bounds overlay.
+/// Provides the message list for a specific channel. The first build paints
+/// the rows stored on this device (see local_store.dart); then it registers a
+/// live subscription and asks the relay only for what the device lacks,
+/// through the server-assembled channel window, falling back to the legacy
+/// websocket history path when the relay does not return a valid NIP-CW
+/// bounds overlay.
 class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   final String channelId;
   void Function()? _unsubscribe;
@@ -49,9 +53,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   int _windowGeneration = 0;
   int _windowOpVersion = 0;
   bool _loadingNewer = false;
-  bool _headRestoreStarted = false;
-  bool _relayHistoryArrived = false;
-  Set<String> _cachedHeadIds = const {};
+  bool _storePaintTried = false;
+  _StoredWindow _storedWindow = _StoredWindow.none;
+  bool _storedReachesLive = false;
+  NostrEvent? _storedNewest;
+
+  /// Rows of the pages the next newest page replaced; they leave the list
+  /// unless that page still has them.
+  Set<String> _replacedRowIds = const {};
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
   final Map<String, NostrEvent> _deepLinkEvents = {};
@@ -155,12 +164,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _summaryRefreshes.pause();
       _clearSubscription();
     });
-    if (!_headRestoreStarted && _lastKnownMessages == null) {
-      final scope = _readHeadScope();
-      if (scope != null) {
-        _headRestoreStarted = true;
-        unawaited(_restoreCachedHead(scope));
-      }
+    if (!_storePaintTried && _lastKnownMessages == null) {
+      _storePaintTried = true;
+      _paintFromStore();
     }
 
     final me = ref.watch(myPubkeyProvider);
@@ -187,13 +193,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       return AsyncData(_lastKnownMessages ?? const []);
     }
     _restart();
-    if (_lastKnownMessages case final cached? when cached.isNotEmpty) {
+    if (_lastKnownMessages case final cached?
+        when cached.isNotEmpty || _storedWindow != _StoredWindow.none) {
       return AsyncData(cached);
     }
     return const AsyncLoading();
   }
 
-  Future<void> _init() async {
+  /// [fromStore]: the window was painted from the message database and only
+  /// needs what the device lacks ([_settleStoredWindow]).
+  Future<void> _init({bool fromStore = false}) async {
     final initVersion = ++_initVersion;
     _initInFlight = true;
     _clearSubscription();
@@ -224,6 +233,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         );
       }
 
+      if (fromStore) {
+        if (await _settleStoredWindow(session, initVersion)) return;
+        if (!_isCurrentInit(initVersion)) return;
+      }
+
       if (_usingChannelWindow && _windowStore.isMiddle) {
         await _refreshMiddleAfterReconnect(session, initVersion);
         if (_isCurrentInit(initVersion)) _needsInit = false;
@@ -244,13 +258,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
             : history.map((event) => event.id),
       );
 
-      // The relay page is authoritative: drop cached rows it no longer has
-      // (e.g. deleted while the app was closed), keeping live arrivals.
-      final cachedHeadIds = _cachedHeadIds;
-      _cachedHeadIds = const {};
+      // The relay page is authoritative: rows of the pages it replaced (stored
+      // rows it no longer has, or past a hole) leave; live arrivals stay.
+      final replaced = _replacedRowIds;
+      _replacedRowIds = const {};
+      _storedWindow = _StoredWindow.none;
       final existing = [
         for (final event in state.value ?? const <NostrEvent>[])
-          if (!cachedHeadIds.contains(event.id)) event,
+          if (!replaced.contains(event.id)) event,
       ];
       final existingIds = existing.map((event) => event.id).toSet();
       final merged = _withDeepLinkEvents([
@@ -293,9 +308,12 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _initialWindowQueryInFlight = true;
       final pageVersion = ++_threadQuerySerial;
       final response = await session.queryRelay([_channelWindowFilter(null)]);
-      _relayHistoryArrived = true;
       final page = parseChannelWindowResponse(response, channelId, null);
       _initialWindowQueryInFlight = false;
+      _replacedRowIds = {
+        for (final page in _windowStore.allPages)
+          for (final row in page.rows) row.event.id,
+      };
       _windowStore = replaceNewestChannelWindow(
         _windowStore,
         page,
@@ -329,15 +347,15 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         NostrFilters.messages(channelId),
       );
       recordLoadedEvents(ref, history);
-      _relayHistoryArrived = true;
       history.sort(compareChannelTimelineEventsChronologically);
       return history;
     }
   }
 
-  /// Whether the visible rows are a persisted head awaiting the relay page.
-  /// Such rows cannot be paged or used as unread targets yet.
-  bool get isShowingCachedHead => _cachedHeadIds.isNotEmpty;
+  /// Whether the visible rows are stored rows whose newest part is still
+  /// being checked with the relay: rows sent meanwhile may be missing, so
+  /// they cannot be used as unread targets yet.
+  bool get isShowingCachedHead => _storedWindow == _StoredWindow.unchecked;
 
   Future<ChannelWindowPage> _fetchWindowPage(
     RelaySessionNotifier session,
@@ -1009,8 +1027,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
     final existing = state.value ?? const <NostrEvent>[];
     for (final event in existing) {
-      // Cached rows may have been deleted since; fetch those from the relay.
-      if (ids.contains(event.id) && !_cachedHeadIds.contains(event.id)) {
+      // Unchecked stored rows may have been deleted since; fetch those.
+      if (ids.contains(event.id) && !isShowingCachedHead) {
         _deepLinkEvents[event.id] = event;
       }
     }
@@ -1066,7 +1084,12 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 
   Future<bool> fetchOlder() async {
-    if (_reachedOldest || _initInFlight || isShowingCachedHead) return false;
+    // A window painted from the database pages on while its newest rows are
+    // checked; a newest page that replaces it fences the page out.
+    if (_reachedOldest ||
+        (_initInFlight && _storedWindow == _StoredWindow.none)) {
+      return false;
+    }
 
     final session = ref.read(relaySessionProvider.notifier);
     if (_usingChannelWindow) {
@@ -1077,7 +1100,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
       try {
         final pageVersion = ++_threadQuerySerial;
-        final page = await _fetchWindowPage(session, cursor);
+        // Stored rows first, down to where the stored range ends; the relay
+        // pages on from there, and its page joins the next stored range.
+        final page =
+            _storedOlderPage(cursor) ?? await _fetchWindowPage(session, cursor);
         _windowStore = appendOlderChannelWindow(_windowStore, page);
         _reconcilePageSummaries(page, pageVersion);
         _reachedOldest = !channelWindowHasMore(_windowStore);
