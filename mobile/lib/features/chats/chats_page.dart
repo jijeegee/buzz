@@ -40,6 +40,7 @@ import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'chat_navigation.dart';
 import 'chat_row_visible_latest.dart';
 import 'chat_thread_row_menu.dart';
 import 'chat_working.dart';
@@ -248,7 +249,11 @@ class ChatsPage extends HookConsumerWidget {
     );
 
     Future<void> openRow(ChatListRow row) async {
-      final channel = channelById[row.channelId];
+      final channel =
+          channelById[row.channelId] ??
+          (currentPubkey == null || currentPubkey.isEmpty
+              ? null
+              : channelFromChatRow(row, currentPubkey));
       if (channel == null) {
         ScaffoldMessenger.maybeOf(context)?.showSnackBar(
           SnackBar(content: Text(context.l10n.chatsStillLoading)),
@@ -261,6 +266,7 @@ class ChatsPage extends HookConsumerWidget {
           builder: (_) => ChannelDetailPage(
             channel: channel,
             initialThreadRootId: row.isThread ? row.rootId : null,
+            initialThreadHead: row.isThread ? row.root : null,
             initialThreadRouteBehavior:
                 InitialThreadRouteBehavior.replaceCurrentRoute,
           ),

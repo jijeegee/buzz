@@ -155,7 +155,7 @@ void threadStoredOpenTests() {
       await closeStore(tester);
     });
 
-    testWidgets('a thread not proven up to now loads from the relay', (
+    testWidgets('a stored thread paints while refreshing its unverified head', (
       tester,
     ) async {
       useTallView(tester);
@@ -163,7 +163,8 @@ void threadStoredOpenTests() {
       final session = _CountingThreadRelaySession(replies);
       await tester.pumpWidget(testable(session));
 
-      expect(loading, findsOneWidget);
+      expect(loading, findsNothing);
+      expect(findRichText('row 179'), findsOneWidget);
       await tester.pumpAndSettle();
       expect(findRichText('row 179'), findsOneWidget);
       expect(session.threadQueries, greaterThan(0));

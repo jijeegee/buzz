@@ -386,14 +386,14 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   /// thread query takes them.
   List<NostrEvent>? _storedOpen;
 
-  /// Opens at the newest stored replies when the message database holds the
-  /// thread complete up to now; otherwise empty until the query's first page.
+  /// Paints the newest stored page immediately. Only an already live-covered
+  /// page can replace the query; other snapshots refresh in the background.
   @override
   ThreadWindow? build() {
     final stored = readStoredNewestThreadPage(ref, args);
-    if (stored == null || !stored.covered) return null;
+    if (stored == null) return null;
     final window = mergeNewestThreadPage(null, stored.page);
-    _storedOpen = window.events;
+    _storedOpen = stored.covered ? window.events : null;
     return window;
   }
 
@@ -715,7 +715,7 @@ final threadRepliesWithLocalProvider = Provider.autoDispose
       final windowEvents = ref.watch(threadWindowProvider(args))?.events;
       // Only the displayed value comes from here (status stays on the query),
       // so a refresh keeps showing the held window instead of shrinking it.
-      final relayReplies = windowEvents != null && queryReplies.hasValue
+      final relayReplies = windowEvents != null
           ? AsyncData(windowEvents)
           : queryReplies;
       final authoritative = relayReplies.value;

@@ -130,21 +130,6 @@ part 'channel_detail_page/app_bar.dart';
 part 'channel_detail_page/direct_thread.dart';
 part 'channel_detail_page/open_target.dart';
 
-/// Fetch deep-link targets that may be outside the loaded channel window.
-Future<void> _loadDeepLinkEvents(
-  WidgetRef ref,
-  String channelId,
-  Set<String> eventIds,
-) async {
-  try {
-    await ref
-        .read(channelMessagesProvider(channelId).notifier)
-        .loadEventsById(eventIds);
-  } catch (error) {
-    debugPrint('deep-link: failed to load target messages: $error');
-  }
-}
-
 /// Fetch channel members and preload their profiles into the user cache.
 /// One-to-one DMs additionally refresh participant profiles for identity gates.
 /// Returns whether identity resolution completed successfully.
@@ -317,6 +302,10 @@ class ChannelDetailPage extends HookConsumerWidget {
   final String? initialMessageId;
   final String? initialThreadRootId;
 
+  /// Head already present in the account-scoped Chats snapshot. The thread
+  /// can open while its background by-id refresh is still pending.
+  final NostrEvent? initialThreadHead;
+
   /// How the automatically opened initial thread affects the route stack.
   final InitialThreadRouteBehavior initialThreadRouteBehavior;
 
@@ -333,6 +322,7 @@ class ChannelDetailPage extends HookConsumerWidget {
     required this.channel,
     this.initialMessageId,
     this.initialThreadRootId,
+    this.initialThreadHead,
     this.initialThreadRouteBehavior = InitialThreadRouteBehavior.push,
     this.highlightInitialMessage = false,
     this.ownerView,
@@ -361,6 +351,11 @@ class ChannelDetailPage extends HookConsumerWidget {
         initialThreadRouteBehavior ==
             InitialThreadRouteBehavior.replaceCurrentRoute;
     final didOpenDirectThread = useRef(false);
+    final cachedInitialHead = _validThreadSnapshot(
+      channel.id,
+      initialThreadRootId,
+      initialThreadHead,
+    );
     final deepLinkLoads = useState(0);
     final huddleLifecycle =
         ref.watch(huddleLifecycleProvider(channel.id)).value ?? const [];
@@ -877,7 +872,8 @@ class ChannelDetailPage extends HookConsumerWidget {
         if (channel.isForum) return null;
         final eventIds = {
           ?initialMessageId,
-          ?initialThreadRootId,
+          if (!opensThreadDirectly || cachedInitialHead == null)
+            ?initialThreadRootId,
           ?initialOldestOrdinaryUnreadMessageId,
           ...initialForcedUnreadMessageIds,
         };
@@ -899,34 +895,20 @@ class ChannelDetailPage extends HookConsumerWidget {
       ],
     );
 
-    // Start the thread's newest replies alongside its head instead of after
-    // the thread page mounts, so opening it costs one relay round trip. The
-    // thread page watches the same query and picks up the in-flight result.
-    useEffect(() {
-      final rootId = initialThreadRootId;
-      if (channel.isForum || rootId == null) return null;
-      final subscription = ref.listenManual(
-        threadRepliesProvider(
-          ThreadRepliesArgs(channelId: channel.id, rootId: rootId),
-        ),
-        (_, _) {},
-      );
-      return subscription.close;
-    }, [channel.id, initialThreadRootId]);
+    _useDirectThreadReplies(ref, channel, initialThreadRootId);
 
     // A thread opened straight from Inbox, a draft, a goal or a notification
     // never shows the channel: this route stands in with a thread-shaped
     // placeholder and swaps itself for the thread once the head is known,
     // either cached on the timeline or fetched by id above.
     final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
-    final directThreadHead = opensThreadDirectly
-        ? directThreadEvents
-                  .where((event) => event.id == initialThreadRootId)
-                  .firstOrNull ??
-              ref
-                  .read(channelMessagesProvider(channel.id).notifier)
-                  .deepLinkEvent(initialThreadRootId!)
-        : null;
+    final directThreadHead = _directThreadHead(
+      ref,
+      channel.id,
+      opensThreadDirectly ? initialThreadRootId : null,
+      directThreadEvents,
+      cachedInitialHead,
+    );
     // The head could not be found (deleted, or the fetch failed) once both the
     // by-id fetch and the timeline have settled: show the channel instead.
     final directThreadMissing =
@@ -954,16 +936,20 @@ class ChannelDetailPage extends HookConsumerWidget {
         }
         Navigator.of(context).pushReplacement(
           _DirectThreadRoute(
-            builder: (_) => ThreadDetailPage(
-              threadHead: threadHead,
-              allMessages: messages,
+            builder: (_) => _DirectThreadContent(
               channelId: channel.id,
-              currentPubkey: currentPubkey,
-              isMember: resolvedChannel.isMember,
-              isArchived: resolvedChannel.isArchived,
-              initialMessageId: initialMessageId,
-              channelBelow: false,
-              ownerView: ownerView,
+              refreshRootId: cachedInitialHead?.id,
+              child: ThreadDetailPage(
+                threadHead: threadHead,
+                allMessages: messages,
+                channelId: channel.id,
+                currentPubkey: currentPubkey,
+                isMember: resolvedChannel.isMember,
+                isArchived: resolvedChannel.isArchived,
+                initialMessageId: initialMessageId,
+                channelBelow: false,
+                ownerView: ownerView,
+              ),
             ),
           ),
         );
