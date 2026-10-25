@@ -39,6 +39,7 @@ import {
   prepareSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
+import { catchUpSocket } from "@/shared/api/channelCatchUp";
 import { replayLiveSubscriptions } from "@/shared/api/relayReconnectReplay";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
@@ -1054,6 +1055,7 @@ export class RelayClient {
         subscriptions: this.subscriptions,
         sendRaw: (payload) => this.sendRaw(payload),
         requestRepair: getChannelReconnectRepairEvents,
+        catchUp: (ids) => catchUpSocket(this.wsId, this.relayUrl, ids),
         generation,
         visibleChannelId: this.visibleChannelId,
         isActive: () => this.connectionGeneration === generation,

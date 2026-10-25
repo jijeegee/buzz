@@ -6,7 +6,7 @@ use std::collections::HashMap;
 use rusqlite::Connection;
 use serde_json::Value;
 
-use super::{ingest, record::unix_now};
+use super::{ingest, record::unix_now, sync};
 
 #[derive(Debug, PartialEq)]
 pub(crate) enum LiveOp {
@@ -24,6 +24,8 @@ pub(crate) enum LiveOp {
     EndAll { at: i64 },
     /// Newest frame time, so a crash closes open segments no later than it.
     Frame(i64),
+    /// The socket (caught up) vouches for everything before this time.
+    Watermark(i64),
 }
 
 /// Open segments of one socket, by subscription id. Lives as long as the
@@ -72,6 +74,7 @@ pub(crate) fn apply(
                 ingest::close_live(conn, Some(ws_id), at)?;
             }
             LiveOp::Frame(at) => ingest::note_frame(conn, at)?,
+            LiveOp::Watermark(at) => sync::advance_watermark(conn, at)?,
         }
     }
     flush(conn, &mut events)

@@ -72,7 +72,7 @@ async fn segments(store: &MessageStore, dir: &Path) -> (Vec<(i64, i64)>, i64) {
 }
 
 fn tap(store: &MessageStore, dir: &Path) -> StoreTap {
-    StoreTap::new(7, store.writer(dir, &scope()).unwrap())
+    StoreTap::new(7, scope(), store.writer(dir, &scope()).unwrap())
 }
 
 #[tokio::test]
@@ -193,4 +193,66 @@ async fn a_crash_closes_open_segments_at_the_last_frame() {
     assert_eq!(ranges[0].0, 100);
     assert!((ranges[0].1 - unix_now()).abs() <= 5);
     reopened.shut_down_all();
+}
+
+async fn watermark(store: &MessageStore, dir: &Path) -> Option<i64> {
+    store
+        .call(dir, &scope(), |conn| {
+            crate::message_store::sync::watermark(conn)
+        })
+        .await
+        .unwrap()
+}
+
+#[tokio::test]
+async fn a_socket_moves_the_watermark_only_once_caught_up() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::default();
+    let tap = tap(&store, dir.path());
+    tap.outgoing(&live_req("live-1", 100, 1000));
+    tap.incoming(Some(r#"["EOSE","live-1"]"#));
+    tap.incoming(Some(&event_frame("live-1", 1, 9, json!([["h", ROOM]]))));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, None);
+
+    assert!(tap.mark_caught_up());
+    // A live event vouches for its own time.
+    tap.incoming(Some(&event_frame("live-1", 2, 9, json!([["h", ROOM]]))));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, Some(102));
+
+    // A replayed (not yet live) event vouches for nothing; the EOSE then
+    // vouches for when its REQ was sent.
+    tap.outgoing(&json!(["REQ", "other", {"kinds": [9], "#h": [ROOM], "limit": 5}]).to_string());
+    tap.incoming(Some(&event_frame("other", 50, 9, json!([["h", ROOM]]))));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, Some(102));
+    tap.incoming(Some(r#"["EOSE","other"]"#));
+    tap.flush();
+    let at = watermark(&store, dir.path()).await.unwrap();
+    assert!((at - unix_now()).abs() <= 5, "{at}");
+
+    // An older live event never moves it back.
+    tap.incoming(Some(&event_frame("live-1", 3, 9, json!([["h", ROOM]]))));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, Some(at));
+}
+
+#[tokio::test]
+async fn a_closed_req_and_an_exited_socket_vouch_for_nothing() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::default();
+    let tap = tap(&store, dir.path());
+    assert!(tap.mark_caught_up());
+    tap.outgoing(&live_req("closed", 100, 1000));
+    tap.outgoing(r#"["CLOSE","closed"]"#);
+    tap.incoming(Some(r#"["EOSE","closed"]"#));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, None);
+
+    tap.finish();
+    assert!(!tap.mark_caught_up());
+    tap.incoming(Some(r#"["EOSE","closed"]"#));
+    tap.flush();
+    assert_eq!(watermark(&store, dir.path()).await, None);
 }

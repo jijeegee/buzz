@@ -77,6 +77,8 @@ type State = {
     { lastOpenedAt: number | null; lastEventAt: number; bytesEst: number }
   >;
   lastFrameAt: number | null;
+  /** Catch-up watermark (`message_store::sync`); absent in older saves. */
+  watermark?: number | null;
 };
 type ScopeStorage = Pick<Storage, "getItem" | "setItem" | "removeItem"> | null;
 
@@ -319,6 +321,17 @@ export class MockScopeStore {
     }
     this.save(this.state);
     return inserted;
+  }
+
+  watermark(): number | null {
+    return this.state.watermark ?? null;
+  }
+
+  advanceWatermark(at: number) {
+    if (at > (this.state.watermark ?? Number.NEGATIVE_INFINITY)) {
+      this.state.watermark = at;
+      this.save(this.state);
+    }
   }
 
   noteFrame(at: number) {

@@ -15,6 +15,7 @@ pub(crate) mod live;
 mod read;
 pub(crate) mod record;
 mod schema;
+pub(crate) mod sync;
 #[cfg(test)]
 mod tests;
 
@@ -174,6 +175,25 @@ impl ScopeWriter {
             }
         });
         let _ = self.actor.send(job);
+    }
+
+    /// Runs `f` on the pinned actor's thread after everything sent before it.
+    /// Errors once the scope was purged.
+    pub(crate) async fn call<T, F>(&self, f: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: FnOnce(&mut Connection) -> Result<T, String> + Send + 'static,
+    {
+        let (reply, result) = tokio::sync::oneshot::channel();
+        let job: Job = Box::new(move |conn| {
+            let _ = reply.send(f(conn));
+        });
+        if !self.actor.send(job) {
+            return Err("message store unavailable".to_string());
+        }
+        result
+            .await
+            .unwrap_or_else(|_| Err("message store unavailable".to_string()))
     }
 }
 

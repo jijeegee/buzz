@@ -38,6 +38,10 @@ import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audioMediaLoadScheduler";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
+import {
+  type MockCatchUpFilter,
+  mockChannelsCatchUp,
+} from "./e2eBridgeCatchUp.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
 import {
   handleMessageStoreMockCommand,
@@ -6104,6 +6108,31 @@ async function handleGetChannelReconnectRepair(
         right.created_at - left.created_at || left.id.localeCompare(right.id),
     )
     .slice(0, args.limit);
+}
+
+/** One catch-up page over several rooms, like `channels_catch_up` asks. */
+async function queryMockCatchUpPage(
+  filter: MockCatchUpFilter,
+  config: E2eConfig | undefined,
+): Promise<RelayEvent[]> {
+  if (getIdentity(config)) return relayQuery(config, [filter]);
+  const kinds = new Set(filter.kinds);
+  return filter["#h"]
+    .flatMap((channelId) => getMockMessageStore(channelId))
+    .filter(
+      (event) =>
+        kinds.has(event.kind) &&
+        event.created_at >= filter.since &&
+        (filter.until === undefined ||
+          event.created_at < filter.until ||
+          (event.created_at === filter.until &&
+            (filter.before_id === undefined || event.id > filter.before_id))),
+    )
+    .sort(
+      (left, right) =>
+        right.created_at - left.created_at || left.id.localeCompare(right.id),
+    )
+    .slice(0, filter.limit);
 }
 
 async function handleGetChannelWindow(
@@ -15043,6 +15072,21 @@ export function maybeInstallE2eTauriMocks() {
         );
         recordMockRepair(scope, args.channelId, events, args);
         return events;
+      }
+      case "channels_catch_up": {
+        const args = payload as {
+          wsId: number;
+          channelIds: string[];
+          dispatchChannelIds: string[];
+        };
+        return mockChannelsCatchUp({
+          store: mockMessageStoreScope(mockStoreScope(activeConfig)),
+          tap: mockSockets.get(args.wsId)?.storeTap,
+          channelIds: args.channelIds,
+          dispatchChannelIds: args.dispatchChannelIds,
+          syncKinds: MOCK_SYNC_KINDS,
+          query: (filter) => queryMockCatchUpPage(filter, activeConfig),
+        });
       }
       case "get_channel_window": {
         const args = payload as Parameters<typeof handleGetChannelWindow>[0];

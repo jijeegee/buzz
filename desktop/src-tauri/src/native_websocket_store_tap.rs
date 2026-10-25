@@ -8,6 +8,11 @@
 //! rooms, and nothing narrower, proves those rooms from its `since` (or from
 //! when it was sent, if its stored replay was cut by its limit) once it
 //! reaches EOSE, until it is closed or the socket exits.
+//!
+//! The tap also moves the scope's catch-up watermark (see
+//! `message_store::sync`), but only once a catch-up has run for this socket:
+//! a REQ it answered with EOSE vouches for everything sent before the REQ,
+//! and an event a live segment delivered for everything before it.
 
 use std::{
     collections::{HashMap, HashSet},
@@ -41,7 +46,7 @@ pub(crate) fn writer_for_connect<R: Runtime>(
     app: &AppHandle<R>,
     url: &str,
     config: Option<&Value>,
-) -> Option<ScopeWriter> {
+) -> Option<(StoreScope, ScopeWriter)> {
     let scope = requested_scope(config, url)?;
     let state = app.try_state::<crate::app_state::AppState>()?;
     let signed_in = state.user_credential().ok()?.public_key().to_hex();
@@ -49,8 +54,12 @@ pub(crate) fn writer_for_connect<R: Runtime>(
         eprintln!("kuzz-desktop: message store: socket scope is not the signed-in account");
         return None;
     }
-    crate::message_store::writer_for(app, &scope)
+    let writer = crate::message_store::writer_for(app, &scope)?;
+    Some((scope, writer))
 }
+
+/// Outstanding REQs remembered for their round trip (bounded).
+const MAX_ROUND_TRIPS: usize = 4096;
 
 /// A REQ that may become a live segment once it reaches EOSE.
 struct PendingReq {
@@ -66,12 +75,19 @@ struct TapState {
     ops: Vec<LiveOp>,
     pending: HashMap<String, PendingReq>,
     live: HashSet<String>,
+    /// When each outstanding REQ was sent, by subscription id.
+    round_trips: HashMap<String, i64>,
+    /// A catch-up ran for this socket: its frames may move the watermark.
+    caught_up: bool,
+    /// Newest watermark vouched for since the last flush.
+    watermark: Option<i64>,
     last_frame_at: Option<i64>,
     finished: bool,
 }
 
 pub(crate) struct StoreTap {
     ws_id: i64,
+    scope: StoreScope,
     writer: ScopeWriter,
     segments: Arc<Mutex<Segments>>,
     state: Mutex<TapState>,
@@ -161,8 +177,15 @@ fn segment_request(filters: &[Value], sent_at: i64) -> Option<PendingReq> {
 }
 
 impl TapState {
+    fn vouch(&mut self, at: i64) {
+        if self.caught_up {
+            self.watermark = Some(self.watermark.map_or(at, |current| current.max(at)));
+        }
+    }
+
     fn end(&mut self, sub_id: &str) {
         self.pending.remove(sub_id);
+        self.round_trips.remove(sub_id);
         if self.live.remove(sub_id) {
             let at = self.last_frame_at.unwrap_or_else(unix_now);
             self.ops.push(LiveOp::End {
@@ -173,6 +196,11 @@ impl TapState {
     }
 
     fn eose(&mut self, sub_id: &str) {
+        // The relay answered a REQ on this socket: everything sent before
+        // the REQ was delivered.
+        if let Some(sent_at) = self.round_trips.remove(sub_id) {
+            self.vouch(sent_at);
+        }
         let Some(request) = self.pending.remove(sub_id) else {
             return;
         };
@@ -195,9 +223,10 @@ impl TapState {
 }
 
 impl StoreTap {
-    pub(crate) fn new(ws_id: u32, writer: ScopeWriter) -> Self {
+    pub(crate) fn new(ws_id: u32, scope: StoreScope, writer: ScopeWriter) -> Self {
         Self {
             ws_id: i64::from(ws_id),
+            scope,
             writer,
             segments: Arc::default(),
             state: Mutex::default(),
@@ -223,7 +252,17 @@ impl StoreTap {
                 if let Some(request) = state.pending.get_mut(sub_id) {
                     request.replayed += 1;
                 }
+                let delivered_live = state.live.contains(sub_id);
                 if let Some(event) = parts.get(1).filter(|event| is_room_event(event)) {
+                    // A live event vouches for what came before it; a future
+                    // timestamp vouches for no more than now.
+                    if let (true, Some(created_at), Some(now)) = (
+                        delivered_live,
+                        event["created_at"].as_i64(),
+                        state.last_frame_at,
+                    ) {
+                        state.vouch(created_at.min(now));
+                    }
                     state.ops.push(LiveOp::Event(event.clone()));
                 }
             }
@@ -254,7 +293,11 @@ impl StoreTap {
             // A REQ reusing an id replaces that subscription.
             state.end(&sub_id);
             if kind == "REQ" {
-                if let Some(request) = segment_request(&parts[1..], unix_now()) {
+                let sent_at = unix_now();
+                if state.round_trips.len() < MAX_ROUND_TRIPS {
+                    state.round_trips.insert(sub_id.clone(), sent_at);
+                }
+                if let Some(request) = segment_request(&parts[1..], sent_at) {
                     state.pending.insert(sub_id, request);
                 }
             }
@@ -266,6 +309,9 @@ impl StoreTap {
     /// the webview never sees an event the store has not been given.
     pub(crate) fn flush(&self) {
         let mut state = lock(&self.state);
+        if let Some(at) = state.watermark.take() {
+            state.ops.push(LiveOp::Watermark(at));
+        }
         if state.ops.is_empty() {
             return;
         }
@@ -279,6 +325,27 @@ impl StoreTap {
             .submit(move |conn| live::apply(conn, ws_id, &mut lock(&segments), ops));
     }
 
+    /// The scope this socket stores into.
+    pub(crate) fn scope(&self) -> &StoreScope {
+        &self.scope
+    }
+
+    pub(crate) fn writer(&self) -> &ScopeWriter {
+        &self.writer
+    }
+
+    /// A catch-up for this socket committed: from now on its round trips and
+    /// live events move the watermark. False once the socket has exited (a
+    /// dead socket vouches for nothing).
+    pub(crate) fn mark_caught_up(&self) -> bool {
+        let mut state = lock(&self.state);
+        if state.finished {
+            return false;
+        }
+        state.caught_up = true;
+        true
+    }
+
     /// The socket exited: its segments close at its last frame.
     pub(crate) fn finish(&self) {
         {
@@ -289,6 +356,7 @@ impl StoreTap {
             state.finished = true;
             state.pending.clear();
             state.live.clear();
+            state.round_trips.clear();
             if let Some(at) = state.last_frame_at {
                 state.ops.push(LiveOp::EndAll { at });
             }

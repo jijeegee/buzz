@@ -132,6 +132,11 @@ impl Default for WebSocketManager {
 }
 
 impl WebSocketManager {
+    /// The store tap of an open socket, if it stores into a scope.
+    pub(crate) async fn tap_for(&self, id: Id) -> Option<Arc<StoreTap>> {
+        self.connections.lock().await.get(&id)?.tap.clone()
+    }
+
     async fn remove(&self, id: Id) -> Option<Arc<ConnectionHandle>> {
         self.connections.lock().await.remove(&id)
     }
@@ -160,7 +165,7 @@ async fn open_connection(
     manager: &WebSocketManager,
     url: &str,
     on_message: Channel<InvokeResponseBody>,
-    store: Option<ScopeWriter>,
+    store: Option<(crate::message_store::StoreScope, ScopeWriter)>,
 ) -> Result<Id, String> {
     let connect_cancel = manager.connect_cancel.lock().await.clone();
     let mut request = url
@@ -198,7 +203,7 @@ async fn open_connection(
     };
     let (sender, receiver) = mpsc::channel(SEND_QUEUE_CAPACITY);
     let cancel = CancellationToken::new();
-    let tap = store.map(|writer| Arc::new(StoreTap::new(id, writer)));
+    let tap = store.map(|(scope, writer)| Arc::new(StoreTap::new(id, scope, writer)));
     let handle = Arc::new(ConnectionHandle {
         sender,
         cancel: cancel.clone(),
@@ -571,7 +576,7 @@ mod tests {
             WebSocketStream::from_raw_socket(server_io, Role::Server, None),
         );
         let (_sender, receiver) = mpsc::channel(SEND_QUEUE_CAPACITY);
-        let tap = Arc::new(StoreTap::new(1, writer));
+        let tap = Arc::new(StoreTap::new(1, scope.clone(), writer));
         let cancel = CancellationToken::new();
         let task = tokio::spawn(run_connection(
             1,

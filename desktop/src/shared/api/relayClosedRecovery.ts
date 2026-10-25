@@ -132,6 +132,8 @@ function recoverLiveSubscriptionFromClosed({
 }) {
   subscription.resolveReady?.("closed");
   subscription.resolveReady = undefined;
+  subscription.liveGeneration = undefined;
+  subscription.liveGap = true;
 
   // A deadline on a live sub is treated as retryable: resubscribe with the
   // same filter under the 1-30s backoff, which can keep retrying at the cap.
@@ -286,8 +288,10 @@ export function handleSubscriptionEose({
   const subscription = subscriptions.get(subId);
   if (!subscription) return;
   if (subscription.mode === "live") {
-    if (generation !== undefined)
+    if (generation !== undefined) {
+      if (!subscription.liveGap) subscription.liveGeneration = generation;
       markReconnectLiveEose(subscription, generation);
+    }
     subscription.resolveReady?.("eose");
     subscription.resolveReady = undefined;
     subscription.closedRetryAttempt = 0;

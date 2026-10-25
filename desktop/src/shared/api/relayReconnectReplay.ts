@@ -9,6 +9,7 @@ import {
   shouldDispatchSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import type { ChannelReconnectRepairRequest } from "@/shared/api/channelReconnectRepair";
+import type { ChannelCatchUpResult } from "@/shared/api/channelCatchUp";
 import {
   isRateLimited,
   waitForRateLimit,
@@ -183,10 +184,39 @@ export async function replayReconnectHistoryPages({
   return true;
 }
 
+/**
+ * Whether one catch-up answer stands in for a subscription's repair walk.
+ * The catch-up covers the room from `result.since` for every synced kind; the
+ * subscription must already hold everything before that: it was live on an
+ * earlier connection (so it was complete up to that socket's end, which is
+ * no earlier than the watermark) and has no unresolved older window.
+ */
+export function catchUpCoversSubscription(
+  result: ChannelCatchUpResult | null,
+  channelId: string,
+  subscription: Extract<RelaySubscription, { mode: "live" }>,
+  wasLive: boolean,
+): result is ChannelCatchUpResult & { since: number } {
+  return (
+    result !== null &&
+    result.status === "caughtUp" &&
+    result.since !== null &&
+    wasLive &&
+    !result.gapChannelIds.includes(channelId) &&
+    (subscription.pendingReplaySince === undefined ||
+      subscription.pendingReplaySince >= result.since)
+  );
+}
+
+function roomOf(event: RelayEvent) {
+  return event.tags.find((tag) => tag[0] === "h")?.[1];
+}
+
 export async function replayLiveSubscriptions({
   subscriptions,
   sendRaw,
   requestRepair,
+  catchUp,
   generation = 0,
   pageReplayConcurrency = RECONNECT_REPLAY_PAGE_CONCURRENCY,
   visibleChannelId = null,
@@ -201,6 +231,14 @@ export async function replayLiveSubscriptions({
   requestRepair: (
     request: ChannelReconnectRepairRequest,
   ) => Promise<RelayEvent[]>;
+  /**
+   * One catch-up of every joined room for this connection, run after the
+   * live REQs are restored; returns the dispatch rooms' events. Absent, or
+   * null/throwing, means every room takes its repair walk.
+   */
+  catchUp?: (
+    dispatchChannelIds: string[],
+  ) => Promise<ChannelCatchUpResult | null>;
   generation?: number;
   pageReplayConcurrency?: number;
   /** Channel currently visible in the UI — its subscriptions go in the first batch. */
@@ -280,6 +318,10 @@ export async function replayLiveSubscriptions({
         channelId,
         replaySince,
         shouldPageReplay: willRepair,
+        // Read before the restored REQ can reach EOSE on this connection.
+        wasLive:
+          subscription.liveGeneration !== undefined &&
+          subscription.liveGeneration !== generation,
       };
     });
 
@@ -340,19 +382,62 @@ export async function replayLiveSubscriptions({
     }
   }
 
+  const repairRequests = replayRequests.filter(
+    (
+      request,
+    ): request is typeof request & {
+      channelId: string;
+      replaySince: number;
+      shouldPageReplay: true;
+    } =>
+      request.shouldPageReplay &&
+      request.channelId !== undefined &&
+      request.replaySince !== undefined,
+  );
+
+  // One catch-up for every joined room. It is best-effort like the walks:
+  // any failure leaves every room to its walk.
+  let caughtUp: ChannelCatchUpResult | null = null;
+  if (catchUp) {
+    try {
+      caughtUp = await catchUp([
+        ...new Set(repairRequests.map((request) => request.channelId)),
+      ]);
+    } catch (error) {
+      console.warn("[reconnect replay] catch-up failed:", error);
+    }
+    if (!isActive()) return;
+  }
+  const walkRequests = repairRequests.filter((request) => {
+    if (
+      !catchUpCoversSubscription(
+        caughtUp,
+        request.channelId,
+        request.subscription,
+        request.wasLive,
+      )
+    ) {
+      return true;
+    }
+    const { subId, subscription, channelId, replaySince } = request;
+    if (subscriptions.get(subId) !== subscription) return false;
+    for (const event of caughtUp.events) {
+      if (
+        roomOf(event) === channelId &&
+        event.created_at >= replaySince &&
+        subscription.filter.kinds.includes(event.kind) &&
+        shouldDispatchSubscriptionEvent(subscription, event)
+      ) {
+        subscription.onEvent(event);
+      }
+    }
+    subscription.pendingReplaySince = undefined;
+    markReconnectRepairDone(subscription, generation);
+    return false;
+  });
+
   await runWithConcurrency(
-    replayRequests.filter(
-      (
-        request,
-      ): request is typeof request & {
-        channelId: string;
-        replaySince: number;
-        shouldPageReplay: true;
-      } =>
-        request.shouldPageReplay &&
-        request.channelId !== undefined &&
-        request.replaySince !== undefined,
-    ),
+    walkRequests,
     pageReplayConcurrency,
     async ({ subId, subscription, channelId, replaySince }) => {
       // Backfill is best-effort: a failure here (typically a `rate-limited:`
@@ -392,6 +477,15 @@ export async function replayLiveSubscriptions({
           // window may release it.
           if (completed) {
             subscription.pendingReplaySince = undefined;
+            if (subscription.liveGap) {
+              // The walk closed the gap; live again once this connection's
+              // REQ reached EOSE (now, or at its EOSE).
+              subscription.liveGap = undefined;
+              const replay = subscription.reconnectReplay;
+              if (replay?.generation === generation && replay.liveEose) {
+                subscription.liveGeneration = generation;
+              }
+            }
             markReconnectRepairDone(subscription, generation);
           }
           return;

@@ -708,3 +708,66 @@ test("reconnect backfills more missed channel messages than the live subscriptio
     )
     .toBe(true);
 });
+
+test("reconnect catches joined rooms up from the store in one call, without repair walks", async ({
+  page,
+}) => {
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  await expect(page.getByTestId("chat-title")).toHaveText("general");
+
+  const now = Math.floor(Date.now() / 1_000);
+  const seen = `catch-up seen ${now}`;
+  await emitMockMessages(page, [{ content: seen, createdAt: now - 60 }]);
+  await expect(page.getByTestId("message-timeline")).toContainText(seen);
+
+  await page.evaluate(() => {
+    window.__KUZZ_E2E_COMMANDS__ = [];
+  });
+  await disconnectMockWebsockets(page);
+  const missedOpen = `catch-up missed open ${now}`;
+  const missedClosed = `catch-up missed closed ${now}`;
+  await emitMockMessages(page, [{ content: missedOpen, createdAt: now - 30 }]);
+  await page.evaluate(
+    ({ content, createdAt }) =>
+      window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+        channelName: "random",
+        content,
+        createdAt,
+      }),
+    { content: missedClosed, createdAt: now - 20 },
+  );
+
+  // The open room shows what it missed.
+  await expect(page.getByTestId("message-timeline")).toContainText(missedOpen, {
+    timeout: 15_000,
+  });
+  const commands = () =>
+    page.evaluate(() => window.__KUZZ_E2E_COMMANDS__ ?? []);
+  await expect
+    .poll(async () =>
+      (await commands()).filter((name) => name === "channels_catch_up"),
+    )
+    .toEqual(["channels_catch_up"]);
+  expect(
+    (await commands()).filter(
+      (name) => name === "get_channel_reconnect_repair",
+    ),
+  ).toEqual([]);
+
+  // A room that is not open got its missed message into the local store.
+  await expect
+    .poll(() =>
+      page.evaluate((needle) => {
+        for (let i = 0; i < window.localStorage.length; i++) {
+          const key = window.localStorage.key(i) ?? "";
+          if (!key.startsWith("kuzz-e2e-message-store:")) continue;
+          if ((window.localStorage.getItem(key) ?? "").includes(needle)) {
+            return true;
+          }
+        }
+        return false;
+      }, missedClosed),
+    )
+    .toBe(true);
+});

@@ -790,6 +790,7 @@ pub fn run() {
             get_forum_thread,
             get_thread_replies,
             get_channel_reconnect_repair,
+            channels_catch_up,
             get_channel_window,
             get_channel_windows,
             get_thread_windows,

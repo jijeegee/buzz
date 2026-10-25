@@ -58,6 +58,7 @@ type TapStore = {
   beginLive(wsId: number, channelIds: string[], since: number): number;
   closeSegment(segmentId: number, closedAt: number): void;
   closeLive(wsId: number | null, closedAt: number): void;
+  advanceWatermark(at: number): void;
 };
 
 const SEGMENT_FILTER_KEYS = new Set(["kinds", "#h", "since", "limit"]);
@@ -88,9 +89,16 @@ export function createMockStoreTap(
   const segments = new Map<string, number>();
   let lastFrameAt: number | null = null;
   let finished = false;
+  // Watermark (`message_store::sync`): moved only once a catch-up ran.
+  let caughtUp = false;
+  const roundTrips = new Map<string, number>();
+  const vouch = (at: number) => {
+    if (caughtUp) store.advanceWatermark(at);
+  };
 
   const end = (subId: string) => {
     pending.delete(subId);
+    roundTrips.delete(subId);
     const segment = segments.get(subId);
     if (segment === undefined) return false;
     segments.delete(subId);
@@ -157,9 +165,14 @@ export function createMockStoreTap(
             e.tags.some((tag) => tag[0] === "h" && Boolean(tag[1]))
           ) {
             store.insertEvents([e]);
+            if (segments.has(subId))
+              vouch(Math.min(e.created_at, lastFrameAt ?? now()));
             touched = true;
           }
         } else if (type === "EOSE") {
+          const sentAt = roundTrips.get(subId);
+          roundTrips.delete(subId);
+          if (sentAt !== undefined) vouch(sentAt);
           const request = pending.get(subId);
           if (request) {
             pending.delete(subId);
@@ -191,15 +204,23 @@ export function createMockStoreTap(
       const [type, subId, ...filters] = frame;
       end(subId);
       if (type === "REQ") {
+        roundTrips.set(subId, now());
         const request = segmentRequest(filters);
         if (request) pending.set(subId, request);
       }
+    },
+    /** A catch-up committed for this socket; false once it closed. */
+    markCaughtUp() {
+      if (finished) return false;
+      caughtUp = true;
+      return true;
     },
     /** The socket closed: its segments close at its last frame. */
     finish() {
       if (finished) return;
       finished = true;
       pending.clear();
+      roundTrips.clear();
       segments.clear();
       if (lastFrameAt !== null) store.closeLive(wsId, lastFrameAt);
     },
