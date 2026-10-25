@@ -386,6 +386,21 @@ fn remove_orphans_in(dir: &Path, listed: &HashSet<String>) {
     }
 }
 
+/// Launch: delete the retired room-head cache database, if present.
+pub(crate) fn remove_legacy_head_cache(data_dir: &Path) {
+    for name in [
+        "channel-head-cache.db",
+        "channel-head-cache.db-wal",
+        "channel-head-cache.db-shm",
+    ] {
+        match std::fs::remove_file(data_dir.join(name)) {
+            Ok(()) => {}
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => eprintln!("kuzz-desktop: old head cache not removed: {error}"),
+        }
+    }
+}
+
 /// App exit: finish queued work and close every scope.
 pub(crate) fn shut_down(app: &AppHandle) {
     app.state::<MessageStore>().shut_down_all();

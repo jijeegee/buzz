@@ -10,7 +10,7 @@ use super::{
     coverage::{Claim, Cursor, Upper},
     file_stem, ingest,
     ingest::Class,
-    read, remove_orphans_in, schema, MessageStore, StoreScope,
+    read, remove_legacy_head_cache, remove_orphans_in, schema, MessageStore, StoreScope,
 };
 
 fn open(dir: &Path) -> Connection {
@@ -396,4 +396,21 @@ fn sync_kinds_match_the_shared_list() {
     let kinds: Vec<u32> = serde_json::from_value(shared["kinds"].clone()).unwrap();
     assert_eq!(kinds, super::SYNC_KINDS.to_vec());
     assert_eq!(shared["version"], super::SYNC_KINDS_VERSION);
+}
+
+#[test]
+fn launch_removes_the_retired_head_cache_files_only() {
+    let dir = tempfile::tempdir().unwrap();
+    for name in [
+        "channel-head-cache.db",
+        "channel-head-cache.db-wal",
+        "keep.db",
+    ] {
+        std::fs::write(dir.path().join(name), b"x").unwrap();
+    }
+    remove_legacy_head_cache(dir.path());
+    remove_legacy_head_cache(dir.path());
+    assert!(!dir.path().join("channel-head-cache.db").exists());
+    assert!(!dir.path().join("channel-head-cache.db-wal").exists());
+    assert!(dir.path().join("keep.db").exists());
 }

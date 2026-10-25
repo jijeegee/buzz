@@ -32,12 +32,7 @@ import {
   refreshChannelWindowMessages,
 } from "@/features/messages/lib/projectChannelWindow";
 import { reconcileChannelWindowMessages } from "@/features/messages/lib/channelWindowReconciliation";
-import {
-  channelHeadCacheScope,
-  channelHeadHydration,
-  consumeHydratedChannel,
-} from "@/features/messages/lib/channelHeadCache";
-import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
+import { storedChannelMessages } from "@/features/messages/lib/storeChannelHeads";
 import {
   isMatchingPendingMessage,
   mergeMessages,
@@ -749,8 +744,6 @@ export function reconcileFetchedChannelWindow(
   events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
   previousMessages: RelayEvent[],
   signal: AbortSignal,
-  // Background loads must not rank as visits in the persisted-head LRU.
-  persistHead = true,
 ): RelayEvent[] {
   // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
   // therefore win while this older request is still in flight. Never let that
@@ -763,12 +756,6 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
-  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
-  if (scope) {
-    void storeChannelHeadCache(scope, channelId, events).catch((error) => {
-      console.warn("Failed to persist channel head", channelId, error);
-    });
-  }
   return reconcileChannelWindowMessages(next, previousMessages);
 }
 
@@ -780,13 +767,11 @@ export function useChannelMessagesQuery(channel: Channel | null) {
     queryKey,
     queryFn: async ({ signal }) => {
       if (!channel) throw new Error("No group selected.");
-      // Persisted heads seed asynchronously; wait for that seed so a channel
-      // opened during boot takes the hydrated path instead of racing it with
-      // a cold relay fetch.
-      await channelHeadHydration(queryClient);
-      if (consumeHydratedChannel(queryClient, channel.id)) {
-        return queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
-      }
+      // Inside proven local coverage the store answers; the server is asked
+      // only when it cannot prove the room's current head.
+      const stored = await storedChannelMessages(queryClient, channel);
+      signal.throwIfAborted();
+      if (stored) return stored;
       const previousMessages =
         queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
       const events = await getChannelWindowEvents(channel.id);

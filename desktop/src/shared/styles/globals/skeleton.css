@@ -90,6 +90,24 @@
   animation: none;
 }
 
+/*
+ * A room whose rows the local store proves paints them after one quick read;
+ * the timeline skeleton waits out that read instead of flashing for a frame.
+ */
+.timeline-skeleton-grace {
+  animation: timeline-skeleton-grace 0s linear 120ms both;
+}
+
+@keyframes timeline-skeleton-grace {
+  from {
+    visibility: hidden;
+  }
+
+  to {
+    visibility: visible;
+  }
+}
+
 @keyframes t-skel-pulse {
   0%,
   100% {

@@ -4,8 +4,10 @@ import type { QueryClient } from "@tanstack/react-query";
 import { reconcileFetchedChannelWindow } from "@/features/messages/hooks";
 import {
   channelHeadHydration,
+  hasPersistedHydratedChannel,
+  isStoreSeededChannel,
   markPaintableChannelSnapshot,
-} from "@/features/messages/lib/channelHeadCache";
+} from "@/features/messages/lib/storeChannelHeads";
 import type { ChannelWindowStore } from "@/features/messages/lib/channelWindowStore";
 import {
   channelMessagesKey,
@@ -23,7 +25,7 @@ import {
   getThreadWindows,
   MAX_THREAD_WINDOWS_PER_REQUEST,
 } from "@/shared/api/threadWindow";
-import type { RelayEvent } from "@/shared/api/types";
+import type { Channel, RelayEvent } from "@/shared/api/types";
 
 const MESSAGES_STALE_MS = 5 * 60 * 1_000;
 const MESSAGES_GC_MS = CONVERSATION_CACHE_GC_MS;
@@ -76,7 +78,10 @@ export async function preloadChannelsMessages(
     const events = pages.get(channelId);
     // A room the relay skipped stays cold; opening it loads as usual.
     if (!events) continue;
-    if (queryClient.getQueryData(channelMessagesKey(channelId)) !== undefined) {
+    if (
+      queryClient.getQueryData(channelMessagesKey(channelId)) !== undefined &&
+      !isStoreSeededChannel(queryClient, channelId)
+    ) {
       continue;
     }
     if (await storeChannelPage(queryClient, channelId, async () => events)) {
@@ -87,8 +92,8 @@ export async function preloadChannelsMessages(
 }
 
 /**
- * A room that already has messages cached (open, visited, or restored from the
- * persisted head) is not reloaded, but it may paint that copy while opening
+ * A room that already has messages cached (open, visited, or a proven stored
+ * head) is not reloaded, but it may paint that copy while opening
  * revalidates it, so opening never holds a skeleton over known rows.
  */
 function keepCachedChannel(queryClient: QueryClient, channelId: string) {
@@ -96,6 +101,15 @@ function keepCachedChannel(queryClient: QueryClient, channelId: string) {
     channelMessagesKey(channelId),
   );
   if (cached === undefined) return false;
+  if (isStoreSeededChannel(queryClient, channelId)) {
+    // A stored head paints only when the store proves it current; reload the
+    // others from the server.
+    const lastMessageAt =
+      queryClient
+        .getQueryData<Channel[]>(["channels"])
+        ?.find((channel) => channel.id === channelId)?.lastMessageAt ?? null;
+    return hasPersistedHydratedChannel(queryClient, channelId, lastMessageAt);
+  }
   // Live events or an optimistic send can seed this cache before any relay
   // page lands; only a relay-delivered newest page is safe to paint.
   const newestPage = queryClient
@@ -122,7 +136,6 @@ async function storeChannelPage(
         await loadEvents(),
         [],
         signal,
-        false,
       ),
     retry: PRELOAD_RETRY,
     staleTime: MESSAGES_STALE_MS,

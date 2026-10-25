@@ -51,7 +51,7 @@ import {
   getThreadReference,
   isThreadReply,
 } from "@/features/messages/lib/threading";
-import { hasPersistedHydratedChannel } from "@/features/messages/lib/channelHeadCache";
+import { hasPersistedHydratedChannel } from "@/features/messages/lib/storeChannelHeads";
 import { resolveTimelineQueryLoadingState } from "@/features/messages/lib/timelineLoadingState";
 import { useFetchOlderMessages } from "@/features/messages/useFetchOlderMessages";
 import { useIndependentThreadPanel } from "@/features/messages/useIndependentThreadPanel";
@@ -681,7 +681,11 @@ export function ChannelScreen({
         isError: messagesQuery.isError,
       },
       activeChannelId !== null &&
-        hasPersistedHydratedChannel(queryClient, activeChannelId),
+        hasPersistedHydratedChannel(
+          queryClient,
+          activeChannelId,
+          activeChannel?.lastMessageAt ?? null,
+        ),
     );
   settledChannelIdRef.current = settledChannelId;
   // Hold the skeleton while the open position is still being found, so the
