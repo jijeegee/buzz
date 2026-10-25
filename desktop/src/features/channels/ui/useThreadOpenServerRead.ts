@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { useAppShell } from "@/app/AppShellContext";
+import { useAppShellRoom } from "@/app/AppShellContext";
 import { threadGoalRootId } from "@/features/goals/goalTree";
 import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 import type { TimelineMessage } from "@/features/messages/types";
@@ -31,7 +31,7 @@ export function useThreadOpenServerRead(
 ) {
   const rootId = head ? threadGoalRootId(head) : null;
   const newestAt = newestShownThreadAt(head, replies);
-  const { mirrorThreadRead } = useAppShell();
+  const { mirrorThreadRead } = useAppShellRoom();
   const focused = useAppFocused();
   React.useEffect(() => {
     if (!rootId || newestAt === null || !focused) return;

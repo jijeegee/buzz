@@ -161,6 +161,7 @@ export default defineConfig({
         "**/kuzz-theme-screenshots.spec.ts",
         "**/appearance-previews.spec.ts",
         "**/channel-sort.spec.ts",
+        "**/open-room-render-isolation.spec.ts",
         "**/identity-lost.spec.ts",
         "**/deep-link-invite.spec.ts",
         "**/invite-link-copy.spec.ts",

@@ -426,13 +426,47 @@ const MessageTimelineBase = React.forwardRef<
     },
     [],
   );
+  // Armed by the reader's own send (with the row count at that moment) until
+  // the sent row has joined the timeline and the floor is reached. The send
+  // and its append briefly report "not at bottom" before the pin lands; that
+  // transient must not freeze the tail (it would hide the sent row behind the
+  // "new messages" pill). Reader scroll input disarms it.
+  const ownSendPinRef = React.useRef<number | null>(null);
+  const latestMessageCountRef = React.useRef(deferredMessages.length);
+  latestMessageCountRef.current = deferredMessages.length;
+  // biome-ignore lint/correctness/useExhaustiveDependencies: a pin never outlives its channel
+  React.useEffect(() => {
+    ownSendPinRef.current = null;
+  }, [channelId]);
+  React.useEffect(() => {
+    const scroller = activeScrollContainerRef.current;
+    if (!scroller) return;
+    const disarm = () => {
+      ownSendPinRef.current = null;
+    };
+    scroller.addEventListener("wheel", disarm, { passive: true });
+    scroller.addEventListener("touchmove", disarm, { passive: true });
+    scroller.addEventListener("pointerdown", disarm, { passive: true });
+    scroller.addEventListener("keydown", disarm);
+    return () => {
+      scroller.removeEventListener("keydown", disarm);
+      scroller.removeEventListener("wheel", disarm);
+      scroller.removeEventListener("touchmove", disarm);
+      scroller.removeEventListener("pointerdown", disarm);
+    };
+  }, [activeScrollContainerRef]);
   const handleVirtualizerAtBottomStateChange = React.useCallback(
     (atBottom: boolean) => {
       // Virtua can emit an intermediate non-bottom offset while its initial
       // scroll-to-end is still converging. Do not turn that mount transient
       // into a semantic dataset freeze: wait until this channel has reached a
       // confirmed bottom once, then track genuine bottom -> history movement.
+      const ownSendPin = ownSendPinRef.current;
+      if (!atBottom && ownSendPin !== null) return;
       if (atBottom) {
+        if (ownSendPin !== null && latestMessageCountRef.current > ownSendPin) {
+          ownSendPinRef.current = null;
+        }
         hasConfirmedVirtualizerBottomRef.current = true;
         onVirtualizerAtBottomStateChange(true);
         if (suppressNextSemanticBottomRef.current) {
@@ -492,6 +526,13 @@ const MessageTimelineBase = React.forwardRef<
     // The user's own send is the deliberate Zulip exception: release buffered
     // output before arming the next-append bottom pin so the sent row can enter
     // Virtua's model and become the new physical floor.
+    ownSendPinRef.current = latestMessageCountRef.current;
+    if (semanticBottomRafRef.current !== null) {
+      window.cancelAnimationFrame(semanticBottomRafRef.current);
+      semanticBottomRafRef.current = null;
+    }
+    semanticAtBottomRef.current = true;
+    suppressNextSemanticBottomRef.current = false;
     setIsSemanticallyAtBottom(true);
     scrollToBottomOnNextUpdate();
   }, [scrollToBottomOnNextUpdate]);

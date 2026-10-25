@@ -434,7 +434,11 @@ export async function refreshChannelsQuery({
   return sorted;
 }
 
-export function useChannelsQuery(options?: { enabled?: boolean }) {
+export function useChannelsQuery<TData = Channel[]>(options?: {
+  enabled?: boolean;
+  /** Subscribe to a slice: the caller re-renders only when it changes. */
+  select?: (channels: Channel[]) => TData;
+}) {
   const { activeCommunity } = useCommunities();
   const relayUrl = activeCommunity?.relayUrl ?? null;
   // CommunityQueryProvider remounts its QueryClient for every community. Only
@@ -467,7 +471,7 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     CHANNELS_REFETCH_INTERVAL_MS,
   );
 
-  const query = useQuery({
+  const query = useQuery<Channel[], Error, TData>({
     enabled:
       (options?.enabled ?? true) &&
       relayUrl !== null &&
@@ -486,21 +490,27 @@ export function useChannelsQuery(options?: { enabled?: boolean }) {
     initialData: initialSnapshotPair?.channels,
     initialDataUpdatedAt: 0,
     refetchInterval,
+    select: options?.select,
     ...channelsFocusRefetchPolicy,
   });
+  // A sliced subscriber has no full list to measure; the shell's full one does.
+  const fullList = options?.select
+    ? null
+    : (query.data as Channel[] | undefined);
 
   React.useEffect(() => {
     if (
       relayUrl &&
       ownerPubkey &&
+      fullList &&
       query.isSuccess &&
       query.fetchStatus === "idle" &&
       query.dataUpdatedAt > 0
     ) {
-      measureFullSidebarPaint(relayUrl, ownerPubkey, query.data.length);
+      measureFullSidebarPaint(relayUrl, ownerPubkey, fullList.length);
     }
   }, [
-    query.data,
+    fullList,
     query.dataUpdatedAt,
     query.fetchStatus,
     query.isSuccess,
