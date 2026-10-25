@@ -1,7 +1,7 @@
 // biome-ignore-all format: line-count ratchet requires compact forwarding in this legacy component
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
-import { useAppShell } from "@/app/AppShellContext";
+import { useAppShellRoom } from "@/app/AppShellContext";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useActiveChannelHeader } from "@/features/channels/useActiveChannelHeader";
 import { useChannelPaneHandlers } from "@/features/channels/useChannelPaneHandlers";
@@ -81,6 +81,7 @@ import { useElementWidth } from "@/shared/hooks/use-mobile";
 import { useThreadPanelWidth } from "@/shared/hooks/useThreadPanelWidth";
 import { AUXILIARY_PANEL_SINGLE_COLUMN_BREAKPOINT_PX } from "@/shared/layout/AuxiliaryPanel";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { useE2eCommitCounter } from "@/shared/lib/e2eCommitCounter";
 import { useChannelActivityTyping } from "./useChannelActivityTyping";
 import { useChannelAgentSessions } from "./useChannelAgentSessions";
 import { useMessageProfiles } from "./useMessageProfiles";
@@ -100,7 +101,9 @@ import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { OwnerCanReadNotice } from "@/features/agents/ownerView/OwnerCanReadNotice";
 import { GuardedChannelPane } from "./GuardedChannelPane"; import { useNavigationGuard } from "./useNavigationGuard"; import * as searchForwarding from "./searchTargetForwarding";
 const EMPTY_RELAY_EVENTS: RelayEvent[] = [];
-export function ChannelScreen({
+// Memoized: the route keeps its props stable, so other rooms' live events
+// (which rewrite the channel list) do not re-render the open room.
+export const ChannelScreen = React.memo(function ChannelScreen({
   activeChannel,
   autoSendDraftKey,
   currentIdentity,
@@ -114,6 +117,7 @@ export function ChannelScreen({
   targetMessageEvents, targetMessageId, isRouteTargetResolving = false,
   ...searchTarget
 }: ChannelScreenProps) {
+  useE2eCommitCounter("ChannelScreen");
   const queryClient = useQueryClient();
   const { goHome } = useAppNavigation();
   const { activeCommunity } = useCommunities();
@@ -134,7 +138,7 @@ export function ChannelScreen({
     recordThreadInteraction,
     isThreadMuted,
     readStateVersion,
-  } = useAppShell();
+  } = useAppShellRoom();
   const {
     agentSessionReturnThreadId,
     channelManagementInitialView,
@@ -1132,4 +1136,4 @@ export function ChannelScreen({
       </ProfilePanelProvider>
     </AgentSessionProvider>
   );
-}
+});

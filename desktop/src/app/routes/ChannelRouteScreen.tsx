@@ -34,7 +34,7 @@ import {
 import { ProjectChannelHome } from "@/features/projects/ui/ProjectChannelHome";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { getEventById } from "@/shared/api/tauri";
-import type { RelayEvent } from "@/shared/api/types";
+import type { Channel, RelayEvent } from "@/shared/api/types";
 import { useT } from "@/shared/i18n";
 import { ViewLoadingFallback } from "@/shared/ui/ViewLoadingFallback";
 
@@ -146,11 +146,17 @@ export function ChannelRouteScreen({
   const isHuddleTranscript = huddleWindowChannelId() !== null;
   const queryClient = useQueryClient();
   const { closeForumPost, goForumPost } = useAppNavigation();
-  const channelsQuery = useChannelsQuery();
+  // Subscribe to this room's row only: every live event rewrites the list's
+  // recency, and the open room must not re-render for other rooms.
+  const selectRouteChannel = React.useCallback(
+    (channels: Channel[]) =>
+      channels.find((channel) => channel.id === channelId) ?? null,
+    [channelId],
+  );
+  const channelsQuery = useChannelsQuery({ select: selectRouteChannel });
   const projectsQuery = useProjectsQuery();
   const identityQuery = useIdentityQuery();
   const profileQuery = useProfileQuery();
-  const channels = channelsQuery.data ?? [];
   const ownerViewRow = ownerView?.row ?? null;
   const ownerViewAgent = ownerView?.agentPubkey ?? null;
   // Rebuilt only when who is in the chat changes, not on every list refresh.
@@ -172,9 +178,7 @@ export function ChannelRouteScreen({
         : null,
     [ownerViewAgent, ownerViewKey],
   );
-  const memberChannel = ownerViewChannel
-    ? null
-    : (channels.find((channel) => channel.id === channelId) ?? null);
+  const memberChannel = ownerViewChannel ? null : (channelsQuery.data ?? null);
   // A non-member public group (a Find groups preview or a deep link) is not in
   // the member-only poll list. Resolve just that one group by id — never the
   // all-open directory — and only when it is openable (open, or a member).
@@ -382,6 +386,15 @@ export function ChannelRouteScreen({
         : undefined,
     [ownerView, ownerViewChannel, t],
   );
+  const handleCloseForumPost = React.useCallback(() => {
+    void closeForumPost(channelId);
+  }, [channelId, closeForumPost]);
+  const handleSelectForumPost = React.useCallback(
+    (postId: string) => {
+      void goForumPost(channelId, postId);
+    },
+    [channelId, goForumPost],
+  );
 
   if (!activeChannel && (channelsQuery.isPending || reference.isResolving)) {
     if (isHuddleTranscript) {
@@ -415,12 +428,8 @@ export function ChannelRouteScreen({
       autoSendDraftKey={autoSendDraftKey}
       currentIdentity={identityQuery.data}
       currentProfile={profileQuery.data}
-      onCloseForumPost={() => {
-        void closeForumPost(channelId);
-      }}
-      onSelectForumPost={(postId) => {
-        void goForumPost(channelId, postId);
-      }}
+      onCloseForumPost={handleCloseForumPost}
+      onSelectForumPost={handleSelectForumPost}
       selectedForumPostId={selectedPostId}
       targetForumReplyId={targetReplyId}
       isRouteTargetResolving={isRouteTargetResolving}

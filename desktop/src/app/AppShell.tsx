@@ -556,6 +556,15 @@ export function AppShell() {
     channels,
     huddleBackingChannelIds,
   );
+  // Stable for the open room's shell slice (see AppShellContext ROOM_KEYS).
+  const isThreadMuted = React.useCallback(
+    (rootId: string) => mutedRootIds.has(rootId),
+    [mutedRootIds],
+  );
+  const openChannelManagement = React.useCallback((channelId?: string) => {
+    setManagedChannelId(typeof channelId === "string" ? channelId : null);
+    setIsChannelManagementOpen(true);
+  }, []);
   const isNotifiedForThread = React.useCallback(
     (rootId: string) =>
       !mutedRootIds.has(rootId) &&
@@ -652,7 +661,9 @@ export function AppShell() {
     openBrowseChannels: handleOpenBrowseChannels,
     onBrowseDialogOpenChange: handleBrowseDialogOpenChange,
     getCreateSuccess,
-  } = useChannelBrowserDialog(() => void refetchChannels());
+  } = useChannelBrowserDialog(
+    React.useCallback(() => void refetchChannels(), [refetchChannels]),
+  );
   const handleOpenSearch = React.useCallback(() => {
     setSearchFocusRequest((request) => request + 1);
     void refetchChannels();
@@ -857,12 +868,7 @@ export function AppShell() {
             clearChannelUnreadSource,
             openBrowseChannels: handleOpenBrowseChannels,
             openCreateChannel: handleOpenCreateChannel,
-            openChannelManagement: (channelId?: string) => {
-              setManagedChannelId(
-                typeof channelId === "string" ? channelId : null,
-              );
-              setIsChannelManagementOpen(true);
-            },
+            openChannelManagement,
             getChannelReadAt,
             getThreadReadAt,
             markThreadRead,
@@ -879,7 +885,7 @@ export function AppShell() {
             isFollowingThread,
             isNotifiedForThread,
             recordThreadInteraction,
-            isThreadMuted: (rootId) => mutedRootIds.has(rootId),
+            isThreadMuted,
             threadActivityItems,
             threadActivityFeedItems,
             locallyUnreadFeedItems,
