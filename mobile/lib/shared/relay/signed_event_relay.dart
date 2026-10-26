@@ -130,7 +130,9 @@ class SignedEventRelay {
 
   /// Sign (or draft) and submit an event. Returns the relay's OK response as
   /// a [NostrEvent] whose `content` field contains the OK message (e.g.
-  /// `"response:{...}"` for command kinds).
+  /// `"response:{...}"` for command kinds). [onSigned] gets the event before
+  /// it is sent, and again with its replacement when it is signed again; the
+  /// last one it got is the one sent.
   Future<NostrEvent> submit({
     required int kind,
     required String content,
@@ -138,14 +140,24 @@ class SignedEventRelay {
     int? createdAt,
     void Function(NostrEvent event)? onSigned,
   }) async {
-    final event = buildOutgoingEvent(
+    NostrEvent build() => buildOutgoingEvent(
       _config,
       kind: kind,
       content: content,
       tags: tags,
       createdAt: createdAt,
     );
+    var event = build();
     onSigned?.call(event);
+    // An event dated "now" is dated when it goes out. Relay back-pressure
+    // can hold a publish for minutes; signed before that, it would reach the
+    // relay carrying a past time, which other clients order and read by. It
+    // was never sent, so signing it again cannot duplicate it.
+    if (createdAt == null && _session.isRateLimited) {
+      await _session.waitForRateLimit();
+      event = build();
+      onSigned?.call(event);
+    }
     return _session.publish(event);
   }
 }

@@ -269,6 +269,13 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// work checks this to yield instead of queueing behind the window.
   bool get isRateLimited => _rateLimitGate.isActive;
 
+  /// Resolves when relay back-pressure stops pausing requests.
+  Future<void> waitForRateLimit() async {
+    while (_rateLimitGate.isActive) {
+      await _rateLimitGate.wait();
+    }
+  }
+
   /// Execute a one-shot `/query` with raw filter objects and return the
   /// decoded JSON body. Opt-in envelopes (for example `inbox_summary`) answer
   /// with an object rather than an event array.
