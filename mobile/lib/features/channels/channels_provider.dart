@@ -7,6 +7,8 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/community/community_provider.dart';
+import '../../shared/profile/user_cache_provider.dart';
+import '../../shared/profile/user_profile.dart';
 import '../../shared/push/push_presentation_cache.dart';
 import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
@@ -293,6 +295,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       fence,
       dedupedMetas,
       myPk,
+      ref.read(userCacheProvider),
     );
 
     final hiddenDmIds = await _fenced(fence, hiddenDms);

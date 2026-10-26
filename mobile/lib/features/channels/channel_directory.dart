@@ -196,9 +196,11 @@ Future<T> _started<T>(Future<T> future) {
 /// Resolves display labels for the other participants in every DM meta.
 ///
 /// The relay stores DM channels with the literal name "DM", and the pure-Nostr
-/// architecture puts name resolution in the client. So collect the non-self
-/// participant pubkeys across all DM metas and batch-fetch their kind:0
-/// profiles in one round-trip. Returns lowercase pubkey to label.
+/// architecture puts name resolution in the client. People the profile cache
+/// already knows ([known]: saved by earlier launches or read this session)
+/// are labelled from it, without a round trip; it reads them again in the
+/// background, and the next refresh picks up a change. The rest are fetched
+/// in one kind:0 batch. Returns lowercase pubkey to label.
 ///
 /// Lives in this part file because `channels_provider.dart` sits against the
 /// repository-wide 1200-line file ceiling enforced by `just file-size-check`.
@@ -207,6 +209,7 @@ Future<Map<String, String>> _resolveDmDisplayNames(
   _ChannelRefreshFence fence,
   Iterable<NostrEvent> dedupedMetas,
   String myPk,
+  Map<String, UserProfile> known,
 ) async {
   final dmParticipants = <String>{};
   final myPkLower = myPk.toLowerCase();
@@ -220,20 +223,40 @@ Future<Map<String, String>> _resolveDmDisplayNames(
   }
   if (dmParticipants.isEmpty) return const {};
 
+  final displayNames = <String, String>{};
+  String label(String pubkey, String? displayName, String? nip05) =>
+      displayName?.trim().isNotEmpty == true
+      ? displayName!.trim()
+      : nip05?.trim().isNotEmpty == true
+      ? nip05!.trim()
+      : shortPubkey(pubkey);
+  final unknown = <String>[];
+  for (final pubkey in dmParticipants) {
+    final profile = known[pubkey];
+    if (profile == null) {
+      unknown.add(pubkey);
+    } else {
+      displayNames[pubkey] = label(
+        pubkey,
+        profile.displayName,
+        profile.nip05Handle,
+      );
+    }
+  }
+  if (unknown.isEmpty) return displayNames;
+
   final profileEvents = await _fenced(
     fence,
-    session.fetchHistory(NostrFilters.profilesBatch(dmParticipants.toList())),
+    session.fetchHistory(NostrFilters.profilesBatch(unknown)),
   );
-  final displayNames = <String, String>{};
   for (final event in profileEvents) {
     if (event.kind != 0) continue;
     final profile = ProfileData.fromEvent(event);
-    final label = profile.displayName?.trim().isNotEmpty == true
-        ? profile.displayName!.trim()
-        : profile.nip05?.trim().isNotEmpty == true
-        ? profile.nip05!.trim()
-        : shortPubkey(profile.pubkey);
-    displayNames[profile.pubkey.toLowerCase()] = label;
+    displayNames[profile.pubkey.toLowerCase()] = label(
+      profile.pubkey,
+      profile.displayName,
+      profile.nip05,
+    );
   }
   return displayNames;
 }
