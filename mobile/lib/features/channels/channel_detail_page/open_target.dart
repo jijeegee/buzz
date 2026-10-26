@@ -57,6 +57,10 @@ class _OpenedAt {
 /// out of sight; the newest rows are never drawn first.
 const _openRetryDelay = Duration(seconds: 8);
 
+/// Retries of an open before the room gives up on the message and shows its
+/// newest rows: a lasting failure must not keep the room out of sight.
+const _maxOpenRetries = 3;
+
 /// The first main-timeline row after [readAt] that the message database
 /// proves unread, counted as the unread badge counts: messages by others,
 /// not in a muted room, newer than their own read marker. Null when the

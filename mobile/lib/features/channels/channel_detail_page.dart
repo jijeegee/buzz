@@ -808,9 +808,11 @@ class ChannelDetailPage extends HookConsumerWidget {
           }
           if (!opened &&
               target != null &&
+              openRetries.value < _maxOpenRetries &&
               ref.read(relaySessionProvider).status ==
                   SessionStatus.connected) {
             // Stay out of sight and ask again; never the newest rows first.
+            // Past the last retry the room shows its newest rows.
             openRetry.value = Timer(_openRetryDelay, () {
               if (!context.mounted) return;
               if (openPhase.value != _OpenPhase.opening) return;

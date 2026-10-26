@@ -13,6 +13,21 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     // also while a painted window is still being checked: what was sent
     // meanwhile joins it like live rows.
     if (await _openStoredAt(cursor, eventId)) return true;
+    // A newest page still in flight: ask for the window around the message
+    // alongside it rather than after it, so opening costs one round trip.
+    // Kept only if that load finishes without being replaced.
+    ({int initVersion, int pageVersion, Future<List<ChannelWindowPage>> pages})?
+    early;
+    if (_initInFlight && await _supportsNewerWindowsSoon()) {
+      final pages = _fetchMiddlePages(_summarySession, cursor);
+      // Awaited below, or dropped: never an unhandled error.
+      pages.ignore();
+      early = (
+        initVersion: _initVersion,
+        pageVersion: ++_threadQuerySerial,
+        pages: pages,
+      );
+    }
     while (_initInFlight) {
       await _initFuture;
     }
@@ -28,11 +43,13 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     final opVersion = ++_windowOpVersion;
     final session = _summarySession;
     try {
-      final pageVersion = ++_threadQuerySerial;
-      final pages = await Future.wait([
-        _fetchWindowPage(session, cursor),
-        _fetchWindowPage(session, cursor, direction: WindowPageDirection.newer),
-      ]);
+      final reused = early != null && early.initVersion == initVersion
+          ? early
+          : null;
+      final pageVersion = reused?.pageVersion ?? ++_threadQuerySerial;
+      final pages = reused != null
+          ? await reused.pages
+          : await _fetchMiddlePages(session, cursor);
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
       _windowStore = openMiddleChannelWindow(
         _windowStore,
@@ -55,6 +72,15 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       return false;
     }
   }
+
+  /// The pages older than [cursor] and from it toward the present.
+  Future<List<ChannelWindowPage>> _fetchMiddlePages(
+    RelaySessionNotifier session,
+    ChannelPageCursor cursor,
+  ) => Future.wait([
+    _fetchWindowPage(session, cursor),
+    _fetchWindowPage(session, cursor, direction: WindowPageDirection.newer),
+  ]);
 
   /// Opens the window at [cursor] from stored rows when the database has
   /// both sides of it; false leaves the window as it is.
