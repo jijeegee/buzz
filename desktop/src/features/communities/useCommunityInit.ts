@@ -28,6 +28,8 @@ import { setQuickReactionAccount } from "@/features/messages/ui/useQuickReaction
 import { clearTrayAgentActivity } from "@/shared/api/trayMenu";
 import { getOverrides } from "@/shared/features";
 import { resetMediaCaches } from "@/shared/lib/mediaUrl";
+import { resetUserLabelStorageCache } from "@/features/profile/lib/userLabelStorage";
+import { resetUsersBatchLoaders } from "@/features/profile/lib/usersBatchLoader";
 import { resetLinkPreviewMetadataCache } from "@/shared/lib/useResolvedLinkPreviews";
 import { clearSearchHitEventCache } from "@/app/navigation/searchHitEventCache";
 import { resetNavigationDeepLinkDrain } from "@/shared/deep-link";
@@ -81,6 +83,7 @@ async function resetCommunityState({
 }: {
   resetAvatarState: boolean;
 }): Promise<void> {
+  resetUsersBatchLoaders();
   relayClient.disconnect();
   await resetNavigationDeepLinkDrain();
   resetRateLimitGate();
@@ -97,6 +100,7 @@ async function resetCommunityState({
   }
   resetSidebarRelayConnectionCardState();
   resetMediaCaches();
+  resetUserLabelStorageCache();
   resetLinkPreviewMetadataCache();
   resetVideoPlayerState();
   resetAudioMediaLoadScheduler();

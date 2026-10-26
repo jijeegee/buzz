@@ -7,6 +7,13 @@ export const USERS_BATCH_GATHER_MS = 16;
 /** Pubkeys per relay read. */
 export const USERS_BATCH_MAX_PUBKEYS = 200;
 
+let communityGeneration = 0;
+
+/** Reject queued and in-flight profile reads before changing communities. */
+export function resetUsersBatchLoaders(): void {
+  communityGeneration += 1;
+}
+
 /**
  * Coalesces profile reads: every chat list row and timeline asks for its own
  * set of pubkeys as it renders, which at startup meant one relay read per
@@ -19,6 +26,12 @@ export function createUsersBatchLoader(
   fetch: Fetch,
   timers: Pick<Window, "setTimeout"> = window,
 ) {
+  const generation = communityGeneration;
+  let disposed = false;
+  const isActive = () => !disposed && generation === communityGeneration;
+  const assertActive = () => {
+    if (!isActive()) throw new Error("Profile read invalidated");
+  };
   const inFlight = new Map<string, Promise<UsersBatchResponse>>();
   let queued = new Set<string>();
   let flush: Promise<UsersBatchResponse> | null = null;
@@ -33,16 +46,21 @@ export function createUsersBatchLoader(
         for (let i = 0; i < pubkeys.length; i += USERS_BATCH_MAX_PUBKEYS) {
           chunks.push(pubkeys.slice(i, i + USERS_BATCH_MAX_PUBKEYS));
         }
-        Promise.all(chunks.map((chunk) => fetch(chunk)))
-          .then((responses) =>
+        Promise.resolve()
+          .then(() => {
+            assertActive();
+            return Promise.all(chunks.map((chunk) => fetch(chunk)));
+          })
+          .then((responses) => {
+            assertActive();
             resolve({
               profiles: Object.assign(
                 {},
                 ...responses.map((response) => response.profiles),
               ),
               missing: responses.flatMap((response) => response.missing),
-            }),
-          )
+            });
+          })
           .catch(reject)
           .finally(() => {
             for (const pubkey of pubkeys) inFlight.delete(pubkey);
@@ -50,7 +68,8 @@ export function createUsersBatchLoader(
       }, USERS_BATCH_GATHER_MS);
     });
 
-  return async function load(pubkeys: string[]): Promise<UsersBatchResponse> {
+  async function load(pubkeys: string[]): Promise<UsersBatchResponse> {
+    assertActive();
     const reads = new Set<Promise<UsersBatchResponse>>();
     for (const pubkey of pubkeys) {
       let read = inFlight.get(pubkey);
@@ -63,6 +82,7 @@ export function createUsersBatchLoader(
       reads.add(read);
     }
     const responses = await Promise.all(reads);
+    assertActive();
     const profiles: UsersBatchResponse["profiles"] = {};
     const missing: string[] = [];
     for (const pubkey of pubkeys) {
@@ -73,5 +93,13 @@ export function createUsersBatchLoader(
       else missing.push(pubkey);
     }
     return { profiles, missing };
-  };
+  }
+
+  return Object.assign(load, {
+    isActive,
+    assertActive,
+    dispose: () => {
+      disposed = true;
+    },
+  });
 }

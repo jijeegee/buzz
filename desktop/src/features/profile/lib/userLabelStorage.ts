@@ -75,6 +75,11 @@ const parsedCaches = new Map<
   { raw: string; cache: UserLabelCache | null }
 >();
 
+/** Release parsed community data when the active community changes. */
+export function resetUserLabelStorageCache(): void {
+  parsedCaches.clear();
+}
+
 function readCache(relayUrl: string): UserLabelCache | null {
   try {
     const key = userLabelCacheKey(relayUrl);

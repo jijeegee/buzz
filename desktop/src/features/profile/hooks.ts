@@ -322,6 +322,9 @@ export function evictUsersBatchEntries(
   queryClient: QueryClient,
   pubkeys: string[],
 ) {
+  // A profile save must not reuse or persist a read started before the save.
+  usersBatchLoaders.get(queryClient)?.dispose();
+  usersBatchLoaders.delete(queryClient);
   for (const pubkey of pubkeys) {
     queryClient.removeQueries({
       queryKey: usersBatchEntryKey(pubkey.toLowerCase()),
@@ -416,7 +419,9 @@ export function useUsersBatchQuery(
         }
       }
       if (toFetch.length > 0) {
-        const fresh = await usersBatchLoaderFor(queryClient)(toFetch);
+        const loader = usersBatchLoaderFor(queryClient);
+        const fresh = await loader(toFetch);
+        loader.assertActive();
         if (relayUrl) {
           writeCachedUserLabels(relayUrl, fresh.profiles, fresh.missing);
         }
