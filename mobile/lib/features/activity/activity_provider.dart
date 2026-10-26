@@ -74,7 +74,14 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
   @override
   Future<HomeFeedResponse> build() async {
     ref.watch(relayConfigProvider);
-    final sessionState = ref.watch(relaySessionProvider);
+    // Connected or not, not every status step: each step (and each
+    // reconnect attempt) would fetch the feed and resubscribe again. Going
+    // connected refetches it, so nothing missed while away is lost.
+    final connected = ref.watch(
+      relaySessionProvider.select(
+        (session) => session.status == SessionStatus.connected,
+      ),
+    );
     // React to the DM channel set (loading → data, membership changes) so a
     // cold start where channels resolve after the first fetch still surfaces
     // DMs without a manual refresh.
@@ -95,8 +102,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     });
 
     final response = await _fetch();
-    if (sessionState.status == SessionStatus.connected &&
-        generation == _subscriptionGeneration) {
+    if (connected && generation == _subscriptionGeneration) {
       unawaited(_subscribeLive(generation));
     }
     return response;

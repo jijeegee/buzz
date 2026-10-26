@@ -19,6 +19,18 @@ class SessionState {
   final int reconnectAttempt;
 
   const SessionState({required this.status, this.reconnectAttempt = 0});
+
+  // Equal states do not notify watchers: setting the same status again
+  // (several paths mark a closed socket disconnected) rebuilt every provider
+  // watching the session.
+  @override
+  bool operator ==(Object other) =>
+      other is SessionState &&
+      other.status == status &&
+      other.reconnectAttempt == reconnectAttempt;
+
+  @override
+  int get hashCode => Object.hash(status, reconnectAttempt);
 }
 
 /// Recovery lifecycle for a live relay subscription.

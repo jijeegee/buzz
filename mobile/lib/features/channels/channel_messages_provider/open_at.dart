@@ -21,7 +21,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     if (_initInFlight && await _supportsNewerWindowsSoon()) {
       final pages = _fetchMiddlePages(_summarySession, cursor);
       // Awaited below, or dropped: never an unhandled error.
-      pages.ignore();
+      unawaited(pages.then<void>((_) {}, onError: (Object _) {}));
       early = (
         initVersion: _initVersion,
         pageVersion: ++_threadQuerySerial,

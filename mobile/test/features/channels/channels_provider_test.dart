@@ -643,15 +643,15 @@ void main() {
 
       expect(await container.read(channelsProvider.future), isEmpty);
 
-      // The directory query succeeds, then the refresh parks on the member-count
+      // The directory query succeeds, then the refresh parks on the metadata
       // query and fails there after the switch. A retired failure must not
       // overwrite the new scope's list or push it into an error state.
       session.memberships = [_membership(_channelA, myPk)];
-      session.pauseNextMemberCountQuery();
+      session.pauseNextMetadataQuery();
       final staleRefresh = container
           .read(channelsProvider.notifier)
           .retryDirectory();
-      await session.nextMemberCountQueryStarted;
+      await session.nextMetadataQueryStarted;
 
       session.memberships = [_membership(_channelB, myPk)];
       session.metadata = [_meta(id: _channelB, name: 'community-b-general')];
@@ -660,8 +660,8 @@ void main() {
           .update(baseUrl: 'https://community-b.example');
       await container.read(channelsProvider.future);
 
-      session.failClaimedMemberCountQuery = true;
-      session.resumePausedMemberCountQuery();
+      session.failClaimedMetadataQuery = true;
+      session.resumePausedMetadataQuery();
       await staleRefresh;
       await _settle();
 
@@ -735,19 +735,19 @@ void main() {
       expect(await container.read(channelsProvider.future), isEmpty);
 
       session.memberships = [_membership(_channelA, myPk)];
-      session.pauseNextMemberCountQuery();
+      session.pauseNextMetadataQuery();
       final staleRefresh = container
           .read(channelsProvider.notifier)
           .retryDirectory();
-      await session.nextMemberCountQueryStarted;
+      await session.nextMetadataQueryStarted;
 
       session.memberships = [_membership(_channelB, _otherPk)];
       session.metadata = [_meta(id: _channelB, name: 'second-identity-joined')];
       container.read(_testPubkeyProvider.notifier).set(_otherPk);
       await container.read(channelsProvider.future);
 
-      session.failClaimedMemberCountQuery = true;
-      session.resumePausedMemberCountQuery();
+      session.failClaimedMetadataQuery = true;
+      session.resumePausedMetadataQuery();
       await staleRefresh;
       await _settle();
 
@@ -2673,7 +2673,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
   List<NostrEvent> recentMessages;
   int membershipFailures;
   int directoryFailures = 0;
-  bool failClaimedMemberCountQuery = false;
+  bool failClaimedMetadataQuery = false;
   bool failClaimedUnreadCatchUpQuery = false;
   int membershipRequestCount = 0;
   int metadataPageRequestCount = 0;
@@ -2712,9 +2712,9 @@ class _FakeRelaySession extends RelaySessionNotifier {
   Completer<void>? _pausedHiddenDm;
   Completer<void>? _hiddenDmStarted;
   Completer<void>? _claimedHiddenDm;
-  Completer<void>? _pausedMemberCount;
-  Completer<void>? _memberCountStarted;
-  Completer<void>? _claimedMemberCount;
+  Completer<void>? _pausedMetadata;
+  Completer<void>? _metadataStarted;
+  Completer<void>? _claimedMetadata;
   Completer<void>? _pausedHuddleStarts;
   Completer<void>? _huddleStartsStarted;
   Completer<void>? _claimedHuddleStarts;
@@ -2841,28 +2841,28 @@ class _FakeRelaySession extends RelaySessionNotifier {
     paused.complete();
   }
 
-  /// Holds the next member-count query open, one shot only.
-  void pauseNextMemberCountQuery() {
-    if (_pausedMemberCount != null) {
-      throw StateError('A member-count query is already paused');
+  /// Holds the next metadata query open, one shot only.
+  void pauseNextMetadataQuery() {
+    if (_pausedMetadata != null) {
+      throw StateError('A metadata query is already paused');
     }
-    _pausedMemberCount = Completer<void>();
-    _memberCountStarted = Completer<void>();
+    _pausedMetadata = Completer<void>();
+    _metadataStarted = Completer<void>();
   }
 
-  /// Completes once the parked member-count query has been requested.
-  Future<void> get nextMemberCountQueryStarted async {
-    final started = _memberCountStarted;
+  /// Completes once the parked metadata query has been requested.
+  Future<void> get nextMetadataQueryStarted async {
+    final started = _metadataStarted;
     if (started == null) {
-      throw StateError('No member-count query is pending');
+      throw StateError('No metadata query is pending');
     }
     await started.future;
   }
 
-  /// Releases the parked member-count query so its response lands.
-  void resumePausedMemberCountQuery() {
-    final paused = _claimedMemberCount ?? _pausedMemberCount;
-    if (paused == null) throw StateError('No member-count query is paused');
+  /// Releases the parked metadata query so its response lands.
+  void resumePausedMetadataQuery() {
+    final paused = _claimedMetadata ?? _pausedMetadata;
+    if (paused == null) throw StateError('No metadata query is paused');
     paused.complete();
   }
 
@@ -2907,17 +2907,6 @@ class _FakeRelaySession extends RelaySessionNotifier {
   }) async {
     historyFilters.add(filter);
     if (filter.kinds.contains(39002) && filter.tags['#d'] != null) {
-      final paused = _pausedMemberCount;
-      if (paused != null) {
-        _claimedMemberCount = paused;
-        _pausedMemberCount = null;
-        _memberCountStarted!.complete();
-        _memberCountStarted = null;
-        await paused.future;
-        if (failClaimedMemberCountQuery) {
-          throw Exception('member-count fetch failed');
-        }
-      }
       final ids = (filter.tags['#d'] ?? const <String>[]).toSet();
       return memberships
           .where((event) => ids.contains(event.getTagValue('d')))
@@ -2952,7 +2941,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
     }
     if (filter.kinds.contains(EventKind.huddleStarted)) {
       // Claim the parked slot so the newer refresh's own Huddle query runs
-      // unblocked: one shot, exactly like the hidden-DM and member-count hooks.
+      // unblocked: one shot, exactly like the hidden-DM and metadata hooks.
       final paused = _pausedHuddleStarts;
       if (paused != null) {
         _claimedHuddleStarts = paused;
@@ -2967,6 +2956,17 @@ class _FakeRelaySession extends RelaySessionNotifier {
       final ids = filter.tags['#d']?.toSet();
       if (ids == null) {
         throw StateError('Directory queries must use the HTTP query bridge');
+      }
+      final paused = _pausedMetadata;
+      if (paused != null) {
+        _claimedMetadata = paused;
+        _pausedMetadata = null;
+        _metadataStarted!.complete();
+        _metadataStarted = null;
+        await paused.future;
+        if (failClaimedMetadataQuery) {
+          throw Exception('metadata fetch failed');
+        }
       }
       // Member metadata query — return only matching `d` tags.
       return metadata.where((e) => ids.contains(e.getTagValue('d'))).toList();

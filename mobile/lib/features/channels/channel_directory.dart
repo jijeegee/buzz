@@ -185,6 +185,14 @@ Future<T> _fenced<T>(_ChannelRefreshFence fence, Future<T> future) async {
   return value;
 }
 
+/// Starts [future] for a later `await`, so a refresh sends requests that do
+/// not depend on each other together. A refresh that stops before awaiting
+/// it (retired, or another request failed) leaves no unhandled error.
+Future<T> _started<T>(Future<T> future) {
+  unawaited(future.then<void>((_) {}, onError: (Object _) {}));
+  return future;
+}
+
 /// Resolves display labels for the other participants in every DM meta.
 ///
 /// The relay stores DM channels with the literal name "DM", and the pure-Nostr

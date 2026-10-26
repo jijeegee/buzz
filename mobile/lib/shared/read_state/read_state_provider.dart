@@ -84,7 +84,10 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     _forcedUnreadContexts.clear();
 
     final relayConfig = ref.watch(relayConfigProvider);
-    ref.watch(relaySessionProvider);
+    // A new session, not its connection state: each status change (and
+    // each reconnect attempt) would otherwise build a new manager that
+    // fetches and subscribes again. A reconnect refreshes the manager below.
+    ref.watch(relaySessionProvider.notifier);
     final activeCommunity = ref.watch(activeCommunityProvider).value;
 
     final String pubkey;

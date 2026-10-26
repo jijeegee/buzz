@@ -288,7 +288,11 @@ class ReadStateManager {
         unsub.call();
         return;
       }
+      // A reconnect's refresh can overlap a first load still waiting on its
+      // fetch: keep one subscription.
+      final previous = _unsubscribeLive;
       _unsubscribeLive = unsub;
+      previous?.call();
       debugPrint('[ReadStateManager] live subscription established');
     } catch (e) {
       debugPrint('[ReadStateManager] live subscription FAILED: $e');
