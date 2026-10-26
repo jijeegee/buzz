@@ -51,6 +51,30 @@ void main() {
     expect(sent, hasLength(1));
   });
 
+  test('a resend goes out again at a position already sent', () async {
+    final sent = <Object?>[];
+    final writer = ChatStateWriter(
+      send: (filter) async {
+        sent.add(filter['items']);
+        return null;
+      },
+    );
+    writer.markRead(_channel, 12);
+    await writer.flush();
+    // A message dated 11 arrived after: the relay must turn 12 into a
+    // position again for it to be read.
+    writer.markRead(_channel, 12, resend: true);
+    await writer.flush();
+    expect(sent, [
+      [
+        {'channel': _channel, 'at': 12},
+      ],
+      [
+        {'channel': _channel, 'at': 12},
+      ],
+    ]);
+  });
+
   test('a refused item is dropped and never resent', () async {
     final sent = <List<Object?>>[];
     final writer = ChatStateWriter(

@@ -144,7 +144,9 @@ void main() {
         EventKind.channelThreadSummary,
       ]);
       expect(relaySession.liveFilters.single.tags['#h'], [_channelId]);
-      expect(relaySession.liveFilters.single.limit, 200);
+      // New events only: a `since` would drop a late-dated arrival.
+      expect(relaySession.liveFilters.single.limit, 0);
+      expect(relaySession.liveFilters.single.since, isNull);
       expect(
         relaySession.queryFilters.first.kinds,
         EventKind.channelTimelineContentKinds,

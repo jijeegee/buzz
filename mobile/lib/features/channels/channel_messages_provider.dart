@@ -211,14 +211,18 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final session = ref.read(relaySessionProvider.notifier);
 
       try {
+        // New events only, without a `since`: the relay checks `since`
+        // against a message's own (sender) time, so a message dated before
+        // this opened but reaching the relay after would never arrive.
+        // History comes from the window query below; a reconnect takes what
+        // it missed from the catch-up or reloads ([_RoomReconnect]).
         final unsubscribe = await session.subscribe(
           NostrFilter(
             kinds: _channelLiveEventKinds,
             tags: {
               '#h': [channelId],
             },
-            since: _currentUnixSeconds(),
-            limit: 200,
+            limit: 0,
           ),
           _onSubscriptionEvent,
         );
@@ -1133,7 +1137,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }
 }
 
-int _currentUnixSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
 final channelMessagesProvider =
     NotifierProvider.family<

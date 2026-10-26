@@ -95,6 +95,7 @@ import 'message_quote.dart';
 import 'message_quote_header.dart';
 import 'new_messages_divider.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
+import '../../shared/read_state/late_arrivals.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
@@ -129,6 +130,7 @@ part 'channel_detail_page/banners.dart';
 part 'channel_detail_page/app_bar.dart';
 part 'channel_detail_page/direct_thread.dart';
 part 'channel_detail_page/open_target.dart';
+part 'channel_detail_page/read_position.dart';
 
 /// Fetch channel members and preload their profiles into the user cache.
 /// One-to-one DMs additionally refresh participant profiles for identity gates.
@@ -225,42 +227,6 @@ Future<void Function()> _subscribeToDmIdentityUpdates(
     unsubscribe();
     rethrow;
   }
-}
-
-int? _channelReadTimestamp({
-  required Channel channel,
-  required AsyncValue<List<NostrEvent>> messagesState,
-  List<NostrEvent>? heldNewerEvents,
-}) {
-  if (channel.isForum) {
-    return dateTimeToUnixSeconds(channel.lastMessageAt);
-  }
-
-  final events = messagesState.value;
-  // A window opened at a message stops short of the present; opening the
-  // channel still reads everything up to its newest known row.
-  if (heldNewerEvents != null) {
-    var latest = dateTimeToUnixSeconds(channel.lastMessageAt) ?? 0;
-    for (final event in [...?events, ...heldNewerEvents]) {
-      if (event.threadReference.parentId != null) continue;
-      if (event.createdAt > latest) latest = event.createdAt;
-    }
-    return latest > 0 ? latest : null;
-  }
-  if (events != null && events.isNotEmpty) {
-    var latest = 0;
-    for (final event in events) {
-      if (event.threadReference.parentId != null) continue;
-      if (event.createdAt > latest) {
-        latest = event.createdAt;
-      }
-    }
-    if (latest > 0) {
-      return latest;
-    }
-  }
-
-  return dateTimeToUnixSeconds(channel.lastMessageAt);
 }
 
 bool _isOneToOneAgentDm(Channel channel, Set<String> agentPubkeys) {
@@ -957,6 +923,16 @@ class ChannelDetailPage extends HookConsumerWidget {
       return null;
     }, [directThreadHead]);
 
+    final lateArrivalCount = useLateArrivals(
+      channel.id,
+      [
+        for (final event in messagesState.value ?? const <NostrEvent>[])
+          if (event.threadReference.parentId == null) event,
+      ],
+      readTimestamp,
+      currentPubkey,
+    );
+
     useEffect(() {
       // The owner view reads someone else's chat: nothing is marked read.
       if (ownerView != null || !readState.isReady || readTimestamp == null) {
@@ -965,12 +941,16 @@ class ChannelDetailPage extends HookConsumerWidget {
       return deferReadStateUpdate(context, () {
         ref
             .read(readStateProvider.notifier)
-            .markContextRead(channel.id, readTimestamp);
+            .markContextRead(
+              channel.id,
+              readTimestamp,
+              resend: lateArrivalCount > 0,
+            );
         ref
             .read(channelsProvider.notifier)
             .clearObservedUnreadCoveredByRead(channel.id, readTimestamp);
       });
-    }, [channel.id, readState.isReady, readTimestamp]);
+    }, [channel.id, readState.isReady, readTimestamp, lateArrivalCount]);
 
     if (opensThreadDirectly && !directThreadMissing) {
       return _DirectThreadPlaceholder(

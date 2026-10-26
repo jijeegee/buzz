@@ -8,6 +8,10 @@ import '../theme/theme_provider.dart';
 import '../community/community_provider.dart';
 import 'read_state_manager.dart';
 
+/// One read made on this device. [resend]: send it to the relay again even
+/// at a position already sent.
+typedef LocalRead = ({String contextId, int unixTimestamp, bool resend});
+
 class ReadStateState {
   final bool isReady;
   final String? pubkey;
@@ -66,15 +70,11 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
   ReadStateManager? _manager;
   bool _isInitialized = false;
   final Map<String, String> _forcedUnreadContexts = {};
-  final _localReads =
-      StreamController<({String contextId, int unixTimestamp})>.broadcast(
-        sync: true,
-      );
+  final _localReads = StreamController<LocalRead>.broadcast(sync: true);
 
   /// Reads made on this device ([markContextRead]), not seeds or positions
   /// synced from other devices. The Chats read mirror listens here.
-  Stream<({String contextId, int unixTimestamp})> get localReads =>
-      _localReads.stream;
+  Stream<LocalRead> get localReads => _localReads.stream;
 
   @override
   ReadStateState build() {
@@ -177,11 +177,13 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
   /// (channel tile/menu) should pass [clearForcedMessages] so message-level
   /// forces inside the channel are released too; the automatic read on
   /// channel open must not, so a message deliberately marked unread stays
-  /// unread until acted on.
+  /// unread until acted on. [resend] sends the read to the relay again even
+  /// at a position already sent ([useLateArrivals]).
   void markContextRead(
     String contextId,
     int unixTimestamp, {
     bool clearForcedMessages = false,
+    bool resend = false,
   }) {
     var removed = _forcedUnreadContexts.remove(contextId) != null;
     if (clearForcedMessages) {
@@ -194,7 +196,13 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     final manager = _manager;
     manager?.markContextRead(contextId, unixTimestamp);
     if (manager != null) {
-      _localReads.add((contextId: contextId, unixTimestamp: unixTimestamp));
+      _localReads.add(
+        (
+          contextId: contextId,
+          unixTimestamp: unixTimestamp,
+          resend: resend,
+        ),
+      );
     }
     if (removed) {
       _refreshForcedState();

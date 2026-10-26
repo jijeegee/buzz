@@ -121,10 +121,15 @@ class ChatStateWriter {
   /// Whether a ping arriving now is likely the echo of this device's write.
   bool isOwnWriteEcho() => _now().difference(_lastWriteAt) < ownWritePingWindow;
 
-  void markRead(String contextId, int unixTimestamp) {
+  /// Queues a read. [resend] sends it even at a position already sent: the
+  /// relay counts unread by arrival and turns a read time into the newest
+  /// arrival dated at or before it when the read is stored, so a message
+  /// dated earlier that arrives later needs the same read again.
+  void markRead(String contextId, int unixTimestamp, {bool resend = false}) {
     if (_stopped) return;
     final item = markReadItemForContext(contextId, unixTimestamp);
     if (item == null || _refused.contains(item.key)) return;
+    if (resend) _sent.remove(item.key);
     if ((_sent[item.key] ?? 0) >= item.at) return;
     final queued = _pending[item.key];
     if (queued != null && queued.at >= item.at) return;
@@ -257,7 +262,13 @@ final chatStateWriterProvider = Provider<ChatStateWriter?>((ref) {
   final reads = ref
       .read(readStateProvider.notifier)
       .localReads
-      .listen((read) => writer.markRead(read.contextId, read.unixTimestamp));
+      .listen(
+        (read) => writer.markRead(
+          read.contextId,
+          read.unixTimestamp,
+          resend: read.resend,
+        ),
+      );
   ref.onDispose(reads.cancel);
   ref.listen(appLifecycleProvider, (_, next) {
     if (next == AppLifecycleState.paused ||

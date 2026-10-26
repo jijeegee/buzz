@@ -66,6 +66,7 @@ import 'message_quote.dart';
 import 'message_quote_header.dart';
 import 'new_messages_divider.dart';
 import 'reaction_row.dart';
+import '../../shared/read_state/late_arrivals.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import 'room_goals_provider.dart';
@@ -84,6 +85,7 @@ part 'thread_detail_helpers.dart';
 part 'thread_detail_page/thread_message.dart';
 part 'thread_detail_page/avatar.dart';
 part 'thread_detail_page/open_at.dart';
+part 'thread_detail_page/read.dart';
 
 const _landingHighlightDuration = Duration(seconds: 3);
 const _landingHighlightDelay = Duration(milliseconds: 50);
@@ -1214,38 +1216,14 @@ class ThreadDetailPage extends HookConsumerWidget {
       [initialHighlightTargetIndex.value, initialTargetReadyForHighlight.value],
     );
 
-    final visibleReplyReadKey = replies
-        .map((reply) => '${reply.id}:${reply.createdAt}')
-        .join(',');
-
-    useEffect(() {
-      // The owner view reads someone else's chat: nothing is marked read.
-      if (this.ownerView != null || !readState.isReady || replies.isEmpty) {
-        return null;
-      }
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        for (final reply in replies) {
-          ref
-              .read(readStateProvider.notifier)
-              .markContextRead(msgContextKey(reply.id), reply.createdAt);
-        }
-        // Opening a thread at its first unread reply still reads all of them.
-        for (final event
-            in initialUnreadReplies.value ?? const <ObservedUnreadEvent>[]) {
-          ref
-              .read(readStateProvider.notifier)
-              .markContextRead(msgContextKey(event.id), event.createdAt);
-        }
-        // The thread as a whole, for the Chats list and other devices.
-        ref
-            .read(readStateProvider.notifier)
-            .markContextRead(
-              threadContextKey(threadHead.id),
-              replies.map((reply) => reply.createdAt).reduce(math.max),
-            );
-      });
-      return null;
-    }, [threadHead.id, readState.isReady, visibleReplyReadKey]);
+    _useThreadRead(
+      ref,
+      enabled: this.ownerView == null && readState.isReady,
+      rootId: threadHead.id,
+      replies: replies,
+      openedUnread: initialUnreadReplies,
+      currentPubkey: currentPubkey,
+    );
 
     // Thread-scoped typing indicators (exclude self).
     final allTyping = ref.watch(channelTypingProvider(channelId));
