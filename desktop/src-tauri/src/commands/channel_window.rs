@@ -93,8 +93,18 @@ fn split_channel_windows(
         let Some(channel_id) = bounds_channel else {
             continue;
         };
-        let events = std::mem::take(&mut segment);
+        let mut events = std::mem::take(&mut segment);
         if channel_ids.contains(&channel_id) {
+            // A window holds only its own room's events, whatever else a
+            // malformed response put before its overlay.
+            events.retain(|event| {
+                event["tags"].as_array().is_none_or(|tags| {
+                    tags.iter()
+                        .find(|tag| tag.get(0).and_then(|key| key.as_str()) == Some("h"))
+                        .and_then(|tag| tag.get(1).and_then(|room| room.as_str()))
+                        .is_none_or(|room| room == channel_id)
+                })
+            });
             entries.push(ChannelWindowBatchEntry { channel_id, events });
         }
     }

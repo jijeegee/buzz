@@ -7,6 +7,7 @@ import {
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
 import { isSearchHitPlaceholder } from "@/features/messages/lib/searchHitPlaceholder";
+import { getChannelIdFromTags } from "@/features/messages/lib/threading";
 import { useThreadRepliesForRoots } from "@/features/messages/useThreadReplies";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 
@@ -34,15 +35,26 @@ export function useHuddleChannelMessages({
   windowStore,
 }: HuddleChannelMessagesOptions) {
   const resolvedChannelMessages = React.useMemo(() => {
+    if (!activeChannel) return messages;
+    // A room shows only its own messages, whatever cache or route target
+    // handed it another room's (events with no room tag are relay-scoped).
+    const ownRoom = (event: RelayEvent) => {
+      const room = getChannelIdFromTags(event.tags);
+      return room === null || room === activeChannel.id;
+    };
+    const roomMessages = messages.every(ownRoom)
+      ? messages
+      : messages.filter(ownRoom);
     // A search-hit placeholder must not replace the feed's own copy: it lacks
     // thread tags, so it would render a loaded thread reply as a channel row.
-    const loadedIds = new Set(messages.map((message) => message.id));
+    const loadedIds = new Set(roomMessages.map((message) => message.id));
     const extraEvents = targetMessageEvents.filter(
       (event) =>
-        !isSearchHitPlaceholder(event.tags) || !loadedIds.has(event.id),
+        ownRoom(event) &&
+        (!isSearchHitPlaceholder(event.tags) || !loadedIds.has(event.id)),
     );
-    if (!activeChannel || extraEvents.length === 0) return messages;
-    return extraEvents.reduce(mergeMessages, messages);
+    if (extraEvents.length === 0) return roomMessages;
+    return extraEvents.reduce(mergeMessages, roomMessages);
   }, [activeChannel, messages, targetMessageEvents]);
 
   const threadSummaries = React.useMemo(

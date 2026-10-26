@@ -17,6 +17,7 @@ import { HuddleStartingView } from "@/features/huddle/components/HuddleStartingV
 import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
 import { getRememberedRouteEvent } from "@/features/messages/lib/routeEventCache";
 import {
+  getChannelIdFromTags,
   getThreadReference,
   isBroadcastReply,
 } from "@/features/messages/lib/threading";
@@ -51,10 +52,50 @@ type ChannelRouteScreenProps = {
 };
 
 const MAX_ROUTE_ANCESTOR_HOPS = 50;
+/** A route fetch that failed (not "not found") is tried again this often. */
+const MAX_ROUTE_FETCH_RETRIES = 5;
+const routeRetryDelayMs = (attempt: number) =>
+  Math.min(1_000 * 2 ** attempt, 15_000);
+
+const NO_EVENTS: RelayEvent[] = [];
+
+/** Route target events of one room, and the target key last settled there. */
+type RouteRecord = {
+  channelId: string;
+  events: RelayEvent[];
+  resolvedKey: string | null;
+};
+
+/** An event of `channelId` (or one carrying no room, scoped by the relay). */
+function isRoomEvent(event: RelayEvent, channelId: string): boolean {
+  const room = getChannelIdFromTags(event.tags);
+  return room === null || room === channelId;
+}
+
+/** `record` for `channelId` with `events` of that room added (by id). */
+function withRouteEvents(
+  record: RouteRecord,
+  channelId: string,
+  events: readonly RelayEvent[],
+): RouteRecord {
+  const base: RouteRecord =
+    record.channelId === channelId
+      ? record
+      : { channelId, events: [], resolvedKey: null };
+  const eventsById = new Map(base.events.map((event) => [event.id, event]));
+  for (const event of events) {
+    if (isRoomEvent(event, channelId)) eventsById.set(event.id, event);
+  }
+  return { ...base, events: Array.from(eventsById.values()) };
+}
+
+/** Set when a fetch failed for a reason other than the event not existing. */
+type RouteFetchFailure = { failed: boolean };
 
 async function fetchRouteEvent(
   queryClient: QueryClient,
   eventId: string,
+  failure: RouteFetchFailure,
 ): Promise<RelayEvent | null> {
   // Preloaded thread replies and roots open without a relay round trip; the
   // room and thread queries still revalidate them.
@@ -64,6 +105,9 @@ async function fetchRouteEvent(
     return await getEventById(eventId);
   } catch (error) {
     console.error("Failed to load route event", eventId, error);
+    // Only "not found" settles the route as missing; anything else is
+    // retried, so a thread is not closed for a passing network error.
+    if (!String(error).includes("event not found")) failure.failed = true;
     return null;
   }
 }
@@ -81,6 +125,7 @@ async function fetchRouteTargetEvents(
   eventIds: string[],
   targetMessageId: string | null,
   targetThreadRootId: string | null,
+  failure: RouteFetchFailure,
 ): Promise<RelayEvent[]> {
   const eventsById = new Map<string, RelayEvent>();
   const addEvent = (event: RelayEvent | null) => {
@@ -91,7 +136,9 @@ async function fetchRouteTargetEvents(
 
   const uniqueEventIds = [...new Set(eventIds)];
   const initialEvents = await Promise.all(
-    uniqueEventIds.map((eventId) => fetchRouteEvent(queryClient, eventId)),
+    uniqueEventIds.map((eventId) =>
+      fetchRouteEvent(queryClient, eventId, failure),
+    ),
   );
   for (const event of initialEvents) {
     addEvent(event);
@@ -107,7 +154,7 @@ async function fetchRouteTargetEvents(
   const targetThreadRef = getThreadReference(targetEvent.tags);
   const threadRootId = targetThreadRootId ?? targetThreadRef.rootId ?? null;
   if (threadRootId && !eventsById.has(threadRootId)) {
-    addEvent(await fetchRouteEvent(queryClient, threadRootId));
+    addEvent(await fetchRouteEvent(queryClient, threadRootId, failure));
   }
 
   let parentId = getReplyParentId(targetEvent);
@@ -119,7 +166,7 @@ async function fetchRouteTargetEvents(
   ) {
     const parentEvent =
       eventsById.get(parentId) ??
-      (await fetchRouteEvent(queryClient, parentId));
+      (await fetchRouteEvent(queryClient, parentId, failure));
     if (!parentEvent) {
       break;
     }
@@ -212,21 +259,35 @@ export function ChannelRouteScreen({
   const projectHome = ownerViewChannel
     ? null
     : (enumeratedProjectHome ?? projectHomeLookupQuery.data ?? null);
-  const [targetMessageEvents, setTargetMessageEvents] = React.useState<
-    RelayEvent[]
-  >(() => {
+  // Events fetched for this room's route target, and the target the last
+  // fetch settled for, held together with their room: this screen stays
+  // mounted across rooms, so another room's record is never shown here and
+  // never counts as settled for this one. Until it settles, a thread opened by
+  // this route waits for its root instead of closing as missing.
+  const [routeRecord, setRouteRecord] = React.useState<RouteRecord>(() => {
     const cachedTarget = getCachedSearchHitEvent(targetMessageId);
-    return cachedTarget ? [cachedTarget] : [];
+    return {
+      channelId,
+      events: cachedTarget ? [cachedTarget] : [],
+      resolvedKey: null,
+    };
   });
-  // The route target the last fetch settled for. Until it settles, a thread
-  // opened by this route waits for its root instead of closing as missing.
+  const targetMessageEvents =
+    routeRecord.channelId === channelId ? routeRecord.events : NO_EVENTS;
+  const resolvedRouteTargetKey =
+    routeRecord.channelId === channelId ? routeRecord.resolvedKey : null;
   const routeTargetKey =
     !selectedPostId && (targetMessageId || targetThreadRootId)
-      ? `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`
+      ? `${channelId}|${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`
       : null;
-  const [resolvedRouteTargetKey, setResolvedRouteTargetKey] = React.useState<
-    string | null
-  >(null);
+  // A failed fetch is tried again (see `fetchRouteEvent`); the attempt is
+  // tied to the target it was for.
+  const [routeRetry, setRouteRetry] = React.useState<{
+    key: string | null;
+    attempt: number;
+  }>({ key: null, attempt: 0 });
+  const routeAttempt =
+    routeRetry.key === routeTargetKey ? routeRetry.attempt : 0;
   const isRouteTargetResolving =
     routeTargetKey !== null && resolvedRouteTargetKey !== routeTargetKey;
   // Preloaded roots and replies are at hand on the first render, so a thread
@@ -234,7 +295,7 @@ export function ChannelRouteScreen({
   const displayedTargetMessageEvents = React.useMemo(() => {
     const remembered = [targetThreadRootId, targetMessageId].flatMap((id) => {
       const event = id ? getRememberedRouteEvent(queryClient, id) : null;
-      return event ? [event] : [];
+      return event && isRoomEvent(event, channelId) ? [event] : [];
     });
     if (remembered.length === 0) return targetMessageEvents;
     const eventsById = new Map<string, RelayEvent>();
@@ -242,7 +303,13 @@ export function ChannelRouteScreen({
       eventsById.set(event.id, event);
     }
     return Array.from(eventsById.values());
-  }, [queryClient, targetMessageEvents, targetMessageId, targetThreadRootId]);
+  }, [
+    channelId,
+    queryClient,
+    targetMessageEvents,
+    targetMessageId,
+    targetThreadRootId,
+  ]);
   const [activeSearchHighlight, setActiveSearchHighlight] =
     React.useState<SearchHighlightNavigation | null>(searchHighlight ?? null);
   const appliedSearchActivationIdRef = React.useRef<string | null>(
@@ -290,18 +357,13 @@ export function ChannelRouteScreen({
     targetThreadRootId,
   ]);
 
-  // Reset spliced target events when the channel changes. Tied to channel
-  // identity rather than the route target so clearing the `messageId` param
-  // mid-channel keeps the deep-linked row in view. Seeded with the mount key so
-  // the initial cache-seeded events survive first commit; only a genuine
-  // channel change clears them. Declared before the fetch effect so a channel
-  // switch clears stale events before the new target is fetched.
+  // Reset the search highlight when the channel changes. Spliced target
+  // events need no reset: `routeRecord` is tied to its room (see above).
   const previousResetKeyRef = React.useRef<string>(channelId);
   React.useEffect(() => {
     if (previousResetKeyRef.current === channelId) return;
     previousResetKeyRef.current = channelId;
     appliedSearchActivationIdRef.current = null;
-    setTargetMessageEvents([]);
     setActiveSearchHighlight(null);
   }, [channelId]);
 
@@ -322,10 +384,8 @@ export function ChannelRouteScreen({
 
     const cachedTarget = getCachedSearchHitEvent(targetMessageId);
     if (cachedTarget) {
-      setTargetMessageEvents((currentEvents) =>
-        currentEvents.some((event) => event.id === cachedTarget.id)
-          ? currentEvents
-          : [...currentEvents, cachedTarget],
+      setRouteRecord((record) =>
+        withRouteEvents(record, channelId, [cachedTarget]),
       );
     }
 
@@ -336,30 +396,43 @@ export function ChannelRouteScreen({
         : null,
     ].filter((eventId): eventId is string => eventId !== null);
 
+    const key = `${channelId}|${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`;
+    const failure = { failed: false };
+    let retryTimer: number | undefined;
     void fetchRouteTargetEvents(
       queryClient,
       eventIds,
       targetMessageId,
       targetThreadRootId,
+      failure,
     ).then((events) => {
-      if (!isCancelled) {
-        setResolvedRouteTargetKey(
-          `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`,
-        );
-        setTargetMessageEvents((currentEvents) => {
-          const eventsById = new Map<string, RelayEvent>();
-          for (const event of [...currentEvents, ...events]) {
-            eventsById.set(event.id, event);
-          }
-          return Array.from(eventsById.values());
-        });
+      if (isCancelled) return;
+      // A failed fetch keeps the target unresolved and tries again; only a
+      // complete answer (or the last attempt) settles it.
+      const retry = failure.failed && routeAttempt < MAX_ROUTE_FETCH_RETRIES;
+      setRouteRecord((record) => {
+        const next = withRouteEvents(record, channelId, events);
+        return retry ? next : { ...next, resolvedKey: key };
+      });
+      if (retry) {
+        retryTimer = window.setTimeout(() => {
+          setRouteRetry({ key, attempt: routeAttempt + 1 });
+        }, routeRetryDelayMs(routeAttempt));
       }
     });
 
     return () => {
       isCancelled = true;
+      window.clearTimeout(retryTimer);
     };
-  }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
+  }, [
+    channelId,
+    queryClient,
+    routeAttempt,
+    selectedPostId,
+    targetMessageId,
+    targetThreadRootId,
+  ]);
 
   const screenOwnerView = React.useMemo(
     () =>
