@@ -1,15 +1,23 @@
 import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../community/community_provider.dart';
 import '../push/push_presentation_cache.dart';
 import '../push/push_presentation_export_recovery.dart';
 import '../relay/relay.dart';
+import '../theme/theme_provider.dart';
+import 'profile_label_storage.dart';
 import 'user_profile.dart';
 import 'profile_event_parser.dart';
 
-/// In-memory cache of user profiles, fetched in batches from the relay.
+/// Cache of user profiles, fetched in batches from the relay.
+///
+/// Starts from the profiles saved by earlier launches (name, avatar, handle),
+/// so known people paint at once; each saved profile is read again from the
+/// relay the first time it is asked for, in the background, and replaced if
+/// it changed.
 ///
 /// Lookups requested via [get] or [preload] are coalesced into a single
 /// kind:0 batch query (NIP-01 `authors` filter) every 50ms. Larger requests
@@ -27,11 +35,17 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   Timer? _batchTimer;
   Completer<bool>? _batchCompleter;
 
+  /// Saved profiles not yet read again from the relay this launch.
+  final Set<String> _stale = {};
+  Timer? _saveTimer;
+
   @override
   Map<String, UserProfile> build() {
-    ref.watch(relayConfigProvider);
+    final config = ref.watch(relayConfigProvider);
     _generation++;
     _profileEventOrders.clear();
+    _stale.clear();
+    final prefs = _prefs();
     ref.onDispose(() {
       _generation++;
       _pending.clear();
@@ -39,16 +53,43 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       _batchTimer = null;
       _batchCompleter?.complete(false);
       _batchCompleter = null;
+      _saveTimer?.cancel();
+      _saveTimer = null;
     });
-    return {};
+    if (prefs == null) return {};
+    // Saved shortly after the cache settles, not on every merge.
+    listenSelf((previous, next) {
+      if (identical(previous, next)) return;
+      _saveTimer?.cancel();
+      _saveTimer = Timer(const Duration(seconds: 2), () {
+        unawaited(writeStoredProfiles(prefs, config.baseUrl, next));
+      });
+    });
+    final stored = readStoredProfiles(prefs, config.baseUrl);
+    _stale.addAll(stored.keys);
+    return stored;
+  }
+
+  SharedPreferences? _prefs() {
+    try {
+      return ref.read(savedPrefsProvider);
+    } catch (_) {
+      // Not provided (tests): profiles are kept in memory only.
+      return null;
+    }
   }
 
   /// Request a profile for [pubkey]. Returns immediately from cache if
-  /// available, otherwise schedules a batch fetch.
+  /// available (a saved one is also read again in the background), otherwise
+  /// schedules a batch fetch.
   UserProfile? get(String pubkey) {
-    final cached = state[pubkey.toLowerCase()];
-    if (cached != null) return cached;
-    _scheduleFetch(pubkey.toLowerCase());
+    final key = pubkey.toLowerCase();
+    final cached = state[key];
+    if (cached != null) {
+      if (_stale.contains(key)) _scheduleFetch(key);
+      return cached;
+    }
+    _scheduleFetch(key);
     return null;
   }
 
@@ -63,9 +104,18 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
     final normalized = pubkeys.map((pk) => pk.toLowerCase()).toSet();
     final alreadyPending = normalized.any(_pending.contains);
     final uncached = normalized
-        .map((pk) => pk.toLowerCase())
         .where((pk) => !state.containsKey(pk) && !_pending.contains(pk))
         .toList();
+    // Saved profiles are shown already: read them again in the background,
+    // never making the caller wait for them.
+    final stale = normalized
+        .where((pk) => _stale.contains(pk) && !_pending.contains(pk))
+        .toList();
+    if (stale.isNotEmpty) {
+      _stale.removeAll(stale);
+      _pending.addAll(stale);
+      _scheduleBatch();
+    }
     if (uncached.isEmpty && !alreadyPending) return Future.value(true);
     _pending.addAll(uncached);
     final completer = _batchCompleter ??= Completer<bool>();
@@ -112,7 +162,9 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   }
 
   void _scheduleFetch(String pubkey) {
-    if (state.containsKey(pubkey) || _pending.contains(pubkey)) return;
+    if (_pending.contains(pubkey)) return;
+    if (state.containsKey(pubkey) && !_stale.contains(pubkey)) return;
+    _stale.remove(pubkey);
     _pending.add(pubkey);
     _batchCompleter ??= Completer<bool>();
     _scheduleBatch();
