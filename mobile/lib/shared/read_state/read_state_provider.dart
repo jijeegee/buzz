@@ -208,13 +208,11 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     final manager = _manager;
     manager?.markContextRead(contextId, unixTimestamp);
     if (manager != null) {
-      _localReads.add(
-        (
-          contextId: contextId,
-          unixTimestamp: unixTimestamp,
-          resend: resend,
-        ),
-      );
+      _localReads.add((
+        contextId: contextId,
+        unixTimestamp: unixTimestamp,
+        resend: resend,
+      ));
     }
     if (removed) {
       _refreshForcedState();

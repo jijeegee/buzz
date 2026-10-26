@@ -291,14 +291,17 @@ void main() {
     expect(await recovery.ensureStarterChannels(), isNull);
   });
 
-  test('invite recovery refuses a community that is no longer active', () async {
-    final recovery = MobileInviteJoinRecovery(isScopeCurrent: () => false);
+  test(
+    'invite recovery refuses a community that is no longer active',
+    () async {
+      final recovery = MobileInviteJoinRecovery(isScopeCurrent: () => false);
 
-    await expectLater(
-      recovery.ensureStarterChannels(),
-      throwsA(isA<StateError>()),
-    );
-  });
+      await expectLater(
+        recovery.ensureStarterChannels(),
+        throwsA(isA<StateError>()),
+      );
+    },
+  );
 
   test(
     'starter setup recovery survives dismissal and container recreation',
