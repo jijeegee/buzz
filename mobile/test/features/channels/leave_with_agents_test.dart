@@ -36,6 +36,7 @@ class _ScriptedRelay implements SignedEventRelay {
     required List<List<String>> tags,
     int? createdAt,
     void Function(NostrEvent event)? onSigned,
+    void Function(NostrEvent previous, NostrEvent event)? onResigned,
   }) async {
     submitted.add(_Submitted(kind, tags));
     final target = tags.firstWhere((tag) => tag.first == 'p')[1];

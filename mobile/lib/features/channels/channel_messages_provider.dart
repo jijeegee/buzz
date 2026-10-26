@@ -273,6 +273,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
           if (!replaced.contains(event.id)) event,
       ];
       final existingIds = existing.map((event) => event.id).toSet();
+      if (_reloadingAfterReconnect) {
+        _reloadingAfterReconnect = false;
+        _noteReloadArrivals(history);
+      }
       final merged = _withDeepLinkEvents([
         ...existing,
         ...history.where((event) => existingIds.add(event.id)),
@@ -989,6 +993,24 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   static const _maxArrivals = 500;
 
   bool arrivedLive(String eventId) => _arrivals.contains(eventId);
+
+  /// A reload a reconnect started: what it brings that was not shown, and is
+  /// no older than the oldest row shown, reached the room while it was away.
+  bool _reloadingAfterReconnect = false;
+
+  void _noteReloadArrivals(List<NostrEvent> history) {
+    final shown = state.value ?? const <NostrEvent>[];
+    if (shown.isEmpty) return;
+    final shownIds = {for (final event in shown) event.id};
+    final oldest = shown
+        .map((event) => event.createdAt)
+        .reduce((a, b) => a < b ? a : b);
+    for (final event in history) {
+      if (!shownIds.contains(event.id) && event.createdAt >= oldest) {
+        _noteArrival(event.id);
+      }
+    }
+  }
 
   void _noteArrival(String eventId) {
     if (!_arrivals.add(eventId)) return;

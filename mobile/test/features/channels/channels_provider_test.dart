@@ -1762,26 +1762,17 @@ void main() {
       expect(await fallbackFilters(Exception('bridge down')), isNotEmpty);
     });
 
-    test('back-pressure retries the one batch instead of each room', () async {
-      final session =
-          _FakeRelaySession(
-              memberships: [_membership(_channelA, myPk)],
-              metadata: [_meta(id: _channelA, name: 'general')],
-            )
-            ..messageBatchError = RelayException(
-              429,
-              '{"error":"rate-limited"}',
-            )
-            ..rateLimited = true;
+    test('back-pressure never falls back to one read per room', () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'general')],
+      );
+      session.messageBatchError = RelayException(429, '{"error":"slow"}');
       final container = _buildContainer(session: session);
       addTearDown(container.dispose);
       await container.read(channelsProvider.future);
-      await _waitUntil(() => session.queryBatches.length >= 2);
+      await _waitUntil(() => session.queryBatches.isNotEmpty);
       await Future<void>.delayed(Duration.zero);
-      final latest = session.queryBatches
-          .where((batch) => batch.every((filter) => filter.since == null))
-          .toList();
-      expect(latest, hasLength(2));
       expect(session.messageHistoryCount, 0);
     });
   });
@@ -2690,12 +2681,6 @@ class _FakeRelaySession extends RelaySessionNotifier {
   final List<NostrFilter> catchUpFilters = [];
   List<NostrEvent> Function(NostrFilter filter)? catchUpResults;
   Object? messageBatchError;
-
-  /// Relay back-pressure, as the session's gate reports it.
-  bool rateLimited = false;
-
-  @override
-  bool get isRateLimited => rateLimited;
   Object? latestBatchError;
   Object? messageHistoryError;
   int messageHistoryCount = 0;

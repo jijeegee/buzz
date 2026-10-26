@@ -50,6 +50,7 @@ extension _RoomReconnect on ChannelMessagesNotifier {
     final me = ref.read(myPubkeyProvider);
     Future.microtask(() => restoreLocalSends(ref, this, me));
     if (_needsInit || _unsubscribe == null || !_isFedByChannelList) {
+      _reloadingAfterReconnect = true;
       _restart();
       return;
     }
@@ -72,6 +73,7 @@ extension _RoomReconnect on ChannelMessagesNotifier {
       _handleLiveEvent(event);
     }
     if (catchUp.gaps.contains(channelId)) {
+      _reloadingAfterReconnect = true;
       _restart();
     } else {
       unawaited(_restartIfRoomHasGap(catchUp.scope));
@@ -100,7 +102,10 @@ extension _RoomReconnect on ChannelMessagesNotifier {
             SessionStatus.connected) {
       return;
     }
-    if (gap) _restart();
+    if (gap) {
+      _reloadingAfterReconnect = true;
+      _restart();
+    }
   }
 
   /// Loads the newest page as opening the room does; a window opened at a

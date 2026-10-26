@@ -77,9 +77,6 @@ class _BufferedEvent {
   _BufferedEvent(this.subId, this.event);
 }
 
-/// Longest relay back-pressure window a `/query` read waits out.
-const _queryGateWaitLimit = Duration(seconds: 10);
-
 class RelaySessionNotifier extends Notifier<SessionState> {
   RelaySessionNotifier({
     http.Client? httpClient,
@@ -290,22 +287,6 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       throw StateError('Relay session is unavailable');
     }
     final generation = _contextGeneration;
-    // Back-pressure is per account: a read sent inside the window is only
-    // refused again. A short window is waited out; a long one fails the read
-    // at once, as the relay would, rather than holding its caller for up to
-    // [RelayRateLimitGate.maxRetrySeconds].
-    if (_rateLimitGate.isActive) {
-      if (_rateLimitGate.remainingMs() > _queryGateWaitLimit.inMilliseconds) {
-        throw RelayException(
-          429,
-          '{"error":"rate-limited: waiting for the relay to accept requests"}',
-        );
-      }
-      await waitForRateLimit();
-      if (_disposed || _ageRestricted || generation != _contextGeneration) {
-        throw StateError('Relay query belongs to a retired session');
-      }
-    }
     final config = ref.read(relayConfigProvider);
     final url = Uri.parse(config.baseUrl).resolve('/query').toString();
     final bodyBytes = utf8.encode(jsonEncode(filters));

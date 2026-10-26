@@ -523,16 +523,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         debugPrint('[ChannelsNotifier] batched $operation hit the deadline');
         return null;
       }
-      // Back-pressure: one request per room would only add to it. The same
-      // single request goes once more (a short window is waited out);
-      // failing again, the batch is unavailable.
-      if (session.isRateLimited) {
-        try {
-          return await session.queryRelay(filters);
-        } catch (retryError) {
-          debugPrint('[ChannelsNotifier] batched $operation: $retryError');
-          return null;
-        }
+      // Refused for back-pressure: one request per room would only add to
+      // it. Unavailable, like a deadline: what is shown stays.
+      if (error is RelayException && error.statusCode == 429) {
+        debugPrint('[ChannelsNotifier] batched $operation was rate-limited');
+        return null;
       }
       debugPrint(
         '[ChannelsNotifier] batched $operation failed; '
@@ -988,6 +983,17 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     } on _StaleChannelRefresh {
       return;
     } catch (error, stackTrace) {
+      // The directory it started settles only with the refresh.
+      if (fetchDirectory) {
+        ref
+            .read(channelDirectoryLoadStatusProvider.notifier)
+            .markError(
+              channelDirectoryScope(
+                ref.read(relayConfigProvider).baseUrl,
+                ref.read(myPubkeyProvider),
+              ),
+            );
+      }
       state = AsyncError(error, stackTrace);
     }
   }
