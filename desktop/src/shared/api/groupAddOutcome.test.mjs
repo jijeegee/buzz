@@ -19,6 +19,19 @@ test("classifies relay add-member replies", () => {
     classifyMemberAddError("invite-sent: invitation stored"),
     "invite-sent",
   );
+  // The HTTP path reports the same reason behind its status line.
+  assert.equal(
+    classifyMemberAddError(
+      "relay returned 400 Bad Request: invite-sent: not added; they were sent an invitation to join",
+    ),
+    "invite-sent",
+  );
+  assert.equal(
+    classifyMemberAddError(
+      "relay returned 429 Too Many Requests: rate-limited: too many invitations",
+    ),
+    "rate-limited",
+  );
   assert.equal(
     classifyMemberAddError(
       "relay rejected event: rate-limited: too many invitations, try later",
