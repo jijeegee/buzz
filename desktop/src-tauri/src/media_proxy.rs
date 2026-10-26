@@ -155,9 +155,12 @@ async fn proxy_handler(AxumState(state): AxumState<ProxyState>, req: Request) ->
     (status, headers, body).into_response()
 }
 
+/// File in the app data dir holding the port of the last launch.
+const PORT_FILE: &str = "media-proxy-port";
+
 /// Spawn a localhost HTTP proxy that streams media via reqwest, avoiding the
 /// Tauri protocol handler's requirement to buffer the entire response into
-/// `Vec<u8>`. Returns the OS-assigned port.
+/// `Vec<u8>`. Returns the bound port: the last launch's when it is free.
 pub async fn spawn_media_proxy(http_client: reqwest::Client, app_handle: tauri::AppHandle) -> u16 {
     let proxy_state = ProxyState {
         client: http_client,
@@ -168,10 +171,39 @@ pub async fn spawn_media_proxy(http_client: reqwest::Client, app_handle: tauri::
         .route("/media/{*path}", get(proxy_handler))
         .with_state(proxy_state);
 
-    let listener = TcpListener::bind("127.0.0.1:0")
-        .await
-        .expect("failed to bind media proxy");
+    // The port is part of every image URL the webview caches, so reuse the
+    // last launch's port: a new one each launch made every cached avatar and
+    // image a different URL, downloaded again. Any free port if it is taken.
+    let port_file = app_handle
+        .path()
+        .app_data_dir()
+        .ok()
+        .map(|dir| dir.join(PORT_FILE));
+    let remembered = port_file
+        .as_ref()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .and_then(|text| text.trim().parse::<u16>().ok())
+        .filter(|port| *port != 0);
+    let listener = match remembered {
+        Some(port) => match TcpListener::bind(("127.0.0.1", port)).await {
+            Ok(listener) => listener,
+            Err(_) => TcpListener::bind("127.0.0.1:0")
+                .await
+                .expect("failed to bind media proxy"),
+        },
+        None => TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("failed to bind media proxy"),
+    };
     let port = listener.local_addr().unwrap().port();
+    if remembered != Some(port) {
+        if let Some(path) = &port_file {
+            if let Some(dir) = path.parent() {
+                let _ = std::fs::create_dir_all(dir);
+            }
+            let _ = std::fs::write(path, port.to_string());
+        }
+    }
 
     tokio::spawn(async move {
         axum::serve(listener, app).await.ok();
