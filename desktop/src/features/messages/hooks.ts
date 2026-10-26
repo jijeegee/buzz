@@ -48,6 +48,7 @@ import {
   recordTimeoutFromRejection,
 } from "@/features/moderation/lib/timeoutStore";
 import { relayClient, setVisibleChannel } from "@/shared/api/relayClient";
+import { keepLiveSubscription } from "@/shared/api/liveSubscriptionRetry";
 import { customEmojiQueryKey } from "@/features/custom-emoji/hooks";
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { reactionEmojiUrl } from "@/shared/api/customEmoji";
@@ -870,7 +871,6 @@ export function useChannelSubscription(channel: Channel | null) {
     }
 
     let isDisposed = false;
-    let cleanup: (() => Promise<void>) | undefined;
     const disposeReconnectListener = relayClient.subscribeToReconnects(() => {
       void refreshNewestWindow().catch((error) => {
         if (!isDisposed) {
@@ -902,33 +902,27 @@ export function useChannelSubscription(channel: Channel | null) {
         }
       });
     };
-    relayClient
-      .subscribeToChannelLive(channelId, (event) => {
-        if (!isDisposed) {
-          appendMessage(event);
-        }
-      })
-      .then(
-        (dispose) => {
-          if (isDisposed) {
-            void dispose();
-            return;
+    // A failed open is retried: thread replies reach the open room only
+    // through this subscription.
+    const disposeSubscription = keepLiveSubscription({
+      open: () =>
+        relayClient.subscribeToChannelLive(channelId, (event) => {
+          if (!isDisposed) {
+            appendMessage(event);
           }
-          cleanup = dispose;
-          refreshAfterSubscribe("subscribing");
-        },
-        (error) => {
-          console.error("Failed to subscribe to channel", channelId, error);
-          refreshAfterSubscribe("subscription failure");
-        },
-      );
+        }),
+      onReconnect: (listener) => relayClient.subscribeToReconnects(listener),
+      onOpened: () => refreshAfterSubscribe("subscribing"),
+      onFailed: (error) => {
+        console.error("Failed to subscribe to channel", channelId, error);
+        refreshAfterSubscribe("subscription failure");
+      },
+    });
 
     return () => {
       isDisposed = true;
       disposeReconnectListener();
-      if (cleanup) {
-        void cleanup();
-      }
+      disposeSubscription();
     };
   }, [channelId, channelType]);
 }

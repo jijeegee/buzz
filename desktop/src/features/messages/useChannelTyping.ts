@@ -4,6 +4,7 @@ import {
   getChannelIdFromTags,
   getThreadReference,
 } from "@/features/messages/lib/threading";
+import { keepLiveSubscription } from "@/shared/api/liveSubscriptionRetry";
 import { relayClient } from "@/shared/api/relayClient";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import {
@@ -182,35 +183,28 @@ export function useChannelTyping(
     }
 
     let isDisposed = false;
-    let cleanup: (() => Promise<void>) | undefined;
-
-    relayClient
-      .subscribeToTypingIndicators(channelId, (event) => {
-        if (!isDisposed) {
-          registerTyping(event);
-        }
-      })
-      .then((dispose) => {
-        if (isDisposed) {
-          void dispose();
-          return;
-        }
-
-        cleanup = dispose;
-      })
-      .catch((error) => {
+    // A failed open is retried: thread working indicators come only from
+    // these typing events.
+    const disposeSubscription = keepLiveSubscription({
+      open: () =>
+        relayClient.subscribeToTypingIndicators(channelId, (event) => {
+          if (!isDisposed) {
+            registerTyping(event);
+          }
+        }),
+      onReconnect: (listener) => relayClient.subscribeToReconnects(listener),
+      onFailed: (error) => {
         console.error(
           "Failed to subscribe to typing indicators",
           channelId,
           error,
         );
-      });
+      },
+    });
 
     return () => {
       isDisposed = true;
-      if (cleanup) {
-        void cleanup();
-      }
+      disposeSubscription();
     };
   }, [channelId, channelType]);
 
