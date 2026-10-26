@@ -528,6 +528,17 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         debugPrint('[ChannelsNotifier] batched $operation hit the deadline');
         return null;
       }
+      // Back-pressure: one request per room would only add to it. The same
+      // single request goes once more after the window (queries wait for
+      // it); failing again, the batch is unavailable.
+      if (session.isRateLimited) {
+        try {
+          return await session.queryRelay(filters);
+        } catch (retryError) {
+          debugPrint('[ChannelsNotifier] batched $operation: $retryError');
+          return null;
+        }
+      }
       debugPrint(
         '[ChannelsNotifier] batched $operation failed; '
         'using bounded websocket fallback: $error',

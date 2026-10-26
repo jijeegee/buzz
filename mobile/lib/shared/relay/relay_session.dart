@@ -287,6 +287,14 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       throw StateError('Relay session is unavailable');
     }
     final generation = _contextGeneration;
+    // Back-pressure is per account: a read sent inside the window is only
+    // refused again, and keeps the window open.
+    if (_rateLimitGate.isActive) {
+      await waitForRateLimit();
+      if (_disposed || _ageRestricted || generation != _contextGeneration) {
+        throw StateError('Relay query belongs to a retired session');
+      }
+    }
     final config = ref.read(relayConfigProvider);
     final url = Uri.parse(config.baseUrl).resolve('/query').toString();
     final bodyBytes = utf8.encode(jsonEncode(filters));
