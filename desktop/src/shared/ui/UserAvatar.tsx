@@ -7,6 +7,7 @@ import { cn } from "@/shared/lib/cn";
 import { getInitials } from "@/shared/lib/initials";
 import { useRelayMediaFallback } from "@/shared/lib/relayMediaVariants";
 import { rewriteRelayUrl } from "@/shared/lib/mediaUrl";
+import { useAwaitingMediaProxy } from "@/shared/lib/useMediaProxyPort";
 import { Avatar, AvatarFallback, AvatarImage } from "@/shared/ui/avatar";
 
 type UserAvatarSize = "xs" | "sm" | "md";
@@ -84,11 +85,19 @@ export function UserAvatar({
     animated ? null : shapedAvatarUrl,
     "small",
   );
-  const src = animated
-    ? rewriteRelayUrl(isHovered ? animated.animationUrl : animated.posterUrl)
-    : still.src
-      ? rewriteRelayUrl(still.src)
-      : null;
+  // Hold relay images until the proxy port is known (a few ms at launch):
+  // drawn earlier they would load through the uncached path, then again.
+  const awaitingProxy = useAwaitingMediaProxy();
+  const rawSrc = animated
+    ? isHovered
+      ? animated.animationUrl
+      : animated.posterUrl
+    : still.src;
+  const rewritten = rawSrc ? rewriteRelayUrl(rawSrc) : null;
+  const src =
+    rewritten && awaitingProxy && rewritten.startsWith("kuzz-media://")
+      ? null
+      : rewritten;
   const radiusClass =
     resolvedShape === "squircle" ? "rounded-squircle" : "rounded-full";
 

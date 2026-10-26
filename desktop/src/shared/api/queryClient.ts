@@ -60,5 +60,11 @@ export function createKuzzQueryClient() {
       gcTime: CONVERSATION_CACHE_GC_MS,
     });
   }
+  // Per-pubkey profile entries are written by the batch query and observed by
+  // nothing; keep them past their 10-minute freshness so a stale entry still
+  // paints (as placeholder) while it is read again.
+  queryClient.setQueryDefaults(["users-batch-entry"], {
+    gcTime: CONVERSATION_CACHE_GC_MS,
+  });
   return queryClient;
 }

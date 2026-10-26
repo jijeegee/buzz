@@ -223,3 +223,22 @@ test("ignores malformed cache payloads", async () => {
     undefined,
   );
 });
+
+test("keeps avatar URLs so a restart draws known avatars at once", async () => {
+  const subject = await loadSubject();
+  installLocalStorage();
+  subject.writeCachedUserLabels("wss://relay.example", {
+    abcdef: {
+      displayName: "Alice",
+      name: "alice",
+      avatarUrl: "https://relay.example/media/a.png",
+      nip05Handle: null,
+      ownerPubkey: null,
+    },
+  });
+  assert.equal(
+    subject.readCachedUserLabels("wss://relay.example", ["abcdef"]).profiles
+      .abcdef.avatarUrl,
+    "https://relay.example/media/a.png",
+  );
+});
