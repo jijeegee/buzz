@@ -40,6 +40,9 @@ type AppShellContextValue = {
   // Send an open thread's read to the relay's chat state only (no local
   // marker); a no-op while it is off.
   mirrorThreadRead: (rootId: string, timestamp: number) => void;
+  // Send a room or thread read to the relay's chat state again at a position
+  // already sent, for a message that arrived later but is dated before it.
+  resendRead: (contextId: string, timestamp: number) => void;
   // Per-message read frontier as unix-seconds timestamp, or null when never
   // read. Uses `msg:<id>` context keys folded through the active channel by the
   // parent resolver (LP4 v3 per-message badge model).
@@ -103,6 +106,7 @@ const DEFAULT_APP_SHELL: AppShellContextValue = {
   markThreadRead: () => {},
   markThreadUnread: () => false,
   mirrorThreadRead: () => {},
+  resendRead: () => {},
   getMessageReadAt: () => null,
   getChannelActivityItemReadAt: () => null,
   markMessageRead: () => {},
@@ -161,6 +165,7 @@ const ROOM_KEYS = [
   "isThreadMuted",
   "readStateVersion",
   "mirrorThreadRead",
+  "resendRead",
   "locallyUnreadFeedItems",
   "feedItemState",
 ] as const satisfies readonly (keyof AppShellContextValue)[];

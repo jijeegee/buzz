@@ -334,22 +334,6 @@ export function removeOptimisticMessage(
 const STORED_SEND_MATCH_WINDOW_SECONDS = 120;
 
 /**
- * The backend signs at a caller-chosen second only within two minutes of
- * now (`is_recent_send_time`), and at the current second otherwise. A send
- * of a row drawn longer ago than this is redrawn at the current second, so
- * the second it is signed at is still the one drawn and its copy is still
- * recognised. Kept under the backend's limit for the time the send takes.
- */
-const RESEND_AT_DRAWN_TIME_SECONDS = 110;
-
-/** The second to draw and sign a send of a row drawn at `drawnAt`. */
-export function sendTimeOfDrawnRow(drawnAt: number, now: number): number {
-  return drawnAt <= now && now - drawnAt <= RESEND_AT_DRAWN_TIME_SECONDS
-    ? drawnAt
-    : now;
-}
-
-/**
  * Asks the relay whether a stored send landed after all (the app quit
  * between the relay storing it and its acknowledgement). Until it answers,
  * the send is not drawn, so a delivered message never shows as failed and
@@ -977,7 +961,6 @@ export function useSendMessageMutation(
       sentFromThreadRootId,
       sentFromThreadRootExcerpt,
       transport = "auto",
-      optimisticLocalKey,
     }) => {
       // Prefer a channel captured by the caller at compose time. Otherwise,
       // resolve a captured id from the shared channel cache so navigation
@@ -1031,15 +1014,11 @@ export function useSendMessageMutation(
         );
       }
 
-      // Sign with the second the sender's row already shows, so the
-      // acknowledged message stays exactly where it was drawn.
-      const shownSendTime = optimisticLocalKey
-        ? findOptimisticMessage(
-            queryClient,
-            effectiveChannel.id,
-            optimisticLocalKey,
-          )?.created_at
-        : undefined;
+      // No send time is passed: the backend signs at the second it sends,
+      // never at the second the row was drawn, which may be well before (a
+      // preview, a mention prompt). A message signed earlier than it reaches
+      // the relay misses every subscription opened in between, and reorders
+      // the relay's unread count against time-based read markers.
       const sentFromThreadTag = sentFromThreadRootId
         ? buildSentFromThreadTag(
             sentFromThreadRootId,
@@ -1089,8 +1068,6 @@ export function useSendMessageMutation(
           undefined,
           suppliedRootEventId,
           quoteTag,
-          undefined,
-          shownSendTime,
         );
 
         // Build tags matching relay-emitted shape: h, author p, mention ps, reply es, imeta, emoji.
@@ -1142,7 +1119,6 @@ export function useSendMessageMutation(
         content,
         recipientPubkeys,
         [...mentionTags, ...(sentFromThreadTag ? [sentFromThreadTag] : [])],
-        shownSendTime,
       );
     },
     onMutate: async ({
@@ -1204,25 +1180,10 @@ export function useSendMessageMutation(
         sentFromThreadRootExcerpt ?? null,
         optimisticLocalKey,
       );
-      // A previewed row is replaced in place: same id and time, so it never
-      // moves. A Retry long after it was drawn moves it to now, the second
-      // the backend will sign it at.
-      const previewed = optimisticLocalKey
-        ? findOptimisticMessage(
-            queryClient,
-            effectiveChannel.id,
-            optimisticLocalKey,
-          )
-        : undefined;
-      const drawn = previewed
-        ? {
-            ...optimisticMessage,
-            created_at: sendTimeOfDrawnRow(
-              previewed.created_at,
-              optimisticMessage.created_at,
-            ),
-          }
-        : optimisticMessage;
+      // A previewed row is replaced in place (same id) at the second of this
+      // send, at or before the second the backend signs it at, so its relay
+      // copy is still recognised.
+      const drawn = optimisticMessage;
       writeOptimisticMessage(queryClient, effectiveChannel.id, drawn);
       if (optimisticLocalKey) {
         // Kept on disk until the relay accepts it, so a failure or a quit

@@ -43,18 +43,29 @@ export function buildChannelFilter(
 }
 
 /**
- * Live room subscription from now: every kind the local message store syncs,
- * so the native socket tap can count it as a live segment for the room.
+ * How far back an open room's live subscription starts. The relay checks
+ * `since` against a message's own time, so a message dated before the
+ * subscription opened but arriving after it (a sender clock behind, a send
+ * signed before it reached the relay) would never reach the room; replaying
+ * this window catches it. Consumers merge by event id.
+ */
+export const ROOM_LIVE_SINCE_GRACE_SECONDS = 120;
+
+/**
+ * Live room subscription from now (less `sinceGraceSeconds`): every kind the
+ * local message store syncs, so the native socket tap can count it as a live
+ * segment for the room.
  */
 export function buildChannelLiveFilter(
   channelId: string,
   extraKinds: readonly number[] = [],
+  sinceGraceSeconds = 0,
 ): RelaySubscriptionFilter {
   return {
     kinds: [...CHANNEL_SYNC_KINDS, ...extraKinds],
     "#h": [channelId],
     limit: 1000,
-    since: Math.floor(Date.now() / 1_000),
+    since: Math.floor(Date.now() / 1_000) - sinceGraceSeconds,
   };
 }
 

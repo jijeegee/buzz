@@ -30,6 +30,7 @@ import {
   buildChannelHistoryFilter,
   buildChannelLiveFilter,
   buildGlobalStreamFilter,
+  ROOM_LIVE_SINCE_GRACE_SECONDS,
 } from "@/shared/api/relayChannelFilters";
 import {
   clearClosedRetry,
@@ -347,7 +348,10 @@ export class RelayClient {
     return this.subscribe(buildChannelFilter(channelId, 50), onEvent);
   }
 
-  /** Subscribe to channel rows and aux starting now, with no history replay. */
+  /**
+   * Subscribe to channel rows and aux from just before now: the last
+   * ROOM_LIVE_SINCE_GRACE_SECONDS replay, so late-dated arrivals still land.
+   */
   async subscribeToChannelLive(
     channelId: string,
     onEvent: (event: RelayEvent) => void,
@@ -355,7 +359,11 @@ export class RelayClient {
     // 39005 reaches only this window-store consumer, never unread tracking or
     // cache merges; sync-only kinds feed the local message store alone.
     return this.subscribe(
-      buildChannelLiveFilter(channelId, [KIND_CHANNEL_THREAD_SUMMARY]),
+      buildChannelLiveFilter(
+        channelId,
+        [KIND_CHANNEL_THREAD_SUMMARY],
+        ROOM_LIVE_SINCE_GRACE_SECONDS,
+      ),
       uiKindsOnly(onEvent, KIND_CHANNEL_THREAD_SUMMARY),
     );
   }

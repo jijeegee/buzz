@@ -41,7 +41,6 @@ const { discardFailedSend, hasFailedSend, resetFailedSends, retryFailedSend } =
 const { isStoredSendInFlight, resetStoredSendSession, storedSends } =
   await import("../messages/lib/failedSendStore.ts");
 const { initDraftStore } = await import("../messages/lib/useDrafts.ts");
-const { sendTimeOfDrawnRow } = await import("../messages/hooks.ts");
 
 const CHANNEL = "11111111-1111-4111-8111-111111111111";
 const ME = "a".repeat(64);
@@ -166,7 +165,8 @@ function accepted(args, id) {
     parent_event_id: args.parentEventId ?? null,
     root_event_id: args.parentEventId ?? null,
     depth: args.parentEventId ? 1 : 0,
-    created_at: args.createdAt,
+    // The backend signs at the second it sends.
+    created_at: args.createdAt ?? Math.floor(Date.now() / 1000),
   });
 }
 
@@ -205,9 +205,9 @@ test("an own post shows at once, and only once when the refetch brings it", asyn
     true,
   );
   await flush();
-  // Signed at the second the row shows, so it does not move.
+  // No send time is passed: the backend signs at the second it sends.
   assert.equal(invocations.length, 1);
-  assert.equal(invocations[0].createdAt, row.event.created_at);
+  assert.equal(invocations[0].createdAt ?? null, null);
   assert.equal(invocations[0].kind, KIND_POST);
   assert.equal(storedSends(CHANNEL).length, 1);
 
@@ -280,7 +280,7 @@ test("a failed post stays with Retry, which sends it again under its row", async
   await act(async () => retryFailedSend(row.localKey));
   assert.equal(invocations.length, 2);
   assert.equal(invocations[1].content, "hello");
-  assert.equal(invocations[1].createdAt, row.event.created_at);
+  assert.equal(invocations[1].createdAt ?? null, null);
   assert.equal(localRows(queryClient).length, 1);
   assert.equal(localRows(queryClient)[0].localKey, row.localKey);
   assert.equal(localRows(queryClient)[0].eventId, id);
@@ -625,14 +625,6 @@ async function atTime(at, body) {
   }
 }
 
-test("a send keeps its drawn second only while the backend still signs at it", () => {
-  assert.equal(sendTimeOfDrawnRow(1_000, 1_000), 1_000);
-  assert.equal(sendTimeOfDrawnRow(1_000, 1_110), 1_000);
-  assert.equal(sendTimeOfDrawnRow(1_000, 1_111), 1_111);
-  // A row drawn "in the future" (the clock went back) is signed now.
-  assert.equal(sendTimeOfDrawnRow(1_200, 1_100), 1_100);
-});
-
 test("Retry more than two minutes later redraws the row at the second it is signed", async () => {
   const queryClient = newClient();
   seedForum(queryClient);
@@ -653,8 +645,8 @@ test("Retry more than two minutes later redraws the row at the second it is sign
   assert.equal(redrawn.localKey, row.localKey);
   assert.equal(redrawn.failed, true);
   assert.equal(redrawn.event.created_at, Math.floor((start + 200_000) / 1000));
-  // Row, signing time and disk copy all carry the new second.
-  assert.equal(invocations[1].createdAt, redrawn.event.created_at);
+  // Row and disk copy carry the new second; the backend signs then.
+  assert.equal(invocations[1].createdAt ?? null, null);
   assert.equal(
     storedSends(CHANNEL)[0].event.created_at,
     redrawn.event.created_at,
@@ -671,7 +663,7 @@ test("Retry more than two minutes later redraws the row at the second it is sign
   assert.deepEqual(storedSends(CHANNEL), []);
 });
 
-test("Retry within two minutes keeps the row's second", async () => {
+test("Retry within two minutes also redraws the row at now", async () => {
   const queryClient = newClient();
   seedForum(queryClient);
   sendHandler = () => Promise.reject(new Error("offline"));
@@ -685,10 +677,11 @@ test("Retry within two minutes keeps the row's second", async () => {
   await atTime(start + 60_000, () =>
     act(async () => retryFailedSend(row.localKey)),
   );
-  assert.equal(invocations[1].createdAt, row.event.created_at);
+  // Never dated before it reaches the relay: no send time, row at now.
+  assert.equal(invocations[1].createdAt ?? null, null);
   assert.equal(
     localRows(queryClient)[0].event.created_at,
-    row.event.created_at,
+    Math.floor((start + 60_000) / 1000),
   );
 });
 

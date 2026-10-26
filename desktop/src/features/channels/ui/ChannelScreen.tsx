@@ -90,6 +90,7 @@ import { useChannelProfilePanel } from "./useChannelProfilePanel";
 import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
+import { useLateArrivalRead } from "./useLateArrivalRead";
 import { isRelayOffline, useChannelOpenAnchor } from "./useChannelOpenAnchor";
 import {
   type ReadingPosition,
@@ -263,6 +264,13 @@ export const ChannelScreen = React.memo(function ChannelScreen({
     activeChannelId,
     activeChannel?.isMember,
     activeReadAt,
+  );
+  useLateArrivalRead(
+    activeChannelId,
+    latestActiveMessage?.created_at ?? null,
+    messagesQuery.data ?? EMPTY_RELAY_EVENTS,
+    currentPubkey,
+    activeChannel?.isMember !== false,
   );
   React.useEffect(() => {
     if (!activeChannelId) {
@@ -757,7 +765,11 @@ export const ChannelScreen = React.memo(function ChannelScreen({
   const displayedThreadAllMessages = threadPanelData.messages;
   const displayedThreadMessages = threadPanelData.visibleReplies;
   const displayedThreadReplyTargetMessage = threadPanelData.replyTargetMessage;
-  useThreadOpenServerRead(displayedThreadHeadMessage, displayedThreadMessages);
+  useThreadOpenServerRead(
+    displayedThreadHeadMessage,
+    displayedThreadMessages,
+    currentPubkey,
+  );
   const displayedThreadFirstUnreadReplyId = displayedThreadHeadMessage
     ? threadFirstUnreadReplyId
     : null;

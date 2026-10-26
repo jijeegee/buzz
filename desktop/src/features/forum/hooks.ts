@@ -6,7 +6,6 @@ import { relayClient } from "@/shared/api/relayClient";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import {
   lookupStoredSendOnRelay,
-  sendTimeOfDrawnRow,
   type StoredSendRelayCheck,
 } from "@/features/messages/hooks";
 import { registerFailedSend } from "@/features/messages/lib/failedSends";
@@ -192,27 +191,17 @@ export function useForumSend(pubkey: string | undefined) {
         variables.mediaTags,
         variables.mentionPubkeys,
         variables.kind,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        undefined,
-        // Sign with the second the row already shows, so it never moves.
-        findForumLocalSend(queryClient, variables.channelId, variables.localKey)
-          ?.event.created_at,
+        // No send time: the backend signs at the second it sends, so the
+        // post is never dated before it reaches the relay.
       ),
     onMutate: (variables) => {
       const { channelId, localKey, parentEventId } = variables;
       const now = Math.floor(Date.now() / 1000);
       const shown = findForumLocalSend(queryClient, channelId, localKey)?.event;
-      // A Retry long after the row was drawn moves it to now: the backend
-      // signs it then, and its copy must match the row and the disk copy.
+      // Each attempt redraws the row at now, at or before the second the
+      // backend signs it at, so its copy matches the row and the disk copy.
       const drawn = shown
-        ? { ...shown, created_at: sendTimeOfDrawnRow(shown.created_at, now) }
+        ? { ...shown, created_at: now }
         : pubkey
           ? buildForumLocalEvent(variables, pubkey, now)
           : null;

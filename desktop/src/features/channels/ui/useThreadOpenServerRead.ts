@@ -5,6 +5,7 @@ import { threadGoalRootId } from "@/features/goals/goalTree";
 import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 import type { TimelineMessage } from "@/features/messages/types";
 import { useAppFocused } from "@/shared/lib/useDocumentVisible";
+import { useLateArrivalRead } from "./useLateArrivalRead";
 
 /** Newest createdAt (unix seconds) among the thread root and shown replies. */
 export function newestShownThreadAt(
@@ -28,6 +29,7 @@ export function newestShownThreadAt(
 export function useThreadOpenServerRead(
   head: Pick<TimelineMessage, "createdAt" | "id" | "rootId"> | null | undefined,
   replies: readonly Pick<MainTimelineEntry, "message">[],
+  selfPubkey?: string,
 ) {
   const rootId = head ? threadGoalRootId(head) : null;
   const newestAt = newestShownThreadAt(head, replies);
@@ -37,4 +39,20 @@ export function useThreadOpenServerRead(
     if (!rootId || newestAt === null || !focused) return;
     mirrorThreadRead(rootId, newestAt);
   }, [focused, mirrorThreadRead, newestAt, rootId]);
+  const arrivals = React.useMemo(
+    () =>
+      replies.map(({ message }) => ({
+        id: message.id,
+        pubkey: message.pubkey ?? "",
+        created_at: message.createdAt,
+      })),
+    [replies],
+  );
+  useLateArrivalRead(
+    rootId ? `thread:${rootId}` : null,
+    newestAt,
+    arrivals,
+    selfPubkey,
+    focused,
+  );
 }

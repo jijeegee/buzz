@@ -128,6 +128,8 @@ export function useChatStateWiring({
   markChannelUnread: (channelId: string, source?: ForcedUnreadSource) => void;
   markThreadUnread: (rootId: string) => boolean;
   mirrorThreadRead: (rootId: string, at: number) => void;
+  /** Send a read again at a position already sent (see `resendRead`). */
+  resendRead: (contextId: string, at: number) => void;
   /** Before an explicit thread Mark as read: let its read through. */
   beforeExplicitThreadRead: (rootId: string) => void;
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
@@ -287,6 +289,23 @@ export function useChatStateWiring({
     },
     [threadUnreadGuard],
   );
+  // A message that arrived after this read was sent but is dated at or
+  // before it: the relay counts unread by arrival, so the same position is
+  // sent again to cover it. The thread guard still holds a read back after
+  // this device's Mark as unread.
+  const resendRead = React.useCallback(
+    (contextId: string, at: number) => {
+      if (
+        contextId.startsWith("thread:") &&
+        !threadUnreadGuard.allowRead(contextId, at)
+      ) {
+        return;
+      }
+      writerRef.current?.forgetSent(contextId);
+      writerRef.current?.queueRead(contextId, at);
+    },
+    [threadUnreadGuard],
+  );
   // An explicit Mark as read: lift the guard and resend even a read at a
   // position already sent (another device may have marked it unread).
   const beforeExplicitThreadRead = React.useCallback(
@@ -346,6 +365,7 @@ export function useChatStateWiring({
     mirrorFollow,
     mirrorThreadRead,
     pinThread: threadPins.add,
+    resendRead,
     serverChats,
     syncProps,
     unpinThread: threadPins.remove,
