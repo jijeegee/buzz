@@ -45,6 +45,7 @@ import {
   resolveUserLabelPlaceholderData,
   writeCachedUserLabels,
 } from "@/features/profile/lib/userLabelStorage";
+import { createUsersBatchLoader } from "@/features/profile/lib/usersBatchLoader";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { updateCachedChannelMemberDisplayName } from "@/features/channels/channelMemberProfileCache";
 
@@ -321,12 +322,58 @@ export function evictUsersBatchEntries(
   queryClient: QueryClient,
   pubkeys: string[],
 ) {
+  // A profile save must not reuse or persist a read started before the save.
+  usersBatchLoaders.get(queryClient)?.dispose();
+  usersBatchLoaders.delete(queryClient);
   for (const pubkey of pubkeys) {
     queryClient.removeQueries({
       queryKey: usersBatchEntryKey(pubkey.toLowerCase()),
       exact: true,
     });
   }
+}
+
+const usersBatchLoaders = new WeakMap<
+  QueryClient,
+  ReturnType<typeof createUsersBatchLoader>
+>();
+
+/**
+ * One coalescing profile loader per query client, so it is scoped to the
+ * community like the cache it fills (see `createUsersBatchLoader`).
+ */
+function usersBatchLoaderFor(queryClient: QueryClient) {
+  let loader = usersBatchLoaders.get(queryClient);
+  if (!loader) {
+    loader = createUsersBatchLoader(getUsersBatch);
+    usersBatchLoaders.set(queryClient, loader);
+  }
+  return loader;
+}
+
+/**
+ * What the batch can show before the relay answers: stored labels, overlaid
+ * by this session's per-pubkey entries, overlaid by the previous answer.
+ * Undefined when nothing is known.
+ */
+export function knownProfilesPlaceholder(
+  queryClient: QueryClient,
+  stored: UsersBatchResponse | undefined,
+  previousData: UsersBatchResponse | undefined,
+  pubkeys: string[],
+): UsersBatchResponse | undefined {
+  const profiles: UsersBatchResponse["profiles"] = {
+    ...(stored?.profiles ?? {}),
+  };
+  for (const pubkey of pubkeys) {
+    const entry = queryClient.getQueryData<UsersBatchEntry>(
+      usersBatchEntryKey(pubkey),
+    );
+    if (entry?.summary) profiles[pubkey] = entry.summary;
+  }
+  Object.assign(profiles, previousData?.profiles ?? {});
+  if (Object.keys(profiles).length === 0) return previousData;
+  return { profiles, missing: previousData?.missing ?? [] };
 }
 
 export function useUsersBatchQuery(
@@ -372,7 +419,9 @@ export function useUsersBatchQuery(
         }
       }
       if (toFetch.length > 0) {
-        const fresh = await getUsersBatch(toFetch);
+        const loader = usersBatchLoaderFor(queryClient);
+        const fresh = await loader(toFetch);
+        loader.assertActive();
         if (relayUrl) {
           writeCachedUserLabels(relayUrl, fresh.profiles, fresh.missing);
         }
@@ -391,10 +440,14 @@ export function useUsersBatchQuery(
     // Loading older messages grows the pubkey set, which changes this query's
     // key entirely. Without this, already-resolved authors would flash back
     // to their raw pubkey while the larger batch refetches.
+    // Every profile already known paints at once: the previous answer, then
+    // profiles read this session (any age), then labels and avatars kept
+    // from earlier sessions. Only the rest wait for the relay.
     placeholderData: (previousData) =>
-      resolveUserLabelPlaceholderData(
+      knownProfilesPlaceholder(
+        queryClient,
+        resolveUserLabelPlaceholderData(undefined, relayUrl, normalizedPubkeys),
         previousData,
-        relayUrl,
         normalizedPubkeys,
       ),
     staleTime: USERS_BATCH_ENTRY_FRESH_MS,

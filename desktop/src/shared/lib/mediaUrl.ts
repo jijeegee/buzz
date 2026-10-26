@@ -27,6 +27,8 @@ const RELAY_MEDIA_RE =
 /** Cached proxy port — fetched once from the Tauri backend. */
 let cachedPort: number | null = null;
 let portPromise: Promise<number | null> | null = null;
+/** The current port lookup finished (with or without a port). */
+let portLookupSettled = false;
 
 /**
  * Cached relay origin (e.g. "https://buzz-oss.stage.blox.sqprod.co"),
@@ -187,6 +189,19 @@ async function fetchProxyPort(): Promise<number | null> {
   // previous community can neither keep spinning nor cache its stale port
   // after a reset.
   const generation = cacheGeneration;
+  portLookupSettled = false;
+  try {
+    return await pollProxyPort(generation);
+  } finally {
+    if (generation === cacheGeneration) {
+      portLookupSettled = true;
+      // A found port already notified; giving up changes what renderers do.
+      if (!cachedPort) notifyMediaProxyPortListeners();
+    }
+  }
+}
+
+async function pollProxyPort(generation: number): Promise<number | null> {
   const deadline = Date.now() + POLL_TIMEOUT_MS;
   while (Date.now() < deadline && generation === cacheGeneration) {
     if (!cachedRelayOrigin) {
@@ -267,6 +282,7 @@ export function resetMediaCaches(): void {
   const hadCachedPort = cachedPort !== null;
   cachedPort = null;
   portPromise = null;
+  portLookupSettled = false;
   if (hadCachedPort) {
     notifyMediaProxyPortListeners();
   }
@@ -293,6 +309,16 @@ export function getCachedRelayOrigin(): string | null {
  */
 export function getCachedMediaProxyPort(): number | null {
   return cachedPort;
+}
+
+/**
+ * The proxy's state for renderers: its port once known, `0` while its lookup
+ * is still running (a relay image drawn now would take the uncached
+ * `kuzz-media://` path and load twice), `-1` once the lookup gave up.
+ */
+export function getMediaProxyState(): number {
+  if (cachedPort && cachedPort > 0) return cachedPort;
+  return portLookupSettled ? -1 : 0;
 }
 
 /**

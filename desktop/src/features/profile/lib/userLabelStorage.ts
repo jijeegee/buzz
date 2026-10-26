@@ -12,6 +12,11 @@ type CachedUserLabel = {
   displayName: string | null;
   name: string | null;
   nip05Handle: string | null;
+  /**
+   * Kept so a restart draws a known avatar at once instead of waiting for the
+   * relay. Absent in entries written before it was kept.
+   */
+  avatarUrl: string | null;
   updatedAt: number;
 };
 
@@ -35,6 +40,7 @@ function parseCachedUserLabel(value: unknown): CachedUserLabel | null {
   const displayName = nullableString(raw.displayName);
   const name = nullableString(raw.name);
   const nip05Handle = nullableString(raw.nip05Handle);
+  const avatarUrl = nullableString(raw.avatarUrl) ?? null;
   if (
     displayName === undefined ||
     name === undefined ||
@@ -42,13 +48,16 @@ function parseCachedUserLabel(value: unknown): CachedUserLabel | null {
   ) {
     return null;
   }
-  if (![displayName, name, nip05Handle].some((label) => label?.trim())) {
+  if (
+    ![displayName, name, nip05Handle, avatarUrl].some((label) => label?.trim())
+  ) {
     return null;
   }
   return {
     displayName,
     name,
     nip05Handle,
+    avatarUrl,
     updatedAt:
       typeof raw.updatedAt === "number" && Number.isFinite(raw.updatedAt)
         ? raw.updatedAt
@@ -56,9 +65,38 @@ function parseCachedUserLabel(value: unknown): CachedUserLabel | null {
   };
 }
 
+/**
+ * The parsed cache per storage key and the raw text it came from: rows ask
+ * for placeholder labels on every render, so storage is parsed once per
+ * write, not per row.
+ */
+const parsedCaches = new Map<
+  string,
+  { raw: string; cache: UserLabelCache | null }
+>();
+
+/** Release parsed community data when the active community changes. */
+export function resetUserLabelStorageCache(): void {
+  parsedCaches.clear();
+}
+
 function readCache(relayUrl: string): UserLabelCache | null {
   try {
-    const raw = window.localStorage.getItem(userLabelCacheKey(relayUrl));
+    const key = userLabelCacheKey(relayUrl);
+    const raw = window.localStorage.getItem(key);
+    if (!raw) return null;
+    const parsed = parsedCaches.get(key);
+    if (parsed?.raw === raw) return parsed.cache;
+    const cache = parseCache(raw);
+    parsedCaches.set(key, { raw, cache });
+    return cache;
+  } catch {
+    return null;
+  }
+}
+
+function parseCache(raw: string): UserLabelCache | null {
+  try {
     if (!raw) return null;
     const parsed = JSON.parse(raw) as unknown;
     if (typeof parsed !== "object" || parsed === null) return null;
@@ -102,7 +140,7 @@ export function readCachedUserLabels(
     profiles[normalizedPubkey] = {
       displayName: cached.displayName,
       name: cached.name,
-      avatarUrl: null,
+      avatarUrl: cached.avatarUrl,
       nip05Handle: cached.nip05Handle,
       ownerPubkey: null,
     };
@@ -137,6 +175,7 @@ export function writeCachedUserLabels(
         displayName: profile.displayName,
         name: profile.name,
         nip05Handle: profile.nip05Handle,
+        avatarUrl: profile.avatarUrl,
         updatedAt: now,
       });
       const normalizedPubkey = pubkey.toLowerCase();
