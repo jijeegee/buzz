@@ -929,7 +929,8 @@ class ChannelDetailPage extends HookConsumerWidget {
       channel.id,
       [
         for (final event in messagesState.value ?? const <NostrEvent>[])
-          if (event.threadReference.parentId == null) event,
+          if (event.threadReference.parentId == null)
+            (id: event.id, pubkey: event.pubkey, createdAt: event.createdAt),
       ],
       readTimestamp,
       currentPubkey,

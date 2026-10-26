@@ -1,12 +1,13 @@
 import 'package:flutter_hooks/flutter_hooks.dart';
 
-import '../relay/relay.dart';
+/// What [lateArrivals] needs of a message.
+typedef ArrivalEvent = ({String id, String pubkey, int createdAt});
 
 /// Ids of [events] from others not yet in [seen] that [arrived] (reached
 /// the page as new events, not through a page or by-id load), dated at or
 /// before [readAt]. Adds every id to [seen], so each event is judged once.
 List<String> lateArrivals(
-  Iterable<NostrEvent> events,
+  Iterable<ArrivalEvent> events,
   Set<String> seen,
   int readAt,
   String? selfPubkey,
@@ -36,7 +37,7 @@ List<String> lateArrivals(
 /// records what is already there.
 int useLateArrivals(
   String contextId,
-  Iterable<NostrEvent> events,
+  Iterable<ArrivalEvent> events,
   int? readAt,
   String? selfPubkey,
   bool Function(String eventId) arrived,

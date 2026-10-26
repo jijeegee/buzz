@@ -9,7 +9,7 @@ void _useThreadRead(
   required bool enabled,
   required String channelId,
   required String rootId,
-  required List<NostrEvent> replies,
+  required List<TimelineMessage> replies,
   required ObjectRef<List<ObservedUnreadEvent>?> openedUnread,
   required String? currentPubkey,
 }) {
@@ -21,7 +21,10 @@ void _useThreadRead(
       : replies.map((reply) => reply.createdAt).reduce(math.max);
   final lateArrivalCount = useLateArrivals(
     rootId,
-    replies,
+    [
+      for (final reply in replies)
+        (id: reply.id, pubkey: reply.pubkey, createdAt: reply.createdAt),
+    ],
     readAt,
     currentPubkey,
     ref.read(channelMessagesProvider(channelId).notifier).arrivedLive,

@@ -1,16 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/shared/read_state/late_arrivals.dart';
-import 'package:kuzz/shared/relay/relay.dart';
 
-NostrEvent _event(String id, int createdAt, {String pubkey = 'other'}) =>
-    NostrEvent(
-      id: id,
-      pubkey: pubkey,
-      createdAt: createdAt,
-      kind: 9,
-      tags: const [],
-      content: '',
-    );
+ArrivalEvent _event(String id, int createdAt, {String pubkey = 'other'}) =>
+    (id: id, pubkey: pubkey, createdAt: createdAt);
 
 void main() {
   test('a message from someone else dated at or before the read is late', () {
