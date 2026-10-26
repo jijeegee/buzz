@@ -173,3 +173,27 @@ test("a completed walk closes a live gap", async () => {
   assert.equal(repairs.length, 1);
   assert.equal(subscription.liveGap, undefined);
 });
+
+test("the connection is usable once REQs are restored, before the catch-up ends", async () => {
+  const events = [];
+  let finishCatchUp = () => {};
+  const done = replayLiveSubscriptions({
+    subscriptions: new Map([["live-1", liveSub([])]]),
+    sendRaw: async (payload) => {
+      events.push(payload[0]);
+    },
+    requestRepair: async () => [],
+    catchUp: () => {
+      events.push("catch-up");
+      return new Promise((resolve) => {
+        finishCatchUp = () => resolve(caughtUp());
+      });
+    },
+    generation: 2,
+    onRequestsRestored: () => events.push("restored"),
+  });
+  for (let i = 0; i < 10; i++) await Promise.resolve();
+  assert.deepEqual(events, ["REQ", "restored", "catch-up"]);
+  finishCatchUp();
+  await done;
+});

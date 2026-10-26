@@ -13,10 +13,7 @@ import {
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
 import { pageOlderMessagesUntilRowFloor } from "@/features/messages/lib/pageOlderMessages";
-import {
-  MAX_STORED_SEEK_PAGES,
-  MAX_UNREAD_SEEK_PAGES,
-} from "@/features/channels/ui/useChannelOpenAnchor";
+import { MAX_STORED_SEEK_PAGES } from "@/features/channels/ui/useChannelOpenAnchor";
 import {
   channelMessagesKey,
   channelWindowKey,
@@ -104,9 +101,10 @@ export async function preloadChannelsMessages(
 export type UnreadAnchorTarget = { channelId: string; readAt: number };
 
 /**
- * Page each room's cached window older (store first, then the server) until
- * it reaches the room's read marker, so opening at the first unread needs no
- * seek. Bounded like the open's own seek; rooms with no newest page loaded
+ * Page each room's cached window older from the local store until it reaches
+ * the room's read marker, so opening at the first unread needs no seek.
+ * Never asks the server: what the store lacks, opening the room seeks.
+ * Bounded like the open's own store seek; rooms with no newest page loaded
  * are skipped. Resolves to the rooms whose read marker is now loaded.
  */
 export async function preloadUnreadAnchors(
@@ -116,7 +114,6 @@ export async function preloadUnreadAnchors(
 ): Promise<string[]> {
   const reached: string[] = [];
   for (const { channelId, readAt } of targets) {
-    let serverPages = 0;
     let storedPages = 0;
     for (;;) {
       if (!shouldContinue()) return reached;
@@ -129,25 +126,23 @@ export async function preloadUnreadAnchors(
         reached.push(channelId);
         break;
       }
-      if (
-        serverPages >= MAX_UNREAD_SEEK_PAGES ||
-        storedPages >= MAX_STORED_SEEK_PAGES
-      ) {
-        break;
-      }
+      if (storedPages >= MAX_STORED_SEEK_PAGES) break;
       let source: "store" | "server" | undefined;
       try {
+        // Store pages only: a background pass must not spend the relay's
+        // per-minute request budget (one 429 holds every request, including
+        // the room being opened). Opening the room seeks the server itself.
         ({ source } = await pageOlderMessagesUntilRowFloor(
           queryClient,
           channelId,
           shouldContinue,
+          { storeOnly: true },
         ));
       } catch (error) {
         console.warn("Unread history preload failed", channelId, error);
         break;
       }
       if (source === "store") storedPages += 1;
-      else if (source === "server") serverPages += 1;
       else break;
     }
   }

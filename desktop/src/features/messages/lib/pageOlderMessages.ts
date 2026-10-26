@@ -29,10 +29,19 @@ export function pageOlderMessagesUntilRowFloor(
   queryClient: QueryClient,
   channelId: string,
   shouldContinue: () => boolean,
+  options: {
+    /** Append only a page the local store holds; never ask the server. */
+    storeOnly?: boolean;
+  } = {},
 ): Promise<PageOlderResult> {
   const running = inFlightPasses.get(channelId);
   if (running) return running;
-  const pass = runPage(queryClient, channelId, shouldContinue).finally(() => {
+  const pass = runPage(
+    queryClient,
+    channelId,
+    shouldContinue,
+    options.storeOnly ?? false,
+  ).finally(() => {
     inFlightPasses.delete(channelId);
   });
   inFlightPasses.set(channelId, pass);
@@ -43,6 +52,7 @@ async function runPage(
   queryClient: QueryClient,
   channelId: string,
   shouldContinue: () => boolean,
+  storeOnly: boolean,
 ): Promise<PageOlderResult> {
   const store = queryClient.getQueryData<ChannelWindowStore>(
     channelWindowKey(channelId),
@@ -58,6 +68,7 @@ async function runPage(
     channelId,
     requestCursor,
   );
+  if (!stored && storeOnly) return { hasOlderMessages: true };
   const page =
     stored ??
     parseChannelWindowResponse(

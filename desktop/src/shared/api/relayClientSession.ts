@@ -1055,10 +1055,23 @@ export class RelayClient {
     return [...this.subscriptions.values()].some((s) => s.mode === "live");
   }
 
-  private async replayLiveSubscriptions() {
+  /**
+   * Restore live subscriptions, resolving once their REQs are back on the
+   * socket. The catch-up of every joined room and the repair walks continue
+   * after: waiting for them held every new subscription and every send for
+   * as long as they took (most visible right after launch).
+   */
+  private replayLiveSubscriptions(): Promise<void> {
+    return new Promise<void>((resolve, reject) => {
+      this.runReplay(resolve).then(resolve, reject);
+    });
+  }
+
+  private async runReplay(onRequestsRestored: () => void) {
     const generation = this.connectionGeneration;
     try {
       await replayLiveSubscriptions({
+        onRequestsRestored,
         subscriptions: this.subscriptions,
         sendRaw: (payload) => this.sendRaw(payload),
         requestRepair: getChannelReconnectRepairEvents,

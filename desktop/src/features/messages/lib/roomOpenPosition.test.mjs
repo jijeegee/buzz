@@ -81,6 +81,7 @@ function windowOf(...runs) {
 let calls = [];
 /** Store rows below `before` (or the newest), `PAGE` at a time, down to 1. */
 let storedThrough = 100;
+let storeHasOlder = true;
 let coverageHiAt = 100;
 let serverFails = false;
 const PAGE = 10;
@@ -111,6 +112,9 @@ globalThis.__TAURI_INTERNALS__ = {
           },
         ];
       case "message_store_read_window": {
+        if (args.before && !storeHasOlder) {
+          return { ...storePage(1, 0, args.before), hasMore: false };
+        }
         const top = args.before ? args.before.createdAt - 1 : storedThrough;
         if (top < 1) return { ...storePage(1, 0, args.before), hasMore: false };
         return storePage(Math.max(1, top - PAGE + 1), top, args.before);
@@ -154,6 +158,7 @@ const windowIds = (queryClient) =>
 
 beforeEach(() => {
   storedThrough = 100;
+  storeHasOlder = true;
   coverageHiAt = 100;
   serverFails = false;
 });
@@ -298,6 +303,18 @@ test("unread preload pages each room down to its read marker from the store", as
   ]);
   assert.deepEqual(reached, [ROOM]);
   assert.ok(Math.min(...windowIds(queryClient)) <= 65);
+  assert.ok(!commands().includes("get_channel_window"));
+});
+
+test("unread preload never asks the server for what the store lacks", async () => {
+  const queryClient = await client();
+  storeHasOlder = false;
+  queryClient.setQueryData(channelWindowKey(ROOM), windowOf([91, 100]));
+  const reached = await preloadUnreadAnchors(queryClient, [
+    { channelId: ROOM, readAt: 5 },
+  ]);
+  assert.deepEqual(reached, []);
+  assert.equal(Math.min(...windowIds(queryClient)), 91);
   assert.ok(!commands().includes("get_channel_window"));
 });
 

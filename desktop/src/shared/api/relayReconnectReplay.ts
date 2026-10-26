@@ -225,7 +225,13 @@ export async function replayLiveSubscriptions({
   setTimeoutFn = (fn: () => void, ms: number) =>
     window.setTimeout(fn, ms) as unknown as number,
   isActive = () => true,
+  onRequestsRestored,
 }: {
+  /**
+   * Called once every live REQ is back on the socket, before the catch-up
+   * and repair walks: the connection is usable from here on.
+   */
+  onRequestsRestored?: () => void;
   subscriptions: Map<string, RelaySubscription>;
   sendRaw: (payload: unknown[]) => Promise<void>;
   requestRepair: (
@@ -381,6 +387,8 @@ export async function replayLiveSubscriptions({
       );
     }
   }
+
+  onRequestsRestored?.();
 
   const repairRequests = replayRequests.filter(
     (
