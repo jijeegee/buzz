@@ -161,7 +161,16 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     ref.listen(relaySessionProvider, (prev, next) {
       if (prev?.status != SessionStatus.connected &&
           next.status == SessionStatus.connected) {
-        unawaited(manager.reinitializeRemote());
+        // A first load started before the socket was up sent its fetch into
+        // nothing and waits out its timeout; this read on the live socket
+        // makes the state ready instead.
+        unawaited(
+          manager.reinitializeRemote().then((ran) {
+            if (!ran || _manager != manager || _isInitialized) return;
+            _isInitialized = true;
+            _emitManagerState(manager);
+          }),
+        );
       }
     });
 

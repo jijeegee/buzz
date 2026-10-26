@@ -238,11 +238,13 @@ class SendMessage {
         tags: tags,
         createdAt: createdAt,
         onSigned: (event) {
-          // Signed again when it went out (relay back-pressure held it): the
-          // row moves to its new time.
-          if (localMessage case final previous?) {
-            _removeLocalMessage(channelId, previous.id);
-          }
+          localMessage = event;
+          onSigned(event);
+        },
+        // Signed again when it went out (relay back-pressure held it): the
+        // row moves to its new time.
+        onResigned: (previous, event) {
+          _removeLocalMessage(channelId, previous.id);
           localMessage = event;
           onSigned(event);
         },

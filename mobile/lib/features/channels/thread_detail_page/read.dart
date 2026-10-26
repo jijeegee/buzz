@@ -7,6 +7,7 @@ part of '../thread_detail_page.dart';
 void _useThreadRead(
   WidgetRef ref, {
   required bool enabled,
+  required String channelId,
   required String rootId,
   required List<NostrEvent> replies,
   required ObjectRef<List<ObservedUnreadEvent>?> openedUnread,
@@ -23,6 +24,7 @@ void _useThreadRead(
     replies,
     readAt,
     currentPubkey,
+    ref.read(channelMessagesProvider(channelId).notifier).arrivedLive,
   );
 
   useEffect(() {
@@ -33,8 +35,7 @@ void _useThreadRead(
         readState.markContextRead(msgContextKey(reply.id), reply.createdAt);
       }
       // Opening a thread at its first unread reply still reads all of them.
-      for (final event
-          in openedUnread.value ?? const <ObservedUnreadEvent>[]) {
+      for (final event in openedUnread.value ?? const <ObservedUnreadEvent>[]) {
         readState.markContextRead(msgContextKey(event.id), event.createdAt);
       }
       readState.markContextRead(

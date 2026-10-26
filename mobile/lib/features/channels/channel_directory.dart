@@ -198,9 +198,10 @@ Future<T> _started<T>(Future<T> future) {
 /// The relay stores DM channels with the literal name "DM", and the pure-Nostr
 /// architecture puts name resolution in the client. People the profile cache
 /// already knows ([known]: saved by earlier launches or read this session)
-/// are labelled from it, without a round trip; it reads them again in the
-/// background, and the next refresh picks up a change. The rest are fetched
-/// in one kind:0 batch. Returns lowercase pubkey to label.
+/// are labelled from it, without a round trip; [refreshKnown] has it read
+/// them again in the background, and the next refresh picks up a change.
+/// The rest are fetched in one kind:0 batch. Returns lowercase pubkey to
+/// label.
 ///
 /// Lives in this part file because `channels_provider.dart` sits against the
 /// repository-wide 1200-line file ceiling enforced by `just file-size-check`.
@@ -210,6 +211,7 @@ Future<Map<String, String>> _resolveDmDisplayNames(
   Iterable<NostrEvent> dedupedMetas,
   String myPk,
   Map<String, UserProfile> known,
+  void Function(List<String> pubkeys) refreshKnown,
 ) async {
   final dmParticipants = <String>{};
   final myPkLower = myPk.toLowerCase();
@@ -243,6 +245,7 @@ Future<Map<String, String>> _resolveDmDisplayNames(
       );
     }
   }
+  if (displayNames.isNotEmpty) refreshKnown(displayNames.keys.toList());
   if (unknown.isEmpty) return displayNames;
 
   final profileEvents = await _fenced(
@@ -406,19 +409,30 @@ class _ChannelRefreshCoordinator {
     return fence;
   }
 
-  /// Fetches the directory under [fence], or throws if the fence is retired.
+  /// Starts fetching the directory under [fence], for [loadDirectory]. The
+  /// status turns to loading now; only [loadDirectory] settles it, so a
+  /// refresh that fails before it does leaves the error its caller records.
+  Future<List<NostrEvent>> startDirectory(
+    RelaySessionNotifier session,
+    _ChannelRefreshFence fence,
+  ) {
+    loadStatus().markLoading(fence.scope);
+    return _started(_fetchChannelDirectoryMetas(session));
+  }
+
+  /// Settles the directory [request] from [startDirectory], or throws if the
+  /// fence is retired.
   ///
   /// Returns null when the request failed inside the current scope, which means
   /// "retain the cached discovery". The fence is re-checked after the await and
   /// before every write, on both the success and the failure path.
   Future<List<NostrEvent>?> loadDirectory(
-    RelaySessionNotifier session,
     _ChannelRefreshFence fence,
+    Future<List<NostrEvent>> request,
   ) async {
-    loadStatus().markLoading(fence.scope);
     final List<NostrEvent> metas;
     try {
-      metas = await _fetchChannelDirectoryMetas(session);
+      metas = await request;
     } catch (error, stackTrace) {
       fence.ensureCurrent();
       loadStatus().markError(fence.scope);

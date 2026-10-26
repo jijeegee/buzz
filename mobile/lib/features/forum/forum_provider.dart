@@ -185,6 +185,13 @@ class ForumEventDelivery {
           messages().addLocalMessage(event, persist: true);
           onShown?.call();
         },
+        // Signed again when it went out (relay back-pressure held it): the
+        // never-sent row gives way to the one sent.
+        onResigned: (previous, event) {
+          messages().removeLocalMessage(previous.id);
+          shown = event;
+          messages().addLocalMessage(event, persist: true);
+        },
       );
     } catch (error) {
       final event = shown;

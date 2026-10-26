@@ -24,6 +24,7 @@ extension _LocalStore on ChannelMessagesNotifier {
   /// The room's own live subscription: stored, then shown.
   void _onSubscriptionEvent(NostrEvent event) {
     recordLoadedEvents(_storeRef, [event]);
+    _noteArrival(event.id);
     _handleLiveEvent(event);
   }
 

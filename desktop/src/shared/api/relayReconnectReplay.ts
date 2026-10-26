@@ -318,9 +318,15 @@ export async function replayLiveSubscriptions({
       // over the cursor: live events kept advancing `lastSeenCreatedAt`
       // while the older window stayed unresolved, and starting from the
       // cursor would skip it permanently.
+      //
+      // A live-only room that has seen nothing yet has neither: its window
+      // starts when it opened (its REQ replays nothing by itself).
       const replayFloor =
         cursorSince === undefined
-          ? subscription.pendingReplaySince
+          ? (subscription.pendingReplaySince ??
+            (shouldPageReplay && subscription.filter.limit === 0
+              ? liveReplayFloor(subscription)
+              : undefined))
           : Math.min(cursorSince, subscription.pendingReplaySince ?? Infinity);
       // Native repair bypasses the original WS filter, so preserve its lower
       // bound explicitly. Otherwise a from-now subscription can replay older

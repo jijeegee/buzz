@@ -2,28 +2,32 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 
 import '../relay/relay.dart';
 
-/// Ids of [events] from others not yet in [seen], dated at or before
-/// [readAt]: they arrived after the read was sent but did not move it. Adds
-/// every id to [seen], so each event is judged once.
+/// Ids of [events] from others not yet in [seen] that [arrived] (reached
+/// the page as new events, not through a page or by-id load), dated at or
+/// before [readAt]. Adds every id to [seen], so each event is judged once.
 List<String> lateArrivals(
   Iterable<NostrEvent> events,
   Set<String> seen,
   int readAt,
   String? selfPubkey,
+  bool Function(String eventId) arrived,
 ) {
   final self = selfPubkey?.toLowerCase();
   final late = <String>[];
   for (final event in events) {
     if (!seen.add(event.id)) continue;
-    if (event.pubkey.toLowerCase() != self && event.createdAt <= readAt) {
+    if (event.pubkey.toLowerCase() != self &&
+        event.createdAt <= readAt &&
+        arrived(event.id)) {
       late.add(event.id);
     }
   }
   return late;
 }
 
-/// How many messages from others have appeared in [events] while
-/// [contextId] is open, dated at or before [readAt]. The relay counts unread
+/// How many messages from others have [arrived] in [events] while
+/// [contextId] is open, dated at or before [readAt]. Older pages loaded while
+/// scrolling are history, not arrivals. The relay counts unread
 /// by arrival, and a read time is turned into the newest arrival dated at or
 /// before it when the read is stored; a message dated earlier (a sender clock
 /// behind, a send signed before it went out) that arrives after leaves that
@@ -35,6 +39,7 @@ int useLateArrivals(
   Iterable<NostrEvent> events,
   int? readAt,
   String? selfPubkey,
+  bool Function(String eventId) arrived,
 ) {
   final seen = useRef<({String contextId, Set<String> ids})?>(null);
   final count = useRef(0);
@@ -53,6 +58,7 @@ int useLateArrivals(
       current.ids,
       readAt,
       selfPubkey,
+      arrived,
     ).length;
   }
   return count.value;

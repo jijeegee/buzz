@@ -261,12 +261,15 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     // discovery fails closed if that contract ever regresses. The composite
     // cursor preserves tied-timestamp rows.
     final directoryRequest = fetchDirectory
-        ? _started(_refreshCoordinator.loadDirectory(session, fence))
+        ? _refreshCoordinator.startDirectory(session, fence)
         : null;
     final memberMetas = await _fenced(fence, memberMetasRequest);
     if (memberChannelIds.isNotEmpty) _noteFeedAlive(metasRequestedAt);
     if (directoryRequest != null) {
-      final metas = await directoryRequest;
+      final metas = await _refreshCoordinator.loadDirectory(
+        fence,
+        directoryRequest,
+      );
       if (metas != null) _directoryMetas = metas;
     }
 
@@ -296,6 +299,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       dedupedMetas,
       myPk,
       ref.read(userCacheProvider),
+      (pubkeys) =>
+          unawaited(ref.read(userCacheProvider.notifier).preload(pubkeys)),
     );
 
     final hiddenDmIds = await _fenced(fence, hiddenDms);
@@ -519,8 +524,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         return null;
       }
       // Back-pressure: one request per room would only add to it. The same
-      // single request goes once more after the window (queries wait for
-      // it); failing again, the batch is unavailable.
+      // single request goes once more (a short window is waited out);
+      // failing again, the batch is unavailable.
       if (session.isRateLimited) {
         try {
           return await session.queryRelay(filters);

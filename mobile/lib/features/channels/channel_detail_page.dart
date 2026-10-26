@@ -933,6 +933,7 @@ class ChannelDetailPage extends HookConsumerWidget {
       ],
       readTimestamp,
       currentPubkey,
+      messagesNotifier.arrivedLive,
     );
 
     useEffect(() {

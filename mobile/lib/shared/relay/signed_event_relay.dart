@@ -131,14 +131,21 @@ class SignedEventRelay {
   /// Sign (or draft) and submit an event. Returns the relay's OK response as
   /// a [NostrEvent] whose `content` field contains the OK message (e.g.
   /// `"response:{...}"` for command kinds). [onSigned] gets the event before
-  /// it is sent, and again with its replacement when it is signed again; the
-  /// last one it got is the one sent.
+  /// it is sent.
+  ///
+  /// [onResigned] opts a message into being dated when it goes out: when
+  /// relay back-pressure holds an event dated "now" (no [createdAt]), it is
+  /// signed again once the window passes, and [onResigned] gets the event
+  /// [onSigned] got and the one actually sent. The first was never sent, so
+  /// this cannot duplicate it. Without [onResigned] the event keeps the time
+  /// it was signed at.
   Future<NostrEvent> submit({
     required int kind,
     required String content,
     required List<List<String>> tags,
     int? createdAt,
     void Function(NostrEvent event)? onSigned,
+    void Function(NostrEvent previous, NostrEvent event)? onResigned,
   }) async {
     NostrEvent build() => buildOutgoingEvent(
       _config,
@@ -149,14 +156,13 @@ class SignedEventRelay {
     );
     var event = build();
     onSigned?.call(event);
-    // An event dated "now" is dated when it goes out. Relay back-pressure
-    // can hold a publish for minutes; signed before that, it would reach the
-    // relay carrying a past time, which other clients order and read by. It
-    // was never sent, so signing it again cannot duplicate it.
-    if (createdAt == null && _session.isRateLimited) {
+    // Held, it would reach the relay carrying a past time, which other
+    // clients order and read by.
+    if (onResigned != null && createdAt == null && _session.isRateLimited) {
       await _session.waitForRateLimit();
+      final previous = event;
       event = build();
-      onSigned?.call(event);
+      onResigned(previous, event);
     }
     return _session.publish(event);
   }

@@ -711,6 +711,43 @@ test("native repair preserves an explicit subscription since boundary", async ()
   ]);
 });
 
+// A live-only room REQ replays nothing by itself, so a room that received no
+// event before the socket dropped is repaired from when it opened.
+test("a quiet live-only room repairs the window since it opened", async () => {
+  resetGate();
+  const repairRequests = [];
+  const subscriptions = new Map([
+    [
+      "live-1",
+      {
+        mode: "live",
+        filter: buildChannelLiveFilter("channel-1"),
+        onEvent: () => {},
+        openedAt: 20_000,
+      },
+    ],
+  ]);
+
+  await replayLiveSubscriptions({
+    subscriptions,
+    sendRaw: async () => {},
+    requestRepair: async (request) => {
+      repairRequests.push(request);
+      return [];
+    },
+  });
+
+  assert.deepEqual(repairRequests, [
+    {
+      channelId: "channel-1",
+      limit: 500,
+      since: 20_000,
+      until: undefined,
+      beforeId: undefined,
+    },
+  ]);
+});
+
 test("reconnect replay starts live REQs in parallel and preserves per-sub page order", async () => {
   resetGate();
   const sentPayloads = [];

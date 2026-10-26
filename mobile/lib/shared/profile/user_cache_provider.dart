@@ -59,7 +59,8 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
     if (prefs == null) return {};
     // Saved shortly after the cache settles, not on every merge.
     listenSelf((previous, next) {
-      if (identical(previous, next)) return;
+      // The first value is what was just read.
+      if (previous == null || identical(previous, next)) return;
       _saveTimer?.cancel();
       _saveTimer = Timer(const Duration(seconds: 2), () {
         unawaited(writeStoredProfiles(prefs, config.baseUrl, next));
@@ -103,21 +104,19 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   Future<bool> preload(List<String> pubkeys) {
     final normalized = pubkeys.map((pk) => pk.toLowerCase()).toSet();
     final alreadyPending = normalized.any(_pending.contains);
-    final uncached = normalized
-        .where((pk) => !state.containsKey(pk) && !_pending.contains(pk))
+    // Saved profiles are shown already, but are read again before this
+    // completes: a caller that waits wants the relay's answer (a saved
+    // profile carries no verified agent owner).
+    final toFetch = normalized
+        .where(
+          (pk) =>
+              (!state.containsKey(pk) || _stale.contains(pk)) &&
+              !_pending.contains(pk),
+        )
         .toList();
-    // Saved profiles are shown already: read them again in the background,
-    // never making the caller wait for them.
-    final stale = normalized
-        .where((pk) => _stale.contains(pk) && !_pending.contains(pk))
-        .toList();
-    if (stale.isNotEmpty) {
-      _stale.removeAll(stale);
-      _pending.addAll(stale);
-      _scheduleBatch();
-    }
-    if (uncached.isEmpty && !alreadyPending) return Future.value(true);
-    _pending.addAll(uncached);
+    if (toFetch.isEmpty && !alreadyPending) return Future.value(true);
+    _stale.removeAll(toFetch);
+    _pending.addAll(toFetch);
     final completer = _batchCompleter ??= Completer<bool>();
     _scheduleBatch();
     return completer.future;

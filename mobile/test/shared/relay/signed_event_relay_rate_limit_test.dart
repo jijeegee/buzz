@@ -32,39 +32,59 @@ class _HeldSession extends RelaySessionNotifier {
 String _nsec() => nostr.Keys.generate().nsec;
 
 void main() {
-  test('a message held by back-pressure is signed again when it goes out',
-      () async {
-    final session = _HeldSession(limited: true);
-    final relay = SignedEventRelay(session: session, nsec: _nsec());
-    final signed = <NostrEvent>[];
+  test(
+    'a message held by back-pressure is signed again when it goes out',
+    () async {
+      final session = _HeldSession(limited: true);
+      final relay = SignedEventRelay(session: session, nsec: _nsec());
+      final signed = <NostrEvent>[];
+      final resigned = <(NostrEvent, NostrEvent)>[];
 
-    await relay.submit(
-      kind: 9,
-      content: 'hi',
-      tags: const [],
-      onSigned: signed.add,
-    );
+      await relay.submit(
+        kind: 9,
+        content: 'hi',
+        tags: const [],
+        onSigned: signed.add,
+        onResigned: (previous, event) => resigned.add((previous, event)),
+      );
 
-    expect(signed, hasLength(2));
-    expect(signed.last.createdAt, greaterThan(signed.first.createdAt));
-    // Only the last one is sent.
-    expect(session.published.map((event) => event.id), [signed.last.id]);
-  });
+      final (previous, sent) = resigned.single;
+      expect(previous.id, signed.single.id);
+      expect(sent.createdAt, greaterThan(previous.createdAt));
+      // Only the new one is sent.
+      expect(session.published.map((event) => event.id), [sent.id]);
+    },
+  );
 
   test('a message with a set time is never signed again', () async {
     final session = _HeldSession(limited: true);
     final relay = SignedEventRelay(session: session, nsec: _nsec());
-    final signed = <NostrEvent>[];
+    var resigned = false;
 
     await relay.submit(
       kind: 9,
       content: 'retry',
       tags: const [],
       createdAt: 1000,
+      onResigned: (_, _) => resigned = true,
+    );
+
+    expect(resigned, isFalse);
+    expect(session.published.single.createdAt, 1000);
+  });
+
+  test('without onResigned an event keeps the time it was signed at', () async {
+    final session = _HeldSession(limited: true);
+    final relay = SignedEventRelay(session: session, nsec: _nsec());
+    final signed = <NostrEvent>[];
+
+    await relay.submit(
+      kind: 30078,
+      content: '',
+      tags: const [],
       onSigned: signed.add,
     );
 
-    expect(signed, hasLength(1));
-    expect(session.published.single.createdAt, 1000);
+    expect(session.published.single.id, signed.single.id);
   });
 }

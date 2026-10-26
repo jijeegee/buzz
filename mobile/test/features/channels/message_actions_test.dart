@@ -50,6 +50,7 @@ class _FakeReadStateNotifier extends ReadStateNotifier {
     String contextId,
     int unixTimestamp, {
     bool clearForcedMessages = false,
+    bool resend = false,
   }) {
     markedRead[contextId] = unixTimestamp;
     var forced = {

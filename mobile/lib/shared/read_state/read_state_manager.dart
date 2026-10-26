@@ -136,8 +136,10 @@ class ReadStateManager {
     await _publish();
   }
 
-  Future<void> reinitializeRemote() async {
-    if (_disposed || !_remoteEnabled || !_initialized) return;
+  /// Reads the remote state again (a reconnect). False when it did not run:
+  /// disposed, local-only, or [initialize] not started yet.
+  Future<bool> reinitializeRemote() async {
+    if (_disposed || !_remoteEnabled || !_initialized) return false;
     debugPrint('[ReadStateManager] reinitializeRemote');
     if (_isPublishing) {
       await _publishCompleter?.future;
@@ -150,6 +152,7 @@ class ReadStateManager {
       _schedulePublish();
     }
     _onChanged();
+    return true;
   }
 
   void dispose({bool flushPending = true}) {

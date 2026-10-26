@@ -21,8 +21,16 @@ void main() {
       _event('mine', 7, pubkey: 'ME'),
       _event('new', 12),
     ];
-    expect(lateArrivals(events, seen, 10, 'me'), ['late']);
+    bool arrived(String id) => id != 'paged';
+    expect(lateArrivals(events, seen, 10, 'me', arrived), ['late']);
     // Each event is judged once.
-    expect(lateArrivals(events, seen, 12, 'me'), isEmpty);
+    expect(lateArrivals(events, seen, 12, 'me', arrived), isEmpty);
+  });
+
+  test('an older page loaded while scrolling is history, not late', () {
+    final seen = {'a'};
+    final events = [_event('a', 10), _event('paged', 4)];
+    bool arrived(String id) => id != 'paged';
+    expect(lateArrivals(events, seen, 10, 'me', arrived), isEmpty);
   });
 }

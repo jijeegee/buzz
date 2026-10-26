@@ -982,6 +982,19 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   /// The message the window was opened at, when [isInMiddleWindow].
   String? get anchorId => _windowStore.anchorId;
 
+  /// Ids of events that reached this room after it opened (its live
+  /// subscription, a reconnect catch-up), not through a page or by-id load.
+  /// Newest [_maxArrivals] kept.
+  final _arrivals = <String>{};
+  static const _maxArrivals = 500;
+
+  bool arrivedLive(String eventId) => _arrivals.contains(eventId);
+
+  void _noteArrival(String eventId) {
+    if (!_arrivals.add(eventId)) return;
+    if (_arrivals.length > _maxArrivals) _arrivals.remove(_arrivals.first);
+  }
+
   /// Changes whenever the window is replaced by one that does not continue it
   /// ([openAt], [jumpToLatest]), so a list can reset its scroll position.
   int get windowGeneration => _windowGeneration;
@@ -1136,7 +1149,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     return true;
   }
 }
-
 
 final channelMessagesProvider =
     NotifierProvider.family<

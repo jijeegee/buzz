@@ -1219,6 +1219,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     _useThreadRead(
       ref,
       enabled: this.ownerView == null && readState.isReady,
+      channelId: channelId,
       rootId: threadHead.id,
       replies: replies,
       openedUnread: initialUnreadReplies,

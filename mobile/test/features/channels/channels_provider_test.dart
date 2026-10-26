@@ -1763,12 +1763,16 @@ void main() {
     });
 
     test('back-pressure retries the one batch instead of each room', () async {
-      final session = _FakeRelaySession(
-        memberships: [_membership(_channelA, myPk)],
-        metadata: [_meta(id: _channelA, name: 'general')],
-      )
-        ..messageBatchError = RelayException(429, '{"error":"rate-limited"}')
-        ..rateLimited = true;
+      final session =
+          _FakeRelaySession(
+              memberships: [_membership(_channelA, myPk)],
+              metadata: [_meta(id: _channelA, name: 'general')],
+            )
+            ..messageBatchError = RelayException(
+              429,
+              '{"error":"rate-limited"}',
+            )
+            ..rateLimited = true;
       final container = _buildContainer(session: session);
       addTearDown(container.dispose);
       await container.read(channelsProvider.future);
