@@ -102,9 +102,13 @@ export function buildReconnectReplayFilter(
   return replayFilter;
 }
 
+/**
+ * A room subscription (one room, every channel kind) is repaired by paging
+ * its missed window, whatever its own `limit`: a live-only room REQ
+ * (`limit: 0`) asks for no history, but the window it missed is still owed.
+ */
 export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
   return (
-    filter.limit > 0 &&
     Array.isArray(filter["#h"]) &&
     filter["#h"].length === 1 &&
     CHANNEL_EVENT_KINDS.every((kind) => filter.kinds.includes(kind))
@@ -121,6 +125,24 @@ export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
  * connection, and clearing its pinned `pendingReplaySince` on a stale abort
  * would erase the floor the new connection still needs.
  */
+/**
+ * The oldest time a reconnect may replay into a subscription: its own
+ * `since`, or for a live-only one (`limit: 0`, no `since`) when it opened.
+ * Neither asked for older rows, and replaying them would surface stale
+ * unread or notification activity.
+ */
+export function liveReplayFloor(
+  subscription: Pick<
+    Extract<RelaySubscription, { mode: "live" }>,
+    "filter" | "openedAt"
+  >,
+) {
+  return (
+    subscription.filter.since ??
+    (subscription.filter.limit === 0 ? (subscription.openedAt ?? 0) : 0)
+  );
+}
+
 export async function replayReconnectHistoryPages({
   subscription,
   channelId,
@@ -306,7 +328,7 @@ export async function replayLiveSubscriptions({
       const replaySince =
         replayFloor === undefined
           ? undefined
-          : Math.max(replayFloor, subscription.filter.since ?? 0);
+          : Math.max(replayFloor, liveReplayFloor(subscription));
       const willRepair = shouldPageReplay && replaySince !== undefined;
       if (willRepair) {
         // Install before the restored live REQ: a live frame may beat page one.

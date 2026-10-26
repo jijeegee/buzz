@@ -80,6 +80,8 @@ type LiveSubscription = {
   /** Release readiness/cancellation listeners when this entry is retired. */
   onRemoved?: () => void;
   lastSeenCreatedAt?: number;
+  /** When it was created (unix seconds): see {@link liveReplayFloor}. */
+  openedAt?: number;
   /**
    * The connection generation this subscription last reached EOSE on, while
    * its live delivery was unbroken. A reconnect catch-up may stand in for its

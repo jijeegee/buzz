@@ -12,6 +12,7 @@ import {
   PAGE_REPLAY_MAX_ATTEMPTS,
   replayLiveSubscriptions,
   REPLAY_BATCH_SIZE,
+  liveReplayFloor,
   shouldPageReconnectReplay,
 } from "./relayReconnectReplay.ts";
 import {
@@ -191,7 +192,31 @@ test("reconnect replay preserves the live-only zero-history contract", () => {
   });
 });
 
-test("live-only subscriptions do not page reconnect history", () => {
+// The relay checks `since` against a message's own (sender) time, so a room
+// subscription with a `since` drops a message dated before it opened that
+// reaches the relay after. Rooms subscribe live-only instead, and still page
+// the window a reconnect missed.
+test("a room live subscription asks for new events only and pages repair", () => {
+  const filter = buildChannelLiveFilter("channel-1", [39005]);
+  assert.equal("since" in filter, false);
+  assert.equal(filter.limit, 0);
+  assert.equal(shouldPageReconnectReplay(filter), true);
+});
+
+test("a live-only subscription replays nothing from before it opened", () => {
+  const filter = buildChannelLiveFilter("channel-1");
+  assert.equal(liveReplayFloor({ filter, openedAt: 5_000 }), 5_000);
+  assert.equal(
+    liveReplayFloor({ filter: { ...filter, since: 6_000 }, openedAt: 5_000 }),
+    6_000,
+  );
+  assert.equal(
+    liveReplayFloor({ filter: { ...filter, limit: 50 }, openedAt: 5_000 }),
+    0,
+  );
+});
+
+test("subscriptions narrower than a room do not page reconnect history", () => {
   const filter = {
     kinds: [9],
     "#h": ["channel-1"],
