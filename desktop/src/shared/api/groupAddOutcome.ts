@@ -17,9 +17,14 @@ export function invitationSentText(name: string): string {
   return t("ui.groupAdd.invitationSent", { name });
 }
 
-/** The relay's OK reason, without the native `relay rejected event:` prefix. */
+/**
+ * The relay's reason, without the native prefix: `relay rejected event:` for
+ * a WebSocket OK, `relay returned 400 Bad Request:` for the HTTP path.
+ */
 function okReason(error: string): string {
-  return error.replace(/^relay rejected event:\s*/i, "").trim();
+  return error
+    .replace(/^(relay rejected event:|relay returned \d{3}[^:]*:)\s*/i, "")
+    .trim();
 }
 
 export function classifyMemberAddError(error: string): MemberAddOutcome {
