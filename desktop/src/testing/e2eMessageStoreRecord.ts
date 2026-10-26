@@ -76,7 +76,12 @@ export function windowClaim(
     );
   if (!bounds) return null;
   try {
-    return boundsClaim(JSON.parse(bounds.content), requestCursor, fetchedAt);
+    // Mirrors `record::answered_at`: never past the relay's signing clock.
+    return boundsClaim(
+      JSON.parse(bounds.content),
+      requestCursor,
+      Math.min(fetchedAt, bounds.created_at),
+    );
   } catch {
     return null;
   }

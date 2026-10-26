@@ -80,6 +80,13 @@ impl Recorder {
         });
     }
 
+    /// Events read by id (a thread root, a linked message): stored, never
+    /// claimed, so an old thread's root is at hand like a recent one's.
+    pub(crate) fn events(&self, events: &[Value]) {
+        let events = events.to_vec();
+        self.submit(move |conn| ingest::insert_events(conn, None, &events, unix_now()).map(|_| ()));
+    }
+
     /// One thread page; `claim` from [`bounds_claim`].
     pub(crate) fn thread(
         &self,
@@ -178,7 +185,19 @@ pub(crate) fn window_claim(
         event["kind"].as_u64() == Some(KIND_WINDOW_BOUNDS) && has_tag(event, "h", channel_id)
     })?;
     let content: Value = serde_json::from_str(bounds["content"].as_str()?).ok()?;
-    bounds_claim(&content, request_cursor, fetched_at)
+    bounds_claim(
+        &content,
+        request_cursor,
+        answered_at(fetched_at, bounds["created_at"].as_i64()),
+    )
+}
+
+/// The upper end a head fetch may claim: the local fetch time, but never past
+/// the relay's own clock when it signed the page's bounds. A device clock that
+/// runs ahead must not claim events the relay had not yet seen, which a later
+/// comparison against message times (sender clocks) would then trust.
+pub(crate) fn answered_at(fetched_at: i64, bounds_created_at: Option<i64>) -> i64 {
+    bounds_created_at.map_or(fetched_at, |relay_at| fetched_at.min(relay_at))
 }
 
 /// The bounds of one reconnect-repair request.

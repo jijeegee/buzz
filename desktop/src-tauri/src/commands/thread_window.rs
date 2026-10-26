@@ -98,7 +98,11 @@ fn split_thread_windows(
             .cursor
             .as_ref()
             .map(|c| (c.created_at, c.event_id.as_str()));
-        let claim = record::bounds_claim(&bounds, request_cursor, fetched_at);
+        let claim = record::bounds_claim(
+            &bounds,
+            request_cursor,
+            record::answered_at(fetched_at, i64::try_from(event.created_at.as_u64()).ok()),
+        );
         let has_more = bounds["has_more"].as_bool().unwrap_or(false);
         let next_cursor = bounds["next_cursor"].as_object().and_then(|cursor| {
             Some(ThreadCursor {

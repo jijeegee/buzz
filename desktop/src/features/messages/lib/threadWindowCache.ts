@@ -266,8 +266,10 @@ async function walkToTarget(
   target: string | null,
 ): Promise<{ events: RelayEvent[]; reached: boolean }> {
   const stateKey = threadWindowStateKey(channelId, rootId);
+  const repliesKey = threadRepliesKey(channelId, rootId);
+  const cachedAtStart = queryClient.getQueryData<RelayEvent[]>(repliesKey);
   let { events, state } = mergeNewestThreadPage(
-    queryClient.getQueryData<RelayEvent[]>(threadRepliesKey(channelId, rootId)),
+    cachedAtStart,
     queryClient.getQueryData<ThreadWindowState>(stateKey),
     page,
   );
@@ -288,6 +290,17 @@ async function walkToTarget(
     );
     if (!older) break;
     ({ events, state } = mergeOlderThreadPage(events, state, older));
+  }
+  // Replies that arrived live while older pages were walked are in the
+  // cache, not in `events`; the result replaces the cache, so keep them.
+  const cachedNow = queryClient.getQueryData<RelayEvent[]>(repliesKey);
+  if (cachedNow !== cachedAtStart) {
+    const known = new Set([
+      ...(cachedAtStart ?? []).map((event) => event.id),
+      ...events.map((event) => event.id),
+    ]);
+    const arrived = (cachedNow ?? []).filter((event) => !known.has(event.id));
+    if (arrived.length > 0) events = sortMessages([...events, ...arrived]);
   }
   const reached = !target || events.some((event) => event.id === target);
   if (reached) queryClient.setQueryData(stateKey, state);

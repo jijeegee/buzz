@@ -16,8 +16,9 @@ fn message(n: u8, created_at: i64, room: &str) -> Value {
            "tags": [["h", room]], "content": "hi", "sig": ""})
 }
 
+/// A bounds overlay the relay signed at 10_000, after every test fetch time.
 fn bounds(room: &str, content: Value) -> Value {
-    json!({"id": "ee".repeat(32), "pubkey": "cd".repeat(32), "created_at": 1, "kind": 39006,
+    json!({"id": "ee".repeat(32), "pubkey": "cd".repeat(32), "created_at": 10_000, "kind": 39006,
            "tags": [["d", format!("{room}:head")], ["h", room]], "content": content.to_string(), "sig": ""})
 }
 
@@ -55,7 +56,22 @@ fn window_claims_come_from_the_bounds_overlay() {
     assert!(matches!(below.unwrap().hi, Upper::Before(cursor) if cursor.created_at == 200));
 
     let end = bounds(ROOM_A, json!({"has_more": false, "next_cursor": null}));
-    assert!(window_claim(&[end], ROOM_A, None, 500).unwrap().lo_is_start);
+    assert!(
+        window_claim(&[end.clone()], ROOM_A, None, 500)
+            .unwrap()
+            .lo_is_start
+    );
+
+    // A device clock ahead of the relay claims no further than the relay had
+    // seen when it signed the bounds.
+    let mut signed_earlier = end;
+    signed_earlier["created_at"] = json!(450);
+    assert_eq!(
+        window_claim(&[signed_earlier], ROOM_A, None, 500)
+            .unwrap()
+            .hi,
+        Upper::At(450)
+    );
 
     // No overlay, another room's overlay, or a broken cursor prove nothing.
     assert!(window_claim(&[message(1, 100, ROOM_A)], ROOM_A, None, 500).is_none());

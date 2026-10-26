@@ -1,8 +1,8 @@
 use std::collections::HashSet;
 
-use tauri::State;
+use tauri::{AppHandle, State};
 
-use crate::{app_state::AppState, relay::query_relay};
+use crate::{app_state::AppState, message_store::record, relay::query_relay};
 
 // The relay clamps a single filter to this many events. Keep exact-ID reads in
 // chunks so a large workflow list cannot silently lose late presentations.
@@ -26,9 +26,16 @@ const GET_EVENT_KINDS: [u32; 15] = [
     kuzz_core_pkg::kind::KIND_HUDDLE_STARTED,
 ];
 
+/// One event by id. Room events read this way (a thread root, a linked
+/// message) are also stored, so an old thread's root is at hand next time.
 #[tauri::command]
-pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<String, String> {
-    let events = query_relay(
+pub async fn get_event(
+    event_id: String,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<String, String> {
+    let (events, recorder) = record::query(
+        &app,
         &state,
         &[serde_json::json!({
             "ids": [event_id],
@@ -41,7 +48,9 @@ pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<S
     let event = events
         .first()
         .ok_or_else(|| "event not found".to_string())?;
-    serde_json::to_string(event).map_err(|error| format!("serialize event: {error}"))
+    let value = serde_json::to_value(event).map_err(|error| format!("serialize event: {error}"))?;
+    recorder.events(std::slice::from_ref(&value));
+    Ok(value.to_string())
 }
 
 /// Relay-signed excerpt of a quoted message the reader joined too late to
@@ -101,6 +110,7 @@ fn normalized_event_id_chunks(event_ids: Vec<String>) -> Vec<Vec<String>> {
 #[tauri::command]
 pub async fn get_events(
     event_ids: Vec<String>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let event_id_chunks = normalized_event_id_chunks(event_ids);
@@ -110,7 +120,8 @@ pub async fn get_events(
 
     let mut events_by_id = std::collections::HashMap::new();
     for event_ids in event_id_chunks {
-        let events = query_relay(
+        let (events, recorder) = record::query(
+            &app,
             &state,
             &[serde_json::json!({
                 "ids": event_ids,
@@ -119,17 +130,20 @@ pub async fn get_events(
             })],
         )
         .await?;
-        for event in events {
-            events_by_id.entry(event.id).or_insert(event);
+        let values = events
+            .iter()
+            .map(|event| {
+                serde_json::to_value(event).map_err(|error| format!("serialize event: {error}"))
+            })
+            .collect::<Result<Vec<_>, _>>()?;
+        // Room events among them (thread roots) are stored like any fetched read.
+        recorder.events(&values);
+        for (event, value) in events.into_iter().zip(values) {
+            events_by_id.entry(event.id).or_insert(value);
         }
     }
 
-    events_by_id
-        .into_values()
-        .map(|event| {
-            serde_json::to_value(event).map_err(|error| format!("serialize event: {error}"))
-        })
-        .collect()
+    Ok(events_by_id.into_values().collect())
 }
 
 #[cfg(test)]

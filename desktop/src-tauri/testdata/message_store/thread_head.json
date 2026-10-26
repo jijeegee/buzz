@@ -1,5 +1,5 @@
 {
-  "description": "Thread heads read newest first inside one covered run: thread claims, the root's room `all` run from the thread start, and live coverage.",
+  "description": "Thread heads read newest first inside one covered run: thread claims, the root's room `all` run from the thread start, and live coverage. A thread whose root is not stored takes its room from a stored reply, so the room's live segment proves it too.",
   "steps": [
     {
       "op": "ingest",
@@ -327,6 +327,240 @@
         "nextCursor": null,
         "hasMore": false,
         "gap": false,
+        "coveredThrough": null,
+        "liveCovered": true
+      }
+    },
+    {
+      "op": "ingest",
+      "channelId": "room-c",
+      "events": [
+        {
+          "id": "4141414141414141414141414141414141414141414141414141414141414141",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 110,
+          "kind": 9,
+          "tags": [
+            ["h", "room-c"],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "old reply 1",
+          "sig": ""
+        },
+        {
+          "id": "4242424242424242424242424242424242424242424242424242424242424242",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 120,
+          "kind": 9,
+          "tags": [
+            ["h", "room-c"],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "old reply 2",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "claimThread",
+      "rootId": "4040404040404040404040404040404040404040404040404040404040404040",
+      "lo": null,
+      "loIsStart": true,
+      "hi": {
+        "at": 200
+      }
+    },
+    {
+      "op": "readThreadHead",
+      "rootId": "4040404040404040404040404040404040404040404040404040404040404040",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "rowIds": [
+          "4242424242424242424242424242424242424242424242424242424242424242",
+          "4141414141414141414141414141414141414141414141414141414141414141"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": false,
+        "coveredThrough": 200,
+        "liveCovered": false
+      }
+    },
+    {
+      "op": "beginLive",
+      "wsId": 2,
+      "channelIds": ["room-c"],
+      "since": 190
+    },
+    {
+      "op": "ingest",
+      "channelId": "room-c",
+      "events": [
+        {
+          "id": "4343434343434343434343434343434343434343434343434343434343434343",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 250,
+          "kind": 9,
+          "tags": [
+            ["h", "room-c"],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "4040404040404040404040404040404040404040404040404040404040404040",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "live reply",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "readThreadHead",
+      "rootId": "4040404040404040404040404040404040404040404040404040404040404040",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "rowIds": [
+          "4343434343434343434343434343434343434343434343434343434343434343",
+          "4242424242424242424242424242424242424242424242424242424242424242",
+          "4141414141414141414141414141414141414141414141414141414141414141"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": null,
+        "hasMore": false,
+        "gap": false,
+        "coveredThrough": null,
+        "liveCovered": true
+      }
+    },
+    {
+      "op": "closeLive",
+      "wsId": 2,
+      "closedAt": 260
+    },
+    {
+      "op": "ingest",
+      "channelId": "room-d",
+      "events": [
+        {
+          "id": "5151515151515151515151515151515151515151515151515151515151515151",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 110,
+          "kind": 9,
+          "tags": [
+            ["h", "room-d"],
+            [
+              "e",
+              "5050505050505050505050505050505050505050505050505050505050505050",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "5050505050505050505050505050505050505050505050505050505050505050",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "old reply",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "claimThread",
+      "rootId": "5050505050505050505050505050505050505050505050505050505050505050",
+      "lo": null,
+      "loIsStart": true,
+      "hi": {
+        "at": 200
+      }
+    },
+    {
+      "op": "beginLive",
+      "wsId": 3,
+      "channelIds": ["room-d"],
+      "since": 220
+    },
+    {
+      "op": "ingest",
+      "channelId": "room-d",
+      "events": [
+        {
+          "id": "5252525252525252525252525252525252525252525252525252525252525252",
+          "pubkey": "abababababababababababababababababababababababababababababababab",
+          "created_at": 250,
+          "kind": 9,
+          "tags": [
+            ["h", "room-d"],
+            [
+              "e",
+              "5050505050505050505050505050505050505050505050505050505050505050",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "5050505050505050505050505050505050505050505050505050505050505050",
+              "",
+              "reply"
+            ]
+          ],
+          "content": "live reply",
+          "sig": ""
+        }
+      ]
+    },
+    {
+      "op": "readThreadHead",
+      "rootId": "5050505050505050505050505050505050505050505050505050505050505050",
+      "before": null,
+      "limit": 10,
+      "expect": {
+        "rowIds": [
+          "5252525252525252525252525252525252525252525252525252525252525252"
+        ],
+        "auxIds": [],
+        "summaryIds": [],
+        "nextCursor": {
+          "createdAt": 250,
+          "eventId": "5252525252525252525252525252525252525252525252525252525252525252"
+        },
+        "hasMore": true,
+        "gap": true,
         "coveredThrough": null,
         "liveCovered": true
       }

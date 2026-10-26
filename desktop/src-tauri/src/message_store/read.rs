@@ -386,23 +386,12 @@ pub(crate) fn thread(
     )?;
     let has_more = rows.len() > limit;
     rows.truncate(limit);
-    // Proven through: a thread range from the thread start, or a room `all`
-    // run holding the root (replies are newer than their root).
-    let mut through = normalize(thread_ranges(conn, root_id)?, SYNC_KINDS_VERSION)
+    // Proven through: the covered run that reaches the thread start.
+    let through = thread_runs(conn, root_id)?
         .iter()
         .filter(|range| range.lo_is_start)
         .map(|range| range.hi_at)
         .max();
-    if let Some((channel_id, created_at)) = thread_root(conn, root_id)? {
-        let all = normalize(
-            room_ranges(conn, &channel_id, Class::All)?,
-            SYNC_KINDS_VERSION,
-        );
-        let runs = with_live(&all, live_since(conn, &channel_id)?, SYNC_KINDS_VERSION);
-        if let Some(run) = run_containing(&runs, created_at, root_id) {
-            through = through.max(Some(run.hi_at));
-        }
-    }
     let row_ids = ids(&rows);
     Ok(ThreadPage {
         next_cursor: if has_more {
@@ -429,26 +418,45 @@ fn thread_root(conn: &Connection, root_id: &str) -> Result<Option<(String, i64)>
     .map_err(db("read thread root"))
 }
 
+/// The room of a thread whose root is not stored (an old thread): any stored
+/// reply carries it.
+fn thread_room(conn: &Connection, root_id: &str) -> Result<Option<String>, String> {
+    conn.query_row(
+        "SELECT channel_id FROM events WHERE root_id=?1 LIMIT 1",
+        [root_id],
+        |row| row.get(0),
+    )
+    .optional()
+    .map_err(db("read thread room"))
+}
+
 /// A thread's covered runs: its own claims, plus its room's `all` runs (live
-/// included) at or above the root. The run holding the root counts from the
-/// thread start, since replies are newer than their root.
+/// included), which hold every reply in their span. With the root stored,
+/// only runs at or above it count and the one holding it counts from the
+/// thread start, since replies are newer than their root. Without it (an old
+/// thread), the room is taken from a stored reply and every run counts as is,
+/// so the room's live segment proves the thread like any other.
 fn thread_runs(conn: &Connection, root_id: &str) -> Result<Vec<Range>, String> {
     let mut ranges = normalize(thread_ranges(conn, root_id)?, SYNC_KINDS_VERSION);
-    if let Some((channel_id, root_at)) = thread_root(conn, root_id)? {
+    let room = match thread_root(conn, root_id)? {
+        Some((channel_id, root_at)) => Some((channel_id, Some(root_at))),
+        None => thread_room(conn, root_id)?.map(|channel_id| (channel_id, None)),
+    };
+    if let Some((channel_id, root_at)) = room {
         let all = normalize(
             room_ranges(conn, &channel_id, Class::All)?,
             SYNC_KINDS_VERSION,
         );
         for run in with_live(&all, live_since(conn, &channel_id)?, SYNC_KINDS_VERSION) {
-            if run.contains(root_at, root_id) {
-                ranges.push(Range {
+            match root_at {
+                Some(root_at) if run.contains(root_at, root_id) => ranges.push(Range {
                     lo_at: 0,
                     lo_id: String::new(),
                     lo_is_start: true,
                     ..run
-                });
-            } else if run.hi_at >= root_at {
-                ranges.push(run);
+                }),
+                Some(root_at) if run.hi_at < root_at => {}
+                _ => ranges.push(run),
             }
         }
     }

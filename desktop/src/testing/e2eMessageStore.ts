@@ -593,20 +593,10 @@ export class MockScopeStore {
       .sort((a, b) => a.createdAt - b.createdAt || cmpStr(a.id, b.id));
     const hasMore = matching.length > limit;
     const rows = matching.slice(0, limit);
-    const starts = normalize(this.state.threadCoverage[root] ?? []).filter(
-      (range) => range.loIsStart,
-    );
-    let through: number | null = starts.length
+    const starts = this.threadRuns(root).filter((range) => range.loIsStart);
+    const through: number | null = starts.length
       ? Math.max(...starts.map((range) => range.hiAt))
       : null;
-    const rootRow = this.state.events[root];
-    if (rootRow) {
-      const { all } = this.topRuns(rootRow.channelId);
-      const run = withLive(all, this.liveSince(rootRow.channelId)).find(
-        (range) => contains(range, rootRow.createdAt, root),
-      );
-      if (run) through = Math.max(through ?? run.hiAt, run.hiAt);
-    }
     const last = rows[rows.length - 1];
     return {
       rows: rows.map((row) => row.raw),
@@ -621,14 +611,24 @@ export class MockScopeStore {
     };
   }
 
-  /** Mirrors `read::thread_runs`: thread claims plus the root's `all` runs. */
+  /**
+   * Mirrors `read::thread_runs`: thread claims plus the room's `all` runs.
+   * Without a stored root, the room comes from a stored reply and every run
+   * counts as is.
+   */
   private threadRuns(root: string): Range[] {
     const ranges = [...normalize(this.state.threadCoverage[root] ?? [])];
     const rootRow = this.state.events[root];
-    if (rootRow) {
-      const { all } = this.topRuns(rootRow.channelId);
-      for (const run of withLive(all, this.liveSince(rootRow.channelId))) {
-        if (contains(run, rootRow.createdAt, root)) {
+    const channelId =
+      rootRow?.channelId ??
+      Object.values(this.state.events).find((row) => row.rootId === root)
+        ?.channelId;
+    if (channelId) {
+      const { all } = this.topRuns(channelId);
+      for (const run of withLive(all, this.liveSince(channelId))) {
+        if (!rootRow) {
+          ranges.push(run);
+        } else if (contains(run, rootRow.createdAt, root)) {
           ranges.push({ ...run, loAt: 0, loId: "", loIsStart: true });
         } else if (run.hiAt >= rootRow.createdAt) {
           ranges.push(run);
