@@ -69,12 +69,11 @@ class SidebarRelay {
     event.toJson(),
   ]);
 
-  void closeLive(String dTag, String message) =>
-      session.debugHandleMessage([
-        'CLOSED',
-        _liveSubIds[dTag] ?? _bundleSubId,
-        message,
-      ]);
+  void closeLive(String dTag, String message) => session.debugHandleMessage([
+    'CLOSED',
+    _liveSubIds[dTag] ?? _bundleSubId,
+    message,
+  ]);
 
   void _onSend(List<dynamic> message) {
     if (message.first == 'EVENT') {
@@ -115,14 +114,13 @@ class SidebarRelay {
       historyFailures--;
       return _reply(['CLOSED', subId, 'error: overloaded']);
     }
-    final heads = stored
-        .where((e) => dTag == null || e.getTagValue('d') == dTag)
-        .toList()
-      ..sort(
-        (a, b) => a.createdAt != b.createdAt
-            ? b.createdAt.compareTo(a.createdAt)
-            : a.id.compareTo(b.id),
-      );
+    final heads =
+        stored.where((e) => dTag == null || e.getTagValue('d') == dTag).toList()
+          ..sort(
+            (a, b) => a.createdAt != b.createdAt
+                ? b.createdAt.compareTo(a.createdAt)
+                : a.id.compareTo(b.id),
+          );
     if (heads.isNotEmpty) _reply(['EVENT', subId, heads.first.toJson()]);
     _reply(['EOSE', subId]);
   }
