@@ -38,6 +38,7 @@ pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;
 pub(crate) mod service;
+mod sign_out_cleanup;
 pub(crate) mod signed_out;
 pub(crate) mod watchdog;
 

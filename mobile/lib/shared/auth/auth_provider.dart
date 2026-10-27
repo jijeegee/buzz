@@ -13,6 +13,8 @@ import '../push/push_subscription.dart';
 import 'default_community.dart';
 import 'token/relay_origin.dart';
 import '../l10n/l10n.dart';
+import '../message_store/message_store_capture.dart';
+import '../relay/relay_provider.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
 
@@ -272,6 +274,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         );
       }
       await ref.read(communityTransitionProvider).run();
+      for (final community in targets) {
+        final pubkey = community.pubkey ?? pubkeyFromNsec(community.nsec);
+        if (pubkey != null) {
+          await ref
+              .read(messageStoreProvider)
+              .clear(RelayConfig(baseUrl: community.relayUrl).baseUrl, pubkey);
+        }
+      }
       final signedOut = [
         for (final community in communities)
           target(community) ? _signedOutCopy(community) : community,

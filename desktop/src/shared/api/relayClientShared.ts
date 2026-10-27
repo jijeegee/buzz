@@ -183,3 +183,16 @@ export function getTextPayload(message: unknown) {
 
   return null;
 }
+
+/** A send time the sender saw, kept only if it is within the last two minutes. */
+export function recentSendTime(
+  createdAt: number | undefined,
+): number | undefined {
+  if (createdAt === undefined) return undefined;
+  const now = Math.floor(Date.now() / 1_000);
+  return createdAt <= now && now - createdAt <= 120 ? createdAt : undefined;
+}
+
+export function normalizeRelayError(error: unknown, fallbackMessage: string) {
+  return error instanceof Error ? error : new Error(fallbackMessage);
+}

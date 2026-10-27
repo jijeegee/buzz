@@ -32,6 +32,7 @@ mod mesh_llm;
 #[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
 mod message_routing;
+mod message_store;
 mod migration;
 #[cfg(test)]
 mod model_tests;
@@ -254,6 +255,7 @@ pub fn run() {
         .manage(native_relay_client::NativeRelayClient::default())
         .manage(observed_unread::ObservedUnreadStore::default())
         .manage(channel_head_cache::ChannelHeadCacheStore::default())
+        .manage(message_store::MessageStore::default())
         .setup(move |app| {
             let app_handle = app.handle().clone();
             #[cfg(any(target_os = "macos", windows))]
@@ -894,6 +896,9 @@ pub fn run() {
             observed_unread::observed_unread_open_scope,
             observed_unread::observed_unread_ingest,
             channel_head_cache::channel_head_cache_load,
+            message_store::message_store_begin,
+            message_store::message_store_put,
+            message_store::message_store_clear,
             channel_head_cache::channel_head_cache_store,
             channel_head_cache::channel_head_cache_clear,
             list_personas,

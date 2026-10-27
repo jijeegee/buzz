@@ -161,6 +161,7 @@ pub fn set_agent_avatar_communities(
 /// transition lock this takes.
 #[tauri::command]
 pub async fn remove_community_relay(relay_url: String, app: AppHandle) -> Result<(), String> {
+    crate::message_store::clear_relay(app.clone(), relay_url.clone()).await?;
     tokio::task::spawn_blocking(move || {
         crate::managed_agents::remove_relay(&app.state::<AppState>(), &relay_url)
     })
@@ -172,6 +173,7 @@ pub async fn remove_community_relay(relay_url: String, app: AppHandle) -> Result
 /// explicitly re-added, whether or not it becomes the active community.
 #[tauri::command]
 pub async fn readd_community_relay(relay_url: String, app: AppHandle) -> Result<(), String> {
+    crate::message_store::readd_relay(&app, &relay_url)?;
     tokio::task::spawn_blocking(move || {
         crate::managed_agents::readd_relay(&app.state::<AppState>(), &relay_url)
     })

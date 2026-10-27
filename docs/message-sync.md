@@ -120,3 +120,45 @@ per client:
   so the overlap with what a reader already holds is harmless.
 - **Agent online status** comes with everyone else's presence on the
   presence subscription; it needs no REQ of its own.
+
+## Message store: write-only foundation
+
+This first storage slice runs alongside the existing network/cache readers.
+It does **not** yet serve room or thread pages, skip history requests, repair
+gaps, change scroll positions, or claim offline completeness.
+
+- Both clients keep received message originals in application support data,
+  `messages.db`, using SQLite WAL. They do not evict by age, room count, or
+  message count. This is separate from the disposable head cache and archive.
+- Every row belongs to `(relay HTTP origin, account pubkey)`. Socket/history
+  operations capture that scope before receiving results; account/community
+  switches cannot relabel an old result as belonging to the new scope.
+- `events` retains the first original per event ID. `event_tags` indexes its
+  `h`, `e`, and `a` references without inventing a room for an event that has
+  no room tag. A deletion or reaction can arrive before its target. Duplicate
+  IDs cannot replace originals or add conflicting references.
+- The common kind policy and out-of-order examples are in
+  [`message-store.json`](../test-fixtures/message-store.json). Message bodies,
+  replies, edits, deletions, reactions and raw 39005 summaries are retained.
+  39006/39007 page metadata and ephemeral agent work frames are not originals
+  in this table. Parsed mobile events preserve their Nostr fields, not unknown
+  response metadata.
+- Every existing `scopes` row remains `needs_repair=1`; a missing scope is
+  equally incomplete. Neither an event timestamp nor `hasMore`/`nextCursor`
+  proves gap-free history. Coverage and auxiliary-event completeness require
+  a later schema/reader stage.
+- Live receive writers use batches of at most 256 events and bounded queues
+  (4096 pending events, approximately 8 MiB). SQLite work is asynchronous;
+  live delivery does not wait for disk. Native HTTP history writes use a
+  separately bounded background queue and do not delay the response. Write failures/queue overflow
+  are reported through diagnostics and never mark a scope complete; recovery
+  is still the existing network reader, not a new store retry/catch-up system.
+- Explicit logout deletes the account/relay rows and invalidates its old
+  receive contexts, so queued completions cannot recreate them. Community
+  removal clears its local scope (all accounts on a removed desktop relay).
+  Ordinary switching retains data. Cleanup errors are returned, not treated
+  as successful deletion. Unknown schema versions fail without deleting data.
+
+Later slices must add coverage evidence and catch-up before switching readers.
+Administrator deletion without a relay tombstone remains a separate server
+requirement; storing originals cannot discover an unreported deletion.

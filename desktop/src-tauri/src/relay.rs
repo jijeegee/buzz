@@ -368,20 +368,8 @@ pub async fn query_relay_value(
     filters: &[serde_json::Value],
 ) -> Result<serde_json::Value, String> {
     let credential = state.user_credential()?;
-    crate::relay_admission::wait_for_rate_limit().await;
-    let url = format!("{}/query", relay_api_base_url_with_override(state));
-    let body_bytes =
-        serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
-    let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
-    send_query_request_as(
-        &state.http_client,
-        &url,
-        &auth,
-        None,
-        body_bytes,
-        QUERY_REQUEST_TIMEOUT,
-    )
-    .await
+    let base = relay_api_base_url_with_override(state);
+    query_relay_value_as(state, &base, &credential, filters).await
 }
 
 /// [`query_relay_value`] for a relay base and credential the caller already
@@ -393,12 +381,14 @@ pub(crate) async fn query_relay_value_as(
     credential: &crate::auth::credential::UserCredential,
     filters: &[serde_json::Value],
 ) -> Result<serde_json::Value, String> {
+    let capture =
+        crate::message_store::capture(state, api_base_url, &credential.public_key().to_hex());
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/query", api_base_url.trim_end_matches('/'));
     let body_bytes =
         serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
     let auth = credential.relay_http_auth(&Method::POST, &url, &body_bytes)?;
-    send_query_request_as(
+    let response: serde_json::Value = send_query_request_as(
         &state.http_client,
         &url,
         &auth,
@@ -406,7 +396,11 @@ pub(crate) async fn query_relay_value_as(
         body_bytes,
         QUERY_REQUEST_TIMEOUT,
     )
-    .await
+    .await?;
+    if let Some(events) = response.as_array() {
+        crate::message_store::received(capture, events.clone()).await;
+    }
+    Ok(response)
 }
 
 /// Like [`query_relay`] but targets an explicit HTTP API base URL instead of
@@ -431,12 +425,14 @@ pub async fn query_relay_at_with_keys(
     keys: &(impl crate::auth::credential::RelaySigner + ?Sized),
     auth_tag: Option<&str>,
 ) -> Result<Vec<nostr::Event>, String> {
+    let capture =
+        crate::message_store::capture(state, api_base_url, &keys.signer_pubkey().to_hex());
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/query", api_base_url);
     let body_bytes =
         serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
     let auth = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
-    send_query_request(
+    let events = send_query_request(
         &state.http_client,
         &url,
         &auth,
@@ -444,7 +440,17 @@ pub async fn query_relay_at_with_keys(
         body_bytes,
         QUERY_REQUEST_TIMEOUT,
     )
-    .await
+    .await?;
+    crate::message_store::received(
+        capture,
+        events
+            .iter()
+            .map(serde_json::to_value)
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| e.to_string())?,
+    )
+    .await;
+    Ok(events)
 }
 
 /// Build an authenticated relay HTTP request using already-signed NIP-98 auth.

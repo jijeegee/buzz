@@ -1,6 +1,7 @@
 import { RelayClient } from "@/shared/api/relayClientSession";
+import { MessageStoreCapture } from "./messageStoreCapture";
 
-export const relayClient = new RelayClient();
+export const relayClient = new RelayClient(() => new MessageStoreCapture());
 
 /**
  * Notify the relay client which channel is currently visible in the UI.

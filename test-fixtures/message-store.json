@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "storedKinds": [5,7,9,9005,39005,40001,40002,40003,40008,40099,43001,43002,43003,43004,43005,43006,45001,45003,48100,48101,48102,48103],
+  "excludedKinds": [0, 24200, 39006, 39007, 30177],
+  "events": [
+    {"id":"delete","pubkey":"author","created_at":103,"kind":5,"tags":[["e","root"]],"content":""},
+    {"id":"reply","pubkey":"author","created_at":102,"kind":9,"tags":[["h","room-a"],["e","root","","root"]],"content":"reply before root"},
+    {"id":"reaction","pubkey":"author","created_at":102,"kind":7,"tags":[["e","reply"]],"content":"+"},
+    {"id":"root","pubkey":"author","created_at":100,"kind":9,"tags":[["h","room-a"]],"content":"original"},
+    {"id":"other","pubkey":"author","created_at":100,"kind":9,"tags":[["h","room-b"]],"content":"another room"},
+    {"id":"edit","pubkey":"author","created_at":104,"kind":40003,"tags":[["e","root"]],"content":"edited"},
+    {"id":"summary","pubkey":"relay","created_at":105,"kind":39005,"tags":[["h","room-a"],["e","root"]],"content":"{\"reply_count\":1}"}
+  ],
+  "coverage": "incomplete-even-after-all-events"
+}

@@ -26,6 +26,7 @@ import 'relay_provider.dart';
 import 'relay_rate_limit_gate.dart';
 import 'relay_session_types.dart';
 import 'relay_socket.dart';
+import '../message_store/message_store_capture.dart';
 
 export 'relay_session_types.dart';
 
@@ -127,6 +128,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   int _reconnectDelayMs = _baseReconnectDelayMs;
   int _subIdCounter = 0;
   bool _disposed = false;
+  MessageStoreCapture? _messageCapture;
   bool _ageRestricted = false;
   bool _paused = false;
   bool _hasConnectedOnce = false;
@@ -174,6 +176,14 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     // Auto-connect when authenticated and able to AUTH: a token community
     // through its token session, a legacy one with its signing key (NIP-42).
     final isAuthenticated = authState.value?.status == AuthStatus.authenticated;
+    final pubkey = ref.watch(myPubkeyProvider);
+    if (isAuthenticated && pubkey != null) {
+      final store = ref.read(messageStoreProvider);
+      _messageCapture = MessageStoreCapture(
+        store,
+        store.begin(config.baseUrl, pubkey),
+      );
+    }
     final canAuthenticate = config.tokenAuth
         ? tokens != null
         : config.nsec != null;
@@ -313,7 +323,13 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       _activateRateLimitGateFromHttpError(response.body);
       throw RelayException(response.statusCode, response.body);
     }
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) {
+      _messageCapture?.receive(
+        decoded.whereType<Map<String, dynamic>>().map(NostrEvent.fromJson),
+      );
+    }
+    return decoded;
   }
 
   void _activateRateLimitGateFromHttpError(String body) {
@@ -811,6 +827,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     // History subscriptions accumulate immediately.
     final historySub = _historySubscriptions[subId];
     if (historySub != null) {
+      _messageCapture?.receive([event]);
       historySub.events.add(event);
       return;
     }
@@ -819,6 +836,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     // but not that a retry replay is complete; only EOSE is that boundary.
     final liveSub = _liveSubscriptions[subId];
     if (liveSub != null) {
+      _messageCapture?.receive([event]);
       _resetClosedRetry(liveSub);
       // Track last seen timestamp for reconnect replay.
       if (liveSub.lastSeenCreatedAt == null ||
@@ -1132,6 +1150,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   void _dispose() {
     _disposed = true;
+    _messageCapture?.close();
+    _messageCapture = null;
     for (final remove in _tokenListenerRemovers) {
       remove();
     }

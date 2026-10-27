@@ -15,6 +15,7 @@ import '../push/push_lease_revocation_outbox.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
+import '../message_store/message_store_capture.dart';
 import 'community.dart';
 import 'community_storage.dart';
 import 'community_token_session.dart';
@@ -378,6 +379,15 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         revocationJournaled = await ref.read(
           communityPushLeaseRevocationEnqueuerProvider,
         )(current[removedIndex]);
+      }
+      if (removedIndex >= 0) {
+        final community = current[removedIndex];
+        final pubkey = community.pubkey ?? pubkeyFromNsec(community.nsec);
+        if (pubkey != null) {
+          await ref
+              .read(messageStoreProvider)
+              .clear(RelayConfig(baseUrl: community.relayUrl).baseUrl, pubkey);
+        }
       }
       await storage.remove(id);
       if (removedIndex >= 0) {

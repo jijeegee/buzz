@@ -76,15 +76,16 @@ import {
 } from "@/shared/api/relayAuthPolicy";
 import { createRelayInboundBuffer } from "@/shared/api/relayInboundBuffer";
 import { buildThreadReferenceTags } from "@/features/messages/lib/threading";
+import { recentSendTime, normalizeRelayError } from "./relayClientShared";
+import type { MessageCapture } from "./messageStoreCapture";
 type UserStatusInput = { text: string; emoji: string; expiresAt?: number };
-/** A send time the sender saw, kept only if it is within the last two minutes. */
-function recentSendTime(createdAt: number | undefined): number | undefined {
-  if (createdAt === undefined) return undefined;
-  const now = Math.floor(Date.now() / 1_000);
-  return createdAt <= now && now - createdAt <= 120 ? createdAt : undefined;
-}
 
 export class RelayClient {
+  private readonly createCapture?: () => MessageCapture;
+  constructor(createCapture?: () => MessageCapture) {
+    this.createCapture = createCapture;
+  }
+  private capture: MessageCapture | undefined;
   private wsId: number | null = null;
   private relayUrl: string | null = null;
   private connectPromise: Promise<number> | null = null;
@@ -133,6 +134,8 @@ export class RelayClient {
     this.visibleChannelId = id;
   }
   disconnect() {
+    this.capture?.close();
+    this.capture = undefined;
     const error = new Error("Relay disconnected for community switch.");
 
     if (this.reconnectTimeout) {
@@ -470,7 +473,7 @@ export class RelayClient {
       this.reconnectWaiters.settle();
     } catch (error) {
       this.reconnectWaiters.settle(
-        this.normalizeRelayError(error, "Relay reconnect failed."),
+        normalizeRelayError(error, "Relay reconnect failed."),
       );
       throw error;
     }
@@ -501,7 +504,6 @@ export class RelayClient {
   subscribeToConnectionState(listener: (state: ConnectionState) => void) {
     return this.connectionStateEmitter.subscribe(listener);
   }
-
   private async ensureConnected() {
     if (shouldRefuseConnect({ terminal: this.terminal })) {
       // Terminal (e.g. relay rejected auth): refuse until disconnect() or
@@ -541,8 +543,9 @@ export class RelayClient {
       }
     }
   }
-
   private async connect() {
+    this.capture?.close();
+    this.capture = this.createCapture?.();
     if (this.stabilityTimer !== null) {
       window.clearTimeout(this.stabilityTimer);
       this.stabilityTimer = null;
@@ -606,7 +609,7 @@ export class RelayClient {
       this.emitReconnectIfNeeded();
       return generation;
     } catch (error) {
-      const connectionError = this.normalizeRelayError(
+      const connectionError = normalizeRelayError(
         error,
         "Failed to connect to relay.",
       );
@@ -735,15 +738,11 @@ export class RelayClient {
     });
   }
 
-  private normalizeRelayError(error: unknown, fallbackMessage: string) {
-    return error instanceof Error ? error : new Error(fallbackMessage);
-  }
-
   private recoverFromSocketFailure(
     error: unknown,
     fallbackMessage: string,
   ): Error {
-    const normalizedError = this.normalizeRelayError(error, fallbackMessage);
+    const normalizedError = normalizeRelayError(error, fallbackMessage);
     this.resetConnection(normalizedError);
     return normalizedError;
   }
@@ -859,7 +858,7 @@ export class RelayClient {
           this.sendRawForGeneration(payload, generation),
         reconnect: () => this.ensureConnected(),
         normalizeError: (error, fallback) =>
-          this.normalizeRelayError(error, fallback),
+          normalizeRelayError(error, fallback),
         recoverSocketFailure: (error, fallback) =>
           this.recoverFromSocketFailure(error, fallback),
       },
@@ -968,7 +967,7 @@ export class RelayClient {
     if (!subscription) {
       return;
     }
-
+    this.capture?.receive(event);
     if (subscription.mode === "first") {
       subscription.onEvent(event);
       return;
@@ -1094,7 +1093,7 @@ export class RelayClient {
         .then(() => this.reconnectWaiters.settle())
         .catch((error) => {
           this.reconnectWaiters.settle(
-            this.normalizeRelayError(error, "Relay reconnect failed."),
+            normalizeRelayError(error, "Relay reconnect failed."),
           );
           this.scheduleReconnect();
         });

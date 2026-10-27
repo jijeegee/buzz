@@ -1223,7 +1223,7 @@ async fn sign_out_account_now(
     .await;
     // Agent keys whose copy the relay holds for this device leave with the
     // sign-out (restored at the next sign-in); the device key always stays.
-    forget_owner_agent_keys(app, origin, &owners, &confirmed);
+    let cleanup_result = super::sign_out_cleanup::finish(app, origin, &owners, &confirmed).await;
     let next = match (is_active, data_dir.as_deref()) {
         (true, Some(data_dir)) => {
             super::accounts::next_signed_in(data_dir, origin, account.or(active))
@@ -1241,6 +1241,7 @@ async fn sign_out_account_now(
                 eprintln!("kuzz-desktop: auth: no switch after sign-out: {error}");
                 forget_key_after_sign_out(app, account, data_dir.as_deref());
                 emit_changed(app, origin);
+                cleanup_result?;
                 return Ok(SignedOut {
                     switched_to: None,
                     agents_not_stopped,
@@ -1248,6 +1249,7 @@ async fn sign_out_account_now(
             }
         }
         forget_key_after_sign_out(app, account, data_dir.as_deref());
+        cleanup_result?;
         return Ok(SignedOut {
             switched_to: Some(next),
             agents_not_stopped,
@@ -1255,36 +1257,11 @@ async fn sign_out_account_now(
     }
     forget_key_after_sign_out(app, account, data_dir.as_deref());
     emit_changed(app, origin);
+    cleanup_result?;
     Ok(SignedOut {
         switched_to: None,
         agents_not_stopped,
     })
-}
-
-/// Remove the confirmed-copy agent keys of `owners` on `origin` (see
-/// [`super::agent_hosting::forget_confirmed_keys`]). Best effort.
-fn forget_owner_agent_keys(
-    app: &AppHandle,
-    origin: &str,
-    owners: &[PublicKey],
-    confirmed: &std::collections::HashSet<String>,
-) {
-    let owned: Vec<String> = crate::managed_agents::load_managed_agents_without_keys(app)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|record| record.bot_origin.is_none())
-        .filter(|record| {
-            let owner = crate::managed_agents::agent_owner_hex(app, record);
-            owners
-                .iter()
-                .any(|o| owner.as_deref() == Some(o.to_hex().as_str()))
-        })
-        .map(|record| record.pubkey)
-        .collect();
-    let removed = super::agent_hosting::forget_confirmed_keys(app, origin, &owned, confirmed);
-    if removed > 0 {
-        eprintln!("kuzz-desktop: auth: {removed} agent key(s) left this computer at sign-out");
-    }
 }
 
 /// The signed-out account's key leaves this computer (after any switch, so
