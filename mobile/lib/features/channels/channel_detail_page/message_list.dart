@@ -1028,9 +1028,7 @@ class _MessageList extends HookConsumerWidget {
     }
 
     // Build channel names map once for all message bubbles.
-    final channelNames = ref.watch(
-      channelsProvider.select(ChannelNameIds.of),
-    );
+    final channelNames = ref.watch(channelsProvider.select(ChannelNameIds.of));
 
     return QuoteJumpScope(
       channelId: channelId,

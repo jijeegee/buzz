@@ -1307,9 +1307,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         : threadTyping
               .where((e) => e.pubkey.toLowerCase() != blockedCounterpart)
               .toList();
-    final channelNames = ref.watch(
-      channelsProvider.select(ChannelNameIds.of),
-    );
+    final channelNames = ref.watch(channelsProvider.select(ChannelNameIds.of));
     final usesNativeIosGlassBackButton =
         Navigator.canPop(context) &&
         Theme.of(context).platform == TargetPlatform.iOS;

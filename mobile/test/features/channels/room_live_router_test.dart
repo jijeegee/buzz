@@ -72,9 +72,13 @@ void main() {
     // Removing the reaction references the reaction itself.
     expect(
       router.routeBundleEvent(
-        _event('unlike', kind: EventKind.deletion, tags: [
-          ['e', 'like-a'],
-        ]),
+        _event(
+          'unlike',
+          kind: EventKind.deletion,
+          tags: [
+            ['e', 'like-a'],
+          ],
+        ),
         {'a', 'b'},
       ),
       'a',
@@ -92,10 +96,10 @@ void main() {
       reason: 'a one-room chunk names its room',
     );
     expect(
-      router.routeBundleEvent(
-        _reaction('like-?', target: 'unknown'),
-        {'a', 'b'},
-      ),
+      router.routeBundleEvent(_reaction('like-?', target: 'unknown'), {
+        'a',
+        'b',
+      }),
       isNull,
     );
     expect(inA, ['row-a', 'like-a', 'unlike']);

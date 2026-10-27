@@ -45,9 +45,8 @@ class Harness {
       server.requests.where((r) => r.url.path == '/auth/logout').toList();
 
   /// Cleanup of an unsaved or superseded sign-in: this session only.
-  List<http.Request> get endedSessions => server.requests
-      .where((r) => r.url.path == '/auth/sessions/end')
-      .toList();
+  List<http.Request> get endedSessions =>
+      server.requests.where((r) => r.url.path == '/auth/sessions/end').toList();
 
   /// Restore into a signed-in session holding `bzs_2` / `bzr_2`.
   Future<void> signedIn({int ttl = 3600}) async {
@@ -122,10 +121,7 @@ void main() {
           h.states.any((s) => s.status == TokenSessionStatus.signedIn),
           isFalse,
         );
-        expect(
-          h.endedSessions.single.headers['Authorization'],
-          'Bearer bzs_2',
-        );
+        expect(h.endedSessions.single.headers['Authorization'], 'Bearer bzs_2');
         expect(h.clock.active, isEmpty);
       },
     );
@@ -409,13 +405,12 @@ void main() {
     test('a rejected login surfaces the reason', () async {
       final h = Harness();
       await h.controller.restore();
-      h.launcher.respond = (start) =>
-          Uri.parse('app.kuzz://auth/cb').replace(
-            queryParameters: {
-              'error': 'principal_disabled',
-              'state': start.queryParameters['state']!,
-            },
-          );
+      h.launcher.respond = (start) => Uri.parse('app.kuzz://auth/cb').replace(
+        queryParameters: {
+          'error': 'principal_disabled',
+          'state': start.queryParameters['state']!,
+        },
+      );
       expect(await h.controller.signIn(), isFalse);
       expect(h.status, TokenSessionStatus.signedOut);
       expect(h.controller.state.errorMessage, isNotNull);
