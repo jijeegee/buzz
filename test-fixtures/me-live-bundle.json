@@ -8,6 +8,8 @@
     30176,
     30177,
     30178,
+    30180,
+    30181,
     30182,
     30300
   ],
@@ -67,6 +69,23 @@
       },
       "scope": {
         "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "owner devices ride the authored bundle",
+      "filter": {
+        "kinds": [
+          30180,
+          30181
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "authored",
         "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
       }
     },
@@ -136,7 +155,7 @@
       "filter": {
         "kinds": [
           30078,
-          30180
+          20001
         ],
         "authors": [
           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"

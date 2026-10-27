@@ -12,6 +12,7 @@ that both clients' tests read.
 | Fixture tests | `relayRoomBundle.test.mjs` | `room_live_routing_fixture_test.dart` |
 | Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`); features call `meLive.subscribe` (`relayMeLive.ts`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`); `RelaySessionNotifier.subscribe` routes matching filters to it |
 | Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
+| Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
 
 The account bundle's cases live in
 [`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json).
@@ -69,7 +70,8 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 ## Account bundle
 
 Live-only subscriptions about the account itself (settings documents,
-contact list, agent personas and teams, chat-list pings, sign-in notices)
+contact list, agent personas, teams and devices, chat-list pings, sign-in
+notices)
 share two REQs instead of one per feature:
 
 - **Authored:** `{kinds: authoredKinds, authors: [me], limit: 0}`.
@@ -99,6 +101,22 @@ Kept out on purpose:
   names, sort), and the windows of mentions, approvals and membership
   notices. Moving one in means giving it `limit: 0` once it reads its own
   history first.
-- **Agent devices** (30180/30181) belong with the agent subscription.
+- **Mobile's agent devices** (30180/30181) take their last 200 on the REQ
+  and so keep it; desktop's devices are live-only and ride the authored
+  bundle.
 - **Community-wide streams** (user status, presence, catalogs, custom emoji)
   are not about the account.
+
+## Agent activity
+
+Work frames from the account's agents (24200, `#p: [me]`) arrive on one REQ
+per client:
+
+- **Filter.** `limit: 1000`, `since` five minutes before the subscription
+  starts ([`test-fixtures/agent-observer.json`](../test-fixtures/agent-observer.json)).
+  A turn already running sent its first frames earlier; on reconnect the
+  session replays from the last frame seen, up to the limit.
+- **Duplicates.** Frames are deduplicated by sequence number and timestamp,
+  so the overlap with what a reader already holds is harmless.
+- **Agent online status** comes with everyone else's presence on the
+  presence subscription; it needs no REQ of its own.

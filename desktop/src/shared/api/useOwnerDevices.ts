@@ -20,6 +20,7 @@ import {
   useAuthDevicesQuery,
 } from "@/shared/api/useAuthDeviceNames";
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -136,8 +137,8 @@ export function useOwnerDevicesLiveUpdates(
     let disposed = false;
     let dispose: (() => void) | undefined;
 
-    void relayClient
-      .subscribeLive(
+    void meLive
+      .subscribe(
         { kinds: OWNER_DEVICE_KINDS, authors: [owner], limit: 0 },
         invalidate,
       )

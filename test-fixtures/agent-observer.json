@@ -1,0 +1,5 @@
+{
+  "description": "Observer frame (kind 24200) subscription shared by desktop (observerRelay.ts) and mobile (observer_subscription.dart). See docs/message-sync.md.",
+  "lookbackSecs": 300,
+  "limit": 1000
+}

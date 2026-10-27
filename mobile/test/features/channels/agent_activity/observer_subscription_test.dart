@@ -110,9 +110,13 @@ void main() {
       expect(relaySession.filters, hasLength(1));
       final filter = relaySession.filters.first;
       expect(filter.kinds, [EventKind.agentObserverFrame]);
-      expect(filter.limit, 0);
+      expect(filter.limit, observerLiveLimit);
       expect(filter.tags['#p'], contains(myPubkey));
-      expect(filter.since, isNull);
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      expect(
+        filter.since,
+        inInclusiveRange(now - observerLiveLookbackSeconds - 5, now),
+      );
     },
   );
 

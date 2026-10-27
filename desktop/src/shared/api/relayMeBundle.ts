@@ -7,11 +7,11 @@ import type {
 /**
  * Kinds the account's own documents and signals use: settings documents
  * (30078 by `d`/`t` tag), contact list, deletions, agent personas, teams and
- * catalogs, and event reminders. Shared with mobile through
+ * catalogs, agent host devices and robots, and event reminders. Shared with mobile through
  * `test-fixtures/me-live-bundle.json` (docs/message-sync.md).
  */
 export const ME_AUTHORED_KINDS: readonly number[] = [
-  3, 5, 30078, 30175, 30176, 30177, 30178, 30182, 30300,
+  3, 5, 30078, 30175, 30176, 30177, 30178, 30180, 30181, 30182, 30300,
 ];
 
 /** Kinds addressed to the account: mentions, approvals, reminders, chat-list pings, sign-in and membership notices. */

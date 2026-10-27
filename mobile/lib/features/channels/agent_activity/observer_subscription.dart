@@ -13,6 +13,13 @@ import 'transcript_builder.dart';
 const _maxObserverEvents = 800;
 const _observerBatchKind = 'batch';
 
+/// How far back the live subscription looks, and how many frames it takes:
+/// a turn already running when the subscription starts sent its first frames
+/// earlier, and a reconnect replays from the last frame seen up to [limit].
+/// Same as desktop (test-fixtures/agent-observer.json).
+const observerLiveLookbackSeconds = 300;
+const observerLiveLimit = 1000;
+
 /// Key for channel-scoped transcript reads.
 typedef ObserverKey = ({String channelId, String agentPubkey});
 
@@ -138,7 +145,12 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
           tags: {
             '#p': [ownerPubkey],
           },
-          limit: 0,
+          // Frames are deduplicated by seq and timestamp, so the overlap with
+          // what this reader already holds is harmless.
+          limit: observerLiveLimit,
+          since:
+              DateTime.now().millisecondsSinceEpoch ~/ 1000 -
+              observerLiveLookbackSeconds,
         ),
         _handleEvent,
         onClosed: (message) {
