@@ -7,6 +7,7 @@ import {
 import { projectChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
 import { parseChannelWindowResponse } from "@/features/messages/lib/channelWindowResponse";
 import { channelWindowKey } from "@/features/messages/lib/messageQueryKeys";
+import { markRenderScopedReactionsLoaded } from "@/features/messages/lib/renderScopedReactions";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 
 const CHANNEL_WINDOW_PAGE_SIZE = 50;
@@ -49,6 +50,10 @@ async function runPage(
   );
   if (!shouldContinue()) return { hasOlderMessages: true };
   const page = parseChannelWindowResponse(events, channelId, requestCursor);
+  markRenderScopedReactionsLoaded(
+    channelId,
+    page.rows.map((row) => row.event.id),
+  );
   const retained = queryClient.getQueryData<ChannelWindowStore>(
     channelWindowKey(channelId),
   );

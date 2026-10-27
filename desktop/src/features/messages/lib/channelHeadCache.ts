@@ -11,6 +11,7 @@ import {
   replaceNewestChannelWindow,
 } from "./channelWindowStore";
 import { reconcileChannelWindowMessages } from "./channelWindowReconciliation";
+import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
 import type { RelayEvent } from "@/shared/api/types";
 const hydrations = new WeakMap<QueryClient, Promise<void>>();
 const hydratedChannels = new WeakMap<QueryClient, Set<string>>();
@@ -94,6 +95,10 @@ async function seedChannelHeads(
       // the skeleton holds until the relay answers instead of flashing the
       // empty-channel intro over rows that are still revalidating.
       if (page.rows.length === 0) continue;
+      markRenderScopedReactionsLoaded(
+        entry.channelId,
+        page.rows.map((row) => row.event.id),
+      );
       const windowKey = channelWindowKey(entry.channelId);
       const messagesKey = channelMessagesKey(entry.channelId);
       // Merge, don't replace: the app mounts while this load is in flight, so

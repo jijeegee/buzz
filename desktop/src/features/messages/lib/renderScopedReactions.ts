@@ -81,6 +81,20 @@ export function collectRenderScopedReactionMessageIds(input: {
   return ids;
 }
 
+/**
+ * Rows whose reactions are already known need no reaction read: a channel
+ * window page carries its rows' reactions (its aux closure), and a row that
+ * arrives live has none yet — later ones arrive live too. Thread replies come
+ * without reactions and are still read.
+ */
+export function markRenderScopedReactionsLoaded(
+  channelId: string,
+  messageIds: Iterable<string>,
+) {
+  const hydrated = hydratedSetForChannel(channelId);
+  for (const id of messageIds) hydrated.add(id);
+}
+
 export function claimUnhydratedRenderScopedReactionIds(
   channelId: string,
   messageIds: readonly string[],

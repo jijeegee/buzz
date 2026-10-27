@@ -1,13 +1,21 @@
 import type { QueryClient } from "@tanstack/react-query";
 
+import type { getChannelWindowEvents } from "@/shared/api/channelWindow";
+import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
 import type { RelayEvent } from "@/shared/api/types";
 import { channelMessagesKey, channelWindowKey } from "./messageQueryKeys";
 import {
   emptyChannelWindowStore,
+  replaceNewestChannelWindow,
   type ChannelWindowStore,
 } from "./channelWindowStore";
+import { parseChannelWindowResponse } from "./channelWindowResponse";
 import { reconcileChannelWindowMessages } from "./channelWindowReconciliation";
-import { channelHeadHydration } from "./channelHeadCache";
+import {
+  channelHeadCacheScope,
+  channelHeadHydration,
+} from "./channelHeadCache";
+import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
 
 /** Keep the rendered timeline cache aligned with its authoritative window. */
 export function projectChannelWindowMessages(
@@ -50,4 +58,37 @@ export async function refreshChannelWindowMessages(
     { cancelRefetch: !seeded, throwOnError: true },
   );
   projectChannelWindowMessages(queryClient, channelId);
+}
+
+export function reconcileFetchedChannelWindow(
+  queryClient: QueryClient,
+  channelId: string,
+  events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
+  previousMessages: RelayEvent[],
+  signal: AbortSignal,
+  // Background loads must not rank as visits in the persisted-head LRU.
+  persistHead = true,
+): RelayEvent[] {
+  // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
+  // therefore win while this older request is still in flight. Never let that
+  // canceled request commit its stale page into the authoritative window.
+  signal.throwIfAborted();
+  const windowKey = channelWindowKey(channelId);
+  const page = parseChannelWindowResponse(events, channelId, null);
+  markRenderScopedReactionsLoaded(
+    channelId,
+    page.rows.map((row) => row.event.id),
+  );
+  const current =
+    queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
+    emptyChannelWindowStore();
+  const next = replaceNewestChannelWindow(current, page);
+  queryClient.setQueryData(windowKey, next);
+  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
+  if (scope) {
+    void storeChannelHeadCache(scope, channelId, events).catch((error) => {
+      console.warn("Failed to persist channel head", channelId, error);
+    });
+  }
+  return reconcileChannelWindowMessages(next, previousMessages);
 }

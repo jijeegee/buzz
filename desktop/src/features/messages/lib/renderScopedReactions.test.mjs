@@ -201,3 +201,41 @@ for (const message of [
     );
   });
 }
+
+test("rows of a fetched window page need no reaction read; thread replies still do", async () => {
+  const { QueryClient } = await import("@tanstack/react-query");
+  const { reconcileFetchedChannelWindow } = await import(
+    "./projectChannelWindow.ts"
+  );
+  const queryClient = new QueryClient();
+  const row = event(hex("1"), 9);
+  const bounds = event(hex("9"), 39006, {
+    tags: [
+      ["h", CHANNEL_ID],
+      ["d", `${CHANNEL_ID}:head`],
+    ],
+    content: JSON.stringify({ has_more: false, next_cursor: null }),
+  });
+  reconcileFetchedChannelWindow(
+    queryClient,
+    CHANNEL_ID,
+    [row, bounds],
+    [],
+    new AbortController().signal,
+    false,
+  );
+  const requested = [];
+  await hydrateRenderScopedReactions({
+    channelId: CHANNEL_ID,
+    messageIds: [row.id, hex("2")],
+    queryClient: makeQueryClientStub(),
+    deps: {
+      fetchReactionEventsForMessages: async (_channelId, ids) => {
+        requested.push(...ids);
+        return [];
+      },
+    },
+  });
+  assert.deepEqual(requested, [hex("2")]);
+  queryClient.clear();
+});

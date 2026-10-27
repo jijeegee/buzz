@@ -29,15 +29,16 @@ import {
 } from "@/features/messages/lib/threading";
 import {
   projectChannelWindowMessages,
+  reconcileFetchedChannelWindow,
   refreshChannelWindowMessages,
 } from "@/features/messages/lib/projectChannelWindow";
-import { reconcileChannelWindowMessages } from "@/features/messages/lib/channelWindowReconciliation";
+import { markRenderScopedReactionsLoaded } from "@/features/messages/lib/renderScopedReactions";
 import {
-  channelHeadCacheScope,
   channelHeadHydration,
   consumeHydratedChannel,
 } from "@/features/messages/lib/channelHeadCache";
-import { storeChannelHeadCache } from "@/shared/api/tauriChannelHeadCache";
+
+export { reconcileFetchedChannelWindow };
 import {
   isMatchingPendingMessage,
   mergeMessages,
@@ -95,13 +96,9 @@ import {
   mapChannelWindowEvents,
   mergeLiveChannelWindowEvent,
   mergeLiveThreadSummary,
-  replaceNewestChannelWindow,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
-import {
-  parseChannelWindowResponse,
-  parseLiveThreadSummary,
-} from "@/features/messages/lib/channelWindowResponse";
+import { parseLiveThreadSummary } from "@/features/messages/lib/channelWindowResponse";
 import {
   CHANNEL_AUX_EVENT_KINDS,
   CHANNEL_TIMELINE_CONTENT_KINDS,
@@ -743,35 +740,6 @@ export function useChannelWindowQuery(channel: Channel | null) {
   });
 }
 
-export function reconcileFetchedChannelWindow(
-  queryClient: QueryClient,
-  channelId: string,
-  events: Awaited<ReturnType<typeof getChannelWindowEvents>>,
-  previousMessages: RelayEvent[],
-  signal: AbortSignal,
-  // Background loads must not rank as visits in the persisted-head LRU.
-  persistHead = true,
-): RelayEvent[] {
-  // Tauri invokes cannot be canceled after dispatch. A replacement refetch can
-  // therefore win while this older request is still in flight. Never let that
-  // canceled request commit its stale page into the authoritative window.
-  signal.throwIfAborted();
-  const windowKey = channelWindowKey(channelId);
-  const page = parseChannelWindowResponse(events, channelId, null);
-  const current =
-    queryClient.getQueryData<ChannelWindowStore>(windowKey) ??
-    emptyChannelWindowStore();
-  const next = replaceNewestChannelWindow(current, page);
-  queryClient.setQueryData(windowKey, next);
-  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
-  if (scope) {
-    void storeChannelHeadCache(scope, channelId, events).catch((error) => {
-      console.warn("Failed to persist channel head", channelId, error);
-    });
-  }
-  return reconcileChannelWindowMessages(next, previousMessages);
-}
-
 export function useChannelMessagesQuery(channel: Channel | null) {
   const queryClient = useQueryClient();
   const queryKey = channelMessagesKey(channel?.id ?? "none");
@@ -831,6 +799,7 @@ export function useChannelSubscription(channel: Channel | null) {
       return;
     }
     const isTimelineRow = CHANNEL_TIMELINE_KINDS.has(event.kind);
+    if (isTimelineRow) markRenderScopedReactionsLoaded(channelId, [event.id]);
     const threadReference = isTimelineRow
       ? getThreadReference(event.tags)
       : null;
