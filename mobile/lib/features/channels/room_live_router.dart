@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -50,8 +49,8 @@ class RoomLiveRouter {
   final OpenRoomLiveSubscription _openRoomSubscription;
   final _rooms = <String, _ListenedRoom>{};
   Set<String> _coveredRooms = const {};
-  final _seen = LinkedHashSet<String>();
-  final _eventRooms = LinkedHashMap<String, String>();
+  final _seen = <String>{};
+  final _eventRooms = <String, String>{};
   bool _disposed = false;
 
   /// Rooms whose bundle chunk is installed. Rooms listened to but not covered
@@ -202,7 +201,7 @@ class RoomLiveRouter {
   }
 }
 
-void _remember(LinkedHashSet<String> seen, String id, int limit) {
+void _remember(Set<String> seen, String id, int limit) {
   seen.add(id);
   if (seen.length > limit) seen.remove(seen.first);
 }

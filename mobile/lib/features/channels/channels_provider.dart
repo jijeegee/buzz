@@ -94,6 +94,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   // keep lifecycle code below the file-size ratchet.
   Ref get _lifecycleRef => ref;
 
+  /// The room router of this build's relay and identity (it rebuilds on the
+  /// same two), held so coverage can be cleared from `onDispose`, where
+  /// reading providers is not allowed.
+  RoomLiveRouter? _coverageRouter;
+
   /// The member snapshot already returned while loading the channel list.
   ///
   /// Mention autocomplete can use this synchronously while its independent
@@ -119,6 +124,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   Future<List<Channel>> build() async {
     final relayBaseUrl = ref.watch(relayConfigProvider).baseUrl;
     final pubkey = ref.watch(myPubkeyProvider)?.toLowerCase();
+    _coverageRouter = ref.read(roomLiveRouterProvider);
     if (_memberSnapshotRelayBaseUrl != relayBaseUrl ||
         _memberSnapshotPubkey != pubkey) {
       _memberSnapshotRelayBaseUrl = relayBaseUrl;

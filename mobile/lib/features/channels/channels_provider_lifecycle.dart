@@ -253,9 +253,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
 
   /// Tells the room router which rooms the installed chunks cover, so an open
   /// room needs no REQ of its own while its chunk is live.
+  /// Runs from `onDispose` too, so it uses the router held at build.
   void _publishLiveCoverage() {
-    if (!_lifecycleRef.mounted) return;
-    _lifecycleRef.read(roomLiveRouterProvider).setCoveredRooms({
+    _coverageRouter?.setCoveredRooms({
       for (final MapEntry(:key, :value) in _liveSubscriptionsByChunk.entries)
         if (value.unsubscribe != null) ...key.split('\u0000'),
     });
