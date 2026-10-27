@@ -10,7 +10,7 @@ that both clients' tests read.
 | Room bundle chunking | `desktop/src/shared/api/relayRoomBundle.ts` (`chunkRoomIds`) | `chunkChannelIdsForLiveSubscriptions` in `mobile/lib/features/channels/channels_provider_lifecycle.dart` |
 | Event placement | `RoomLiveBundle` (`relayRoomBundle.ts`) | `RoomLiveRouter` (`mobile/lib/features/channels/room_live_router.dart`) |
 | Fixture tests | `relayRoomBundle.test.mjs` | `room_live_routing_fixture_test.dart` |
-| Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`) |
+| Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`); features call `meLive.subscribe` (`relayMeLive.ts`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`); `RelaySessionNotifier.subscribe` routes matching filters to it |
 | Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
 
 The account bundle's cases live in
@@ -86,9 +86,10 @@ Features keep their own filters and listen through the bundle:
   authors, and each `#x` tag; `#p` and authors compare case-insensitively),
   each event once per listener. `since` and `limit` do not filter live
   delivery.
-- **History.** A listener whose filter has `since` gets that window fetched
-  for it alone once the bundle is live (`limit` capped at 500), before it is
-  told the subscription is ready, as its own REQ's history used to arrive.
+- **History.** A listener whose filter asks for history (a nonzero `limit`,
+  from its `since` if any) gets it fetched for it alone once the bundle is
+  live, at most 500 events, before it is told the subscription is ready, as
+  its own REQ's history used to arrive. `limit: 0` gets none.
 - **Reconnect.** Each live bundle fetches what it missed from the moment the
   connection dropped minus the relay's created-at skew allowance, up to 500
   events. A failed catch-up owes its window to the next reconnect.

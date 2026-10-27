@@ -6,6 +6,7 @@
     43006, 44100, 44101, 45001, 45003, 46010, 46011, 46012
   ],
   "catchUpLimit": 500,
+  "catchUpLookbackSecs": 1865,
   "scopes": [
     {
       "name": "a settings document rides the authored bundle",

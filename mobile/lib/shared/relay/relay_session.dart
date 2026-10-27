@@ -16,6 +16,7 @@ import '../auth/remote_sign_out.dart';
 import '../auth/token/relay_origin.dart';
 import '../auth/token/token_session.dart';
 import '../device_key/device_proof.dart';
+import 'me_live_bundle.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 import 'relay_client.dart';
@@ -361,11 +362,24 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     return completer.future;
   }
 
+  /// Filters about the account (one pubkey in `authors` or `#p`) share two
+  /// REQs through [_meBundle] (docs/message-sync.md); others get their own.
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
-  }) => _subscribe(filter, onEvent, onClosed: onClosed);
+  }) => meScopeOf(filter) == null
+      ? _subscribe(filter, onEvent, onClosed: onClosed)
+      : _meBundle.subscribe(filter, onEvent, onClosed: onClosed);
+
+  late final _meBundle = MeLiveBundle(
+    open: (filter, onEvent, onClosed) =>
+        _subscribe(filter, onEvent, onClosed: onClosed),
+    fetch: fetchHistory,
+  );
+
+  /// When the connection dropped, for the account bundle's catch-up.
+  int? _meDroppedAt;
 
   /// Subscribe to a live stream and observe its recovery lifecycle.
   ///
@@ -627,11 +641,19 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _reconnectDelayMs = _baseReconnectDelayMs;
     state = const SessionState(status: SessionStatus.connected);
     await _replayLiveSubscriptions(generation);
+    final droppedAt = _meDroppedAt;
+    _meDroppedAt = null;
+    if (droppedAt != null && _isActiveConnection(generation)) {
+      unawaited(_meBundle.catchUp(droppedAt - meCatchUpLookbackSeconds));
+    }
   }
 
   void _handleDisconnected(int generation, Object? error) {
     if (_disposed || generation != _connectionGeneration) return;
     _socketConnected = false;
+    if (_hasConnectedOnce) {
+      _meDroppedAt ??= DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    }
     _cancelAllHistory(error);
     _rejectAllPending(error);
     _resetAllClosedRetries();
@@ -1129,6 +1151,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _socketConnected = false;
     _cancelAllHistory(null);
     _rejectAllPending(null);
+    _meBundle.reset();
+    _meDroppedAt = null;
     final subscriptions = _liveSubscriptions.values.toList();
     _liveSubscriptions.clear();
     for (final subscription in subscriptions) {

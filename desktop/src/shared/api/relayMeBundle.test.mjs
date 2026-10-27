@@ -9,6 +9,7 @@ import {
   MeLiveBundle,
   meScopeOf,
 } from "./relayMeBundle.ts";
+import { RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS } from "./relayReconnectReplay.ts";
 
 const fixtures = JSON.parse(
   readFileSync(
@@ -89,9 +90,13 @@ function event(id, kind, tags, { pubkey = ME, createdAt = 100 } = {}) {
   };
 }
 
-test("shared fixture: kinds match mobile", () => {
+test("shared fixture: kinds and lookback match mobile", () => {
   assert.deepEqual([...ME_AUTHORED_KINDS], fixtures.authoredKinds);
   assert.deepEqual([...ME_ADDRESSED_KINDS], fixtures.addressedKinds);
+  assert.equal(
+    RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS,
+    fixtures.catchUpLookbackSecs,
+  );
 });
 
 for (const fixture of fixtures.scopes) {
@@ -138,7 +143,7 @@ test("listeners of one scope share one REQ and get only their documents", async 
   assert.deepEqual(stars, ["s1"]);
 });
 
-test("a since window is fetched for that listener before it resolves", async () => {
+test("history a filter asks for is fetched for it alone before it resolves", async () => {
   const { bundle, opened, fetches, setFetchResult } = harness();
   setFetchResult([
     event("late", 44100, [["p", ME]], { pubkey: "c".repeat(64), createdAt: 9 }),
@@ -178,6 +183,18 @@ test("a since window is fetched for that listener before it resolves", async () 
     event("late", 44100, [["p", ME]], { pubkey: "c".repeat(64) }),
   );
   assert.deepEqual(seen, ["early", "late"]);
+});
+
+test("a limit-0 listener gets no history", async () => {
+  const { bundle, opened, fetches } = harness();
+  const subscribing = bundle.subscribe(
+    { kinds: [30078], authors: [ME], "#d": ["channel-sort"], limit: 0 },
+    () => {},
+  );
+  await flush();
+  opened[0].release();
+  await subscribing;
+  assert.deepEqual(fetches, []);
 });
 
 test("the last listener leaving closes the REQ after a grace period", async () => {

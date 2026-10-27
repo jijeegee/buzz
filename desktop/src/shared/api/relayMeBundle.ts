@@ -63,7 +63,7 @@ export function meScopeOf(filter: RelaySubscriptionFilter): MeScope | null {
 
 /**
  * Whether a live event reaches a listener with `filter`. `since` and `limit`
- * shape only the listener's catch-up, not live delivery: the old per-feature
+ * shape only the listener's history, not live delivery: the old per-feature
  * REQ dropped live events stamped before `since`, which only lost events.
  */
 export function eventMatchesFilter(
@@ -156,8 +156,9 @@ function byCreatedAt(a: RelayEvent, b: RelayEvent) {
  * kind that scope carries and hands each listener the events its filter
  * matches, once.
  *
- * A listener whose filter has `since` also gets that window once the scope is
- * live, fetched for it alone, as its own REQ's history used to. After a
+ * A listener whose filter asks for history (a nonzero `limit`, from its
+ * `since` if any) gets it fetched for it alone once the scope is live, as its
+ * own REQ's history used to arrive. After a
  * reconnect the bundle fetches what each scope missed while the connection
  * was down (`catchUp`); listeners drop events they already had.
  */
@@ -172,7 +173,8 @@ export class MeLiveBundle {
 
   /**
    * Listen with `filter` (see `meScopeOf`). Resolves once the scope's REQ is
-   * live and any `since` window has been delivered, with the stop function;
+   * live and any history the filter asks for has been delivered, with the
+   * stop function;
    * rejects if either fails, leaving nothing registered.
    */
   async subscribe(
@@ -207,10 +209,10 @@ export class MeLiveBundle {
 
     try {
       const readiness = await entry.ready;
-      if (filter.since !== undefined && !stopped) {
+      if (filter.limit > 0 && !stopped) {
         const history = await this.deps.fetch({
           ...filter,
-          limit: Math.min(filter.limit || CATCH_UP_LIMIT, CATCH_UP_LIMIT),
+          limit: Math.min(filter.limit, CATCH_UP_LIMIT),
         });
         if (!stopped) {
           for (const event of [...history].sort(byCreatedAt)) {
