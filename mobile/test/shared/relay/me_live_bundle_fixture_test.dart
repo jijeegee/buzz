@@ -63,9 +63,7 @@ NostrEvent _event(Map json) => NostrEvent(
   pubkey: json['pubkey'] as String,
   createdAt: json['created_at'] as int,
   kind: json['kind'] as int,
-  tags: [
-    for (final tag in json['tags'] as List) (tag as List).cast<String>(),
-  ],
+  tags: [for (final tag in json['tags'] as List) (tag as List).cast<String>()],
   content: '',
   sig: '',
 );

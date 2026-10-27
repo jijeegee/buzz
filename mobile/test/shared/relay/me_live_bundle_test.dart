@@ -30,15 +30,21 @@ void main() {
     await Future.wait([muting, starring]);
 
     final req = relay.opened.single;
-    req.onEvent(_event('m1', 30078, [
-      ['d', 'channel-mutes'],
-    ]));
-    req.onEvent(_event('s1', 30078, [
-      ['d', 'channel-stars'],
-    ]));
-    req.onEvent(_event('m1', 30078, [
-      ['d', 'channel-mutes'],
-    ]));
+    req.onEvent(
+      _event('m1', 30078, [
+        ['d', 'channel-mutes'],
+      ]),
+    );
+    req.onEvent(
+      _event('s1', 30078, [
+        ['d', 'channel-stars'],
+      ]),
+    );
+    req.onEvent(
+      _event('m1', 30078, [
+        ['d', 'channel-mutes'],
+      ]),
+    );
     expect(mutes, ['m1']);
     expect(stars, ['s1']);
     expect(relay.fetches, isEmpty, reason: 'limit 0 asks for no history');

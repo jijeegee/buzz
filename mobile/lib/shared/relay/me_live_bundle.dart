@@ -272,38 +272,39 @@ class MeLiveBundle {
     final entry = _ScopeEntry(scope);
     bool isCurrent() =>
         generation == _generation && _scopes[scope.key] == entry;
-    entry.ready = _open(
-      scope.filter,
-      (event) {
-        if (!isCurrent()) return;
-        for (final listener in [...entry.listeners]) {
-          listener.deliver(event);
-        }
-      },
-      (message) {
-        // A terminal CLOSED: the next subscriber opens a fresh REQ, and each
-        // listener reacts as it did to its own REQ closing.
-        if (!isCurrent()) return;
-        _scopes.remove(scope.key);
-        _closeScope(entry);
-        for (final listener in [...entry.listeners]) {
-          listener.onClosed?.call(message);
-        }
-      },
-    ).then(
-      (stop) {
-        if (!isCurrent()) {
-          stop();
-          return;
-        }
-        entry.stop = stop;
-        entry.live = true;
-      },
-      onError: (Object error, StackTrace stackTrace) {
-        if (_scopes[scope.key] == entry) _scopes.remove(scope.key);
-        Error.throwWithStackTrace(error, stackTrace);
-      },
-    );
+    entry.ready =
+        _open(
+          scope.filter,
+          (event) {
+            if (!isCurrent()) return;
+            for (final listener in [...entry.listeners]) {
+              listener.deliver(event);
+            }
+          },
+          (message) {
+            // A terminal CLOSED: the next subscriber opens a fresh REQ, and each
+            // listener reacts as it did to its own REQ closing.
+            if (!isCurrent()) return;
+            _scopes.remove(scope.key);
+            _closeScope(entry);
+            for (final listener in [...entry.listeners]) {
+              listener.onClosed?.call(message);
+            }
+          },
+        ).then(
+          (stop) {
+            if (!isCurrent()) {
+              stop();
+              return;
+            }
+            entry.stop = stop;
+            entry.live = true;
+          },
+          onError: (Object error, StackTrace stackTrace) {
+            if (_scopes[scope.key] == entry) _scopes.remove(scope.key);
+            Error.throwWithStackTrace(error, stackTrace);
+          },
+        );
     // Callers observe the error; this keeps an unobserved one quiet.
     unawaited(entry.ready.catchError((_) {}));
     _scopes[scope.key] = entry;
