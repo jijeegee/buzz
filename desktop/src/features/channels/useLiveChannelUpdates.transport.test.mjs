@@ -14,6 +14,7 @@ Object.assign(globalThis, {
   IS_REACT_ACT_ENVIRONMENT: true,
 });
 const writes = [];
+const repairs = [];
 let sendHook = async () => {};
 window.__TAURI_INTERNALS__ = {
   async invoke(command, args) {
@@ -22,6 +23,10 @@ window.__TAURI_INTERNALS__ = {
       return sendHook(JSON.parse(args.message.data));
     }
     if (command === "plugin:websocket|disconnect") return;
+    if (command === "get_channel_reconnect_repair") {
+      repairs.push(args);
+      return [];
+    }
     assert.fail(`unexpected IPC: ${command}`);
   },
 };
@@ -63,6 +68,7 @@ const deliver = (frame) =>
 beforeEach(() => {
   now = 1_000_000;
   writes.length = 0;
+  repairs.length = 0;
   sendHook = async () => {};
   relayClient.wsId = 7;
 });
@@ -144,52 +150,80 @@ async function mount(count, strict = false, onChannelMessage = () => {}) {
     },
   };
 }
+const roomIds = (frame) => frame[2]["#h"];
 for (const strict of [false, true]) {
-  test(`154 channels produce 154 actual REQs (StrictMode=${strict})`, async () => {
+  test(`154 channels ride two room-bundle REQs (StrictMode=${strict})`, async () => {
     const h = await mount(154, strict);
     try {
       assert.equal(frames("REQ").length, 1, "cold setup must not burst");
-      await advance(153 * 250);
-      assert.equal(frames("REQ").length, 154);
-      assert.equal(new Set(frames("REQ").map((f) => f[2]["#h"][0])).size, 154);
+      await advance(250);
+      assert.equal(frames("REQ").length, 2);
+      assert.deepEqual(
+        frames("REQ").map((f) => roomIds(f).length),
+        [128, 26],
+      );
+      assert.equal(new Set(frames("REQ").flatMap(roomIds)).size, 154);
+      for (const [, , filter] of frames("REQ")) {
+        assert.equal(filter.limit, 0);
+        assert.equal(filter.since, undefined);
+        assert.ok(filter.kinds.includes(39005));
+      }
     } finally {
       await h.eose();
     }
   });
 }
-test("adding one pending channel retains 154 entries/filters and emits only one REQ", async () => {
+test("a changed room set swaps bundles only after the successor is live, delivering once", async () => {
   const observed = [];
-  const h = await mount(154, false, (...args) => observed.push(args));
-  const owned = [...relayClient.subscriptions];
-  const initial = owned.map(([id, sub]) => [
-    "REQ",
-    id,
-    structuredClone(sub.filter),
-  ]);
+  const h = await mount(2, false, (...args) => observed.push(args));
   try {
-    await h.members(channels(155));
-    for (const [id, sub] of owned)
-      assert.equal(
-        relayClient.subscriptions.get(id),
-        sub,
-        "retain queued and pending owners",
-      );
-    assert.equal(
-      frames("REQ").length,
-      1,
-      "membership addition cannot flush the queue",
-    );
-    await advance(154 * 250);
-    assert.equal(frames("REQ").length, 155);
-    assert.deepEqual(
-      frames("REQ").slice(0, 154),
-      initial,
-      "retain original IDs and coverage floors",
-    );
-    assert.equal(frames("CLOSE").length, 0);
-    const [first] = initial;
+    await h.eose();
+    const [old] = frames("REQ");
+    await h.members(channels(3));
+    // The live REQ drain admits one REQ per 250 ms.
+    await advance(250);
+    assert.equal(frames("REQ").length, 2);
+    const replacement = frames("REQ").at(-1);
+    assert.deepEqual(roomIds(replacement), [
+      "channel-0",
+      "channel-1",
+      "channel-2",
+    ]);
+    assert.equal(frames("CLOSE").length, 0, "old bundle covers meanwhile");
+    const shared = {
+      id: "shared",
+      kind: 9,
+      pubkey: "b".repeat(64),
+      created_at: 1,
+      content: "hi",
+      tags: [["h", "channel-1"]],
+      sig: "",
+    };
     await act(async () => {
-      // H-less delivery still belongs to this subscription's channel.
+      await deliver(["EVENT", old[1], shared]);
+      await deliver(["EVENT", replacement[1], shared]);
+      await flush();
+    });
+    await advance(50);
+    assert.equal(observed.length, 1, "overlap delivers the event once");
+    assert.equal(observed[0][0], "channel-1");
+    await h.eose();
+    await advance(500);
+    assert.deepEqual(
+      frames("CLOSE").map((f) => f[1]),
+      [old[1]],
+      "old bundle closes once the successor is live",
+    );
+  } finally {
+    await h.eose();
+  }
+});
+test("an h-less event on a one-room bundle belongs to that room", async () => {
+  const observed = [];
+  const h = await mount(1, false, (...args) => observed.push(args));
+  try {
+    const [first] = frames("REQ");
+    await act(async () => {
       await deliver([
         "EVENT",
         first[1],
@@ -206,38 +240,9 @@ test("adding one pending channel retains 154 entries/filters and emits only one 
       await deliver(["EOSE", first[1]]);
       await flush();
     });
-    assert.equal(observed.length, 1, "callback survives replacement effect");
-    assert.equal(observed[0][0], first[2]["#h"][0]);
-    await h.eose();
-    assert.equal(
-      frames("CLOSE").length,
-      0,
-      "late readiness cannot retire retained entries",
-    );
-  } finally {
-    await h.eose();
-  }
-});
-test("remove then re-add during readiness retires only the old entry immediately", async () => {
-  const h = await mount(2);
-  const [old] = frames("REQ");
-  try {
-    await h.members(channels(2).slice(1));
-    assert.ok(
-      frames("CLOSE").some((f) => f[1] === old[1]),
-      "CLOSE before readiness",
-    );
-    await h.members(channels(2));
-    await advance(500);
-    assert.equal(frames("REQ").length, 3);
-    await h.eose();
-    assert.equal(
-      relayClient.subscriptions.size,
-      2,
-      "late old setup does not remove replacement",
-    );
-    await h.members(channels(2));
-    assert.equal(frames("REQ").length, 3);
+    await advance(50);
+    assert.equal(observed.length, 1);
+    assert.equal(observed[0][0], "channel-0");
   } finally {
     await h.eose();
   }
@@ -267,7 +272,30 @@ for (const stop of ["remove", "unmount", "workspace disconnect"]) {
   });
 }
 
-test("late initial send failure after real replay retains the hook entry and its original floor", async () => {
+test("reconnect re-sends the bundle unchanged and repairs every room in one walk", async () => {
+  const h = await mount(2);
+  try {
+    await h.eose();
+    const [original] = frames("REQ");
+    await act(async () => {
+      relayClient.resetConnection(new Error("socket closed"));
+      window.clearTimeout(relayClient.reconnectTimeout);
+      relayClient.reconnectTimeout = null;
+      relayClient.wsId = 8;
+      await relayClient.replayLiveSubscriptions();
+      await flush();
+    });
+    assert.deepEqual(frames("REQ"), [original, original]);
+    assert.equal(repairs.length, 1, "one repair page for the whole bundle");
+    assert.deepEqual(repairs[0].channelIds, ["channel-0", "channel-1"]);
+    // Continuity started when the bundle subscribed, not at the first event.
+    assert.equal(repairs[0].since, 0);
+  } finally {
+    await h.eose();
+  }
+});
+
+test("late initial send failure after real replay retains the bundle and its original floor", async () => {
   const first = Promise.withResolvers();
   let requests = 0;
   sendHook = async (f) => {
@@ -290,10 +318,11 @@ test("late initial send failure after real replay retains the hook entry and its
     assert.equal(frames("CLOSE").length, 0);
     assert.deepEqual(frames("REQ"), [original, original]);
     await h.members(channels(2));
+    await advance(250);
     assert.equal(
       frames("REQ").length,
       3,
-      "unchanged channel remains owned after handoff",
+      "a changed room set opens one successor bundle",
     );
   } finally {
     first.resolve();

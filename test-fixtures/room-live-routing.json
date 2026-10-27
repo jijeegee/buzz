@@ -1,0 +1,82 @@
+{
+  "description": "Shared room live-bundle rules (docs/message-sync.md). Desktop relayRoomBundle and mobile RoomLiveRouter must agree on every case.",
+  "maxRoomsPerSubscription": 128,
+  "chunking": [
+    { "name": "no rooms", "rooms": [], "chunkSizes": [] },
+    {
+      "name": "sorted and deduplicated",
+      "rooms": ["c", "a", "b", "a"],
+      "chunks": [["a", "b", "c"]]
+    },
+    {
+      "name": "split at the relay cap",
+      "generate": { "prefix": "room-", "count": 129 },
+      "chunkSizes": [128, 1]
+    }
+  ],
+  "routing": [
+    {
+      "name": "an h tag names the room",
+      "chunkRooms": ["a", "b"],
+      "event": { "id": "row-b", "kind": 9, "tags": [["h", "b"]] },
+      "expectedRoom": "b"
+    },
+    {
+      "name": "an h-less event on a one-room chunk belongs to that room",
+      "chunkRooms": ["a"],
+      "event": { "id": "like", "kind": 7, "tags": [["e", "unknown"]] },
+      "expectedRoom": "a"
+    },
+    {
+      "name": "a reaction finds the room of an event routed earlier",
+      "chunkRooms": ["a", "b"],
+      "routedBefore": [{ "id": "row-a", "kind": 9, "tags": [["h", "a"]] }],
+      "event": { "id": "like-a", "kind": 7, "tags": [["e", "row-a"]] },
+      "expectedRoom": "a"
+    },
+    {
+      "name": "removing a reaction follows the reaction to its room",
+      "chunkRooms": ["a", "b"],
+      "routedBefore": [
+        { "id": "row-a", "kind": 9, "tags": [["h", "a"]] },
+        { "id": "like-a", "kind": 7, "tags": [["e", "row-a"]] }
+      ],
+      "event": { "id": "unlike", "kind": 5, "tags": [["e", "like-a"]] },
+      "expectedRoom": "a"
+    },
+    {
+      "name": "the reacted event is the last e tag",
+      "chunkRooms": ["a", "b"],
+      "routedBefore": [{ "id": "row-b", "kind": 9, "tags": [["h", "b"]] }],
+      "event": {
+        "id": "like-b",
+        "kind": 7,
+        "tags": [
+          ["e", "row-a-unknown"],
+          ["e", "row-b"]
+        ]
+      },
+      "expectedRoom": "b"
+    },
+    {
+      "name": "a reaction finds a target loaded in an open room",
+      "chunkRooms": ["a", "b"],
+      "loaded": { "b": ["paged-b"] },
+      "event": { "id": "like-paged", "kind": 7, "tags": [["e", "paged-b"]] },
+      "expectedRoom": "b"
+    },
+    {
+      "name": "a target loaded in a room outside the chunk is not used",
+      "chunkRooms": ["a", "b"],
+      "loaded": { "c": ["paged-c"] },
+      "event": { "id": "like-c", "kind": 7, "tags": [["e", "paged-c"]] },
+      "expectedRoom": null
+    },
+    {
+      "name": "an unknown target on a multi-room chunk cannot be placed",
+      "chunkRooms": ["a", "b"],
+      "event": { "id": "like-x", "kind": 7, "tags": [["e", "unknown"]] },
+      "expectedRoom": null
+    }
+  ]
+}

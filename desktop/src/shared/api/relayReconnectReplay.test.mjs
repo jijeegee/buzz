@@ -15,6 +15,7 @@ import {
   shouldPageReconnectReplay,
 } from "./relayReconnectReplay.ts";
 import { buildChannelFilter } from "./relayChannelFilters.ts";
+import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
 import {
   flushEvents,
   markReconnectLiveEose,
@@ -627,21 +628,21 @@ test("channel reconnect replay pages the missed window until a short page", asyn
   ]);
   assert.deepEqual(historyFilters, [
     {
-      channelId: "channel-1",
+      channelIds: ["channel-1"],
       limit: 500,
       since: 0,
       until: undefined,
       beforeId: undefined,
     },
     {
-      channelId: "channel-1",
+      channelIds: ["channel-1"],
       limit: 500,
       since: 0,
       until: 1501,
       beforeId: "newest-0",
     },
     {
-      channelId: "channel-1",
+      channelIds: ["channel-1"],
       limit: 500,
       since: 0,
       until: 1002,
@@ -683,7 +684,7 @@ test("native repair preserves an explicit subscription since boundary", async ()
   assert.equal(11_000 - RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS, 9_135);
   assert.deepEqual(repairRequests, [
     {
-      channelId: "channel-1",
+      channelIds: ["channel-1"],
       limit: 500,
       since: 10_000,
       until: undefined,
@@ -741,7 +742,7 @@ test("reconnect replay starts live REQs in parallel and preserves per-sub page o
       });
     },
     requestRepair: async (request) => {
-      const channelId = request.channelId;
+      const [channelId] = request.channelIds;
       historyFiltersByChannel[channelId].push(request.until);
       return pagesByChannel[channelId].shift() ?? [];
     },
@@ -1336,7 +1337,7 @@ test("live-before-repair and repair-before-live dispatch once", async () => {
     }
     await replayReconnectHistoryPages({
       subscription,
-      channelId: "channel-1",
+      channelIds: ["channel-1"],
       since: 0,
       until: 1000,
       isActive: () => true,
@@ -1354,4 +1355,66 @@ test("live-before-repair and repair-before-live dispatch once", async () => {
 test("teardown — restore Date.now", () => {
   Date.now = origDateNow;
   assert.ok(true);
+});
+
+test("a live-only room bundle is re-sent unchanged and repaired across all its rooms", async () => {
+  resetGate();
+  const sent = [];
+  const repairs = [];
+  const delivered = [];
+  const filter = {
+    kinds: [...CHANNEL_EVENT_KINDS, 39005],
+    "#h": ["channel-1", "channel-2"],
+    limit: 0,
+  };
+  assert.equal(shouldPageReconnectReplay(filter), true);
+  assert.equal(
+    shouldPageReconnectReplay({
+      ...filter,
+      "#h": Array.from({ length: 129 }, (_, i) => `channel-${i}`),
+    }),
+    false,
+    "beyond the relay's 128-channel cap",
+  );
+  const subscriptions = new Map([
+    [
+      "live-bundle",
+      {
+        mode: "live",
+        filter,
+        onEvent: (event) => delivered.push(event.id),
+        lastSeenCreatedAt: 10_000,
+      },
+    ],
+  ]);
+
+  await replayLiveSubscriptions({
+    subscriptions,
+    sendRaw: async (payload) => {
+      sent.push(payload);
+    },
+    requestRepair: async (request) => {
+      repairs.push(request);
+      return [
+        {
+          id: "missed",
+          kind: 9,
+          created_at: 9_999,
+          tags: [["h", "channel-2"]],
+        },
+      ];
+    },
+  });
+
+  assert.deepEqual(sent, [["REQ", "live-bundle", filter]]);
+  assert.deepEqual(repairs, [
+    {
+      channelIds: ["channel-1", "channel-2"],
+      limit: 500,
+      since: 10_000 - RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS,
+      until: undefined,
+      beforeId: undefined,
+    },
+  ]);
+  assert.deepEqual(delivered, ["missed"]);
 });

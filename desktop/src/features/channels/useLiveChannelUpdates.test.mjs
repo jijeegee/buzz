@@ -114,6 +114,9 @@ async function mount(initialChannels, options = {}, subscribeImpl) {
       hook.unmount();
       cleanup();
       queryClient.clear();
+      // The bundle lives on the singleton client; forget this test's rooms
+      // and delivered events.
+      relayClient.disconnect();
       relayClient.subscribeLive = originalLive;
       if (originalMention) {
         Object.defineProperty(
@@ -129,22 +132,27 @@ async function mount(initialChannels, options = {}, subscribeImpl) {
 }
 
 for (const count of [20, 50, 129]) {
-  test(`${count} member channels use one live stream each, not a second mention family`, async () => {
+  test(`${count} member channels share one live REQ per 128 rooms, not a second mention family`, async () => {
     const h = await mount(channels(count), { onLiveMention() {} });
     try {
-      assert.equal(h.subscriptions.length, count);
+      assert.equal(h.subscriptions.length, Math.ceil(count / 128));
       assert.equal(
         h.mentionSubscriptions.length,
         0,
         "channel streams already include mention kinds",
       );
       assert.deepEqual(
-        h.subscriptions.map((s) => s.filter["#h"]),
+        h.subscriptions.flatMap((s) => s.filter["#h"]).sort(),
         channels(count)
-          .map((c) => [c.id])
+          .map((c) => c.id)
           .sort(),
       );
-      assert.ok(h.subscriptions.every((s) => s.filter.since > 0));
+      assert.ok(
+        h.subscriptions.every(
+          (s) => s.filter.limit === 0 && s.filter.since === undefined,
+        ),
+        "live-only, and no since that would drop backdated events",
+      );
       assert.ok(
         h.subscriptions.every((s) =>
           HOME_MENTION_EVENT_KINDS.every((kind) =>
@@ -210,7 +218,7 @@ test("chat recency advances for actual self/peer messages, not metadata or auxil
     );
     assert.deepEqual(order(), ["channel-0", "channel-1"]);
     await h.deliver(
-      h.subscriptions[1],
+      h.subscriptions[0],
       message("peer-message", { created_at: 202, tags: [["h", "channel-1"]] }),
     );
     assert.deepEqual(order(), ["channel-1", "channel-0"]);
@@ -305,24 +313,22 @@ test("latest mention callback and identity are used without subscription churn",
   }
 });
 
-test("membership diff disposes removed channels and keeps unchanged channel delivery", async () => {
+test("membership diff replaces the room bundle and drops a removed channel's late events", async () => {
   let mentions = 0;
   const opts = { onLiveMention: () => mentions++ };
   const h = await mount(channels(2), opts);
   try {
-    const [removed, retained] = h.subscriptions;
+    const [previous] = h.subscriptions;
     h.rerender(channels(3).slice(1), opts);
     await h.settle();
-    assert.equal(
-      h.subscriptions.length,
-      3,
-      "only the newly joined channel subscribes",
-    );
-    assert.equal(removed.disposed, true);
-    assert.equal(retained.disposed, false);
-    await h.deliver(removed, message("removed"));
+    assert.equal(h.subscriptions.length, 2, "one replacement bundle");
+    const [, replacement] = h.subscriptions;
+    assert.deepEqual(replacement.filter["#h"], ["channel-1", "channel-2"]);
+    assert.equal(previous.disposed, true, "retired once the successor is live");
+    assert.equal(replacement.disposed, false);
+    await h.deliver(previous, message("removed"));
     await h.deliver(
-      retained,
+      replacement,
       message("retained", {
         tags: [
           ["h", "channel-1"],
@@ -340,7 +346,7 @@ test("membership diff disposes removed channels and keeps unchanged channel deli
   }
 });
 
-test("untagged auxiliary event keeps its single-channel context in the timeline cache", async () => {
+test("untagged reaction finds its room from the loaded timeline and keeps that context", async () => {
   let mentions = 0;
   const h = await mount(channels(2), { onLiveMention: () => mentions++ });
   try {
@@ -349,7 +355,7 @@ test("untagged auxiliary event keeps its single-channel context in the timeline 
       message("parent", { tags: [["h", "channel-1"]] }),
     ]);
     await h.deliver(
-      h.subscriptions[1],
+      h.subscriptions[0],
       message("reaction", {
         kind: 7,
         content: "👀",
@@ -370,7 +376,7 @@ test("untagged auxiliary event keeps its single-channel context in the timeline 
   }
 });
 
-test("one failed setup does not abort other channel streams and retries only that channel", async () => {
+test("a failed bundle setup retries the same rooms after backoff", async () => {
   const originalSetTimeout = window.setTimeout;
   const originalClearTimeout = window.clearTimeout;
   const retries = new Map();
@@ -381,21 +387,24 @@ test("one failed setup does not abort other channel streams and retries only tha
   };
   window.clearTimeout = (id) => retries.delete(id);
   let failOnce = true;
-  const h = await mount(channels(2), {}, async (sub) => {
-    if (sub.filter["#h"][0] === "channel-0" && failOnce) {
+  const h = await mount(channels(2), {}, async () => {
+    if (failOnce) {
       failOnce = false;
       throw new Error("fixture subscription setup failure");
     }
   });
   try {
-    assert.equal(h.subscriptions.length, 2);
+    assert.equal(h.subscriptions.length, 1);
     assert.equal(retries.size, 1);
     await h.act(async () => {
       retries.values().next().value();
     });
     await h.settle();
-    assert.equal(h.subscriptions.length, 3);
-    assert.deepEqual(h.subscriptions[2].filter["#h"], ["channel-0"]);
+    assert.equal(h.subscriptions.length, 2);
+    assert.deepEqual(h.subscriptions[1].filter["#h"], [
+      "channel-0",
+      "channel-1",
+    ]);
   } finally {
     h.restore();
     window.setTimeout = originalSetTimeout;
@@ -403,21 +412,20 @@ test("one failed setup does not abort other channel streams and retries only tha
   }
 });
 
-test("unmount disposes both established and pending channel streams", async () => {
+test("unmount disposes a pending room bundle once it settles", async () => {
   let release;
-  const h = await mount(channels(2), { onLiveMention() {} }, async (sub) => {
-    if (sub.filter["#h"][0] === "channel-1") {
-      await new Promise((resolve) => {
-        release = resolve;
-      });
-    }
+  const h = await mount(channels(2), { onLiveMention() {} }, async () => {
+    await new Promise((resolve) => {
+      release = resolve;
+    });
   });
   try {
     h.unmount();
-    assert.equal(h.subscriptions[0].disposed, true);
     await h.act(async () => {
       release();
     });
+    await h.settle();
+    assert.ok(h.subscriptions.length > 0);
     assert.ok(h.subscriptions.every((sub) => sub.disposed));
     assert.equal(h.mentionSubscriptions.length, 0);
   } finally {
@@ -476,7 +484,7 @@ test("live messages patch the shown server chats list in place, once per event",
       ],
     });
   try {
-    await h.deliver(h.subscriptions[1], mention("peer-in-1"));
+    await h.deliver(h.subscriptions[0], mention("peer-in-1"));
     let rows = h.queryClient.getQueryData(key).rows;
     assert.deepEqual(
       rows.map((row) => [row.key, row.unread, row.unread_mentions]),
@@ -489,8 +497,8 @@ test("live messages patch the shown server chats list in place, once per event",
 
     // A second message in the same second, then a repeat of the first
     // (reconnect replay): the repeat is not counted again.
-    await h.deliver(h.subscriptions[1], mention("peer-in-2"));
-    await h.deliver(h.subscriptions[1], mention("peer-in-1"));
+    await h.deliver(h.subscriptions[0], mention("peer-in-2"));
+    await h.deliver(h.subscriptions[0], mention("peer-in-1"));
     rows = h.queryClient.getQueryData(key).rows;
     assert.deepEqual(
       [rows[0].key, rows[0].unread, rows[0].unread_mentions],

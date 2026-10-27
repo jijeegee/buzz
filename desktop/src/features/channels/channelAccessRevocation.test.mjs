@@ -133,9 +133,10 @@ async function mount() {
     await settle();
   };
   await settle();
-  // Admit both subscriptions through the production drain before testing CLOSED.
+  // Admit the room bundle (both channels, one REQ) through the production
+  // drain before testing CLOSED.
   await tick(500);
-  assert.equal(sent.filter(([type]) => type === "REQ").length, 2);
+  assert.equal(sent.filter(([type]) => type === "REQ").length, 1);
   const ids = sent.filter(([type]) => type === "REQ").map(([, id]) => id);
   return {
     reads,
@@ -194,7 +195,6 @@ for (const outcome of ["archived", "unchanged", "removed", "failed"]) {
     try {
       await h.close();
       await h.close(); // duplicate frame is not a second hint
-      await h.close(h.ids[1]); // a second channel shares the debounce
       assert.equal(
         h.relayClient.subscriptions.size,
         0,
@@ -258,8 +258,8 @@ for (const outcome of ["archived", "unchanged", "removed", "failed"]) {
       );
       assert.equal(
         h.sent.filter(([type]) => type === "REQ").length,
-        2,
-        "no terminal resubscribe",
+        outcome === "removed" ? 2 : 1,
+        "no terminal resubscribe; only a changed room set subscribes again",
       );
     } finally {
       h.restore();
@@ -282,7 +282,9 @@ test("unknown, non-channel, unrelated and old-generation CLOSED do not refresh c
     await dispose();
     await h.tick(500);
     assert.equal(h.reads.length, 0);
-    assert.equal(h.relayClient.subscriptions.size, 1);
+    // The terminal "invalid:" CLOSED removed the room bundle and the global
+    // subscription was disposed; neither refreshed channels.
+    assert.equal(h.relayClient.subscriptions.size, 0);
   } finally {
     h.restore();
   }

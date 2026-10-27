@@ -7,8 +7,6 @@ import {
   KIND_STREAM_MESSAGE,
   KIND_TYPING_INDICATOR,
   KIND_USER_STATUS,
-  CHANNEL_EVENT_KINDS,
-  KIND_CHANNEL_THREAD_SUMMARY,
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
@@ -23,7 +21,6 @@ import {
 } from "@/shared/api/relayClientShared";
 import {
   buildChannelAuxDeletionFilter,
-  buildChannelFilter,
   buildChannelHistoryFilter,
   buildGlobalStreamFilter,
 } from "@/shared/api/relayChannelFilters";
@@ -35,7 +32,11 @@ import {
   prepareSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
-import { replayLiveSubscriptions } from "@/shared/api/relayReconnectReplay";
+import {
+  replayLiveSubscriptions,
+  shouldPageReconnectReplay,
+} from "@/shared/api/relayReconnectReplay";
+import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
@@ -107,6 +108,15 @@ export class RelayClient {
   private liveSessionAbort = new AbortController();
   private stabilityTimer: number | null = null;
   private visibleChannelId: string | null = null;
+  /** Every room's live events ride this bundle (one REQ per 128 rooms). */
+  readonly liveRooms = new RoomLiveBundle(
+    (filter, onEvent, onReady, signal) =>
+      this.subscribeLive(filter, onEvent, onReady, undefined, signal),
+    {
+      setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+      clearTimeout: (id) => window.clearTimeout(id),
+    },
+  );
   private authOkTracker = new AuthOkTracker();
   private terminal = false;
 
@@ -137,6 +147,7 @@ export class RelayClient {
     this.sessionEpoch++;
     this.liveSessionAbort.abort();
     this.liveSessionAbort = new AbortController();
+    this.liveRooms.reset();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     this.keepAliveRequested = false;
@@ -335,30 +346,12 @@ export class RelayClient {
     void this.sendRaw(["EVENT", event]).catch(() => {});
   }
 
-  async subscribeToChannel(
-    channelId: string,
-    onEvent: (event: RelayEvent) => void,
-  ) {
-    return this.subscribe(buildChannelFilter(channelId, 50), onEvent);
-  }
-
-  /** Subscribe to channel rows and aux starting now, with no history replay. */
+  /** One room's live rows, aux and 39005 summaries, riding `liveRooms`. */
   async subscribeToChannelLive(
     channelId: string,
     onEvent: (event: RelayEvent) => void,
   ) {
-    // 39005 rides only this window-store subscription — CHANNEL_EVENT_KINDS'
-    // other consumers (unread tracking, cache merges) must never see
-    // summary overlays.
-    return this.subscribe(
-      {
-        kinds: [...CHANNEL_EVENT_KINDS, KIND_CHANNEL_THREAD_SUMMARY],
-        "#h": [channelId],
-        limit: 1000,
-        since: Math.floor(Date.now() / 1_000),
-      },
-      onEvent,
-    );
+    return this.liveRooms.listenRoom(channelId, onEvent);
   }
 
   /**
@@ -650,6 +643,10 @@ export class RelayClient {
       priority,
       onEvent,
       onRemoved,
+      // A repairable room subscription is continuous from now on.
+      lastSeenCreatedAt: shouldPageReconnectReplay(filter)
+        ? Math.floor(Date.now() / 1_000)
+        : undefined,
     };
     const dispose = async () => {
       if (this.subscriptions.get(subId) !== subscription) return;

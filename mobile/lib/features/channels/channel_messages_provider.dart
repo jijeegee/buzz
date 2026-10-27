@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
+import 'room_live_router.dart';
 import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
@@ -21,11 +22,6 @@ part 'channel_messages_provider/thread_summaries.dart';
 // Channel history keeps partial reply evidence; full threads stay route-scoped.
 const _maxCachedRepliesPerRoot = 256;
 const _maxCachedReplies = 2048;
-
-const _channelLiveEventKinds = [
-  ...EventKind.channelEventKinds,
-  EventKind.channelThreadSummary,
-];
 
 /// Provides the message list for a specific channel. Registers a live
 /// subscription first, then syncs history via the server-assembled channel
@@ -225,29 +221,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     try {
       final session = ref.read(relaySessionProvider.notifier);
 
-      try {
-        final unsubscribe = await session.subscribe(
-          NostrFilter(
-            kinds: _channelLiveEventKinds,
-            tags: {
-              '#h': [channelId],
-            },
-            since: _currentUnixSeconds(),
-            limit: 200,
-          ),
-          _handleLiveEvent,
-        );
-        if (!_isCurrentInit(initVersion)) {
-          unsubscribe();
-          return;
-        }
-        _unsubscribe = unsubscribe;
-      } catch (error) {
-        if (!_isCurrentInit(initVersion)) return;
-        debugPrint(
-          '[ChannelMessagesNotifier] live subscription failed for $channelId: $error',
-        );
+      // The room rides the shared room bundle: no REQ of its own once the
+      // bundle covers it (see RoomLiveRouter).
+      final unsubscribe = await ref
+          .read(roomLiveRouterProvider)
+          .listenRoom(channelId, _handleLiveEvent, holdsEvent: _holdsEvent);
+      if (!_isCurrentInit(initVersion)) {
+        unsubscribe();
+        return;
       }
+      _unsubscribe = unsubscribe;
 
       if (_usingChannelWindow && _windowStore.isMiddle) {
         await _refreshMiddleAfterReconnect(session, initVersion);
@@ -1018,6 +1001,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
   bool _isCurrentInit(int initVersion) => initVersion == _initVersion;
 
+  bool _holdsEvent(String id) =>
+      _lastKnownMessages?.any((event) => event.id == id) ?? false;
+
   void _clearSubscription() {
     _unsubscribe?.call();
     _unsubscribe = null;
@@ -1189,8 +1175,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     return true;
   }
 }
-
-int _currentUnixSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
 final channelMessagesProvider =
     NotifierProvider.family<

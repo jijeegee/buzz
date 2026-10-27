@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -41,6 +42,47 @@ void main() {
       2,
     );
   });
+
+  test(
+    'a room the bundle covers opens no REQ of its own and draws routed events',
+    () async {
+      final relaySession = _RecordingRelaySessionNotifier(
+        queryResults: [
+          [_event(id: 'history', createdAt: 10), _bounds()],
+        ],
+      );
+      final container = _buildContainer(relaySession);
+      addTearDown(container.dispose);
+      final router = container.read(roomLiveRouterProvider)
+        ..setCoveredRooms({_channelId});
+      container.read(channelMessagesProvider(_channelId));
+      for (var i = 0; i < 5; i++) {
+        await _pumpEventQueue();
+      }
+      expect(relaySession.liveFilters, isEmpty);
+
+      router.routeBundleEvent(_event(id: 'live', createdAt: 20), {
+        _channelId,
+        'other-room',
+      });
+      router.routeBundleEvent(
+        _event(
+          id: 'reply',
+          createdAt: 30,
+          extraTags: [
+            ['e', 'history', '', 'root'],
+            ['e', 'history', '', 'reply'],
+          ],
+        ),
+        {_channelId, 'other-room'},
+      );
+      final ids = container
+          .read(channelMessagesProvider(_channelId))
+          .value!
+          .map((event) => event.id);
+      expect(ids, containsAll(['history', 'live', 'reply']));
+    },
+  );
 
   for (final retainDeepLink in [false, true]) {
     test(
@@ -144,7 +186,9 @@ void main() {
         EventKind.channelThreadSummary,
       ]);
       expect(relaySession.liveFilters.single.tags['#h'], [_channelId]);
-      expect(relaySession.liveFilters.single.limit, 200);
+      // Not yet covered by the room bundle: a live-only room subscription.
+      expect(relaySession.liveFilters.single.limit, 0);
+      expect(relaySession.liveFilters.single.since, isNull);
       expect(
         relaySession.queryFilters.first.kinds,
         EventKind.channelTimelineContentKinds,

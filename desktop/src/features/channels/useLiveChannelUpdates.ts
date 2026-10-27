@@ -1,5 +1,5 @@
 import * as React from "react";
-import { useQueryClient } from "@tanstack/react-query";
+import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { INBOX_DELETIONS_QUERY_KEY } from "@/features/home/lib/inboxDeletions";
@@ -26,7 +26,6 @@ import {
 } from "@/features/notifications/lib/shouldNotify";
 import { relayClient } from "@/shared/api/relayClient";
 import {
-  CHANNEL_EVENT_KINDS,
   CHANNEL_MESSAGE_EVENT_KINDS,
   HOME_MENTION_EVENT_KINDS,
   KIND_DELETION,
@@ -87,9 +86,6 @@ export type UseLiveChannelUpdatesOptions = {
   mutedChannelIds?: ReadonlySet<string>;
 };
 
-const LIVE_SUBSCRIPTION_RETRY_BASE_MS = 1_000;
-const LIVE_SUBSCRIPTION_RETRY_MAX_MS = 30_000;
-
 // get_channels is an expensive O(channels) relay fan-out. Incoming traffic for
 // non-active channels arrives in bursts, so coalesce the refetch into a single
 // trailing invalidation instead of one per event.
@@ -129,15 +125,28 @@ function isExternalMentionEvent(event: RelayEvent, currentPubkey: string) {
   );
 }
 
-type LiveChannelEntry = {
-  controller: AbortController;
-  pending: Promise<boolean>;
-  dispose?: () => Promise<void>;
-};
-
-function retireLiveChannel(entry: LiveChannelEntry) {
-  entry.controller.abort();
-  void entry.dispose?.().catch(() => {});
+/**
+ * The room of a loaded event, for reactions and removals that carry no `h`
+ * tag: looked up in the loaded timelines and threads.
+ */
+export function findRoomOfCachedEvent(
+  queryClient: QueryClient,
+  eventId: string,
+): string | null {
+  for (const queryKey of [["channel-messages"], ["thread-replies"]]) {
+    for (const [key, events] of queryClient.getQueriesData<unknown>({
+      queryKey,
+    })) {
+      if (
+        typeof key[1] === "string" &&
+        Array.isArray(events) &&
+        events.some((event: RelayEvent) => event?.id === eventId)
+      ) {
+        return key[1];
+      }
+    }
+  }
+  return null;
 }
 
 const SEEN_NOTIFICATION_EVENT_LIMIT = 5_000;
@@ -482,117 +491,38 @@ export function useLiveChannelUpdates(
     [invalidateChannelsDebounced],
   );
 
-  const liveSubsRef = React.useRef(new Map<string, LiveChannelEntry>());
-
+  // Every member room's events arrive on the client's shared live room
+  // bundle (one REQ per 128 rooms) instead of one REQ per room.
   React.useEffect(() => {
-    let isCancelled = false;
-    let retryTimeout: number | undefined;
-    let retryAttempt = 0;
-
-    const syncSubs = async (): Promise<boolean> => {
-      const activeSubs = liveSubsRef.current;
-      const targetIds = new Set(channelIdsKey ? channelIdsKey.split(",") : []);
-
-      for (const [channelId, entry] of activeSubs) {
-        if (!targetIds.has(channelId)) {
-          activeSubs.delete(channelId);
-          retireLiveChannel(entry);
-        }
-      }
-
-      if (targetIds.size > 0) {
-        // Record the subscription start time so handleDmEvent can distinguish
-        // backlog replays (created_at < startedAt) from live messages.
-        dmSubscriptionStartedAtRef.current = Math.floor(Date.now() / 1000);
-      }
-
-      const pending = Array.from(targetIds).map((channelId) => {
-        const existing = activeSubs.get(channelId);
-        if (existing) return existing.pending;
-        const entry: LiveChannelEntry = {
-          controller: new AbortController(),
-          pending: Promise.resolve(true),
-        };
-        // Claim before the first await so a membership rerun retains this work.
-        activeSubs.set(channelId, entry);
-        entry.pending = relayClient
-          .subscribeLive(
-            {
-              kinds: [...CHANNEL_EVENT_KINDS],
-              "#h": [channelId],
-              limit: 1000,
-              since: Math.floor(Date.now() / 1_000),
-            },
-            (event) => {
-              if (activeSubs.get(channelId) === entry) {
-                handleIncomingMessage(withChannelTagFallback(event, channelId));
-              }
-            },
-            undefined,
-            undefined,
-            entry.controller.signal,
-          )
-          .then((dispose) => {
-            if (activeSubs.get(channelId) !== entry) {
-              void dispose().catch(() => {});
-            } else {
-              entry.dispose = dispose;
-            }
-            return true;
-          })
-          .catch((err) => {
-            if (activeSubs.get(channelId) !== entry) return true;
-            activeSubs.delete(channelId);
-            if (err instanceof DOMException && err.name === "AbortError")
-              return true;
-            console.error(
-              "Failed to subscribe to live channel updates",
-              channelId,
-              err,
-            );
-            return false;
-          });
-        return entry.pending;
-      });
-      return (await Promise.all(pending)).every(Boolean);
-    };
-
-    const runSync = async () => {
-      const ok = await syncSubs();
-      if (isCancelled) return;
-      if (ok) {
-        retryAttempt = 0;
-        return;
-      }
-      const delayMs = Math.min(
-        LIVE_SUBSCRIPTION_RETRY_BASE_MS * 2 ** retryAttempt,
-        LIVE_SUBSCRIPTION_RETRY_MAX_MS,
-      );
-      retryAttempt += 1;
-      retryTimeout = window.setTimeout(() => {
-        retryTimeout = undefined;
-        void runSync();
-      }, delayMs);
-    };
-
-    void runSync();
-
-    return () => {
-      isCancelled = true;
-      if (retryTimeout !== undefined) {
-        window.clearTimeout(retryTimeout);
-      }
-    };
+    const roomIds = channelIdsKey ? channelIdsKey.split(",") : [];
+    if (roomIds.length > 0) {
+      // Record the subscription start time so handleDmEvent can distinguish
+      // backlog replays (created_at < startedAt) from live messages.
+      dmSubscriptionStartedAtRef.current = Math.floor(Date.now() / 1000);
+    }
+    relayClient.liveRooms.setMemberRooms(roomIds);
+    return () => relayClient.liveRooms.setMemberRooms([]);
   }, [channelIdsKey]);
+
+  React.useEffect(
+    () =>
+      relayClient.liveRooms.listenAllRooms((event) => {
+        handleIncomingMessage(event);
+      }),
+    [],
+  );
+
+  React.useEffect(
+    () =>
+      relayClient.liveRooms.setRoomResolver((eventId) =>
+        findRoomOfCachedEvent(queryClient, eventId),
+      ),
+    [queryClient],
+  );
 
   React.useEffect(() => {
     return () => {
       channelsInvalidateRef.current?.cancel();
-
-      for (const entry of liveSubsRef.current.values()) {
-        retireLiveChannel(entry);
-      }
-      liveSubsRef.current.clear();
     };
   }, []);
 }

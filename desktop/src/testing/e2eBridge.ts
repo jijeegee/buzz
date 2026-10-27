@@ -6057,7 +6057,7 @@ function buildMockChannelWindowBounds(
  */
 async function handleGetChannelReconnectRepair(
   args: {
-    channelId: string;
+    channelIds: string[];
     since: number;
     limit: number;
     until?: number | null;
@@ -6070,7 +6070,7 @@ async function handleGetChannelReconnectRepair(
     48101, 48102, 48103,
   ]);
   const filter: Record<string, unknown> = {
-    "#h": [args.channelId],
+    "#h": args.channelIds,
     kinds: [...kinds],
     since: args.since,
     limit: args.limit,
@@ -6079,7 +6079,8 @@ async function handleGetChannelReconnectRepair(
   if (args.beforeId != null) filter.before_id = args.beforeId;
 
   if (getIdentity(config)) return relayQuery(config, [filter]);
-  return getMockMessageStore(args.channelId)
+  return args.channelIds
+    .flatMap((channelId) => getMockMessageStore(channelId))
     .filter(
       (event) =>
         kinds.has(event.kind) &&
@@ -11335,15 +11336,14 @@ function sendToMockSocket(args: {
 
     if (subId.startsWith("live-")) {
       const subscription = createMockSubscription(filters);
-      const onlyChannelId =
-        subscription.channelIds.length === 1 &&
-        subscription.channelIds[0] !== GLOBAL_MOCK_SUBSCRIPTION
-          ? subscription.channelIds[0]
-          : undefined;
+      // Rooms ride one live bundle; the thread-summary kind marks it.
+      const carriesRooms = subscription.channelIds.some(
+        (channelId) => channelId !== GLOBAL_MOCK_SUBSCRIPTION,
+      );
       if (
         getConfig()?.mock?.closeChannelLiveSubscriptionOnce &&
         !mockClosedChannelLiveSubscription &&
-        onlyChannelId &&
+        carriesRooms &&
         subscription.kinds?.includes(KIND_CHANNEL_THREAD_SUMMARY)
       ) {
         mockClosedChannelLiveSubscription = true;

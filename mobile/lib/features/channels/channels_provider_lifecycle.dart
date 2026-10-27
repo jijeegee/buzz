@@ -96,19 +96,30 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       final generation = ++_nextLiveChunkGeneration;
       final subscription = _LiveChunkSubscription(generation);
       _liveSubscriptionsByChunk[chunkKey] = subscription;
+      final chunkRooms = chunk.toSet();
       try {
         final unsubscribe = await session.subscribe(
           NostrFilter(
-            kinds: EventKind.channelEventKinds,
+            // The open rooms ride these chunks too (see RoomLiveRouter), so
+            // they carry the thread-summary recounts the rooms need.
+            kinds: roomLiveEventKinds,
             tags: {'#h': chunk},
             limit: 0,
           ),
           (event) {
-            // Superseded chunks can overlap during replacement or recovery.
-            // Deliver only the current scope's still-desired channels; duplicate
-            // events are already idempotent in the unread/timestamp stores.
             if (!_lifecycleRef.mounted ||
-                _refreshCoordinator.currentScope() != fence.scope ||
+                _refreshCoordinator.currentScope() != fence.scope) {
+              return;
+            }
+            _lifecycleRef
+                .read(roomLiveRouterProvider)
+                .routeBundleEvent(event, chunkRooms);
+            // Superseded chunks can overlap during replacement or recovery.
+            // Deliver only the current scope's still-desired channels;
+            // duplicate events are already idempotent in the unread/timestamp
+            // stores. Thread summaries are room metadata, never unread or chat
+            // rows.
+            if (event.kind == EventKind.channelThreadSummary ||
                 !_desiredLiveChannelIds.contains(event.channelId)) {
               return;
             }
@@ -139,6 +150,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
           unsubscribe();
           continue;
         }
+        _publishLiveCoverage();
       } on _StaleChannelRefresh {
         rethrow;
       } catch (error) {
@@ -175,6 +187,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     final subscription = _liveSubscriptionsByChunk[chunkKey];
     if (subscription == null || subscription.generation != generation) return;
     _liveSubscriptionsByChunk.remove(chunkKey);
+    _publishLiveCoverage();
     // RelaySession calls onClosed only for terminal admission failures. Its
     // transient/rate-limit retries have their own backoff. Do not turn a
     // terminal rejection into a fresh membership/history/REQ loop here.
@@ -227,6 +240,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       _liveSubscriptionsByChunk.remove(entry.key);
       entry.value.unsubscribe?.call();
     }
+    _publishLiveCoverage();
   }
 
   void _clearRetainedLiveChunks() {
@@ -234,6 +248,17 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       subscription.unsubscribe?.call();
     }
     _liveSubscriptionsByChunk.clear();
+    _publishLiveCoverage();
+  }
+
+  /// Tells the room router which rooms the installed chunks cover, so an open
+  /// room needs no REQ of its own while its chunk is live.
+  void _publishLiveCoverage() {
+    if (!_lifecycleRef.mounted) return;
+    _lifecycleRef.read(roomLiveRouterProvider).setCoveredRooms({
+      for (final MapEntry(:key, :value) in _liveSubscriptionsByChunk.entries)
+        if (value.unsubscribe != null) ...key.split('\u0000'),
+    });
   }
 
   void _clearLiveSubscriptions() {

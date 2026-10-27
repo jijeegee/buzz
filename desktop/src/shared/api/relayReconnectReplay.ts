@@ -1,7 +1,8 @@
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
-import type {
-  RelaySubscription,
-  RelaySubscriptionFilter,
+import {
+  MAX_EXPLICIT_CHANNEL_VALUES,
+  type RelaySubscription,
+  type RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -101,11 +102,18 @@ export function buildReconnectReplayFilter(
   return replayFilter;
 }
 
+/**
+ * Whether a live subscription's missed window is repaired over HTTP: it must
+ * carry every channel event kind for an explicit set of rooms (one room, or a
+ * room bundle of up to the relay's 128-channel cap). Room bundles are
+ * live-only (`limit: 0`), so their repair is the only replay they get.
+ */
 export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
+  const roomIds = filter["#h"];
   return (
-    filter.limit > 0 &&
-    Array.isArray(filter["#h"]) &&
-    filter["#h"].length === 1 &&
+    Array.isArray(roomIds) &&
+    roomIds.length > 0 &&
+    roomIds.length <= MAX_EXPLICIT_CHANNEL_VALUES &&
     CHANNEL_EVENT_KINDS.every((kind) => filter.kinds.includes(kind))
   );
 }
@@ -122,14 +130,14 @@ export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
  */
 export async function replayReconnectHistoryPages({
   subscription,
-  channelId,
+  channelIds,
   since,
   until,
   isActive,
   requestRepair,
 }: {
   subscription: Extract<RelaySubscription, { mode: "live" }>;
-  channelId: string;
+  channelIds: string[];
   since: number;
   until?: number;
   isActive: () => boolean;
@@ -144,7 +152,7 @@ export async function replayReconnectHistoryPages({
     if (!isActive()) return false;
 
     const events = await requestRepair({
-      channelId,
+      channelIds,
       since,
       limit: RECONNECT_REPLAY_PAGE_LIMIT,
       until: pageUntil,
@@ -229,10 +237,8 @@ export async function replayLiveSubscriptions({
         entry[1].mode === "live",
     )
     .map(([subId, subscription]) => {
-      const channelId = subscription.filter["#h"]?.[0];
-      const shouldPageReplay =
-        channelId !== undefined &&
-        shouldPageReconnectReplay(subscription.filter);
+      const channelIds = subscription.filter["#h"];
+      const shouldPageReplay = shouldPageReconnectReplay(subscription.filter);
       const cursorSince =
         subscription.lastSeenCreatedAt === undefined
           ? undefined
@@ -272,7 +278,7 @@ export async function replayLiveSubscriptions({
       return {
         subId,
         subscription,
-        channelId,
+        channelIds,
         replaySince,
         shouldPageReplay: willRepair,
       };
@@ -340,16 +346,16 @@ export async function replayLiveSubscriptions({
       (
         request,
       ): request is typeof request & {
-        channelId: string;
+        channelIds: string[];
         replaySince: number;
         shouldPageReplay: true;
       } =>
         request.shouldPageReplay &&
-        request.channelId !== undefined &&
+        request.channelIds !== undefined &&
         request.replaySince !== undefined,
     ),
     pageReplayConcurrency,
-    async ({ subId, subscription, channelId, replaySince }) => {
+    async ({ subId, subscription, channelIds, replaySince }) => {
       // Backfill is best-effort: a failure here (typically a `rate-limited:`
       // CLOSED on a history REQ) must never escape to the session and tear
       // down the healthy, authenticated socket carrying the live REQs — that
@@ -366,7 +372,7 @@ export async function replayLiveSubscriptions({
         try {
           const completed = await replayReconnectHistoryPages({
             subscription,
-            channelId,
+            channelIds,
             since: replaySince,
             // Do not trust the renderer clock as the upper bound. The relay's
             // newest matching row starts the keyset walk.

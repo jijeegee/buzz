@@ -18,6 +18,7 @@ import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'room_live_router.dart';
 import 'huddle_channel_filter.dart';
 import 'timeline_message.dart' show SystemEvent, SystemEventType;
 import '../../shared/read_state/read_state_provider.dart';

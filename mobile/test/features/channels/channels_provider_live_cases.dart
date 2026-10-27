@@ -131,10 +131,12 @@ void _liveSubscriptionTests() {
         _channelA,
         _channelB,
       ]);
-      expect(
-        session.subscribeFilters.single.kinds,
-        EventKind.channelEventKinds,
-      );
+      // The open rooms ride these chunks too, so they carry the
+      // thread-summary recounts.
+      expect(session.subscribeFilters.single.kinds, [
+        ...EventKind.channelEventKinds,
+        EventKind.channelThreadSummary,
+      ]);
       expect(session.subscribeFilters.single.limit, 0);
 
       session.resumePausedSubscribe();
