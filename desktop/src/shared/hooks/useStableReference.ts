@@ -76,3 +76,31 @@ function setsEqual<T>(a: ReadonlySet<T>, b: ReadonlySet<T>): boolean {
   }
   return true;
 }
+
+/**
+ * Returns `next` but preserves the previous reference when every own field is
+ * `Object.is`-equal. For context values assembled inline on each render: a
+ * parent re-render that changes nothing no longer re-renders every consumer.
+ */
+export function useStableObjectShallow<T extends object>(next: T): T {
+  const ref = React.useRef(next);
+  const prev = ref.current;
+  if (prev !== next && objectsShallowEqual(prev, next)) {
+    return prev;
+  }
+  ref.current = next;
+  return next;
+}
+
+function objectsShallowEqual(a: object, b: object): boolean {
+  const aKeys = Object.keys(a);
+  if (aKeys.length !== Object.keys(b).length) return false;
+  return aKeys.every(
+    (key) =>
+      Object.hasOwn(b, key) &&
+      Object.is(
+        (a as Record<string, unknown>)[key],
+        (b as Record<string, unknown>)[key],
+      ),
+  );
+}

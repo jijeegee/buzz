@@ -5,6 +5,7 @@ import type { ThreadActivityItem } from "@/features/channels/useUnreadChannels";
 import type { FeedItemState } from "@/features/home/useFeedItemState";
 import type { FeedItem } from "@/shared/api/types";
 import type { SettingsSection } from "@/features/settings/ui/SettingsPanels";
+import { useStableObjectShallow } from "@/shared/hooks/useStableReference";
 
 const EMPTY_SET = new Set<string>();
 
@@ -140,8 +141,11 @@ export function AppShellProvider({
   children: React.ReactNode;
   value: AppShellContextValue;
 }) {
+  // AppShell re-renders on every live event in any room; consumers (the open
+  // room's screen among them) re-render only when a field actually changed.
+  const stableValue = useStableObjectShallow(value);
   return (
-    <AppShellContext.Provider value={value}>
+    <AppShellContext.Provider value={stableValue}>
       {children}
     </AppShellContext.Provider>
   );

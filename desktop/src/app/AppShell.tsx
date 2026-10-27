@@ -809,6 +809,18 @@ export function AppShell() {
   });
   // Dispatch `kuzz://` deep links only from the main window; the companion is dedicated to its active Huddle route.
   useAppDeepLinks(!isHuddleRoom);
+  const handleOpenChannelManagement = React.useCallback(
+    (channelId?: string) => {
+      setManagedChannelId(typeof channelId === "string" ? channelId : null);
+      setIsChannelManagementOpen(true);
+    },
+    [],
+  );
+  // Changes identity with the muted set, so consumers still re-render on mute.
+  const isThreadMuted = React.useCallback(
+    (rootId: string) => mutedRootIds.has(rootId),
+    [mutedRootIds],
+  );
   const handleOpenCreateChannel = React.useCallback(
     () => setIsCreateChannelOpen(true),
     [],
@@ -857,12 +869,7 @@ export function AppShell() {
             clearChannelUnreadSource,
             openBrowseChannels: handleOpenBrowseChannels,
             openCreateChannel: handleOpenCreateChannel,
-            openChannelManagement: (channelId?: string) => {
-              setManagedChannelId(
-                typeof channelId === "string" ? channelId : null,
-              );
-              setIsChannelManagementOpen(true);
-            },
+            openChannelManagement: handleOpenChannelManagement,
             getChannelReadAt,
             getThreadReadAt,
             markThreadRead,
@@ -879,7 +886,7 @@ export function AppShell() {
             isFollowingThread,
             isNotifiedForThread,
             recordThreadInteraction,
-            isThreadMuted: (rootId) => mutedRootIds.has(rootId),
+            isThreadMuted,
             threadActivityItems,
             threadActivityFeedItems,
             locallyUnreadFeedItems,

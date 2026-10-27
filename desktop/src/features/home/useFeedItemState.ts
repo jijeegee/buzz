@@ -82,7 +82,10 @@ export function useFeedItemState(pubkey: string | undefined) {
     setUnreadIds((prev) => prev.filter((v) => v !== id));
   }, []);
 
-  return { doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet };
+  return React.useMemo(
+    () => ({ doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet }),
+    [doneSet, markDone, markUnread, undoDone, undoUnread, unreadSet],
+  );
 }
 
 export type FeedItemState = ReturnType<typeof useFeedItemState>;
