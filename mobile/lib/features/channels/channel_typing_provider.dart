@@ -21,48 +21,59 @@ class TypingEntry {
 
 /// Tracks who is currently typing in a specific channel.
 ///
-/// Subscribes to kind:20002 (typing indicator) events via websocket.
+/// Subscribes to kind:20002 (typing indicator) events via websocket while a
+/// screen of the room watches it; leaving the room closes the subscription.
 /// Entries expire after 8 seconds (matching the desktop TTL).
 class ChannelTypingNotifier extends Notifier<List<TypingEntry>> {
   static const _ttlMs = 8000;
   static const _pruneIntervalMs = 1000;
 
   final String channelId;
-  void Function()? _unsubscribe;
   Timer? _pruneTimer;
 
   ChannelTypingNotifier(this.channelId);
 
   @override
   List<TypingEntry> build() {
-    final sessionState = ref.watch(relaySessionProvider);
+    final connected = ref.watch(
+      relaySessionProvider.select(
+        (session) => session.status == SessionStatus.connected,
+      ),
+    );
+    var disposed = false;
+    void Function()? unsubscribe;
 
     ref.onDispose(() {
-      _unsubscribe?.call();
-      _unsubscribe = null;
+      disposed = true;
+      unsubscribe?.call();
       _pruneTimer?.cancel();
       _pruneTimer = null;
     });
 
-    if (sessionState.status == SessionStatus.connected) {
-      _subscribeLive();
+    if (connected) {
+      unawaited(() async {
+        final stop = await ref
+            .read(relaySessionProvider.notifier)
+            .subscribe(
+              NostrFilter(
+                kinds: [EventKind.typingIndicator],
+                tags: {
+                  '#h': [channelId],
+                },
+                limit: 10,
+              ),
+              _handleTypingEvent,
+            );
+        // Left the room (or reconnected) while the REQ was opening.
+        if (disposed) {
+          stop();
+        } else {
+          unsubscribe = stop;
+        }
+      }());
     }
 
     return [];
-  }
-
-  void _subscribeLive() async {
-    final session = ref.read(relaySessionProvider.notifier);
-    _unsubscribe = await session.subscribe(
-      NostrFilter(
-        kinds: [EventKind.typingIndicator],
-        tags: {
-          '#h': [channelId],
-        },
-        limit: 10,
-      ),
-      _handleTypingEvent,
-    );
   }
 
   void _handleTypingEvent(NostrEvent event) {
@@ -107,7 +118,7 @@ class ChannelTypingNotifier extends Notifier<List<TypingEntry>> {
   }
 }
 
-final channelTypingProvider =
-    NotifierProvider.family<ChannelTypingNotifier, List<TypingEntry>, String>(
+final channelTypingProvider = NotifierProvider.autoDispose
+    .family<ChannelTypingNotifier, List<TypingEntry>, String>(
       ChannelTypingNotifier.new,
     );
