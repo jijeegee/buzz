@@ -50,64 +50,37 @@ void main() {
     expect(relay.fetches, isEmpty, reason: 'limit 0 asks for no history');
   });
 
-  test('history a filter asks for is fetched for it alone', () async {
-    final relay = _FakeBundleRelay()
-      ..fetchResult = [
-        _event('late', 44100, [
-          ['p', _me],
-        ], createdAt: 9),
-        _event('early', 44100, [
-          ['p', _me],
-        ], createdAt: 8),
-      ];
-    final bundle = relay.bundle();
-    final seen = <String>[];
-    final filter = NostrFilter(
-      kinds: const [44100, 44101],
+  test('a filter asking for history is not the bundle\'s', () async {
+    final bundle = _FakeBundleRelay().bundle();
+    final history = NostrFilter(
+      kinds: const [44100],
       tags: {
         '#p': [_me],
       },
       limit: 50,
-      since: 5,
     );
-    final subscribing = bundle.subscribe(filter, (e) => seen.add(e.id));
-    await pumpEventQueue();
-    expect(relay.opened.single.filter.kinds, meAddressedKinds);
-    relay.opened.single.release();
-    await subscribing;
-
-    expect(relay.fetches.single.since, 5);
-    expect(relay.fetches.single.limit, 50);
-    expect(seen, ['early', 'late']);
-    relay.opened.single.onEvent(
-      _event('late', 44100, [
-        ['p', _me],
-      ]),
-    );
-    expect(seen, ['early', 'late']);
+    await expectLater(bundle.subscribe(history, (_) {}), throwsArgumentError);
   });
 
-  test('the last listener leaving closes the REQ after a grace period', () {
-    fakeAsync((async) {
-      final relay = _FakeBundleRelay();
-      final bundle = relay.bundle();
-      void Function()? stop;
-      bundle.subscribe(_doc('channel-sort'), (_) {}).then((s) => stop = s);
-      async.flushMicrotasks();
-      relay.opened.single.release();
-      async.flushMicrotasks();
+  test('last listener leaving closes the REQ unless one comes back', () async {
+    final relay = _FakeBundleRelay();
+    final bundle = relay.bundle();
+    final subscribing = bundle.subscribe(_doc('channel-sort'), (_) {});
+    await pumpEventQueue();
+    relay.opened.single.release();
+    final stop = await subscribing;
 
-      stop!();
-      void Function()? again;
-      bundle.subscribe(_doc('channel-sort'), (_) {}).then((s) => again = s);
-      async.elapse(const Duration(seconds: 2));
-      expect(relay.opened, hasLength(1), reason: 'a rebuild keeps the REQ');
-      expect(relay.opened.single.closed, isFalse);
+    // A provider rebuild: dispose, then subscribe again in the same task.
+    stop();
+    final again = bundle.subscribe(_doc('channel-sort'), (_) {});
+    await again;
+    await pumpEventQueue();
+    expect(relay.opened, hasLength(1));
+    expect(relay.opened.single.closed, isFalse);
 
-      again!();
-      async.elapse(const Duration(seconds: 2));
-      expect(relay.opened.single.closed, isTrue);
-    });
+    (await again)();
+    await pumpEventQueue();
+    expect(relay.opened.single.closed, isTrue);
   });
 
   test('a failed REQ fails its listeners and the next one retries', () async {

@@ -13,7 +13,6 @@ const bundle = new MeLiveBundle({
     relayClient.subscribeLive(filter, onEvent, onReady, undefined, signal),
   fetch: (filter) => relayClient.fetchEvents(filter),
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) as unknown as number,
-  clearTimeout: (id) => globalThis.clearTimeout(id),
 });
 
 let stopWatchingConnection: (() => void) | null = null;

@@ -58,7 +58,6 @@ function harness() {
       timers.set(id, fn);
       return id;
     },
-    clearTimeout: (id) => timers.delete(id),
   });
   return {
     bundle,
@@ -143,26 +142,12 @@ test("listeners of one scope share one REQ and get only their documents", async 
   assert.deepEqual(stars, ["s1"]);
 });
 
-test("history a filter asks for is fetched for it alone before it resolves", async () => {
-  const { bundle, opened, fetches, setFetchResult } = harness();
-  setFetchResult([
-    event("late", 44100, [["p", ME]], { pubkey: "c".repeat(64), createdAt: 9 }),
-    event("early", 44100, [["p", ME]], {
-      pubkey: "c".repeat(64),
-      createdAt: 8,
-    }),
-  ]);
-  const seen = [];
+test("a listener is ready once the scope's REQ is, with no history", async () => {
+  const { bundle, opened, fetches } = harness();
   let ready = null;
-  const filter = {
-    kinds: [44100, 44101],
-    "#p": [ME],
-    limit: 50,
-    since: 5,
-  };
   const subscribing = bundle.subscribe(
-    filter,
-    (e) => seen.push(e.id),
+    { kinds: [44100, 44101], "#p": [ME], limit: 0 },
+    () => {},
     (r) => {
       ready = r;
     },
@@ -173,47 +158,29 @@ test("history a filter asks for is fetched for it alone before it resolves", asy
     "#p": [ME],
     limit: 0,
   });
+  assert.equal(ready, null);
   opened[0].release();
   await subscribing;
-  assert.deepEqual(fetches, [filter]);
-  assert.deepEqual(seen, ["early", "late"], "oldest first");
   assert.equal(ready, "eose");
-  // The live REQ carries one of them again.
-  opened[0].onEvent(
-    event("late", 44100, [["p", ME]], { pubkey: "c".repeat(64) }),
-  );
-  assert.deepEqual(seen, ["early", "late"]);
-});
-
-test("a limit-0 listener gets no history", async () => {
-  const { bundle, opened, fetches } = harness();
-  const subscribing = bundle.subscribe(
-    { kinds: [30078], authors: [ME], "#d": ["channel-sort"], limit: 0 },
-    () => {},
-  );
-  await flush();
-  opened[0].release();
-  await subscribing;
   assert.deepEqual(fetches, []);
 });
 
-test("the last listener leaving closes the REQ after a grace period", async () => {
-  const { bundle, opened, runTimers } = harness();
+test("the last listener leaving closes the REQ unless one comes straight back", async () => {
+  const { bundle, opened } = harness();
   const filter = { kinds: [24210], "#p": [ME], limit: 0 };
   const subscribing = bundle.subscribe(filter, () => {});
   await flush();
   opened[0].release();
   const stop = await subscribing;
 
-  await stop();
-  // A remount within the grace period keeps the REQ.
+  // An effect re-run: cleanup, then subscribe again in the same task.
+  void stop();
   const again = await bundle.subscribe(filter, () => {});
-  runTimers();
+  await flush();
   assert.equal(opened.length, 1);
   assert.equal(opened[0].closed, false);
 
   await again();
-  runTimers();
   await flush();
   assert.equal(opened[0].closed, true);
   bundle.subscribe(filter, () => {});

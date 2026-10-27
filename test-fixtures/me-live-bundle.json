@@ -1,9 +1,36 @@
 {
   "description": "Account bundle rules shared by desktop (relayMeBundle.test.mjs) and mobile (me_live_bundle_fixture_test.dart). See docs/message-sync.md.",
-  "authoredKinds": [3, 5, 30078, 30175, 30176, 30177, 30178, 30182, 30300],
+  "authoredKinds": [
+    3,
+    5,
+    30078,
+    30175,
+    30176,
+    30177,
+    30178,
+    30182,
+    30300
+  ],
   "addressedKinds": [
-    1, 9, 24210, 24211, 40002, 40007, 43001, 43002, 43003, 43004, 43005,
-    43006, 44100, 44101, 45001, 45003, 46010, 46011, 46012
+    1,
+    9,
+    24210,
+    24211,
+    40002,
+    40007,
+    43001,
+    43002,
+    43003,
+    43004,
+    43005,
+    43006,
+    44100,
+    44101,
+    45001,
+    45003,
+    46010,
+    46011,
+    46012
   ],
   "catchUpLimit": 500,
   "catchUpLookbackSecs": 1865,
@@ -11,39 +38,81 @@
     {
       "name": "a settings document rides the authored bundle",
       "filter": {
-        "kinds": [30078],
-        "authors": ["AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"],
-        "#d": ["channel-mutes"],
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "#d": [
+          "channel-mutes"
+        ],
         "limit": 0
       },
-      "scope": { "kind": "authored", "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      "scope": {
+        "kind": "authored",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
     },
     {
-      "name": "a tagged read-state filter rides the authored bundle",
+      "name": "chat-list pings ride the addressed bundle",
       "filter": {
-        "kinds": [30078],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#t": ["read-state"],
+        "kinds": [
+          24210
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "a filter asking for history keeps its own REQ",
+      "filter": {
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#t": [
+          "read-state"
+        ],
         "limit": 500
       },
-      "scope": { "kind": "authored", "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      "scope": null
     },
     {
-      "name": "notices with a since window ride the addressed bundle",
+      "name": "a since window keeps its own REQ",
       "filter": {
-        "kinds": [44100, 44101],
-        "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          44100,
+          44101
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 50,
         "since": 1000
       },
-      "scope": { "kind": "addressed", "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }
+      "scope": null
     },
     {
       "name": "authors and #p together need their own REQ",
       "filter": {
-        "kinds": [30078],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "scope": null
@@ -51,8 +120,13 @@
     {
       "name": "several authors need their own REQ",
       "filter": {
-        "kinds": [20001],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"],
+        "kinds": [
+          20001
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
         "limit": 0
       },
       "scope": null
@@ -60,8 +134,13 @@
     {
       "name": "a kind outside the bundle needs its own REQ",
       "filter": {
-        "kinds": [30078, 30180],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          30078,
+          30180
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "scope": null
@@ -69,9 +148,15 @@
     {
       "name": "a channel-scoped filter needs its own REQ",
       "filter": {
-        "kinds": [9],
-        "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#h": ["11111111-1111-4111-8111-111111111111"],
+        "kinds": [
+          9
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#h": [
+          "11111111-1111-4111-8111-111111111111"
+        ],
         "limit": 0
       },
       "scope": null
@@ -80,7 +165,9 @@
       "name": "a filter without kinds needs its own REQ",
       "filter": {
         "kinds": [],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "scope": null
@@ -90,9 +177,15 @@
     {
       "name": "same kind, author and d tag",
       "filter": {
-        "kinds": [30078],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#d": ["channel-mutes"],
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#d": [
+          "channel-mutes"
+        ],
         "limit": 0
       },
       "event": {
@@ -100,16 +193,27 @@
         "pubkey": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
         "kind": 30078,
         "created_at": 2000,
-        "tags": [["d", "channel-mutes"]]
+        "tags": [
+          [
+            "d",
+            "channel-mutes"
+          ]
+        ]
       },
       "matches": true
     },
     {
       "name": "another settings document",
       "filter": {
-        "kinds": [30078],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#d": ["channel-mutes"],
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#d": [
+          "channel-mutes"
+        ],
         "limit": 0
       },
       "event": {
@@ -117,16 +221,27 @@
         "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "kind": 30078,
         "created_at": 2000,
-        "tags": [["d", "channel-stars"]]
+        "tags": [
+          [
+            "d",
+            "channel-stars"
+          ]
+        ]
       },
       "matches": false
     },
     {
       "name": "read state is told apart by its t tag",
       "filter": {
-        "kinds": [30078],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "#t": ["read-state"],
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "#t": [
+          "read-state"
+        ],
         "limit": 0
       },
       "event": {
@@ -134,15 +249,28 @@
         "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "kind": 30078,
         "created_at": 2000,
-        "tags": [["d", "read-state:1"], ["t", "read-state"]]
+        "tags": [
+          [
+            "d",
+            "read-state:1"
+          ],
+          [
+            "t",
+            "read-state"
+          ]
+        ]
       },
       "matches": true
     },
     {
       "name": "a kind the listener did not ask for",
       "filter": {
-        "kinds": [30182],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          30182
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "event": {
@@ -150,15 +278,24 @@
         "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         "kind": 5,
         "created_at": 2000,
-        "tags": [["a", "30182:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:team"]]
+        "tags": [
+          [
+            "a",
+            "30182:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa:team"
+          ]
+        ]
       },
       "matches": false
     },
     {
       "name": "#p compares pubkeys case-insensitively",
       "filter": {
-        "kinds": [24210],
-        "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          24210
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "event": {
@@ -166,32 +303,24 @@
         "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         "kind": 24210,
         "created_at": 2000,
-        "tags": [["p", "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"]]
-      },
-      "matches": true
-    },
-    {
-      "name": "since shapes catch-up only, not live delivery",
-      "filter": {
-        "kinds": [44100],
-        "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
-        "limit": 50,
-        "since": 5000
-      },
-      "event": {
-        "id": "e6",
-        "pubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
-        "kind": 44100,
-        "created_at": 4000,
-        "tags": [["p", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]]
+        "tags": [
+          [
+            "p",
+            "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+          ]
+        ]
       },
       "matches": true
     },
     {
       "name": "someone else's document",
       "filter": {
-        "kinds": [3],
-        "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"],
+        "kinds": [
+          3
+        ],
+        "authors": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
         "limit": 0
       },
       "event": {

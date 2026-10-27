@@ -21,30 +21,22 @@ export const ME_ADDRESSED_KINDS: readonly number[] = [
 ];
 
 /** Filter keys a bundle listener may use; anything else needs its own REQ. */
-const LISTENER_KEYS = new Set([
-  "kinds",
-  "authors",
-  "#p",
-  "#d",
-  "#t",
-  "since",
-  "limit",
-]);
+const LISTENER_KEYS = new Set(["kinds", "authors", "#p", "#d", "#t", "limit"]);
 const CATCH_UP_LIMIT = 500;
 const LISTENER_SEEN_LIMIT = 2_000;
-/** Keeps a scope open across an unmount/remount of its last listener. */
-const CLOSE_DELAY_MS = 1_000;
 const CATCH_UP_ATTEMPTS = 3;
 const CATCH_UP_RETRY_MS = 1_000;
 
 export type MeScope = { kind: "authored" | "addressed"; pubkey: string };
 
 /**
- * The bundle a filter can ride: one pubkey in `authors` (authored) or in `#p`
- * (addressed), never both, only kinds that bundle carries, and only the keys
- * above. Anything else returns null.
+ * The bundle a filter can ride: live only (`limit: 0`, no `since`), one pubkey
+ * in `authors` (authored) or in `#p` (addressed), never both, only kinds that
+ * bundle carries, and only the keys above. Anything else, including a filter
+ * that asks for history, returns null.
  */
 export function meScopeOf(filter: RelaySubscriptionFilter): MeScope | null {
+  if (filter.limit !== 0) return null;
   if (Object.keys(filter).some((key) => !LISTENER_KEYS.has(key))) return null;
   const kinds = filter.kinds;
   if (!kinds || kinds.length === 0) return null;
@@ -61,11 +53,7 @@ export function meScopeOf(filter: RelaySubscriptionFilter): MeScope | null {
   return null;
 }
 
-/**
- * Whether a live event reaches a listener with `filter`. `since` and `limit`
- * shape only the listener's history, not live delivery: the old per-feature
- * REQ dropped live events stamped before `since`, which only lost events.
- */
+/** Whether a live event reaches a listener with `filter`. */
 export function eventMatchesFilter(
   event: RelayEvent,
   filter: RelaySubscriptionFilter,
@@ -118,7 +106,6 @@ type ScopeEntry = {
   /** Start of a window a failed catch-up still owes; retried next reconnect. */
   owedSince: number | null;
   dispose: (() => Promise<void>) | null;
-  closeTimer: number | null;
   controller: AbortController;
 };
 
@@ -131,7 +118,6 @@ export type MeBundleDependencies = {
   ) => Promise<() => Promise<void>>;
   fetch: (filter: RelaySubscriptionFilter) => Promise<RelayEvent[]>;
   setTimeout: (fn: () => void, ms: number) => number;
-  clearTimeout: (id: number) => void;
 };
 
 function deliver(listener: Listener, event: RelayEvent) {
@@ -154,13 +140,12 @@ function byCreatedAt(a: RelayEvent, b: RelayEvent) {
  * (`authors: [me]`) and what is addressed to it (`#p: [me]`). Features keep
  * their filters; the bundle opens one `limit: 0` REQ per scope with every
  * kind that scope carries and hands each listener the events its filter
- * matches, once.
+ * matches, once. After a reconnect the bundle fetches what each scope missed
+ * while the connection was down (`catchUp`); listeners drop events they
+ * already had.
  *
- * A listener whose filter asks for history (a nonzero `limit`, from its
- * `since` if any) gets it fetched for it alone once the scope is live, as its
- * own REQ's history used to arrive. After a
- * reconnect the bundle fetches what each scope missed while the connection
- * was down (`catchUp`); listeners drop events they already had.
+ * A scope closes once its last listener leaves, after the current task, so an
+ * effect that re-subscribes at once keeps it.
  */
 export class MeLiveBundle {
   private scopes = new Map<string, ScopeEntry>();
@@ -173,9 +158,8 @@ export class MeLiveBundle {
 
   /**
    * Listen with `filter` (see `meScopeOf`). Resolves once the scope's REQ is
-   * live and any history the filter asks for has been delivered, with the
-   * stop function;
-   * rejects if either fails, leaving nothing registered.
+   * live, with the stop function; rejects if it fails, leaving nothing
+   * registered.
    */
   async subscribe(
     filter: RelaySubscriptionFilter,
@@ -186,10 +170,6 @@ export class MeLiveBundle {
     if (!scope) throw new Error("Filter is not scoped to one account.");
     const key = `${scope.kind}:${scope.pubkey}`;
     const entry = this.scopes.get(key) ?? this.openScope(key, scope);
-    if (entry.closeTimer !== null) {
-      this.deps.clearTimeout(entry.closeTimer);
-      entry.closeTimer = null;
-    }
     const listener: Listener = { filter, onEvent, seen: new Map() };
     entry.listeners.add(listener);
 
@@ -199,27 +179,15 @@ export class MeLiveBundle {
       stopped = true;
       entry.listeners.delete(listener);
       if (entry.listeners.size > 0 || this.scopes.get(key) !== entry) return;
-      entry.closeTimer = this.deps.setTimeout(() => {
-        entry.closeTimer = null;
+      queueMicrotask(() => {
         if (entry.listeners.size > 0 || this.scopes.get(key) !== entry) return;
         this.scopes.delete(key);
         this.closeScope(entry);
-      }, CLOSE_DELAY_MS);
+      });
     };
 
     try {
       const readiness = await entry.ready;
-      if (filter.limit > 0 && !stopped) {
-        const history = await this.deps.fetch({
-          ...filter,
-          limit: Math.min(filter.limit, CATCH_UP_LIMIT),
-        });
-        if (!stopped) {
-          for (const event of [...history].sort(byCreatedAt)) {
-            deliver(listener, event);
-          }
-        }
-      }
       onReady?.(readiness);
       return stop;
     } catch (error) {
@@ -259,7 +227,6 @@ export class MeLiveBundle {
       live: false,
       owedSince: null,
       dispose: null,
-      closeTimer: null,
       controller,
     };
     let readiness: LiveSubscriptionReadiness = "eose";
@@ -304,10 +271,6 @@ export class MeLiveBundle {
   private closeScope(entry: ScopeEntry) {
     entry.controller.abort();
     entry.live = false;
-    if (entry.closeTimer !== null) {
-      this.deps.clearTimeout(entry.closeTimer);
-      entry.closeTimer = null;
-    }
     void entry.dispose?.().catch(() => {});
   }
 

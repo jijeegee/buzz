@@ -23,6 +23,9 @@ class SidebarRelay {
   final published = <NostrEvent>[];
   final reqs = <List<dynamic>>[];
   final _liveSubIds = <String, String>{};
+
+  /// The account bundle's live REQ: no `#d`, so it carries every lane.
+  String? _bundleSubId;
   int historyFailures = 0;
   Completer<void>? holdHistory;
   Completer<void>? holdOk;
@@ -52,19 +55,26 @@ class SidebarRelay {
     keys.public,
   );
 
+  /// REQs that carry [dTag]: its own, or the account bundle's.
   List<List<dynamic>> reqsFor(String dTag, String prefix) => [
     for (final req in reqs)
-      if ((req[1] as String).startsWith(prefix) && _dTagOf(req) == dTag) req,
+      if ((req[1] as String).startsWith(prefix) &&
+          (_dTagOf(req) ?? dTag) == dTag)
+        req,
   ];
 
   void emit(NostrEvent event) => session.debugHandleMessage([
     'EVENT',
-    _liveSubIds[event.getTagValue('d')],
+    _liveSubIds[event.getTagValue('d')] ?? _bundleSubId,
     event.toJson(),
   ]);
 
   void closeLive(String dTag, String message) =>
-      session.debugHandleMessage(['CLOSED', _liveSubIds[dTag], message]);
+      session.debugHandleMessage([
+        'CLOSED',
+        _liveSubIds[dTag] ?? _bundleSubId,
+        message,
+      ]);
 
   void _onSend(List<dynamic> message) {
     if (message.first == 'EVENT') {
@@ -84,7 +94,12 @@ class SidebarRelay {
       unawaited(_answerHistory(subId, _dTagOf(message)));
       return;
     }
-    _liveSubIds[_dTagOf(message)] = subId;
+    final dTag = _dTagOf(message);
+    if (dTag == null) {
+      _bundleSubId = subId;
+    } else {
+      _liveSubIds[dTag] = subId;
+    }
     final rejection = rejectLive;
     if (rejection == null && withholdEose) return;
     scheduleMicrotask(
@@ -94,13 +109,15 @@ class SidebarRelay {
     );
   }
 
-  Future<void> _answerHistory(String subId, String dTag) async {
+  Future<void> _answerHistory(String subId, String? dTag) async {
     await holdHistory?.future;
     if (historyFailures > 0) {
       historyFailures--;
       return _reply(['CLOSED', subId, 'error: overloaded']);
     }
-    final heads = stored.where((e) => e.getTagValue('d') == dTag).toList()
+    final heads = stored
+        .where((e) => dTag == null || e.getTagValue('d') == dTag)
+        .toList()
       ..sort(
         (a, b) => a.createdAt != b.createdAt
             ? b.createdAt.compareTo(a.createdAt)
@@ -112,8 +129,8 @@ class SidebarRelay {
 
   void _reply(List<dynamic> message) => session.debugHandleMessage(message);
 
-  static String _dTagOf(List<dynamic> req) =>
-      ((req[2] as Map<String, dynamic>)['#d'] as List).single as String;
+  static String? _dTagOf(List<dynamic> req) =>
+      ((req[2] as Map<String, dynamic>)['#d'] as List?)?.single as String?;
 }
 
 class ConnectedRelaySession extends RelaySessionNotifier {

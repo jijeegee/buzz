@@ -68,38 +68,37 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 ## Account bundle
 
-Live subscriptions about the account itself (settings documents, contact
-list, agent personas and teams, reminders, chat-list pings, mentions,
-approvals, sign-in and membership notices) share two REQs instead of one per
-feature:
+Live-only subscriptions about the account itself (settings documents,
+contact list, agent personas and teams, chat-list pings, sign-in notices)
+share two REQs instead of one per feature:
 
 - **Authored:** `{kinds: authoredKinds, authors: [me], limit: 0}`.
 - **Addressed:** `{kinds: addressedKinds, "#p": [me], limit: 0}`.
 
 Features keep their own filters and listen through the bundle:
 
-- **Which filters ride it.** Exactly one pubkey in `authors` or in `#p` (not
-  both), every kind in that bundle's list, and no keys besides `kinds`,
-  `authors`, `#p`, `#d`, `#t`, `since` and `limit`. Anything else opens its
-  own REQ as before.
+- **Which filters ride it.** Live only (`limit: 0`, no `since`), exactly one
+  pubkey in `authors` or in `#p` (not both), every kind in that bundle's
+  list, and no keys besides `kinds`, `authors`, `#p`, `#d`, `#t` and `limit`.
+  Anything else, including a filter that asks for history, opens its own REQ
+  as before.
 - **Delivery.** Each listener gets the events its filter matches (kinds,
   authors, and each `#x` tag; `#p` and authors compare case-insensitively),
-  each event once per listener. `since` and `limit` do not filter live
-  delivery.
-- **History.** A listener whose filter asks for history (a nonzero `limit`,
-  from its `since` if any) gets it fetched for it alone once the bundle is
-  live, at most 500 events, before it is told the subscription is ready, as
-  its own REQ's history used to arrive. `limit: 0` gets none.
+  each event once per listener.
 - **Reconnect.** Each live bundle fetches what it missed from the moment the
   connection dropped minus the relay's created-at skew allowance, up to 500
   events. A failed catch-up owes its window to the next reconnect.
-- **Lifetime.** A bundle opens with its first listener and closes a second
-  after its last one leaves, so a remount keeps it.
+- **Lifetime.** A bundle opens with its first listener and closes once its
+  last one leaves, after the current task, so a rebuild that subscribes again
+  at once keeps it.
 
 Kept out on purpose:
 
-- **Desktop read state** keeps its own REQ, sent ahead of other requests so
-  unread badges are not held up.
+- **Filters that ask for history** keep their own REQ: read state, mobile's
+  sidebar lanes that take their head on the REQ (sections, mutes, stars,
+  names, sort), and the windows of mentions, approvals and membership
+  notices. Moving one in means giving it `limit: 0` once it reads its own
+  history first.
 - **Agent devices** (30180/30181) belong with the agent subscription.
 - **Community-wide streams** (user status, presence, catalogs, custom emoji)
   are not about the account.

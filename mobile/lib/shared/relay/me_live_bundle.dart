@@ -49,11 +49,9 @@ const meAddressedKinds = <int>[
 const meCatchUpLookbackSeconds = 1865;
 
 const _listenerTagKeys = {'#p', '#d', '#t'};
-const _historyLimit = 500;
+const _catchUpLimit = 500;
 const _listenerSeenLimit = 2000;
 
-/// Keeps a scope open across a rebuild of its last listener.
-const _closeDelay = Duration(seconds: 1);
 const _catchUpAttempts = 3;
 const _catchUpRetry = Duration(seconds: 1);
 
@@ -86,11 +84,14 @@ class MeScope {
   int get hashCode => Object.hash(kind, pubkey);
 }
 
-/// The bundle [filter] can ride: one pubkey in `authors` (authored) or in
-/// `#p` (addressed), never both, only kinds that bundle carries, and only
-/// `#p`, `#d` and `#t` tags. Anything else returns null.
+/// The bundle [filter] can ride: live only (`limit: 0`, no `since`), one
+/// pubkey in `authors` (authored) or in `#p` (addressed), never both, only
+/// kinds that bundle carries, and only `#p`, `#d` and `#t` tags. Anything
+/// else, including a filter that asks for history, returns null.
 MeScope? meScopeOf(NostrFilter filter) {
-  if (filter.kinds.isEmpty ||
+  if (filter.limit != 0 ||
+      filter.since != null ||
+      filter.kinds.isEmpty ||
       filter.ids != null ||
       filter.until != null ||
       filter.search != null ||
@@ -111,8 +112,7 @@ MeScope? meScopeOf(NostrFilter filter) {
   return null;
 }
 
-/// Whether a live [event] reaches a listener with [filter]. `since` and
-/// `limit` shape only the listener's history, not live delivery.
+/// Whether a live [event] reaches a listener with [filter].
 bool eventMatchesFilter(NostrEvent event, NostrFilter filter) {
   if (!filter.kinds.contains(event.kind)) return false;
   final authors = filter.authors;
@@ -167,7 +167,6 @@ class _ScopeEntry {
   late Future<void> ready;
   bool live = false;
   void Function()? stop;
-  Timer? closeTimer;
 
   /// Start of a window a failed catch-up still owes; paid next reconnect.
   int? owedSince;
@@ -180,12 +179,11 @@ int _byCreatedAt(NostrEvent a, NostrEvent b) =>
 /// (`authors: [me]`) and what is addressed to it (`#p: [me]`). Features keep
 /// their filters; the bundle opens one `limit: 0` REQ per scope with every
 /// kind that scope carries and hands each listener the events its filter
-/// matches, once.
+/// matches, once. After a reconnect the bundle fetches what each scope missed
+/// while the connection was down ([catchUp]).
 ///
-/// A listener whose filter asks for history (a nonzero `limit`, from its
-/// `since` if any) gets it fetched for it alone once the scope is live, as
-/// its own REQ's history used to arrive. After a reconnect the bundle fetches
-/// what each scope missed while the connection was down ([catchUp]).
+/// A scope closes once its last listener leaves, after the current task, so
+/// a provider rebuild that resubscribes at once keeps it.
 class MeLiveBundle {
   MeLiveBundle({required MeBundleOpen open, required MeBundleFetch fetch})
     : _open = open,
@@ -197,8 +195,8 @@ class MeLiveBundle {
   var _generation = 0;
 
   /// Listen with [filter] (see [meScopeOf]). Completes once the scope's REQ
-  /// is live and any history the filter asks for has been delivered, with
-  /// the stop function; throws if either fails, leaving nothing registered.
+  /// is live, with the stop function; throws if it fails, leaving nothing
+  /// registered.
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
@@ -209,8 +207,6 @@ class MeLiveBundle {
       throw ArgumentError('Filter is not scoped to one account.');
     }
     final entry = _scopes[scope.key] ?? _openScope(scope);
-    entry.closeTimer?.cancel();
-    entry.closeTimer = null;
     final listener = _Listener(filter, onEvent, onClosed);
     entry.listeners.add(listener);
 
@@ -220,8 +216,7 @@ class MeLiveBundle {
       stopped = true;
       entry.listeners.remove(listener);
       if (entry.listeners.isNotEmpty || _scopes[scope.key] != entry) return;
-      entry.closeTimer = Timer(_closeDelay, () {
-        entry.closeTimer = null;
+      scheduleMicrotask(() {
         if (entry.listeners.isNotEmpty || _scopes[scope.key] != entry) return;
         _scopes.remove(scope.key);
         _closeScope(entry);
@@ -230,16 +225,6 @@ class MeLiveBundle {
 
     try {
       await entry.ready;
-      if (filter.limit > 0 && !stopped) {
-        final history = await _fetch(
-          _withLimit(filter, math.min(filter.limit, _historyLimit)),
-        );
-        if (!stopped) {
-          for (final event in [...history]..sort(_byCreatedAt)) {
-            listener.deliver(event);
-          }
-        }
-      }
       return stop;
     } catch (_) {
       stop();
@@ -313,8 +298,6 @@ class MeLiveBundle {
 
   void _closeScope(_ScopeEntry entry) {
     entry.live = false;
-    entry.closeTimer?.cancel();
-    entry.closeTimer = null;
     entry.stop?.call();
     entry.stop = null;
   }
@@ -335,7 +318,7 @@ class MeLiveBundle {
       if (!isCurrent()) return;
       try {
         final missed = await _fetch(
-          _withLimit(entry.scope.filter.copyWithSince(since), _historyLimit),
+          _withLimit(entry.scope.filter.copyWithSince(since), _catchUpLimit),
         );
         if (!isCurrent()) return;
         entry.owedSince = null;
