@@ -1020,3 +1020,31 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 final channelsProvider = AsyncNotifierProvider<ChannelsNotifier, List<Channel>>(
   ChannelsNotifier.new,
 );
+
+/// Selects room [id] as the list holds it, or null. A live event in another
+/// room keeps this room's [Channel] object, so a screen watching its own room
+/// does not rebuild for other rooms' traffic.
+Channel? Function(AsyncValue<List<Channel>>) selectChannel(String id) =>
+    (channels) => channels.value?.where((c) => c.id == id).firstOrNull;
+
+/// Lower-cased room name → id for `#name` links, compared by content: a live
+/// event that only moves some room's recency does not rebuild its watchers.
+@immutable
+class ChannelNameIds {
+  ChannelNameIds.of(AsyncValue<List<Channel>> channels)
+    : ids = {
+        for (final channel in channels.value ?? const <Channel>[])
+          channel.name.toLowerCase(): channel.id,
+      };
+
+  final Map<String, String> ids;
+
+  @override
+  bool operator ==(Object other) =>
+      other is ChannelNameIds && mapEquals(ids, other.ids);
+
+  @override
+  int get hashCode => Object.hashAllUnordered(
+    ids.entries.map((entry) => Object.hash(entry.key, entry.value)),
+  );
+}

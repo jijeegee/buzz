@@ -399,7 +399,9 @@ class ChannelDetailPage extends HookConsumerWidget {
     // Captured per build so a send carries the quote shown when it started.
     final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
     final detailsAsync = ref.watch(channelDetailsProvider(channel.id));
-    final channelsAsync = ref.watch(channelsProvider);
+    final listedChannel = ref.watch(
+      channelsProvider.select(selectChannel(channel.id)),
+    );
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
     final opensThreadDirectly =
         initialThreadRootId != null &&
@@ -472,16 +474,7 @@ class ChannelDetailPage extends HookConsumerWidget {
               e.pubkey.toLowerCase() != currentPubkey.toLowerCase(),
         )
         .toList();
-    final baseChannel =
-        channelsAsync
-            .whenData(
-              (channels) => channels.firstWhere(
-                (candidate) => candidate.id == channel.id,
-                orElse: () => channel,
-              ),
-            )
-            .value ??
-        channel;
+    final baseChannel = listedChannel ?? channel;
     final shownOwnerView = this.ownerView;
     final mergedChannel =
         detailsAsync.whenData(baseChannel.mergeDetails).value ?? baseChannel;

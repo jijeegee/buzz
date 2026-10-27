@@ -499,6 +499,42 @@ void _liveSubscriptionTests() {
       expect(session.unsubscribeCount, 1);
     },
   );
+
+  test("a live event in one room leaves other rooms' selections", () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk), _membership(_channelB, myPk)],
+      metadata: [
+        _meta(id: _channelA, name: 'a'),
+        _meta(id: _channelB, name: 'b'),
+      ],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
+    await container.read(channelsProvider.future);
+    await _waitUntil(() => session.activeSubscriptionCount == 1);
+    var roomA = 0;
+    var names = 0;
+    container.listen(
+      channelsProvider.select(selectChannel(_channelA)),
+      (_, _) => roomA++,
+    );
+    container.listen(
+      channelsProvider.select(ChannelNameIds.of),
+      (_, _) => names++,
+    );
+
+    session.emit(_liveMessage(_channelB));
+    final b = container
+        .read(channelsProvider)
+        .requireValue
+        .firstWhere((channel) => channel.id == _channelB);
+    expect(b.lastMessageAt?.millisecondsSinceEpoch, 20000);
+    expect(roomA, 0, reason: "room A's screen must not rebuild");
+    expect(names, 0, reason: 'no room name changed');
+
+    session.emit(_liveMessage(_channelA));
+    expect(roomA, 1);
+  });
 }
 
 NostrEvent _systemMessage(String channelId, Map<String, Object?> payload) =>

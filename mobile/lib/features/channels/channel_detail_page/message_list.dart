@@ -1028,13 +1028,9 @@ class _MessageList extends HookConsumerWidget {
     }
 
     // Build channel names map once for all message bubbles.
-    final channelsAsync = ref.watch(channelsProvider);
-    final channelNamesMap = <String, String>{};
-    channelsAsync.whenData((channels) {
-      for (final ch in channels) {
-        channelNamesMap[ch.name.toLowerCase()] = ch.id;
-      }
-    });
+    final channelNames = ref.watch(
+      channelsProvider.select(ChannelNameIds.of),
+    );
 
     return QuoteJumpScope(
       channelId: channelId,
@@ -1222,7 +1218,7 @@ class _MessageList extends HookConsumerWidget {
                                   showAuthor: showAuthor,
                                   showTime: showTime,
                                   hasReplies: entry.summary != null,
-                                  channelNames: channelNamesMap,
+                                  channelNames: channelNames.ids,
                                   currentChannelId: channelId,
                                   currentPubkey: currentPubkey,
                                   allMessages: allMessages,

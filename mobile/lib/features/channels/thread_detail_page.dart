@@ -1290,10 +1290,9 @@ class ThreadDetailPage extends HookConsumerWidget {
     }, [appView, itemScrollController]);
 
     // Channel names for message content rendering.
-    final channelsAsync = ref.watch(channelsProvider);
-    final channel = channelsAsync.value
-        ?.where((candidate) => candidate.id == channelId)
-        .firstOrNull;
+    final channel = ref.watch(
+      channelsProvider.select(selectChannel(channelId)),
+    );
     // A thread in a one-to-one DM with someone I blocked: the Unblock bar
     // stands in for the reply composer and their typing is not shown.
     final blockedCounterpart = channel != null && channel.isOneToOneDm
@@ -1308,12 +1307,9 @@ class ThreadDetailPage extends HookConsumerWidget {
         : threadTyping
               .where((e) => e.pubkey.toLowerCase() != blockedCounterpart)
               .toList();
-    final channelNamesMap = <String, String>{};
-    channelsAsync.whenData((channels) {
-      for (final ch in channels) {
-        channelNamesMap[ch.name.toLowerCase()] = ch.id;
-      }
-    });
+    final channelNames = ref.watch(
+      channelsProvider.select(ChannelNameIds.of),
+    );
     final usesNativeIosGlassBackButton =
         Navigator.canPop(context) &&
         Theme.of(context).platform == TargetPlatform.iOS;
@@ -1467,7 +1463,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                           headIsDeleted: liveDeletionHidesHead,
                           head: liveHead,
                           stickyDayTimestamp: stickyDayTimestamp,
-                          channelNames: channelNamesMap,
+                          channelNames: channelNames.ids,
                           channelId: channelId,
                           currentPubkey: currentPubkey,
                           highlightedMessageId: highlightedMessageId.value,
