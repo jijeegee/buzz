@@ -10,6 +10,11 @@ that both clients' tests read.
 | Room bundle chunking | `desktop/src/shared/api/relayRoomBundle.ts` (`chunkRoomIds`) | `chunkChannelIdsForLiveSubscriptions` in `mobile/lib/features/channels/channels_provider_lifecycle.dart` |
 | Event placement | `RoomLiveBundle` (`relayRoomBundle.ts`) | `RoomLiveRouter` (`mobile/lib/features/channels/room_live_router.dart`) |
 | Fixture tests | `relayRoomBundle.test.mjs` | `room_live_routing_fixture_test.dart` |
+| Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`) |
+| Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
+
+The account bundle's cases live in
+[`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json).
 
 ## Live room bundle
 
@@ -60,3 +65,40 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   allowance.
 - Mobile re-sends each chunk; the open room refetches its newest page and the
   open thread its replies, as before.
+
+## Account bundle
+
+Live subscriptions about the account itself (settings documents, contact
+list, agent personas and teams, reminders, chat-list pings, mentions,
+approvals, sign-in and membership notices) share two REQs instead of one per
+feature:
+
+- **Authored:** `{kinds: authoredKinds, authors: [me], limit: 0}`.
+- **Addressed:** `{kinds: addressedKinds, "#p": [me], limit: 0}`.
+
+Features keep their own filters and listen through the bundle:
+
+- **Which filters ride it.** Exactly one pubkey in `authors` or in `#p` (not
+  both), every kind in that bundle's list, and no keys besides `kinds`,
+  `authors`, `#p`, `#d`, `#t`, `since` and `limit`. Anything else opens its
+  own REQ as before.
+- **Delivery.** Each listener gets the events its filter matches (kinds,
+  authors, and each `#x` tag; `#p` and authors compare case-insensitively),
+  each event once per listener. `since` and `limit` do not filter live
+  delivery.
+- **History.** A listener whose filter has `since` gets that window fetched
+  for it alone once the bundle is live (`limit` capped at 500), before it is
+  told the subscription is ready, as its own REQ's history used to arrive.
+- **Reconnect.** Each live bundle fetches what it missed from the moment the
+  connection dropped minus the relay's created-at skew allowance, up to 500
+  events. A failed catch-up owes its window to the next reconnect.
+- **Lifetime.** A bundle opens with its first listener and closes a second
+  after its last one leaves, so a remount keeps it.
+
+Kept out on purpose:
+
+- **Desktop read state** keeps its own REQ, sent ahead of other requests so
+  unread badges are not held up.
+- **Agent devices** (30180/30181) belong with the agent subscription.
+- **Community-wide streams** (user status, presence, catalogs, custom emoji)
+  are not about the account.

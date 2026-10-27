@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { reconcileInboundPersonaEvent } from "@/shared/api/tauriPersonas";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -417,8 +418,8 @@ export function startPersonaSync(
   // Events arriving before the backfill dispatches are held in `liveBuffer`;
   // `openBoundaryAndDrain` releases them.
   let unsub: (() => Promise<void>) | null = null;
-  void relayClient
-    .subscribeLive(
+  void meLive
+    .subscribe(
       { kinds: PERSONA_SYNC_KINDS, authors: [pubkey], limit: 0 },
       onLiveEvent,
     )

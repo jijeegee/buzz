@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { KIND_NEW_SIGNIN_NOTICE } from "@/shared/constants/kinds";
 import { parseNewSignInNotice, type NewSignInNotice } from "./newSignInNotice";
 
@@ -27,8 +27,8 @@ export function useNewSignInNotice(pubkey: string | undefined): {
     let attempt = 0;
     const start = () => {
       retryTimer = null;
-      relayClient
-        .subscribeLive(
+      meLive
+        .subscribe(
           { kinds: [KIND_NEW_SIGNIN_NOTICE], "#p": [me], limit: 0 },
           (event) => {
             const parsed = parseNewSignInNotice(event, me);

@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   nip44DecryptFromSelf,
   nip44EncryptToSelf,
@@ -93,8 +94,8 @@ export function useChatPrivateNamesSync(
     refresh();
     let unsubscribe: (() => Promise<void>) | null = null;
     let cancelled = false;
-    void relayClient
-      .subscribeLive(
+    void meLive
+      .subscribe(
         {
           kinds: [KIND_CHANNEL_NAMES],
           authors: [pubkey],

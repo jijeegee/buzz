@@ -1,4 +1,5 @@
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   nip44DecryptFromSelf,
   nip44EncryptToSelf,
@@ -185,7 +186,7 @@ export class ProjectSidebarMembershipSyncManager {
   async subscribe(
     onUpdate: (remote: RemoteProjectSidebarMembership) => void,
   ): Promise<() => Promise<void>> {
-    return relayClient.subscribeLive(
+    return meLive.subscribe(
       {
         kinds: [KIND_PROJECT_SIDEBAR_MEMBERSHIP],
         authors: [this.pubkey],

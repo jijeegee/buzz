@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { PublishCanceledError } from "@/shared/api/relayEventPublisher";
 import {
   nip44DecryptFromSelf,
@@ -330,8 +331,8 @@ export function useLaneSync(
     let unsubLive: (() => Promise<void>) | null = null;
     const detachTabs = store.attachCrossTab();
     const unsubReconnect = relayClient.subscribeToReconnects(() => rec.wake());
-    void relayClient
-      .subscribeLive(rec.filter(0), (event) => {
+    void meLive
+      .subscribe(rec.filter(0), (event) => {
         if (!disposed) void rec.ingest(event);
       })
       .then((dispose) => {

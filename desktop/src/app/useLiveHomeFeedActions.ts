@@ -2,7 +2,7 @@ import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
 import { remindersQueryKey } from "@/features/reminders/hooks";
-import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   KIND_APPROVAL_REQUEST,
   KIND_EVENT_REMINDER,
@@ -63,7 +63,7 @@ export function useLiveHomeFeedActions(
       }
 
       void Promise.allSettled([
-        relayClient.subscribeLive(
+        meLive.subscribe(
           {
             kinds: [...HOME_FEED_ACTION_KINDS],
             "#p": [normalizedPubkey],
@@ -72,7 +72,7 @@ export function useLiveHomeFeedActions(
           },
           handleLiveHomeFeedEvent,
         ),
-        relayClient.subscribeLive(
+        meLive.subscribe(
           {
             authors: [normalizedPubkey],
             kinds: [KIND_EVENT_REMINDER],

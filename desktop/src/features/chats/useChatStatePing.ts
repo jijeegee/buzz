@@ -1,6 +1,6 @@
 import * as React from "react";
 
-import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { KIND_CHAT_STATE_PING } from "@/shared/constants/kinds";
 import { createTrailingDebounce } from "@/shared/lib/trailingDebounce";
 
@@ -33,8 +33,8 @@ export function useChatStatePing(
     );
     const start = () => {
       retryTimer = null;
-      relayClient
-        .subscribeLive(
+      meLive
+        .subscribe(
           { kinds: [KIND_CHAT_STATE_PING], "#p": [me], limit: 0 },
           () => debounce.trigger(),
         )

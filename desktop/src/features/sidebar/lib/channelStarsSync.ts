@@ -1,4 +1,5 @@
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   nip44DecryptFromSelf,
   nip44EncryptToSelf,
@@ -240,7 +241,7 @@ export class ChannelStarSyncManager {
   async subscribeToStars(
     onUpdate: (remote: RemoteStars) => void,
   ): Promise<() => Promise<void>> {
-    return relayClient.subscribeLive(
+    return meLive.subscribe(
       {
         kinds: [KIND_CHANNEL_STARS],
         authors: [this.pubkey],

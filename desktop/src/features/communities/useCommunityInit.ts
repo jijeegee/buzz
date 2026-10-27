@@ -7,6 +7,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import { closeSocketsThenReload } from "@/shared/api/relayWebSocketClose";
 import { resetChannelMembershipWrites } from "@/shared/api/channelMembershipWrites";
 import { resetRateLimitGate } from "@/shared/api/relayRateLimitGate";
+import { resetMeLiveBundle } from "@/shared/api/relayMeLive";
 import { readmitRelay } from "@/features/agents/managedAgentRelayCleanup";
 import {
   autoConnectDefaultRelayEnabled,
@@ -85,6 +86,7 @@ async function resetCommunityState({
 }): Promise<void> {
   resetUsersBatchLoaders();
   relayClient.disconnect();
+  resetMeLiveBundle();
   await resetNavigationDeepLinkDrain();
   resetRateLimitGate();
   clearAllDrafts();

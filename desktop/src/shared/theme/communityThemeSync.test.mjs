@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   CommunityThemeSyncManager,
   communityThemeHydrationRemote,
@@ -118,7 +119,7 @@ test("live replacement delivered during empty onboarding fetch prevents default 
       throw new Error(`unexpected command: ${command}`);
     },
   };
-  mock.method(relayClient, "subscribeLive", (_filter, callback, onReady) => {
+  mock.method(meLive, "subscribe", (_filter, callback, onReady) => {
     liveCallback = callback;
     onReady("eose");
     return Promise.resolve(async () => {});
@@ -158,7 +159,7 @@ test("live replacement delivered during empty onboarding fetch prevents default 
 });
 
 test("failed live setup cannot authorize hydration publishing", async () => {
-  mock.method(relayClient, "subscribeLive", () =>
+  mock.method(meLive, "subscribe", () =>
     Promise.reject(new Error("subscription failed")),
   );
   mock.method(relayClient, "fetchEvents", () => Promise.resolve([]));
@@ -175,7 +176,7 @@ test("failed live setup cannot authorize hydration publishing", async () => {
 
 test("EOSE-confirmed absence authorizes hydration seeding after live delivery drains", async () => {
   let liveCallback;
-  mock.method(relayClient, "subscribeLive", (_filter, callback, onReady) => {
+  mock.method(meLive, "subscribe", (_filter, callback, onReady) => {
     liveCallback = callback;
     onReady("eose");
     return Promise.resolve(async () => {});
@@ -205,7 +206,7 @@ test("unreadable live state cannot authorize hydration publishing", async () => 
       throw new Error(`unexpected command: ${command}`);
     },
   };
-  mock.method(relayClient, "subscribeLive", (_filter, callback, onReady) => {
+  mock.method(meLive, "subscribe", (_filter, callback, onReady) => {
     liveCallback = callback;
     onReady("eose");
     return Promise.resolve(async () => {});
@@ -229,7 +230,7 @@ test("unreadable live state cannot authorize hydration publishing", async () => 
 
 test("apparently ready live setup cannot authorize hydration publishing", async () => {
   // Timeout readiness is not proof that the live REQ reached EOSE.
-  mock.method(relayClient, "subscribeLive", (_filter, _callback, onReady) => {
+  mock.method(meLive, "subscribe", (_filter, _callback, onReady) => {
     onReady("timeout");
     return Promise.resolve(async () => {});
   });
@@ -490,7 +491,7 @@ test("delayed live decryption fences publish acknowledgement and preserves local
       throw new Error(`unexpected command: ${command}`);
     },
   };
-  mock.method(relayClient, "subscribeLive", (_filter, callback) => {
+  mock.method(meLive, "subscribe", (_filter, callback) => {
     liveCallback = callback;
     return Promise.resolve(async () => {});
   });

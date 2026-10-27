@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import {
   KIND_DELETION,
   KIND_MANAGED_AGENT,
@@ -120,7 +121,7 @@ test("startPersonaSync backfills history including the deletion kind", async () 
     fetchCalls.push(filter);
     return Promise.resolve([]);
   });
-  mock.method(relayClient, "subscribeLive", (filter) => {
+  mock.method(meLive, "subscribe", (filter) => {
     liveCalls.push(filter);
     return Promise.resolve(() => Promise.resolve());
   });
@@ -179,7 +180,7 @@ test("startPersonaSync buffers live catalog heads until the backfill hydrates co
   });
   mock.method(relayClient, "fetchEvents", () => backfill);
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -258,7 +259,7 @@ test("startPersonaSync pages history to exhaustion so an out-of-page constituent
     fetchCalls.push(filter);
     return Promise.resolve(filter.until === undefined ? page1 : page2);
   });
-  mock.method(relayClient, "subscribeLive", () =>
+  mock.method(meLive, "subscribe", () =>
     Promise.resolve(() => Promise.resolve()),
   );
 
@@ -322,7 +323,7 @@ test("startPersonaSync forwards its own relay as the event arrival relay", async
   mock.method(relayClient, "fetchEvents", () =>
     Promise.resolve([ownEvent, foreignEvent]),
   );
-  mock.method(relayClient, "subscribeLive", () =>
+  mock.method(meLive, "subscribe", () =>
     Promise.resolve(() => Promise.resolve()),
   );
 
@@ -371,7 +372,7 @@ test("startPersonaSync subscribes live before backfilling so a gap event still r
 
   const callOrder = [];
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     callOrder.push("subscribe");
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
@@ -430,7 +431,7 @@ test("startPersonaSync reconciles an event only once when it appears both live-b
     dTag: "o",
   });
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -480,7 +481,7 @@ test("startPersonaSync still backfills history when the live subscription reject
   const onUnhandled = (reason) => unhandled.push(reason);
   process.on("unhandledRejection", onUnhandled);
 
-  mock.method(relayClient, "subscribeLive", () =>
+  mock.method(meLive, "subscribe", () =>
     Promise.reject(new Error("initial subscription failed")),
   );
   // Backfill history returns one persona head; it must still reconcile even
@@ -564,7 +565,7 @@ test("startPersonaSync fails loudly on a dense boundary and degrades to catalog-
     return Promise.resolve(densePage);
   });
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -654,7 +655,7 @@ test("degraded-live drops a team edit adding a new persona so a witness is not f
     );
   mock.method(relayClient, "fetchEvents", () => Promise.resolve(densePage));
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -724,7 +725,7 @@ test("degraded-live drops a kind-5 whose owned dependency `a` tag is not first",
     );
   mock.method(relayClient, "fetchEvents", () => Promise.resolve(densePage));
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -785,7 +786,7 @@ test("startPersonaSync retries a transient backfill rejection so a buffered live
       : Promise.resolve([]);
   });
   let onEvent;
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });
@@ -845,7 +846,7 @@ test("startPersonaSync does not retry a dense-boundary error", async () => {
     fetchCalls.push(filter);
     return Promise.resolve(densePage);
   });
-  mock.method(relayClient, "subscribeLive", () =>
+  mock.method(meLive, "subscribe", () =>
     Promise.resolve(() => Promise.resolve()),
   );
 
@@ -884,7 +885,7 @@ test("startPersonaSync serializes inbound reconciliation in relay order", async 
 
   let onEvent;
   mock.method(relayClient, "fetchEvents", () => Promise.resolve([]));
-  mock.method(relayClient, "subscribeLive", (_filter, listener) => {
+  mock.method(meLive, "subscribe", (_filter, listener) => {
     onEvent = listener;
     return Promise.resolve(() => Promise.resolve());
   });

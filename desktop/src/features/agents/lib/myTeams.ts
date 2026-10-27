@@ -7,6 +7,7 @@ import {
 
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { relayClient } from "@/shared/api/relayClient";
+import { meLive } from "@/shared/api/relayMeLive";
 import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_AGENT_TEAM, KIND_DELETION } from "@/shared/constants/kinds";
@@ -179,11 +180,11 @@ export function useMyTeamsLiveUpdates(): void {
     let disposed = false;
     const disposers: Array<() => void> = [];
     const subscribe = (
-      filter: Parameters<typeof relayClient.subscribeLive>[0],
+      filter: Parameters<typeof meLive.subscribe>[0],
       onEvent: (event: RelayEvent) => void,
     ) => {
-      void relayClient
-        .subscribeLive(filter, onEvent)
+      void meLive
+        .subscribe(filter, onEvent)
         .then((unsubscribe) => {
           if (disposed) void unsubscribe();
           else
