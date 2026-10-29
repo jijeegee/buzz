@@ -327,6 +327,14 @@ pub struct Config {
     /// rollback for migration 0068.
     pub chat_state_writes: bool,
 
+    /// Advertise `kuzz-deletion-records` in NIP-11 `supported_extensions`
+    /// (`KUZZ_DELETION_RECORDS_ADVERTISED`, default off).
+    ///
+    /// The relay always writes relay-signed kind:9005 records for server-side
+    /// message removals; this only tells clients every past removal has one.
+    /// Turn it on after `kuzz-admin backfill-deletion-records` has run.
+    pub deletion_records_advertised: bool,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -1227,6 +1235,7 @@ impl Config {
         let age_attestation_required = parse_optional_bool("KUZZ_AGE_ATTESTATION_REQUIRED")?;
         let audit_enabled = parse_bool("KUZZ_AUDIT_ENABLED", true)?;
         let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
+        let deletion_records_advertised = parse_bool("KUZZ_DELETION_RECORDS_ADVERTISED", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1459,6 +1468,7 @@ impl Config {
             media_uploads_per_minute,
             audit_enabled,
             chat_state_writes,
+            deletion_records_advertised,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,
@@ -1702,6 +1712,10 @@ mod tests {
         assert!(
             !config.chat_state_writes,
             "chat-state writes must default to off"
+        );
+        assert!(
+            !config.deletion_records_advertised,
+            "deletion records must not be advertised before the backfill"
         );
         assert!(config.slow_client_grace_limit > 0);
         assert!(
