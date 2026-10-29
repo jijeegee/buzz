@@ -110,7 +110,7 @@ void main() {
           reason: '$name: parsed cursor',
         );
       } finally {
-        await store.forget(_account);
+        await store.forget(_relay, _account);
         await dir.delete(recursive: true);
       }
     }

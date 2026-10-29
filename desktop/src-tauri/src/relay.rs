@@ -421,9 +421,15 @@ pub async fn query_relay_at(
     // this request is parked must not authenticate to A's relay as B. The
     // explicit-signature path still mints fresh NIP-98 auth AFTER the wait.
     let credential = state.user_credential()?;
-    query_relay_at_with_keys(state, api_base_url, filters, &credential, None).await
+    // Only the signed-in account's answers go to the device store. Taken
+    // before the wait: a sign-out meanwhile keeps the answer out of it.
+    let lease =
+        crate::message_store::query_lease(api_base_url, &credential.signer_pubkey().to_hex());
+    query_with_keys(state, api_base_url, filters, &credential, None, lease).await
 }
 
+/// A query signed with `keys` (an agent, robot or other signer). Its answer
+/// is not kept in the device store.
 pub async fn query_relay_at_with_keys(
     state: &AppState,
     api_base_url: &str,
@@ -431,9 +437,17 @@ pub async fn query_relay_at_with_keys(
     keys: &(impl crate::auth::credential::RelaySigner + ?Sized),
     auth_tag: Option<&str>,
 ) -> Result<Vec<nostr::Event>, String> {
-    // Taken before the wait: a sign-out meanwhile keeps the answer out of
-    // the device store.
-    let lease = crate::message_store::query_lease(api_base_url, &keys.signer_pubkey().to_hex());
+    query_with_keys(state, api_base_url, filters, keys, auth_tag, None).await
+}
+
+async fn query_with_keys(
+    state: &AppState,
+    api_base_url: &str,
+    filters: &[serde_json::Value],
+    keys: &(impl crate::auth::credential::RelaySigner + ?Sized),
+    auth_tag: Option<&str>,
+    lease: Option<crate::message_store::Lease>,
+) -> Result<Vec<nostr::Event>, String> {
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/query", api_base_url);
     let body_bytes =

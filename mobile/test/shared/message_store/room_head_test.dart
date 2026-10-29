@@ -123,7 +123,7 @@ void main() {
           );
         }
       } finally {
-        await store.forget(_account);
+        await store.forget(_relay, _account);
         await dir.delete(recursive: true);
       }
     }
@@ -164,7 +164,7 @@ void main() {
         expect(coverage.liveAtOf(subscription, 1), 5100);
         await store.flushed();
       } finally {
-        await store.forget(_account);
+        await store.forget(_relay, _account);
         await dir.delete(recursive: true);
       }
     },

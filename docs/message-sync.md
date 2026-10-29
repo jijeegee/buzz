@@ -169,9 +169,13 @@ pages still load from the relay.
   batched (up to 512 rows per transaction). A full queue or a failed write
   drops events and marks the file `lossy`, so a later catch-up does not take
   it for complete.
-- **Sign-out** deletes every file of that account on this device and ends its
-  scope: answers to requests sent before the sign-out write nothing. Other
-  accounts' files are untouched.
+- **Sign-out** of a server (or removing that community) deletes that
+  account's file for that server only and ends its scope: answers to requests
+  sent before the sign-out write nothing. The same account's files from other
+  servers, and other accounts' files, are untouched and keep recording.
+- **Only the signed-in account's traffic is kept.** Desktop `/query` answers
+  signed with other keys (agents, robots, team adoption) are not stored, and
+  an empty answer creates no file.
 - **Schema** is versioned (`user_version` 1). A file from a newer app is not
   opened.
 

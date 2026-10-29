@@ -35,9 +35,10 @@ pub(crate) fn global() -> Option<&'static MessageStore> {
 }
 
 /// Deletes everything kept for `account` (hex pubkey) on this device.
-pub(crate) fn forget_account(account: &str) {
+/// Deletes what `account` kept from `relay_url` (sign-out of that server).
+pub(crate) fn forget_account(relay_url: &str, account: &str) {
     if let Some(store) = global() {
-        store.forget(account);
+        store.forget(relay_url, account);
     }
 }
 
@@ -54,11 +55,11 @@ pub(crate) fn token_frame(token: &str, account: &str) -> Value {
 const TOKENS_KEPT: usize = 32;
 
 /// The scope a receive belongs to, taken when the request or socket starts.
-/// A lease from before the account signed out writes nothing.
+/// A lease from before the account signed out of that server writes nothing.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Lease {
+    /// `<origin hash>-<account>`: one file, one epoch.
     stem: String,
-    account: String,
     epoch: u64,
 }
 
@@ -119,12 +120,9 @@ impl MessageStore {
         if account.len() != 64 || !account.bytes().all(|byte| byte.is_ascii_hexdigit()) {
             return None;
         }
-        let epoch = *self.inner.lock().ok()?.epochs.get(&account).unwrap_or(&0);
-        Some(Lease {
-            stem: file_stem(&origin, &account),
-            account,
-            epoch,
-        })
+        let stem = file_stem(&origin, &account);
+        let epoch = *self.inner.lock().ok()?.epochs.get(&stem).unwrap_or(&0);
+        Some(Lease { stem, epoch })
     }
 
     /// Hands a receive to the writer of `lease`'s file. Never blocks on the
@@ -133,7 +131,7 @@ impl MessageStore {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
-        if *inner.epochs.get(&lease.account).unwrap_or(&0) != lease.epoch {
+        if *inner.epochs.get(&lease.stem).unwrap_or(&0) != lease.epoch {
             return;
         }
         let path = self.path_of(lease);
@@ -231,27 +229,22 @@ impl MessageStore {
         .unwrap_or_default()
     }
 
-    /// Ends every lease of `account`, stops its writers and deletes its files.
-    pub(crate) fn forget(&self, account: &str) {
-        let account = account.to_ascii_lowercase();
-        let suffix = format!("-{account}");
-        let stopping: Vec<Writer> = {
+    /// Ends every lease of `account` on `relay_url`, stops that file's
+    /// writer and deletes the file. The account's files from other servers
+    /// are kept and keep recording.
+    pub(crate) fn forget(&self, relay_url: &str, account: &str) {
+        let Some(origin) = http_origin(relay_url) else {
+            return;
+        };
+        let stem = file_stem(&origin, account);
+        let stopping = {
             let Ok(mut inner) = self.inner.lock() else {
                 return;
             };
-            *inner.epochs.entry(account.clone()).or_insert(0) += 1;
-            let stems: Vec<String> = inner
-                .writers
-                .keys()
-                .filter(|stem| stem.ends_with(&suffix))
-                .cloned()
-                .collect();
-            stems
-                .iter()
-                .filter_map(|stem| inner.writers.remove(stem))
-                .collect()
+            *inner.epochs.entry(stem.clone()).or_insert(0) += 1;
+            inner.writers.remove(&stem)
         };
-        for writer in stopping {
+        if let Some(writer) = stopping {
             writer.stop();
         }
         let Ok(entries) = std::fs::read_dir(&self.dir) else {
@@ -259,8 +252,7 @@ impl MessageStore {
         };
         for entry in entries.flatten() {
             let name = entry.file_name().to_string_lossy().into_owned();
-            let stem = name.split('.').next().unwrap_or_default();
-            if stem.ends_with(&suffix) {
+            if name.split('.').next() == Some(stem.as_str()) {
                 if let Err(error) = std::fs::remove_file(entry.path()) {
                     eprintln!("kuzz-desktop: message store: could not delete {name}: {error}");
                 }
@@ -404,6 +396,9 @@ pub(crate) fn query_received(lease: Option<Lease>, events: &[nostr::Event]) {
     let (Some(lease), Some(store)) = (lease, global()) else {
         return;
     };
+    if events.is_empty() {
+        return; // starts no writer and creates no file
+    }
     let values: Vec<Value> = events
         .iter()
         .filter_map(|event| serde_json::to_value(event).ok())

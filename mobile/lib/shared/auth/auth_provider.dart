@@ -286,7 +286,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       final store = ref.read(messageStoreProvider);
       for (final community in targets) {
         final account = community.pubkey ?? pubkeyFromNsec(community.nsec);
-        if (account != null) unawaited(store.forget(account));
+        if (account != null) {
+          unawaited(store.forget(community.relayUrl, account));
+        }
       }
       // Cached message heads are derived data; signing out leaves none behind.
       unawaited(

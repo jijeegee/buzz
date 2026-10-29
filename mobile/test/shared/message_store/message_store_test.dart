@@ -12,6 +12,7 @@ const _account =
 const _other =
     'bb00000000000000000000000000000000000000000000000000000000000002';
 const _relay = 'wss://relay.example';
+const _elsewhere = 'wss://other.example';
 
 Map<String, dynamic> _event(String id, int at, {String content = ''}) => {
   'id': id,
@@ -50,8 +51,9 @@ void main() {
   });
 
   tearDown(() async {
-    await store.forget(_account);
-    await store.forget(_other);
+    await store.forget(_relay, _account);
+    await store.forget(_relay, _other);
+    await store.forget(_elsewhere, _account);
     await dir.delete(recursive: true);
   });
 
@@ -121,23 +123,33 @@ void main() {
     expect(store.lease('https://relay.example/', _account), mine);
   });
 
-  test('sign-out deletes only that account and fences late writes', () async {
-    final mine = store.lease(_relay, _account)!;
-    final theirs = store.lease(_relay, _other)!;
-    store.submit(mine, [_event('a1', 1)]);
-    store.submit(theirs, [_event('b1', 1)]);
-    await store.flushed();
-    await store.forget(_account);
-    expect(File(await store.pathOf(mine)).existsSync(), isFalse);
-    expect(File(await store.pathOf(theirs)).existsSync(), isTrue);
-    // An answer to a request sent before the sign-out arrives late.
-    store.submit(mine, [_event('a2', 2)]);
-    await store.flushed();
-    expect(File(await store.pathOf(mine)).existsSync(), isFalse);
-    // Signing in again starts a fresh scope.
-    final again = store.lease(_relay, _account)!;
-    store.submit(again, [_event('a3', 3)]);
-    await store.flushed();
-    expect(await rows(again, 'SELECT id FROM events'), hasLength(1));
-  });
+  test(
+    'sign-out deletes only that account on that server, fences late writes',
+    () async {
+      final mine = store.lease(_relay, _account)!;
+      final theirs = store.lease(_relay, _other)!;
+      final elsewhere = store.lease(_elsewhere, _account)!;
+      store.submit(mine, [_event('a1', 1)]);
+      store.submit(theirs, [_event('b1', 1)]);
+      store.submit(elsewhere, [_event('e1', 1)]);
+      await store.flushed();
+      // The community's relay URL as stored, not normalised.
+      await store.forget('https://relay.example/', _account);
+      expect(File(await store.pathOf(mine)).existsSync(), isFalse);
+      expect(File(await store.pathOf(theirs)).existsSync(), isTrue);
+      // The same account on another server keeps its file and keeps recording.
+      store.submit(elsewhere, [_event('e2', 2)]);
+      await store.flushed();
+      expect(await rows(elsewhere, 'SELECT id FROM events'), hasLength(2));
+      // An answer to a request sent before the sign-out arrives late.
+      store.submit(mine, [_event('a2', 2)]);
+      await store.flushed();
+      expect(File(await store.pathOf(mine)).existsSync(), isFalse);
+      // Signing in again starts a fresh scope.
+      final again = store.lease(_relay, _account)!;
+      store.submit(again, [_event('a3', 3)]);
+      await store.flushed();
+      expect(await rows(again, 'SELECT id FROM events'), hasLength(1));
+    },
+  );
 }

@@ -165,11 +165,16 @@ fn each_account_and_server_has_its_own_file() {
 }
 
 #[test]
-fn sign_out_deletes_only_that_account_and_fences_late_writes() {
+fn sign_out_deletes_only_that_account_on_that_server_and_fences_late_writes() {
     let dir = tempfile::tempdir().unwrap();
     let store = MessageStore::new(dir.path().to_path_buf());
     let mine = store.lease(RELAY, ACCOUNT).unwrap();
     let theirs = store.lease(RELAY, OTHER).unwrap();
+    let elsewhere = store.lease("wss://other.example", ACCOUNT).unwrap();
+    store.submit(
+        &elsewhere,
+        Input::Events(vec![event("e1", 1, json!([["h", "r"]]))]),
+    );
     store.submit(
         &mine,
         Input::Events(vec![event("a1", 1, json!([["h", "r"]]))]),
@@ -179,9 +184,17 @@ fn sign_out_deletes_only_that_account_and_fences_late_writes() {
         Input::Events(vec![event("b1", 1, json!([["h", "r"]]))]),
     );
     finish(&store);
-    store.forget(ACCOUNT);
+    // The sign-out names the server as the app has it, not normalised.
+    store.forget("https://relay.example/", ACCOUNT);
     assert!(!store.path_of(&mine).exists());
     assert!(store.path_of(&theirs).exists());
+    // The same account on another server keeps its file and keeps recording.
+    store.submit(
+        &elsewhere,
+        Input::Events(vec![event("e2", 2, json!([["h", "r"]]))]),
+    );
+    finish(&store);
+    assert_eq!(count(&store, &elsewhere), 2);
     // An answer to a request sent before the sign-out arrives late.
     store.submit(
         &mine,

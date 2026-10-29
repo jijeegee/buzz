@@ -388,7 +388,9 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         final removed = current[removedIndex];
         final account = removed.pubkey ?? pubkeyFromNsec(removed.nsec);
         if (account != null) {
-          unawaited(ref.read(messageStoreProvider).forget(account));
+          unawaited(
+            ref.read(messageStoreProvider).forget(removed.relayUrl, account),
+          );
         }
         unawaited(
           ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((

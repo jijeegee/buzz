@@ -63,7 +63,7 @@ String _fileStem(String origin, String account) {
 }
 
 /// The scope a receive belongs to, taken when the session or request starts.
-/// A lease from before its account signed out writes nothing.
+/// A lease from before its account signed out of that server writes nothing.
 @immutable
 class MessageStoreLease {
   const MessageStoreLease._(this.stem, this.account, this.epoch);
@@ -128,7 +128,8 @@ class MessageStore {
   final Map<String, _Writer> _writers = {};
   final Map<String, int> _epochs = {};
 
-  /// File deletions in progress per account; a new file waits for them.
+  /// Epochs and file deletions in progress, per file stem (server and
+  /// account); a new file waits for its deletion.
   final Map<String, Future<void>> _forgetting = {};
   Future<String>? _dir;
 
@@ -149,7 +150,7 @@ class MessageStore {
     return MessageStoreLease._(
       _fileStem(origin, pubkey),
       pubkey,
-      _epochs[pubkey] ?? 0,
+      _epochs[_fileStem(origin, pubkey)] ?? 0,
     );
   }
 
@@ -273,7 +274,7 @@ class MessageStore {
   }
 
   _Writer? _writerFor(MessageStoreLease? lease) {
-    if (lease == null || (_epochs[lease.account] ?? 0) != lease.epoch) {
+    if (lease == null || (_epochs[lease.stem] ?? 0) != lease.epoch) {
       return null;
     }
     return _writers.putIfAbsent(lease.stem, () => _Writer(() => _open(lease)));
@@ -291,7 +292,7 @@ class MessageStore {
   Future<void> flushed() => Future.wait(_writers.values.map((w) => w.drained));
 
   Future<Database> _open(MessageStoreLease lease) async {
-    await _forgetting[lease.account];
+    await _forgetting[lease.stem];
     await Directory(await _directory()).create(recursive: true);
     final db = await factory().openDatabase(
       await pathOf(lease),
@@ -404,27 +405,28 @@ class MessageStore {
     }
   }
 
-  /// Ends every lease of [account] at once, then stops its writers and
-  /// deletes its files. Callers need not wait: nothing more is written for
-  /// the old leases, and a new file waits for the deletion.
-  Future<void> forget(String account) {
-    final pubkey = account.trim().toLowerCase();
-    _epochs[pubkey] = (_epochs[pubkey] ?? 0) + 1;
-    final suffix = '-$pubkey';
+  /// Ends every lease of [account] on [relayUrl] at once, then stops that
+  /// file's writer and deletes the file. The account's files from other
+  /// servers are kept and keep recording. Callers need not wait: nothing more
+  /// is written for the old leases, and a new file waits for the deletion.
+  Future<void> forget(String relayUrl, String account) {
+    final origin = messageStoreOrigin(relayUrl);
+    if (origin == null) return Future.value();
+    final stem = _fileStem(origin, account.trim().toLowerCase());
+    _epochs[stem] = (_epochs[stem] ?? 0) + 1;
     final stopping = [
-      for (final stem
-          in _writers.keys.where((s) => s.endsWith(suffix)).toList())
-        _writers.remove(stem)!
+      if (_writers.remove(stem) case final writer?)
+        writer
           ..stopped = true
           ..queue.clear(),
     ];
-    final previous = _forgetting[pubkey] ?? Future<void>.value();
-    final done = previous.then((_) => _delete(stopping, suffix));
-    _forgetting[pubkey] = done;
+    final previous = _forgetting[stem] ?? Future<void>.value();
+    final done = previous.then((_) => _delete(stopping, stem));
+    _forgetting[stem] = done;
     return done;
   }
 
-  Future<void> _delete(List<_Writer> stopping, String suffix) async {
+  Future<void> _delete(List<_Writer> stopping, String stem) async {
     for (final writer in stopping) {
       try {
         await writer.drained;
@@ -443,7 +445,7 @@ class MessageStore {
     try {
       await for (final entry in dir.list()) {
         final name = entry.uri.pathSegments.last;
-        if (name.split('.').first.endsWith(suffix)) await entry.delete();
+        if (name.split('.').first == stem) await entry.delete();
       }
     } catch (error) {
       debugPrint('[MessageStore] could not delete files: $error');

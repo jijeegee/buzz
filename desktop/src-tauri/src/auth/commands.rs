@@ -1196,7 +1196,7 @@ async fn sign_out_account_now(
             .mark(origin, Some(account), &stopping)?;
     }
     if let (Some(account), Some(data_dir)) = (account, data_dir.as_deref()) {
-        crate::message_store::forget_account(&account.to_hex());
+        crate::message_store::forget_account(origin, &account.to_hex());
         let secrets = super::accounts::shared_secrets();
         if let Err(error) = super::accounts::mark_signed_out(secrets, data_dir, origin, &account) {
             eprintln!("kuzz-desktop: auth: account list not updated on sign-out: {error}");
