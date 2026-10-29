@@ -837,9 +837,8 @@ pub async fn get_ws_auth_frame(app: AppHandle) -> Result<Option<serde_json::Valu
         CredentialMode::Blocked(reason) => Err(reason),
         CredentialMode::Token(_) => {
             let session = fresh_session(&state, &origin).await?;
-            Ok(Some(
-                serde_json::json!({ "token": session.access.as_str() }),
-            ))
+            let account = session.principal.to_hex();
+            Ok(Some(crate::message_store::token_frame(&session.access, &account)))
         }
     }
 }
@@ -1197,12 +1196,9 @@ async fn sign_out_account_now(
             .mark(origin, Some(account), &stopping)?;
     }
     if let (Some(account), Some(data_dir)) = (account, data_dir.as_deref()) {
-        if let Err(error) = super::accounts::mark_signed_out(
-            super::accounts::shared_secrets(),
-            data_dir,
-            origin,
-            &account,
-        ) {
+        crate::message_store::forget_account(&account.to_hex());
+        let secrets = super::accounts::shared_secrets();
+        if let Err(error) = super::accounts::mark_signed_out(secrets, data_dir, origin, &account) {
             eprintln!("kuzz-desktop: auth: account list not updated on sign-out: {error}");
         }
     }

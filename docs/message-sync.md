@@ -12,10 +12,14 @@ that both clients' tests read.
 | Fixture tests | `relayRoomBundle.test.mjs` | `room_live_routing_fixture_test.dart` |
 | Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`); features call `meLive.subscribe` (`relayMeLive.ts`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`); `RelaySessionNotifier.subscribe` routes matching filters to it |
 | Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
+| Message store | `desktop/src-tauri/src/message_store/` (fed by `native_websocket.rs` and `relay.rs`) | `mobile/lib/shared/message_store/` (fed by `relay_session.dart`) |
+| Message store fixture tests | `message_store/tests.rs` | `message_store_test.dart` |
 | Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
 
 The account bundle's cases live in
-[`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json).
+[`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json),
+the message store's in
+[`test-fixtures/message-store.json`](../test-fixtures/message-store.json).
 
 ## Live room bundle
 
@@ -120,3 +124,36 @@ per client:
   so the overlap with what a reader already holds is harmless.
 - **Agent online status** comes with everyone else's presence on the
   presence subscription; it needs no REQ of its own.
+
+## Message store
+
+Every room event the device receives is kept on the device. Nothing reads the
+store yet; rooms and threads still load from the relay.
+
+- **One file per server and account:** `messages/<first 8 bytes of
+  sha256(origin) in hex>-<account pubkey>.db`, where the origin is the relay's
+  `https://host[:port]` (a `wss://` socket and an `https://` query to the same
+  server share it). Desktop keeps it under the app data directory, mobile
+  under the application support directory.
+- **What is captured:** events from the relay socket after its AUTH (desktop:
+  the account is the author of the socket's AUTH event, or for a token AUTH
+  the account the token was issued to; mobile: the session's account) and event arrays returned by `/query`. The scope is taken when the
+  socket authenticates or the query is sent.
+- **What is kept:** room content kinds (9, 40001, 40002, 40008, 40099,
+  43001–43006, 45001, 45003, 48100–48103) with an `h` tag; overlays (5, 7,
+  9005, 40003), indexed by every `e` tag they reference, with an `h` tag except
+  for reactions (7) and removals (5); and thread summaries (39005), the newest
+  per thread root (first `e` tag). Anything else is ignored.
+- **Thread placement:** the same rule as live placement: the last
+  `reply`-marked `e` tag is the parent, the `root`-marked one (else the
+  parent) the root. An event without a `reply` marker is top-level.
+- **First copy wins.** An event id is written once; later copies are ignored.
+- **Never blocks receiving.** Writes go through a queue per file and are
+  batched (up to 512 rows per transaction). A full queue or a failed write
+  drops events and marks the file `lossy`, so a later catch-up does not take
+  it for complete.
+- **Sign-out** deletes every file of that account on this device and ends its
+  scope: answers to requests sent before the sign-out write nothing. Other
+  accounts' files are untouched.
+- **Schema** is versioned (`user_version` 1). A file from a newer app is not
+  opened.

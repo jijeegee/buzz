@@ -431,12 +431,15 @@ pub async fn query_relay_at_with_keys(
     keys: &(impl crate::auth::credential::RelaySigner + ?Sized),
     auth_tag: Option<&str>,
 ) -> Result<Vec<nostr::Event>, String> {
+    // Taken before the wait: a sign-out meanwhile keeps the answer out of
+    // the device store.
+    let lease = crate::message_store::query_lease(api_base_url, &keys.signer_pubkey().to_hex());
     crate::relay_admission::wait_for_rate_limit().await;
     let url = format!("{}/query", api_base_url);
     let body_bytes =
         serde_json::to_vec(filters).map_err(|e| format!("filter serialization failed: {e}"))?;
     let auth = keys.relay_http_auth(&Method::POST, &url, &body_bytes)?;
-    send_query_request(
+    let events = send_query_request(
         &state.http_client,
         &url,
         &auth,
@@ -444,7 +447,9 @@ pub async fn query_relay_at_with_keys(
         body_bytes,
         QUERY_REQUEST_TIMEOUT,
     )
-    .await
+    .await?;
+    crate::message_store::query_received(lease, &events);
+    Ok(events)
 }
 
 /// Build an authenticated relay HTTP request using already-signed NIP-98 auth.

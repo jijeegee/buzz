@@ -16,6 +16,8 @@ import '../auth/remote_sign_out.dart';
 import '../auth/token/relay_origin.dart';
 import '../auth/token/token_session.dart';
 import '../device_key/device_proof.dart';
+import '../message_store/message_store.dart';
+import '../message_store/message_store_provider.dart';
 import 'me_live_bundle.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
@@ -149,6 +151,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// session already refreshed; it must not refresh again (one per cycle).
   bool _retryingRefreshedToken = false;
 
+  /// Received events are kept on the device under this account's scope.
+  MessageStore? _messageStore;
+  MessageStoreLease? _storeLease;
+
   @override
   SessionState build() {
     final config = ref.watch(relayConfigProvider);
@@ -160,6 +166,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _disposed = false;
 
     ref.onDispose(_dispose);
+    _messageStore = ref.read(messageStoreProvider);
+    _storeLease = _messageStore!.lease(
+      config.baseUrl,
+      ref.read(myPubkeyProvider),
+    );
 
     final tokens = config.tokenAuth
         ? ref.watch(relayAccessTokensProvider)
@@ -281,6 +292,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       throw StateError('Relay session is unavailable');
     }
     final generation = _contextGeneration;
+    final storeLease = _storeLease;
     final config = ref.read(relayConfigProvider);
     final url = Uri.parse(config.baseUrl).resolve('/query').toString();
     final bodyBytes = utf8.encode(jsonEncode(filters));
@@ -313,7 +325,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       _activateRateLimitGateFromHttpError(response.body);
       throw RelayException(response.statusCode, response.body);
     }
-    return jsonDecode(response.body);
+    final decoded = jsonDecode(response.body);
+    if (decoded is List) _messageStore?.submit(storeLease, decoded);
+    return decoded;
   }
 
   void _activateRateLimitGateFromHttpError(String body) {
@@ -807,6 +821,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     final subId = data[1] as String;
     final eventJson = data[2] as Map<String, dynamic>;
     final event = NostrEvent.fromJson(eventJson);
+    _messageStore?.submit(_storeLease, [eventJson]);
 
     // History subscriptions accumulate immediately.
     final historySub = _historySubscriptions[subId];

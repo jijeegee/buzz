@@ -207,6 +207,7 @@ async fn open_connection(
         cancel,
         on_message,
         task_manager,
+        crate::message_store::SocketTap::new(url),
     ));
     *task_slot = Some(task);
     drop(task_slot);
@@ -314,6 +315,7 @@ async fn run_connection<S>(
     cancel: CancellationToken,
     on_message: Channel<InvokeResponseBody>,
     manager: WebSocketManager,
+    mut tap: crate::message_store::SocketTap,
 ) where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
 {
@@ -333,6 +335,9 @@ async fn run_connection<S>(
             _ = batch.due() => batch.flush(&on_message),
             request = receiver.recv() => {
                 let Some(request) = request else { break };
+                if let Message::Text(text) = &request.message {
+                    tap.sent(text.as_str());
+                }
                 let result = tokio::time::timeout(WRITE_TIMEOUT, socket.send(request.message))
                     .await
                     .map_err(|_| "WebSocket send timed out".to_string())
@@ -351,7 +356,10 @@ async fn run_connection<S>(
                 // Classify the relay payload before it is wrapped, while its
                 // structure is still readable.
                 let urgent = match &message {
-                    OutboundMessage::Text(payload) => is_auth_challenge(payload),
+                    OutboundMessage::Text(payload) => {
+                        tap.received(payload);
+                        is_auth_challenge(payload)
+                    }
                     _ => false,
                 };
                 let Ok(frame) = serde_json::to_string(&message) else { continue };
@@ -479,6 +487,7 @@ mod tests {
                 cancel.clone(),
                 channel,
                 manager,
+                crate::message_store::SocketTap::new(""),
             ));
             Self {
                 server,
@@ -625,6 +634,7 @@ mod tests {
             handle.cancel.clone(),
             channel,
             manager.clone(),
+            crate::message_store::SocketTap::new(""),
         ));
         *handle.task.lock().await = Some(task);
 
@@ -759,6 +769,7 @@ mod tests {
             handle.cancel.clone(),
             silent_channel(),
             manager.clone(),
+            crate::message_store::SocketTap::new(""),
         ));
         *handle.task.lock().await = Some(task);
 

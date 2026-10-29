@@ -32,6 +32,7 @@ mod mesh_llm;
 #[cfg(not(feature = "mesh-llm"))]
 mod mesh_llm_stubs;
 mod message_routing;
+mod message_store;
 mod migration;
 #[cfg(test)]
 mod model_tests;
@@ -337,6 +338,7 @@ pub fn run() {
                 let secrets = crate::auth::accounts::shared_secrets();
                 crate::auth::service::migrate_on_launch(secrets, &data_dir);
                 crate::auth::accounts::reconcile_on_launch(&data_dir);
+                crate::message_store::init(&data_dir);
             }
             if let Err(e) = resolve_persisted_identity(&app_handle, &state) {
                 eprintln!("kuzz-desktop: fatal: identity resolution failed: {e}");

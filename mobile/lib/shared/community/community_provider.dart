@@ -9,6 +9,7 @@ import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
 import '../l10n/l10n.dart';
+import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
@@ -384,6 +385,11 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         final relayUrl = RelayConfig(
           baseUrl: current[removedIndex].relayUrl,
         ).baseUrl;
+        final removed = current[removedIndex];
+        final account = removed.pubkey ?? pubkeyFromNsec(removed.nsec);
+        if (account != null) {
+          unawaited(ref.read(messageStoreProvider).forget(account));
+        }
         unawaited(
           ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
             Object error,

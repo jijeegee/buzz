@@ -1,0 +1,75 @@
+{
+  "description": "Which received events the device message store keeps, and how it files them. Read by desktop (Rust message_store) and mobile (message_store.dart) tests. See docs/message-sync.md#message-store.",
+  "cases": [
+    {
+      "name": "top-level message",
+      "event": { "id": "a1", "kind": 9, "pubkey": "p1", "created_at": 100, "tags": [["h", "room1"]], "content": "hi" },
+      "expect": { "stored": true, "room": "room1", "root": null, "broadcast": false, "targets": [] }
+    },
+    {
+      "name": "thread reply with root and reply markers",
+      "event": { "id": "a2", "kind": 9, "pubkey": "p1", "created_at": 101, "tags": [["h", "room1"], ["e", "r1", "", "root"], ["e", "m5", "", "reply"]], "content": "re" },
+      "expect": { "stored": true, "room": "room1", "root": "r1", "broadcast": false, "targets": [] }
+    },
+    {
+      "name": "reply marker only: the parent is the root",
+      "event": { "id": "a3", "kind": 40002, "pubkey": "p1", "created_at": 102, "tags": [["h", "room1"], ["e", "r2", "", "reply"]], "content": "re" },
+      "expect": { "stored": true, "room": "room1", "root": "r2", "broadcast": false, "targets": [] }
+    },
+    {
+      "name": "e tag without a reply marker is top-level",
+      "event": { "id": "a4", "kind": 9, "pubkey": "p1", "created_at": 103, "tags": [["h", "room1"], ["e", "x9"]], "content": "quote" },
+      "expect": { "stored": true, "room": "room1", "root": null, "broadcast": false, "targets": [] }
+    },
+    {
+      "name": "broadcast reply keeps its root and the flag",
+      "event": { "id": "a5", "kind": 9, "pubkey": "p1", "created_at": 104, "tags": [["h", "room1"], ["e", "r1", "", "root"], ["e", "r1", "", "reply"], ["broadcast", "1"]], "content": "also in main" },
+      "expect": { "stored": true, "room": "room1", "root": "r1", "broadcast": true, "targets": [] }
+    },
+    {
+      "name": "reaction without a room tag is kept by its target",
+      "event": { "id": "a6", "kind": 7, "pubkey": "p2", "created_at": 105, "tags": [["e", "a1"], ["p", "p1"]], "content": "+" },
+      "expect": { "stored": true, "room": null, "root": null, "broadcast": false, "targets": ["a1"] }
+    },
+    {
+      "name": "deletion targets every e tag",
+      "event": { "id": "a7", "kind": 5, "pubkey": "p1", "created_at": 106, "tags": [["e", "a1"], ["e", "a2"]], "content": "" },
+      "expect": { "stored": true, "room": null, "root": null, "broadcast": false, "targets": ["a1", "a2"] }
+    },
+    {
+      "name": "relay deletion in a room",
+      "event": { "id": "a8", "kind": 9005, "pubkey": "relay", "created_at": 107, "tags": [["h", "room1"], ["e", "a2"]], "content": "" },
+      "expect": { "stored": true, "room": "room1", "root": null, "broadcast": false, "targets": ["a2"] }
+    },
+    {
+      "name": "edit is kept by its target and is not a thread reply",
+      "event": { "id": "a9", "kind": 40003, "pubkey": "p1", "created_at": 108, "tags": [["h", "room1"], ["e", "a1"]], "content": "edited" },
+      "expect": { "stored": true, "room": "room1", "root": null, "broadcast": false, "targets": ["a1"] }
+    },
+    {
+      "name": "thread summary is filed under its root",
+      "event": { "id": "b1", "kind": 39005, "pubkey": "relay", "created_at": 109, "tags": [["d", "r1"], ["e", "r1"], ["h", "room1"]], "content": "{}" },
+      "expect": { "stored": true, "summary": true, "room": "room1", "root": "r1" }
+    },
+    {
+      "name": "message without a room tag is not kept",
+      "event": { "id": "c1", "kind": 9, "pubkey": "p1", "created_at": 110, "tags": [], "content": "?" },
+      "expect": { "stored": false }
+    },
+    {
+      "name": "typing indicator is not kept",
+      "event": { "id": "c2", "kind": 20002, "pubkey": "p1", "created_at": 111, "tags": [["h", "room1"]], "content": "" },
+      "expect": { "stored": false }
+    },
+    {
+      "name": "agent work frame is not kept",
+      "event": { "id": "c3", "kind": 24200, "pubkey": "p1", "created_at": 112, "tags": [["p", "me"]], "content": "" },
+      "expect": { "stored": false }
+    },
+    {
+      "name": "page bounds metadata is not kept",
+      "event": { "id": "c4", "kind": 39006, "pubkey": "relay", "created_at": 113, "tags": [["h", "room1"]], "content": "{}" },
+      "expect": { "stored": false }
+    }
+  ]
+}

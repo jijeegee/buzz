@@ -8,8 +8,10 @@ import '../../features/channels/channel_head_cache.dart';
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
+import '../message_store/message_store_provider.dart';
 import '../push/push_bridge.dart';
 import '../push/push_subscription.dart';
+import '../relay/relay_provider.dart';
 import 'default_community.dart';
 import 'token/relay_origin.dart';
 import '../l10n/l10n.dart';
@@ -280,6 +282,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       // A person key held by Google is deleted from this phone (signing in
       // with Google restores it); this install's device key is kept.
       await storage.saveAll(signedOut);
+      // Messages kept on this phone go with the account.
+      final store = ref.read(messageStoreProvider);
+      for (final community in targets) {
+        final account = community.pubkey ?? pubkeyFromNsec(community.nsec);
+        if (account != null) unawaited(store.forget(account));
+      }
       // Cached message heads are derived data; signing out leaves none behind.
       unawaited(
         ref.read(channelHeadCacheProvider).clearAll().catchError((
