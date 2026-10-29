@@ -270,19 +270,30 @@ export function useOlderThreadReplies(
   // The thread whose older page is loading, so another thread is not blocked.
   const [fetchingKey, setFetchingKey] = React.useState<string | null>(null);
   const inFlightRef = React.useRef(new Set<string>());
-  const fetchOlder = React.useCallback(async () => {
-    if (!channelId || !rootId || inFlightRef.current.has(threadKey)) return;
-    inFlightRef.current.add(threadKey);
-    setFetchingKey(threadKey);
-    try {
-      await loadOlderThreadReplies(queryClient, channelId, rootId);
-    } catch (error) {
-      console.warn("Failed to load older thread replies", rootId, error);
-    } finally {
-      inFlightRef.current.delete(threadKey);
-      setFetchingKey((current) => (current === threadKey ? null : current));
-    }
-  }, [channelId, queryClient, rootId, threadKey]);
+  /** Resolves whether an older page was added. */
+  const fetchOlder = React.useCallback(
+    async (limitRows?: number): Promise<boolean> => {
+      if (!channelId || !rootId || inFlightRef.current.has(threadKey))
+        return false;
+      inFlightRef.current.add(threadKey);
+      setFetchingKey(threadKey);
+      try {
+        return await loadOlderThreadReplies(
+          queryClient,
+          channelId,
+          rootId,
+          limitRows,
+        );
+      } catch (error) {
+        console.warn("Failed to load older thread replies", rootId, error);
+        return false;
+      } finally {
+        inFlightRef.current.delete(threadKey);
+        setFetchingKey((current) => (current === threadKey ? null : current));
+      }
+    },
+    [channelId, queryClient, rootId, threadKey],
+  );
   return {
     hasOlderReplies: stateQuery.data?.hasOlder ?? false,
     isFetchingOlderReplies: fetchingKey === threadKey,

@@ -1,5 +1,4 @@
 import 'dart:async';
-
 import '../../shared/relay/fake_relay_access_tokens.dart';
 import '../profile/presence_snapshot_test.dart'
     show PresenceTestRelay, presenceEvent;
@@ -57,6 +56,7 @@ import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
+import 'package:kuzz/features/channels/read_state_wait.dart';
 import 'package:kuzz/features/channels/room_position_store.dart';
 import 'package:kuzz/features/channels/window_anchor.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
@@ -362,8 +362,8 @@ Widget _buildTestable({
         relayDirectoryUsersProvider.overrideWith((ref) async => directoryUsers),
       if (createChannelActions != null)
         channelActionsProvider.overrideWith(createChannelActions),
-      if (readStateNotifier != null)
-        readStateProvider.overrideWith(() => readStateNotifier),
+      if (readStateNotifier ?? _readyFor(huddleCurrentPubkey) case final n?)
+        readStateProvider.overrideWith(() => n),
       for (final entry in threadReplies.entries)
         threadRepliesProvider(
           ThreadRepliesArgs(channelId: _channelId, rootId: entry.key),
@@ -2049,7 +2049,7 @@ void main() {
           relaySessionNotifier: relaySession,
           readStateNotifier: _SynchronousReadStateNotifier(
             const ReadStateState(
-              isReady: false,
+              isReady: true,
               pubkey: 'self',
               contexts: {},
               version: 0,

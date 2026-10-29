@@ -84,6 +84,7 @@ import { isWelcomeExperienceChannel as isWelcomeExperience } from "@/features/on
 import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
+import { useThreadOpenTarget } from "./useThreadOpenTarget";
 import { useT } from "@/shared/i18n";
 const HUDDLE_TRANSCRIPT_ROOT_STYLE = {
   "--kuzz-channel-content-top-padding": "0rem",
@@ -101,6 +102,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   channelManagementOpen = false,
   channelManagementInitialView = null,
   currentPubkey,
+  readingPositionScope = null,
   editTarget = null,
   fetchOlder,
   header,
@@ -209,6 +211,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   threadUnreadCounts,
   threadReplyUnreadCounts,
   threadFirstUnreadReplyId,
+  threadOpenRead = "ready",
   typingPubkeys,
 }: ChannelPaneProps) {
   const t = useT();
@@ -548,6 +551,19 @@ export const ChannelPane = React.memo(function ChannelPane({
     showIdleAuxiliaryOverThread,
     markExitComplete,
   );
+  const threadOpen = useThreadOpenTarget({
+    channelId: activeChannel?.id ?? null,
+    rootId: threadHeadMessage?.id ?? null,
+    positionScope: readingPositionScope,
+    opensElsewhere: Boolean(threadScrollTargetId),
+    replies: threadMessages,
+    isLoading: threadMessagesPending,
+    firstUnreadReplyId: threadFirstUnreadReplyId ?? null,
+    readState: threadOpenRead,
+    hasOlderReplies: threadHasOlderReplies,
+    isFetchingOlder: threadIsFetchingOlderReplies,
+    fetchOlder: onFetchOlderThreadReplies,
+  });
   const { changeThreadViewMode, layoutScrollTargetId, resolveScrollTarget } =
     useThreadViewModeSwitch({
       activeThreadHeadId: threadHeadMessage?.id ?? null,
@@ -989,20 +1005,36 @@ export const ChannelPane = React.memo(function ChannelPane({
                   onSendToChannel={
                     isComposerDisabled ? undefined : onSendToChannel
                   }
-                  onScrollTargetResolved={() => resolveScrollTarget()}
+                  onScrollTargetResolved={() =>
+                    threadOpen.targetId && !layoutScrollTargetId
+                      ? threadOpen.release()
+                      : resolveScrollTarget()
+                  }
                   onScrollTargetSettled={resolveScrollTarget}
+                  onReadingPositionChange={threadOpen.savePosition}
                   onToggleReaction={onToggleReaction}
                   onUnfollowThread={onUnfollowThread}
                   {...{ profiles, recentMentionPubkeys: recentMentions }}
                   replyTargetMessage={threadReplyTargetMessage}
-                  scrollTargetHighlights={!layoutScrollTargetId}
-                  scrollTargetId={layoutScrollTargetId ?? threadScrollTargetId}
+                  scrollTargetHighlights={
+                    !layoutScrollTargetId && !threadOpen.targetId
+                  }
+                  scrollTargetId={
+                    layoutScrollTargetId ??
+                    threadScrollTargetId ??
+                    threadOpen.targetId
+                  }
+                  scrollTargetTopPx={
+                    layoutScrollTargetId ? null : threadOpen.topPx
+                  }
                   {...searchHighlightProps.thread}
                   threadHead={threadHeadMessage}
                   videoReviewPresentation={threadVideoReviewPresentation}
                   widthPx={threadPanelWidthPx}
                   threadReplies={threadMessages}
-                  threadRepliesPending={threadMessagesPending}
+                  threadRepliesPending={
+                    threadMessagesPending || threadOpen.isResolving
+                  }
                   threadRepliesError={threadMessagesError}
                   onRetryThreadReplies={onRetryThreadReplies}
                   hasOlderReplies={threadHasOlderReplies}

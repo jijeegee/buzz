@@ -228,7 +228,7 @@ new one); mobile per room notifier, which lives for the run, and for the
 preload per account and server. A stored window only draws the first frame: once that fetch has
 settled, the client asks the relay once (on desktop, the refresh after the
 room's live subscription joins that request rather than sending another) and
-its window replaces the stored rows (stored rows the relay no longer has are dropped; live arrivals stay).
+its window replaces the stored rows (stored rows inside its span that the relay no longer has are dropped; older rows that join it stay, see [Opening at a position](#opening-at-a-position); live arrivals stay).
 This extra request is a safety net until the store-vs-relay log shows no
 differences (stage 5 then skips it for certain rooms). Later refreshes always
 ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
@@ -321,3 +321,77 @@ line: `[message-store] <room|thread> <id>: store matches relay (<n>)`, or
 `store differs from relay` with the ids missing from the store and the ids
 only the store had. Rooms compare timeline rows of the newest page; threads
 compare replies.
+
+## Opening at a position
+
+A room opens at, in order: a linked message, the first unread message, where
+the reader left it, the newest message. The list is drawn once, already at
+that position.
+
+- **Decided on a current window (desktop):** the position is chosen only on
+  a window fetched during this visit (from the relay, or a certain window
+  from the store), or one fetched earlier whose newest row is at least as new
+  as the channel's last message. A head cache from an earlier run, the fetch
+  that only hands it over, and rows merged live never count as fetched: they
+  can miss newer unread rows, so the skeleton stays until the relay
+  answers, at most 1.5 s, after which the rows held decide. A visit that
+  cannot have unread rows (last message not after the read frontier) and has
+  no remembered row opens at the newest at once. A window counts once its
+  newest row has reached the rows drawn, not when it is merely announced.
+- **Threads:** the same order: a linked reply, the first unread reply (near
+  the top), where the reader left the thread, the newest reply. The reading
+  position is kept per thread under `<channel id>/<root id>`. Desktop pages
+  back for a reply in an older page (the same limits as a room) before the
+  replies are drawn.
+- **Where positions are kept:** per server and account. Desktop keys them by
+  the relay's `https://host[:port]` origin (the store files' server identity)
+  and account; a record from before this moves once to the first server the
+  account reads on.
+- **Forgetting a position:** a visit that opens at another row (a first
+  unread, a link) or jumps to the newest forgets the remembered one, as does
+  one whose row is no longer within reach (paged back to the limit, or gone).
+  A visit that only ran out of time (a slow relay, no read state in time)
+  keeps it for the next visit; settling at the newest during that visit does
+  not forget it until the reader has scrolled away once.
+- **Waiting for the read state:** first unread and the remembered row are
+  only known with the read state. A room or thread opened before its first
+  load stays hidden for up to 1 s, decides once when it is ready, and
+  otherwise opens at the newest without trusting a remembered row or (for
+  a thread) its unread replies. A read state that is stuck loading costs one
+  wait per session, not one per room. With no read state at all (no account
+  signed in) nothing waits. Opening does not mark the room read before
+  that decision. A link does not wait.
+- **Opening at a message does not wait for the newest page (mobile):** a
+  room opened from a certain stored window fetches the two pages around the
+  message as soon as the stored window is shown, without waiting for the
+  relay's newest page. If that page lands after the window opened at the
+  message, it is dropped; if the window could not open there, it replaces the
+  stored rows as usual.
+- **Seeking a far first unread or remembered row (desktop):** up to three
+  older pages of the relay's largest window (200 rows), within 2 s; a failed
+  page is asked again after 250 ms rather than counted. Not found in time:
+  the newest message. The hidden list re-finds its row every frame, so rows
+  loaded above it before it is shown do not move it.
+- **Replacing the newest page keeps joined older rows:** when the relay's
+  newest page arrives (after a store open, on subscribe, on reconnect), rows
+  inside its span are its rows; those it no longer has were deleted. Older
+  retained rows stay when the two join: some retained row is not older than
+  the new page's end cursor (relay order: `created_at DESC, id ASC`). They
+  are re-cut into one page that starts at that cursor and keeps the old
+  tail's end cursor, so paging further back continues the chain; overlays
+  (5, 7, 9005, 40003) targeting the kept rows, and deletions of those
+  overlays, go with them. A new page with
+  no more history proves every older row gone. Pages that do not join leave
+  only the new page. Live thread summaries of kept rows stay; for roots the
+  new page delivers, desktop takes the page's summary and mobile keeps a live
+  one newer than it (as before); desktop drops the rest unless the root is a
+  live overlay row. A mobile window opened at a
+  message starts over at the newest page. Cases:
+  `test-fixtures/channel-window-replace.json`.
+- **Limit:** a kept older row keeps what it had: if it was deleted, edited,
+  reacted to or replied to while the client was disconnected (desktop's
+  reconnect repair stores such events but does not hand older ones to the
+  room), that shows only once the room is fetched again from the newest page
+  with no older rows kept, or the row is paged in again. Mobile's screen list
+  also keeps rows its window drops (as before), so after a replace that does
+  not join, desktop and mobile can show different older rows until reopened.

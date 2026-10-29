@@ -50,6 +50,11 @@ type UseAnchoredScrollOptions = {
   highlightTargetMessage?: boolean;
   /** Keeps a targeted message centered until the user deliberately scrolls. */
   pinTargetCentered?: boolean;
+  /**
+   * Puts the target this far below the scroller top instead of centring it
+   * (a thread opening at its first unread or remembered reply).
+   */
+  targetTopPx?: number | null;
   onTargetReached?: (messageId: string) => void;
   /** Reports a pinned target after resize correction and one paint frame. */
   onTargetSettled?: (messageId: string) => void;
@@ -58,6 +63,8 @@ type UseAnchoredScrollOptions = {
     messageId: string,
     options?: { behavior?: ScrollBehavior },
   ) => boolean;
+  /** Whether the virtualized list is landing, hidden, on this message. */
+  virtualIsLandingAt?: (messageId: string) => boolean;
   /** Imperative virtualizer-owned bottom jump, used only when virtualizer mode is active. */
   virtualScrollToBottom?: (behavior?: ScrollBehavior) => void;
   virtualSettleAtBottom?: () => void;
@@ -185,10 +192,12 @@ export function useAnchoredScroll({
   initialAnchorMessageId = null,
   highlightTargetMessage = true,
   pinTargetCentered = false,
+  targetTopPx = null,
   onTargetReached,
   onTargetSettled,
   virtualCancelBottomIntent,
   virtualScrollToMessage,
+  virtualIsLandingAt,
   virtualScrollToBottom,
   virtualSettleAtBottom,
   virtualizerOwnsPrependAnchoring = false,
@@ -523,7 +532,8 @@ export function useAnchoredScroll({
       const rect = el.getBoundingClientRect();
       const containerRect = container.getBoundingClientRect();
       const currentTopOffset = rect.top - containerRect.top;
-      const centeredTopOffset = (container.clientHeight - rect.height) / 2;
+      const centeredTopOffset =
+        targetTopPx ?? (container.clientHeight - rect.height) / 2;
       const maxScrollTop = Math.max(
         0,
         container.scrollHeight - container.clientHeight,
@@ -536,7 +546,7 @@ export function useAnchoredScroll({
         currentTopOffset - (targetScrollTop - container.scrollTop);
       const contentTop = rect.top + container.scrollTop - containerRect.top;
 
-      if (pinTargetCentered) {
+      if (pinTargetCentered && targetTopPx === null) {
         writePinnedCenterScroll(container, () => {
           el.scrollIntoView({
             block: "center",
@@ -565,7 +575,7 @@ export function useAnchoredScroll({
           topOffset: targetTopOffset,
         };
       }
-      if (!pinTargetCentered) {
+      if (!pinTargetCentered || targetTopPx !== null) {
         setIsAtBottom(maxScrollTop - targetScrollTop <= AT_BOTTOM_THRESHOLD_PX);
       }
 
@@ -576,6 +586,7 @@ export function useAnchoredScroll({
       highlightMessage,
       pinTargetCentered,
       scrollContainerRef,
+      targetTopPx,
       virtualCancelBottomIntent,
       virtualizerOwnsPrependAnchoring,
       writePinnedCenterScroll,
@@ -674,7 +685,20 @@ export function useAnchoredScroll({
           scrollToBottomImperative("auto");
         });
       };
-      if (targetMessageId) {
+      if (targetMessageId && virtualIsLandingAt?.(targetMessageId)) {
+        // The list is landing on the target, hidden and centred, and shows
+        // it once it holds still; nothing may move it meanwhile.
+        anchorRef.current = {
+          kind: "message",
+          messageId: targetMessageId,
+          topOffset: 0,
+        };
+        virtualizerAtBottomRef.current = false;
+        setIsAtBottom(false);
+        if (highlightTargetMessage) highlightMessage(targetMessageId);
+        handledTargetIdRef.current = targetMessageId;
+        onTargetReached?.(targetMessageId);
+      } else if (targetMessageId) {
         // A cold deep-link target may not be in the DOM on this first
         // commit — the route screen fetches it by id and splices it in a
         // render or two later. If centering fails now, leave the timeline at
@@ -819,6 +843,7 @@ export function useAnchoredScroll({
     prevMessageCountRef.current = messages.length;
     prevMessagesRef.current = messages;
   }, [
+    highlightMessage,
     highlightTargetMessage,
     initialAnchorMessageId,
     isLoading,
@@ -829,6 +854,7 @@ export function useAnchoredScroll({
     scrollToBottomImperative,
     scrollToMessageImperative,
     targetMessageId,
+    virtualIsLandingAt,
     virtualScrollToBottom,
     virtualSettleAtBottom,
     virtualizerOwnsPrependAnchoring,

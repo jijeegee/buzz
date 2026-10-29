@@ -97,9 +97,64 @@ function assertValidPage(page: ChannelWindowPage) {
   }
 }
 
+function targetsAny(event: RelayEvent, ids: Set<string>) {
+  return event.tags.some((tag) => tag[0] === "e" && ids.has(tag[1]));
+}
+
 /**
- * Replace the authoritative chain at page zero. Its end cursor may move, so
- * retaining old tail pages would claim a cursor chain they were not fetched on.
+ * The retained rows older than a new newest page, re-cut into one page that
+ * starts at its end cursor, or null when there are none or the two do not
+ * join. They join when a retained row is not older than the new page's end
+ * cursor: the old chain then runs unbroken from inside the new page down to
+ * its own tail. A new page with no more history proves every older row gone.
+ * Cases: test-fixtures/channel-window-replace.json.
+ */
+function retainedOlderPage(
+  current: ChannelWindowStore,
+  page: ChannelWindowPage,
+): ChannelWindowPage | null {
+  const end = page.nextCursor;
+  const tail = current.pages[current.pages.length - 1];
+  const newest = current.pages[0]?.rows[0]?.event;
+  if (!end || !tail || !newest || isStrictlyOlder(newest, end)) return null;
+  const rows = current.pages
+    .flatMap((retained) => retained.rows)
+    .filter((row) => isStrictlyOlder(row.event, end));
+  if (rows.length === 0) return null;
+  // Overlays on the kept rows, and deletions of those overlays.
+  const targets = new Set(rows.map((row) => row.event.id));
+  const pageAuxIds = new Set(page.aux.map((event) => event.id));
+  const candidates = current.pages
+    .flatMap((retained) => retained.aux)
+    .filter(
+      (event, index, all) =>
+        !pageAuxIds.has(event.id) &&
+        all.findIndex((other) => other.id === event.id) === index,
+    );
+  const aux: RelayEvent[] = [];
+  for (let hop = 0; hop < 2; hop += 1) {
+    for (const event of candidates) {
+      if (!aux.includes(event) && targetsAny(event, targets)) aux.push(event);
+    }
+    for (const event of aux) targets.add(event.id);
+  }
+  aux.sort(
+    (left, right) => candidates.indexOf(left) - candidates.indexOf(right),
+  );
+  return {
+    startCursor: end,
+    rows,
+    aux,
+    nextCursor: tail.nextCursor,
+    hasMore: tail.hasMore,
+  };
+}
+
+/**
+ * Replace the authoritative chain at page zero. Rows inside the new page's
+ * span are its rows (those it no longer has were deleted); older retained
+ * rows that join it stay, re-cut so the cursor chain stays continuous, which
+ * keeps an anchor found by paging back (docs/message-sync.md#opening-at-a-position).
  */
 export function replaceNewestChannelWindow(
   current: ChannelWindowStore,
@@ -109,16 +164,31 @@ export function replaceNewestChannelWindow(
     throw new Error("Newest channel page must have a null start cursor.");
   }
   assertValidPage(page);
-  const ids = new Set(page.rows.map((row) => row.event.id));
+  const older = retainedOlderPage(current, page);
+  const pages = older ? [page, older] : [page];
+  const ids = new Set(
+    pages.flatMap((retained) => retained.rows.map((row) => row.event.id)),
+  );
   const auxIds = new Set(page.aux.map((event) => event.id));
+  const pageRootIds = new Set(page.rows.map((row) => row.event.id));
+  const liveOverlay = current.liveOverlay.filter((event) => !ids.has(event.id));
+  const shownRootIds = new Set([
+    ...(older?.rows ?? []).map((row) => row.event.id),
+    ...liveOverlay.map((event) => event.id),
+  ]);
   return {
-    pages: [page],
-    liveOverlay: current.liveOverlay.filter((event) => !ids.has(event.id)),
+    pages,
+    liveOverlay,
     liveAux: current.liveAux.filter((event) => !auxIds.has(event.id)),
     // A head refetch is the authoritative resync moment (subscribe/reconnect
-    // both funnel here): every retained page is replaced, so live summaries
-    // pinned to the old snapshot are cleared rather than diffed.
-    liveSummaries: {},
+    // both funnel here): live summaries for the roots it re-delivers yield to
+    // its snapshot; those for kept older rows and overlay rows stay, and the
+    // rest go with their rows.
+    liveSummaries: Object.fromEntries(
+      Object.entries(current.liveSummaries).filter(
+        ([rootId]) => !pageRootIds.has(rootId) && shownRootIds.has(rootId),
+      ),
+    ),
   };
 }
 
@@ -161,8 +231,8 @@ export function appendOlderChannelWindow(
  * root: the relay pushes a full recount on every thread mutation, so the
  * latest push is authoritative for that root — including counting *down*
  * after a delete. Retained across scrollback pages (a racing push can be
- * fresher than a just-fetched page summary) and cleared only by the head
- * refetch in `replaceNewestChannelWindow`.
+ * fresher than a just-fetched page summary) and cleared only by a head
+ * refetch that re-delivers the root (`replaceNewestChannelWindow`).
  */
 export function mergeLiveThreadSummary(
   current: ChannelWindowStore,

@@ -4,16 +4,18 @@ part of '../channel_messages_provider.dart';
 /// paging from there toward the present (NIP-CW newer direction).
 extension _OpenAtWindow on ChannelMessagesNotifier {
   Future<bool> _openAt({required int createdAt, String? eventId}) async {
-    while (_initInFlight) {
-      await _initFuture;
-    }
+    await _awaitOpenableWindow();
     if (!_summaryMounted || !_usingChannelWindow || isShowingCachedHead) {
       return false;
     }
     // Without newer pages the window could only show the anchor past a gap;
     // keep the newest window and let the caller page back as before.
     if (!await _relaySupportsNewerWindows()) return false;
-    if (!_summaryMounted || !_usingChannelWindow || _initInFlight) return false;
+    if (!_summaryMounted ||
+        !_usingChannelWindow ||
+        (_initInFlight && !_followingStoredHead)) {
+      return false;
+    }
     final initVersion = _initVersion;
     final opVersion = ++_windowOpVersion;
     final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
@@ -52,11 +54,19 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
   }
 
   Future<bool> _canOpenAt() async {
-    while (_initInFlight) {
-      await _initFuture;
-    }
+    await _awaitOpenableWindow();
     if (!_summaryMounted || !_usingChannelWindow) return false;
     return _relaySupportsNewerWindows();
+  }
+
+  /// Waits for the first window: the end of init, or a certain window from
+  /// the device store whose relay follow-up is still out. Opening at a
+  /// message fetches its own pages, so it need not wait for the newest one.
+  Future<void> _awaitOpenableWindow() async {
+    while (_initInFlight && !_followingStoredHead) {
+      final shown = _storedHeadShown ??= Completer<void>();
+      await Future.any([_initFuture ?? Future<void>.value(), shown.future]);
+    }
   }
 
   Future<bool> _fetchNewer() async {

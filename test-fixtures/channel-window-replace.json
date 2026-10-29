@@ -1,0 +1,903 @@
+{
+  "description": "Replacing a room window's newest page (relay answer after a store open, subscribe refresh, reconnect). Shared by desktop (channelWindowStore.ts) and mobile (channel_window.dart). Rules: docs/message-sync.md#opening-at-a-position. Rows are [id, created_at] of top-level kind 9 messages in relay order. `current` lists the retained pages oldest-last; page 0 starts at null and each next page starts at the previous page's end cursor. A page's end cursor is its last row when `more`, else null. `aux` entries are [id, target] reactions (kind 7). `threads` maps a page row to the created_at of the thread summary it carries. `live_summaries` are roots holding a live thread summary created at 1. `then_older` is an older page appended from the tail cursor after the replace. Cursors are [created_at, id].",
+  "cases": [
+    {
+      "name": "a joined older chain is re-cut at the new page's end cursor",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ],
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": true
+        },
+        {
+          "rows": [
+            [
+              "d",
+              70
+            ],
+            [
+              "e",
+              60
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ],
+          [
+            "b",
+            90
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a",
+              "b"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b"
+            ]
+          },
+          {
+            "start": [
+              90,
+              "b"
+            ],
+            "rows": [
+              "c",
+              "d",
+              "e"
+            ],
+            "aux": [],
+            "next": [
+              60,
+              "e"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a page that does not reach the old rows replaces them",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              50
+            ],
+            [
+              "b",
+              40
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "x",
+            100
+          ],
+          [
+            "y",
+            90
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "x",
+              "y"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "y"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "rows in the same second split by id",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b1",
+              90
+            ],
+            [
+              "b2",
+              90
+            ],
+            [
+              "b3",
+              90
+            ],
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ],
+          [
+            "b1",
+            90
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a",
+              "b1"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b1"
+            ]
+          },
+          {
+            "start": [
+              90,
+              "b1"
+            ],
+            "rows": [
+              "b2",
+              "b3",
+              "c"
+            ],
+            "aux": [],
+            "next": [
+              80,
+              "c"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a row missing inside the new page's span was deleted",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "z",
+              95
+            ],
+            [
+              "b",
+              90
+            ],
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "a",
+            100
+          ],
+          [
+            "b",
+            90
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "a",
+              "b"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b"
+            ]
+          },
+          {
+            "start": [
+              90,
+              "b"
+            ],
+            "rows": [
+              "c"
+            ],
+            "aux": [],
+            "next": [
+              80,
+              "c"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a new page with no more history drops every older row",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "more": true
+        },
+        {
+          "rows": [
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ],
+          [
+            "b",
+            90
+          ]
+        ],
+        "more": false
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a",
+              "b"
+            ],
+            "aux": [],
+            "next": null
+          }
+        ]
+      }
+    },
+    {
+      "name": "overlays stay with the kept rows they target",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ],
+            [
+              "c",
+              80
+            ]
+          ],
+          "aux": [
+            [
+              "r1",
+              "a"
+            ],
+            [
+              "r2",
+              "c"
+            ]
+          ],
+          "more": true
+        },
+        {
+          "rows": [
+            [
+              "d",
+              70
+            ]
+          ],
+          "aux": [
+            [
+              "r3",
+              "d"
+            ],
+            [
+              "r2",
+              "c"
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "aux": [
+          [
+            "r4",
+            "a"
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a"
+            ],
+            "aux": [
+              "r4"
+            ],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b",
+              "c",
+              "d"
+            ],
+            "aux": [
+              "r2",
+              "r3"
+            ],
+            "next": [
+              70,
+              "d"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "live thread summaries yield only for roots the new page delivers",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "live_summaries": [
+        "a",
+        "b"
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "threads": {
+          "a": 5
+        },
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a"
+            ],
+            "aux": [],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b"
+            ]
+          }
+        ],
+        "live_summaries": [
+          "b"
+        ]
+      }
+    },
+    {
+      "name": "deletions of kept overlays stay with them",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "aux": [
+            [
+              "r1",
+              "b"
+            ],
+            [
+              "d1",
+              "r1"
+            ],
+            [
+              "d2",
+              "zz"
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a"
+            ],
+            "aux": [],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b"
+            ],
+            "aux": [
+              "r1",
+              "d1"
+            ],
+            "next": [
+              90,
+              "b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an old newest row equal to the new end cursor joins",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            120
+          ],
+          [
+            "m",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "m",
+              "a"
+            ],
+            "aux": [],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "the re-cut chain still takes the next older page",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "more": true
+        },
+        {
+          "rows": [
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "more": true
+      },
+      "then_older": {
+        "rows": [
+          [
+            "d",
+            70
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a"
+            ],
+            "aux": [],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b",
+              "c"
+            ],
+            "aux": [],
+            "next": [
+              80,
+              "c"
+            ]
+          },
+          {
+            "start": [
+              80,
+              "c"
+            ],
+            "rows": [
+              "d"
+            ],
+            "aux": [],
+            "next": [
+              70,
+              "d"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "an empty window takes the new page",
+      "current": [],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n"
+            ],
+            "aux": [],
+            "next": [
+              110,
+              "n"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "no older rows left keeps only the new page",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ]
+          ],
+          "more": true
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ],
+          [
+            "b",
+            90
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a",
+              "b"
+            ],
+            "aux": [],
+            "next": [
+              90,
+              "b"
+            ]
+          }
+        ]
+      }
+    },
+    {
+      "name": "a complete old window stays complete",
+      "current": [
+        {
+          "rows": [
+            [
+              "a",
+              100
+            ],
+            [
+              "b",
+              90
+            ],
+            [
+              "c",
+              80
+            ]
+          ],
+          "more": false
+        }
+      ],
+      "page": {
+        "rows": [
+          [
+            "n",
+            110
+          ],
+          [
+            "a",
+            100
+          ]
+        ],
+        "more": true
+      },
+      "expect": {
+        "pages": [
+          {
+            "start": null,
+            "rows": [
+              "n",
+              "a"
+            ],
+            "aux": [],
+            "next": [
+              100,
+              "a"
+            ]
+          },
+          {
+            "start": [
+              100,
+              "a"
+            ],
+            "rows": [
+              "b",
+              "c"
+            ],
+            "aux": [],
+            "next": null
+          }
+        ]
+      }
+    }
+  ]
+}

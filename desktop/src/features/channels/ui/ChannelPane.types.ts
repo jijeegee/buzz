@@ -1,3 +1,4 @@
+import type { ThreadOpenRead } from "./useChannelUnreadState";
 import type * as React from "react";
 import type { SendPreview } from "@/features/messages/hooks";
 import type { ReadingPosition } from "@/features/channels/readingPositionStore";
@@ -42,8 +43,10 @@ export type ChannelPaneProps = {
   /** Opens the channel side panel straight into this view. */
   channelManagementInitialView?: "goals" | null;
   currentPubkey?: string;
+  /** Where reading positions are kept (readingPositionScope). */
+  readingPositionScope?: string | null;
   editTarget?: MessageComposerEditTarget | null;
-  fetchOlder?: () => Promise<void>;
+  fetchOlder?: () => Promise<unknown>;
   header?: React.ReactNode;
   /**
    * Idle-state body for the right auxiliary pane (project extras, etc.).
@@ -212,7 +215,8 @@ export type ChannelPaneProps = {
   /** Newest-first threads: older replies remain to be loaded. */
   threadHasOlderReplies?: boolean;
   threadIsFetchingOlderReplies?: boolean;
-  onFetchOlderThreadReplies?: () => Promise<void>;
+  /** Resolves whether an older page was added. */
+  onFetchOlderThreadReplies?: (limitRows?: number) => Promise<boolean>;
   /** Scrolls the room to the open thread's root message. */
   onShowThreadInChannel?: () => void;
   threadPanelWidthPx: number;
@@ -222,6 +226,8 @@ export type ChannelPaneProps = {
   threadUnreadCounts?: ReadonlyMap<string, number>;
   threadReplyUnreadCounts?: ReadonlyMap<string, number>;
   threadFirstUnreadReplyId?: string | null;
+  /** Whether the open thread can decide where it opens yet. */
+  threadOpenRead?: ThreadOpenRead;
   targetMessageId: string | null;
   /** Exact clicked result id, including a reply routed into the thread panel. */
   targetSearchMessageId?: string | null;

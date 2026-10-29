@@ -27,6 +27,9 @@ import { isConversationalUnreadKind } from "@/shared/constants/kinds";
 
 import { useWelcomeInitialUnreadSuppression } from "./useWelcomeInitialUnreadSuppression";
 
+/** How long a channel waits for the read state before it opens without it. */
+export const READ_STATE_OPEN_WAIT_MS = 1000;
+
 type UseChannelUnreadStateOptions = {
   activeChannelId: string | null;
   timelineMessages: TimelineMessage[];
@@ -45,7 +48,15 @@ type UseChannelUnreadStateOptions = {
   markMessageRead: (messageId: string, timestamp: number) => void;
   isThreadMuted: (rootId: string) => boolean;
   readStateVersion: number;
+  /** The read state finished its first load (AppShell). */
+  isReadStateReady?: boolean;
 };
+
+/**
+ * Whether a thread can decide where it opens: "pending" while the read state's
+ * first load is awaited, "missed" when the wait ran out without it.
+ */
+export type ThreadOpenRead = "pending" | "ready" | "missed";
 
 /**
  * All read-state derivation for an active channel that is computed from the
@@ -74,6 +85,7 @@ export function useChannelUnreadState({
   markMessageRead,
   isThreadMuted,
   readStateVersion,
+  isReadStateReady = true,
 }: UseChannelUnreadStateOptions) {
   // Capture the read frontier as it stood the instant this channel was opened,
   // BEFORE the mark-read effect (in ChannelScreen) advances it to latest.
@@ -83,11 +95,48 @@ export function useChannelUnreadState({
   // when the channel id changes, never when the frontier advances, or the
   // divider would vanish the moment the open marks the channel read.
   const openFrontierRef = React.useRef(new Map<string, number | null>());
-  if (activeChannelId && !openFrontierRef.current.has(activeChannelId)) {
+  // Before the read state's first load the frontier may be missing: wait for
+  // it up to READ_STATE_OPEN_WAIT_MS, then take what there is.
+  // One wait per session: a read state stuck loading does not hold every
+  // room for a second, as on mobile.
+  // Keyed by account, so a newly switched account gets its own wait.
+  const [readWaitSpentFor, setReadWaitSpentFor] = React.useState<string | null>(
+    null,
+  );
+  const readWaitSpent =
+    readWaitSpentFor !== null && readWaitSpentFor === (currentPubkey ?? "");
+  const readWaitPending =
+    !!activeChannelId && !isReadStateReady && !readWaitSpent;
+  const awaitingReadState =
+    readWaitPending && !openFrontierRef.current.has(activeChannelId);
+  // A thread opened in that time waits as well: its divider snapshot and its
+  // open target need the same read state.
+  const threadReadPending = readWaitPending && !!openThreadHeadId;
+  React.useEffect(() => {
+    if (!readWaitPending || !activeChannelId) return;
+    const timer = window.setTimeout(
+      () => setReadWaitSpentFor(currentPubkey ?? ""),
+      READ_STATE_OPEN_WAIT_MS,
+    );
+    return () => window.clearTimeout(timer);
+  }, [activeChannelId, currentPubkey, readWaitPending]);
+  // Rooms whose frontier was taken without the read state: no reading
+  // position is trusted for them, as on mobile.
+  const frontierWithoutReadStateRef = React.useRef(new Set<string>());
+  if (
+    activeChannelId &&
+    !awaitingReadState &&
+    !openFrontierRef.current.has(activeChannelId)
+  ) {
     openFrontierRef.current.set(
       activeChannelId,
       getChannelReadAt(activeChannelId),
     );
+    if (isReadStateReady) {
+      frontierWithoutReadStateRef.current.delete(activeChannelId);
+    } else {
+      frontierWithoutReadStateRef.current.add(activeChannelId);
+    }
   }
   const openFrontierSeconds = activeChannelId
     ? (openFrontierRef.current.get(activeChannelId) ?? null)
@@ -248,7 +297,13 @@ export function useChannelUnreadState({
     },
     [getMessageReadAt, openThreadHeadId],
   );
-  if (openThreadHeadId) {
+  // Threads opened without the read state: every reply would read as unread,
+  // so they show no divider, as on mobile.
+  const threadsWithoutReadStateRef = React.useRef(new Set<string>());
+  if (openThreadHeadId && !threadReadPending && !isReadStateReady) {
+    threadsWithoutReadStateRef.current.add(openThreadHeadId);
+  }
+  if (openThreadHeadId && !threadReadPending) {
     // Capture each visible reply's read state the first render it appears —
     // before the on-open mark-read effect advances its marker. Replies revealed
     // by expanding a branch are captured eagerly in markRevealedRepliesRead
@@ -264,6 +319,7 @@ export function useChannelUnreadState({
     if (!rootId) return;
     return () => {
       threadOpenReadSnapshotRef.current.delete(rootId);
+      threadsWithoutReadStateRef.current.delete(rootId);
     };
   }, [openThreadHeadId]);
   // Mark the revealed set read when the thread opens (LP4 v3): only the replies
@@ -273,17 +329,23 @@ export function useChannelUnreadState({
   // gets its own msg:<id> marker advanced to its createdAt; a NEWER reply
   // re-raises the badge because the predicate is strictly createdAt > read.
   React.useEffect(() => {
-    if (!openThreadHeadId) return;
+    if (!openThreadHeadId || threadReadPending) return;
     if (isThreadMuted(openThreadHeadId)) return;
     for (const entry of threadMessages) {
       markMessageRead(entry.message.id, entry.message.createdAt);
     }
-  }, [openThreadHeadId, threadMessages, markMessageRead, isThreadMuted]);
+  }, [
+    openThreadHeadId,
+    threadMessages,
+    markMessageRead,
+    isThreadMuted,
+    threadReadPending,
+  ]);
   // In-thread "New" divider position. Reads the open-time snapshot (frozen
   // before the mark-read effect above), so the divider does not collapse the
   // instant open marks the revealed replies read. A reply absent from the
   // snapshot (loaded after open) falls back to its live marker.
-  const { firstUnreadReplyId: threadFirstUnreadReplyId } = React.useMemo(() => {
+  const { firstUnreadReplyId: threadMarkerReplyId } = React.useMemo(() => {
     if (!openThreadHeadId || threadMessages.length === 0) {
       return { firstUnreadReplyId: null, unreadCount: 0 };
     }
@@ -304,6 +366,10 @@ export function useChannelUnreadState({
       currentPubkey,
     );
   }, [currentPubkey, getMessageReadAt, openThreadHeadId, threadMessages]);
+  const threadFirstUnreadReplyId =
+    openThreadHeadId && threadsWithoutReadStateRef.current.has(openThreadHeadId)
+      ? null
+      : threadMarkerReplyId;
   // Per-row subtree unread counts for the in-panel thread summary rows. Scoped
   // to the open thread's subtree and decided per-reply against the live
   // per-message read state (getMessageReadAt): each collapsed row's badge
@@ -509,6 +575,18 @@ export function useChannelUnreadState({
     openThreadHeadMessage,
     threadFirstUnreadReplyId,
     threadMessages,
+    /** The open frontier waits for the read state's first load. */
+    isOpenFrontierPending: awaitingReadState,
+    /** The frontier was taken without the read state (the wait ran out). */
+    isOpenFrontierUnknown:
+      !!activeChannelId &&
+      frontierWithoutReadStateRef.current.has(activeChannelId),
+    /** Where the open thread stands with the read state. */
+    threadOpenRead: (threadReadPending
+      ? "pending"
+      : isReadStateReady
+        ? "ready"
+        : "missed") as ThreadOpenRead,
     threadReplyTargetMessage,
     threadReplyUnreadCounts,
     threadUnreadCounts,

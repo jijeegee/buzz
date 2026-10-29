@@ -31,7 +31,9 @@ final relayFetchedRoomsProvider = Provider<Set<String>>((ref) {
 extension _StoreHead on ChannelMessagesNotifier {
   /// Loads the newest window and merges it into the room. A window that came
   /// from the store is drawn at once, then the relay is asked once and its
-  /// window replaces the stored rows (live arrivals stay).
+  /// window replaces the stored rows (live arrivals stay). Opening at a
+  /// message does not wait for that answer, and a window it opened first is
+  /// kept (docs/message-sync.md#opening-at-a-position).
   Future<void> _syncNewest(
     RelaySessionNotifier session,
     int initVersion,
@@ -46,9 +48,17 @@ extension _StoreHead on ChannelMessagesNotifier {
     }
     if (stored == null || !_isCurrentInit(initVersion)) return;
     if (_usingChannelWindow && _windowStore.isMiddle) return;
-    await _mergeNewest(session, initVersion, {
-      for (final event in stored) event.id,
-    });
+    _followingStoredHead = true;
+    _storedHeadShown?.complete();
+    _storedHeadShown = null;
+    try {
+      await _mergeNewest(session, initVersion, {
+        for (final event in stored) event.id,
+      });
+    } finally {
+      if (_isCurrentInit(initVersion)) _followingStoredHead = false;
+    }
+    if (!_isCurrentInit(initVersion)) return;
     final newest = _windowStore.pages.firstOrNull;
     if (!_usingChannelWindow || newest == null || newest.startCursor != null) {
       return;
@@ -70,7 +80,7 @@ extension _StoreHead on ChannelMessagesNotifier {
   ) async {
     final historyVersion = ++_threadQuerySerial;
     final history = await _fetchNewestHistory(session);
-    if (!_isCurrentInit(initVersion)) return;
+    if (history == null || !_isCurrentInit(initVersion)) return;
     // Only relay rows confirm a send; the window's live overlay also holds
     // the unconfirmed local rows themselves.
     _confirmLocalMessages(

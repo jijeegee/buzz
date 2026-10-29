@@ -64,7 +64,7 @@ type MessageTimelineProps = {
   emptyTitle?: string;
   emptyDescription?: string;
   currentPubkey?: string;
-  fetchOlder?: () => Promise<void>;
+  fetchOlder?: () => Promise<unknown>;
   hasOlderMessages?: boolean;
   /**
    * True when the loaded window provably starts at the channel's beginning
@@ -389,6 +389,7 @@ const MessageTimelineBase = React.forwardRef<
       : null,
     virtualCancelBottomIntent: timelineVirtualizerApi?.cancelBottomIntent,
     virtualScrollToMessage: timelineVirtualizerApi?.scrollToMessage,
+    virtualIsLandingAt: timelineVirtualizerApi?.isLandingAt,
     virtualScrollToBottom: timelineVirtualizerApi?.scrollToBottom,
     virtualSettleAtBottom: timelineVirtualizerApi?.settleAtBottom,
     virtualizerOwnsPrependAnchoring: useTimelineVirtualizer,
@@ -689,6 +690,7 @@ const MessageTimelineBase = React.forwardRef<
       firstUnreadMessageId={firstUnreadMessageId}
       initialAnchorMessageId={initialAnchorMessageId}
       initialAnchorTopPx={initialAnchorTopPx}
+      initialTargetMessageId={useTimelineVirtualizer ? targetMessageId : null}
       onReadingPositionChange={onReadingPositionChange}
       followThreadById={followThreadById}
       highlightedMessageId={highlightedMessageId}

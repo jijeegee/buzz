@@ -113,7 +113,7 @@ test("rejects inconsistent exhaustion and cursor facts", () => {
   );
 });
 
-test("newest refresh drops a stale tail when its boundary moves", () => {
+test("newest refresh re-cuts a joined tail at its boundary", () => {
   const first = page(null, [event("a", 100)]);
   const loaded = appendOlderChannelWindow(
     replaceNewestChannelWindow(emptyChannelWindowStore(), first),
@@ -123,10 +123,15 @@ test("newest refresh drops a stale tail when its boundary moves", () => {
     loaded,
     page(null, [event("n", 110), event("a", 100)]),
   );
-  assert.equal(refreshed.pages.length, 1);
+  assert.equal(refreshed.pages.length, 2);
+  assert.deepEqual(
+    refreshed.pages[1].startCursor,
+    refreshed.pages[0].nextCursor,
+  );
+  assert.equal(refreshed.pages[1].hasMore, false);
   assert.deepEqual(
     flattenChannelWindowEvents(refreshed).map((item) => item.content),
-    ["a", "n"],
+    ["z", "a", "n"],
   );
 });
 
@@ -449,4 +454,20 @@ test("exhaustion tracks only a resolved tail page's hasMore", () => {
   );
   assert.equal(channelWindowHistoryExhausted(closed), true);
   assert.equal(channelWindowHasMore(closed), false);
+});
+
+test("a replace that drops rows drops their live summaries, keeps overlay roots'", () => {
+  let store = replaceNewestChannelWindow(
+    emptyChannelWindowStore(),
+    page(null, [event("a", 50), event("b", 40)]),
+  );
+  store = mergeLiveChannelWindowEvent(store, event("o", 60));
+  for (const rootId of [event("b", 40).id, event("o", 60).id]) {
+    store = mergeLiveThreadSummary(store, rootId, live(3, 70));
+  }
+  const refreshed = replaceNewestChannelWindow(
+    store,
+    page(null, [event("x", 100), event("y", 90)]),
+  );
+  assert.deepEqual(Object.keys(refreshed.liveSummaries), [event("o", 60).id]);
 });

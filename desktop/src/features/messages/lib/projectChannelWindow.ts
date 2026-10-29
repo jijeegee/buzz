@@ -18,6 +18,44 @@ import {
 import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
 import { isStoredWindow, storeFollowUp } from "./storedWindows";
 
+/**
+ * When each room last committed a fetched window (relay, or a certain one from
+ * the device store), per query cache. Seeded head caches, the snapshot fetch
+ * that consumes them and live merges never count: they can miss newer rows.
+ */
+const windowCommits = new WeakMap<QueryClient, Map<string, number>>();
+const commitListeners = new Set<() => void>();
+
+/** Calls `listener` after any room commits a fetched window. */
+export function subscribeChannelWindowCommits(listener: () => void) {
+  commitListeners.add(listener);
+  return () => {
+    commitListeners.delete(listener);
+  };
+}
+
+/** The room's last fetched window: when, and its newest row's time. */
+export function channelWindowCommit(
+  queryClient: QueryClient,
+  channelId: string | null,
+): {
+  at: number;
+  newestRowAt: number | null;
+  newestRowId: string | null;
+} | null {
+  const at = channelId ? windowCommits.get(queryClient)?.get(channelId) : null;
+  if (!channelId || at == null) return null;
+  const window = queryClient.getQueryData<ChannelWindowStore>(
+    channelWindowKey(channelId),
+  );
+  const newestRow = window?.pages[0]?.rows[0]?.event;
+  return {
+    at,
+    newestRowAt: newestRow?.created_at ?? null,
+    newestRowId: newestRow?.id ?? null,
+  };
+}
+
 /** Keep the rendered timeline cache aligned with its authoritative window. */
 export function projectChannelWindowMessages(
   queryClient: QueryClient,
@@ -91,6 +129,13 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
+  let commits = windowCommits.get(queryClient);
+  if (!commits) {
+    commits = new Map();
+    windowCommits.set(queryClient, commits);
+  }
+  commits.set(channelId, Date.now());
+  for (const listener of commitListeners) listener();
   // A window from the device store is not persisted; the relay's answer
   // that follows is.
   const scope =

@@ -14,15 +14,24 @@ const CHANNEL_WINDOW_PAGE_SIZE = 50;
 export type PageOlderResult = { hasOlderMessages: boolean };
 const inFlightPasses = new Map<string, Promise<PageOlderResult>>();
 
-/** Fetch exactly one server-defined older window and append it atomically. */
+/**
+ * Fetch exactly one server-defined older window (`pageSize` rows, at most the
+ * relay's 200) and append it atomically.
+ */
 export function pageOlderMessagesUntilRowFloor(
   queryClient: QueryClient,
   channelId: string,
   shouldContinue: () => boolean,
+  pageSize = CHANNEL_WINDOW_PAGE_SIZE,
 ): Promise<PageOlderResult> {
   const running = inFlightPasses.get(channelId);
   if (running) return running;
-  const pass = runPage(queryClient, channelId, shouldContinue).finally(() => {
+  const pass = runPage(
+    queryClient,
+    channelId,
+    shouldContinue,
+    pageSize,
+  ).finally(() => {
     inFlightPasses.delete(channelId);
   });
   inFlightPasses.set(channelId, pass);
@@ -33,6 +42,7 @@ async function runPage(
   queryClient: QueryClient,
   channelId: string,
   shouldContinue: () => boolean,
+  pageSize: number,
 ): Promise<PageOlderResult> {
   const store = queryClient.getQueryData<ChannelWindowStore>(
     channelWindowKey(channelId),
@@ -46,7 +56,7 @@ async function runPage(
   const events = await getChannelWindowEvents(
     channelId,
     requestCursor,
-    CHANNEL_WINDOW_PAGE_SIZE,
+    pageSize,
   );
   if (!shouldContinue()) return { hasOlderMessages: true };
   const page = parseChannelWindowResponse(events, channelId, requestCursor);

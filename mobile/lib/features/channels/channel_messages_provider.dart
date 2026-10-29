@@ -45,6 +45,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _relayHistoryArrived = false;
   Set<String> _cachedHeadIds = const {};
   List<NostrEvent>? _storedHead;
+  bool _followingStoredHead = false;
+  Completer<void>? _storedHeadShown;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
   final Map<String, NostrEvent> _deepLinkEvents = {};
@@ -224,6 +226,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   Future<void> _init() async {
     final initVersion = ++_initVersion;
     _initInFlight = true;
+    _followingStoredHead = false;
     _clearSubscription();
     try {
       final session = ref.read(relaySessionProvider.notifier);
@@ -264,7 +267,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     }
   }
 
-  Future<List<NostrEvent>> _fetchNewestHistory(
+  /// Null when a window opened at a message meanwhile, which it must not
+  /// replace.
+  Future<List<NostrEvent>?> _fetchNewestHistory(
     RelaySessionNotifier session,
   ) async {
     try {
@@ -272,6 +277,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final pageVersion = ++_threadQuerySerial;
       final response = await _openWindowResponse(session);
       _relayHistoryArrived = true;
+      if (_windowStore.isMiddle) {
+        _initialWindowQueryInFlight = false;
+        _liveSummaryRootsDuringInitialWindowQuery.clear();
+        return null;
+      }
       final page = parseChannelWindowResponse(response, channelId, null);
       _initialWindowQueryInFlight = false;
       _windowStore = replaceNewestChannelWindow(

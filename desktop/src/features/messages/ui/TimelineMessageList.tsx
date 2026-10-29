@@ -44,6 +44,8 @@ export type TimelineVirtualizerApi = {
     messageId: string,
     options?: { behavior?: ScrollBehavior },
   ) => boolean;
+  /** Whether the list is landing, hidden, on this message's row. */
+  isLandingAt: (messageId: string) => boolean;
 };
 
 type TimelineMessageListProps = {
@@ -63,6 +65,8 @@ type TimelineMessageListProps = {
   initialAnchorMessageId?: string | null;
   /** Where the anchor's row sits when reopening a remembered position. */
   initialAnchorTopPx?: number | null;
+  /** Linked message the virtualized list opens centred on, when loaded. */
+  initialTargetMessageId?: string | null;
   /** Reports where the reader is (null at the newest message). */
   onReadingPositionChange?: (position: ReadingPosition | null) => void;
   followThreadById?: (rootId: string) => void;
@@ -144,6 +148,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
   firstUnreadMessageId = null,
   initialAnchorMessageId = null,
   initialAnchorTopPx = null,
+  initialTargetMessageId = null,
   onReadingPositionChange,
   followThreadById,
   highlightedMessageId = null,
@@ -351,6 +356,7 @@ export const TimelineMessageList = React.memo(function TimelineMessageList({
         hideDayDividers={hideDayDividers}
         initialAnchorMessageId={initialAnchorMessageId}
         initialAnchorTopPx={initialAnchorTopPx}
+        initialTargetMessageId={initialTargetMessageId}
         leadingContent={leadingContent}
         onAtBottomStateChange={onAtBottomStateChange}
         onReadingPositionChange={onReadingPositionChange}
@@ -435,6 +441,7 @@ type VirtualizedTimelineRowsProps = {
   hideDayDividers: boolean;
   initialAnchorMessageId?: string | null;
   initialAnchorTopPx?: number | null;
+  initialTargetMessageId?: string | null;
   leadingContent?: React.ReactNode;
   onAtBottomStateChange?: (atBottom: boolean) => void;
   onReadingPositionChange?: (position: ReadingPosition | null) => void;
@@ -478,6 +485,7 @@ function VirtualizedTimelineRows({
   hideDayDividers,
   initialAnchorMessageId = null,
   initialAnchorTopPx = null,
+  initialTargetMessageId = null,
   leadingContent,
   onAtBottomStateChange,
   onReadingPositionChange,
@@ -549,8 +557,12 @@ function VirtualizedTimelineRows({
   );
   const onAtBottomStateChangeRef = React.useRef(onAtBottomStateChange);
   onAtBottomStateChangeRef.current = onAtBottomStateChange;
-  const { land: landAtAnchor, cancel: cancelAnchorLanding } =
-    useVirtualizedAnchorLanding(hostRef, listRef, onAtBottomStateChangeRef);
+  const {
+    land: landAtAnchor,
+    landAtBottom,
+    isLandingAt,
+    cancel: cancelAnchorLanding,
+  } = useVirtualizedAnchorLanding(hostRef, listRef, onAtBottomStateChangeRef);
 
   const updatePinnedDayLabel = React.useCallback(
     (offset: number) => {
@@ -697,6 +709,20 @@ function VirtualizedTimelineRows({
     }
     if (!hasInitialPositionedRef.current && items.length > 0) {
       hasInitialPositionedRef.current = true;
+      const targetIndex = initialTargetMessageId
+        ? findAnchorItemIndex(items, initialTargetMessageId, false)
+        : -1;
+      const indexOf = (messageId: string, divider: boolean) => () =>
+        findAnchorItemIndex(itemsRef.current, messageId, divider);
+      if (
+        targetIndex >= 0 &&
+        landAtAnchor(
+          indexOf(initialTargetMessageId ?? "", false),
+          null,
+          "center",
+        )
+      )
+        return;
       const anchorIndex = initialAnchorMessageId
         ? findAnchorItemIndex(
             items,
@@ -704,8 +730,14 @@ function VirtualizedTimelineRows({
             initialAnchorTopPx === null,
           )
         : -1;
-      if (anchorIndex < 0 || !landAtAnchor(anchorIndex, initialAnchorTopPx))
-        settleAtBottom();
+      if (
+        anchorIndex < 0 ||
+        !landAtAnchor(
+          indexOf(initialAnchorMessageId ?? "", initialAnchorTopPx === null),
+          initialAnchorTopPx,
+        )
+      )
+        landAtBottom(settleAtBottom);
     }
   }, [isPrepend, items.length, keys, settleAtBottom]);
 
@@ -755,12 +787,17 @@ function VirtualizedTimelineRows({
         listRef.current?.scrollToIndex(index, { align: "center" });
         return true;
       },
+      isLandingAt(messageId) {
+        const index = messageItemIndexByIdRef.current.get(messageId);
+        return index !== undefined && isLandingAt(index);
+      },
     };
     onVirtualizerApiChange(api);
     return () => onVirtualizerApiChange(null);
   }, [
     cancelAnchorLanding,
     cancelBottomSettle,
+    isLandingAt,
     onVirtualizerApiChange,
     settleAtBottom,
   ]);

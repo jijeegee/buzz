@@ -12,6 +12,7 @@ import {
   replaceNewestChannelWindow,
 } from "./channelWindowStore.ts";
 import {
+  channelWindowCommit,
   projectChannelWindowMessages,
   refreshChannelWindowMessages,
 } from "./projectChannelWindow.ts";
@@ -486,4 +487,31 @@ test("test_refresh_failure_retains_cached_rows_and_success_clears_error", async 
   } finally {
     unsubscribe();
   }
+});
+
+test("only a fetched window counts as the room's commit, not seeds or live rows", () => {
+  const harness = createHarness();
+  // A seeded window (head cache) and live merges commit nothing.
+  assert.equal(channelWindowCommit(harness.client, harness.channelId), null);
+  appendLiveEvent(harness, event("live", 300));
+  assert.equal(channelWindowCommit(harness.client, harness.channelId), null);
+  const before = Date.now();
+  reconcileFetchedChannelWindow(
+    harness.client,
+    harness.channelId,
+    wirePage([event("fetched", 200)]),
+    [],
+    new AbortController().signal,
+    false,
+  );
+  const commit = channelWindowCommit(harness.client, harness.channelId);
+  assert.ok(commit.at >= before);
+  assert.equal(commit.newestRowAt, 200);
+  // A later live row leaves the commit's newest page row as it was.
+  appendLiveEvent(harness, event("later", 400));
+  assert.equal(
+    channelWindowCommit(harness.client, harness.channelId).newestRowAt,
+    200,
+  );
+  assert.equal(channelWindowCommit(new QueryClient(), harness.channelId), null);
 });

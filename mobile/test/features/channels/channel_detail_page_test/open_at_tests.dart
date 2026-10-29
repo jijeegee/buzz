@@ -47,12 +47,23 @@ void openAtTests() {
   group('Opening at a message', () {
     final rows = [for (var n = 100; n < 300; n++) _openAtRow(n)];
 
+    ReadStateState readAt(int? firstUnread, {bool isReady = true}) =>
+        ReadStateState(
+          isReady: isReady,
+          pubkey: 'self',
+          contexts: {
+            _channelId: firstUnread == null ? 2000 : 999 + firstUnread,
+          },
+          version: 0,
+        );
+
     Widget testable(
       _WindowRelaySession session, {
       bool newerPages = true,
       String? initialMessageId,
       int? firstUnread,
       Widget? home,
+      _SynchronousReadStateNotifier? readState,
     }) => _buildTestable(
       home: home,
       huddleCurrentPubkey: 'self',
@@ -79,16 +90,8 @@ void openAtTests() {
             ],
         },
       ),
-      readStateNotifier: _SynchronousReadStateNotifier(
-        ReadStateState(
-          isReady: true,
-          pubkey: 'self',
-          contexts: {
-            _channelId: firstUnread == null ? 2000 : 999 + firstUnread,
-          },
-          version: 0,
-        ),
-      ),
+      readStateNotifier:
+          readState ?? _SynchronousReadStateNotifier(readAt(firstUnread)),
     );
 
     void useTallView(WidgetTester tester) {
@@ -386,5 +389,109 @@ void openAtTests() {
       expect(findRichText('row 150'), findsOneWidget);
       expect(store.read(_channelId), isNull);
     });
+
+    testWidgets(
+      'a read state ready within a second opens at the first unread',
+      (tester) async {
+        useTallView(tester);
+        final readState = _LateReadStateNotifier(readAt(150, isReady: false));
+        await tester.pumpWidget(
+          testable(
+            _WindowRelaySession(rows),
+            firstUnread: 150,
+            readState: readState,
+          ),
+        );
+        await tester.pump(const Duration(milliseconds: 400));
+        // Nothing is drawn at the newest rows while the read state loads.
+        expect(timelineVisible(tester), isFalse);
+
+        readState.becomeReady(readAt(150));
+        await tester.pumpAndSettle();
+        expect(
+          find.byKey(const ValueKey('channel-new-messages-divider')),
+          findsOneWidget,
+        );
+        expect(findRichText('row 150'), findsOneWidget);
+        expect(findRichText('row 299'), findsNothing);
+        expect(notifierOf(tester).isInMiddleWindow, isTrue);
+      },
+    );
+
+    testWidgets(
+      'a read marker from another device keeps the divider and position',
+      (tester) async {
+        useTallView(tester);
+        final readState = _LateReadStateNotifier(readAt(150));
+        await tester.pumpWidget(
+          testable(
+            _WindowRelaySession(rows),
+            firstUnread: 150,
+            readState: readState,
+          ),
+        );
+        await tester.pumpAndSettle();
+        final divider = find.byKey(
+          const ValueKey('channel-new-messages-divider'),
+        );
+        expect(divider, findsOneWidget);
+        final before = tester.getRect(findRichText('row 150').first);
+
+        // Another device reads the whole room while it is open here.
+        readState.becomeReady(
+          const ReadStateState(
+            isReady: true,
+            pubkey: 'self',
+            contexts: {_channelId: 2000},
+            version: 1,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(divider, findsOneWidget);
+        expect(tester.getRect(findRichText('row 150').first), before);
+      },
+    );
+
+    testWidgets('without the read state in a second it opens at the newest', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final store = await positionStore(tester);
+      saveRow(store, 150);
+      await tester.pumpWidget(
+        testable(
+          _WindowRelaySession(rows),
+          readState: _LateReadStateNotifier(readAt(null, isReady: false)),
+        ),
+      );
+      await tester.pump(readStateOpenWait ~/ 2);
+      expect(timelineVisible(tester), isFalse);
+      await tester.pump(readStateOpenWait);
+      await tester.pumpAndSettle();
+
+      expect(timelineVisible(tester), isTrue);
+      expect(findRichText('row 299'), findsOneWidget);
+      expect(notifierOf(tester).isInMiddleWindow, isFalse);
+    });
   });
 }
+
+/// A read state that is not ready until the test says so.
+class _LateReadStateNotifier extends _SynchronousReadStateNotifier {
+  _LateReadStateNotifier(super.initial);
+
+  void becomeReady(ReadStateState ready) => state = ready;
+}
+
+/// A signed-in test page gets a read state that is already loaded, so it
+/// does not wait out readStateOpenWait for a relay that never answers.
+ReadStateNotifier? _readyFor(String? pubkey) => pubkey == null
+    ? null
+    : _SynchronousReadStateNotifier(
+        ReadStateState(
+          isReady: true,
+          pubkey: pubkey,
+          contexts: const {},
+          version: 0,
+        ),
+      );

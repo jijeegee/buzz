@@ -46,6 +46,7 @@ import {
 } from "@/features/messages/hooks";
 import { buildMessageComposerEditTarget } from "@/features/messages/lib/draftMentionRefs";
 import { formatTimelineMessages } from "@/features/messages/lib/formatTimelineMessages";
+import { useChannelWindowCommit } from "@/features/messages/useChannelWindowCommit";
 import { DeleteMessageConfirmDialog } from "@/features/messages/ui/DeleteMessageConfirmDialog";
 import {
   getThreadReference,
@@ -90,10 +91,7 @@ import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
 import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
-import {
-  type ReadingPosition,
-  readingPositionStore,
-} from "@/features/channels/readingPositionStore";
+import { readingPositionScope } from "@/features/channels/readingPositionStore";
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
@@ -134,6 +132,7 @@ export function ChannelScreen({
     recordThreadInteraction,
     isThreadMuted,
     readStateVersion,
+    isReadStateReady,
   } = useAppShell();
   const {
     agentSessionReturnThreadId,
@@ -249,11 +248,6 @@ export function ChannelScreen({
   const activeReadAt = latestActiveMessage
     ? new Date(latestActiveMessage.created_at * 1_000).toISOString()
     : null;
-  useChannelOpenReadState(
-    activeChannelId,
-    activeChannel?.isMember,
-    activeReadAt,
-  );
   React.useEffect(() => {
     if (!activeChannelId) {
       setContextParentResolver(null);
@@ -485,6 +479,9 @@ export function ChannelScreen({
     isMessageUnread,
     markRevealedRepliesRead,
     openFrontierSeconds,
+    isOpenFrontierPending,
+    isOpenFrontierUnknown,
+    threadOpenRead,
     openThreadHeadMessage,
     threadFirstUnreadReplyId,
     threadReplyTargetMessage,
@@ -506,7 +503,14 @@ export function ChannelScreen({
     markMessageRead,
     isThreadMuted,
     readStateVersion,
+    isReadStateReady,
   });
+  // Opening marks the channel read only once its open frontier is taken.
+  useChannelOpenReadState(
+    isOpenFrontierPending ? null : activeChannelId,
+    activeChannel?.isMember,
+    activeReadAt,
+  );
   const editTargetMessage = React.useMemo(
     () =>
       timelineMessages.find((message) => message.id === editTargetId) ??
@@ -648,24 +652,26 @@ export function ChannelScreen({
       setThreadReplyTargetId,
       setThreadScrollTargetId,
     });
+  const positionScope = readingPositionScope(
+    currentPubkey,
+    activeCommunity?.relayUrl,
+  );
+  const windowCommit = useChannelWindowCommit(queryClient, activeChannelId);
   const openAnchor = useChannelOpenAnchor({
     channelId: activeChannelId,
-    pubkey: currentPubkey,
+    positionScope,
     messages: messagesQuery.data,
+    windowCommit,
+    lastMessageAt: activeChannel?.lastMessageAt ?? null,
     frontierSeconds: openFrontierSeconds,
+    frontierPending: isOpenFrontierPending,
+    frontierUnknown: isOpenFrontierUnknown,
     firstUnreadMessageId,
     hasOlderMessages,
     isFetchingOlder,
     fetchOlder,
     opensElsewhere: Boolean(targetMessageId) || isHuddleTranscript,
   });
-  const handleReadingPositionChange = React.useCallback(
-    (position: ReadingPosition | null) => {
-      if (!currentPubkey || !activeChannelId) return;
-      readingPositionStore.set(currentPubkey, activeChannelId, position);
-    },
-    [activeChannelId, currentPubkey],
-  );
   const settledChannelIdRef = React.useRef<string | null>(null);
   const { settledChannelId, isLoading: isTimelineQueryLoading } =
     resolveTimelineQueryLoadingState(
@@ -686,7 +692,12 @@ export function ChannelScreen({
   settledChannelIdRef.current = settledChannelId;
   // Hold the skeleton while the open position is still being found, so the
   // list mounts once, already at that position.
-  const isTimelineLoading = isTimelineQueryLoading || openAnchor.isResolving;
+  const isTimelineLoading =
+    isTimelineQueryLoading ||
+    openAnchor.isResolving ||
+    (Boolean(targetMessageId) &&
+      isRouteTargetResolving &&
+      !messagesQuery.data?.some((event) => event.id === targetMessageId));
   const { welcomeKickoffStage, welcomeKickoffSettingUp } =
     useWelcomeKickoffStagePresence(
       activeChannel,
@@ -742,7 +753,11 @@ export function ChannelScreen({
   const displayedThreadAllMessages = threadPanelData.messages;
   const displayedThreadMessages = threadPanelData.visibleReplies;
   const displayedThreadReplyTargetMessage = threadPanelData.replyTargetMessage;
-  useThreadOpenServerRead(displayedThreadHeadMessage, displayedThreadMessages);
+  // A thread read is sent only once the thread has decided where it opens.
+  useThreadOpenServerRead(
+    threadOpenRead === "pending" ? null : displayedThreadHeadMessage,
+    displayedThreadMessages,
+  );
   const displayedThreadFirstUnreadReplyId = displayedThreadHeadMessage
     ? threadFirstUnreadReplyId
     : null;
@@ -959,6 +974,7 @@ export function ChannelScreen({
                   channelManagementInitialView={channelManagementInitialView}
                   channelManagementOpen={channelManagementOpen}
                   currentPubkey={currentPubkey}
+                  readingPositionScope={positionScope}
                   canResetThreadPanelWidth={canResetThreadPanelWidth}
                   fetchOlder={fetchOlder}
                   header={channelHeader}
@@ -1078,7 +1094,7 @@ export function ChannelScreen({
                   firstUnreadMessageId={firstUnreadMessageId}
                   initialAnchorMessageId={openAnchor.anchorMessageId}
                   initialAnchorTopPx={openAnchor.anchorTopPx}
-                  onReadingPositionChange={handleReadingPositionChange}
+                  onReadingPositionChange={openAnchor.savePosition}
                   unreadCount={unreadCount}
                   targetMessageId={mainTimelineTargetMessageId}
                   threadAllMessages={displayedThreadAllMessages}
@@ -1109,6 +1125,7 @@ export function ChannelScreen({
                   threadUnreadCounts={threadUnreadCounts}
                   threadReplyUnreadCounts={threadReplyUnreadCounts}
                   threadFirstUnreadReplyId={displayedThreadFirstUnreadReplyId}
+                  threadOpenRead={threadOpenRead}
                   isJoining={joinChannelMutation.isPending}
                   onJoinChannel={joinChannelMutation.mutateAsync}
                     typingPubkeys={humanTypingPubkeys}

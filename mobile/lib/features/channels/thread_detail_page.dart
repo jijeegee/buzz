@@ -75,6 +75,7 @@ import 'small_avatar.dart';
 import 'sticky_date_header.dart';
 import 'timeline_message.dart';
 import 'unread_badge/observed_unread_event.dart';
+import 'read_state_wait.dart';
 import 'window_anchor.dart';
 
 part 'thread_detail_page/nested_thread_summary_row.dart';
@@ -369,35 +370,25 @@ class ThreadDetailPage extends HookConsumerWidget {
     }
     // A link or notification opens at its reply, unread replies at the first
     // of them, and otherwise a saved position at its reply, instead of the
-    // newest reply. The list waits for that window out of sight rather than
-    // drawing the newest replies first.
-    final openTarget = useMemoized(() {
-      final messageId = initialMessageId;
-      if (messageId != null) {
-        return messageId == threadHead.id
-            ? null
-            : _ThreadOpenTarget(id: messageId);
-      }
-      final unread = initialUnreadReplies.value?.firstOrNull;
-      if (unread != null) {
-        return _ThreadOpenTarget(
-          id: unread.id,
-          createdAt: unread.createdAt,
-          isUnread: true,
-        );
-      }
-      // Unread replies are only known once the read state is: until then a
-      // saved position could hide them.
-      final saved = savedPosition;
-      if (!readState.isReady || saved == null) return null;
-      return _ThreadOpenTarget(
-        id: saved.id,
-        createdAt: saved.createdAt,
-        edge: saved.edge,
-      );
-    });
+    // newest reply. The list waits for that window (and up to a second for
+    // the read state) out of sight rather than drawing the newest replies.
+    final readDecided = useReadStateDecided(
+      waits: initialMessageId == null,
+      isReady: readState.isReady || readState.pubkey == null,
+    );
+    final openTarget = useMemoized(
+      () => readDecided
+          ? _threadOpenTarget(
+              linkedId: initialMessageId,
+              headId: threadHead.id,
+              unread: initialUnreadReplies.value?.firstOrNull,
+              saved: readState.isReady ? savedPosition : null,
+            )
+          : null,
+      [readDecided],
+    );
     final openPhase = useState(
-      openTarget != null || windowHasNewer
+      openTarget != null || windowHasNewer || !readDecided
           ? _ThreadOpenPhase.opening
           : _ThreadOpenPhase.none,
     );
@@ -431,14 +422,22 @@ class ThreadDetailPage extends HookConsumerWidget {
             }),
       );
       return null;
-    }, const []);
+    }, [readDecided]);
     useEffect(
       () {
         if (openPhase.value != _ThreadOpenPhase.opening ||
-            didStartOpening.value) {
+            didStartOpening.value ||
+            !readDecided) {
           return null;
         }
         final target = openTarget;
+        if (target == null && !windowHasNewer) {
+          didStartOpening.value = true;
+          scheduleMicrotask(() {
+            if (context.mounted) openPhase.value = _ThreadOpenPhase.none;
+          });
+          return null;
+        }
         if (target == null) {
           // A window left open at a reply by an earlier visit; this visit has
           // nothing to open at, so it starts at the newest replies.
@@ -497,6 +496,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         supportsOpenAt.value,
         canUseMessagesForInitialTarget,
         relayRepliesAvailable,
+        readDecided,
       ],
     );
     // The window shows once the thread query is in too; a query that failed

@@ -55,6 +55,8 @@ import { UnreadDivider } from "./UnreadDivider";
 import { useComposerHeightPadding } from "./useComposerHeightPadding";
 import { useStableSendToChannel } from "./useStableSendToChannel";
 import { useAnchoredScroll } from "./useAnchoredScroll";
+import { useThreadReadingPositionReport } from "./useThreadReadingPositionReport";
+import type { ReadingPosition } from "@/features/channels/readingPositionStore";
 import { useLoadOlderOnScroll } from "./useLoadOlderOnScroll";
 import {
   type GoalLinkTarget,
@@ -103,6 +105,9 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   onScrollTargetResolved: () => void;
   onScrollTargetSettled?: (messageId: string) => void;
   scrollTargetHighlights?: boolean;
+  /** Where an unhighlighted target sits below the top; null centres it. */
+  scrollTargetTopPx?: number | null;
+  onReadingPositionChange?: (position: ReadingPosition | null) => void;
   searchMessageId?: string | null;
   searchQuery?: string;
   onSelectReplyTarget: (message: TimelineMessage) => void;
@@ -143,7 +148,7 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   /** Older replies remain above the loaded ones (newest-first threads). */
   hasOlderReplies?: boolean;
   isFetchingOlderReplies?: boolean;
-  onFetchOlderReplies?: () => Promise<void>;
+  onFetchOlderReplies?: () => Promise<unknown>;
   /** Scrolls the room beside the panel to this thread's root message. */
   onShowInChannel?: () => void;
   threadUnreadCount?: number;
@@ -232,6 +237,8 @@ export function MessageThreadPanel({
   replyTargetMessage,
   scrollTargetId,
   scrollTargetHighlights = true,
+  scrollTargetTopPx = null,
+  onReadingPositionChange,
   searchMessageId,
   searchQuery,
   threadHead,
@@ -578,7 +585,13 @@ export function MessageThreadPanel({
     pinTargetCentered: !scrollTargetHighlights,
     scrollContainerRef: threadBodyRef,
     targetMessageId: scrollTargetId,
+    targetTopPx: scrollTargetTopPx,
   });
+  useThreadReadingPositionReport(
+    threadBodyRef,
+    onReadingPositionChange,
+    threadHeadId,
+  );
   useLoadOlderOnScroll({
     fetchOlder: onFetchOlderReplies,
     hasOlderMessages: hasOlderReplies,

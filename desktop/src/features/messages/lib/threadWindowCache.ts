@@ -256,21 +256,23 @@ export async function loadOlderThreadReplies(
   queryClient: QueryClient,
   channelId: string,
   rootId: string,
-): Promise<void> {
+  limitRows = THREAD_PAGE_ROWS,
+): Promise<boolean> {
   const stateKey = threadWindowStateKey(channelId, rootId);
   const state = queryClient.getQueryData<ThreadWindowState>(stateKey);
-  if (!state?.hasOlder || !state.olderCursor) return;
+  if (!state?.hasOlder || !state.olderCursor) return false;
   const page = await fetchThreadPage(
     channelId,
     rootId,
     state.olderCursor,
-    THREAD_PAGE_ROWS,
+    limitRows,
   );
-  if (!page) return;
+  if (!page) return false;
   // A newest-page reload may have restarted the cache meanwhile; this page
   // then no longer borders what is cached.
   const current = queryClient.getQueryData<ThreadWindowState>(stateKey);
-  if (!current || !sameCursor(current.olderCursor, state.olderCursor)) return;
+  if (!current || !sameCursor(current.olderCursor, state.olderCursor))
+    return false;
   const repliesKey = threadRepliesKey(channelId, rootId);
   const merged = mergeOlderThreadPage(
     queryClient.getQueryData<RelayEvent[]>(repliesKey),
@@ -279,6 +281,7 @@ export async function loadOlderThreadReplies(
   );
   queryClient.setQueryData(repliesKey, merged.events);
   queryClient.setQueryData(stateKey, merged.state);
+  return true;
 }
 
 /**

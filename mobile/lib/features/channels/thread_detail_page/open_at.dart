@@ -38,6 +38,34 @@ class _ThreadOpenTarget {
   final double? edge;
 }
 
+/// Where a thread opens: a linked reply ([linkedId]; the head itself opens
+/// at the newest), else the first [unread] reply, else a [saved] position
+/// (only passed once the read state is known: before that it could hide
+/// unread replies).
+_ThreadOpenTarget? _threadOpenTarget({
+  required String? linkedId,
+  required String headId,
+  required ObservedUnreadEvent? unread,
+  required RoomPosition? saved,
+}) {
+  if (linkedId != null) {
+    return linkedId == headId ? null : _ThreadOpenTarget(id: linkedId);
+  }
+  if (unread != null) {
+    return _ThreadOpenTarget(
+      id: unread.id,
+      createdAt: unread.createdAt,
+      isUnread: true,
+    );
+  }
+  if (saved == null) return null;
+  return _ThreadOpenTarget(
+    id: saved.id,
+    createdAt: saved.createdAt,
+    edge: saved.edge,
+  );
+}
+
 /// The list a thread window is drawn in: a new [epoch] draws a new list at
 /// [index] and [alignment] from its first frame.
 class _ThreadListPlacement {

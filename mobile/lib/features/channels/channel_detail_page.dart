@@ -105,6 +105,7 @@ import 'small_avatar.dart';
 import 'sticky_date_header.dart';
 import 'thread_depth.dart';
 import 'thread_detail_page.dart';
+import 'read_state_wait.dart';
 import 'thread_replies_provider.dart';
 import 'thread_name_provider.dart';
 import 'timeline_message.dart';
@@ -123,6 +124,7 @@ part 'channel_detail_page/message_bubble.dart';
 part 'channel_detail_page/banners.dart';
 part 'channel_detail_page/app_bar.dart';
 part 'channel_detail_page/direct_thread.dart';
+part 'channel_detail_page/open_target.dart';
 
 /// Fetch deep-link targets that may be outside the loaded channel window.
 Future<void> _loadDeepLinkEvents(
@@ -289,59 +291,6 @@ enum InitialThreadRouteBehavior {
 
   /// Replace the temporary channel route so Back returns to its origin.
   replaceCurrentRoute,
-}
-
-/// Where a channel page is in opening its timeline at a message.
-enum _OpenPhase {
-  /// The timeline opens at the newest rows, as it always did.
-  none,
-
-  /// Waiting for the window around the message; nothing is drawn yet.
-  opening,
-
-  /// The window is in; the list settles its first position out of sight.
-  positioning,
-
-  /// The list shows the window opened at the message.
-  opened,
-}
-
-/// The messages a page may open at; the oldest one found is used.
-class _OpenTarget {
-  const _OpenTarget({
-    required this.ids,
-    required this.isUnread,
-    this.knownCreatedAt = const {},
-    this.edge,
-  });
-
-  final Set<String> ids;
-  final bool isUnread;
-  final Map<String, int> knownCreatedAt;
-
-  /// Where a saved position had its row, when the target is one.
-  final double? edge;
-}
-
-/// The message the timeline window was opened at.
-class _OpenedAt {
-  const _OpenedAt({
-    required this.messageId,
-    required this.createdAt,
-    required this.isUnread,
-    this.edge,
-  });
-
-  final String messageId;
-  final int createdAt;
-
-  /// The first unread message: it gets the "New messages" divider and sits
-  /// at the top of the timeline rather than near its middle.
-  final bool isUnread;
-
-  /// A saved position's row goes back where it was: its bottom edge as a
-  /// fraction of the timeline's height from the bottom.
-  final double? edge;
 }
 
 /// Channel pages on screen or under other routes, oldest first.
@@ -744,10 +693,17 @@ class ChannelDetailPage extends HookConsumerWidget {
 
     // A link or notification opens at its message, unread messages at the
     // first of them, and otherwise a saved position at its row, instead of
-    // the newest row. The list waits for that window rather than drawing the
-    // newest rows first.
+    // the newest row. The list waits for that window (and up to a second for
+    // the read state) rather than drawing the newest rows first.
+    final readDecided = useReadStateDecided(
+      waits:
+          !channel.isForum &&
+          initialThreadRootId == null &&
+          initialMessageId == null,
+      isReady: readState.isReady || readState.pubkey == null,
+    );
     final openTarget = useMemoized(
-      () => channel.isForum || initialThreadRootId != null
+      () => !readDecided || channel.isForum || initialThreadRootId != null
           ? null
           : initialMessageId != null
           ? _OpenTarget(ids: {initialMessageId!}, isUnread: false)
@@ -774,9 +730,11 @@ class ChannelDetailPage extends HookConsumerWidget {
               edge: savedPosition.edge,
             )
           : null,
+      [readDecided],
     );
     final openPhase = useState(
       openTarget != null ||
+              !readDecided ||
               (messagesNotifier.isInMiddleWindow && messagesNotifier.hasNewer)
           ? _OpenPhase.opening
           : _OpenPhase.none,
@@ -802,13 +760,25 @@ class ChannelDetailPage extends HookConsumerWidget {
         }),
       );
       return null;
-    }, const []);
+    }, [readDecided]);
     useEffect(() {
-      if (openPhase.value != _OpenPhase.opening || didStartOpening.value) {
+      if (openPhase.value != _OpenPhase.opening ||
+          didStartOpening.value ||
+          !readDecided) {
         return null;
       }
       final Future<bool> opening;
       final target = openTarget;
+      if (target == null &&
+          !(messagesNotifier.isInMiddleWindow && messagesNotifier.hasNewer)) {
+        // The read state decided there is nothing to open at; the phase
+        // changes after this build.
+        didStartOpening.value = true;
+        scheduleMicrotask(() {
+          if (context.mounted) openPhase.value = _OpenPhase.none;
+        });
+        return null;
+      }
       if (target == null) {
         // A window left open at a message by an earlier visit; this visit
         // has nothing to open at, so it starts at the newest rows.
@@ -860,7 +830,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         }),
       );
       return null;
-    }, [deepLinkLoads.value, messagesState.value]);
+    }, [deepLinkLoads.value, messagesState.value, readDecided]);
     final isOpenedAtMessage =
         openPhase.value == _OpenPhase.positioning ||
         openPhase.value == _OpenPhase.opened;

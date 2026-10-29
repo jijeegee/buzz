@@ -49,33 +49,41 @@ export function useFetchOlderMessages(channel: Channel | null) {
       emptyChannelWindowStore(),
   });
 
-  const fetchOlder = useCallback(async () => {
-    if (!channelId || isFetchingOlderRef.current) {
-      return;
-    }
-    const store =
-      queryClient.getQueryData<ChannelWindowStore>(
-        channelWindowKey(channelId),
-      ) ?? emptyChannelWindowStore();
-    if (!channelWindowHasMore(store)) {
-      return;
-    }
+  /** Whether a page was appended; false when skipped or it failed. */
+  const fetchOlder = useCallback(
+    async (pageSize?: number) => {
+      if (!channelId || isFetchingOlderRef.current) {
+        return false;
+      }
+      const store =
+        queryClient.getQueryData<ChannelWindowStore>(
+          channelWindowKey(channelId),
+        ) ?? emptyChannelWindowStore();
+      if (!channelWindowHasMore(store)) {
+        return false;
+      }
 
-    isFetchingOlderRef.current = true;
-    setIsFetchingOlder(true);
-    try {
-      await pageOlderMessagesUntilRowFloor(
-        queryClient,
-        channelId,
-        () => channelId === channel?.id,
-      );
-    } catch (error) {
-      console.error("Failed to fetch older messages", channelId, error);
-    } finally {
-      isFetchingOlderRef.current = false;
-      setIsFetchingOlder(false);
-    }
-  }, [channel?.id, channelId, queryClient]);
+      isFetchingOlderRef.current = true;
+      setIsFetchingOlder(true);
+      try {
+        await pageOlderMessagesUntilRowFloor(
+          queryClient,
+          channelId,
+          () => channelId === channel?.id,
+          // Callers wired as event handlers pass an event here.
+          typeof pageSize === "number" ? pageSize : undefined,
+        );
+        return true;
+      } catch (error) {
+        console.error("Failed to fetch older messages", channelId, error);
+        return false;
+      } finally {
+        isFetchingOlderRef.current = false;
+        setIsFetchingOlder(false);
+      }
+    },
+    [channel?.id, channelId, queryClient],
+  );
 
   return { fetchOlder, isFetchingOlder, hasOlderMessages, historyExhausted };
 }

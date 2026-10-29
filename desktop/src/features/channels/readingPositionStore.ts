@@ -1,8 +1,9 @@
 /**
- * Per-pubkey localStorage record of where the reader left each channel's main
- * timeline: the message at the top of the view and its distance from the
- * scroller top. A channel left at its newest message has no entry, so it opens
- * at the newest message again.
+ * Per-server, per-account localStorage record of where the reader left each
+ * channel's main timeline (and each thread, keyed `channelId/rootId`): the
+ * message at the top of the view and its distance from the scroller top. A
+ * channel left at its newest message has no entry, so it opens at the newest
+ * message again.
  *
  * Device-local and best-effort; never synced to the relay.
  */
@@ -16,9 +17,59 @@ export type ReadingPosition = {
 /** channelId → where the reader left that channel. */
 type ReadingPositionMap = Record<string, ReadingPosition>;
 
-const STORAGE_PREFIX = "kuzz-reading-position.v1";
+/** Before positions were kept per server: one record per account. */
+const LEGACY_STORAGE_PREFIX = "kuzz-reading-position.v1";
+const STORAGE_PREFIX = "kuzz-reading-position.v2";
 export const MAX_READING_POSITION_ENTRIES = 300;
-const storageKey = (pubkey: string) => `${STORAGE_PREFIX}:${pubkey}`;
+const storageKey = (scope: string) => `${STORAGE_PREFIX}:${scope}`;
+
+/**
+ * `https://host[:port]` for a relay URL, the same server identity the device
+ * message store files use (src-tauri message_store `http_origin`), so a socket
+ * and a query to one server share a record.
+ */
+function httpOrigin(relayUrl: string): string | null {
+  try {
+    const url = new URL(relayUrl.trim());
+    const scheme =
+      url.protocol === "wss:" || url.protocol === "https:"
+        ? "https"
+        : url.protocol === "ws:" || url.protocol === "http:"
+          ? "http"
+          : null;
+    if (scheme === null || !url.hostname) return null;
+    return `${scheme}://${url.host.toLowerCase()}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * The record a reader's positions live in: one per server and account. Null
+ * (nothing is kept) without both.
+ */
+export function readingPositionScope(
+  pubkey: string | null | undefined,
+  relayUrl: string | null | undefined,
+): string | null {
+  const origin = relayUrl ? httpOrigin(relayUrl) : null;
+  if (!pubkey || origin === null) return null;
+  return `${origin}|${pubkey}`;
+}
+
+/**
+ * Moves a pre-server record of the scope's account into the scope the first
+ * time that account reads on any server, then drops the old record.
+ */
+function migrateLegacy(scope: string) {
+  const legacyKey = `${LEGACY_STORAGE_PREFIX}:${scope.slice(scope.lastIndexOf("|") + 1)}`;
+  const legacy = window.localStorage.getItem(legacyKey);
+  if (legacy === null) return;
+  if (window.localStorage.getItem(storageKey(scope)) === null) {
+    window.localStorage.setItem(storageKey(scope), legacy);
+  }
+  window.localStorage.removeItem(legacyKey);
+}
 
 function isReadingPosition(value: unknown): value is ReadingPosition {
   return (
@@ -33,9 +84,10 @@ function isReadingPosition(value: unknown): value is ReadingPosition {
   );
 }
 
-function readMap(pubkey: string): ReadingPositionMap {
+function readMap(scope: string): ReadingPositionMap {
   try {
-    const raw = window.localStorage.getItem(storageKey(pubkey));
+    migrateLegacy(scope);
+    const raw = window.localStorage.getItem(storageKey(scope));
     if (!raw) return {};
     const parsed: unknown = JSON.parse(raw);
     if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed))
@@ -55,15 +107,15 @@ function readMap(pubkey: string): ReadingPositionMap {
   }
 }
 
-function writeMap(pubkey: string, map: ReadingPositionMap) {
+function writeMap(scope: string, map: ReadingPositionMap) {
   try {
     const entries = Object.entries(map);
     if (entries.length === 0) {
-      window.localStorage.removeItem(storageKey(pubkey));
+      window.localStorage.removeItem(storageKey(scope));
       return;
     }
     window.localStorage.setItem(
-      storageKey(pubkey),
+      storageKey(scope),
       JSON.stringify(
         Object.fromEntries(entries.slice(-MAX_READING_POSITION_ENTRIES)),
       ),
@@ -74,13 +126,14 @@ function writeMap(pubkey: string, map: ReadingPositionMap) {
 }
 
 export const readingPositionStore = {
-  get(pubkey: string, channelId: string): ReadingPosition | null {
-    return readMap(pubkey)[channelId] ?? null;
+  /** `scope` comes from readingPositionScope. */
+  get(scope: string, channelId: string): ReadingPosition | null {
+    return readMap(scope)[channelId] ?? null;
   },
 
   /** Records `position` for `channelId`, or forgets it when null. */
-  set(pubkey: string, channelId: string, position: ReadingPosition | null) {
-    const map = readMap(pubkey);
+  set(scope: string, channelId: string, position: ReadingPosition | null) {
+    const map = readMap(scope);
     const current = map[channelId];
     if (position === null) {
       if (current === undefined) return;
@@ -93,6 +146,6 @@ export const readingPositionStore = {
       delete map[channelId];
       map[channelId] = { messageId: position.messageId, topPx };
     }
-    writeMap(pubkey, map);
+    writeMap(scope, map);
   },
 };

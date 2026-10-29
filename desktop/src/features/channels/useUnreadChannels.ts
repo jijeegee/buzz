@@ -995,6 +995,8 @@ export function useUnreadChannels(
     setContextParentResolver,
     /** Local read markers are complete (every relay slot merged). */
     isReadStateInitialized,
+    /** The read state finished its first load (local and relay). */
+    isReadStateReady,
     /** Mirror the user's own reads to the relay's chat state (Chats S4). */
     setReadStateServerMirror,
     participatedRootIds,

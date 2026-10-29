@@ -59,6 +59,8 @@ void threadOpenAtTests() {
       bool newerPages = true,
       String? initialMessageId,
       int? firstUnread,
+      bool readReady = true,
+      _SynchronousReadStateNotifier? readState,
     }) => _buildTestable(
       messages: [_openAtRoot],
       relaySessionNotifier: session,
@@ -82,16 +84,18 @@ void threadOpenAtTests() {
             ],
         },
       ),
-      readStateNotifier: _SynchronousReadStateNotifier(
-        ReadStateState(
-          isReady: true,
-          pubkey: 'self',
-          contexts: {
-            _channelId: firstUnread == null ? 2000 : 999 + firstUnread,
-          },
-          version: 0,
-        ),
-      ),
+      readStateNotifier:
+          readState ??
+          _SynchronousReadStateNotifier(
+            ReadStateState(
+              isReady: readReady,
+              pubkey: 'self',
+              contexts: {
+                _channelId: firstUnread == null ? 2000 : 999 + firstUnread,
+              },
+              version: 0,
+            ),
+          ),
       home: ThreadDetailPage(
         threadHead: formatTimeline([_openAtRoot]).single,
         allMessages: formatTimeline([
@@ -337,5 +341,99 @@ void threadOpenAtTests() {
       await tester.pumpWidget(const SizedBox());
       expect(store.read(threadRoomKey(_channelId, _openAtRootId)), isNull);
     });
+
+    testWidgets('a late read state still opens at the first unread reply', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final readState = _LateReadStateNotifier(
+        ReadStateState(
+          isReady: false,
+          pubkey: 'self',
+          contexts: const {_channelId: 999 + 150},
+          version: 0,
+        ),
+      );
+      await tester.pumpWidget(
+        testable(
+          _ThreadWindowRelaySession(replies),
+          firstUnread: 150,
+          readState: readState,
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(listVisible(tester), isFalse);
+
+      readState.becomeReady(
+        const ReadStateState(
+          isReady: true,
+          pubkey: 'self',
+          contexts: {_channelId: 999 + 150},
+          version: 0,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(divider, findsOneWidget);
+      expect(findRichText('row 150'), findsOneWidget);
+      expect(findRichText('row 299'), findsNothing);
+    });
+
+    testWidgets(
+      'a read marker from another device keeps the thread divider and position',
+      (tester) async {
+        useTallView(tester);
+        final readState = _LateReadStateNotifier(
+          const ReadStateState(
+            isReady: true,
+            pubkey: 'self',
+            contexts: {_channelId: 999 + 150},
+            version: 0,
+          ),
+        );
+        await tester.pumpWidget(
+          testable(
+            _ThreadWindowRelaySession(replies),
+            firstUnread: 150,
+            readState: readState,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(divider, findsOneWidget);
+        final before = tester.getRect(findRichText('row 150').first);
+
+        // Another device reads the whole thread while it is open here.
+        readState.becomeReady(
+          const ReadStateState(
+            isReady: true,
+            pubkey: 'self',
+            contexts: {_channelId: 2000},
+            version: 1,
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(divider, findsOneWidget);
+        expect(tester.getRect(findRichText('row 150').first), before);
+      },
+    );
+
+    testWidgets(
+      'without the read state in a second a thread opens at the newest',
+      (tester) async {
+        useTallView(tester);
+        await tester.pumpWidget(
+          testable(
+            _ThreadWindowRelaySession(replies),
+            firstUnread: 150,
+            readReady: false,
+          ),
+        );
+        await tester.pump(readStateOpenWait ~/ 2);
+        expect(listVisible(tester), isFalse);
+        await tester.pump(readStateOpenWait);
+        await tester.pumpAndSettle();
+        expect(listVisible(tester), isTrue);
+        expect(findRichText('row 299'), findsOneWidget);
+      },
+    );
   });
 }

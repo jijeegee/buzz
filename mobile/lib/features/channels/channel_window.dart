@@ -251,9 +251,65 @@ ChannelWindowPage parseChannelWindowResponse(
   );
 }
 
-/// Starts the window over at the newest page. A window opened at a message
-/// ends here too: rows it was holding back are newer than this page's
-/// snapshot or in it, so they join the overlay.
+/// The retained rows older than a new newest page, re-cut into one page that
+/// starts at its end cursor, or null when there are none or the two do not
+/// join. They join when a retained row is not older than the new page's end
+/// cursor: the old chain then runs unbroken from inside the new page down to
+/// its own tail. A new page with no more history proves every older row gone.
+/// A window opened at a message starts over. Cases:
+/// test-fixtures/channel-window-replace.json.
+ChannelWindowPage? _retainedOlderPage(
+  ChannelWindowStore current,
+  ChannelWindowPage page,
+) {
+  final end = page.nextCursor;
+  if (end == null || current.isMiddle || current.pages.isEmpty) return null;
+  final newest = current.pages.first.rows.firstOrNull?.event;
+  if (newest == null || _isStrictlyOlder(newest, end)) return null;
+  final rows = [
+    for (final retained in current.pages)
+      for (final row in retained.rows)
+        if (_isStrictlyOlder(row.event, end)) row,
+  ];
+  if (rows.isEmpty) return null;
+  // Overlays on the kept rows, and deletions of those overlays.
+  final targets = {for (final row in rows) row.event.id};
+  final skip = {for (final event in page.aux) event.id};
+  final candidates = [
+    for (final retained in current.pages)
+      for (final event in retained.aux)
+        if (skip.add(event.id)) event,
+  ];
+  final kept = <NostrEvent>{};
+  for (var hop = 0; hop < 2; hop++) {
+    for (final event in candidates) {
+      if (event.tags.any(
+        (tag) => tag.length > 1 && tag[0] == 'e' && targets.contains(tag[1]),
+      )) {
+        kept.add(event);
+      }
+    }
+    targets.addAll(kept.map((event) => event.id));
+  }
+  final aux = [
+    for (final event in candidates)
+      if (kept.contains(event)) event,
+  ];
+  final tail = current.pages.last;
+  return ChannelWindowPage(
+    startCursor: end,
+    rows: rows,
+    aux: aux,
+    nextCursor: tail.nextCursor,
+    hasMore: tail.hasMore,
+  );
+}
+
+/// Starts the window over at the newest page, keeping older retained rows
+/// that join it (re-cut so the cursor chain stays continuous); rows inside
+/// its span it no longer has were deleted. A window opened at a message ends
+/// here too: rows it was holding back are newer than this page's snapshot or
+/// in it, so they join the overlay.
 ChannelWindowStore replaceNewestChannelWindow(
   ChannelWindowStore current,
   ChannelWindowPage page, {
@@ -263,10 +319,15 @@ ChannelWindowStore replaceNewestChannelWindow(
     throw Exception('Newest channel page must have a null start cursor.');
   }
   _assertValidPage(page);
-  final rowIds = page.rows.map((row) => row.event.id).toSet();
+  final older = _retainedOlderPage(current, page);
+  final pages = [page, ?older];
+  final rowIds = {
+    for (final retained in pages)
+      for (final row in retained.rows) row.event.id,
+  };
   final auxIds = page.aux.map((event) => event.id).toSet();
   return ChannelWindowStore(
-    pages: [page],
+    pages: pages,
     liveOverlay: _sortedLive(
       [
         ...current.liveOverlay,
