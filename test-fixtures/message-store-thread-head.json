@@ -955,6 +955,177 @@
           "l1"
         ]
       }
+    },
+    {
+      "name": "relay-signed 9005 hides stored thread replies that a non-author kind 5 or a staff delete removed",
+      "limit": 1,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b2",
+          "kind": 9,
+          "pubkey": "agent",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b3",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d1",
+          "kind": 5,
+          "pubkey": "owner",
+          "created_at": 5400,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b2"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x1",
+          "kind": 9005,
+          "pubkey": "relay",
+          "created_at": 9000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b2"
+            ],
+            [
+              "k",
+              "9"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x2",
+          "kind": 9005,
+          "pubkey": "relay",
+          "created_at": 9100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b3"
+            ],
+            [
+              "k",
+              "9"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "b1"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          5100,
+          "b1"
+        ]
+      }
     }
   ]
 }

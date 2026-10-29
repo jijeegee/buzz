@@ -841,18 +841,24 @@ async fn run_atomic_mutation(
                 .map_err(|e| anyhow::anyhow!("thread metadata lookup failed: {e}"))?;
             let parent_id = meta.as_ref().and_then(|m| m.parent_event_id.clone());
             let root_id = meta.as_ref().and_then(|m| m.root_event_id.clone());
-            let committed = state
+            // The relay-signed 9005 record is written in the same transaction
+            // (signed inside it) so device stores also drop the row.
+            let outcome = state
                 .db
-                .execute_delete_with_marker(
+                .execute_delete_with_marker_and_record(
                     action_id,
                     lease_token,
                     ctx.community_id,
                     target,
                     parent_id.as_deref(),
                     root_id.as_deref(),
+                    Some(&state.relay_keypair),
                 )
                 .await
                 .map_err(|e| anyhow::anyhow!("delete failed: {e}"))?;
+            let committed = outcome.committed;
+            crate::handlers::deletion_record::finish_staff_delete(tenant, state, &outcome, target)
+                .await;
             // Same post-commit refresh as NIP-29 DELETE_EVENT: push a fresh
             // 39005 so live badge counts also count down.
             if let (true, Some(meta), Some(root_id)) = (committed, meta, root_id) {

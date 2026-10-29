@@ -29,6 +29,8 @@ pub mod chat_user_state;
 pub mod community;
 /// Durable whole-community deletion lifecycle and PostgreSQL adapter.
 pub mod deletion;
+/// Relay-signed kind:9005 records for server-side message removals.
+pub mod deletion_record;
 /// Direct message channel persistence.
 pub mod dm;
 /// Event storage and retrieval.
@@ -100,6 +102,9 @@ mod artifact_postgres_tests;
 
 #[cfg(test)]
 mod blocks_postgres_tests;
+
+#[cfg(test)]
+mod deletion_record_postgres_tests;
 
 #[cfg(test)]
 mod media_access_postgres_tests;

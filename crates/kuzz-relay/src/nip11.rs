@@ -177,6 +177,9 @@ pub(crate) struct RelayCapabilityFlags {
     pub advertise_nip43: bool,
     /// Whether NIP-FI (federated identity) is advertised.
     pub advertise_fi: bool,
+    /// Whether `kuzz-deletion-records` is advertised: every server-side
+    /// message removal has a relay-signed kind:9005 record (after backfill).
+    pub advertise_deletion_records: bool,
 }
 
 impl RelayInfo {
@@ -219,6 +222,7 @@ impl RelayInfo {
         let RelayCapabilityFlags {
             advertise_nip43,
             advertise_fi,
+            advertise_deletion_records,
         } = flags;
         debug_assert!(
             !advertise_nip43 || relay_self.is_some(),
@@ -236,6 +240,9 @@ impl RelayInfo {
             // Channel and thread windows page toward newer rows (`since` + `after_id`).
             "nip-cw-newer".to_string(),
         ];
+        if advertise_deletion_records {
+            supported_extensions.push("kuzz-deletion-records".to_string());
+        }
         let gif = gif_provider.map(|provider| {
             supported_extensions.push("kuzz-gif".to_string());
             GifDescriptor {
@@ -369,6 +376,7 @@ pub(crate) async fn nip11_document(state: &crate::state::AppState, raw_host: &st
         RelayCapabilityFlags {
             advertise_nip43,
             advertise_fi,
+            advertise_deletion_records: state.config.deletion_records_advertised,
         },
         state.config.max_frame_bytes,
         state.config.pairing_relay_url.as_deref(),
@@ -645,6 +653,29 @@ mod tests {
             .contains(&"kuzz-gif".to_string()));
     }
 
+    #[test]
+    fn deletion_records_extension_is_config_gated() {
+        let build = |advertise_deletion_records| {
+            RelayInfo::build(
+                None,
+                None,
+                RelayCapabilityFlags {
+                    advertise_deletion_records,
+                    ..Default::default()
+                },
+                DEFAULT_MAX_FRAME_BYTES,
+                None,
+                None,
+                None,
+            )
+            .supported_extensions
+            .expect("extensions")
+        };
+        let ext = "kuzz-deletion-records".to_string();
+        assert!(build(true).contains(&ext));
+        assert!(!build(false).contains(&ext));
+    }
+
     /// NIP-WP → NIP-11 mirror: a set workspace icon is served in the standard
     /// `icon` field; no icon (or a cleared, empty icon) omits the field
     /// entirely so the JSON matches pre-icon documents byte-for-byte.
@@ -826,7 +857,7 @@ mod tests {
             None,
             RelayCapabilityFlags {
                 advertise_nip43: true,
-                advertise_fi: false,
+                ..Default::default()
             },
             DEFAULT_MAX_FRAME_BYTES,
             None,
@@ -848,7 +879,7 @@ mod tests {
             None,
             RelayCapabilityFlags {
                 advertise_nip43: true,
-                advertise_fi: false,
+                ..Default::default()
             },
             DEFAULT_MAX_FRAME_BYTES,
             None,

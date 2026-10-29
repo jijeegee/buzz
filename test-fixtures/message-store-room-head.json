@@ -959,6 +959,129 @@
           "t1"
         ]
       }
+    },
+    {
+      "name": "relay-signed 9005 hides stored room rows that a non-author kind 5 or a staff delete removed",
+      "limit": 1,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "m1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m2",
+          "kind": 9,
+          "pubkey": "agent",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m3",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d1",
+          "kind": 5,
+          "pubkey": "owner",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m2"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x1",
+          "kind": 9005,
+          "pubkey": "relay",
+          "created_at": 9000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m2"
+            ],
+            [
+              "k",
+              "9"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x2",
+          "kind": 9005,
+          "pubkey": "relay",
+          "created_at": 9100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m3"
+            ],
+            [
+              "k",
+              "9"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "m1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "m1"
+        ]
+      }
     }
   ]
 }

@@ -12,6 +12,10 @@ pub mod command_executor;
 pub mod community_provisioning;
 /// NIP-45 COUNT handler.
 pub mod count;
+/// Relay-signed kind:9005 records for server-side message removals.
+pub(crate) mod deletion_record;
+#[cfg(test)]
+mod deletion_record_tests;
 /// EVENT handler — WS dispatcher → ingest pipeline → fan-out.
 pub mod event;
 /// Ownerless group chats: kind:9007 creation checks and initial people.

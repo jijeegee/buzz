@@ -21,6 +21,7 @@
 //! the guard against parallel adds (e.g. `xargs -P`).
 
 mod chat_backfill;
+mod deletion_record_backfill;
 mod deletions;
 mod key_backups;
 mod storage_snapshot_startup;
@@ -126,6 +127,28 @@ enum Command {
         #[arg(long, default_value_t = 100, value_parser = clap::value_parser!(u32).range(1..=10_000))]
         batch_size: u32,
     },
+    /// Store the relay-signed kind:9005 record for message removals made
+    /// before the relay wrote one (staff deletes, and kind:5 deletes by
+    /// someone other than the message's signer), so device stores drop them.
+    ///
+    /// Needs KUZZ_RELAY_PRIVATE_KEY. Each record is its own transaction under
+    /// the relay's locks, so it is safe next to a live relay. Re-running is
+    /// safe and writes nothing new.
+    BackfillDeletionRecords {
+        /// Only count the targets that lack a record.
+        #[arg(long)]
+        dry_run: bool,
+
+        /// The relay's public key (hex). The run stops before writing if it
+        /// differs from KUZZ_RELAY_PRIVATE_KEY or from the signer of the
+        /// newest relay group-state event (kind 39000/39002).
+        #[arg(long)]
+        expect_pubkey: String,
+
+        /// Targets per page; one JSON progress line is printed per page.
+        #[arg(long, default_value_t = 200, value_parser = clap::value_parser!(u32).range(1..=10_000))]
+        batch_size: u32,
+    },
     /// Emit missing kind:39000/39001/39002 channel discovery events, or
     /// republish only a targeted channel's kind:39002 roster.
     ///
@@ -215,6 +238,11 @@ async fn run(cli: Cli) -> Result<i32> {
             dry_run,
             batch_size,
         } => chat_backfill::run(dry_run, batch_size).await,
+        Command::BackfillDeletionRecords {
+            dry_run,
+            expect_pubkey,
+            batch_size,
+        } => deletion_record_backfill::run(dry_run, &expect_pubkey, batch_size).await,
         Command::ReconcileChannels { channel, relay_key } => {
             reconcile_channels(channel, relay_key).await?;
             Ok(0)

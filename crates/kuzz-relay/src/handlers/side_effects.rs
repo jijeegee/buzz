@@ -408,6 +408,7 @@ pub async fn validate_standard_deletion_event(
                 "artifacts cannot be deleted with kind 5; use op=delete or kind 9005 redaction"
             );
         }
+        super::deletion_record::ensure_not_relay_record(&target_event.event, state)?;
         let target_author =
             effective_message_author(&target_event.event, &state.relay_keypair.public_key());
         if target_author != actor_bytes
@@ -1022,6 +1023,7 @@ pub async fn validate_admin_event(
                     "artifact removal markers cannot be deleted"
                 ));
             }
+            super::deletion_record::ensure_not_relay_record(&target_event.event, state)?;
 
             // Check if actor is the event author.
             // For relay-signed REST messages, the real author is in the p tag.
@@ -2940,6 +2942,8 @@ async fn handle_standard_deletion_event(
         if !deleted {
             continue;
         }
+        super::deletion_record::record_non_author_deletion(tenant, state, event, &target_event)
+            .await;
 
         // Thread counters were decremented in the same transaction — push a
         // fresh relay-signed 39005 so live badge counts also count *down*.
