@@ -1,0 +1,54 @@
+{
+  "description": "Store-first preload plan (docs/message-sync.md#store-first-preload). `rooms` are the preload targets not already cached, in order; `tokens` the rooms a live REQ carrying them had reached EOSE for when the pass checked; `certain` the rooms the store answered as certain. The plan: `check` = rooms asked of the store (those with a token), `certain` = rooms not requested and left for an open to draw from the store, `fetch` = rooms requested from the relay in one batch, `no_token` = the fetched rooms that had no token (not checked). Desktop: desktop/src/features/messages/lib/storePreloadPlan.ts; mobile: mobile/lib/features/channels/store_preload_plan.dart.",
+  "cases": [
+    {
+      "name": "certain rooms are not fetched",
+      "rooms": ["a", "b", "c"],
+      "tokens": ["a", "b", "c"],
+      "certain": ["a"],
+      "expect": { "check": ["a", "b", "c"], "certain": ["a"], "fetch": ["b", "c"], "no_token": [] }
+    },
+    {
+      "name": "rooms without a token are fetched without a store check",
+      "rooms": ["a", "b"],
+      "tokens": ["a"],
+      "certain": [],
+      "expect": { "check": ["a"], "certain": [], "fetch": ["a", "b"], "no_token": ["b"] }
+    },
+    {
+      "name": "a certain answer for a room without a token does not count",
+      "rooms": ["a"],
+      "tokens": [],
+      "certain": ["a"],
+      "expect": { "check": [], "certain": [], "fetch": ["a"], "no_token": ["a"] }
+    },
+    {
+      "name": "a certain answer for a room not asked about does not count",
+      "rooms": ["a"],
+      "tokens": ["a"],
+      "certain": ["z"],
+      "expect": { "check": ["a"], "certain": [], "fetch": ["a"], "no_token": [] }
+    },
+    {
+      "name": "a repeated room is planned once, where it first appears",
+      "rooms": ["b", "a", "b"],
+      "tokens": ["a", "b"],
+      "certain": ["b"],
+      "expect": { "check": ["b", "a"], "certain": ["b"], "fetch": ["a"], "no_token": [] }
+    },
+    {
+      "name": "nothing is fetched when every room is certain",
+      "rooms": ["a", "b"],
+      "tokens": ["a", "b"],
+      "certain": ["b", "a"],
+      "expect": { "check": ["a", "b"], "certain": ["a", "b"], "fetch": [], "no_token": [] }
+    },
+    {
+      "name": "no rooms, no plan",
+      "rooms": [],
+      "tokens": [],
+      "certain": [],
+      "expect": { "check": [], "certain": [], "fetch": [], "no_token": [] }
+    }
+  ]
+}

@@ -8,11 +8,13 @@ import {
   catchUpFromStore,
   noteStoreLiveEose,
   noteStoreLiveEvent,
+  noteStoreRepairEnded,
   setStoreCoverageDeps,
   storeLiveAt,
   STORE_CATCH_UP_MAX_PAGES,
   STORE_CATCH_UP_PAGE_LIMIT,
   STORE_RESUME_LOOKBACK_SECS,
+  waitStoreLive,
 } from "./relayStoreCoverage.ts";
 
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
@@ -187,6 +189,67 @@ test("with no store scope (signed out) nothing is recorded", async () => {
     await tick();
     assert.deepEqual(state.extended, []);
   } finally {
+    restore();
+  }
+});
+
+test("the preload waits for a room's EOSE and its catch-up", async () => {
+  const { restore } = harness({ points: { w1: 5_000 } });
+  let answer;
+  const restorePage = setStoreCoverageDeps({
+    requestPage: () => new Promise((resolve) => (answer = resolve)),
+  });
+  const subscription = bundle(["w1"]);
+  try {
+    let settled = false;
+    const waiting = waitStoreLive(["w1"], 2_000).then(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    assert.equal(settled, false);
+    noteStoreLiveEose(subscription, 1);
+    await new Promise((resolve) => setTimeout(resolve, 150));
+    // Live, but the catch-up has not landed yet.
+    assert.equal(settled, false);
+    answer([]);
+    await waiting;
+    assert.equal(settled, true);
+  } finally {
+    retireLiveSubscription(subscription);
+    restorePage();
+    restore();
+  }
+});
+
+test("the preload's wait for a room that never goes live is capped", async () => {
+  const started = Date.now();
+  await waitStoreLive(["never-live"], 60);
+  assert.ok(Date.now() - started >= 50);
+});
+
+test("an aborted preload stops waiting at once", async () => {
+  const abort = new AbortController();
+  const started = Date.now();
+  setTimeout(() => abort.abort(), 20);
+  await waitStoreLive(["never-live"], 2_000, abort.signal);
+  assert.ok(Date.now() - started < 1_000);
+});
+
+test("a repair that ends without completing releases the preload", async () => {
+  const { restore } = harness({ points: { w2: 5_000 } });
+  const subscription = {
+    ...bundle(["w2"]),
+    reconnectReplay: { generation: 1, repairDone: false },
+  };
+  try {
+    noteStoreLiveEose(subscription, 1);
+    let settled = false;
+    const waiting = waitStoreLive(["w2"], 2_000).then(() => (settled = true));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    assert.equal(settled, false);
+    noteStoreRepairEnded(subscription);
+    await waiting;
+    assert.equal(settled, true);
+  } finally {
+    retireLiveSubscription(subscription);
     restore();
   }
 });

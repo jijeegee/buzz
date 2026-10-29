@@ -108,6 +108,57 @@ pub async fn message_store_room_head(
     .await
 }
 
+/// One room to check for [`message_store_certain_rooms`]: `live_at` is when
+/// its live REQ reached EOSE on the current connection.
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertainRoomArg {
+    room_id: String,
+    live_at: i64,
+}
+
+/// A room whose newest stored window is certain, with that window in the
+/// shape of `get_channel_window`.
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CertainRoom {
+    room_id: String,
+    events: Vec<serde_json::Value>,
+}
+
+/// The rooms of `rooms` whose newest window in the store is certain, with
+/// their windows: the idle preload draws them instead of asking the relay
+/// (docs/message-sync.md#store-first-preload). One drain and one read.
+#[tauri::command]
+pub async fn message_store_certain_rooms(
+    rooms: Vec<CertainRoomArg>,
+    state: State<'_, AppState>,
+) -> Result<Vec<CertainRoom>, String> {
+    let (relay, account) = scope(&state)?;
+    let kinds: Vec<u64> = super::channel_window::TIMELINE_KINDS
+        .iter()
+        .map(|&kind| u64::from(kind))
+        .collect();
+    let rooms: Vec<(String, i64)> = rooms
+        .into_iter()
+        .map(|room| (room.room_id, room.live_at))
+        .collect();
+    off_main(move || {
+        crate::message_store::certain_room_heads(&relay, &account, &rooms, &kinds, ROOM_HEAD_ROWS)
+            .into_iter()
+            .map(|(room_id, events)| CertainRoom { room_id, events })
+            .collect()
+    })
+    .await
+}
+
+/// Whether this device's clock agrees with the relay's closely enough for
+/// the store to vouch for anything (docs/message-sync.md#clock-check).
+#[tauri::command]
+pub fn message_store_clock_trusted() -> bool {
+    crate::message_store::clock_trusted()
+}
+
 /// `root_id`'s newest replies from the store, in the shape of a
 /// `get_thread_windows` page, or `None` unless it is certain.
 #[tauri::command]

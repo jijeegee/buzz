@@ -100,9 +100,13 @@ globalThis.__TAURI_INTERNALS__ = {
 };
 
 const { QueryClient } = await import("@tanstack/react-query");
-const { preloadChannelsMessages, preloadThreads } = await import(
-  "./channelPreload.ts"
-);
+const { preloadChannelsMessages, preloadThreads, setStorePreloadDeps } =
+  await import("./channelPreload.ts");
+const {
+  openChannelWindowEvents,
+  resetStoreRoomHeadRooms,
+  setStoreRoomHeadDeps,
+} = await import("./lib/storeRoomHead.ts");
 const { getRememberedRouteEvent } = await import("./lib/routeEventCache.ts");
 const { threadWindowStateKey } = await import("./lib/threadWindowCache.ts");
 const { hasPersistedHydratedChannel, hydrateChannelHeads } = await import(
@@ -123,7 +127,42 @@ function newClient() {
   return client;
 }
 
+/** The store side of the preload: no room has a live token by default. */
+const store = {
+  trusted: true,
+  waited: [],
+  live: new Map(),
+  certain: new Set(),
+  asked: [],
+  /** @type {null | (() => void)} */
+  onWait: null,
+};
+setStorePreloadDeps({
+  trusted: async () => store.trusted,
+  waitLive: async (roomIds) => {
+    store.waited.push([...roomIds]);
+    store.onWait?.();
+  },
+  liveAt: (roomId) => store.live.get(roomId) ?? null,
+  certain: async (rooms) => {
+    store.asked.push(rooms);
+    return rooms
+      .filter((room) => store.certain.has(room.roomId))
+      .map((room) => ({
+        roomId: room.roomId,
+        events: windowEvents(room.roomId),
+      }));
+  },
+});
+
 beforeEach(() => {
+  store.trusted = true;
+  store.onWait = null;
+  store.waited.length = 0;
+  store.live.clear();
+  store.certain.clear();
+  store.asked.length = 0;
+  resetStoreRoomHeadRooms();
   calls.length = 0;
   failBatch = false;
   inaccessible.clear();
@@ -224,6 +263,117 @@ test("a failed batch loads nothing and leaves the retry to a later pass", async 
   );
   assert.equal(client.getQueryData(channelMessagesKey(ROOM)), undefined);
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
+});
+
+test("a room the store holds certainly is not requested and opens from the store", async () => {
+  const client = newClient();
+  const other = "11111111-2222-4333-8444-555555555555";
+  store.live.set(ROOM, 900);
+  store.live.set(other, 900);
+  store.certain.add(ROOM);
+  const loaded = await preloadChannelsMessages(client, [ROOM, other], 50);
+  // The live REQs settled first, then only the uncertain room was asked for.
+  assert.deepEqual(store.waited, [[ROOM, other]]);
+  assert.deepEqual(store.asked, [
+    [
+      { roomId: ROOM, liveAt: 900 },
+      { roomId: other, liveAt: 900 },
+    ],
+  ]);
+  assert.deepEqual(loaded, [other]);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["get_channel_windows"],
+  );
+  assert.deepEqual(calls[0].args.channelIds, [other]);
+  // The certain room's stored window paints at once, but is stale: opening
+  // it still fetches.
+  assert.equal(client.getQueryData(channelMessagesKey(ROOM)).length, 1);
+  assert.equal(
+    client.getQueryState(channelMessagesKey(ROOM)).isInvalidated,
+    true,
+  );
+
+  // Opening the certain room draws from the store; the preloaded one asks
+  // the relay.
+  const stored = windowEvents(ROOM);
+  const relayAsked = [];
+  const restore = setStoreRoomHeadDeps({
+    liveAt: () => 900,
+    roomHead: async () => stored,
+    relayWindow: async (roomId) => {
+      relayAsked.push(roomId);
+      return windowEvents(roomId);
+    },
+    relayRefresh: async () => {},
+  });
+  try {
+    assert.equal(await openChannelWindowEvents(client, ROOM), stored);
+    assert.deepEqual(relayAsked, []);
+    await openChannelWindowEvents(client, other);
+    assert.deepEqual(relayAsked, [other]);
+  } finally {
+    restore();
+  }
+});
+
+test("rooms without a live token are fetched without asking the store", async () => {
+  const client = newClient();
+  const other = "11111111-2222-4333-8444-555555555555";
+  store.live.set(other, 900);
+  const loaded = await preloadChannelsMessages(client, [ROOM, other], 50);
+  assert.deepEqual(store.asked, [[{ roomId: other, liveAt: 900 }]]);
+  assert.deepEqual(loaded, [ROOM, other]);
+  assert.deepEqual(
+    calls.map((call) => call.command),
+    ["get_channel_windows"],
+  );
+  assert.deepEqual(calls[0].args.channelIds, [ROOM, other]);
+});
+
+test("when every room is certain no request goes out", async () => {
+  const client = newClient();
+  store.live.set(ROOM, 900);
+  store.certain.add(ROOM);
+  const certain = [];
+  assert.deepEqual(
+    await preloadChannelsMessages(client, [ROOM], 50, {
+      onCertain: (roomIds) => certain.push(...roomIds),
+    }),
+    [],
+  );
+  assert.deepEqual(calls, []);
+  assert.deepEqual(certain, [ROOM]);
+});
+
+test("an untrusted clock skips the wait and the store check", async () => {
+  const client = newClient();
+  store.trusted = false;
+  store.live.set(ROOM, 900);
+  store.certain.add(ROOM);
+  assert.deepEqual(await preloadChannelsMessages(client, [ROOM], 50), [ROOM]);
+  assert.deepEqual(store.waited, []);
+  assert.deepEqual(store.asked, []);
+});
+
+test("a pass cancelled during the store wait sends nothing", async () => {
+  const client = newClient();
+  const abort = new AbortController();
+  store.onWait = () => abort.abort();
+  const loaded = await preloadChannelsMessages(client, [ROOM], 50, {
+    signal: abort.signal,
+  });
+  assert.deepEqual(loaded, []);
+  assert.deepEqual(calls, []);
+});
+
+test("a busy user after the store check skips the request", async () => {
+  const client = newClient();
+  const loaded = await preloadChannelsMessages(client, [ROOM], 50, {
+    beforeFetch: async () => false,
+  });
+  assert.deepEqual(loaded, []);
+  assert.deepEqual(calls, []);
 });
 
 const reply = {

@@ -2,8 +2,10 @@ import type { InboxItem } from "@/features/home/lib/inbox";
 import { getInboxRoomEntry } from "@/features/home/lib/inboxRoomEntry";
 import { getThreadReference } from "@/features/messages/lib/threading";
 
-/** Inbox rows whose rooms load in the background: about one screenful. */
+/** Inbox rows whose rooms load first: about one screenful. */
 export const INBOX_PRELOAD_ROWS = 12;
+/** Rows whose rooms load in the background after the first wave. */
+export const INBOX_PRELOAD_BACKGROUND_ROWS = 48;
 /** Newest messages loaded per preloaded room: a whole open window. */
 export const INBOX_PRELOAD_MESSAGES = 50;
 

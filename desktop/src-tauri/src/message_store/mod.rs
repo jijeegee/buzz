@@ -15,7 +15,7 @@ mod read_thread;
 mod tests;
 mod writer;
 
-pub(crate) use clock::note_server_date;
+pub(crate) use clock::{clock_trusted, note_server_date};
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -440,6 +440,30 @@ impl MessageStore {
         .unwrap_or_default()
     }
 
+    /// The newest windows of `rooms` (each with its `live_at`), after one
+    /// drain and in one read.
+    pub(crate) fn room_heads(
+        &self,
+        lease: &Lease,
+        rooms: &[(String, i64)],
+        kinds: &[u64],
+        limit: usize,
+    ) -> Vec<(String, read::RoomHead)> {
+        if !self.drained(lease) {
+            return Vec::new();
+        }
+        self.read(lease, "room heads", |conn| {
+            rooms
+                .iter()
+                .map(|(room, live_at)| {
+                    read::room_head(conn, room, kinds, limit, Some(*live_at))
+                        .map(|head| (room.clone(), head))
+                })
+                .collect()
+        })
+        .unwrap_or_default()
+    }
+
     pub(crate) fn thread_head(
         &self,
         lease: &Lease,
@@ -667,6 +691,36 @@ pub(crate) fn certain_room_head(
     let lease = store.lease(relay_url, account)?;
     let head = store.room_head(&lease, room, kinds, limit, Some(live_at));
     head.certain.then(|| head.into_response(room))
+}
+
+/// Of `rooms` (each with when its live REQ reached EOSE), those whose newest
+/// window is certain, each with that window as a channel-window response
+/// (docs/message-sync.md#store-first-preload).
+pub(crate) fn certain_room_heads(
+    relay_url: &str,
+    account: &str,
+    rooms: &[(String, i64)],
+    kinds: &[u64],
+    limit: usize,
+) -> Vec<(String, Vec<Value>)> {
+    if !clock::clock_trusted() {
+        return Vec::new();
+    }
+    let Some(store) = global() else {
+        return Vec::new();
+    };
+    let Some(lease) = store.lease(relay_url, account) else {
+        return Vec::new();
+    };
+    store
+        .room_heads(&lease, rooms, kinds, limit)
+        .into_iter()
+        .filter(|(_, head)| head.certain)
+        .map(|(room, head)| {
+            let window = head.into_response(&room);
+            (room, window)
+        })
+        .collect()
 }
 
 /// `root`'s newest replies in `room` from the store, only when certain:

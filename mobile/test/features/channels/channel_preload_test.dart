@@ -139,8 +139,16 @@ void main() {
     late _WindowSession session;
     late ProviderContainer container;
     late DateTime now;
+    // The store side: rooms with a live token, and those the store holds
+    // certainly.
+    final liveRooms = <String>{};
+    final certainRooms = <String>{};
+    final waited = <List<String>>[];
 
     setUp(() async {
+      liveRooms.clear();
+      certainRooms.clear();
+      waited.clear();
       root = await Directory.systemTemp.createTemp('channel_preload_test');
       session = _WindowSession();
       now = DateTime(2026, 1, 1, 12);
@@ -152,7 +160,19 @@ void main() {
             ChannelHeadCache(() async => root),
           ),
           channelPreloaderProvider.overrideWith(
-            (ref) => ChannelPreloader(ref, now: () => now),
+            (ref) => ChannelPreloader(
+              ref,
+              now: () => now,
+              store: (
+                live: (rooms) async {
+                  waited.add(rooms);
+                  return liveRooms.intersection(rooms.toSet());
+                },
+                certain: (room) async => certainRooms.contains(room)
+                    ? [_event('$room-stored', 9)]
+                    : null,
+              ),
+            ),
           ),
         ],
       );
@@ -191,6 +211,77 @@ void main() {
         ]);
       },
     );
+
+    test('a room the store holds certainly is not requested and opens from '
+        'the store', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      liveRooms.addAll(['certain', 'uncertain']);
+      certainRooms.add('certain');
+      final stored = await preloader.preloadRooms([
+        (channelId: 'certain', latestAt: 100),
+        (channelId: 'uncertain', latestAt: 100),
+        (channelId: 'no-token', latestAt: 100),
+      ]);
+
+      // The live REQs settled first, then one batched request for the rest.
+      expect(waited, [
+        ['certain', 'uncertain', 'no-token'],
+      ]);
+      expect(session.requests, hasLength(1));
+      expect(session.requests.single.map((f) => f.tags['#h']!.single), [
+        'uncertain',
+        'no-token',
+      ]);
+      expect(stored, ['uncertain', 'no-token']);
+      // Not marked fetched: opening it takes the store's window.
+      expect(container.read(relayFetchedRoomsProvider), {
+        'uncertain',
+        'no-token',
+      });
+      // Its stored window is the persisted head, so the open paints it.
+      final head = await container
+          .read(channelHeadCacheProvider)
+          .load(_scope, 'certain');
+      expect(head?.map((event) => event.id), ['certain-stored']);
+    });
+
+    test('a certain room is looked at again after a minute', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      liveRooms.add('certain');
+      certainRooms.add('certain');
+      // Newer than any head written now, so the head never counts as fresh.
+      final future = DateTime.now().millisecondsSinceEpoch ~/ 1000 + 3600;
+      final target = (channelId: 'certain', latestAt: future);
+      await preloader.preloadRooms([target]);
+      now = now.add(const Duration(seconds: 30));
+      await preloader.preloadRooms([target]);
+      expect(waited, hasLength(1));
+      now = now.add(const Duration(seconds: 31));
+      await preloader.preloadRooms([target]);
+      expect(waited, hasLength(2));
+      expect(session.requests, isEmpty);
+    });
+
+    test('a busy user after the store check skips the request', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      final stored = await preloader.preloadRooms([
+        (channelId: 'cold', latestAt: 100),
+      ], beforeFetch: () async => false);
+      expect(stored, isEmpty);
+      expect(session.requests, isEmpty);
+    });
+
+    test('when every room is certain no request goes out', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      liveRooms.add('certain');
+      certainRooms.add('certain');
+      final stored = await preloader.preloadRooms([
+        (channelId: 'certain', latestAt: 100),
+      ]);
+      expect(stored, isEmpty);
+      expect(session.requests, isEmpty);
+      expect(container.read(relayFetchedRoomsProvider), isEmpty);
+    });
 
     test('skips fresh heads and rooms tried within five minutes', () async {
       final preloader = container.read(channelPreloaderProvider);

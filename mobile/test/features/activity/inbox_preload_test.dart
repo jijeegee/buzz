@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:kuzz/features/activity/feed_item.dart';
 import 'package:kuzz/features/activity/inbox_item.dart';
 import 'package:kuzz/features/activity/inbox_preload.dart';
@@ -15,7 +17,10 @@ class _RecordingPreloader extends ChannelPreloader {
   final List<List<String>> threadBatches = [];
 
   @override
-  Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
+  Future<List<String>> preloadRooms(
+    List<ChannelPreloadTarget> targets, {
+    Future<bool> Function()? beforeFetch,
+  }) async {
     roomBatches.add([for (final target in targets) target.channelId]);
     for (final target in targets) {
       roomLatestAt[target.channelId] = target.latestAt;
@@ -102,6 +107,29 @@ void main() {
     ]);
     // Each background room batch and the background threads waited.
     expect(idleChecks, 3);
+  });
+
+  test('the first wave waits for the first frame before any request', () async {
+    final container = ProviderContainer();
+    addTearDown(container.dispose);
+    final preloader = _RecordingPreloader(
+      container.read(Provider((ref) => ref)),
+    );
+    final started = Completer<bool>();
+    final run = runInboxPreload(
+      preloader,
+      _roomTargets(3),
+      waitReady: () async => true,
+      waitIdle: () async => true,
+      waitStart: () => started.future,
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(preloader.roomBatches, isEmpty);
+    started.complete(true);
+    await run;
+    expect(preloader.roomBatches, [
+      ['room-0', 'room-1', 'room-2'],
+    ]);
   });
 
   test('a busy user stops the background wave', () async {

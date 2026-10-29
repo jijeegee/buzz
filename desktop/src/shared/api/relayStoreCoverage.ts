@@ -25,11 +25,17 @@ export const STORE_CATCH_UP_PAGE_LIMIT = 500;
 /** Beyond this the gap is left for the room to fill when it is opened. */
 export const STORE_CATCH_UP_MAX_PAGES = 4;
 export const STORE_CATCH_UP_MAX_AGE_SECS = 7 * 24 * 60 * 60;
+/** How long the idle preload waits for its rooms' live REQs to settle. */
+export const STORE_LIVE_WAIT_MS = 3_000;
+const STORE_LIVE_POLL_MS = 100;
 
 type LiveSubscription = Extract<RelaySubscription, { mode: "live" }>;
 
 type CoverageDeps = {
   nowSecs: () => number;
+  nowMs: () => number;
+  /** Resolves after `ms`; `cancel` resolves it at once. */
+  sleep: (ms: number) => { done: Promise<void>; cancel: () => void };
   /**
    * The store capture coverage is recorded with (`null`: none): the one the
    * backend took when subscription `subId` reached EOSE, or one taken now.
@@ -57,6 +63,18 @@ type CoverageDeps = {
 
 const defaultDeps: CoverageDeps = {
   nowSecs: () => Math.floor(Date.now() / 1000),
+  nowMs: () => Date.now(),
+  sleep: (ms) => {
+    let cancel = () => {};
+    const done = new Promise<void>((resolve) => {
+      const timer = setTimeout(resolve, ms);
+      cancel = () => {
+        clearTimeout(timer);
+        resolve();
+      };
+    });
+    return { done, cancel };
+  },
   scope: (subId) =>
     invokeTauri<string | null>("message_store_scope", { subId: subId ?? null }),
   extend: (roomIds, from, to, scope) =>
@@ -80,6 +98,13 @@ let deps = defaultDeps;
 
 /** Covered live REQs that reached EOSE; retired ones drop their coverage. */
 const liveSubscriptions = new Set<LiveSubscription>();
+/**
+ * Per EOSE coverage, the catch-up (or reconnect repair) filling the gap
+ * before it; settles when the store holds what the REQ missed.
+ */
+const settling = new WeakMap<object, Promise<unknown>>();
+/** A reconnect repair in flight per REQ: resolved when it completes. */
+const repairs = new WeakMap<LiveSubscription, () => void>();
 
 /** Replace the store bridge (tests). Returns the restore function. */
 export function setStoreCoverageDeps(next: Partial<CoverageDeps>) {
@@ -145,8 +170,52 @@ export function noteStoreLiveEose(
   if (subscription.reconnectReplay?.generation !== generation) {
     // Stops once this REQ's coverage is retired or replaced.
     const live = () => subscription.storeCoverage === coverage;
-    void catchUpFromStore(roomIds, liveAt, scope, live).catch(() => {});
+    settling.set(
+      coverage,
+      catchUpFromStore(roomIds, liveAt, scope, live).catch(() => {}),
+    );
+  } else if (!subscription.reconnectReplay.repairDone) {
+    // A waiter on an earlier EOSE of this REQ stops waiting.
+    noteStoreRepairEnded(subscription);
+    settling.set(
+      coverage,
+      new Promise<void>((resolve) => repairs.set(subscription, resolve)),
+    );
   }
+}
+
+/**
+ * Waits, at most `capMs`, until a live REQ carrying each of `roomIds` has
+ * reached EOSE and caught the store up on what it missed (the idle
+ * preload's store check; docs/message-sync.md#store-first-preload).
+ */
+export async function waitStoreLive(
+  roomIds: readonly string[],
+  capMs = STORE_LIVE_WAIT_MS,
+  signal?: AbortSignal,
+): Promise<void> {
+  const deadline = deps.nowMs() + capMs;
+  // Every sleep ends early when `signal` aborts.
+  const nap = async (ms: number, until?: Promise<unknown>) => {
+    if (signal?.aborted) return;
+    const timer = deps.sleep(ms);
+    const stop = () => timer.cancel();
+    signal?.addEventListener("abort", stop, { once: true });
+    await (until ? Promise.race([until, timer.done]) : timer.done);
+    signal?.removeEventListener("abort", stop);
+    timer.cancel();
+  };
+  while (roomIds.some((roomId) => storeLiveCoverage(roomId).length === 0)) {
+    const left = deadline - deps.nowMs();
+    if (left <= 0 || signal?.aborted) return;
+    await nap(Math.min(STORE_LIVE_POLL_MS, left));
+  }
+  const pending = roomIds.flatMap((roomId) =>
+    storeLiveCoverage(roomId).map(({ coverage }) => settling.get(coverage)),
+  );
+  const left = deadline - deps.nowMs();
+  if (left <= 0) return;
+  await nap(left, Promise.all(pending));
 }
 
 /**
@@ -211,6 +280,16 @@ export function noteStoreRepairCompleted(
   const roomIds = storeCoveredRooms(subscription.filter);
   const scope = subscription.storeCoverage?.scope ?? currentScope();
   if (roomIds) record(roomIds, since, deps.nowSecs(), scope);
+  noteStoreRepairEnded(subscription);
+}
+
+/**
+ * A reconnect repair of `subscription` ended, completed or not: a preload
+ * waiting on it stops waiting (an unrepaired room is simply not certain).
+ */
+export function noteStoreRepairEnded(subscription: LiveSubscription) {
+  repairs.get(subscription)?.();
+  repairs.delete(subscription);
 }
 
 /**

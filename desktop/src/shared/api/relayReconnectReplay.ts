@@ -10,7 +10,10 @@ import {
   shouldDispatchSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import type { ChannelReconnectRepairRequest } from "@/shared/api/channelReconnectRepair";
-import { noteStoreRepairCompleted } from "@/shared/api/relayStoreCoverage";
+import {
+  noteStoreRepairCompleted,
+  noteStoreRepairEnded,
+} from "@/shared/api/relayStoreCoverage";
 import {
   isRateLimited,
   waitForRateLimit,
@@ -440,6 +443,8 @@ export async function replayLiveSubscriptions({
             subscription.pendingReplaySince = undefined;
             noteStoreRepairCompleted(subscription, replaySince);
             markReconnectRepairDone(subscription, generation);
+          } else {
+            noteStoreRepairEnded(subscription);
           }
           return;
         } catch (error) {
@@ -449,13 +454,17 @@ export async function replayLiveSubscriptions({
           );
           if (attempt === PAGE_REPLAY_MAX_ATTEMPTS) {
             markReconnectRepairDone(subscription, generation);
+            noteStoreRepairEnded(subscription);
             return;
           }
           // The failed REQ's CLOSED handler arms the rate-limit gate before
           // rejecting; wait for it (no-op when the failure wasn't back-pressure)
           // and re-check that this replay's connection is still current.
           if (isRateLimited()) await waitForRateLimit();
-          if (subscriptions.get(subId) !== subscription || !isActive()) return;
+          if (subscriptions.get(subId) !== subscription || !isActive()) {
+            noteStoreRepairEnded(subscription);
+            return;
+          }
         }
       }
     },

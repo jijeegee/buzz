@@ -18,6 +18,8 @@ that both clients' tests read.
 | Forgetting fixture tests | `purge_follows_shared_fixture` (`message_store/tests.rs`); triggers: `socket_notices_carry_the_relay_key`, `an_eose_capture_precedes_what_arrives_after_it`, `a_large_purge_runs_in_chunks`, `a_list_older_than_the_last_applied_is_refused`, `store_rooms_follow_membership_not_the_shown_list` (`fetch_tests.rs`), `storeRoomPurge.test.mjs` | `message_store_purge_test.dart`; triggers: `relay_session_purge_test.dart`, `channels_store_purge_test.dart` |
 | Head spans | `message_store/head.rs` (writer: `writer.rs`; commands `message_store_head_sent`, `message_store_record_heads`); requests: `desktop/src/shared/api/relayStoreHeads.ts`, used by `channelWindow.ts` and `threadWindow.ts` | `mobile/lib/shared/message_store/head_coverage.dart`; requests: `queryRelayWithStoreHeads` (`relay_session_store.dart`, `store_heads.dart`), used by `store_head.dart`, `thread_replies_provider.dart`, `channel_preload.dart` |
 | Head span fixture tests | `head_coverage_follows_shared_fixture` and the other tests in `message_store/head_tests.rs`; `relayStoreHeads.test.mjs` | `message_store_head_test.dart`; `store_heads_test.dart` |
+| Store-first preload | `desktop/src/features/messages/channelPreload.ts` (`roomsNeedingRelay`; plan: `lib/storePreloadPlan.ts`; wait: `waitStoreLive` in `relayStoreCoverage.ts`; command `message_store_certain_rooms`); waves: `desktop/src/features/home/lib/inboxPreloadRun.ts`, run by `useInboxPreload.ts` | `ChannelPreloader._roomsNeedingRelay` (`mobile/lib/features/channels/channel_preload.dart`; plan: `store_preload_plan.dart`; wait: `waitStoreLiveRooms` in `relay_session_store.dart`); waves: `runInboxPreload` (`mobile/lib/features/activity/inbox_preload.dart`) |
+| Store-first preload tests | `storePreloadPlan.test.mjs`, `channelPreload.test.mjs`, `inboxPreloadRun.test.mjs`, `relayStoreCoverage.test.mjs` | `store_preload_plan_test.dart`, `channel_preload_test.dart`, `inbox_preload_test.dart`, `coverage_test.dart` |
 | Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
 
 The account bundle's cases live in
@@ -27,7 +29,9 @@ the message store's in
 forgetting a room's in
 [`test-fixtures/message-store-purge.json`](../test-fixtures/message-store-purge.json),
 head spans' in
-[`test-fixtures/message-store-head-coverage.json`](../test-fixtures/message-store-head-coverage.json).
+[`test-fixtures/message-store-head-coverage.json`](../test-fixtures/message-store-head-coverage.json),
+the store-first preload plan's in
+[`test-fixtures/message-store-preload-plan.json`](../test-fixtures/message-store-preload-plan.json).
 
 ## Live room bundle
 
@@ -330,8 +334,9 @@ coverage can still open from the store. Cases:
 On a room's first fetch, the client reads the room's newest window from the
 store and uses it as the relay's channel-window answer when it is certain;
 otherwise it asks the relay as before. A first fetch is one for a room this
-run has not yet fetched from the store or the relay, the background preload
-included. Desktop tracks this per query cache (a community switch starts a
+run has not yet fetched from the store or the relay, the background
+preload's requests included (a room the preload left to the store is not
+fetched; see [Store-first preload](#store-first-preload)). Desktop tracks this per query cache (a community switch starts a
 new one); mobile per room notifier, which lives for the run, and for the
 preload per account and server. A stored window only draws the first frame: once that fetch has
 settled, the client asks the relay once (on desktop, the refresh after the
@@ -367,6 +372,50 @@ ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
 - **Written first:** the read waits (at most 0.5 s) until every event
   received before it is written. A writer that is gone, still busy after the
   wait, or holding a loss not yet written down means not certain.
+
+### Store-first preload
+
+The background preload (the rooms behind the chat list's top rows) asks the
+store before the relay, so rooms it already holds certainly cost no request
+and open from the store. Desktop and mobile behave the same. Cases:
+`test-fixtures/message-store-preload-plan.json`.
+
+- **Start:** never on the startup path. Desktop's first pass waits for the
+  browser to be idle (`requestIdleCallback`, at most 2 s); mobile's first
+  wave waits for the first frame and a usable session. A room the user
+  opens meanwhile loads itself and is left out.
+- **Waves:** the rooms behind the top 12 rows in one request, then their
+  threads four per request; then the rooms of rows 13 to 48 not already
+  loaded, 12 per request, and their threads, each request waiting until the
+  user is idle (no input for 1.5 s, nothing loading in the foreground, app
+  visible; mobile also keyboard down and relay usable).
+- **Wait:** each room request first waits, at most 3 s, until a live REQ
+  carrying each of its rooms has reached EOSE and the catch-up (or
+  reconnect repair) begun there has ended, completed or not. With store
+  opens off, no store or an untrusted clock (desktop reads it through
+  `message_store_clock_trusted`), nothing can be certain: it does not wait,
+  and every room counts as without a token. Signing out, switching account
+  or leaving Home ends the wait; nothing is then requested, and the request
+  is also dropped if the account or server changed meanwhile.
+- **Check:** rooms with a token (a live REQ that reached EOSE) are asked of
+  the store (desktop: one call, one drain), with the rule of [opening a room
+  from the store](#opening-a-room-from-the-store); the call returns each
+  certain room's window. A certain room is not requested and not marked
+  fetched; its window is kept as a paintable copy (desktop: a stored, stale
+  query that is never saved as head cache; mobile: written as the head
+  cache), so the first open paints it at once, then reads the store and
+  asks the relay once. It is looked at again after 60 s (failed rooms after
+  5 minutes). The rest, rooms without a token included, are requested in
+  one batch as before (recording [head spans](#head-spans)) and marked
+  fetched. A background-wave request checks again that the user is idle
+  after the store check, right before it goes out.
+- **Log:** one line per room request:
+  `[preload] certain N / fetched M / skipped (no token) K`, where M counts
+  every room requested and K those of them that had no token, so were never
+  checked.
+- **Not yet:** opening a certain room still asks the relay right after the
+  stored window is drawn (stage 5-6 drops that request). Threads are
+  preloaded as before; the 20-reply thread preload never records a head.
 
 ### Opening a thread from the store
 
@@ -557,7 +606,10 @@ older rows it should no longer see. Cases:
   `--dart-define=KUZZ_STORE_OPEN=off` (mobile) opens every room and thread
   from the relay. Events are still stored and covered.
 - **Head cache:** only a relay window is saved as a room's head cache, never
-  a window opened from the store.
+  a window opened from the store. One exception on mobile: the preload
+  writes a certain room's stored window as its head cache when the saved
+  one is missing or older than the room's newest message (see
+  [store-first preload](#store-first-preload)).
 
 ### Clock check
 

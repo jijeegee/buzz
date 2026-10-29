@@ -792,6 +792,8 @@ pub fn run() {
             message_store_scope,
             message_store_forget_rooms_except,
             message_store_room_head,
+            message_store_certain_rooms,
+            message_store_clock_trusted,
             message_store_thread_head,
             message_store_head_sent,
             message_store_record_heads,

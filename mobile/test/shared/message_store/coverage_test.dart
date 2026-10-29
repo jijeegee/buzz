@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -170,6 +171,30 @@ void main() {
       coverage.noteEvent(sub, _bundle(['r1']), 1);
       await store.flushed();
       expect(await store.resumePoints(lease, ['r1'], _later), {'r1': 10070});
+    });
+
+    test('an EOSE settles once its catch-up has ended', () async {
+      store.extendCoverage(lease, ['r1'], 9000, 10000);
+      await store.flushed();
+      now = 20000;
+      final answer = Completer<List<Map<String, dynamic>>>();
+      coverage = RoomBundleCoverage(
+        scope: () => (store: store, lease: lease),
+        nowSecs: () => now,
+        query: (filters) => answer.future,
+      );
+      final sub = Object();
+      expect(coverage.settledOf(sub, 1), isNull);
+      coverage.noteEose(sub, _bundle(['r1']), 1);
+      var settled = false;
+      unawaited(coverage.settledOf(sub, 1)!.then((_) => settled = true));
+      // Another connection's REQ is not live.
+      expect(coverage.settledOf(sub, 2), isNull);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(settled, isFalse);
+      answer.complete(const []);
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(settled, isTrue);
     });
 
     test('a later EOSE catches the store up by keyset pages', () async {

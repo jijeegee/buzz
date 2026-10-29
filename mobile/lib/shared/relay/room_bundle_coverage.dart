@@ -41,6 +41,9 @@ class _Live {
   /// for rooms forgotten after it (docs/message-sync.md#forgetting-a-room).
   final int captured;
   int markedAt;
+
+  /// Completes once the catch-up begun at this EOSE has ended.
+  Future<void> settled = Future.value();
 }
 
 /// Room ids of a live REQ carrying every channel event of explicit rooms.
@@ -83,7 +86,8 @@ class RoomBundleCoverage {
     if (captured == null) return;
     final liveAt = _nowSecs();
     final at = captured.sequence;
-    _live[subscription] = _Live(generation, liveAt, current, at);
+    final live = _Live(generation, liveAt, current, at);
+    _live[subscription] = live;
     current.store.extendCoverage(
       current.lease,
       roomIds,
@@ -99,6 +103,14 @@ class RoomBundleCoverage {
         return false;
       }),
     );
+    live.settled = _catchUps;
+  }
+
+  /// Completes once [subscription]'s catch-up since its EOSE on connection
+  /// [generation] has ended; `null` when it is not live there.
+  Future<void>? settledOf(Object subscription, int generation) {
+    final live = _live[subscription];
+    return live != null && live.generation == generation ? live.settled : null;
   }
 
   /// When [subscription] reached EOSE on connection [generation], if it has

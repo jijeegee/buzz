@@ -51,6 +51,48 @@ extension RelaySessionStore on RelaySessionNotifier {
     return liveAt;
   }
 
+  /// Of [roomIds], those a live REQ has reached EOSE for on this connection
+  /// (a token for the store check), after waiting at most [cap] for each
+  /// room's REQ to reach EOSE and catch the store up
+  /// (docs/message-sync.md#store-first-preload). With no store, store opens
+  /// off or an untrusted clock nothing can be certain: returns at once.
+  Future<Set<String>> waitStoreLiveRooms(
+    Iterable<String> roomIds, {
+    Duration cap = const Duration(seconds: 3),
+  }) async {
+    final rooms = roomIds.toSet();
+    if (_messageStore == null ||
+        _storeLease == null ||
+        !storeOpensEnabled ||
+        !clockTrusted) {
+      return const {};
+    }
+    final deadline = DateTime.now().add(cap);
+    while (rooms.any((room) => _storeLiveAt(room) == null)) {
+      final left = deadline.difference(DateTime.now());
+      if (left <= Duration.zero) break;
+      await Future<void>.delayed(
+        left < const Duration(milliseconds: 100)
+            ? left
+            : const Duration(milliseconds: 100),
+      );
+    }
+    final pending = [
+      for (final subscription in _liveSubscriptions.values)
+        if (storeCoveredRooms(subscription.filter)?.any(rooms.contains) ??
+            false)
+          ?_storeCoverage.settledOf(subscription, _connectionGeneration),
+    ];
+    final left = deadline.difference(DateTime.now());
+    if (pending.isNotEmpty && left > Duration.zero) {
+      await Future.wait(pending).timeout(left, onTimeout: () => const []);
+    }
+    return {
+      for (final room in rooms)
+        if (_storeLiveAt(room) != null) room,
+    };
+  }
+
   /// [rootId]'s newest replies in [roomId] from the store, in the shape of a
   /// relay thread-window response, or `null` unless it is certain.
   Future<List<NostrEvent>?> certainThreadHead(

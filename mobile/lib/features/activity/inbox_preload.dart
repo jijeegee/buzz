@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:math' as math;
 
+import 'package:flutter/scheduler.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -90,17 +91,19 @@ List<ThreadRepliesArgs> _threads(Iterable<InboxPreloadTarget> targets) => [
 /// rows in one request and their threads four per request, right away; then
 /// rows up to [inboxPreloadBackgroundRows], [maxChannelWindowsPerRequest]
 /// rooms per request, each request waiting until [waitIdle] resolves true.
-/// [waitReady] gates the first wave on a usable session only.
+/// [waitStart] (default: [waitReady]) gates the first wave, after the first
+/// frame; [waitReady] gates its threads on a usable session only.
 Future<void> runInboxPreload(
   ChannelPreloader preloader,
   List<InboxPreloadTarget> targets, {
   required Future<bool> Function() waitReady,
   required Future<bool> Function() waitIdle,
+  Future<bool> Function()? waitStart,
 }) async {
   final first = targets.take(inboxPreloadRows).toList();
   final rest = targets.skip(inboxPreloadRows).toList();
 
-  if (!await waitReady()) return;
+  if (!await (waitStart ?? waitReady)()) return;
   final firstRooms = _rooms(first);
   await preloader.preloadRooms(firstRooms);
   await preloader.preloadThreads(_threads(first), beforeRequest: waitReady);
@@ -121,6 +124,8 @@ Future<void> runInboxPreload(
         start,
         math.min(start + maxChannelWindowsPerRequest, rooms.length),
       ),
+      // The store check may have taken a while: still idle?
+      beforeFetch: waitIdle,
     );
   }
   await preloader.preloadThreads(_threads(rest), beforeRequest: waitIdle);
@@ -194,6 +199,12 @@ void Function() useInboxPreload(
         targets,
         waitReady: () => waitUntil(isReady),
         waitIdle: () => waitUntil(isIdle),
+        // Never on the startup path: the first wave starts after the first
+        // frame is drawn (docs/message-sync.md#store-first-preload).
+        waitStart: () async {
+          await SchedulerBinding.instance.endOfFrame;
+          return waitUntil(isReady);
+        },
       ),
     );
     return () {

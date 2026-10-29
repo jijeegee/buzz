@@ -4,6 +4,7 @@ import type { QueryClient } from "@tanstack/react-query";
 import { reconcileFetchedChannelWindow } from "@/features/messages/hooks";
 import { markStoreRoomHeadFetched } from "@/features/messages/lib/storeRoomHead";
 import {
+  channelHeadCacheScope,
   channelHeadHydration,
   markPaintableChannelSnapshot,
 } from "@/features/messages/lib/channelHeadCache";
@@ -14,9 +15,22 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
+import {
+  planStorePreload,
+  storePreloadSummary,
+} from "@/features/messages/lib/storePreloadPlan";
+import {
+  markStoredWindow,
+  storeOpenLiveAt,
+  storeOpensEnabled,
+} from "@/features/messages/lib/storedWindows";
 import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
 import { getChannelWindowsEvents } from "@/shared/api/channelWindow";
-import { getEventsByIds } from "@/shared/api/tauri";
+import {
+  STORE_LIVE_WAIT_MS,
+  waitStoreLive,
+} from "@/shared/api/relayStoreCoverage";
+import { getEventsByIds, invokeTauri } from "@/shared/api/tauri";
 import {
   getThreadWindows,
   MAX_THREAD_WINDOWS_PER_REQUEST,
@@ -28,25 +42,151 @@ const MESSAGES_GC_MS = CONVERSATION_CACHE_GC_MS;
 /** Background work retries once; the scheduler retries later passes. */
 const PRELOAD_RETRY = 1;
 
+/** A room whose newest stored window is certain, with that window. */
+type CertainRoom = { roomId: string; events: RelayEvent[] };
+
+type StorePreloadDeps = {
+  /** Whether the store may vouch for anything: store opens on, clock trusted. */
+  trusted: () => Promise<boolean>;
+  /** Resolves once the rooms' live REQs have settled, at most 3 s. */
+  waitLive: (roomIds: readonly string[], signal?: AbortSignal) => Promise<void>;
+  /** When the room's live REQ reached EOSE (its token), or null. */
+  liveAt: (roomId: string) => number | null;
+  /** The rooms whose newest stored window is certain, with those windows. */
+  certain: (
+    rooms: { roomId: string; liveAt: number }[],
+  ) => Promise<CertainRoom[]>;
+};
+
+const defaultStoreDeps: StorePreloadDeps = {
+  trusted: async () =>
+    storeOpensEnabled() &&
+    (await invokeTauri<boolean>("message_store_clock_trusted").catch(
+      () => false,
+    )),
+  waitLive: (roomIds, signal) =>
+    waitStoreLive(roomIds, STORE_LIVE_WAIT_MS, signal),
+  liveAt: storeOpenLiveAt,
+  certain: (rooms) =>
+    invokeTauri<CertainRoom[]>("message_store_certain_rooms", { rooms }),
+};
+
+let storeDeps = defaultStoreDeps;
+
+/** Replace the store bridge (tests). Returns the restore function. */
+export function setStorePreloadDeps(next: Partial<StorePreloadDeps>) {
+  const previous = storeDeps;
+  storeDeps = { ...storeDeps, ...next };
+  return () => {
+    storeDeps = previous;
+  };
+}
+
+export type PreloadChannelsOptions = {
+  /** Aborted when the pass is cancelled (sign-out, account switch, unmount). */
+  signal?: AbortSignal;
+  /** Rooms the store held certainly, and that were drawn from it. */
+  onCertain?: (roomIds: string[]) => void;
+  /** Runs right before the relay request; false skips it (user busy). */
+  beforeFetch?: () => Promise<boolean>;
+};
+
+function sameScope(
+  left: ReturnType<typeof channelHeadCacheScope>,
+  right: ReturnType<typeof channelHeadCacheScope>,
+) {
+  return left?.pubkey === right?.pubkey && left?.relayUrl === right?.relayUrl;
+}
+
+/**
+ * Of `rooms`, those that need the relay: once their live REQs have settled
+ * (at most 3 s), rooms whose newest stored window is certain are drawn from
+ * the store as a paintable copy, not marked relay-fetched (opening them
+ * reads the store again and revalidates once), and left out
+ * (docs/message-sync.md#store-first-preload). Null when the pass ended.
+ */
+async function roomsNeedingRelay(
+  queryClient: QueryClient,
+  rooms: readonly string[],
+  options: PreloadChannelsOptions,
+): Promise<string[] | null> {
+  const { signal } = options;
+  // Untrusted: nothing can be certain, so nothing to wait for.
+  const trusted = await storeDeps.trusted();
+  if (trusted) await storeDeps.waitLive(rooms, signal);
+  if (signal?.aborted) return null;
+  // A room opened meanwhile loads itself.
+  const cold = rooms.filter(
+    (roomId) =>
+      queryClient.getQueryData(channelMessagesKey(roomId)) === undefined,
+  );
+  const liveAts = new Map<string, number>();
+  for (const roomId of trusted ? cold : []) {
+    const liveAt = storeDeps.liveAt(roomId);
+    if (liveAt !== null) liveAts.set(roomId, liveAt);
+  }
+  const tokens = new Set(liveAts.keys());
+  const check = planStorePreload(cold, tokens, new Set()).check;
+  const certain =
+    check.length === 0
+      ? []
+      : await storeDeps
+          .certain(
+            check.map((roomId) => ({
+              roomId,
+              liveAt: liveAts.get(roomId) ?? 0,
+            })),
+          )
+          .catch(() => []);
+  if (signal?.aborted) return null;
+  const windows = new Map(certain.map((room) => [room.roomId, room.events]));
+  const plan = planStorePreload(cold, tokens, new Set(windows.keys()));
+  console.info(storePreloadSummary(plan));
+  for (const roomId of plan.certain) {
+    const events = windows.get(roomId);
+    if (!events) continue;
+    if (queryClient.getQueryData(channelMessagesKey(roomId)) !== undefined) {
+      continue;
+    }
+    markStoredWindow(events);
+    await storeChannelPage(queryClient, roomId, async () => events, false);
+  }
+  if (plan.certain.length > 0) options.onCertain?.(plan.certain);
+  return plan.fetch;
+}
+
 /**
  * Load the newest page of several rooms in one relay round trip, so opening
  * them paints at once. Rooms that already have messages cached are not
  * reloaded (see `keepCachedChannel`); opening still revalidates as usual.
- * Resolves to the rooms loaded.
+ * Rooms the store holds certainly are drawn from it instead
+ * (`roomsNeedingRelay`). Resolves to the rooms loaded from the relay.
  */
 export async function preloadChannelsMessages(
   queryClient: QueryClient,
   channelIds: readonly string[],
   limitRows: number,
+  options: PreloadChannelsOptions = {},
 ): Promise<string[]> {
   await channelHeadHydration(queryClient);
+  const scope = channelHeadCacheScope(queryClient);
   const cold = channelIds.filter(
     (channelId) => !keepCachedChannel(queryClient, channelId),
   );
   if (cold.length === 0) return [];
+  const fetch = await roomsNeedingRelay(queryClient, cold, options);
+  if (!fetch || fetch.length === 0) return [];
+  if (options.beforeFetch && !(await options.beforeFetch())) return [];
+  // Signed out, switched account or left: nothing more goes out.
+  if (
+    options.signal?.aborted ||
+    !sameScope(scope, channelHeadCacheScope(queryClient))
+  ) {
+    return [];
+  }
   let pages: Map<string, RelayEvent[]>;
   try {
-    pages = await getChannelWindowsEvents(cold, limitRows, {
+    pages = await getChannelWindowsEvents(fetch, limitRows, {
       storeHead: true,
     });
   } catch (error) {
@@ -56,7 +196,7 @@ export async function preloadChannelsMessages(
     return [];
   }
   const loaded: string[] = [];
-  for (const channelId of cold) {
+  for (const channelId of fetch) {
     const events = pages.get(channelId);
     // A room the relay skipped stays cold; opening it loads as usual.
     if (!events) continue;
@@ -95,6 +235,7 @@ async function storeChannelPage(
   queryClient: QueryClient,
   channelId: string,
   loadEvents: () => Promise<RelayEvent[]>,
+  fromRelay = true,
 ): Promise<boolean> {
   const queryKey = channelMessagesKey(channelId);
   await queryClient.prefetchQuery({
@@ -113,8 +254,18 @@ async function storeChannelPage(
     gcTime: MESSAGES_GC_MS,
   });
   if (queryClient.getQueryState(queryKey)?.status !== "success") return false;
-  // A relay page: the next fetch of this room asks the relay, not the store.
-  markStoreRoomHeadFetched(queryClient, channelId);
+  if (fromRelay) {
+    // A relay page: the next fetch of this room asks the relay, not the store.
+    markStoreRoomHeadFetched(queryClient, channelId);
+  } else {
+    // A store window paints at once; opening still fetches (from the store,
+    // then the relay once), as a first open would.
+    await queryClient.invalidateQueries({
+      queryKey,
+      exact: true,
+      refetchType: "none",
+    });
+  }
   // An empty page holds the skeleton on open, as an empty persisted head does.
   if ((queryClient.getQueryData<unknown[]>(queryKey)?.length ?? 0) === 0) {
     return false;
