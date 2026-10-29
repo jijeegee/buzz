@@ -7,6 +7,7 @@ import {
   useManagedAgentsQuery,
 } from "@/features/agents/hooks";
 import { relayClient } from "@/shared/api/relayClient";
+import type { LiveSubscriptionReadiness } from "@/shared/api/relayClientShared";
 import { chunkRoomIds } from "@/shared/api/relayRoomBundle";
 import type { ManagedAgent } from "@/shared/api/types";
 import { KIND_STREAM_MESSAGE } from "@/shared/constants/kinds";
@@ -63,7 +64,15 @@ export function useRemoteStartListener(
   const startedAtRef = React.useRef<number | null>(null);
   const scopeRef = React.useRef("");
   const wantedRef = React.useRef(new Set<string>());
+  // Keys whose REQ is still opening (their entry in `subs` is a placeholder).
+  const openingRef = React.useRef(new Set<string>());
+  // A failed REQ reruns the effect after a backoff, which reopens it.
+  const [retry, setRetry] = React.useState(0);
+  const retryRef = React.useRef<{ attempt: number; timer?: number }>({
+    attempt: 0,
+  });
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: retry only reruns it to reopen failed REQs
   React.useEffect(() => {
     const subs = subsRef.current;
     // A new account or community starts over.
@@ -72,6 +81,9 @@ export function useRemoteStartListener(
       scopeRef.current = scopeKey;
       for (const dispose of subs.values()) void dispose().catch(() => {});
       subs.clear();
+      openingRef.current.clear();
+      window.clearTimeout(retryRef.current.timer);
+      retryRef.current = { attempt: 0 };
       startedAtRef.current = null;
     }
     if (!ownerPubkey || !relayUrl?.trim()) return;
@@ -82,8 +94,16 @@ export function useRemoteStartListener(
     );
     wantedRef.current = wanted;
     // Retire against the latest wanted set: an earlier, slower opening must
-    // not close what a later run opened.
+    // not close what a later run opened, and nothing closes until every
+    // wanted DM set is live (an earlier run's opening may still fail).
     const retire = () => {
+      const wantedNow = [...wantedRef.current];
+      if (
+        wantedNow.some((key) => !subs.has(key) || openingRef.current.has(key))
+      ) {
+        return;
+      }
+      retryRef.current.attempt = 0;
       for (const [key, dispose] of subs) {
         if (wantedRef.current.has(key)) continue;
         subs.delete(key);
@@ -106,12 +126,24 @@ export function useRemoteStartListener(
         void queryClient.invalidateQueries({ queryKey: managedAgentsQueryKey });
       },
     };
+    const scheduleRetry = () => {
+      const state = retryRef.current;
+      if (state.timer !== undefined) return;
+      const delayMs = Math.min(1_000 * 2 ** state.attempt, 60_000);
+      state.attempt += 1;
+      state.timer = window.setTimeout(() => {
+        state.timer = undefined;
+        if (scopeRef.current === scopeKey) setRetry((n) => n + 1);
+      }, delayMs);
+    };
     const opening: Promise<void>[] = [];
     for (const key of wanted) {
       if (subs.has(key)) continue;
       const placeholder = async () => {};
       subs.set(key, placeholder);
+      openingRef.current.add(key);
       const channelIds = key.split(",");
+      let readiness: LiveSubscriptionReadiness | undefined;
       opening.push(
         relayClient
           .subscribeLive(
@@ -123,16 +155,29 @@ export function useRemoteStartListener(
               limit: Math.min(20 * channelIds.length, 500),
             },
             (event) => handleRemoteCommand(event, scope),
+            (next) => {
+              readiness = next;
+            },
           )
           .then((dispose) => {
+            if (readiness === "closed") {
+              // The relay refused it: not live, so it fails like a throw.
+              void dispose().catch(() => {});
+              throw new Error("The relay closed the subscription.");
+            }
             if (subs.get(key) === placeholder) {
               subs.set(key, dispose);
+              openingRef.current.delete(key);
             } else {
               void dispose().catch(() => {});
             }
           })
           .catch((error) => {
-            if (subs.get(key) === placeholder) subs.delete(key);
+            if (subs.get(key) === placeholder) {
+              subs.delete(key);
+              openingRef.current.delete(key);
+              scheduleRetry();
+            }
             console.error("Failed to listen for remote start", key, error);
           }),
       );
@@ -141,11 +186,12 @@ export function useRemoteStartListener(
     void Promise.all(opening).then(() => {
       if (scopeRef.current === scopeKey) retire();
     });
-  }, [dmKey, ownerPubkey, queryClient, relayUrl]);
+  }, [dmKey, ownerPubkey, queryClient, relayUrl, retry]);
 
   React.useEffect(() => {
     const subs = subsRef.current;
     return () => {
+      window.clearTimeout(retryRef.current.timer);
       for (const dispose of subs.values()) void dispose().catch(() => {});
       subs.clear();
     };
