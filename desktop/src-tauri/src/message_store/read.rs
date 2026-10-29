@@ -57,7 +57,7 @@ impl RoomHead {
     }
 }
 
-fn parse(raw: String) -> Option<Value> {
+pub(super) fn parse(raw: String) -> Option<Value> {
     serde_json::from_str(&raw).ok()
 }
 
@@ -78,7 +78,7 @@ fn parent_of(event: &Value) -> Option<&str> {
 
 /// Whether a stored deletion removes `id` (by `author`): an admin removal
 /// (9005, accepted by the relay only when allowed) or the author's own 5.
-fn is_deleted(conn: &Connection, id: &str, author: &str) -> rusqlite::Result<bool> {
+pub(super) fn is_deleted(conn: &Connection, id: &str, author: &str) -> rusqlite::Result<bool> {
     let mut statement = conn.prepare_cached(
         "SELECT 1 FROM targets t JOIN events e ON e.id = t.id WHERE t.target = ?1 \
          AND (e.kind = 9005 OR (e.kind = 5 AND e.pubkey = ?2)) LIMIT 1",

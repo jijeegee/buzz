@@ -287,3 +287,66 @@ test("no window from the relay resolves to null for the full-read fallback", asy
   pages = [];
   assert.equal(await loadNewestThreadReplies(client, ROOM, ROOT), null);
 });
+
+const { setStoreThreadHeadDeps } = await import("./storeThreadHead.ts");
+
+function storeHarness(stored, liveAt = 500) {
+  const asked = [];
+  const restore = setStoreThreadHeadDeps({
+    liveAt: () => liveAt,
+    threadHead: async (channelId, rootId, limit, at) => {
+      asked.push([channelId, rootId, limit, at]);
+      return stored ? stored() : null;
+    },
+  });
+  return { asked, restore };
+}
+
+test("a thread never loaded opens from the certain stored page", async () => {
+  const { asked, restore } = storeHarness(rawPage(11, 60, true));
+  try {
+    const queryClient = new QueryClient();
+    const events = await loadNewestThreadReplies(queryClient, ROOM, ROOT);
+    assert.equal(events.length, 50);
+    assert.deepEqual(asked, [[ROOM, ROOT, 50, 500]]);
+    assert.equal(
+      calls.filter((call) => call.command === "get_thread_windows").length,
+      0,
+    );
+    const state = queryClient.getQueryData(threadWindowStateKey(ROOM, ROOT));
+    assert.equal(state.hasOlder, true);
+    assert.equal(state.olderCursor.createdAt, 11);
+  } finally {
+    restore();
+  }
+});
+
+test("an uncertain store, no live REQ or a loaded thread asks the relay", async () => {
+  for (const [stored, liveAt, preload] of [
+    [null, 500, false],
+    [rawPage(11, 60, true), null, false],
+    [rawPage(11, 60, true), 500, true],
+  ]) {
+    calls.length = 0;
+    const { asked, restore } = storeHarness(stored, liveAt);
+    try {
+      const queryClient = new QueryClient();
+      if (preload) {
+        queryClient.setQueryData(threadWindowStateKey(ROOM, ROOT), {
+          hasOlder: false,
+          olderCursor: null,
+          newestCovered: null,
+        });
+      }
+      pages = [rawPage(1, 3, false)];
+      const events = await loadNewestThreadReplies(queryClient, ROOM, ROOT);
+      assert.deepEqual(
+        events.map((event) => event.created_at),
+        [1, 2, 3],
+      );
+      assert.equal(asked.length, liveAt === null || preload ? 0 : 1);
+    } finally {
+      restore();
+    }
+  }
+});

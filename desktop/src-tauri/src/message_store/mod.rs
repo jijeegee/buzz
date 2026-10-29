@@ -5,6 +5,7 @@
 mod classify;
 mod coverage;
 mod read;
+mod read_thread;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -215,6 +216,21 @@ impl MessageStore {
         .unwrap_or_default()
     }
 
+    pub(crate) fn thread_head(
+        &self,
+        lease: &Lease,
+        room: &str,
+        root: &str,
+        kinds: &[u64],
+        limit: usize,
+        live_at: Option<i64>,
+    ) -> read_thread::ThreadHead {
+        self.read(lease, "thread head", |conn| {
+            read_thread::thread_head(conn, room, root, kinds, limit, live_at)
+        })
+        .unwrap_or_default()
+    }
+
     /// Ends every lease of `account`, stops its writers and deletes its files.
     pub(crate) fn forget(&self, account: &str) {
         let account = account.to_ascii_lowercase();
@@ -358,6 +374,23 @@ pub(crate) fn certain_room_head(
     let lease = store.lease(relay_url, account)?;
     let head = store.room_head(&lease, room, kinds, limit, Some(live_at));
     head.certain.then(|| head.into_response(room))
+}
+
+/// `root`'s newest replies in `room` from the store, only when certain:
+/// `(rows newest first, next older cursor when more remain)`.
+pub(crate) fn certain_thread_head(
+    relay_url: &str,
+    account: &str,
+    room: &str,
+    root: &str,
+    kinds: &[u64],
+    limit: usize,
+    live_at: i64,
+) -> Option<(Vec<Value>, Option<(i64, String)>)> {
+    let store = global()?;
+    let lease = store.lease(relay_url, account)?;
+    let head = store.thread_head(&lease, room, root, kinds, limit, Some(live_at));
+    head.certain.then_some((head.rows, head.next_cursor))
 }
 
 /// The scope of a `/query` to `api_base_url` as `account`, taken before it

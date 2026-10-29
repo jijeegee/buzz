@@ -434,3 +434,74 @@ fn room_head_follows_shared_fixture() {
         assert_eq!(bounds["tags"][0][1], format!("{room}:head"), "{name}");
     }
 }
+
+#[test]
+fn thread_head_follows_shared_fixture() {
+    let text = include_str!("../../../../test-fixtures/message-store-thread-head.json");
+    let fixture: Value = serde_json::from_str(text).unwrap();
+    let room = fixture["room"].as_str().unwrap();
+    let root = fixture["root"].as_str().unwrap();
+    let kinds: Vec<u64> = fixture["kinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|kind| kind.as_u64().unwrap())
+        .collect();
+    for case in fixture["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().to_path_buf());
+        let lease = store.lease(RELAY, ACCOUNT).unwrap();
+        store.submit(
+            &lease,
+            Input::Events(case["events"].as_array().unwrap().clone()),
+        );
+        for span in case["coverage"].as_array().unwrap() {
+            store.submit(
+                &lease,
+                Input::Coverage {
+                    rooms: vec![room.to_owned()],
+                    from: span[0].as_i64().unwrap(),
+                    to: span[1].as_i64().unwrap(),
+                },
+            );
+        }
+        finish(&store);
+        let head = store.thread_head(
+            &lease,
+            room,
+            root,
+            &kinds,
+            case["limit"].as_u64().unwrap() as usize,
+            case["live_at"].as_i64(),
+        );
+        let expect = &case["expect"];
+        assert_eq!(head.certain, expect["certain"].as_bool().unwrap(), "{name}");
+        let rows: Vec<&str> = head
+            .rows
+            .iter()
+            .map(|event| event["id"].as_str().unwrap())
+            .collect();
+        let expected: Vec<&str> = expect["rows"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|id| id.as_str().unwrap())
+            .collect();
+        assert_eq!(rows, expected, "{name}: rows");
+        assert_eq!(
+            head.has_more,
+            expect["has_more"].as_bool().unwrap(),
+            "{name}"
+        );
+        let cursor = &expect["next_cursor"];
+        assert_eq!(
+            head.next_cursor,
+            cursor.as_array().map(|pair| (
+                pair[0].as_i64().unwrap(),
+                pair[1].as_str().unwrap().to_owned()
+            )),
+            "{name}: cursor"
+        );
+    }
+}

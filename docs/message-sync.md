@@ -133,8 +133,10 @@ per client:
 Every room event the device receives is kept on the device, with the spans
 known complete ([Coverage](#coverage)). Opening a room reads its newest
 window from the store when it is certain
-([Opening a room from the store](#opening-a-room-from-the-store)); threads
-and older pages still load from the relay.
+([Opening a room from the store](#opening-a-room-from-the-store)), and
+opening a thread its newest replies
+([Opening a thread from the store](#opening-a-thread-from-the-store)); older
+pages still load from the relay.
 
 - **One file per server and account:** `messages/<first 8 bytes of
   sha256(origin) in hex>-<account pubkey>.db`, where the origin is the relay's
@@ -214,3 +216,24 @@ before. Later refreshes always ask the relay. Cases:
   room reached EOSE at L on the current connection and has not been closed
   since (the client passes L; none means not certain); and one coverage span
   has `lo ≤ created_at of the 50th row − 1865` and `hi ≥ L`.
+
+### Opening a thread from the store
+
+On a thread's first load (no reply page folded in yet), the client reads the
+thread's newest replies from the store and uses them as the relay's
+thread-window answer when it is certain; otherwise it asks the relay as
+before. Later loads and older pages always ask the relay. Cases:
+`test-fixtures/message-store-thread-head.json`.
+
+- **Rows:** replies of the thread-window kinds (9, 40002) whose root is the
+  thread's root, at any depth, newest 50 by `created_at DESC, id ASC`. The
+  root itself is not a row. A reply targeted by a removal (9005) or by its
+  author's deletion (5) is left out. No overlays or summaries, as the relay
+  sends none (`include_aux` false).
+- **Bounds:** a full window has more (`next_cursor` = the oldest reply). The
+  answer ends with one unsigned `39007` bounds event (`h` = room, `e` = root,
+  content `{version: 1, direction: "older", has_more, next_cursor}`).
+- **Certain** when a live REQ carrying the room reached EOSE at L on the
+  current connection and has not been closed since, and one coverage span has
+  `hi ≥ L` and `lo ≤` (full window: the oldest reply's `created_at`; fewer
+  replies: the root's `created_at`, which must be stored in the room) `− 1865`.

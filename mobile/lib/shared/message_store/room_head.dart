@@ -64,6 +64,19 @@ class StoredRoomHead {
   }
 }
 
+/// Whether a stored deletion removes [id] (by [author]): an admin removal
+/// (9005, accepted by the relay only when allowed) or the author's own 5.
+Future<bool> isStoredDeleted(
+  DatabaseExecutor db,
+  String id,
+  String author,
+) async => (await db.rawQuery(
+  'SELECT 1 FROM targets t JOIN events e ON e.id = t.id '
+  'WHERE t.target = ? '
+  'AND (e.kind = 9005 OR (e.kind = 5 AND e.pubkey = ?)) LIMIT 1',
+  [id, author],
+)).isNotEmpty;
+
 Map<String, dynamic>? _parse(Object? raw) {
   if (raw is! String) return null;
   try {
@@ -143,13 +156,9 @@ Future<StoredRoomHead> readRoomHead(
         if (root != null && _parentOf(event) != root) continue;
         // An admin removal (9005, accepted only when allowed) or the
         // author's own deletion (5) takes the row out.
-        final deleted = await db.rawQuery(
-          'SELECT 1 FROM targets t JOIN events e ON e.id = t.id '
-          'WHERE t.target = ? '
-          'AND (e.kind = 9005 OR (e.kind = 5 AND e.pubkey = ?)) LIMIT 1',
-          [id, candidate['pubkey']],
-        );
-        if (deleted.isNotEmpty) continue;
+        if (await isStoredDeleted(db, id, candidate['pubkey']! as String)) {
+          continue;
+        }
         nextCursor = (candidate['created_at']! as int, id);
         rowIds.add(id);
         rows.add(event);

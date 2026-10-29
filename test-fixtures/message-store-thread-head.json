@@ -1,0 +1,960 @@
+{
+  "description": "Opening a thread from the device store: the newest replies under `root` (every depth), rebuilt by the relay's thread-window rules, and whether that window is certain. Shared by desktop (message_store/read_thread.rs) and mobile (message_store/thread_head.dart). Rules: docs/message-sync.md#opening-a-thread-from-the-store. Each case stores `events` into an empty store for room `room-1`, records `coverage` spans, then reads the window with `kinds`, `limit` and the live REQ's EOSE time `live_at` (null: no live REQ).",
+  "room": "room-1",
+  "root": "root-1",
+  "kinds": [
+    9,
+    40002
+  ],
+  "cases": [
+    {
+      "name": "newest replies at every depth, ties by id ascending",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "a1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "a2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 6000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "a4",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "a1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "a3",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ],
+            [
+              "broadcast",
+              "1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "a5",
+          "kind": 40002,
+          "pubkey": "bob",
+          "created_at": 8000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "a4",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "a5",
+          "a3",
+          "a4"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          7000,
+          "a4"
+        ]
+      }
+    },
+    {
+      "name": "other threads, the root itself, other kinds and deleted replies are left out",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "root-2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "o1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-2",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-2",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b3",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b4",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5400,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "w1",
+          "kind": 43001,
+          "pubkey": "bob",
+          "created_at": 5500,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d1",
+          "kind": 9005,
+          "pubkey": "admin",
+          "created_at": 5600,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b4"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d2",
+          "kind": 5,
+          "pubkey": "mallory",
+          "created_at": 5601,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b3"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d3",
+          "kind": 5,
+          "pubkey": "bob",
+          "created_at": 5602,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "b2"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "b3",
+          "b1"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          5100,
+          "b1"
+        ]
+      }
+    },
+    {
+      "name": "a short thread is certain when coverage reaches back to its root",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "s1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "s2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "s2",
+          "s1"
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "name": "a short thread without its root stored is not certain",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "n1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "n2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "n2",
+          "n1"
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "name": "a short thread needs coverage a margin before its root",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          3000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "m2",
+          "m1"
+        ],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "name": "an empty thread with its root covered is certain",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [],
+        "has_more": false,
+        "next_cursor": null
+      }
+    },
+    {
+      "name": "coverage must reach the live REQ",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          18000
+        ],
+        [
+          19000,
+          19500
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "c1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "c2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "c2",
+          "c1"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          5000,
+          "c1"
+        ]
+      }
+    },
+    {
+      "name": "a full page needs coverage a margin before its oldest reply; met exactly is certain",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          3135,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "g1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "g2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "g2",
+          "g1"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          5000,
+          "g1"
+        ]
+      }
+    },
+    {
+      "name": "no live REQ is not certain",
+      "limit": 2,
+      "live_at": null,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "root-1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 4000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "l1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "l2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "root-1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "l2",
+          "l1"
+        ],
+        "has_more": true,
+        "next_cursor": [
+          5000,
+          "l1"
+        ]
+      }
+    }
+  ]
+}

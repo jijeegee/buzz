@@ -193,12 +193,7 @@ final threadRepliesProvider = FutureProvider.autoDispose
       if (unconfirmedIds == null || unconfirmedIds.isEmpty) {
         try {
           final page = parseThreadWindowPage(
-            await session.queryRelay([
-              threadWindowFilter(
-                channelId: args.channelId,
-                rootId: args.rootId,
-              ),
-            ]),
+            await _openThreadWindowResponse(session, args, window.hasLoaded),
             channelId: args.channelId,
             rootId: args.rootId,
           );
@@ -292,6 +287,28 @@ final threadRepliesProvider = FutureProvider.autoDispose
 /// A thread can also be opened at a reply ([openAt]); it then pages toward
 /// the present with [loadNewer], and the query's newest-page refreshes leave
 /// it alone until they connect to it.
+/// The newest reply window: on a thread's first load, the store's window
+/// when it is certain (docs/message-sync.md#opening-a-thread-from-the-store);
+/// otherwise, and on every later load, the relay's.
+Future<List<NostrEvent>> _openThreadWindowResponse(
+  RelaySessionNotifier session,
+  ThreadRepliesArgs args,
+  bool loaded,
+) async {
+  if (!loaded) {
+    final stored = await session.certainThreadHead(
+      args.channelId,
+      args.rootId,
+      kinds: threadWindowKinds,
+      limit: threadWindowPageReplies,
+    );
+    if (stored != null) return stored;
+  }
+  return session.queryRelay([
+    threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
+  ]);
+}
+
 class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   final ThreadRepliesArgs args;
 
@@ -303,6 +320,9 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
 
   @override
   ThreadWindow? build() => null;
+
+  /// Whether a page has been folded in since this thread was opened.
+  bool get hasLoaded => state != null;
 
   bool get hasOlder => state?.state.hasOlder ?? false;
 

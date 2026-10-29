@@ -62,5 +62,34 @@ pub fn message_store_room_head(
     ))
 }
 
+/// `root_id`'s newest replies from the store, in the shape of a
+/// `get_thread_windows` page, or `None` unless it is certain.
+#[tauri::command]
+pub fn message_store_thread_head(
+    channel_id: String,
+    root_id: String,
+    limit: usize,
+    live_at: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<super::thread_window::ThreadWindowPage>, String> {
+    let (relay, account) = scope(&state)?;
+    let kinds: Vec<u64> = super::thread_window::THREAD_ROW_KINDS
+        .iter()
+        .map(|&kind| u64::from(kind))
+        .collect();
+    Ok(crate::message_store::certain_thread_head(
+        &relay,
+        &account,
+        &channel_id,
+        &root_id,
+        &kinds,
+        limit.clamp(1, 200),
+        live_at,
+    )
+    .map(|(events, next_cursor)| {
+        super::thread_window::ThreadWindowPage::from_store(channel_id, root_id, events, next_cursor)
+    }))
+}
+
 /// Rows of a room's first window, as `get_channel_window` asks by default.
 const ROOM_HEAD_ROWS: usize = 50;

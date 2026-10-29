@@ -3,7 +3,7 @@ use tauri::State;
 use crate::{app_state::AppState, models::ThreadCursor, relay::query_relay};
 
 /// Conversation kinds a thread window may page (NIP-CW thread mode).
-const THREAD_ROW_KINDS: [u32; 2] = [9, 40002];
+pub(crate) const THREAD_ROW_KINDS: [u32; 2] = [9, 40002];
 /// The relay serves at most four thread windows per `/query`.
 const MAX_BATCH_THREADS: usize = 4;
 /// Kind of the relay-signed overlay that closes every thread window.
@@ -26,6 +26,27 @@ pub struct ThreadWindowPage {
     has_more: bool,
     /// Cursor for the next older page, when `has_more`.
     next_cursor: Option<ThreadCursor>,
+}
+
+impl ThreadWindowPage {
+    /// A newest page read from the device store.
+    pub(crate) fn from_store(
+        channel_id: String,
+        root_id: String,
+        events: Vec<serde_json::Value>,
+        next_cursor: Option<(i64, String)>,
+    ) -> Self {
+        Self {
+            channel_id,
+            root_id,
+            events,
+            has_more: next_cursor.is_some(),
+            next_cursor: next_cursor.map(|(created_at, event_id)| ThreadCursor {
+                created_at,
+                event_id,
+            }),
+        }
+    }
 }
 
 fn build_thread_window_filter(request: &ThreadWindowRequest, limit: u32) -> serde_json::Value {

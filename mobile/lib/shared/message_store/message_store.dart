@@ -13,6 +13,7 @@ import 'package:sqflite/sqflite.dart';
 
 import 'coverage.dart' as spans;
 import 'room_head.dart';
+import 'thread_head.dart';
 import 'stored_event.dart';
 
 const messageStoreSchemaVersion = 1;
@@ -221,6 +222,31 @@ class MessageStore {
       ),
     );
     return head != null && head.certain ? head.toResponse(room) : null;
+  }
+
+  /// [root]'s newest replies in [room] as a thread-window response, only
+  /// when certain (docs/message-sync.md#opening-a-thread-from-the-store).
+  Future<List<Map<String, dynamic>>?> certainThreadHead(
+    MessageStoreLease? lease, {
+    required String room,
+    required String root,
+    required List<int> kinds,
+    required int limit,
+    required int liveAt,
+  }) async {
+    final head = await _read(
+      lease,
+      'thread head',
+      (db) => readThreadHead(
+        db,
+        room: room,
+        root: root,
+        kinds: kinds,
+        limit: limit,
+        liveAt: liveAt,
+      ),
+    );
+    return head != null && head.certain ? head.toResponse(room, root) : null;
   }
 
   /// Runs [read] on [lease]'s file; `null` when there is no file yet or it
