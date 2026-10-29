@@ -10,15 +10,20 @@ import 'relay_provider.dart';
 class RelayInfo {
   final Set<String> supportedExtensions;
 
-  const RelayInfo({this.supportedExtensions = const {}});
+  /// The relay's own signing pubkey (NIP-11 `self`), when advertised.
+  final String? relaySelf;
+
+  const RelayInfo({this.supportedExtensions = const {}, this.relaySelf});
 
   /// Parses the fields read here; anything else in the document is ignored.
   factory RelayInfo.fromDocument(Map<String, dynamic> document) {
     final extensions = document['supported_extensions'];
+    final relaySelf = document['self'];
     return RelayInfo(
       supportedExtensions: extensions is List
           ? extensions.whereType<String>().toSet()
           : const {},
+      relaySelf: relaySelf is String ? relaySelf : null,
     );
   }
 

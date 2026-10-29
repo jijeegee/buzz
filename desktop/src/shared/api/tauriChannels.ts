@@ -57,6 +57,10 @@ export type GetChannelsPayload = {
   channels: Channel[] | null;
   /** Map of channel id → ISO-8601 timestamp of its most recent message. */
   lastMessages: Record<string, string>;
+  /** Every room the identity belongs to, hidden DMs included. */
+  memberIds: string[];
+  /** The device store's capture taken before this fetch (`null`: none). */
+  storeScope: string | null;
 };
 
 type RawChannelDetail = RawChannel & {
@@ -151,11 +155,15 @@ export async function getChannels(
     hash: string;
     channels: RawChannel[] | null;
     last_messages: Record<string, string>;
+    member_ids: string[];
+    store_scope: string | null;
   }>("get_channels", { knownHash });
   return {
     hash: raw.hash,
     channels: raw.channels !== null ? raw.channels.map(fromRawChannel) : null,
     lastMessages: raw.last_messages,
+    memberIds: raw.member_ids,
+    storeScope: raw.store_scope,
   };
 }
 

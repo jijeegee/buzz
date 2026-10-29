@@ -5,6 +5,7 @@
 mod classify;
 mod clock;
 mod coverage;
+mod purge;
 mod read;
 mod read_thread;
 #[cfg(test)]
@@ -16,7 +17,7 @@ pub(crate) use clock::note_server_date;
 use std::{
     collections::{HashMap, VecDeque},
     path::{Path, PathBuf},
-    sync::{Mutex, OnceLock},
+    sync::{Arc, Mutex, OnceLock},
 };
 
 use serde_json::Value;
@@ -72,6 +73,11 @@ impl Lease {
     fn token(&self) -> String {
         format!("{}:{}", self.stem, self.epoch)
     }
+
+    /// The file's server part (origin hash) and account.
+    fn parts(&self) -> (&str, &str) {
+        self.stem.split_once('-').unwrap_or((&self.stem, ""))
+    }
 }
 
 pub(crate) struct MessageStore {
@@ -85,7 +91,18 @@ struct Inner {
     epochs: HashMap<String, u64>,
     /// sha256 of a recent AUTH token and its account; never the token.
     tokens: VecDeque<([u8; 32], String)>,
+    /// Each server's signing key (NIP-11 `self`), by origin hash: only its
+    /// notices may forget a room.
+    relay_keys: HashMap<String, Arc<str>>,
+    /// The capture taken when each subscription last reached EOSE, by
+    /// subscription id, until the app asks for it.
+    eose: HashMap<String, (u64, String)>,
+    /// Orders [`Self::eose`] entries, oldest first.
+    eose_noted: u64,
 }
+
+/// EOSE captures kept at most; beyond this the oldest are not needed.
+const MAX_EOSE_CAPTURES: usize = 512;
 
 /// `https://host[:port]` for any relay URL, so a socket and a query to the
 /// same server share one file.
@@ -103,13 +120,29 @@ pub(crate) fn http_origin(relay_url: &str) -> Option<String> {
     })
 }
 
-fn file_stem(origin: &str, account: &str) -> String {
-    let digest = Sha256::digest(origin.as_bytes());
-    let hex: String = digest[..8]
+fn origin_hash(origin: &str) -> String {
+    Sha256::digest(origin.as_bytes())[..8]
         .iter()
         .map(|byte| format!("{byte:02x}"))
-        .collect();
-    format!("{hex}-{}", account.to_ascii_lowercase())
+        .collect()
+}
+
+fn file_stem(origin: &str, account: &str) -> String {
+    format!("{}-{}", origin_hash(origin), account.to_ascii_lowercase())
+}
+
+fn is_pubkey(value: &str) -> bool {
+    value.len() == 64 && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
+/// The capture a `<scope>:<sequence>` token from [`MessageStore::capture`]
+/// names, when its scope is still `lease`'s.
+fn captured(token: Option<&str>, lease: &Lease) -> Result<u64, String> {
+    token
+        .and_then(|token| token.rsplit_once(':'))
+        .filter(|(scope, _)| *scope == lease.token())
+        .and_then(|(_, sequence)| sequence.parse().ok())
+        .ok_or_else(|| "message store scope changed".to_owned())
 }
 
 impl MessageStore {
@@ -128,7 +161,7 @@ impl MessageStore {
     pub(crate) fn lease(&self, relay_url: &str, account: &str) -> Option<Lease> {
         let origin = http_origin(relay_url)?;
         let account = account.to_ascii_lowercase();
-        if account.len() != 64 || !account.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        if !is_pubkey(&account) {
             return None;
         }
         let stem = file_stem(&origin, &account);
@@ -136,9 +169,49 @@ impl MessageStore {
         Some(Lease { stem, epoch })
     }
 
+    /// A capture of `lease`'s file now: its scope and the file's sequence.
+    /// A span or membership list carrying it is refused once the scope ends,
+    /// and for rooms forgotten after it (docs/message-sync.md#forgetting-a-room).
+    pub(crate) fn capture(&self, lease: &Lease) -> Option<String> {
+        let inner = self.inner.lock().ok()?;
+        Some(capture_in(&inner, lease))
+    }
+
+    /// Takes the capture of `lease`'s file as subscription `sub` reaches
+    /// EOSE, in socket order: what arrived before it has a lower number.
+    pub(crate) fn note_eose(&self, lease: &Lease, sub: &str) {
+        let Ok(mut inner) = self.inner.lock() else {
+            return;
+        };
+        let capture = capture_in(&inner, lease);
+        if inner.eose.len() >= MAX_EOSE_CAPTURES && !inner.eose.contains_key(sub) {
+            let oldest = inner
+                .eose
+                .iter()
+                .min_by_key(|(_, (noted, _))| *noted)
+                .map(|(sub, _)| sub.clone());
+            if let Some(oldest) = oldest {
+                inner.eose.remove(&oldest);
+            }
+        }
+        inner.eose_noted += 1;
+        let noted = inner.eose_noted;
+        inner.eose.insert(sub.to_owned(), (noted, capture));
+    }
+
+    /// The capture taken when `sub` last reached EOSE, once.
+    pub(crate) fn take_eose(&self, sub: &str) -> Option<String> {
+        self.inner
+            .lock()
+            .ok()?
+            .eose
+            .remove(sub)
+            .map(|(_, capture)| capture)
+    }
+
     /// Queues a coverage span for the file current for `relay_url` and
-    /// `account`, if `scope` (taken at the span's EOSE) is still that file and
-    /// sign-in. A span without a scope cannot be placed and is refused too.
+    /// `account`, if `scope` (captured at the span's EOSE) is still that file
+    /// and sign-in. A span without a scope cannot be placed and is refused too.
     pub(crate) fn extend_coverage(
         &self,
         relay_url: &str,
@@ -151,28 +224,94 @@ impl MessageStore {
         let Some(lease) = self.lease(relay_url, account) else {
             return Ok(());
         };
-        if scope != Some(lease.token().as_str()) {
-            return Err("message store scope changed".into());
-        }
-        self.submit(&lease, Input::Coverage { rooms, from, to });
+        let captured = captured(scope, &lease)?;
+        self.submit(
+            &lease,
+            Input::Coverage {
+                rooms,
+                from,
+                to,
+                captured,
+            },
+        );
         Ok(())
     }
 
-    /// Hands a receive to the writer of `lease`'s file. Never blocks on the
+    /// Applies `keep`, the account's full membership list from a successful
+    /// fetch, to the rooms stored for `relay_url` and `account`
+    /// (docs/message-sync.md#forgetting-a-room). Refused when `scope`
+    /// (captured before that fetch) is no longer current, and for an empty
+    /// list.
+    pub(crate) fn forget_rooms_except(
+        &self,
+        relay_url: &str,
+        account: &str,
+        scope: Option<&str>,
+        keep: Vec<String>,
+    ) -> Result<(), String> {
+        let lease = self
+            .lease(relay_url, account)
+            .ok_or("message store scope changed")?;
+        let captured = captured(scope, &lease)?;
+        if keep.is_empty() {
+            return Err("an empty membership list is never acted on".into());
+        }
+        let keep = keep.into_iter().collect();
+        self.submit(&lease, Input::ForgetExcept { keep, captured });
+        Ok(())
+    }
+
+    /// Notes `relay_url`'s signing key (its NIP-11 `self`).
+    pub(crate) fn note_relay_key(&self, relay_url: &str, key: &str) {
+        let key = key.to_ascii_lowercase();
+        let (Some(origin), true) = (http_origin(relay_url), is_pubkey(&key)) else {
+            return;
+        };
+        if let Ok(mut inner) = self.inner.lock() {
+            inner.relay_keys.insert(origin_hash(&origin), key.into());
+        }
+    }
+
+    /// Hands a socket frame to the writer, with the server's signing key
+    /// when known, so its relay notices can be acted on.
+    pub(crate) fn submit_frame(&self, lease: &Lease, frame: String) {
+        self.with_writer(lease, |writer, relay_key| {
+            writer.submit(Input::Frame { frame, relay_key });
+        });
+    }
+
+    /// Hands received events (a `/query` answer) to the writer, as frames.
+    pub(crate) fn submit_events(&self, lease: &Lease, events: Vec<Value>) {
+        self.with_writer(lease, |writer, relay_key| {
+            writer.submit(Input::Events { events, relay_key });
+        });
+    }
+
+    /// Hands an input to the writer of `lease`'s file. Never blocks on the
     /// disk; what to keep is decided on the writer thread.
     fn submit(&self, lease: &Lease, input: Input) {
+        self.with_writer(lease, |writer, _| {
+            writer.submit(input);
+        });
+    }
+
+    /// Runs `act` on the writer of `lease`'s file, started if needed, with
+    /// the server's signing key when known, unless the lease has ended.
+    fn with_writer(&self, lease: &Lease, act: impl FnOnce(&Writer, Option<Arc<str>>)) {
         let Ok(mut inner) = self.inner.lock() else {
             return;
         };
         if *inner.epochs.get(&lease.stem).unwrap_or(&0) != lease.epoch {
             return;
         }
+        let relay_key = inner.relay_keys.get(lease.parts().0).cloned();
         let path = self.path_of(lease);
-        inner
+        let account = lease.parts().1.to_owned();
+        let writer = inner
             .writers
             .entry(lease.stem.clone())
-            .or_insert_with(|| Writer::start(path))
-            .submit(input);
+            .or_insert_with(|| Writer::start(path, account));
+        act(writer, relay_key);
     }
 
     fn note_token(&self, token: &str, account: &str) {
@@ -317,6 +456,11 @@ impl MessageStore {
 }
 
 /// Whether `frame` is a `["<label>", ...]` message, without parsing it.
+fn capture_in(inner: &Inner, lease: &Lease) -> String {
+    let sequence = inner.writers.get(&lease.stem).map_or(0, Writer::sequence);
+    format!("{}:{sequence}", lease.token())
+}
+
 fn labelled(frame: &str, label: &str) -> bool {
     frame
         .trim_start()
@@ -362,15 +506,24 @@ impl SocketTap {
         self.lease = account.and_then(|account| store.lease(&self.url, &account));
     }
 
-    /// A frame the relay sent. `["EVENT", sub, event]` is kept.
+    /// A frame the relay sent. `["EVENT", sub, event]` is kept;
+    /// `["EOSE", sub]` takes the capture its coverage is recorded with.
     pub(crate) fn received(&self, frame: &str) {
         let (Some(lease), Some(store)) = (&self.lease, global()) else {
             return;
         };
+        if labelled(frame, "EOSE") {
+            if let Ok(Value::Array(parts)) = serde_json::from_str::<Value>(frame) {
+                if let Some(Value::String(sub)) = parts.get(1) {
+                    store.note_eose(lease, sub);
+                }
+            }
+            return;
+        }
         if !labelled(frame, "EVENT") {
             return;
         }
-        store.submit(lease, Input::Frame(frame.to_owned()));
+        store.submit_frame(lease, frame.to_owned());
     }
 }
 
@@ -389,11 +542,42 @@ pub(crate) fn extend_coverage(
     store.extend_coverage(relay_url, account, scope, rooms, from, to)
 }
 
-/// The file and sign-in a coverage span is meant for, taken when its live
-/// REQ reached EOSE: a span recorded after an account or server switch, or
-/// a sign-out, is refused.
+/// Applies `keep`, a membership list fetched from capture `scope` on, to
+/// the rooms stored for `relay_url` and `account`.
+pub(crate) fn forget_rooms_except(
+    relay_url: &str,
+    account: &str,
+    scope: Option<&str>,
+    keep: Vec<String>,
+) -> Result<(), String> {
+    let Some(store) = global() else { return Ok(()) };
+    store.forget_rooms_except(relay_url, account, scope, keep)
+}
+
+/// Notes `relay_url`'s signing key (NIP-11 `self`): relay notices signed
+/// by it may forget a room; none are trusted before it is known.
+pub(crate) fn note_relay_key(relay_url: &str, key: &str) {
+    if let Some(store) = global() {
+        store.note_relay_key(relay_url, key);
+    }
+}
+
+/// A capture of the file and sign-in for `relay_url` and `account`, taken
+/// when a live REQ reached EOSE or a membership fetch starts: a span or list
+/// carrying it is refused after an account or server switch or a sign-out,
+/// and for rooms forgotten after it.
 pub(crate) fn scope_token(relay_url: &str, account: &str) -> Option<String> {
-    Some(global()?.lease(relay_url, account)?.token())
+    let store = global()?;
+    store.capture(&store.lease(relay_url, account)?)
+}
+
+/// The capture subscription `sub` took at its EOSE on the socket, or one
+/// taken now when there is none (a span from another scope is refused when
+/// it is recorded).
+pub(crate) fn eose_scope_token(relay_url: &str, account: &str, sub: &str) -> Option<String> {
+    global()?
+        .take_eose(sub)
+        .or_else(|| scope_token(relay_url, account))
 }
 
 /// The end of each room's latest coverage span begun before `before`.
@@ -469,5 +653,5 @@ pub(crate) fn query_received(lease: Option<Lease>, events: &[nostr::Event]) {
         .iter()
         .filter_map(|event| serde_json::to_value(event).ok())
         .collect();
-    store.submit(&lease, Input::Events(values));
+    store.submit_events(&lease, values);
 }

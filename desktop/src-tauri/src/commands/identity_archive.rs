@@ -359,6 +359,7 @@ pub(crate) async fn fetch_relay_self_at(
     relay_url: &str,
 ) -> Result<Option<String>, String> {
     if let Some(cached) = cached_relay_self(state, relay_url) {
+        crate::message_store::note_relay_key(relay_url, &cached);
         return Ok(Some(cached));
     }
 
@@ -388,6 +389,8 @@ pub(crate) async fn fetch_relay_self_at(
     };
 
     if relay_self.len() == 64 && relay_self.chars().all(|c| c.is_ascii_hexdigit()) {
+        // The device store trusts only this signer's room notices.
+        crate::message_store::note_relay_key(relay_url, &relay_self);
         if let Ok(mut cache) = state.relay_self_cache.lock() {
             cache.insert(
                 relay_url.to_string(),

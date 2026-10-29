@@ -18,7 +18,7 @@ use crate::{
 // the directory cursor, the not-modified hash, and member-count collection)
 // lives in the `fetch` submodule to keep this file under the per-file line cap.
 mod fetch;
-use fetch::{compute_channels_hash, fetch_channels, DirectoryScope};
+use fetch::{compute_channels_hash, fetch_channel_list, fetch_channels, DirectoryScope};
 mod group_chat;
 pub use group_chat::*;
 
@@ -40,7 +40,8 @@ pub async fn get_channels(
     known_hash: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<GetChannelsPayload, String> {
-    let channels = fetch_channels(&state, DirectoryScope::MemberOnly).await?;
+    let list = fetch_channel_list(&state, DirectoryScope::MemberOnly).await?;
+    let channels = list.channels;
 
     let last_messages: std::collections::HashMap<String, String> = channels
         .iter()
@@ -61,6 +62,8 @@ pub async fn get_channels(
             hash,
             channels: None,
             last_messages,
+            member_ids: list.member_ids,
+            store_scope: list.store_scope,
         });
     }
 
@@ -68,6 +71,8 @@ pub async fn get_channels(
         hash,
         channels: Some(channels),
         last_messages,
+        member_ids: list.member_ids,
+        store_scope: list.store_scope,
     })
 }
 

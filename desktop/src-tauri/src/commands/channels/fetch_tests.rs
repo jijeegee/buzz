@@ -12,6 +12,8 @@ struct Fixture {
     fail_discovery: bool,
     fail_fallback: bool,
     fail_messages: bool,
+    /// Pages are cut to this many rows whatever limit was asked.
+    page_cap: Option<usize>,
 }
 
 struct Relay {
@@ -85,7 +87,8 @@ async fn query(
                 .cmp(&a.created_at)
                 .then_with(|| a.id.cmp(&b.id))
         });
-        page.truncate(filter["limit"].as_u64().unwrap() as usize);
+        let limit = filter["limit"].as_u64().unwrap() as usize;
+        page.truncate(data.page_cap.map_or(limit, |cap| cap.min(limit)));
         result.extend(page);
     }
     (StatusCode::OK, Json(json!(result)))
@@ -187,13 +190,14 @@ async fn member_rosters_are_reused_including_every_discovery_page() {
             .flatten()
             .filter(|f| f["kinds"] == json!([39002]))
             .collect();
-        assert_eq!(discovery.len(), count / DIRECTORY_PAGE_SIZE + 1);
+        // Membership pages run until an empty one.
+        assert_eq!(discovery.len(), count / DIRECTORY_PAGE_SIZE + 2);
         if count > DIRECTORY_PAGE_SIZE {
             assert_eq!(discovery[1]["until"], json!(1_700_000_000));
             assert!(discovery[1]["before_id"].is_string());
         }
         // Membership pages + member metadata + hidden DMs + bounded activity batches.
-        let expected_reads = count / DIRECTORY_PAGE_SIZE + 1 + 2 + count.div_ceil(128);
+        let expected_reads = count / DIRECTORY_PAGE_SIZE + 2 + 2 + count.div_ceil(128);
         assert_eq!(data.requests.len(), expected_reads);
         eprintln!(
             "roster-reuse fixture channels={count} reads={} elapsed={:?}",
@@ -375,4 +379,68 @@ async fn discovery_and_activity_failures_still_abort_the_refresh() {
     relay.data.lock().unwrap().fail_discovery = false;
     relay.data.lock().unwrap().fail_messages = true;
     assert!(fetch(&state, DirectoryScope::MemberOnly).await.is_err());
+}
+
+async fn fetch_list(state: &AppState) -> ChannelList {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(10),
+        fetch_channel_list(state, DirectoryScope::MemberOnly),
+    )
+    .await
+    .expect("bounded channel fetch")
+    .unwrap()
+}
+
+/// The rooms the device store keeps follow membership: a hidden DM and a
+/// member room whose kind:39000 is missing or unparseable (a huddle backing
+/// room) stay, though neither is shown.
+#[tokio::test]
+async fn store_rooms_follow_membership_not_the_shown_list() {
+    let _serial = crate::relay_admission::TEST_SERIAL.lock().await;
+    let keys = Keys::generate();
+    let me = keys.public_key().to_hex();
+    let other = Keys::generate().public_key().to_hex();
+    let relay = Relay::new(vec![
+        metadata(&keys, "joined"),
+        roster(&keys, "joined", &[&me]),
+        event(&keys, 39000, vec![vec!["d", "hidden-dm"], vec!["t", "dm"]]),
+        roster(&keys, "hidden-dm", &[&me, &other]),
+        event(
+            &keys,
+            kuzz_core_pkg::kind::KIND_DM_VISIBILITY.try_into().unwrap(),
+            vec![vec!["p", &me], vec!["h", "hidden-dm"]],
+        ),
+        roster(&keys, "huddle-backing", &[&me]),
+        roster(&keys, "not-mine", &[&other]),
+        metadata(&keys, "pending"),
+    ])
+    .await;
+    let state = relay.state(&keys);
+    state.mark_pending_owned_channel(&me, "pending");
+    let list = fetch_list(&state).await;
+    let shown: Vec<_> = list.channels.iter().map(|c| c.id.as_str()).collect();
+    assert!(!shown.contains(&"hidden-dm") && !shown.contains(&"huddle-backing"));
+    assert_eq!(
+        list.member_ids,
+        ["hidden-dm", "huddle-backing", "joined", "pending"]
+    );
+}
+
+/// A relay serving shorter pages than asked does not end the membership walk
+/// early: the device store never forgets rooms by a partial list.
+#[tokio::test]
+async fn membership_pages_run_until_an_empty_page() {
+    let _serial = crate::relay_admission::TEST_SERIAL.lock().await;
+    let keys = Keys::generate();
+    let me = keys.public_key().to_hex();
+    let mut events = Vec::new();
+    for index in 0..25 {
+        let id = format!("room-{index:02}");
+        events.push(metadata(&keys, &id));
+        events.push(roster(&keys, &id, &[&me]));
+    }
+    let relay = Relay::new(events).await;
+    relay.data.lock().unwrap().page_cap = Some(10);
+    let list = fetch_list(&relay.state(&keys)).await;
+    assert_eq!(list.member_ids.len(), 25);
 }

@@ -790,6 +790,7 @@ pub fn run() {
             message_store_resume_points,
             message_store_extend_coverage,
             message_store_scope,
+            message_store_forget_rooms_except,
             message_store_room_head,
             message_store_thread_head,
             get_channel_window,

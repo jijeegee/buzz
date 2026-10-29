@@ -33,11 +33,19 @@ pub async fn message_store_resume_points(
     off_main(move || crate::message_store::resume_points(&relay, &account, &room_ids, before)).await
 }
 
-/// The scope (server file and sign-in) coverage recorded from now on is for.
+/// The capture (server file, sign-in, sequence) coverage is recorded with:
+/// the one taken when subscription `sub_id` reached EOSE on the socket, or
+/// one taken now.
 #[tauri::command]
-pub fn message_store_scope(state: State<'_, AppState>) -> Result<Option<String>, String> {
+pub fn message_store_scope(
+    sub_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
     let (relay, account) = scope(&state)?;
-    Ok(crate::message_store::scope_token(&relay, &account))
+    Ok(match sub_id {
+        Some(sub) => crate::message_store::eose_scope_token(&relay, &account, &sub),
+        None => crate::message_store::scope_token(&relay, &account),
+    })
 }
 
 /// Records that every event of `room_ids` in `[from, to]` has been received.
@@ -52,6 +60,25 @@ pub fn message_store_extend_coverage(
 ) -> Result<(), String> {
     let (relay, account) = self::scope(&state)?;
     crate::message_store::extend_coverage(&relay, &account, scope.as_deref(), room_ids, from, to)
+}
+
+/// Applies `room_ids`, the account's membership list from a successful
+/// fetch (archived, hidden and huddle rooms included), to the stored rooms.
+/// Refused when `scope` (the capture `get_channels` took before that fetch)
+/// is no longer current, or the list is empty. Also learns the relay's
+/// signing key, so its notices can forget rooms
+/// (docs/message-sync.md#forgetting-a-room).
+#[tauri::command]
+pub async fn message_store_forget_rooms_except(
+    room_ids: Vec<String>,
+    scope: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (relay, account) = self::scope(&state)?;
+    crate::message_store::forget_rooms_except(&relay, &account, scope.as_deref(), room_ids)?;
+    // Noted by the lookup itself; a failed one leaves the notices unacted.
+    let _ = super::identity_archive::fetch_relay_self(&state).await;
+    Ok(())
 }
 
 /// `room_id`'s newest window from the store, in the shape of

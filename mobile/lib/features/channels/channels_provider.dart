@@ -7,6 +7,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/community/community_provider.dart';
+import '../../shared/message_store/message_store.dart' show StoreCapture;
 import '../../shared/push/push_presentation_cache.dart';
 import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
@@ -206,6 +207,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     _loadThreadInterestStores(myPk);
 
     final session = ref.read(relaySessionProvider.notifier);
+    final storeScope = session.storeScope;
 
     // Acquire request ownership before the first relay await. Every channel-list
     // path uses this fence so completion order cannot let an older ordinary,
@@ -224,6 +226,17 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         .whereType<String>()
         .toSet();
     _cacheMemberSnapshots(memberships, replaceAll: true);
+    _forgetStoredRoomsMissingFrom(
+      ref,
+      session,
+      storeScope,
+      myPk,
+      memberships,
+      memberChannelIds.union({
+        for (final channel in state.value ?? const <Channel>[])
+          if (channel.isMember) channel.id,
+      }),
+    );
 
     // Step 2: pull metadata for joined channels. A user with no memberships
     // must still continue to directory discovery below.

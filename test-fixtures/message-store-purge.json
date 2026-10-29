@@ -1,0 +1,504 @@
+{
+  "description": "Forgetting a room's stored copy (docs/message-sync.md#forgetting-a-room). Each case starts from `seed` in a fresh file of `account`: its `events`, its `coverage`, then its `list` applied as the first membership list (only recorded), unless the case says `seed_list: false`. Then `steps` run in order: `events` are received (socket, query answer, older page or catch-up alike); `capture` takes a named capture now (a live REQ's EOSE, or the start of a membership fetch); `coverage` records a span captured at `captured` (default: now); `forget_except` is a successful membership list fetched from `captured` on (default: now; `null`: the list failed, nothing is called) under the current scope or a `stale` one (account or server switched, signed out), and `refused` says whether the store turns it down; `restart` reopens the file in a new store (captures do not outlive it). `relay_key_known: false` means the client has not learned the relay's signing key. `expect` is the file afterwards: event ids, ids of overlays with targets rows, summary roots, coverage per room. Read by desktop (message_store/tests.rs) and mobile (message_store_purge_test.dart).",
+  "account": "aa00000000000000000000000000000000000000000000000000000000000001",
+  "relay_key": "cc00000000000000000000000000000000000000000000000000000000000003",
+  "seed": {
+    "events": [
+      { "id": "a1", "kind": 9, "pubkey": "p1", "created_at": 100, "tags": [["h", "room-a"]], "content": "root" },
+      { "id": "a2", "kind": 9, "pubkey": "p1", "created_at": 150, "tags": [["h", "room-a"], ["e", "a1", "", "root"], ["e", "a1", "", "reply"]], "content": "reply" },
+      { "id": "x1", "kind": 7, "pubkey": "p2", "created_at": 110, "tags": [["e", "a1"]], "content": "+" },
+      { "id": "d1", "kind": 9005, "pubkey": "p1", "created_at": 160, "tags": [["h", "room-a"], ["e", "a2"]], "content": "" },
+      { "id": "s1", "kind": 39005, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 155, "tags": [["e", "a1"], ["h", "room-a"]], "content": "{\"reply_count\":1}" },
+      { "id": "b1", "kind": 9, "pubkey": "p1", "created_at": 120, "tags": [["h", "room-b"]], "content": "b" },
+      { "id": "y1", "kind": 7, "pubkey": "p2", "created_at": 125, "tags": [["e", "b1"]], "content": "+" },
+      { "id": "c1", "kind": 9, "pubkey": "p1", "created_at": 130, "tags": [["h", "room-c"]], "content": "archived" }
+    ],
+    "coverage": [{ "rooms": ["room-a", "room-b", "room-c"], "from": 100, "to": 200 }],
+    "list": ["room-a", "room-b", "room-c"]
+  },
+  "cases": [
+    {
+      "name": "seed only",
+      "steps": [],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "access loss: a kept room the list drops loses its rows, overlays, summaries and coverage; an archived room in the list stays",
+      "steps": [{ "forget_except": ["room-b", "room-c"], "refused": false }],
+      "expect": {
+        "events": ["b1", "c1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a list from a stale scope is refused",
+      "steps": [{ "forget_except": ["room-b"], "scope": "stale", "refused": true }],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "an empty list never purges",
+      "steps": [{ "forget_except": [], "refused": true }],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a failed list never purges",
+      "steps": [{ "forget_except": null }],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "first list (none kept yet, as after an upgrade) is only recorded; the next one forgets the rooms it drops",
+      "seed_list": false,
+      "steps": [
+        { "forget_except": ["room-b", "room-c"], "refused": false },
+        { "forget_except": ["room-a", "room-b"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a room no list had (an open channel only browsed) is not forgotten by a list",
+      "steps": [
+        {
+          "events": [
+            { "id": "o1", "kind": 9, "pubkey": "p1", "created_at": 170, "tags": [["h", "room-o"]], "content": "browsed" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c"], "refused": false },
+        { "forget_except": ["room-a", "room-b"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "d1", "o1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]] }
+      }
+    },
+    {
+      "name": "fence: a span captured before a purge is refused for the forgotten room only; spans captured after it are kept, however early they start, also after a restart",
+      "steps": [
+        { "capture": "eose" },
+        { "forget_except": ["room-b", "room-c"], "refused": false },
+        { "coverage": { "rooms": ["room-a", "room-b"], "from": 150, "to": 300, "captured": "eose" } },
+        { "coverage": { "rooms": ["room-a"], "from": 180, "to": 400 } },
+        { "restart": true },
+        { "coverage": { "rooms": ["room-a"], "from": 50, "to": 60 } }
+      ],
+      "expect": {
+        "events": ["b1", "c1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-a": [[50, 60], [180, 400]], "room-b": [[100, 300]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "join during the fetch: a kept room first written after the list's fetch began is not forgotten, and stays kept for the next list",
+      "steps": [
+        { "forget_except": ["room-a", "room-b", "room-c", "room-m"], "refused": false },
+        { "capture": "fetch" },
+        {
+          "events": [
+            { "id": "m1", "kind": 9, "pubkey": "p1", "created_at": 170, "tags": [["h", "room-m"]], "content": "back in" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c"], "captured": "fetch", "refused": false },
+        { "forget_except": ["room-a", "room-b", "room-c", "room-m"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "m1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a new room stored between two lists is kept when the next list has it",
+      "steps": [
+        {
+          "events": [
+            { "id": "n1", "kind": 9, "pubkey": "p1", "created_at": 170, "tags": [["h", "room-n"]], "content": "new room" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c", "room-n"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "n1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "rejoin by list: rows stored for a room a list dropped are forgotten when a list has it again, once, also across a restart",
+      "steps": [
+        { "forget_except": ["room-a", "room-b"], "refused": false },
+        { "restart": true },
+        {
+          "events": [
+            { "id": "c2", "kind": 9, "pubkey": "p1", "created_at": 135, "tags": [["h", "room-c"]], "content": "while out" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c"], "refused": false },
+        {
+          "events": [
+            { "id": "c3", "kind": 9, "pubkey": "p1", "created_at": 300, "tags": [["h", "room-c"]], "content": "after the rejoin" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c3", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a list keeping every room changes nothing, also when repeated",
+      "steps": [
+        { "forget_except": ["room-a", "room-b", "room-c"], "refused": false },
+        { "forget_except": ["room-a", "room-b", "room-c", "room-z"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "safety: a list dropping more than 5 kept rooms and more than half of them is not applied",
+      "steps": [
+        { "forget_except": ["room-a", "room-b", "room-c", "r1", "r2", "r3", "r4", "r5", "r6"], "refused": false },
+        { "forget_except": ["room-a"], "refused": false }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "first join: a relay member_joined for the account in a room it never left keeps the room's rows",
+      "steps": [
+        {
+          "events": [
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "j1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "leave then rejoin: a relay member_left by the account, then its member_joined, drops the room's older rows and all its coverage, and fences spans captured before it",
+      "steps": [
+        { "capture": "eose" },
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        },
+        { "coverage": { "rooms": ["room-a"], "from": 100, "to": 300, "captured": "eose" } }
+      ],
+      "expect": {
+        "events": ["a2", "b1", "c1", "d1", "j1", "y1"],
+        "targets": ["d1", "y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "leave then rejoin: member_removed naming the account counts as leaving",
+      "steps": [
+        {
+          "events": [
+            { "id": "r1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_removed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a2", "b1", "c1", "d1", "j1", "y1"],
+        "targets": ["d1", "y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "leave then rejoin: notices from a query answer, an older page or catch-up count too",
+      "steps": [
+        {
+          "events": [
+            { "id": "z1", "kind": 9, "pubkey": "p1", "created_at": 90, "tags": [["h", "room-b"]], "content": "page" },
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a2", "b1", "c1", "d1", "j1", "y1", "z1"],
+        "targets": ["d1", "y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "after a list dropped the room, a join older than its last stored row (the first one) forgets nothing",
+      "steps": [
+        { "forget_except": ["room-b", "room-c"], "refused": false },
+        {
+          "events": [
+            { "id": "a5", "kind": 9, "pubkey": "p1", "created_at": 170, "tags": [["h", "room-a"]], "content": "while out" },
+            { "id": "j0", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 90, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a5", "b1", "c1", "j0", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "after a list dropped the room, a newer join forgets what was stored while out",
+      "steps": [
+        { "forget_except": ["room-b", "room-c"], "refused": false },
+        {
+          "events": [
+            { "id": "a5", "kind": 9, "pubkey": "p1", "created_at": 170, "tags": [["h", "room-a"]], "content": "while out" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 300, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["b1", "c1", "j1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "notices not newer than the last join handled for the room are ignored, also after a restart",
+      "steps": [
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        },
+        { "restart": true },
+        {
+          "events": [
+            { "id": "a0", "kind": 9, "pubkey": "p1", "created_at": 90, "tags": [["h", "room-a"]], "content": "older page" }
+          ]
+        },
+        {
+          "events": [
+            { "id": "l0", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 130, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j0", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a0", "a2", "b1", "c1", "d1", "j0", "j1", "l0", "y1"],
+        "targets": ["d1", "y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "notices not signed by the relay are ignored",
+      "steps": [
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "dd00000000000000000000000000000000000000000000000000000000000004", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "dd00000000000000000000000000000000000000000000000000000000000004", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "j1", "l1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "without the relay's signing key no signer is trusted",
+      "relay_key_known": false,
+      "steps": [
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "j1", "l1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "someone else leaving and joining is ignored",
+      "steps": [
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 120, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\"}" },
+            { "id": "j1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 140, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_joined\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"target\":\"bb00000000000000000000000000000000000000000000000000000000000002\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "j1", "l1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "since_join: a relay history_changed to since_join forgets the room and keeps the notice",
+      "steps": [
+        {
+          "events": [
+            { "id": "h1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 300, "tags": [["h", "room-a"]], "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"since_join\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["b1", "c1", "h1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "since_join: history_changed to all is ignored",
+      "steps": [
+        {
+          "events": [
+            { "id": "h1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 300, "tags": [["h", "room-a"]], "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"all\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "h1", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "since_join: one older than a history_changed already handled (the room is all now) is ignored",
+      "steps": [
+        {
+          "events": [
+            { "id": "h2", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 300, "tags": [["h", "room-a"]], "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"all\"}" }
+          ]
+        },
+        {
+          "events": [
+            { "id": "h1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 200, "tags": [["h", "room-a"]], "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"since_join\"}" }
+          ]
+        }
+      ],
+      "expect": {
+        "events": ["a1", "a2", "b1", "c1", "d1", "h1", "h2", "x1", "y1"],
+        "targets": ["d1", "x1", "y1"],
+        "summaries": ["a1"],
+        "coverage": { "room-a": [[100, 200]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "since_join forgets only rows older than the notice: newer ones were sent under the new rule, and a span captured after it vouches for them",
+      "steps": [
+        {
+          "events": [
+            { "id": "a9", "kind": 9, "pubkey": "p1", "created_at": 400, "tags": [["h", "room-a"]], "content": "after" }
+          ]
+        },
+        {
+          "events": [
+            { "id": "h1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 300, "tags": [["h", "room-a"]], "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"since_join\"}" }
+          ]
+        },
+        { "coverage": { "rooms": ["room-a"], "from": 350, "to": 500 } }
+      ],
+      "expect": {
+        "events": ["a9", "b1", "c1", "h1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-a": [[350, 500]], "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a room-less deletion naming rows of two rooms stays when only one room is forgotten",
+      "steps": [
+        {
+          "events": [
+            { "id": "k1", "kind": 5, "pubkey": "p1", "created_at": 170, "tags": [["e", "a1"], ["e", "b1"]], "content": "" }
+          ]
+        },
+        { "forget_except": ["room-b", "room-c"], "refused": false }
+      ],
+      "expect": {
+        "events": ["b1", "c1", "k1", "y1"],
+        "targets": ["k1", "y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    },
+    {
+      "name": "a list equal to the kept one still forgets a kept room a leave notice marked",
+      "steps": [
+        {
+          "events": [
+            { "id": "l1", "kind": 40099, "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003", "created_at": 170, "tags": [["h", "room-a"]], "content": "{\"type\":\"member_left\",\"actor\":\"aa00000000000000000000000000000000000000000000000000000000000001\"}" }
+          ]
+        },
+        { "forget_except": ["room-a", "room-b", "room-c"], "refused": false }
+      ],
+      "expect": {
+        "events": ["b1", "c1", "y1"],
+        "targets": ["y1"],
+        "summaries": [],
+        "coverage": { "room-b": [[100, 200]], "room-c": [[100, 200]] }
+      }
+    }
+  ]
+}

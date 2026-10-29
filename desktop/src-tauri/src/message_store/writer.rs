@@ -2,49 +2,101 @@
 //! written in batches, so neither the socket nor a query waits for the disk.
 
 use std::{
+    collections::{HashMap, HashSet, VecDeque},
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, AtomicI64, Ordering},
-        mpsc::{self, Receiver, SyncSender, TrySendError},
+        atomic::{AtomicBool, AtomicI64, AtomicU64, Ordering},
+        mpsc::{self, Receiver, SyncSender},
         Arc,
     },
     thread::JoinHandle,
 };
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, Transaction};
 
 use serde_json::Value;
 
 use super::classify::{classify, Filed};
 use super::coverage;
+use super::purge;
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
+/// Each input queued for a file takes the next number of that file's
+/// sequence; a capture (see [`Writer::sequence`]) is the number reached when
+/// it was taken.
 pub(crate) enum Input {
-    /// A raw relay frame; only `["EVENT", sub, event]` is kept.
-    Frame(String),
-    Events(Vec<Value>),
-    /// Every event of `rooms` in `[from, to]` is in the inputs before this one.
+    /// A raw relay frame; only `["EVENT", sub, event]` is kept. With the
+    /// relay's signing key when known: its notices may forget a room
+    /// (docs/message-sync.md#forgetting-a-room).
+    Frame {
+        frame: String,
+        relay_key: Option<Arc<str>>,
+    },
+    Events {
+        events: Vec<Value>,
+        relay_key: Option<Arc<str>>,
+    },
+    /// Apply this membership list, fetched from capture `captured` on.
+    ForgetExcept {
+        keep: HashSet<String>,
+        captured: u64,
+    },
+    /// Every event of `rooms` in `[from, to]` is in the inputs before this
+    /// one; its capture began at `captured`.
     Coverage {
         rooms: Vec<String>,
         from: i64,
         to: i64,
+        captured: u64,
     },
     /// Answers once everything queued before it is written: `true` when
     /// nothing was lost.
     Barrier(SyncSender<bool>),
 }
 
-fn rows_of(input: Input, rows: &mut Vec<Filed>) {
+#[cfg(test)]
+impl Input {
+    pub(crate) fn events(events: Vec<Value>) -> Self {
+        Self::Events {
+            events,
+            relay_key: None,
+        }
+    }
+
+    pub(crate) fn frame(frame: String) -> Self {
+        Self::Frame {
+            frame,
+            relay_key: None,
+        }
+    }
+}
+
+/// The rows a receive carries, and the relay key it came with.
+fn rows_of(input: Input) -> (Vec<Filed>, Option<Arc<str>>) {
     match input {
-        Input::Frame(frame) => {
+        Input::Frame { frame, relay_key } => {
+            let mut rows = Vec::new();
             if let Ok(Value::Array(parts)) = serde_json::from_str::<Value>(&frame) {
                 if parts.first().and_then(Value::as_str) == Some("EVENT") {
                     rows.extend(parts.get(2).and_then(classify));
                 }
             }
+            (rows, relay_key)
         }
-        Input::Events(events) => rows.extend(events.iter().filter_map(classify)),
-        Input::Coverage { .. } | Input::Barrier(_) => {}
+        Input::Events { events, relay_key } => {
+            (events.iter().filter_map(classify).collect(), relay_key)
+        }
+        Input::Coverage { .. } | Input::ForgetExcept { .. } | Input::Barrier(_) => {
+            (Vec::new(), None)
+        }
+    }
+}
+
+/// The room a row is filed under.
+fn room_of(row: &Filed) -> Option<&str> {
+    match row {
+        Filed::Event(row) => row.room.as_deref(),
+        Filed::Summary(row) => row.room.as_deref(),
     }
 }
 
@@ -90,6 +142,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
         ));
     }
     conn.execute_batch(SCHEMA)
+        .and_then(|()| conn.execute_batch(purge::MARKS_SCHEMA))
         .map_err(|error| error.to_string())?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(|error| error.to_string())?;
@@ -101,6 +154,11 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
 /// thread keeps its newest summary.
 pub(crate) fn write(conn: &mut Connection, rows: &[Filed]) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
+    write_in(&tx, rows)?;
+    tx.commit()
+}
+
+fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
     {
         let mut event = tx.prepare_cached(
             "INSERT OR IGNORE INTO events(id, kind, pubkey, created_at, room, root, broadcast, raw)
@@ -139,7 +197,7 @@ pub(crate) fn write(conn: &mut Connection, rows: &[Filed]) -> rusqlite::Result<(
             }
         }
     }
-    tx.commit()
+    Ok(())
 }
 
 pub(crate) fn note_lossy(conn: &Connection) -> rusqlite::Result<()> {
@@ -172,11 +230,15 @@ pub(crate) struct Writer {
     sender: Option<SyncSender<Input>>,
     stop: Arc<AtomicBool>,
     lossy: Arc<Loss>,
+    /// Inputs queued so far (the file's sequence). Advanced only under the
+    /// store's lock, so it follows the queue's order.
+    queued: AtomicU64,
     thread: Option<JoinHandle<()>>,
 }
 
 impl Writer {
-    pub(crate) fn start(path: PathBuf) -> Self {
+    /// Starts the writer of `account`'s file at `path`.
+    pub(crate) fn start(path: PathBuf, account: String) -> Self {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_INPUTS);
         let stop = Arc::new(AtomicBool::new(false));
         let lossy = Arc::new(Loss::default());
@@ -184,25 +246,46 @@ impl Writer {
             let (stop, lossy) = (stop.clone(), lossy.clone());
             std::thread::Builder::new()
                 .name("message-store".into())
-                .spawn(move || run(path, receiver, stop, lossy))
+                .spawn(move || run(path, &account, receiver, stop, lossy))
                 .ok()
         };
         Self {
             sender: Some(sender),
             stop,
             lossy,
+            queued: AtomicU64::new(0),
             thread,
         }
     }
 
+    /// The file's sequence now: a capture taken here precedes every input
+    /// queued after it.
+    pub(crate) fn sequence(&self) -> u64 {
+        self.queued.load(Ordering::SeqCst)
+    }
+
+    fn send(&self, input: Input) -> bool {
+        let sent = self
+            .sender
+            .as_ref()
+            .is_some_and(|sender| sender.try_send(input).is_ok());
+        if sent {
+            self.queued.fetch_add(1, Ordering::SeqCst);
+        }
+        sent
+    }
+
     /// Queues `input`; a full queue drops them and marks the file lossy, so
     /// a later catch-up never takes it for complete.
-    pub(crate) fn submit(&self, input: Input) {
-        let Some(sender) = &self.sender else { return };
-        match sender.try_send(input) {
-            Ok(()) => {}
-            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => self.lossy.note(),
+    pub(crate) fn submit(&self, input: Input) -> bool {
+        if self.sender.is_none() {
+            return false;
         }
+        let sent = self.send(input);
+        if !sent {
+            self.lossy.note();
+        }
+        sent
     }
 
     /// Asks to be told once everything queued so far is written. `None` when
@@ -210,13 +293,11 @@ impl Writer {
     /// vouch for what was received. Wait on the answer without holding the
     /// store's lock.
     pub(crate) fn barrier(&self) -> Option<Receiver<bool>> {
-        let sender = self.sender.as_ref()?;
-        if self.lossy.pending.load(Ordering::SeqCst) {
+        if self.sender.is_none() || self.lossy.pending.load(Ordering::SeqCst) {
             return None;
         }
         let (reply, answer) = mpsc::sync_channel(1);
-        sender.try_send(Input::Barrier(reply)).ok()?;
-        Some(answer)
+        self.send(Input::Barrier(reply)).then_some(answer)
     }
 
     /// Stops after the batch in hand, discarding queued ones, and waits.
@@ -250,7 +331,13 @@ impl Drop for Writer {
     }
 }
 
-fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: Arc<Loss>) {
+fn run(
+    path: PathBuf,
+    account: &str,
+    receiver: Receiver<Input>,
+    stop: Arc<AtomicBool>,
+    lossy: Arc<Loss>,
+) {
     let mut conn = match open(&path) {
         Ok(conn) => conn,
         Err(error) => {
@@ -258,18 +345,46 @@ fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: A
             return;
         }
     };
-    while let Ok(first) = receiver.recv() {
+    let mut known = match purge::Rooms::load(&conn) {
+        Ok(rooms) => rooms,
+        Err(error) => {
+            eprintln!("kuzz-desktop: message store: reading rooms failed: {error}");
+            return;
+        }
+    };
+    // Sequence number of the input in hand; per room, the input that first
+    // wrote it this run, and the last input that forgot it.
+    let mut sequence = 0u64;
+    let mut born: HashMap<String, u64> = HashMap::new();
+    let mut forgot: HashMap<String, u64> = HashMap::new();
+    // The capture of the last list applied: an older list is stale.
+    let mut list_captured = 0u64;
+    // Inputs taken off the queue during a long purge, in order.
+    let mut backlog: VecDeque<Input> = VecDeque::new();
+    while let Some(first) = backlog.pop_front().or_else(|| receiver.recv().ok()) {
         let mut rows = Vec::new();
         let mut next = Some(first);
         while let Some(input) = next.take() {
             if stop.load(Ordering::SeqCst) {
                 return;
             }
+            sequence += 1;
             match input {
-                Input::Coverage { rooms, from, to } => {
+                Input::Coverage {
+                    mut rooms,
+                    from,
+                    to,
+                    captured,
+                } => {
                     // A span is only recorded once the events before it are
-                    // written, and never over a dropped one.
+                    // written, never over a dropped one, and not for a room
+                    // forgotten after its capture began.
                     let lost = flush(&mut conn, &mut rows, &lossy);
+                    rooms.retain(|room| forgot.get(room).is_none_or(|&at| at <= captured));
+                    for room in &rooms {
+                        born.entry(room.clone()).or_insert(sequence);
+                        known.note(room);
+                    }
                     if !lost && from > lossy.at.load(Ordering::SeqCst) {
                         if let Err(error) = coverage::extend(&mut conn, &rooms, from, to) {
                             eprintln!("kuzz-desktop: message store: coverage failed: {error}");
@@ -280,14 +395,80 @@ fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: A
                     let lost = flush(&mut conn, &mut rows, &lossy);
                     let _ = reply.try_send(!lost);
                 }
-                other => rows_of(other, &mut rows),
+                Input::ForgetExcept { keep, captured } if captured >= list_captured => {
+                    list_captured = captured;
+                    flush(&mut conn, &mut rows, &lossy);
+                    let new_since = |room: &str| born.get(room).is_some_and(|&at| at > captured);
+                    let take_in = || backlog.extend(receiver.try_iter());
+                    match purge::apply_list(&mut conn, &mut known, &keep, new_since, take_in) {
+                        Ok(rooms) => forgot.extend(rooms.into_iter().map(|room| (room, sequence))),
+                        Err(error) => {
+                            failed(Err(error), "forgetting rooms", &lossy);
+                            reload(&conn, &mut known);
+                        }
+                    }
+                }
+                Input::ForgetExcept { .. } => {}
+                other => {
+                    let (received, relay_key) = rows_of(other);
+                    for row in received {
+                        if let Some(room) = room_of(&row) {
+                            born.entry(room.to_owned()).or_insert(sequence);
+                            known.note(room);
+                        }
+                        let notice = match (&row, &relay_key) {
+                            (Filed::Event(event), Some(key)) => purge::notice(event, account, key),
+                            _ => None,
+                        };
+                        let (Some(notice), Filed::Event(event)) = (notice, &row) else {
+                            rows.push(row);
+                            continue;
+                        };
+                        // Rows received before the notice are written first,
+                        // so it forgets them too.
+                        flush(&mut conn, &mut rows, &lossy);
+                        let applied =
+                            purge::apply_notice(&mut conn, &mut known, event, notice, |tx| {
+                                write_in(tx, std::slice::from_ref(&row))
+                            });
+                        match applied {
+                            Ok(true) => {
+                                if let Some(room) = &event.room {
+                                    forgot.insert(room.clone(), sequence);
+                                }
+                            }
+                            Ok(false) => {}
+                            Err(error) => {
+                                failed(Err(error), "forgetting a room", &lossy);
+                                reload(&conn, &mut known);
+                            }
+                        }
+                    }
+                }
             }
             if rows.len() >= ROWS_PER_TRANSACTION {
                 flush(&mut conn, &mut rows, &lossy);
             }
-            next = receiver.try_recv().ok();
+            next = backlog.pop_front().or_else(|| receiver.try_recv().ok());
         }
         flush(&mut conn, &mut rows, &lossy);
+    }
+}
+
+/// After a failed purge the rooms in memory may not match the file.
+fn reload(conn: &Connection, known: &mut purge::Rooms) {
+    match purge::Rooms::load(conn) {
+        Ok(rooms) => *known = rooms,
+        Err(error) => eprintln!("kuzz-desktop: message store: reading rooms failed: {error}"),
+    }
+}
+
+/// A failed forget leaves rows coverage may still vouch for: treat it as a
+/// loss, so every span is cleared and later ones from before it refused.
+fn failed(result: rusqlite::Result<()>, what: &str, lossy: &Loss) {
+    if let Err(error) = result {
+        eprintln!("kuzz-desktop: message store: {what} failed: {error}");
+        lossy.note();
     }
 }
 

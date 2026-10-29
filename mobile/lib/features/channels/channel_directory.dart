@@ -94,6 +94,40 @@ Future<List<NostrEvent>> _fetchChannelMemberships(
   ensureCurrent: ensureCurrent,
 );
 
+/// Marks a paged list cut short by a page with nothing new (a relay
+/// repeating itself): it may lack rooms, so it never forgets any.
+final _cutShort = Expando<bool>('cutShort');
+
+/// Applies [keep] to the device store's rooms: the full membership list of
+/// a successful fresh fetch (the paginated 39002 `#p` query: archived,
+/// hidden and huddle rooms included; never the push-cached list) plus the
+/// rooms shown as joined at settlement; nothing when [memberships] was cut
+/// short or names no room (whatever is shown joined). Only under a store
+/// capture taken before that fetch for [myPk] that is still current. Then
+/// learns the relay's signing key, so its notices can forget rooms
+/// (docs/message-sync.md#forgetting-a-room).
+void _forgetStoredRoomsMissingFrom(
+  Ref ref,
+  RelaySessionNotifier session,
+  StoreCapture? scope,
+  String myPk,
+  List<NostrEvent> memberships,
+  Set<String> keep,
+) {
+  if (!memberships.any((e) => e.getTagValue('d') != null) ||
+      (_cutShort[memberships] ?? false)) {
+    return;
+  }
+  if (scope?.lease.account != myPk.toLowerCase()) return;
+  if (!session.forgetStoredRoomsExcept(scope, keep)) return;
+  unawaited(
+    ref
+        .read(relayInfoProvider.future)
+        .then((info) => session.noteStoreRelayKey(scope, info?.relaySelf))
+        .catchError((Object _) {}),
+  );
+}
+
 Future<List<NostrEvent>> _fetchChannelDirectoryMetas(
   RelaySessionNotifier session, {
   void Function()? ensureCurrent,
@@ -434,7 +468,10 @@ Future<List<NostrEvent>> _fetchPaginatedChannelEvents(
         madeProgress = true;
       }
     }
-    if (!madeProgress) break;
+    if (!madeProgress) {
+      _cutShort[events] = true;
+      break;
+    }
 
     final last = page.last;
     until = last.createdAt;

@@ -301,7 +301,7 @@ export function handleSubscriptionEose({
   if (subscription.mode === "live") {
     if (generation !== undefined) {
       markReconnectLiveEose(subscription, generation);
-      noteStoreLiveEose(subscription, generation);
+      noteStoreLiveEose(subscription, generation, subId);
     }
     subscription.resolveReady?.("eose");
     subscription.resolveReady = undefined;

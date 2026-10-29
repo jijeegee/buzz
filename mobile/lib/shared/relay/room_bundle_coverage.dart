@@ -28,11 +28,16 @@ const _maxRooms = 128;
 typedef StoreScope = ({MessageStore store, MessageStoreLease lease});
 
 class _Live {
-  _Live(this.generation, this.liveAt, this.scope) : markedAt = liveAt;
+  _Live(this.generation, this.liveAt, this.scope, this.captured)
+    : markedAt = liveAt;
 
   final int generation;
   final int liveAt;
   final StoreScope scope;
+
+  /// The store capture taken at EOSE: spans recorded from it are refused
+  /// for rooms forgotten after it (docs/message-sync.md#forgetting-a-room).
+  final int captured;
   int markedAt;
 }
 
@@ -72,11 +77,22 @@ class RoomBundleCoverage {
     final roomIds = storeCoveredRooms(filter);
     final current = scope();
     if (roomIds == null || current == null) return;
+    final captured = current.store.capture(current.lease);
+    if (captured == null) return;
     final liveAt = _nowSecs();
-    _live[subscription] = _Live(generation, liveAt, current);
-    current.store.extendCoverage(current.lease, roomIds, liveAt, liveAt);
+    final at = captured.sequence;
+    _live[subscription] = _Live(generation, liveAt, current, at);
+    current.store.extendCoverage(
+      current.lease,
+      roomIds,
+      liveAt,
+      liveAt,
+      captured: at,
+    );
     _catchUps = _catchUps.then(
-      (_) => catchUp(current, roomIds, liveAt).catchError((Object error) {
+      (_) => catchUp(current, roomIds, liveAt, captured: at).catchError((
+        Object error,
+      ) {
         debugPrint('[MessageStore] catch-up stopped: $error');
         return false;
       }),
@@ -108,18 +124,21 @@ class RoomBundleCoverage {
       roomIds,
       live.liveAt,
       now,
+      captured: live.captured,
     );
   }
 
   /// Fetch what the store is missing for [roomIds] between their last
   /// coverage and [liveAt]. Rooms never covered are skipped; a gap too old
-  /// or too large is left to opening the room.
+  /// or too large is left to opening the room. [captured]: the store
+  /// capture of the REQ's EOSE (default: when the span is recorded).
   @visibleForTesting
   Future<bool> catchUp(
     StoreScope scope,
     List<String> roomIds,
-    int liveAt,
-  ) async {
+    int liveAt, {
+    int? captured,
+  }) async {
     // Spans opened at liveAt (this REQ's own) may be written already.
     final points = await scope.store.resumePoints(scope.lease, roomIds, liveAt);
     final covered = roomIds.where(points.containsKey).toList();
@@ -150,7 +169,13 @@ class RoomBundleCoverage {
       if (decoded is! List) return false;
       final terminal = decoded.isEmpty ? null : decoded.last;
       if (decoded.length < storeCatchUpPageLimit || terminal == null) {
-        scope.store.extendCoverage(scope.lease, covered, since, liveAt);
+        scope.store.extendCoverage(
+          scope.lease,
+          covered,
+          since,
+          liveAt,
+          captured: captured,
+        );
         return true;
       }
       if (terminal is! Map) return false;

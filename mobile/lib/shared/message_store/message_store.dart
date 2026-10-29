@@ -13,6 +13,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'coverage.dart' as spans;
+import 'purge.dart' as purge;
 import 'room_head.dart';
 import 'thread_head.dart';
 
@@ -51,6 +52,7 @@ const _schema = [
   lo_at INTEGER NOT NULL, lo_id TEXT NOT NULL, hi_at INTEGER NOT NULL, hi_id TEXT NOT NULL)''',
   'CREATE INDEX IF NOT EXISTS coverage_stream ON coverage(room, stream)',
   'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  ...purge.roomMarksSchema,
 ];
 
 /// `https://host[:port]` for any relay URL, so every request to one server
@@ -68,11 +70,17 @@ String? messageStoreOrigin(String relayUrl) {
   return uri.hasPort ? '$scheme://$host:${uri.port}' : '$scheme://$host';
 }
 
-String _fileStem(String origin, String account) {
-  final digest = sha256.convert(utf8.encode(origin)).bytes.take(8);
-  final hex = digest.map((b) => b.toRadixString(16).padLeft(2, '0')).join();
-  return '$hex-$account';
-}
+String _originHash(String origin) => sha256
+    .convert(utf8.encode(origin))
+    .bytes
+    .take(8)
+    .map((b) => b.toRadixString(16).padLeft(2, '0'))
+    .join();
+
+String _fileStem(String origin, String account) =>
+    '${_originHash(origin)}-$account';
+
+final _pubkey = RegExp(r'^[0-9a-f]{64}$');
 
 /// The scope a receive belongs to, taken when the session or request starts.
 /// A lease from before its account signed out of that server writes nothing.
@@ -95,22 +103,56 @@ class MessageStoreLease {
   int get hashCode => Object.hash(stem, account, epoch);
 }
 
-/// A coverage span, queued behind the events received before it.
+/// A point in a file's input sequence, with the scope it was taken under
+/// (docs/message-sync.md#forgetting-a-room): a coverage span or membership
+/// list carrying it is refused once the scope ends, and for rooms forgotten
+/// after it.
+typedef StoreCapture = ({MessageStoreLease lease, int sequence});
+
+/// A coverage span, queued behind the events received before it; its
+/// capture began at [captured].
 class _CoverageOp {
-  const _CoverageOp(this.rooms, this.from, this.to);
+  const _CoverageOp(this.rooms, this.from, this.to, this.captured);
 
   final List<String> rooms;
   final int from;
   final int to;
+  final int captured;
+}
+
+/// Apply this membership list, fetched from capture [captured] on.
+class _ForgetOp {
+  const _ForgetOp(this.keep, this.captured);
+
+  final Set<String> keep;
+  final int captured;
+}
+
+/// An event that may be a relay notice signed by [relayKey]
+/// (docs/message-sync.md#forgetting-a-room).
+class _NoticeOp {
+  const _NoticeOp(this.event, this.relayKey);
+
+  final Map<String, dynamic> event;
+  final String relayKey;
 }
 
 class _Writer {
-  _Writer(this.open);
+  _Writer(this.open, this.account);
 
   final Future<Database> Function() open;
 
-  /// Submitted event lists and [_CoverageOp]s, in the order they were
-  /// received.
+  /// The account whose file this is: a notice naming it is a rejoin.
+  final String account;
+
+  /// Per room, the sequence number of the input that first wrote it while
+  /// this writer runs, and of the last input that forgot it. Captures never
+  /// outlive the writer, so nothing older is needed.
+  final Map<String, int> born = {};
+  final Map<String, int> forgot = {};
+
+  /// Submitted event lists, [_CoverageOp]s, [_ForgetOp]s and [_NoticeOp]s,
+  /// in the order they were received.
   final List<Object> queue = [];
 
   /// Events of the first list already written.
@@ -126,6 +168,10 @@ class _Writer {
   }
 
   Future<Database>? database;
+
+  /// The file's rooms, loaded with the first write after it opens.
+  purge.StoredRooms? rooms;
+
   Future<void> drained = Future.value();
   bool scheduled = false;
   bool lossy = false;
@@ -140,7 +186,8 @@ class _Writer {
     lostAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   }
 
-  /// Inputs ever queued, and how many of them are written (or dropped).
+  /// Inputs ever queued (the file's sequence: each input takes the next
+  /// number), and how many of them are written (or dropped).
   int queued = 0;
   int passed = 0;
   final List<(int, Completer<void>)> _waiters = [];
@@ -189,6 +236,10 @@ class MessageStore {
   final Map<String, _Writer> _writers = {};
   final Map<String, int> _epochs = {};
 
+  /// Each server's signing key (NIP-11 `self`), by origin hash: only its
+  /// notices may forget a room.
+  final Map<String, String> _relayKeys = {};
+
   /// Epochs and file deletions in progress, per file stem (server and
   /// account); a new file waits for its deletion.
   final Map<String, Future<void>> _forgetting = {};
@@ -203,9 +254,7 @@ class MessageStore {
   MessageStoreLease? lease(String relayUrl, String? account) {
     final origin = messageStoreOrigin(relayUrl);
     final pubkey = account?.trim().toLowerCase();
-    if (origin == null ||
-        pubkey == null ||
-        !RegExp(r'^[0-9a-f]{64}$').hasMatch(pubkey)) {
+    if (origin == null || pubkey == null || !_pubkey.hasMatch(pubkey)) {
       return null;
     }
     return MessageStoreLease._(
@@ -217,34 +266,91 @@ class MessageStore {
 
   /// Queues received relay events (JSON maps) for [lease]'s file. Never
   /// waits for the disk; what to keep is decided when the queue is written.
+  /// Relay notices among them may forget a room once the server's signing
+  /// key is known (docs/message-sync.md#forgetting-a-room).
   void submit(MessageStoreLease? lease, Iterable<Object?> events) {
     final writer = _writerFor(lease);
     if (writer == null) return;
     final input = events.whereType<Map<String, dynamic>>().toList();
     if (input.isEmpty) return;
-    if (writer.queue.length >= _queueInputs ||
-        writer.queuedEvents + input.length > _queueEvents) {
-      writer.noteLoss();
-    } else {
-      writer.enqueue(input);
-      writer.queuedEvents += input.length;
+    final relayKey = _relayKeys[lease!.stem.split('-').first];
+    var plain = <Map<String, dynamic>>[];
+    for (final event in input) {
+      if (relayKey == null ||
+          !purge.mayBeRoomNotice(event, relayKey, writer.account)) {
+        plain.add(event);
+        continue;
+      }
+      _enqueueEvents(writer, plain, plain.length);
+      plain = [];
+      _enqueueEvents(writer, _NoticeOp(event, relayKey), 1);
     }
+    _enqueueEvents(writer, plain, plain.length);
     _schedule(writer);
   }
 
-  /// Records that every event of [rooms] in `[from, to]` has been received.
-  /// Applied once the events submitted before it are written, and dropped
-  /// if any of them was lost.
+  void _enqueueEvents(_Writer writer, Object input, int count) {
+    if (count == 0) return;
+    if (writer.queue.length >= _queueInputs ||
+        writer.queuedEvents + count > _queueEvents) {
+      writer.noteLoss();
+    } else {
+      writer.enqueue(input);
+      writer.queuedEvents += count;
+    }
+  }
+
+  /// Notes the signing key (NIP-11 `self`) of [lease]'s server: relay
+  /// notices signed by it may forget a room; none are trusted before it is
+  /// known.
+  void noteRelayKey(MessageStoreLease? lease, String? key) {
+    final pubkey = key?.trim().toLowerCase();
+    if (lease == null || pubkey == null || !_pubkey.hasMatch(pubkey)) return;
+    _relayKeys[lease.stem.split('-').first] = pubkey;
+  }
+
+  /// A capture of [lease]'s file now; `null` once the lease has ended.
+  StoreCapture? capture(MessageStoreLease? lease) {
+    final writer = _writerFor(lease);
+    return writer == null ? null : (lease: lease!, sequence: writer.queued);
+  }
+
+  /// Applies [keep], the account's full membership list from a successful
+  /// fetch, to the rooms stored under [capture]'s file
+  /// (docs/message-sync.md#forgetting-a-room). [capture] is taken before
+  /// that fetch; refused (false) when its scope is not [current] or has
+  /// ended (signed out), and for an empty list. Queued behind earlier writes.
+  bool forgetRoomsExcept(
+    StoreCapture? capture,
+    MessageStoreLease? current,
+    Set<String> keep,
+  ) {
+    if (capture == null || capture.lease != current || keep.isEmpty) {
+      return false;
+    }
+    final writer = _writerFor(capture.lease);
+    if (writer == null) return false;
+    writer.enqueue(_ForgetOp(Set.of(keep), capture.sequence));
+    _schedule(writer);
+    return true;
+  }
+
+  /// Records that every event of [rooms] in `[from, to]` has been received,
+  /// by a capture that began at [captured] (default: now). Applied once the
+  /// events submitted before it are written, dropped if any of them was
+  /// lost, and refused for rooms forgotten after [captured].
   void extendCoverage(
     MessageStoreLease? lease,
     List<String> rooms,
     int from,
-    int to,
-  ) {
+    int to, {
+    int? captured,
+  }) {
     if (rooms.isEmpty || from > to) return;
     final writer = _writerFor(lease);
     if (writer == null) return;
-    writer.enqueue(_CoverageOp(List.of(rooms), from, to));
+    final at = captured ?? writer.queued;
+    writer.enqueue(_CoverageOp(List.of(rooms), from, to, at));
     _schedule(writer);
   }
 
@@ -361,7 +467,10 @@ class MessageStore {
     if (lease == null || (_epochs[lease.stem] ?? 0) != lease.epoch) {
       return null;
     }
-    return _writers.putIfAbsent(lease.stem, () => _Writer(() => _open(lease)));
+    return _writers.putIfAbsent(
+      lease.stem,
+      () => _Writer(() => _open(lease), lease.account),
+    );
   }
 
   void _schedule(_Writer writer) {
@@ -408,16 +517,19 @@ class MessageStore {
     try {
       while (writer.queue.isNotEmpty && !writer.stopped) {
         final head = writer.queue.first;
-        final _CoverageOp? coverage;
+        final coverage = head is _CoverageOp ? head : null;
+        final forget = head is _ForgetOp ? head : null;
+        final notice = head is _NoticeOp ? head : null;
         final List<Map<String, dynamic>> events;
         final int taken;
-        if (head is _CoverageOp) {
+        if (coverage != null || forget != null || notice != null) {
           writer.queue.removeAt(0);
-          coverage = head;
-          events = const [];
+          events = notice == null
+              ? const <Map<String, dynamic>>[]
+              : [notice.event];
+          writer.queuedEvents -= events.length;
           taken = 1;
         } else {
-          coverage = null;
           events = [];
           var inputs = 0;
           // Whole lists up to a transaction's rows; a long one is split.
@@ -442,17 +554,47 @@ class MessageStore {
           taken = inputs;
         }
         final rows = events.map(classifyStoredEvent).nonNulls.toList();
+        // The sequence number of the last input in hand (of the head list,
+        // when only part of it is).
+        final sequence = writer.passed + math.max<int>(taken, 1);
+        for (final row in rows) {
+          final room = switch (row) {
+            StoredRow() => row.room,
+            StoredSummary() => row.room,
+          };
+          if (room != null) writer.born.putIfAbsent(room, () => sequence);
+        }
         final lossy = writer.lossy;
         writer.lossy = false;
-        if (rows.isEmpty && !lossy && coverage == null) {
+        if (rows.isEmpty && !lossy && coverage == null && forget == null) {
           writer.advance(taken);
           continue;
         }
         final db = await (writer.database ??= writer.open());
         if (writer.stopped) return;
+        final known = writer.rooms ??= await purge.StoredRooms.load(db);
+        final forgotten = <String>[];
         await db.transaction((txn) async {
+          // A notice forgets the rows received before it, then is written.
+          final row = rows.firstOrNull;
+          if (notice != null && row is StoredRow) {
+            final applies = purge.roomNotice(
+              row,
+              writer.account,
+              notice.relayKey,
+            );
+            if (applies != null &&
+                await purge.applyRoomNotice(txn, known, row, applies)) {
+              forgotten.add(row.room!);
+            }
+          }
           final batch = txn.batch();
           for (final row in rows) {
+            final room = switch (row) {
+              StoredRow() => row.room,
+              StoredSummary() => row.room,
+            };
+            if (room != null) known.note(room);
             _write(batch, row);
           }
           if (lossy) {
@@ -463,18 +605,40 @@ class MessageStore {
           }
           await batch.commit(noResult: true);
           if (coverage != null && !lossy && coverage.from > writer.lostAt) {
-            await spans.extendCoverage(
-              txn,
-              coverage.rooms,
-              coverage.from,
-              coverage.to,
-            );
+            // Not for a room forgotten after the span's capture began.
+            final rooms = coverage.rooms
+                .where(
+                  (room) => (writer.forgot[room] ?? 0) <= coverage.captured,
+                )
+                .toList();
+            rooms.forEach(known.note);
+            await spans.extendCoverage(txn, rooms, coverage.from, coverage.to);
           }
         });
+        if (forget != null) {
+          // Its own transactions, a chunk of rooms each.
+          forgotten.addAll(
+            await purge.applyList(
+              db,
+              known,
+              forget.keep,
+              (room) => (writer.born[room] ?? 0) > forget.captured,
+            ),
+          );
+        }
+        if (coverage != null) {
+          for (final room in coverage.rooms) {
+            writer.born.putIfAbsent(room, () => sequence);
+          }
+        }
+        for (final room in forgotten) {
+          writer.forgot[room] = sequence;
+        }
         writer.advance(taken);
       }
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
+      writer.rooms = null;
       writer.clearQueue();
       writer.noteLoss();
     } finally {

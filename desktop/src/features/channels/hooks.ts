@@ -43,6 +43,7 @@ import {
 } from "@/shared/api/tauriChannels";
 import { mergeConcurrentChannelRecency } from "@/features/channels/lib/channelRecencyMerge";
 import { leaveRemovingAgents } from "@/features/channels/lib/leaveWithAgents";
+import { beginStoreRoomList } from "@/features/channels/lib/storeRoomPurge";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import { useCommunities } from "@/features/communities/useCommunities";
@@ -333,6 +334,7 @@ export type RefreshChannelsQueryOptions = {
   ownerPubkey: string | null;
   fetchChannels?: (knownHash: string | null) => Promise<GetChannelsPayload>;
   persistSnapshot?: typeof writeChannelSnapshot;
+  storeRoomList?: typeof beginStoreRoomList;
 };
 
 /**
@@ -347,6 +349,7 @@ export async function refreshChannelsQuery({
   ownerPubkey,
   fetchChannels = getChannels,
   persistSnapshot = writeChannelSnapshot,
+  storeRoomList = beginStoreRoomList,
 }: RefreshChannelsQueryOptions): Promise<Channel[]> {
   // Revalidation uses only an authoritative list/hash pair. The displayed
   // channels cache is intentionally ignored because successful mutations
@@ -358,6 +361,7 @@ export async function refreshChannelsQuery({
 
   const channelsAtRequestStart =
     queryClient.getQueryData<Channel[]>(channelsQueryKey);
+  const noteRoomList = storeRoomList();
   const payload = await fetchChannels(knownHash);
 
   // A not-modified response is usable only when it echoes the exact hash
@@ -395,6 +399,7 @@ export async function refreshChannelsQuery({
     if (relayUrl && ownerPubkey) {
       persistSnapshot(relayUrl, ownerPubkey, pair.channels, pair.hash);
     }
+    noteRoomList(full, [authoritativeChannels, displayedAtSettlement]);
     return sorted;
   }
 
@@ -430,6 +435,7 @@ export async function refreshChannelsQuery({
   if (relayUrl && ownerPubkey) {
     persistSnapshot(relayUrl, ownerPubkey, pair.channels, pair.hash);
   }
+  noteRoomList(payload, [authoritativeChannels, displayedAtSettlement]);
   return sorted;
 }
 

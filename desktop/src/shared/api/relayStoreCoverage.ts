@@ -30,8 +30,11 @@ type LiveSubscription = Extract<RelaySubscription, { mode: "live" }>;
 
 type CoverageDeps = {
   nowSecs: () => number;
-  /** The store scope coverage is recorded for now (`null`: none). */
-  scope: () => Promise<string | null>;
+  /**
+   * The store capture coverage is recorded with (`null`: none): the one the
+   * backend took when subscription `subId` reached EOSE, or one taken now.
+   */
+  scope: (subId?: string) => Promise<string | null>;
   /** Refused when `scope` is no longer current. */
   extend: (
     roomIds: string[],
@@ -54,7 +57,8 @@ type CoverageDeps = {
 
 const defaultDeps: CoverageDeps = {
   nowSecs: () => Math.floor(Date.now() / 1000),
-  scope: () => invokeTauri<string | null>("message_store_scope"),
+  scope: (subId) =>
+    invokeTauri<string | null>("message_store_scope", { subId: subId ?? null }),
   extend: (roomIds, from, to, scope) =>
     invokeTauri<void>("message_store_extend_coverage", {
       roomIds,
@@ -127,11 +131,13 @@ export function storeCoveredRooms(filter: RelaySubscriptionFilter) {
 export function noteStoreLiveEose(
   subscription: LiveSubscription,
   generation: number,
+  subId?: string,
 ) {
   const roomIds = storeCoveredRooms(subscription.filter);
   if (!roomIds) return;
   const liveAt = deps.nowSecs();
-  const scope = currentScope();
+  // Taken by the backend as the socket delivered the EOSE.
+  const scope = deps.scope(subId).catch(() => null);
   const coverage = { generation, liveAt, markedAt: liveAt, scope };
   subscription.storeCoverage = coverage;
   liveSubscriptions.add(subscription);

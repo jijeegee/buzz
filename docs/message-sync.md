@@ -14,12 +14,16 @@ that both clients' tests read.
 | Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
 | Message store | `desktop/src-tauri/src/message_store/` (fed by `native_websocket.rs` and `relay.rs`) | `mobile/lib/shared/message_store/` (fed by `relay_session.dart`) |
 | Message store fixture tests | `message_store/tests.rs` | `message_store_test.dart` |
+| Forgetting a room | `message_store/purge.rs`; list from `get_channels` (`commands/channels/fetch.rs`: `member_ids`, `store_scope`), applied by `desktop/src/features/channels/lib/storeRoomPurge.ts` (from `refreshChannelsQuery`) | `mobile/lib/shared/message_store/purge.dart`; list trigger `_forgetStoredRoomsMissingFrom` (`channel_directory.dart`, from the membership fetch in `channels_provider.dart`) |
+| Forgetting fixture tests | `purge_follows_shared_fixture` (`message_store/tests.rs`); triggers: `socket_notices_carry_the_relay_key`, `an_eose_capture_precedes_what_arrives_after_it`, `a_large_purge_runs_in_chunks`, `a_list_older_than_the_last_applied_is_refused`, `store_rooms_follow_membership_not_the_shown_list` (`fetch_tests.rs`), `storeRoomPurge.test.mjs` | `message_store_purge_test.dart`; triggers: `relay_session_purge_test.dart`, `channels_store_purge_test.dart` |
 | Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
 
 The account bundle's cases live in
 [`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json),
 the message store's in
-[`test-fixtures/message-store.json`](../test-fixtures/message-store.json).
+[`test-fixtures/message-store.json`](../test-fixtures/message-store.json),
+forgetting a room's in
+[`test-fixtures/message-store-purge.json`](../test-fixtures/message-store-purge.json).
 
 ## Live room bundle
 
@@ -312,12 +316,137 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   replies: the root's `created_at`, which must be stored in the room) `− 1865`.
 - **Written first:** as for rooms.
 
+### Forgetting a room
+
+The store drops its copy of a room the account can no longer read, or whose
+older rows it should no longer see. Cases:
+`test-fixtures/message-store-purge.json`.
+
+- **What is forgotten:** the room's rows (all, or those created before a
+  time), the room-less overlays (reactions, deletions) aimed only at them
+  (a deletion also naming a row of another room stays, or that row would
+  come back), their thread summaries (every summary of the room when all
+  rows go) and all of the room's coverage. Other rooms are untouched.
+- **Captures:** every input queued for a file (a receive, a span, a list)
+  takes the next number of that file's sequence. A capture is the scope
+  (server file, account; desktop also the sign-out epoch) plus the number
+  reached when it was taken: when a live REQ's EOSE arrives (desktop takes
+  it in Rust as the socket delivers the EOSE frame and hands it to the app
+  with the span; mobile when the session handles it) and when a membership
+  fetch starts. The writer remembers, per room, the input that first wrote
+  it and the last one that forgot it. The numbers live in memory only: a
+  capture never outlives its writer (the queue dies with the process, and a
+  new writer only starts for a new scope), so nothing older has to be kept.
+  No clock is compared.
+- **Fence:** a coverage span captured before a room was last forgotten is
+  refused for that room (other rooms in the span are kept), so no span from
+  before the purge can vouch for rows that are gone. A span captured after
+  it is kept, however early it starts.
+- **Left mark:** each room has a persisted mark of when the account left it
+  (`room_purge.left_at`). It is set by a relay-signed `member_left` by the
+  account (`target`, or `actor` when there is no target) or `member_removed`
+  naming it, when newer than the room's last handled join; and when a list
+  drops the room, as of the room's newest stored row (no mark when nothing
+  was stored). A rejoin acts only on a room with a mark.
+- **Access lost (list):** the list is membership, never what is shown:
+  every room whose kind:39002 names the account (`#p`), whether or not its
+  kind:39000 parses (huddle backing rooms), hidden DMs included, plus
+  channels the pending-owner overlay marks member. Desktop gets it from
+  `get_channels` (`member_ids`, also on a not-modified answer); mobile from
+  the paginated membership fetch, never the push-cached list. Both page the
+  membership query until an empty page, so a relay serving short pages
+  cannot end it early; a mobile page with nothing new (a relay repeating
+  itself) ends paging and that list forgets nothing. Never from the live
+  bundle set. The file keeps the last list applied
+  (`sync_state.kept_rooms`). Only a stored room of that list which the new
+  list lacks is forgotten and marked left. Rooms no list had (open channels
+  only browsed) are never forgotten by a list. The first list (none kept
+  yet, e.g. after the upgrade) is only recorded. A failed fetch forgets
+  nothing, nor does a membership answer naming no room, whatever is shown
+  joined (checked before the shown rooms are added).
+- **Bad list guard:** a list that would drop more than 5 kept rooms and
+  more than half of them is not applied (logged; the kept list stays).
+- **Joined during the fetch:** kept are the list plus the rooms shown as
+  joined at settlement (desktop: `isJoinedChat` in the authoritative list
+  and the displayed cache; mobile: members in the channels state). A kept
+  room first written after the fetch's capture is left alone too and stays
+  kept for the next list.
+- **Same scope only:** the capture is taken before the fetch for the same
+  identity (desktop: by `get_channels` from the same pubkey it fetches for;
+  mobile: the capture's account must be the fetching pubkey). The store
+  refuses the list when that scope changed since (community or account
+  switch, sign-out). Desktop also drops a list whose fetch started before
+  the last one acted on, in the app and again in the writer (a list
+  captured before the last one applied is refused).
+- **Rejoined (list):** a stored room marked left that a list has again is
+  forgotten whole (its rows came from an earlier membership or arrived
+  while the account was out) and loses the mark. Unmarked rooms new to a
+  list are kept.
+- **Rejoined (notice):** the relay sends `member_joined` (`target` = the
+  account) on every join, the first one too. Each newer one is recorded
+  (`joined_at`); only when the room's left mark is older than it does it
+  forget the room's rows created before it (the notice itself is kept) and
+  all its coverage, and clear the mark. A first join keeps the room's rows.
+- **History hidden:** every newer `history_changed` is recorded
+  (`history_at`); one with `history` = `since_join` forgets the room's rows
+  created before it and all its coverage (the notice and newer rows, sent
+  to this account under the new rule, are kept). `all` forgets nothing, and
+  a `since_join` older than a handled `all` is ignored.
+- **Any delivery:** a notice counts however it arrives: a live REQ, a
+  replay before EOSE, a `/query` answer, an older page or catch-up.
+- **Signed by the relay:** the notice's `pubkey` must be the relay's own key,
+  NIP-11 `self` (desktop learns it from the identity archive's relay info
+  fetch, also run after each list purge; mobile from `relayInfoProvider`
+  after a list purge, noted only while that list's scope is current). Until
+  the key is known, no notice forgets anything.
+- **Newer only:** the marks are kept across restarts; a notice not newer
+  than the room's mark of its kind is stored but ignored.
+- **Order and cost:** forgetting goes through the file's write queue, after
+  the events and spans received before it; a notice is acted on in one
+  transaction with its own write. The writer keeps the file's stored rooms,
+  left marks and kept list in memory (loaded once when it opens the file,
+  updated as it writes and forgets), so a list never scans the file, and a
+  list equal to the kept one is skipped unless a room was first stored
+  since or one of its rooms is marked left. Only a 40099 naming the account
+  (or a `history_changed`) is written on its own; other relay messages are
+  batched. After a failed purge the writer reloads its rooms from the file.
+  Desktop keeps the EOSE capture of at most 512 subscriptions, dropping the
+  oldest. A list's purge runs 16 rooms per transaction, taking in newly
+  queued input between chunks (desktop moves it to an in-order backlog so
+  the bounded queue cannot fill; mobile yields). A purge deletes through
+  the `targets_id` and `summaries_room` indexes.
+
 ### Limits
 
 - **since_join rooms:** the relay hides rows from before the reader joined.
-  The store keeps only what the relay sent this account, so it holds no such
-  rows, but rows kept from an earlier membership (left, then re-added) stay
-  and can open in a stored window until the relay's answer replaces it.
+  The store keeps only what the relay sent this account. Rows kept from an
+  earlier membership (left, then re-added) are forgotten by the rejoin
+  notice once the leave is known (its notice, or a list that lacked the
+  room). A leave and rejoin between two lists whose leave notice never
+  reaches this device, or arrives only after the rejoin (an older page read
+  newest first), leaves those rows until the relay's answer replaces a
+  stored window.
+- **The leaver's own notice:** the relay usually ends the leaving
+  account's subscriptions before it sends `member_left`, so this device
+  rarely receives it. A rejoin then purges only because a list dropped the
+  room in between; a leave and rejoin within the same second (equal
+  `created_at`) is not seen as a rejoin.
+- **Left mark from a list:** it is the room's newest stored row, a lower
+  bound of the real leave: a rejoin notice between that row and the actual
+  leave would count as a rejoin and forget rows once more (they are fetched
+  again).
+- **Rooms first stored during a list:** mobile counts a room written in the
+  same batch as a list's capture as new and keeps it; desktop forgets it.
+  Both are corrected by the next list.
+- **Opening the file:** loading the stored-room set and building the
+  `targets_id` index once run on the writer before it drains the queue; on
+  a very large file a startup burst could overflow the queue (the file is
+  then marked lossy and coverage cleared).
+- **After a live forget:** live coverage for that room is refused until its
+  subscription's next EOSE (the capture is older than the forget). Only a
+  speed cost: the room opens from the relay meanwhile.
+- **Relay key:** until the relay key is known in this run (the first list
+  purge or identity archive read), notices forget nothing.
 - **Deletions without an event:** the store drops a row only for a removal
   (9005) or author deletion (5) it has received. A row the relay deletes
   without publishing such an event (an admin deletion today) cannot be seen
@@ -325,9 +454,6 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   replaces it. The relay request after every stored open covers this until
   the relay keeps a deletion record clients can fetch (a later stage).
 - **Job rows:** see the room's certain rule above.
-- **Scope capture (desktop):** a span's scope is read just after its EOSE,
-  not at it; an account switch on the same server in that moment could
-  file the span under the new account. Not yet closed.
 - **Build switch:** `VITE_KUZZ_STORE_OPEN=off` (desktop) or
   `--dart-define=KUZZ_STORE_OPEN=off` (mobile) opens every room and thread
   from the relay. Events are still stored and covered.

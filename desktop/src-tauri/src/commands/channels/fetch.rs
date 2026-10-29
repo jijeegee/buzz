@@ -24,19 +24,34 @@ pub(super) fn advance_directory_cursor(filter: &mut serde_json::Value, page: &[n
     filter["before_id"] = serde_json::json!(last.id.to_hex());
 }
 
+/// How [`query_relay_all`] knows it has every page.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum PageEnd {
+    /// A page shorter than the limit asked.
+    Short,
+    /// An empty page: a relay that caps pages below the limit cannot end
+    /// the walk early. Used where a missing row would be acted on (the
+    /// membership list the device store forgets rooms by).
+    Empty,
+}
+
 /// Fetch every page for a historical relay filter using the relay's composite
 /// `(until, before_id)` cursor. A timestamp-only cursor can skip rows when more
 /// than one page of events shares the same second.
 async fn query_relay_all(
     state: &AppState,
     mut filter: serde_json::Value,
+    end: PageEnd,
 ) -> Result<Vec<nostr::Event>, String> {
     filter["limit"] = serde_json::json!(DIRECTORY_PAGE_SIZE);
     let mut all = Vec::new();
 
     loop {
         let page = query_relay(state, &[filter.clone()]).await?;
-        let done = page.len() < DIRECTORY_PAGE_SIZE;
+        let done = match end {
+            PageEnd::Short => page.len() < DIRECTORY_PAGE_SIZE,
+            PageEnd::Empty => page.is_empty(),
+        };
 
         if !done {
             advance_directory_cursor(&mut filter, &page);
@@ -202,10 +217,58 @@ pub(super) async fn fetch_channels(
     state: &AppState,
     scope: DirectoryScope,
 ) -> Result<Vec<ChannelInfo>, String> {
+    Ok(fetch_channel_list(state, scope).await?.channels)
+}
+
+/// A fetched channel list, with what the device store applies it by.
+pub(super) struct ChannelList {
+    pub(super) channels: Vec<ChannelInfo>,
+    /// Every room the identity belongs to: kind:39002 membership (whether or
+    /// not its kind:39000 parses, hidden DMs included) and channels marked
+    /// member by the pending-owner overlay.
+    pub(super) member_ids: Vec<String>,
+    /// The device store's capture for the same identity, taken before the
+    /// first relay read (docs/message-sync.md#forgetting-a-room).
+    pub(super) store_scope: Option<String>,
+}
+
+/// The rooms the store keeps for a fetch: membership, plus channels marked
+/// member, taken before hidden DMs are dropped from `channels`.
+pub(super) fn store_member_ids(member_ids: &[String], channels: &[ChannelInfo]) -> Vec<String> {
+    let mut ids: Vec<String> = member_ids.to_vec();
+    ids.extend(
+        channels
+            .iter()
+            .filter(|channel| channel.is_member)
+            .map(|channel| channel.id.clone()),
+    );
+    ids.sort();
+    ids.dedup();
+    ids
+}
+
+/// NIP-DV: drops DMs the viewer has hidden from the shown list.
+pub(super) fn drop_hidden_dms(
+    channels: &mut Vec<ChannelInfo>,
+    hidden_dms: &std::collections::HashSet<String>,
+) {
+    if !hidden_dms.is_empty() {
+        channels.retain(|c| c.channel_type != "dm" || !hidden_dms.contains(&c.id));
+    }
+}
+
+pub(super) async fn fetch_channel_list(
+    state: &AppState,
+    scope: DirectoryScope,
+) -> Result<ChannelList, String> {
     #[cfg(debug_assertions)]
     let _profile_start = std::time::Instant::now();
 
     let my_pubkey = { state.current_identity_pubkey()?.to_hex() };
+    let store_scope = crate::message_store::scope_token(
+        &crate::relay::relay_api_base_url_with_override(state),
+        &my_pubkey,
+    );
 
     // Channels this identity created whose kind:39002 membership hasn't yet
     // propagated. Under member-only scope they are the only non-member
@@ -224,6 +287,7 @@ pub(super) async fn fetch_channels(
             let member_events = query_relay_all(
                 state,
                 serde_json::json!({"kinds": [39002], "#p": [&my_pubkey]}),
+                PageEnd::Empty,
             )
             .await?;
 
@@ -267,7 +331,11 @@ pub(super) async fn fetch_channels(
                 Vec::new()
             };
 
-            Ok::<_, String>((meta_events, collect_members_by_channel(&member_events)))
+            Ok::<_, String>((
+                meta_events,
+                collect_members_by_channel(&member_events),
+                member_channel_ids,
+            ))
         },
         // Step 3: non-member channel metadata (kind:39000).
         // - IncludeOpenDirectory: scan ALL open channels so the discovery
@@ -277,7 +345,8 @@ pub(super) async fn fetch_channels(
         async {
             match scope {
                 DirectoryScope::IncludeOpenDirectory => {
-                    query_relay_all(state, serde_json::json!({"kinds": [39000]})).await
+                    query_relay_all(state, serde_json::json!({"kinds": [39000]}), PageEnd::Short)
+                        .await
                 }
                 DirectoryScope::MemberOnly if !pending_owned_ids.is_empty() => {
                     query_relay(
@@ -325,7 +394,7 @@ pub(super) async fn fetch_channels(
     #[cfg(debug_assertions)]
     let t_phase1 = _profile_start.elapsed();
 
-    let (meta_events, mut membership) = member_chain_result?;
+    let (meta_events, mut membership, member_channel_ids) = member_chain_result?;
     let open_meta_events = open_meta_result?;
     // hidden_dms is already a resolved HashSet (tolerant path above)
 
@@ -462,12 +531,15 @@ pub(super) async fn fetch_channels(
         );
     }
 
-    // NIP-DV: drop DMs the viewer has hidden.
-    if !hidden_dms.is_empty() {
-        channels.retain(|c| c.channel_type != "dm" || !hidden_dms.contains(&c.id));
-    }
+    // The store keeps hidden DMs: they are still the identity's rooms.
+    let member_ids = store_member_ids(&member_channel_ids, &channels);
+    drop_hidden_dms(&mut channels, &hidden_dms);
 
-    Ok(channels)
+    Ok(ChannelList {
+        channels,
+        member_ids,
+        store_scope,
+    })
 }
 
 pub(super) struct ChannelMembership {

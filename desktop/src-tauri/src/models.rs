@@ -414,6 +414,12 @@ pub struct GetChannelsPayload {
     /// Map of channel id → ISO-8601 timestamp of its most recent message.
     /// Empty for channels with no messages.
     pub last_messages: std::collections::HashMap<String, String>,
+    /// Every room the identity belongs to (hidden DMs and rooms without
+    /// parsed metadata included), also on a not-modified response.
+    pub member_ids: Vec<String>,
+    /// The device store's capture taken before this fetch, for the same
+    /// identity (docs/message-sync.md#forgetting-a-room).
+    pub store_scope: Option<String>,
 }
 
 // ── Social / Contact list ───────────────────────────────────────────────────

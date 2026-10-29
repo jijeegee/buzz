@@ -18,6 +18,24 @@ extension RelaySessionStore on RelaySessionNotifier {
     if (decoded is List) _messageStore?.submit(lease, decoded);
   }
 
+  /// A capture of the store scope (server file and sign-in) events are kept
+  /// under now. Taken before a membership fetch whose list may forget rooms
+  /// (docs/message-sync.md#forgetting-a-room).
+  StoreCapture? get storeScope => _messageStore?.capture(_storeLease);
+
+  /// Applies [keep], a full membership list fetched from [scope] on, to the
+  /// stored rooms; refused (false) when that scope is no longer current or
+  /// the list is empty (docs/message-sync.md#forgetting-a-room).
+  bool forgetStoredRoomsExcept(StoreCapture? scope, Set<String> keep) =>
+      _messageStore?.forgetRoomsExcept(scope, _storeLease, keep) ?? false;
+
+  /// Notes the signing key (NIP-11 `self`) of [scope]'s server, while that
+  /// scope is still current: only its notices may forget a room.
+  void noteStoreRelayKey(StoreCapture? scope, String? key) {
+    if (scope == null || scope.lease != _storeLease) return;
+    _messageStore?.noteRelayKey(scope.lease, key);
+  }
+
   /// When [roomId]'s live REQ reached EOSE on this connection, if it has
   /// been receiving every event of the room since.
   int? _storeLiveAt(String roomId) {
