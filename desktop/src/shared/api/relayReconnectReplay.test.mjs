@@ -8,6 +8,7 @@ import {
   FENCE_CLOCK_MARGIN_SECS,
   RELAY_INGEST_FUTURE_TOLERANCE_SECS,
   RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS,
+  reconnectCursors,
   replayReconnectHistoryPages,
   PAGE_REPLAY_MAX_ATTEMPTS,
   replayLiveSubscriptions,
@@ -650,6 +651,70 @@ test("channel reconnect replay pages the missed window until a short page", asyn
     },
   ]);
   assert.equal(delivered.length, 1008);
+});
+
+test("a room chunk's repair walks from the lookback but surfaces only rows since it opened", async () => {
+  resetGate();
+  const repairRequests = [];
+  const delivered = [];
+  // A chunk has no `since`; it opened at 10_000 and saw nothing since.
+  const filter = { kinds: CHANNEL_EVENT_KINDS, "#h": ["a", "b"], limit: 0 };
+  const subscriptions = new Map([
+    [
+      "live-1",
+      {
+        mode: "live",
+        filter,
+        onEvent: (event) => delivered.push(event.id),
+        lastSeenCreatedAt: 10_000,
+        liveSince: { a: 10_000, b: 10_000 },
+      },
+    ],
+  ]);
+
+  await replayLiveSubscriptions({
+    subscriptions,
+    sendRaw: async () => {},
+    requestRepair: async (request) => {
+      repairRequests.push(request);
+      return [
+        { id: "new", created_at: 10_100, tags: [["h", "a"]] },
+        { id: "skewed", created_at: 9_996, tags: [["h", "b"]] },
+        { id: "before-launch", created_at: 9_000, tags: [["h", "a"]] },
+      ];
+    },
+  });
+
+  // The store still gets the whole lookback window.
+  assert.equal(
+    repairRequests[0].since,
+    10_000 - RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS,
+  );
+  assert.deepEqual(delivered, ["new", "skewed"]);
+});
+
+test("a replacement chunk keeps the start of rooms already live", () => {
+  const realNow = Date.now;
+  Date.now = () => 20_000_000;
+  try {
+    const filter = { kinds: CHANNEL_EVENT_KINDS, "#h": ["a", "new"], limit: 0 };
+    const replaced = {
+      mode: "live",
+      filter: { ...filter, "#h": ["a", "gone"] },
+      liveSince: { a: 10_000, gone: 9_000 },
+    };
+    assert.deepEqual(reconnectCursors(filter, [replaced]), {
+      lastSeenCreatedAt: 20_000,
+      // `a` stayed live through the swap; `new` starts now.
+      liveSince: { a: 10_000, new: 20_000 },
+    });
+    assert.deepEqual(
+      reconnectCursors({ kinds: [9], limit: 0 }, [replaced]),
+      {},
+    );
+  } finally {
+    Date.now = realNow;
+  }
 });
 
 test("native repair preserves an explicit subscription since boundary", async () => {

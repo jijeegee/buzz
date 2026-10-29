@@ -161,6 +161,40 @@ void main() {
     });
   });
 
+  test('catch-up hands a listener nothing from before it opened', () async {
+    final relay = _FakeBundleRelay();
+    final bundle = relay.bundle();
+    final early = <String>[];
+    final late = <String>[];
+    NostrFilter replies() => NostrFilter(
+      kinds: const [24211],
+      tags: {
+        '#p': [_me],
+      },
+      limit: 0,
+    );
+    relay.now = 1000;
+    final first = bundle.subscribe(replies(), (e) => early.add(e.id));
+    await pumpEventQueue();
+    relay.opened.single.release();
+    await first;
+    relay.now = 2000;
+    await bundle.subscribe(replies(), (e) => late.add(e.id));
+
+    List<List<String>> p() => [
+      ['p', _me],
+    ];
+    relay.fetchResult = [
+      _event('old', 24211, p(), createdAt: 1500),
+      _event('skewed', 24211, p(), createdAt: 1997),
+      _event('new', 24211, p(), createdAt: 2100),
+    ];
+    await bundle.catchUp(100);
+    expect(relay.fetches.last.since, 995, reason: 'earliest listener - skew');
+    expect(early, ['old', 'skewed', 'new']);
+    expect(late, ['skewed', 'new']);
+  });
+
   test('reset drops every scope', () async {
     final relay = _FakeBundleRelay();
     final bundle = relay.bundle();
@@ -222,8 +256,10 @@ class _FakeBundleRelay {
   final fetches = <NostrFilter>[];
   var fetchFailures = 0;
   var fetchResult = <NostrEvent>[];
+  var now = 0;
 
   MeLiveBundle bundle() => MeLiveBundle(
+    nowSecs: () => now,
     open: (filter, onEvent, onClosed) {
       final req = _FakeReq(filter, onEvent, onClosed);
       opened.add(req);

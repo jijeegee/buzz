@@ -57,6 +57,9 @@ const _listenerSeenLimit = 2000;
 const _catchUpAttempts = 3;
 const _catchUpRetry = Duration(seconds: 1);
 
+/// The relay's created-at skew allowance on a reconnect cursor.
+const _catchUpSkewSeconds = 5;
+
 enum MeScopeKind { authored, addressed }
 
 @immutable
@@ -146,9 +149,12 @@ typedef MeBundleOpen =
 typedef MeBundleFetch = Future<List<NostrEvent>> Function(NostrFilter filter);
 
 class _Listener {
-  _Listener(this.filter, this.onEvent, this.onClosed);
+  _Listener(this.filter, this.onEvent, this.onClosed, this.openedAt);
 
   final NostrFilter filter;
+
+  /// Catch-up hands this listener nothing older (less the skew allowance).
+  final int openedAt;
   final void Function(NostrEvent) onEvent;
   final void Function(String message)? onClosed;
   final seen = <String>{};
@@ -187,12 +193,18 @@ int _byCreatedAt(NostrEvent a, NostrEvent b) =>
 /// A scope closes once its last listener leaves, after the current task, so
 /// a provider rebuild that resubscribes at once keeps it.
 class MeLiveBundle {
-  MeLiveBundle({required MeBundleOpen open, required MeBundleFetch fetch})
-    : _open = open,
-      _fetch = fetch;
+  MeLiveBundle({
+    required MeBundleOpen open,
+    required MeBundleFetch fetch,
+    int Function()? nowSecs,
+  }) : _open = open,
+       _fetch = fetch,
+       _nowSecs =
+           nowSecs ?? (() => DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
   final MeBundleOpen _open;
   final MeBundleFetch _fetch;
+  final int Function() _nowSecs;
   final _scopes = <String, _ScopeEntry>{};
   var _generation = 0;
 
@@ -209,7 +221,7 @@ class MeLiveBundle {
       throw ArgumentError('Filter is not scoped to one account.');
     }
     final entry = _scopes[scope.key] ?? _openScope(scope);
-    final listener = _Listener(filter, onEvent, onClosed);
+    final listener = _Listener(filter, onEvent, onClosed, _nowSecs());
     entry.listeners.add(listener);
 
     var stopped = false;
@@ -311,11 +323,12 @@ class MeLiveBundle {
   ) async {
     bool isCurrent() =>
         generation == _generation && entry.live && entry.listeners.isNotEmpty;
-    final since = math.max(
-      0,
-      math.min(sinceSecs, entry.owedSince ?? sinceSecs),
-    );
-    entry.owedSince = since;
+    final owed = math.min(sinceSecs, entry.owedSince ?? sinceSecs);
+    entry.owedSince = owed;
+    if (entry.listeners.isEmpty) return;
+    // Nothing older than the earliest listener reaches anyone.
+    final openedAt = entry.listeners.map((l) => l.openedAt).reduce(math.min);
+    final since = math.max(0, math.max(owed, openedAt - _catchUpSkewSeconds));
     for (var attempt = 1; attempt <= _catchUpAttempts; attempt++) {
       if (!isCurrent()) return;
       try {
@@ -326,6 +339,9 @@ class MeLiveBundle {
         entry.owedSince = null;
         for (final event in [...missed]..sort(_byCreatedAt)) {
           for (final listener in [...entry.listeners]) {
+            if (event.createdAt < listener.openedAt - _catchUpSkewSeconds) {
+              continue;
+            }
             listener.deliver(event);
           }
         }

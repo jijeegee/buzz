@@ -66,8 +66,10 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 - Desktop re-sends each chunk unchanged and repairs the missed window over
   HTTP: one keyset walk per chunk covering all its rooms, from the chunk's
-  last-seen event time (or its start) minus the relay's created-at skew
-  allowance.
+  last-seen event time (or its start) minus the 1865 s lookback. Every row
+  goes to the device store, but rows older than the chunk's start minus 5 s
+  are not handed to listeners: they were never live on it and must not show
+  up as new notifications or activity.
 - Mobile re-sends each chunk; the open room refetches its newest page and the
   open thread its replies, as before.
 - Both apps also catch the device store up after every chunk EOSE (see
@@ -95,8 +97,15 @@ Features keep their own filters and listen through the bundle:
   authors, and each `#x` tag; `#p` and authors compare case-insensitively),
   each event once per listener.
 - **Reconnect.** Each live bundle fetches what it missed from the moment the
-  connection dropped minus the relay's created-at skew allowance, up to 500
-  events. A failed catch-up owes its window to the next reconnect.
+  connection dropped minus the 1865 s lookback, up to 500 events, but never
+  from before its earliest listener started (minus 5 s). Each listener gets
+  only events from when it started (minus 5 s), so nothing from before a
+  feature was listening shows up as new. A failed catch-up owes its window to
+  the next reconnect.
+- **Closed by the relay.** When the relay ends a bundle's REQ for good, the
+  bundle is dropped and the next listener opens a fresh one. Mobile also tells
+  current listeners; desktop features never reacted to their own REQ closing
+  and still don't.
 - **Lifetime.** A bundle opens with its first listener and closes once its
   last one leaves, after the current task, so a rebuild that subscribes again
   at once keeps it.

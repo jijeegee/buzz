@@ -26,6 +26,7 @@ const flush = async () => {
 
 /** A bundle over a fake relay; `opened` REQs resolve when released. */
 function harness() {
+  const clock = { now: 0 };
   const opened = [];
   const fetches = [];
   const timers = new Map();
@@ -33,9 +34,9 @@ function harness() {
   let fetchFailures = 0;
   let fetchResult = [];
   const bundle = new MeLiveBundle({
-    open: (filter, onEvent, onReady, signal) =>
+    open: (filter, onEvent, onReady, signal, onRemoved) =>
       new Promise((resolve, reject) => {
-        const req = { filter, onEvent, closed: false, signal };
+        const req = { filter, onEvent, closed: false, signal, onRemoved };
         req.release = () => {
           onReady("eose");
           resolve(async () => {
@@ -58,8 +59,10 @@ function harness() {
       timers.set(id, fn);
       return id;
     },
+    nowSecs: () => clock.now,
   });
   return {
+    clock,
     bundle,
     opened,
     fetches,
@@ -242,6 +245,52 @@ test("reconnect catch-up delivers what each listener missed, once", async () => 
 
   await bundle.catchUp(3_000);
   assert.equal(fetches.at(-1).since, 3_000, "the owed window was paid");
+});
+
+test("catch-up hands a listener nothing from before it opened", async () => {
+  const { bundle, opened, fetches, setFetchResult, clock } = harness();
+  const early = [];
+  const late = [];
+  clock.now = 1_000;
+  const first = bundle.subscribe(
+    { kinds: [24211], "#p": [ME], limit: 0 },
+    (e) => early.push(e.id),
+  );
+  await flush();
+  opened[0].release();
+  await first;
+  clock.now = 2_000;
+  await bundle.subscribe({ kinds: [24211], "#p": [ME], limit: 0 }, (e) =>
+    late.push(e.id),
+  );
+
+  setFetchResult([
+    event("old", 24211, [["p", ME]], { createdAt: 1_500 }),
+    event("skewed", 24211, [["p", ME]], { createdAt: 1_997 }),
+    event("new", 24211, [["p", ME]], { createdAt: 2_100 }),
+  ]);
+  await bundle.catchUp(100);
+  // The fetch starts at the earliest listener, less the skew allowance.
+  assert.equal(fetches.at(-1).since, 995);
+  assert.deepEqual(early, ["old", "skewed", "new"]);
+  assert.deepEqual(late, ["skewed", "new"]);
+});
+
+test("a REQ the relay drops for good lets the next listener open a fresh one", async () => {
+  const { bundle, opened } = harness();
+  const filter = { kinds: [30078], authors: [ME], "#d": ["x"], limit: 0 };
+  const subscribing = bundle.subscribe(filter, () => {});
+  await flush();
+  opened[0].release();
+  await subscribing;
+
+  opened[0].onRemoved();
+  assert.equal(opened[0].signal.aborted, true);
+  const again = bundle.subscribe(filter, () => {});
+  await flush();
+  assert.equal(opened.length, 2, "a fresh REQ");
+  opened[1].release();
+  await again;
 });
 
 test("reset drops every scope", async () => {

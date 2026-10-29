@@ -81,6 +81,14 @@ type LiveSubscription = {
   onRemoved?: () => void;
   lastSeenCreatedAt?: number;
   /**
+   * Per room, since when a repairable room subscription (or the one it
+   * replaced) has carried it live (unix seconds). Its repair walks from before
+   * this so the device store gets every row, but older rows (less the replay
+   * skew) are not dispatched: the per-room REQs it replaced carried
+   * `since: now`, so such rows never surfaced as new.
+   */
+  liveSince?: Record<string, number>;
+  /**
    * Lower bound of a reconnect backfill window that has not yet completed.
    *
    * Events on the restored live REQ advance `lastSeenCreatedAt` regardless of

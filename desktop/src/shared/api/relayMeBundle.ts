@@ -26,6 +26,8 @@ const CATCH_UP_LIMIT = 500;
 const LISTENER_SEEN_LIMIT = 2_000;
 const CATCH_UP_ATTEMPTS = 3;
 const CATCH_UP_RETRY_MS = 1_000;
+/** The relay's created-at skew allowance on a reconnect cursor. */
+const CATCH_UP_SKEW_SECS = 5;
 
 export type MeScope = { kind: "authored" | "addressed"; pubkey: string };
 
@@ -96,6 +98,8 @@ type Listener = {
   filter: RelaySubscriptionFilter;
   onEvent: (event: RelayEvent) => void;
   seen: Map<string, true>;
+  /** Catch-up hands this listener nothing older (less the skew allowance). */
+  openedAt: number;
 };
 
 type ScopeEntry = {
@@ -115,9 +119,13 @@ export type MeBundleDependencies = {
     onEvent: (event: RelayEvent) => void,
     onReady: (readiness: LiveSubscriptionReadiness) => void,
     signal: AbortSignal,
+    /** The session dropped the REQ for good (or it was disposed). */
+    onRemoved: () => void,
   ) => Promise<() => Promise<void>>;
   fetch: (filter: RelaySubscriptionFilter) => Promise<RelayEvent[]>;
   setTimeout: (fn: () => void, ms: number) => number;
+  /** Unix seconds; defaults to the wall clock. */
+  nowSecs?: () => number;
 };
 
 function deliver(listener: Listener, event: RelayEvent) {
@@ -170,7 +178,12 @@ export class MeLiveBundle {
     if (!scope) throw new Error("Filter is not scoped to one account.");
     const key = `${scope.kind}:${scope.pubkey}`;
     const entry = this.scopes.get(key) ?? this.openScope(key, scope);
-    const listener: Listener = { filter, onEvent, seen: new Map() };
+    const listener: Listener = {
+      filter,
+      onEvent,
+      seen: new Map(),
+      openedAt: this.deps.nowSecs?.() ?? Math.floor(Date.now() / 1_000),
+    };
     entry.listeners.add(listener);
 
     let stopped = false;
@@ -241,6 +254,13 @@ export class MeLiveBundle {
           readiness = next;
         },
         controller.signal,
+        () => {
+          // A terminal CLOSED: the next subscriber opens a fresh REQ, as it
+          // did with a REQ of its own (mobile does the same).
+          if (this.scopes.get(key) !== entry) return;
+          this.scopes.delete(key);
+          this.closeScope(entry);
+        },
       )
       .then(
         (dispose) => {
@@ -281,11 +301,13 @@ export class MeLiveBundle {
   ) {
     const isCurrent = () =>
       generation === this.generation && entry.live && entry.listeners.size > 0;
-    const since = Math.max(
-      0,
-      Math.floor(Math.min(sinceSecs, entry.owedSince ?? sinceSecs)),
+    const owed = Math.floor(Math.min(sinceSecs, entry.owedSince ?? sinceSecs));
+    entry.owedSince = owed;
+    // Nothing older than the earliest listener reaches anyone.
+    const openedAt = Math.min(
+      ...[...entry.listeners].map((listener) => listener.openedAt),
     );
-    entry.owedSince = since;
+    const since = Math.max(0, owed, openedAt - CATCH_UP_SKEW_SECS);
     for (let attempt = 1; attempt <= CATCH_UP_ATTEMPTS; attempt += 1) {
       if (!isCurrent()) return;
       try {
@@ -297,7 +319,12 @@ export class MeLiveBundle {
         if (!isCurrent()) return;
         entry.owedSince = null;
         for (const event of [...missed].sort(byCreatedAt)) {
-          for (const listener of [...entry.listeners]) deliver(listener, event);
+          for (const listener of [...entry.listeners]) {
+            if (event.created_at < listener.openedAt - CATCH_UP_SKEW_SECS) {
+              continue;
+            }
+            deliver(listener, event);
+          }
         }
         return;
       } catch (error) {

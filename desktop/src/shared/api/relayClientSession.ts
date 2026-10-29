@@ -34,7 +34,7 @@ import {
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
 import {
   replayLiveSubscriptions,
-  shouldPageReconnectReplay,
+  reconnectCursors,
 } from "@/shared/api/relayReconnectReplay";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
@@ -84,6 +84,13 @@ function recentSendTime(createdAt: number | undefined): number | undefined {
   return createdAt <= now && now - createdAt <= 120 ? createdAt : undefined;
 }
 
+const INTERACTIVE = [
+  undefined,
+  undefined,
+  undefined,
+  undefined,
+  "interactive",
+] as const;
 export class RelayClient {
   private wsId: number | null = null;
   private relayUrl: string | null = null;
@@ -420,24 +427,18 @@ export class RelayClient {
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
-    readinessTimeoutMs?: number,
+    timeoutMs?: number,
     signal?: AbortSignal,
+    gone?: () => void, // dropped for good: disposed or a terminal CLOSED
   ) {
-    return this.subscribe(filter, onEvent, onReady, readinessTimeoutMs, signal);
+    return this.subscribe(filter, onEvent, onReady, timeoutMs, signal, gone);
   }
   /** Prioritize an interactive live consumer without changing its replay filter or pacing. */
   async subscribeInteractive(
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
   ) {
-    return this.subscribe(
-      filter,
-      onEvent,
-      undefined,
-      undefined,
-      undefined,
-      "interactive",
-    );
+    return this.subscribe(filter, onEvent, ...INTERACTIVE);
   }
 
   async preconnect() {
@@ -623,6 +624,7 @@ export class RelayClient {
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
     readinessTimeoutMs = 250,
     signal?: AbortSignal,
+    onGone?: () => void,
     priority?: "interactive",
   ) {
     const epoch = this.sessionEpoch;
@@ -636,6 +638,7 @@ export class RelayClient {
       sessionSignal.removeEventListener("abort", abort);
       window.clearTimeout(fallbackTimeout);
       settleReady();
+      onGone?.();
     };
     const subscription: Extract<RelaySubscription, { mode: "live" }> = {
       mode: "live",
@@ -643,10 +646,7 @@ export class RelayClient {
       priority,
       onEvent,
       onRemoved,
-      // A repairable room subscription is continuous from now on.
-      lastSeenCreatedAt: shouldPageReconnectReplay(filter)
-        ? Math.floor(Date.now() / 1_000)
-        : undefined,
+      ...reconnectCursors(filter, this.subscriptions.values()),
     };
     const dispose = async () => {
       if (this.subscriptions.get(subId) !== subscription) return;

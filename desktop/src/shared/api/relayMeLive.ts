@@ -9,8 +9,15 @@ import { RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS } from "@/shared/api/relayReconn
 import type { RelayEvent } from "@/shared/api/types";
 
 const bundle = new MeLiveBundle({
-  open: (filter, onEvent, onReady, signal) =>
-    relayClient.subscribeLive(filter, onEvent, onReady, undefined, signal),
+  open: (filter, onEvent, onReady, signal, onRemoved) =>
+    relayClient.subscribeLive(
+      filter,
+      onEvent,
+      onReady,
+      undefined,
+      signal,
+      onRemoved,
+    ),
   fetch: (filter) => relayClient.fetchEvents(filter),
   setTimeout: (fn, ms) => globalThis.setTimeout(fn, ms) as unknown as number,
 });

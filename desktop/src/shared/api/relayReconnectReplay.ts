@@ -104,6 +104,32 @@ export function buildReconnectReplayFilter(
 }
 
 /**
+ * Reconnect cursors for a new live subscription. A repairable one is
+ * continuous from now on, and its repair never surfaces rows from before its
+ * rooms went live as new (see `liveSince`). A room another live subscription
+ * already carries (a chunk being replaced, maybe while offline) keeps that
+ * subscription's start, so the replacement still surfaces what it missed.
+ */
+export function reconnectCursors(
+  filter: RelaySubscriptionFilter,
+  subscriptions: Iterable<RelaySubscription>,
+) {
+  if (!shouldPageReconnectReplay(filter)) return {};
+  const now = Math.floor(Date.now() / 1_000);
+  const liveSince: Record<string, number> = {};
+  for (const roomId of filter["#h"] ?? []) liveSince[roomId] = now;
+  for (const other of subscriptions) {
+    if (other.mode !== "live" || !other.liveSince) continue;
+    for (const [roomId, since] of Object.entries(other.liveSince)) {
+      if (liveSince[roomId] !== undefined && since < liveSince[roomId]) {
+        liveSince[roomId] = since;
+      }
+    }
+  }
+  return { lastSeenCreatedAt: now, liveSince };
+}
+
+/**
  * Whether a live subscription's missed window is repaired over HTTP: it must
  * carry every channel event kind for an explicit set of rooms (one room, or a
  * room bundle of up to the relay's 128-channel cap). Room bundles are
@@ -117,6 +143,20 @@ export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
     roomIds.length <= MAX_EXPLICIT_CHANNEL_VALUES &&
     CHANNEL_EVENT_KINDS.every((kind) => filter.kinds.includes(kind))
   );
+}
+
+/** Rows older than this were never live on `subscription`'s room. */
+function liveFloor(
+  subscription: Extract<RelaySubscription, { mode: "live" }>,
+  event: RelayEvent,
+) {
+  const starts = subscription.liveSince;
+  if (!starts) return Number.NEGATIVE_INFINITY;
+  const roomId = event.tags.find((tag) => tag[0] === "h")?.[1];
+  const since =
+    (roomId === undefined ? undefined : starts[roomId]) ??
+    Math.min(...Object.values(starts));
+  return since - RECONNECT_REPLAY_SKEW_SECS;
 }
 
 /**
@@ -162,7 +202,11 @@ export async function replayReconnectHistoryPages({
 
     if (!isActive()) return false;
 
+    // The walk starts before `liveSince` so the device store gets every row;
+    // older rows were never live on this subscription and must not surface
+    // as new activity.
     for (const event of events) {
+      if (event.created_at < liveFloor(subscription, event)) continue;
       if (shouldDispatchSubscriptionEvent(subscription, event)) {
         subscription.onEvent(event);
       }
