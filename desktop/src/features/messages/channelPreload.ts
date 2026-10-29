@@ -46,7 +46,9 @@ export async function preloadChannelsMessages(
   if (cold.length === 0) return [];
   let pages: Map<string, RelayEvent[]>;
   try {
-    pages = await getChannelWindowsEvents(cold, limitRows);
+    pages = await getChannelWindowsEvents(cold, limitRows, {
+      storeHead: true,
+    });
   } catch (error) {
     // The scheduler retries in a later pass; a burst of single requests here
     // would not yield to the user.
@@ -159,6 +161,8 @@ export async function preloadThreads(
       const pages = await getThreadWindows(
         chunk.map((thread) => ({ ...thread, cursor: null })),
         THREAD_PRELOAD_REPLIES,
+        // Narrower than the page a thread opens on: records no head span.
+        { storeHead: true },
       );
       seedThreadPages(queryClient, pages);
       loaded += pages.length;

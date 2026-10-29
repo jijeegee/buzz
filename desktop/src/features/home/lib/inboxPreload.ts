@@ -4,8 +4,8 @@ import { getThreadReference } from "@/features/messages/lib/threading";
 
 /** Inbox rows whose rooms load in the background: about one screenful. */
 export const INBOX_PRELOAD_ROWS = 12;
-/** Newest messages loaded per preloaded room, about one chat screen. */
-export const INBOX_PRELOAD_MESSAGES = 20;
+/** Newest messages loaded per preloaded room: a whole open window. */
+export const INBOX_PRELOAD_MESSAGES = 50;
 
 export type InboxPreloadTarget = {
   channelId: string;

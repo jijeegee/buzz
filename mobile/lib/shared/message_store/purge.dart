@@ -10,6 +10,7 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'head_coverage.dart' show forgetStoreHeads;
 import 'stored_event.dart';
 
 /// Per room: the `created_at` of the last rejoin notice handled
@@ -356,6 +357,9 @@ Future<bool> applyRoomNotice(
   if (room == null) return false;
   final at = row.createdAt;
   final marks = await _marks(db, room);
+  // Any history change may show rows a head span said were not there
+  // (docs/message-sync.md#head-spans).
+  if (notice is RoomHistory) await forgetStoreHeads(db, room);
   switch (notice) {
     case RoomJoined() when at > marks.joinedAt:
       final rejoined = marks.leftAt > 0 && at > marks.leftAt;

@@ -13,6 +13,9 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'coverage.dart' as spans;
+import 'head_coverage.dart';
+
+export 'head_coverage.dart' show StoreHeadSpan;
 import 'purge.dart' as purge;
 import 'room_head.dart';
 import 'thread_head.dart';
@@ -137,6 +140,23 @@ class _NoticeOp {
   final String relayKey;
 }
 
+/// A newest-window request for [rooms] is going out; this input's number is
+/// its mark (docs/message-sync.md#head-spans).
+class _HeadSentOp {
+  const _HeadSentOp(this.rooms);
+
+  final List<String> rooms;
+}
+
+/// The head spans read from the answer to the request marked [captured];
+/// empty only releases the mark.
+class _HeadsOp {
+  const _HeadsOp(this.heads, this.captured);
+
+  final List<StoreHeadSpan> heads;
+  final int captured;
+}
+
 class _Writer {
   _Writer(this.open, this.account);
 
@@ -150,6 +170,13 @@ class _Writer {
   /// outlive the writer, so nothing older is needed.
   final Map<String, int> born = {};
   final Map<String, int> forgot = {};
+
+  /// Per room, the last input that carried a history change: heads asked
+  /// for before it may hide rows the relay now shows.
+  final Map<String, int> history = {};
+
+  /// Newest-window requests in flight, with their rooms' rows written since.
+  final StoreHeadMarks marks = StoreHeadMarks();
 
   /// Submitted event lists, [_CoverageOp]s, [_ForgetOp]s and [_NoticeOp]s,
   /// in the order they were received.
@@ -354,6 +381,34 @@ class MessageStore {
     _schedule(writer);
   }
 
+  /// Marks a newest-window request for [rooms] going out on [lease]'s file:
+  /// its capture, which [recordHeads] needs, or `null` once the lease has
+  /// ended (docs/message-sync.md#head-spans).
+  StoreCapture? headSent(MessageStoreLease? lease, List<String> rooms) {
+    final writer = _writerFor(lease);
+    if (writer == null || rooms.isEmpty) return null;
+    writer.enqueue(_HeadSentOp(List.of(rooms)));
+    _schedule(writer);
+    return (lease: lease!, sequence: writer.queued);
+  }
+
+  /// Records [heads], read from the answer to the request marked [capture]
+  /// (an empty list only releases the mark). Refused (false) when its scope
+  /// is not [current] or has ended; the writer refuses it too unless
+  /// [capture] is a mark from [headSent].
+  bool recordHeads(
+    StoreCapture? capture,
+    MessageStoreLease? current,
+    List<StoreHeadSpan> heads,
+  ) {
+    if (capture == null || capture.lease != current) return false;
+    final writer = _writerFor(capture.lease);
+    if (writer == null) return false;
+    writer.enqueue(_HeadsOp(List.of(heads), capture.sequence));
+    _schedule(writer);
+    return true;
+  }
+
   /// The end of each room's latest span begun before [before], for rooms
   /// that have one. Empty when nothing was stored yet.
   Future<Map<String, int>> resumePoints(
@@ -520,9 +575,19 @@ class MessageStore {
         final coverage = head is _CoverageOp ? head : null;
         final forget = head is _ForgetOp ? head : null;
         final notice = head is _NoticeOp ? head : null;
+        final heads = head is _HeadsOp ? head : null;
+        if (head is _HeadSentOp) {
+          writer.queue.removeAt(0);
+          writer.marks.open(writer.passed + 1, head.rooms);
+          writer.advance(1);
+          continue;
+        }
         final List<Map<String, dynamic>> events;
         final int taken;
-        if (coverage != null || forget != null || notice != null) {
+        if (coverage != null ||
+            forget != null ||
+            notice != null ||
+            heads != null) {
           writer.queue.removeAt(0);
           events = notice == null
               ? const <Map<String, dynamic>>[]
@@ -563,10 +628,19 @@ class MessageStore {
             StoredSummary() => row.room,
           };
           if (room != null) writer.born.putIfAbsent(room, () => sequence);
+          if (room != null && row is StoredRow) writer.marks.note(room, row.id);
         }
+        // Unknown marks (a plain capture, dropped) record nothing.
+        final closed = heads == null
+            ? null
+            : writer.marks.close(heads.captured);
         final lossy = writer.lossy;
         writer.lossy = false;
-        if (rows.isEmpty && !lossy && coverage == null && forget == null) {
+        if (rows.isEmpty &&
+            !lossy &&
+            coverage == null &&
+            forget == null &&
+            closed == null) {
           writer.advance(taken);
           continue;
         }
@@ -574,6 +648,7 @@ class MessageStore {
         if (writer.stopped) return;
         final known = writer.rooms ??= await purge.StoredRooms.load(db);
         final forgotten = <String>[];
+        String? historyOf;
         await db.transaction((txn) async {
           // A notice forgets the rows received before it, then is written.
           final row = rows.firstOrNull;
@@ -583,6 +658,7 @@ class MessageStore {
               writer.account,
               notice.relayKey,
             );
+            if (applies is purge.RoomHistory) historyOf = row.room;
             if (applies != null &&
                 await purge.applyRoomNotice(txn, known, row, applies)) {
               forgotten.add(row.room!);
@@ -614,6 +690,22 @@ class MessageStore {
             rooms.forEach(known.note);
             await spans.extendCoverage(txn, rooms, coverage.from, coverage.to);
           }
+          if (heads != null && closed != null && !lossy) {
+            for (final span in heads.heads) {
+              // As for a room span: never over a loss, nor for a room
+              // forgotten after the request went out; and only for the
+              // mark's rooms, with no history change since it.
+              if (span.liveAt <= writer.lostAt ||
+                  !closed.rooms.contains(span.room) ||
+                  (writer.forgot[span.room] ?? 0) > heads.captured ||
+                  (writer.history[span.room] ?? 0) > heads.captured) {
+                continue;
+              }
+              known.note(span.room);
+              writer.born.putIfAbsent(span.room, () => sequence);
+              await recordStoreHead(txn, span, closed.fresh);
+            }
+          }
         });
         if (forget != null) {
           // Its own transactions, a chunk of rooms each.
@@ -634,6 +726,7 @@ class MessageStore {
         for (final room in forgotten) {
           writer.forgot[room] = sequence;
         }
+        if (historyOf case final room?) writer.history[room] = sequence;
         writer.advance(taken);
       }
     } catch (error) {

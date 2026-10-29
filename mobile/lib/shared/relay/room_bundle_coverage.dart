@@ -10,6 +10,8 @@ import 'package:flutter/foundation.dart';
 import '../message_store/message_store.dart';
 import 'nostr_models.dart';
 
+export 'store_heads.dart';
+
 /// Same margin as desktop reconnect repair: relay future tolerance plus
 /// storage fence.
 const storeResumeLookbackSecs = 900 + 960 + 5;
@@ -105,6 +107,24 @@ class RoomBundleCoverage {
     final live = _live[subscription];
     return live != null && live.generation == generation ? live.liveAt : null;
   }
+
+  /// The coverage of [subscription]'s EOSE on connection [generation], as a
+  /// part of a head token (docs/message-sync.md#head-spans), or `null`. Each
+  /// is made at one EOSE and never reused: while [holds], the REQ has been
+  /// receiving every event of its rooms since.
+  Object? liveTokenOf(Object subscription, int generation) {
+    final live = _live[subscription];
+    return live != null && live.generation == generation ? live : null;
+  }
+
+  /// Whether [token] from [liveTokenOf] is still [subscription]'s coverage on
+  /// connection [generation].
+  bool holds(Object subscription, Object token, int generation) =>
+      identical(_live[subscription], token) &&
+      (token as _Live).generation == generation;
+
+  /// When the REQ of [token] reached EOSE.
+  int liveAtOfToken(Object token) => (token as _Live).liveAt;
 
   /// The relay closed [subscription]: not receiving until its retry reaches
   /// EOSE again.

@@ -26,6 +26,9 @@ pub struct ThreadWindowPage {
     has_more: bool,
     /// Cursor for the next older page, when `has_more`.
     next_cursor: Option<ThreadCursor>,
+    /// The bounds' paging direction (`older` for a newest page), when given.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    direction: Option<String>,
 }
 
 impl ThreadWindowPage {
@@ -45,6 +48,7 @@ impl ThreadWindowPage {
                 created_at,
                 event_id,
             }),
+            direction: Some("older".to_owned()),
         }
     }
 }
@@ -120,6 +124,7 @@ fn split_thread_windows(
             events,
             has_more: has_more && next_cursor.is_some(),
             next_cursor: if has_more { next_cursor } else { None },
+            direction: bounds["direction"].as_str().map(str::to_owned),
         });
     }
     pages

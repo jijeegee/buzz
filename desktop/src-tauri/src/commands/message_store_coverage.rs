@@ -147,3 +147,66 @@ pub async fn message_store_thread_head(
 
 /// Rows of a room's first window, as `get_channel_window` asks by default.
 const ROOM_HEAD_ROWS: usize = 50;
+
+/// Marks a newest-window request for `room_ids` (each carried by a live REQ)
+/// going out: the capture to record its head spans with, or `None`
+/// (docs/message-sync.md#head-spans).
+#[tauri::command]
+pub async fn message_store_head_sent(
+    room_ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Option<String>, String> {
+    let (relay, account) = scope(&state)?;
+    Ok(crate::message_store::head_sent(&relay, &account, room_ids))
+}
+
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreHeadCursor {
+    created_at: i64,
+    event_id: String,
+}
+
+/// One newest window as the relay answered it, while the room's live REQs
+/// stayed live from before the request (L = `live_at`).
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StoreHeadArg {
+    room_id: String,
+    /// `None`: the room's window; else this thread root's.
+    root_id: Option<String>,
+    live_at: i64,
+    /// The answer's oldest row; `None` when it had no more.
+    next_cursor: Option<StoreHeadCursor>,
+    ids: Vec<String>,
+}
+
+/// Records the head spans of the request marked `scope` (from
+/// `message_store_head_sent`); an empty list only releases the mark.
+#[tauri::command]
+pub async fn message_store_record_heads(
+    scope: Option<String>,
+    heads: Vec<StoreHeadArg>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let (relay, account) = self::scope(&state)?;
+    let kinds = |list: &[u32]| list.iter().map(|&kind| u64::from(kind)).collect();
+    let heads = heads
+        .into_iter()
+        .map(|head| crate::message_store::HeadSpan {
+            kinds: if head.root_id.is_some() {
+                kinds(&super::thread_window::THREAD_ROW_KINDS)
+            } else {
+                kinds(&super::channel_window::TIMELINE_KINDS)
+            },
+            room: head.room_id,
+            root: head.root_id,
+            live_at: head.live_at,
+            oldest: head
+                .next_cursor
+                .map(|cursor| (cursor.created_at, cursor.event_id)),
+            ids: head.ids.into_iter().collect(),
+        })
+        .collect();
+    crate::message_store::record_heads(&relay, &account, scope.as_deref(), heads)
+}

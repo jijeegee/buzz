@@ -133,6 +133,8 @@ extension _StoreHead on ChannelMessagesNotifier {
         return stored;
       }
     }
-    return session.queryRelay([filter]);
+    // Records the room's head span when its live REQ stays live
+    // (docs/message-sync.md#head-spans).
+    return session.queryRelayWithStoreHeads([filter]);
   }
 }

@@ -16,6 +16,8 @@ that both clients' tests read.
 | Message store fixture tests | `message_store/tests.rs` | `message_store_test.dart` |
 | Forgetting a room | `message_store/purge.rs`; list from `get_channels` (`commands/channels/fetch.rs`: `member_ids`, `store_scope`), applied by `desktop/src/features/channels/lib/storeRoomPurge.ts` (from `refreshChannelsQuery`) | `mobile/lib/shared/message_store/purge.dart`; list trigger `_forgetStoredRoomsMissingFrom` (`channel_directory.dart`, from the membership fetch in `channels_provider.dart`) |
 | Forgetting fixture tests | `purge_follows_shared_fixture` (`message_store/tests.rs`); triggers: `socket_notices_carry_the_relay_key`, `an_eose_capture_precedes_what_arrives_after_it`, `a_large_purge_runs_in_chunks`, `a_list_older_than_the_last_applied_is_refused`, `store_rooms_follow_membership_not_the_shown_list` (`fetch_tests.rs`), `storeRoomPurge.test.mjs` | `message_store_purge_test.dart`; triggers: `relay_session_purge_test.dart`, `channels_store_purge_test.dart` |
+| Head spans | `message_store/head.rs` (writer: `writer.rs`; commands `message_store_head_sent`, `message_store_record_heads`); requests: `desktop/src/shared/api/relayStoreHeads.ts`, used by `channelWindow.ts` and `threadWindow.ts` | `mobile/lib/shared/message_store/head_coverage.dart`; requests: `queryRelayWithStoreHeads` (`relay_session_store.dart`, `store_heads.dart`), used by `store_head.dart`, `thread_replies_provider.dart`, `channel_preload.dart` |
+| Head span fixture tests | `head_coverage_follows_shared_fixture` and the other tests in `message_store/head_tests.rs`; `relayStoreHeads.test.mjs` | `message_store_head_test.dart`; `store_heads_test.dart` |
 | Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
 
 The account bundle's cases live in
@@ -23,7 +25,9 @@ The account bundle's cases live in
 the message store's in
 [`test-fixtures/message-store.json`](../test-fixtures/message-store.json),
 forgetting a room's in
-[`test-fixtures/message-store-purge.json`](../test-fixtures/message-store-purge.json).
+[`test-fixtures/message-store-purge.json`](../test-fixtures/message-store-purge.json),
+head spans' in
+[`test-fixtures/message-store-head-coverage.json`](../test-fixtures/message-store-head-coverage.json).
 
 ## Live room bundle
 
@@ -252,6 +256,75 @@ Merging rules and cases: `test-fixtures/message-store-coverage.json`.
   retired stops before recording.
 - **Sign-out** deletes coverage with the file.
 
+### Head spans
+
+A newest window the relay answers (a room's channel window, or a thread's
+reply window, with no cursor) holds every row of that window from its oldest
+row on. When a live REQ carrying the room was receiving all along, the store
+records this as a head span, so a quiet room whose rows are older than any
+coverage can still open from the store. Cases:
+`test-fixtures/message-store-head-coverage.json`.
+
+- **Streams:** `head` for the room's window, `head:<root>` for a thread's,
+  next to the room's own `room` spans. One span per stream. The next answer
+  replaces it, except that a span reaching further back (older `lo`, or the
+  whole history) is kept while a room span joins its `hi` to the new L: it
+  keeps its `lo` and takes `hi` = the later L. One no longer joined is
+  replaced. The coverage version stays 2.
+- **Span:** `lo` = the answer's oldest row `(created_at, id)`, or `0` (whole
+  history) when it had no more; `hi` = L, the latest EOSE of the room's live
+  REQs at the request (see the token). In relay order (`created_at DESC, id
+  ASC`) the span holds every row at or before `lo`.
+- **Token:** as the request goes out, the client takes every live REQ
+  carrying the room that has reached EOSE on this connection (desktop: each
+  REQ's coverage object; mobile: each REQ's EOSE record and the connection
+  generation). The span is recorded only when each of them is still the same,
+  unchanged, when the answer arrives (no CLOSED, socket loss, retirement or
+  new EOSE in between). No such REQ means no span. Unlike the room refresh
+  rule above, the room's listener is not part of it: the store only needs
+  the live REQ.
+- **Mark:** before sending, the client queues a mark for the request's rooms
+  in the store's write queue (its capture) and waits for it. The answer's
+  spans carry that capture; a span with any other capture (a plain one, a
+  mark already answered or evicted) is refused, as is one whose scope ended.
+  A failed request or a token that no longer holds releases the mark with
+  no spans. The mark keeps its rooms; a span for any other room is refused.
+  At most 64 marks wait per file (the oldest is dropped), a mark not
+  answered within 2 minutes expires, and each remembers at most 4096 rows
+  (beyond either, its answer records nothing).
+- **Deleted rows:** in the same transaction as the span, stored rows of the
+  window from `lo` on (every one, for a whole history) up to L
+  (`created_at <= L`) that the answer lacks were deleted on the relay and are
+  dropped with their target index entries and thread summaries. Rows newer
+  than L are kept, and so are rows written to the store after the mark:
+  they may have reached the relay after its answer was read. Room windows
+  look at top-level rows and direct broadcast replies, thread windows at the
+  thread's replies (9, 40002); each leaves the other's rows alone.
+- **Refused** like a room span: after a loss not yet written down or one at
+  or after L, and for a room forgotten after the mark.
+- **History changes:** any relay-signed `history_changed` for a room
+  (`all` or `since_join`, newer or not) deletes the room's `head` and
+  `head:<root>` spans in the transaction that handles it, since rows a head
+  said were absent may now be visible. A span whose mark went out before
+  such a notice is refused.
+- **Consistency:** newest room-window filters carry `"consistency":
+  "strong"`, but the relay's window path does not honour it yet (see
+  [Limits](#limits)). Thread-window filters cannot carry it: the relay's
+  thread-window parser rejects unknown fields.
+- **Which requests:** on both platforms, only the newest window a room or
+  thread opens on from the relay, and the background preload, opt in; and
+  only a request for at least the open window's 50 rows records. So the
+  room preload (50 rows) records, the thread preload (20 replies) and
+  desktop's workflow message picker (25) never do, and older pages, a
+  link's walk to a reply and catch-up never record. Requests are not
+  skipped yet; stage 5-6 does that.
+- **Matching thread pages:** a thread page is matched to its request by
+  channel and root (its bounds' `h` and `e` tags). Its `d` binding is not
+  recomputed: it hashes the relay's resolved host and normalised kinds. So
+  a request naming the same root twice, an answer with two pages for one
+  root, or bounds whose `direction` is not `older` record nothing for that
+  root.
+
 ### Opening a room from the store
 
 On a room's first fetch, the client reads the room's newest window from the
@@ -277,11 +350,17 @@ ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
   at least one reply (the relay sends none for `reply_count` 0), and one
   `39006` bounds event (`d = <room>:head`, unsigned, `next_cursor` = the
   oldest row) so older pages load from the relay as usual.
-- **Certain** when all of: the window has 50 rows; a live REQ carrying the
-  room reached EOSE at L on the current connection and has not been closed
-  since (the client passes L; none means not certain); one coverage span
-  has `lo ≤ created_at of the 50th row − 1865` and `hi ≥ L`; and the room
-  has never stored a job row (43001–43006). Job rows show in the window, but
+- **Certain** when a live REQ carrying the room reached EOSE at L on the
+  current connection and has not been closed since (the client passes L;
+  none means not certain), the room has never stored a job row
+  (43001–43006), and either:
+  - the window has 50 rows and one room span has `lo ≤ created_at of the
+    50th row − 1865` and `hi ≥ L`; or
+  - a [head span](#head-spans) reaches the window's oldest row (whole
+    history, or the window has 50 rows and its 50th row is at or before the
+    head's `lo` in relay order), and one room span has `lo ≤` the head's
+    `hi` and `hi ≥ L`. A room with fewer than 50 rows is certain this way
+    once a whole-history head is recorded. Job rows show in the window, but
   live REQs do not carry them (that set is frozen), so coverage cannot vouch
   for them. A room's first job row is still missed until something stores
   one; the relay request after a stored open (above) corrects that frame.
@@ -311,9 +390,12 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   answer ends with one unsigned `39007` bounds event (`h` = room, `e` = root,
   content `{version: 1, direction: "older", has_more, next_cursor}`).
 - **Certain** when a live REQ carrying the room reached EOSE at L on the
-  current connection and has not been closed since, and one coverage span has
-  `hi ≥ L` and `lo ≤` (full window: the oldest reply's `created_at`; fewer
-  replies: the root's `created_at`, which must be stored in the room) `− 1865`.
+  current connection and has not been closed since, and either one room span
+  has `hi ≥ L` and `lo ≤` (full window: the oldest reply's `created_at`;
+  fewer replies: the root's `created_at`, which must be stored in the room)
+  `− 1865`; or the thread's head span (`head:<root>`) reaches the window's
+  oldest reply as for rooms and one room span has `lo ≤` its `hi` and
+  `hi ≥ L`. A quiet thread is certain this way without its root stored.
 - **Written first:** as for rooms.
 
 ### Forgetting a room
@@ -447,13 +529,30 @@ older rows it should no longer see. Cases:
   speed cost: the room opens from the relay meanwhile.
 - **Relay key:** until the relay key is known in this run (the first list
   purge or identity archive read), notices forget nothing.
-- **Deletions without an event:** the store drops a row only for a removal
-  (9005) or author deletion (5) it has received. A row the relay deletes
+- **Deletions without an event:** apart from [head spans](#head-spans),
+  the store drops a row only for a removal (9005) or author deletion (5) it
+  has received. A row the relay deletes
   without publishing such an event (an admin deletion today) cannot be seen
   from the store, so a stored window may show it until the relay's answer
   replaces it. The relay request after every stored open covers this until
   the relay keeps a deletion record clients can fetch (a later stage).
 - **Job rows:** see the room's certain rule above.
+- **Head consistency:** the relay serves channel and thread windows through
+  its routed read path, which may use a read replica when
+  `KUZZ_REPLICA_READ_MAX_AGE_MS` is set, and ignores `consistency` there
+  (only the catch-all query path honours it). A lagging replica could
+  answer without a row the store already has, and the head would drop it
+  (the live REQ brings it back only if it is sent again). Production has no
+  read replica today; the relay must honour `consistency: "strong"` on the
+  window paths (and accept it on thread windows) before replicas are used.
+- **Head drop range:** rows the answer lacks are dropped only from `lo` up
+  to L; newer ones wait for a later head. A row at or before L that the
+  answer lacks only because its read lagged (see head consistency above)
+  is still dropped.
+- **Thread preload heads:** the thread preload asks for 20 replies, below
+  the open page's 50, so it records no head; a thread opens from the store
+  only after it was opened from the relay once (or a whole history was
+  recorded then). Desktop and mobile behave the same.
 - **Build switch:** `VITE_KUZZ_STORE_OPEN=off` (desktop) or
   `--dart-define=KUZZ_STORE_OPEN=off` (mobile) opens every room and thread
   from the relay. Events are still stored and covered.

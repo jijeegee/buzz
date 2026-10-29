@@ -183,10 +183,12 @@ async function fetchThreadPage(
   rootId: string,
   cursor: ThreadCursor | null,
   limitRows: number,
+  options: { storeHead?: boolean } = {},
 ): Promise<ThreadWindowPage | null> {
   const [page] = await getThreadWindows(
     [{ channelId, rootId, cursor }],
     limitRows,
+    options,
   );
   return page ?? null;
 }
@@ -216,7 +218,10 @@ export async function loadNewestThreadReplies(
     void refreshThreadAfterStore(queryClient, channelId, rootId, stored.events);
   }
   const page =
-    stored ?? (await fetchThreadPage(channelId, rootId, null, limitRows));
+    stored ??
+    (await fetchThreadPage(channelId, rootId, null, limitRows, {
+      storeHead: true,
+    }));
   if (!page) return null;
   if (!stored) compareThreadRelayPage(queryClient, rootId, page.events);
   let { events, state } = mergeNewestThreadPage(

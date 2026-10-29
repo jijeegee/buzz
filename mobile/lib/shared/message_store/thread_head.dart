@@ -9,6 +9,7 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'head_coverage.dart';
 import 'room_head.dart';
 
 /// A thread's newest replies as the store has them.
@@ -130,7 +131,18 @@ Future<StoredThreadHead> readThreadHead(
 
   var certain = false;
   if (liveAt != null) {
-    if (hasMore) {
+    // A head span of the thread's own window (docs/message-sync.md#head-spans).
+    certain = await storeHeadVouches(
+      db,
+      room: room,
+      stream: threadHeadStream(root),
+      oldest: oldest,
+      full: hasMore,
+      liveAt: liveAt,
+    );
+    if (certain) {
+      // Vouched for by the thread's head span.
+    } else if (hasMore) {
       certain = await _covered(
         db,
         room,

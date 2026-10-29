@@ -34,7 +34,8 @@ const defaultDeps: StoreRoomHeadDeps = {
       roomId,
       liveAt,
     }),
-  relayWindow: (roomId) => getChannelWindowEvents(roomId),
+  relayWindow: (roomId) =>
+    getChannelWindowEvents(roomId, null, 50, { storeHead: true }),
   relayRefresh: (queryClient, roomId) =>
     refreshChannelWindowMessages(queryClient, roomId, false),
 };

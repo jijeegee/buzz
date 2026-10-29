@@ -107,4 +107,64 @@ extension RelaySessionStore on RelaySessionNotifier {
     );
     return _storedEvents(events);
   }
+
+  /// [filters] sent through [queryRelay], recording the head span of each
+  /// newest room or thread window they ask for whose room's live REQs were
+  /// live as the request went out and still are when it is answered
+  /// (docs/message-sync.md#head-spans). The request is marked in the store
+  /// first, so rows written after it are never taken for deleted ones.
+  Future<List<NostrEvent>> queryRelayWithStoreHeads(
+    List<NostrFilter> filters,
+  ) async {
+    final sent = [for (final filter in filters) storeHeadFilter(filter)];
+    final windows = [for (final filter in sent) ?storeHeadWindowOf(filter)];
+    final generation = _connectionGeneration;
+    final tokens = <String, List<(String, _LiveSubscription, Object)>>{};
+    for (final roomId in {for (final window in windows) window.roomId}) {
+      final token = [
+        for (final MapEntry(key: subId, value: subscription)
+            in _liveSubscriptions.entries)
+          if (storeCoveredRooms(subscription.filter)?.contains(roomId) ?? false)
+            if (_storeCoverage.liveTokenOf(subscription, generation)
+                case final live?)
+              (subId, subscription, live),
+      ];
+      if (token.isNotEmpty) tokens[roomId] = token;
+    }
+    final store = _messageStore;
+    final capture = tokens.isEmpty
+        ? null
+        : store?.headSent(_storeLease, tokens.keys.toList());
+    if (store == null || capture == null) return queryRelay(sent);
+    var heads = <StoreHeadSpan>[];
+    try {
+      final events = await queryRelay(sent);
+      bool holds(String roomId) =>
+          generation == _connectionGeneration &&
+          tokens[roomId]!.every(
+            (part) =>
+                _liveSubscriptions[part.$1] == part.$2 &&
+                _storeCoverage.holds(part.$2, part.$3, generation),
+          );
+      heads = [
+        for (final answer in storeHeadAnswers(windows, events))
+          if (tokens.containsKey(answer.window.roomId) &&
+              holds(answer.window.roomId))
+            StoreHeadSpan(
+              room: answer.window.roomId,
+              root: answer.window.rootId,
+              kinds: answer.window.kinds,
+              liveAt: tokens[answer.window.roomId]!
+                  .map((part) => _storeCoverage.liveAtOfToken(part.$3))
+                  .reduce(max),
+              oldest: answer.nextCursor,
+              ids: answer.ids,
+            ),
+      ];
+      return events;
+    } finally {
+      // An empty list only releases the mark.
+      store.recordHeads(capture, _storeLease, heads);
+    }
+  }
 }

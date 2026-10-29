@@ -31,6 +31,12 @@ fn build_channel_window_filter(
     if let Some(cursor) = cursor {
         filter.insert("until".to_string(), serde_json::json!(cursor.created_at));
         filter.insert("before_id".to_string(), serde_json::json!(cursor.event_id));
+    } else {
+        // A newest window may record a head span in the device store, which
+        // drops stored rows it lacks: ask for the writer, never a replica
+        // (docs/message-sync.md#head-spans; the window path does not honour
+        // it yet).
+        filter.insert("consistency".to_string(), serde_json::json!("strong"));
     }
     serde_json::Value::Object(filter)
 }

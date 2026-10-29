@@ -5,6 +5,9 @@
 mod classify;
 mod clock;
 mod coverage;
+mod head;
+#[cfg(test)]
+mod head_tests;
 mod purge;
 mod read;
 mod read_thread;
@@ -25,6 +28,7 @@ use sha2::{Digest, Sha256};
 
 #[cfg(test)]
 pub(crate) use classify::{classify, Filed};
+pub(crate) use head::HeadSpan;
 use writer::{Input, Writer};
 
 static STORE: OnceLock<MessageStore> = OnceLock::new();
@@ -258,6 +262,37 @@ impl MessageStore {
         }
         let keep = keep.into_iter().collect();
         self.submit(&lease, Input::ForgetExcept { keep, captured });
+        Ok(())
+    }
+
+    /// Marks a newest-window request for `rooms` going out on `lease`'s
+    /// file: its capture, which [`Self::record_heads`] needs, or `None`
+    /// when it could not be queued (docs/message-sync.md#head-spans).
+    pub(crate) fn head_sent(&self, lease: &Lease, rooms: Vec<String>) -> Option<String> {
+        let mut capture = None;
+        self.with_writer(lease, |writer, _| {
+            if writer.submit(Input::HeadSent { rooms }) {
+                capture = Some(format!("{}:{}", lease.token(), writer.sequence()));
+            }
+        });
+        capture
+    }
+
+    /// Records the head spans read from the answer to the request marked
+    /// `scope` (an empty list only releases the mark). Refused when `scope`
+    /// is no longer current; the writer refuses it too unless it is a mark.
+    pub(crate) fn record_heads(
+        &self,
+        relay_url: &str,
+        account: &str,
+        scope: Option<&str>,
+        heads: Vec<HeadSpan>,
+    ) -> Result<(), String> {
+        let lease = self
+            .lease(relay_url, account)
+            .ok_or("message store scope changed")?;
+        let captured = captured(scope, &lease)?;
+        self.submit(&lease, Input::Heads { heads, captured });
         Ok(())
     }
 
@@ -552,6 +587,25 @@ pub(crate) fn forget_rooms_except(
 ) -> Result<(), String> {
     let Some(store) = global() else { return Ok(()) };
     store.forget_rooms_except(relay_url, account, scope, keep)
+}
+
+/// Marks a newest-window request for `rooms` to `relay_url` as `account`
+/// going out; its capture, or `None` (nothing will be recorded).
+pub(crate) fn head_sent(relay_url: &str, account: &str, rooms: Vec<String>) -> Option<String> {
+    let store = global()?;
+    let lease = store.lease(relay_url, account)?;
+    store.head_sent(&lease, rooms)
+}
+
+/// Records the head spans of the request marked `scope`.
+pub(crate) fn record_heads(
+    relay_url: &str,
+    account: &str,
+    scope: Option<&str>,
+    heads: Vec<HeadSpan>,
+) -> Result<(), String> {
+    let Some(store) = global() else { return Ok(()) };
+    store.record_heads(relay_url, account, scope, heads)
 }
 
 /// Notes `relay_url`'s signing key (NIP-11 `self`): relay notices signed

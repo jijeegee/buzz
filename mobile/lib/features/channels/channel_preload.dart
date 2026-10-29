@@ -7,8 +7,9 @@ import 'channel_messages_provider.dart';
 import 'channel_window.dart';
 import 'thread_replies_provider.dart';
 
-/// Newest messages loaded per preloaded room, about one chat screen.
-const channelPreloadMessages = 20;
+/// Newest messages loaded per preloaded room: a whole open window, so its
+/// answer can vouch for it (docs/message-sync.md#head-spans).
+const channelPreloadMessages = 50;
 
 /// Newest replies loaded per preloaded thread, about one thread screen.
 const threadPreloadReplies = 20;
@@ -171,9 +172,11 @@ class ChannelPreloader {
 
     final List<NostrEvent> events;
     try {
-      events = await _ref.read(relaySessionProvider.notifier).queryRelay([
-        for (final channelId in cold) channelPreloadFilter(channelId),
-      ]);
+      events = await _ref
+          .read(relaySessionProvider.notifier)
+          .queryRelayWithStoreHeads([
+            for (final channelId in cold) channelPreloadFilter(channelId),
+          ]);
     } catch (error) {
       // The scheduler tries again in a later pass.
       debugPrint('[ChannelPreloader] batched room preload failed: $error');
@@ -232,7 +235,7 @@ class ChannelPreloader {
       try {
         final events = await _ref
             .read(relaySessionProvider.notifier)
-            .queryRelay([
+            .queryRelayWithStoreHeads([
               for (final thread in chunk) threadPreloadFilter(thread),
             ]);
         final windows = splitThreadWindows(events, chunk);

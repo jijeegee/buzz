@@ -9,6 +9,8 @@ import 'dart:convert';
 
 import 'package:sqflite/sqflite.dart';
 
+import 'head_coverage.dart';
+
 /// Receive time can trail `created_at` by this much (relay future tolerance
 /// plus storage fence), so coverage must begin this far before a row.
 const rowReceiveMarginSecs = 900 + 960 + 5;
@@ -114,6 +116,8 @@ Map<String, dynamic>? _parse(Object? raw) {
 }
 
 /// The parent of a reply: its last `reply`-marked `e` tag.
+String? storedParentOf(Map<String, dynamic> event) => _parentOf(event);
+
 String? _parentOf(Map<String, dynamic> event) {
   final tags = event['tags'];
   if (tags is! List) return null;
@@ -230,12 +234,28 @@ Future<StoredRoomHead> readRoomHead(
 
   var certain = false;
   final cursor = nextCursor;
-  if (liveAt != null && cursor != null && rows.length == limit) {
-    final covered = await db.rawQuery(
-      'SELECT 1 FROM coverage WHERE room = ? AND stream = ? '
-      'AND lo_at <= ? AND hi_at >= ? LIMIT 1',
-      [room, _roomStream, cursor.$1 - rowReceiveMarginSecs, liveAt],
-    );
+  final full = rows.length == limit;
+  if (liveAt != null) {
+    final received =
+        cursor != null &&
+        full &&
+        (await db.rawQuery(
+          'SELECT 1 FROM coverage WHERE room = ? AND stream = ? '
+          'AND lo_at <= ? AND hi_at >= ? LIMIT 1',
+          [room, _roomStream, cursor.$1 - rowReceiveMarginSecs, liveAt],
+        )).isNotEmpty;
+    // Or a head span reaches the window's oldest row
+    // (docs/message-sync.md#head-spans).
+    final covered =
+        received ||
+        await storeHeadVouches(
+          db,
+          room: room,
+          stream: headStream,
+          oldest: cursor,
+          full: full,
+          liveAt: liveAt,
+        );
     // Job rows (43001-43006) show in the window but no live REQ carries
     // them, so coverage never vouches for them: a room that ever stored one
     // is opened from the relay.
@@ -244,7 +264,7 @@ Future<StoredRoomHead> readRoomHead(
       'AND kind BETWEEN 43001 AND 43006 LIMIT 1',
       [room],
     );
-    certain = covered.isNotEmpty && jobRows.isEmpty;
+    certain = covered && jobRows.isEmpty;
   }
   return StoredRoomHead(
     certain: certain,

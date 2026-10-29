@@ -334,7 +334,7 @@ Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
     final stored = await readStore(session, args);
     if (stored != null) return (events: stored, stored: true);
   }
-  final events = await session.queryRelay([
+  final events = await session.queryRelayWithStoreHeads([
     threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
   ]);
   return (events: events, stored: false);

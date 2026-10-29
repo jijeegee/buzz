@@ -1,0 +1,1839 @@
+{
+  "description": "Head coverage from newest windows (docs/message-sync.md#coverage, head spans). Each case starts from an empty file of `account` and runs `steps` in order: `events` are received (socket or query answer alike); `coverage` records a live or repair span `[from, to]` of `room`, captured now; `sent` marks a newest-window request going out for `rooms` under the name it gives (the mark is its capture); `head` is that request's answer (`sent` names the mark): `root` null for the room window, else the thread window of that root, `live_at` the time the live REQ carrying the room reached EOSE (the token's L), `has_more` and `next_cursor` from the answer's bounds, `ids` every event id the answer held. `token_changed: true` means the live token no longer held when the answer arrived: the client records no span (it only releases the mark). `forget_except` applies a membership list captured now; `lost` drops a receive (the file turns lossy). The relay's signing key `relay_key` is known, so its `history_changed` notices (40099) apply. The room window then reads `limit` rows of `kinds` (a thread window `limit` replies of `thread_kinds`) with the current EOSE time `live_at`. `expect` checks, when present: `room_certain`, `thread_certain`, `events` (every stored event id, sorted), `heads` (the head span per stream, `[lo_at, lo_id, hi_at]`, or null for none). Read by desktop (message_store/head_tests.rs) and mobile (message_store_head_test.dart).",
+  "account": "aa00000000000000000000000000000000000000000000000000000000000001",
+  "room": "room-1",
+  "root": "root-1",
+  "kinds": [
+    9,
+    40002,
+    40008,
+    40099,
+    43001,
+    43002,
+    43003,
+    43004,
+    43005,
+    43006,
+    48100
+  ],
+  "thread_kinds": [
+    9,
+    40002
+  ],
+  "limit": 3,
+  "cases": [
+    {
+      "name": "a small room whose window has no more rows is certain",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1",
+              "a2"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "events": [
+          "a1",
+          "a2"
+        ],
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a token that changed before the answer arrived records nothing",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          },
+          "token_changed": true
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "events": [
+          "a1",
+          "a2"
+        ],
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "stored rows the answer lacks were deleted and are dropped; rows that arrived after the send stay",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "t1",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 6200,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "a1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "a1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": "a thread reply is no window row"
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "events": [
+            {
+              "id": "x1",
+              "kind": 9,
+              "pubkey": "p3",
+              "created_at": 6500,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": "sent late with an older time"
+            }
+          ]
+        },
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1",
+              "a3"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "events": [
+          "a1",
+          "a3",
+          "t1",
+          "x1"
+        ],
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a full window is certain when the head reaches its oldest row",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "r1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r4",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 8000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": true,
+            "next_cursor": [
+              6000,
+              "r2"
+            ],
+            "ids": [
+              "r4",
+              "r3",
+              "r2"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "events": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "heads": {
+          "room": [
+            6000,
+            "r2",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a head that stops short of the window's oldest row is not certain",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "r1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r4",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 8000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": true,
+            "next_cursor": [
+              7000,
+              "r3"
+            ],
+            "ids": [
+              "r4",
+              "r3"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "events": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "heads": {
+          "room": [
+            7000,
+            "r3",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a head older than the live span, with a gap between, is not certain",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            12000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a head joined to the live span by a catch-up span is certain",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            12000,
+            20000
+          ]
+        },
+        {
+          "coverage": [
+            8000,
+            12000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a live span that ended before the current EOSE does not carry a head",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            15000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a room forgotten after the request went out records no head",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "b1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-2"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "forget_except": [
+            "room-1",
+            "room-2"
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "forget_except": [
+            "room-2"
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "events": [
+          "a1",
+          "b1"
+        ],
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a receive lost before the answer records no head",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "lost": true
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a quiet thread whose window has no more replies is certain without its root stored",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "q1",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 5100,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "q2",
+              "kind": 9,
+              "pubkey": "p3",
+              "created_at": 5200,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": "root-1",
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "q1",
+              "q2"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "thread_certain": true,
+        "room_certain": false,
+        "events": [
+          "q1",
+          "q2"
+        ],
+        "heads": {
+          "room": null,
+          "thread": [
+            0,
+            "",
+            10000
+          ]
+        }
+      }
+    },
+    {
+      "name": "a thread head drops the replies its answer lacks",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "q1",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 5100,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "q2",
+              "kind": 9,
+              "pubkey": "p3",
+              "created_at": 5200,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "q3",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 5300,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "q1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": "root-1",
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "q1",
+              "q3"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "thread_certain": true,
+        "events": [
+          "q1",
+          "q3"
+        ],
+        "heads": {
+          "room": null,
+          "thread": [
+            0,
+            "",
+            10000
+          ]
+        }
+      }
+    },
+    {
+      "name": "a room head leaves thread replies alone and a thread head leaves room rows alone",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "root-1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "q1",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 5100,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "root-1"
+            ]
+          }
+        },
+        {
+          "sent": "w2",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w2",
+            "root": "root-1",
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "q1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "thread_certain": true,
+        "events": [
+          "q1",
+          "root-1"
+        ],
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": [
+            0,
+            "",
+            10000
+          ]
+        }
+      }
+    },
+    {
+      "name": "any history change forgets the room's head spans",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "q1",
+              "kind": 9,
+              "pubkey": "p2",
+              "created_at": 5100,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "root"
+                ],
+                [
+                  "e",
+                  "root-1",
+                  "",
+                  "reply"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        },
+        {
+          "sent": "w2",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w2",
+            "root": "root-1",
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "q1"
+            ]
+          }
+        },
+        {
+          "events": [
+            {
+              "id": "h1",
+              "kind": 40099,
+              "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003",
+              "created_at": 15000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"all\"}"
+            }
+          ]
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "thread_certain": false,
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a head asked for before a history change records nothing",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "events": [
+            {
+              "id": "h1",
+              "kind": 40099,
+              "pubkey": "cc00000000000000000000000000000000000000000000000000000000000003",
+              "created_at": 15000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": "{\"type\":\"history_changed\",\"actor\":\"bb00000000000000000000000000000000000000000000000000000000000002\",\"history\":\"all\"}"
+            }
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "rows newer than L that the answer lacks are kept",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 11000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "events": [
+          "a1",
+          "a2"
+        ],
+        "heads": {
+          "room": [
+            0,
+            "",
+            10000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a narrower head joined to the wider one keeps the wider lo",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "r1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r4",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 8000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "r1",
+              "r2",
+              "r3",
+              "r4"
+            ]
+          }
+        },
+        {
+          "sent": "w2",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w2",
+            "root": null,
+            "live_at": 12000,
+            "has_more": true,
+            "next_cursor": [
+              6000,
+              "r2"
+            ],
+            "ids": [
+              "r4",
+              "r3",
+              "r2"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "events": [
+          "r1",
+          "r2",
+          "r3",
+          "r4"
+        ],
+        "heads": {
+          "room": [
+            0,
+            "",
+            12000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a wider head no longer joined to now is replaced",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "r1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r3",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 7000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "r4",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 8000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            12000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "r1",
+              "r2",
+              "r3",
+              "r4"
+            ]
+          }
+        },
+        {
+          "sent": "w2",
+          "rooms": [
+            "room-1"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w2",
+            "root": null,
+            "live_at": 15000,
+            "has_more": true,
+            "next_cursor": [
+              6000,
+              "r2"
+            ],
+            "ids": [
+              "r4",
+              "r3",
+              "r2"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": true,
+        "heads": {
+          "room": [
+            6000,
+            "r2",
+            15000
+          ],
+          "thread": null
+        }
+      }
+    },
+    {
+      "name": "a head for a room its mark does not name is refused",
+      "steps": [
+        {
+          "events": [
+            {
+              "id": "a1",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 5000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            },
+            {
+              "id": "a2",
+              "kind": 9,
+              "pubkey": "p1",
+              "created_at": 6000,
+              "tags": [
+                [
+                  "h",
+                  "room-1"
+                ]
+              ],
+              "content": ""
+            }
+          ]
+        },
+        {
+          "coverage": [
+            10000,
+            20000
+          ]
+        },
+        {
+          "sent": "w1",
+          "rooms": [
+            "room-2"
+          ]
+        },
+        {
+          "head": {
+            "sent": "w1",
+            "root": null,
+            "live_at": 10000,
+            "has_more": false,
+            "next_cursor": null,
+            "ids": [
+              "a1"
+            ]
+          }
+        }
+      ],
+      "live_at": 19000,
+      "expect": {
+        "room_certain": false,
+        "events": [
+          "a1",
+          "a2"
+        ],
+        "heads": {
+          "room": null,
+          "thread": null
+        }
+      }
+    }
+  ],
+  "relay_key": "cc00000000000000000000000000000000000000000000000000000000000003"
+}

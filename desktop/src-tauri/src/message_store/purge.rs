@@ -319,6 +319,11 @@ pub(crate) fn apply_notice(
     let tx = conn.transaction()?;
     let mut current = marks(&tx, room)?;
     let mut forgot = false;
+    // Any history change may show rows a head span said were not there
+    // (docs/message-sync.md#head-spans).
+    if let Notice::History(_) = notice {
+        super::head::forget_heads(&tx, room)?;
+    }
     match notice {
         Notice::Joined if at > current.joined_at => {
             current.joined_at = at;

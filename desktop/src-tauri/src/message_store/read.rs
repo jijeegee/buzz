@@ -9,6 +9,7 @@ use rusqlite::{params, params_from_iter, Connection};
 use serde_json::{json, Value};
 
 use super::coverage::ROOM_STREAM;
+use super::head::{vouches, HEAD_STREAM};
 
 /// Receive time can trail `created_at` by this much (relay future tolerance
 /// plus storage fence), so coverage must begin this far before a row.
@@ -62,7 +63,7 @@ pub(super) fn parse(raw: String) -> Option<Value> {
 }
 
 /// The parent of a reply: its last `reply`-marked `e` tag.
-fn parent_of(event: &Value) -> Option<&str> {
+pub(super) fn parent_of(event: &Value) -> Option<&str> {
     event
         .get("tags")?
         .as_array()?
@@ -188,8 +189,9 @@ pub(crate) fn room_head(
             .collect();
     }
 
-    head.certain = match (live_at, &head.next_cursor) {
-        (Some(live_at), Some((oldest, _))) if head.rows.len() == limit => conn
+    let full = head.rows.len() == limit;
+    let received = match (live_at, &head.next_cursor) {
+        (Some(live_at), Some((oldest, _))) if full => conn
             .prepare_cached(
                 "SELECT 1 FROM coverage WHERE room = ?1 AND stream = ?2 \
                  AND lo_at <= ?3 AND hi_at >= ?4 LIMIT 1",
@@ -201,7 +203,14 @@ pub(crate) fn room_head(
                 live_at
             ])?,
         _ => false,
-    } && !has_job_rows(conn, room)?
+    };
+    let oldest = head.next_cursor.as_ref().map(|(at, id)| (*at, id.as_str()));
+    head.certain = (received
+        || match live_at {
+            Some(live_at) => vouches(conn, room, HEAD_STREAM, oldest, full, live_at)?,
+            None => false,
+        })
+        && !has_job_rows(conn, room)?
         && super::coverage::is_current(conn)?;
     Ok(head)
 }

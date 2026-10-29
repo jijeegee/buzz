@@ -7,6 +7,7 @@ use rusqlite::{params, Connection, OptionalExtension};
 use serde_json::Value;
 
 use super::coverage::ROOM_STREAM;
+use super::head::{thread_head_stream, vouches};
 use super::read::{is_deleted, parse, ROW_RECEIVE_MARGIN_SECS};
 
 /// A thread's newest replies as the store has them.
@@ -80,24 +81,30 @@ pub(crate) fn thread_head(
         head.next_cursor = oldest.filter(|_| head.has_more);
         return Ok(head);
     };
-    head.certain = if head.has_more {
-        let (oldest_at, _) = oldest.as_ref().expect("a full window has rows");
-        covered(conn, room, oldest_at - ROW_RECEIVE_MARGIN_SECS, live_at)?
-    } else {
-        // Fewer replies than asked: only certain when every reply since the
-        // root is known stored.
-        let root_at: Option<i64> = conn
-            .query_row(
-                "SELECT created_at FROM events WHERE id = ?1 AND room = ?2",
-                params![root, room],
-                |row| row.get(0),
-            )
-            .optional()?;
-        match root_at {
-            Some(root_at) => covered(conn, room, root_at - ROW_RECEIVE_MARGIN_SECS, live_at)?,
-            None => false,
-        }
-    } && super::coverage::is_current(conn)?;
+    let oldest_row = oldest.as_ref().map(|(at, id)| (*at, id.as_str()));
+    let stream = thread_head_stream(root);
+    // A head span of the thread's own window (docs/message-sync.md#head-spans).
+    let headed = vouches(conn, room, &stream, oldest_row, head.has_more, live_at)?
+        && super::coverage::is_current(conn)?;
+    head.certain = headed
+        || if head.has_more {
+            let (oldest_at, _) = oldest.as_ref().expect("a full window has rows");
+            covered(conn, room, oldest_at - ROW_RECEIVE_MARGIN_SECS, live_at)?
+        } else {
+            // Fewer replies than asked: only certain when every reply since the
+            // root is known stored.
+            let root_at: Option<i64> = conn
+                .query_row(
+                    "SELECT created_at FROM events WHERE id = ?1 AND room = ?2",
+                    params![root, room],
+                    |row| row.get(0),
+                )
+                .optional()?;
+            match root_at {
+                Some(root_at) => covered(conn, room, root_at - ROW_RECEIVE_MARGIN_SECS, live_at)?,
+                None => false,
+            }
+        } && super::coverage::is_current(conn)?;
     head.next_cursor = oldest.filter(|_| head.has_more);
     Ok(head)
 }

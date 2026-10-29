@@ -18,6 +18,7 @@ use serde_json::Value;
 
 use super::classify::{classify, Filed};
 use super::coverage;
+use super::head::{self, HeadSpan};
 use super::purge;
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
@@ -52,6 +53,12 @@ pub(crate) enum Input {
     /// Answers once everything queued before it is written: `true` when
     /// nothing was lost.
     Barrier(SyncSender<bool>),
+    /// A newest-window request for `rooms` is going out; this input's
+    /// number is its mark (docs/message-sync.md#head-spans).
+    HeadSent { rooms: Vec<String> },
+    /// The head spans read from the answer to the request marked
+    /// `captured`; empty only releases the mark.
+    Heads { heads: Vec<HeadSpan>, captured: u64 },
 }
 
 #[cfg(test)]
@@ -86,9 +93,11 @@ fn rows_of(input: Input) -> (Vec<Filed>, Option<Arc<str>>) {
         Input::Events { events, relay_key } => {
             (events.iter().filter_map(classify).collect(), relay_key)
         }
-        Input::Coverage { .. } | Input::ForgetExcept { .. } | Input::Barrier(_) => {
-            (Vec::new(), None)
-        }
+        Input::Coverage { .. }
+        | Input::ForgetExcept { .. }
+        | Input::Barrier(_)
+        | Input::HeadSent { .. }
+        | Input::Heads { .. } => (Vec::new(), None),
     }
 }
 
@@ -359,6 +368,11 @@ fn run(
     let mut forgot: HashMap<String, u64> = HashMap::new();
     // The capture of the last list applied: an older list is stale.
     let mut list_captured = 0u64;
+    // Newest-window requests in flight, with their rooms' rows written since.
+    let mut marks = head::Marks::default();
+    // Per room, the last input that carried a history change: heads asked
+    // for before it may hide rows the relay now shows.
+    let mut history: HashMap<String, u64> = HashMap::new();
     // Inputs taken off the queue during a long purge, in order.
     let mut backlog: VecDeque<Input> = VecDeque::new();
     while let Some(first) = backlog.pop_front().or_else(|| receiver.recv().ok()) {
@@ -409,12 +423,45 @@ fn run(
                     }
                 }
                 Input::ForgetExcept { .. } => {}
+                Input::HeadSent { rooms } => marks.open(sequence, rooms),
+                Input::Heads { heads, captured } => {
+                    let lost = flush(&mut conn, &mut rows, &lossy);
+                    // Unknown marks (a plain capture, dropped) record nothing.
+                    let closed = marks.close(captured).filter(|_| !lost);
+                    if let Some(head::Closed { rooms, fresh }) = closed {
+                        let lost_at = lossy.at.load(Ordering::SeqCst);
+                        let after = |map: &HashMap<String, u64>, room: &str| {
+                            map.get(room).is_some_and(|&at| at > captured)
+                        };
+                        for head in heads {
+                            // As for a room span: never over a loss, nor for a
+                            // room forgotten after the request went out; and
+                            // only for the mark's rooms, with no history change
+                            // since it.
+                            if head.live_at <= lost_at
+                                || !rooms.contains(&head.room)
+                                || after(&forgot, &head.room)
+                                || after(&history, &head.room)
+                            {
+                                continue;
+                            }
+                            born.entry(head.room.clone()).or_insert(sequence);
+                            known.note(&head.room);
+                            if let Err(error) = head::record(&mut conn, &head, &fresh) {
+                                eprintln!("kuzz-desktop: message store: head failed: {error}");
+                            }
+                        }
+                    }
+                }
                 other => {
                     let (received, relay_key) = rows_of(other);
                     for row in received {
                         if let Some(room) = room_of(&row) {
                             born.entry(room.to_owned()).or_insert(sequence);
                             known.note(room);
+                            if let Filed::Event(event) = &row {
+                                marks.note(room, &event.id);
+                            }
                         }
                         let notice = match (&row, &relay_key) {
                             (Filed::Event(event), Some(key)) => purge::notice(event, account, key),
@@ -427,6 +474,9 @@ fn run(
                         // Rows received before the notice are written first,
                         // so it forgets them too.
                         flush(&mut conn, &mut rows, &lossy);
+                        if let (purge::Notice::History(_), Some(room)) = (notice, &event.room) {
+                            history.insert(room.clone(), sequence);
+                        }
                         let applied =
                             purge::apply_notice(&mut conn, &mut known, event, notice, |tx| {
                                 write_in(tx, std::slice::from_ref(&row))
