@@ -121,7 +121,7 @@ void main() {
         logged.where((line) => line.startsWith('[message-store] thread root')),
         [
           contains(
-            'store differs from relay (compared 2, missing 0 (), extra 1 (deleted))',
+            'store differs from relay (compared 2, missing 0 (), extra 1 (deleted),',
           ),
         ],
       );

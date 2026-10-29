@@ -6,6 +6,7 @@ library;
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
@@ -20,9 +21,13 @@ import 'stored_event.dart';
 
 const messageStoreSchemaVersion = 1;
 
-/// Received events waiting for the writer; beyond this they are dropped and
-/// the file is marked lossy.
-const _queueLimit = 4096;
+/// Receives waiting for the writer, as on desktop: one submit is one input,
+/// however many events it holds. Beyond this one is dropped and the file is
+/// marked lossy.
+const _queueInputs = 4096;
+
+/// Events waiting for the writer, a memory guard well above any one answer.
+const _queueEvents = 50000;
 
 /// Rows written per transaction.
 const _rowsPerTransaction = 512;
@@ -104,8 +109,22 @@ class _Writer {
 
   final Future<Database> Function() open;
 
-  /// Event maps and [_CoverageOp]s, in the order they were received.
+  /// Submitted event lists and [_CoverageOp]s, in the order they were
+  /// received.
   final List<Object> queue = [];
+
+  /// Events of the first list already written.
+  int headOffset = 0;
+
+  /// Events in [queue] not yet written.
+  int queuedEvents = 0;
+
+  void clearQueue() {
+    queue.clear();
+    headOffset = 0;
+    queuedEvents = 0;
+  }
+
   Future<Database>? database;
   Future<void> drained = Future.value();
   bool scheduled = false;
@@ -201,13 +220,14 @@ class MessageStore {
   void submit(MessageStoreLease? lease, Iterable<Object?> events) {
     final writer = _writerFor(lease);
     if (writer == null) return;
-    for (final event in events) {
-      if (event is! Map<String, dynamic>) continue;
-      if (writer.queue.length >= _queueLimit) {
-        writer.noteLoss();
-        break;
-      }
-      writer.enqueue(event);
+    final input = events.whereType<Map<String, dynamic>>().toList();
+    if (input.isEmpty) return;
+    if (writer.queue.length >= _queueInputs ||
+        writer.queuedEvents + input.length > _queueEvents) {
+      writer.noteLoss();
+    } else {
+      writer.enqueue(input);
+      writer.queuedEvents += input.length;
     }
     _schedule(writer);
   }
@@ -398,15 +418,28 @@ class MessageStore {
           taken = 1;
         } else {
           coverage = null;
-          var take = 0;
-          while (take < writer.queue.length &&
-              take < _rowsPerTransaction &&
-              writer.queue[take] is! _CoverageOp) {
-            take++;
+          events = [];
+          var inputs = 0;
+          // Whole lists up to a transaction's rows; a long one is split.
+          while (inputs < writer.queue.length &&
+              events.length < _rowsPerTransaction) {
+            final input = writer.queue[inputs];
+            if (input is! List<Map<String, dynamic>>) break;
+            final end = math.min(
+              input.length,
+              writer.headOffset + _rowsPerTransaction - events.length,
+            );
+            events.addAll(input.getRange(writer.headOffset, end));
+            if (end < input.length) {
+              writer.headOffset = end;
+              break;
+            }
+            writer.headOffset = 0;
+            inputs++;
           }
-          events = writer.queue.sublist(0, take).cast();
-          writer.queue.removeRange(0, take);
-          taken = take;
+          writer.queue.removeRange(0, inputs);
+          writer.queuedEvents -= events.length;
+          taken = inputs;
         }
         final rows = events.map(classifyStoredEvent).nonNulls.toList();
         final lossy = writer.lossy;
@@ -442,7 +475,7 @@ class MessageStore {
       }
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
-      writer.queue.clear();
+      writer.clearQueue();
       writer.noteLoss();
     } finally {
       writer.scheduled = false;
@@ -498,7 +531,7 @@ class MessageStore {
       if (_writers.remove(stem) case final writer?)
         writer
           ..stopped = true
-          ..queue.clear()
+          ..clearQueue()
           ..advance(writer.queued),
     ];
     final previous = _forgetting[stem] ?? Future<void>.value();

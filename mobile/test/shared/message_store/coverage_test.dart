@@ -102,9 +102,18 @@ void main() {
     expect(await store.resumePoints(lease, ['r1', 'r2'], _later), {'r1': 160});
     expect(await rows('SELECT id FROM events'), hasLength(1));
 
-    // Events beyond the queue limit are dropped: nothing is known complete.
+    // One large answer is one input and is kept whole.
     store.submit(lease, [for (var i = 0; i < 5000; i++) _event('b$i', 200)]);
     store.extendCoverage(lease, ['r1'], 160, 300);
+    await store.flushed();
+    expect(await store.resumePoints(lease, ['r1'], _later), {'r1': 300});
+    expect(await rows('SELECT id FROM events'), hasLength(5001));
+
+    // Inputs beyond the queue limit are dropped: nothing is known complete.
+    for (var i = 0; i < 4100; i++) {
+      store.submit(lease, [_event('c$i', 400)]);
+    }
+    store.extendCoverage(lease, ['r1'], 300, 500);
     await store.flushed();
     expect(await store.resumePoints(lease, ['r1'], _later), isEmpty);
     expect(await rows("SELECT value FROM sync_state WHERE key = 'lossy'"), [

@@ -115,7 +115,7 @@ export function compareThreadRelayPage(
   const stored = threads.get(rootId);
   if (!stored) return;
   threads.delete(rootId);
-  logStoreComparison(`thread ${rootId.slice(0, 8)}`, stored, relay);
+  logStoreComparison(`thread ${rootId.slice(0, 8)}`, "thread", stored, relay);
 }
 
 /** Forget the stored pages awaiting the relay (tests). */

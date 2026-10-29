@@ -221,7 +221,12 @@ final threadRepliesProvider = FutureProvider.autoDispose
               unawaited(Future(() => ref.mounted ? refresh() : null));
             } else if (window.storedPage case final stored?) {
               window.storedPage = null;
-              logStoreComparison('thread ${args.rootId}', stored, page.events);
+              logStoreComparison(
+                'thread ${args.rootId}',
+                'thread',
+                stored,
+                page.events,
+              );
             }
             return folded.events;
           }

@@ -18,9 +18,6 @@ import { refreshChannelWindowMessages } from "@/features/messages/lib/projectCha
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
-import { CHANNEL_TIMELINE_CONTENT_KINDS } from "@/shared/constants/kinds";
-
-const TIMELINE_KINDS = new Set<number>(CHANNEL_TIMELINE_CONTENT_KINDS);
 
 type StoreRoomHeadDeps = {
   liveAt: (roomId: string) => number | null;
@@ -126,13 +123,7 @@ async function relayWindowFor(queryClient: QueryClient, channelId: string) {
   waiting.delete(channelId);
   const events = await deps.relayWindow(channelId);
   if (stored) {
-    const timeline = (rows: RelayEvent[]) =>
-      rows.filter((event) => TIMELINE_KINDS.has(event.kind));
-    logStoreComparison(
-      `room ${channelId.slice(0, 8)}`,
-      timeline(stored),
-      timeline(events),
-    );
+    logStoreComparison(`room ${channelId.slice(0, 8)}`, "room", stored, events);
   }
   return events;
 }

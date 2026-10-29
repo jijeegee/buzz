@@ -63,13 +63,20 @@ extension _StoreHead on ChannelMessagesNotifier {
     if (!_usingChannelWindow || newest == null || newest.startCursor != null) {
       return;
     }
+    // The page folds 39005 into its rows; their counts stand in for them.
     logStoreComparison(
       'room $channelId',
-      [
-        for (final event in stored)
-          if (EventKind.channelTimelineContentKinds.contains(event.kind)) event,
-      ],
-      [for (final row in newest.rows) row.event],
+      'room',
+      stored,
+      [for (final row in newest.rows) row.event, ...newest.aux],
+      relayCounts: {
+        for (final row in newest.rows)
+          if ((row.thread, row.threadSummaryCreatedAt) case (
+            final thread?,
+            final at?,
+          ))
+            row.event.id: (count: thread.replyCount, at: at),
+      },
     );
   }
 

@@ -166,9 +166,11 @@ pages still load from the relay.
   parent) the root. An event without a `reply` marker is top-level.
 - **First copy wins.** An event id is written once; later copies are ignored.
 - **Never blocks receiving.** Writes go through a queue per file and are
-  batched (up to 512 rows per transaction). A full queue or a failed write
-  drops events and marks the file `lossy`, so a later catch-up does not take
-  it for complete.
+  batched (up to 512 rows per transaction). The queue counts receives, not
+  events: one relay answer is one entry however large (up to 4096 entries;
+  mobile also caps waiting events at 50000 as a memory guard). A full queue
+  or a failed write drops that receive and marks the file `lossy`, so a later
+  catch-up does not take it for complete.
 - **Sign-out** of a server (or removing that community) deletes that
   account's file for that server only and ends its scope: answers to requests
   sent before the sign-out write nothing. The same account's files from other
@@ -320,7 +322,16 @@ or fell off the end of the relay's page, are not differences). It logs one
 line: `[message-store] <room|thread> <id>: store matches relay (<n>)`, or
 `store differs from relay` with the ids missing from the store and the ids
 only the store had. Rooms compare timeline rows of the newest page; threads
-compare replies.
+compare replies. For rooms it also compares, for rows both hold, what is
+aimed at them (edits, reactions, removals: ids of events whose `e` tag names
+a shared row, leaving out any its own answer removes, as the relay does) and
+their thread reply counts (`reply_count` of the newest 39005 per root; the
+rest of a summary depends on the reader's blocks). Nothing newer than the
+store's newest event is compared there. Thread pages carry neither. Each run
+keeps counts (matches and differences per room and thread stream, and
+differences by type) and logs them at most once a minute as
+`[message-store] comparisons this run`: the evidence for turning off the
+follow-up request.
 
 ## Opening at a position
 
