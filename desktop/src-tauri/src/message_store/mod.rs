@@ -3,6 +3,7 @@
 //! yet. Rules: docs/message-sync.md#message-store.
 
 mod classify;
+mod coverage;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -164,6 +165,29 @@ impl MessageStore {
             .map(|(_, account)| account.clone())
     }
 
+    pub(crate) fn resume_points(
+        &self,
+        lease: &Lease,
+        rooms: &[String],
+        before: i64,
+    ) -> HashMap<String, i64> {
+        let path = self.path_of(lease);
+        if !path.exists() {
+            return HashMap::new();
+        }
+        let flags =
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
+        rusqlite::Connection::open_with_flags(&path, flags)
+            .and_then(|conn| {
+                conn.busy_timeout(std::time::Duration::from_secs(5))?;
+                coverage::resume_points(&conn, rooms, before)
+            })
+            .unwrap_or_else(|error| {
+                eprintln!("kuzz-desktop: message store: resume points failed: {error}");
+                HashMap::new()
+            })
+    }
+
     /// Ends every lease of `account`, stops its writers and deletes its files.
     pub(crate) fn forget(&self, account: &str) {
         let account = account.to_ascii_lowercase();
@@ -258,6 +282,39 @@ impl SocketTap {
         }
         store.submit(lease, Input::Frame(frame.to_owned()));
     }
+}
+
+/// Records that every event of `rooms` in `[from, to]` received from
+/// `relay_url` as `account` is stored. Ordered after everything received so
+/// far, and dropped if any of it was lost.
+pub(crate) fn extend_coverage(
+    relay_url: &str,
+    account: &str,
+    rooms: Vec<String>,
+    from: i64,
+    to: i64,
+) {
+    let Some(store) = global() else { return };
+    let Some(lease) = store.lease(relay_url, account) else {
+        return;
+    };
+    store.submit(&lease, Input::Coverage { rooms, from, to });
+}
+
+/// The end of each room's latest coverage span begun before `before`.
+pub(crate) fn resume_points(
+    relay_url: &str,
+    account: &str,
+    rooms: &[String],
+    before: i64,
+) -> HashMap<String, i64> {
+    let Some(store) = global() else {
+        return HashMap::new();
+    };
+    let Some(lease) = store.lease(relay_url, account) else {
+        return HashMap::new();
+    };
+    store.resume_points(&lease, rooms, before)
 }
 
 /// The scope of a `/query` to `api_base_url` as `account`, taken before it

@@ -70,6 +70,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   allowance.
 - Mobile re-sends each chunk; the open room refetches its newest page and the
   open thread its replies, as before.
+- Both apps also catch the device store up after every chunk EOSE (see
+  [Coverage](#coverage)). Desktop skips this when its reconnect repair runs
+  for the chunk on that connection; mobile has no repair, so it always runs.
 
 ## Account bundle
 
@@ -127,8 +130,9 @@ per client:
 
 ## Message store
 
-Every room event the device receives is kept on the device. Nothing reads the
-store yet; rooms and threads still load from the relay.
+Every room event the device receives is kept on the device, with the spans
+known complete ([Coverage](#coverage)). Nothing reads the store yet; rooms and
+threads still load from the relay.
 
 - **One file per server and account:** `messages/<first 8 bytes of
   sha256(origin) in hex>-<account pubkey>.db`, where the origin is the relay's
@@ -157,3 +161,33 @@ store yet; rooms and threads still load from the relay.
   accounts' files are untouched.
 - **Schema** is versioned (`user_version` 1). A file from a newer app is not
   opened.
+
+### Coverage
+
+A room's coverage is the set of spans `[lo, hi]` (unix seconds, receive time)
+over which every event of the room in the repair kinds (9, 5, 7, 9005, 40001,
+40002, 40003, 40008, 40099, 45001, 45003, 48100–48103) is in the store.
+Workflow kinds 43001–43006 and thread summaries are stored but not covered.
+Merging rules and cases: `test-fixtures/message-store-coverage.json`.
+
+- **Who records:** a live REQ that names explicit rooms (at most 128) and
+  carries every channel event kind (a room-bundle chunk or a room's own REQ).
+- **EOSE at L:** records `[L, L]` for its rooms; from then on the REQ receives
+  every new event.
+- **While live:** an event arriving on the same connection extends the span to
+  `[L, now]`, at most once every 60 seconds (no timers). After a reconnect
+  nothing extends until the next EOSE.
+- **Reconnect repair (desktop):** a completed walk from `since` records
+  `[since, now]`.
+- **Catch-up:** at EOSE (desktop: unless its repair runs), for the chunk's
+  rooms that have a span starting before L, take the oldest of their latest
+  `hi`, minus 1865 s (relay future tolerance 900 + storage fence 960 + 5). One
+  keyset walk (`#h`, repair kinds, `since`, `until` L, `before_id`, 500 per
+  page) into the store only; nothing is shown. When it ends within 4 pages it
+  records `[since, L]`. A longer or more than 7-day gap records nothing and
+  is left for opening the room. Rooms without coverage are never fetched.
+- **Order and loss:** spans go through the same write queue as events, so a
+  span is recorded only after the events received before it are written. A
+  dropped event or failed write clears every span of the file, and any later
+  span starting at or before the time of the loss is not recorded.
+- **Sign-out** deletes coverage with the file.

@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use super::{classify, http_origin, labelled, writer, Filed, Input, MessageStore};
+use super::{classify, coverage, http_origin, labelled, writer, Filed, Input, MessageStore};
 
 const ACCOUNT: &str = "aa00000000000000000000000000000000000000000000000000000000000001";
 const OTHER: &str = "bb00000000000000000000000000000000000000000000000000000000000002";
@@ -251,4 +251,96 @@ fn a_token_auth_names_its_account_without_keeping_the_token() {
         .tokens
         .iter()
         .all(|(hash, _)| !hash.starts_with(b"bzs_")));
+}
+
+#[test]
+fn coverage_follows_shared_fixture() {
+    let text = include_str!("../../../../test-fixtures/message-store-coverage.json");
+    let fixture: Value = serde_json::from_str(text).unwrap();
+    let pairs = |value: &Value| -> Vec<(i64, i64)> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|p| (p[0].as_i64().unwrap(), p[1].as_i64().unwrap()))
+            .collect()
+    };
+    for case in fixture["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let span = pairs(&json!([case["extend"]]))[0];
+        let merged = coverage::merge(&pairs(&case["segments"]), span.0, span.1);
+        assert_eq!(merged, pairs(&case["expect"]), "{name}");
+        assert_eq!(
+            merged.iter().map(|s| s.1).max(),
+            case["resume"].as_i64(),
+            "{name}: resume"
+        );
+    }
+}
+
+#[test]
+fn coverage_is_recorded_after_its_events_and_forgotten_when_lossy() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let lease = store.lease(RELAY, ACCOUNT).unwrap();
+    let rooms = vec!["r".to_owned()];
+    store.submit(
+        &lease,
+        Input::Events(vec![event("a1", 150, json!([["h", "r"]]))]),
+    );
+    store.submit(
+        &lease,
+        Input::Coverage {
+            rooms: rooms.clone(),
+            from: 100,
+            to: 200,
+        },
+    );
+    finish(&store);
+    assert_eq!(count(&store, &lease), 1);
+    assert_eq!(
+        store.resume_points(&lease, &rooms, 1000).get("r"),
+        Some(&200)
+    );
+    assert!(store
+        .resume_points(&lease, &["other".to_owned()], 1000)
+        .is_empty());
+    // A span opened at the catch-up boundary is not a resume point.
+    assert!(store.resume_points(&lease, &rooms, 100).is_empty());
+
+    // An event dropped before a span: the span is not recorded and every
+    // earlier one is forgotten.
+    let writer = writer::Writer::start(store.path_of(&lease));
+    writer.mark_lossy_for_test();
+    writer.submit(Input::Coverage {
+        rooms: rooms.clone(),
+        from: 200,
+        to: 300,
+    });
+    writer.finish();
+    assert!(store.resume_points(&lease, &rooms, 1000).is_empty());
+
+    // The loss is already noted by an earlier batch: a span reaching back
+    // over it is still dropped; one opened after it is kept.
+    let writer = writer::Writer::start(store.path_of(&lease));
+    writer.mark_lossy_for_test();
+    writer.submit(Input::Events(vec![]));
+    std::thread::sleep(std::time::Duration::from_millis(50));
+    writer.submit(Input::Coverage {
+        rooms: rooms.clone(),
+        from: 300,
+        to: 400,
+    });
+    let later = i64::MAX / 2;
+    writer.submit(Input::Coverage {
+        rooms: rooms.clone(),
+        from: later,
+        to: later,
+    });
+    writer.finish();
+    assert_eq!(
+        store.resume_points(&lease, &rooms, i64::MAX).get("r"),
+        Some(&later)
+    );
+    assert!(store.resume_points(&lease, &rooms, later).is_empty());
 }

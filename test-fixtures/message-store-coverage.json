@@ -1,0 +1,68 @@
+{
+  "description": "How a room's coverage segments change when a span [from, to] (unix seconds) is known to be received completely. Segments are kept sorted by lo; spans that overlap or touch an existing segment merge into it. resume is the highest hi, or null. Shared by desktop (message_store/coverage.rs) and mobile (message_store/coverage.dart).",
+  "cases": [
+    {
+      "name": "first span opens a segment",
+      "segments": [],
+      "extend": [100, 100],
+      "expect": [[100, 100]],
+      "resume": 100
+    },
+    {
+      "name": "live tick extends the open segment",
+      "segments": [[100, 100]],
+      "extend": [100, 160],
+      "expect": [[100, 160]],
+      "resume": 160
+    },
+    {
+      "name": "repair from before hi joins across the gap",
+      "segments": [[100, 500]],
+      "extend": [400, 900],
+      "expect": [[100, 900]],
+      "resume": 900
+    },
+    {
+      "name": "a span after a gap stays separate",
+      "segments": [[100, 500]],
+      "extend": [700, 700],
+      "expect": [[100, 500], [700, 700]],
+      "resume": 700
+    },
+    {
+      "name": "a span bridging two segments merges all three",
+      "segments": [[100, 500], [700, 800]],
+      "extend": [450, 750],
+      "expect": [[100, 800]],
+      "resume": 800
+    },
+    {
+      "name": "a span inside a segment changes nothing",
+      "segments": [[100, 800]],
+      "extend": [200, 300],
+      "expect": [[100, 800]],
+      "resume": 800
+    },
+    {
+      "name": "a span before every segment is kept first",
+      "segments": [[500, 800]],
+      "extend": [100, 200],
+      "expect": [[100, 200], [500, 800]],
+      "resume": 800
+    },
+    {
+      "name": "touching ends merge",
+      "segments": [[100, 200]],
+      "extend": [200, 300],
+      "expect": [[100, 300]],
+      "resume": 300
+    },
+    {
+      "name": "a reversed span is ignored",
+      "segments": [[100, 200]],
+      "extend": [300, 250],
+      "expect": [[100, 200]],
+      "resume": 200
+    }
+  ]
+}

@@ -1,3 +1,7 @@
+import {
+  noteStoreLiveEose,
+  noteStoreLiveEvent,
+} from "@/shared/api/relayStoreCoverage";
 import { classifyRelayClosed } from "@/shared/api/relayClosedPolicy";
 import { isQueryDeadlineError } from "@/shared/lib/relayError";
 import {
@@ -248,6 +252,7 @@ export function flushEvents(
       shouldDispatchSubscriptionEvent(subscription, item.event)
     ) {
       subscription.onEvent(item.event);
+      noteStoreLiveEvent(subscription, generation);
     }
   }
 }
@@ -286,8 +291,10 @@ export function handleSubscriptionEose({
   const subscription = subscriptions.get(subId);
   if (!subscription) return;
   if (subscription.mode === "live") {
-    if (generation !== undefined)
+    if (generation !== undefined) {
       markReconnectLiveEose(subscription, generation);
+      noteStoreLiveEose(subscription, generation);
+    }
     subscription.resolveReady?.("eose");
     subscription.resolveReady = undefined;
     subscription.closedRetryAttempt = 0;

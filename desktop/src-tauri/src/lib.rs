@@ -787,6 +787,8 @@ pub fn run() {
             get_forum_thread,
             get_thread_replies,
             get_channel_reconnect_repair,
+            message_store_resume_points,
+            message_store_extend_coverage,
             get_channel_window,
             get_channel_windows,
             get_thread_windows,

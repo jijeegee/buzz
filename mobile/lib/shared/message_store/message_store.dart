@@ -1,6 +1,6 @@
 /// Device message store: every received room event, kept per server and
-/// account in its own SQLite file. Capture only so far — nothing reads it
-/// yet. Rules: docs/message-sync.md#message-store.
+/// account in its own SQLite file, with the spans known complete. Nothing
+/// shows it yet. Rules: docs/message-sync.md#message-store.
 library;
 
 import 'dart:async';
@@ -11,6 +11,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
+import 'coverage.dart' as spans;
 import 'stored_event.dart';
 
 const messageStoreSchemaVersion = 1;
@@ -80,16 +81,36 @@ class MessageStoreLease {
   int get hashCode => Object.hash(stem, account, epoch);
 }
 
+/// A coverage span, queued behind the events received before it.
+class _CoverageOp {
+  const _CoverageOp(this.rooms, this.from, this.to);
+
+  final List<String> rooms;
+  final int from;
+  final int to;
+}
+
 class _Writer {
   _Writer(this.open);
 
   final Future<Database> Function() open;
-  final List<Map<String, dynamic>> queue = [];
+
+  /// Event maps and [_CoverageOp]s, in the order they were received.
+  final List<Object> queue = [];
   Future<Database>? database;
   Future<void> drained = Future.value();
   bool scheduled = false;
   bool lossy = false;
   bool stopped = false;
+
+  /// When (unix seconds) something received was last not written: a span
+  /// starting at or before then may miss it.
+  int lostAt = 0;
+
+  void noteLoss() {
+    lossy = true;
+    lostAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+  }
 }
 
 class MessageStore {
@@ -133,19 +154,66 @@ class MessageStore {
   /// Queues received relay events (JSON maps) for [lease]'s file. Never
   /// waits for the disk; what to keep is decided when the queue is written.
   void submit(MessageStoreLease? lease, Iterable<Object?> events) {
-    if (lease == null || (_epochs[lease.account] ?? 0) != lease.epoch) return;
-    final writer = _writers.putIfAbsent(
-      lease.stem,
-      () => _Writer(() => _open(lease)),
-    );
+    final writer = _writerFor(lease);
+    if (writer == null) return;
     for (final event in events) {
       if (event is! Map<String, dynamic>) continue;
       if (writer.queue.length >= _queueLimit) {
-        writer.lossy = true;
+        writer.noteLoss();
         break;
       }
       writer.queue.add(event);
     }
+    _schedule(writer);
+  }
+
+  /// Records that every event of [rooms] in `[from, to]` has been received.
+  /// Applied once the events submitted before it are written, and dropped
+  /// if any of them was lost.
+  void extendCoverage(
+    MessageStoreLease? lease,
+    List<String> rooms,
+    int from,
+    int to,
+  ) {
+    if (rooms.isEmpty || from > to) return;
+    final writer = _writerFor(lease);
+    if (writer == null) return;
+    writer.queue.add(_CoverageOp(List.of(rooms), from, to));
+    _schedule(writer);
+  }
+
+  /// The end of each room's latest span begun before [before], for rooms
+  /// that have one. Empty when nothing was stored yet.
+  Future<Map<String, int>> resumePoints(
+    MessageStoreLease? lease,
+    List<String> rooms,
+    int before,
+  ) async {
+    try {
+      final writer = _writerFor(lease);
+      if (writer == null || rooms.isEmpty) return const {};
+      if (writer.database == null &&
+          !await File(await pathOf(lease!)).exists()) {
+        return const {};
+      }
+      final db = await (writer.database ??= writer.open());
+      if (writer.stopped) return const {};
+      return await spans.coverageResumePoints(db, rooms, before);
+    } catch (error) {
+      debugPrint('[MessageStore] resume points failed: $error');
+      return const {};
+    }
+  }
+
+  _Writer? _writerFor(MessageStoreLease? lease) {
+    if (lease == null || (_epochs[lease.account] ?? 0) != lease.epoch) {
+      return null;
+    }
+    return _writers.putIfAbsent(lease.stem, () => _Writer(() => _open(lease)));
+  }
+
+  void _schedule(_Writer writer) {
     if (!writer.scheduled && writer.queue.isNotEmpty) {
       writer.scheduled = true;
       writer.drained = writer.drained.then((_) => _drain(writer));
@@ -181,15 +249,28 @@ class MessageStore {
   Future<void> _drain(_Writer writer) async {
     try {
       while (writer.queue.isNotEmpty && !writer.stopped) {
-        final take = writer.queue.length < _rowsPerTransaction
-            ? writer.queue.length
-            : _rowsPerTransaction;
-        final events = writer.queue.sublist(0, take);
-        writer.queue.removeRange(0, take);
+        final head = writer.queue.first;
+        final _CoverageOp? coverage;
+        final List<Map<String, dynamic>> events;
+        if (head is _CoverageOp) {
+          writer.queue.removeAt(0);
+          coverage = head;
+          events = const [];
+        } else {
+          coverage = null;
+          var take = 0;
+          while (take < writer.queue.length &&
+              take < _rowsPerTransaction &&
+              writer.queue[take] is! _CoverageOp) {
+            take++;
+          }
+          events = writer.queue.sublist(0, take).cast();
+          writer.queue.removeRange(0, take);
+        }
         final rows = events.map(classifyStoredEvent).nonNulls.toList();
         final lossy = writer.lossy;
         writer.lossy = false;
-        if (rows.isEmpty && !lossy) continue;
+        if (rows.isEmpty && !lossy && coverage == null) continue;
         final db = await (writer.database ??= writer.open());
         if (writer.stopped) return;
         await db.transaction((txn) async {
@@ -201,14 +282,23 @@ class MessageStore {
             batch.rawInsert(
               "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('lossy', '1')",
             );
+            batch.rawDelete('DELETE FROM coverage');
           }
           await batch.commit(noResult: true);
+          if (coverage != null && !lossy && coverage.from > writer.lostAt) {
+            await spans.extendCoverage(
+              txn,
+              coverage.rooms,
+              coverage.from,
+              coverage.to,
+            );
+          }
         });
       }
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
       writer.queue.clear();
-      writer.lossy = true;
+      writer.noteLoss();
     } finally {
       writer.scheduled = false;
     }

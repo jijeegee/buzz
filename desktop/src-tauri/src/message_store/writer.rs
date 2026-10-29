@@ -4,7 +4,7 @@
 use std::{
     path::{Path, PathBuf},
     sync::{
-        atomic::{AtomicBool, Ordering},
+        atomic::{AtomicBool, AtomicI64, Ordering},
         mpsc::{self, Receiver, SyncSender, TrySendError},
         Arc,
     },
@@ -16,12 +16,19 @@ use rusqlite::{params, Connection};
 use serde_json::Value;
 
 use super::classify::{classify, Filed};
+use super::coverage;
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
 pub(crate) enum Input {
     /// A raw relay frame; only `["EVENT", sub, event]` is kept.
     Frame(String),
     Events(Vec<Value>),
+    /// Every event of `rooms` in `[from, to]` is in the inputs before this one.
+    Coverage {
+        rooms: Vec<String>,
+        from: i64,
+        to: i64,
+    },
 }
 
 fn rows_of(input: Input, rows: &mut Vec<Filed>) {
@@ -34,6 +41,7 @@ fn rows_of(input: Input, rows: &mut Vec<Filed>) {
             }
         }
         Input::Events(events) => rows.extend(events.iter().filter_map(classify)),
+        Input::Coverage { .. } => {}
     }
 }
 
@@ -136,10 +144,28 @@ pub(crate) fn note_lossy(conn: &Connection) -> rusqlite::Result<()> {
     .map(|_| ())
 }
 
+/// Whether something received was not written, and when (unix seconds) it
+/// last happened: a span starting at or before then may miss it.
+#[derive(Default)]
+struct Loss {
+    pending: AtomicBool,
+    at: AtomicI64,
+}
+
+impl Loss {
+    fn note(&self) {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(0, |elapsed| elapsed.as_secs() as i64);
+        self.at.fetch_max(now, Ordering::SeqCst);
+        self.pending.store(true, Ordering::SeqCst);
+    }
+}
+
 pub(crate) struct Writer {
     sender: Option<SyncSender<Input>>,
     stop: Arc<AtomicBool>,
-    lossy: Arc<AtomicBool>,
+    lossy: Arc<Loss>,
     thread: Option<JoinHandle<()>>,
 }
 
@@ -147,7 +173,7 @@ impl Writer {
     pub(crate) fn start(path: PathBuf) -> Self {
         let (sender, receiver) = mpsc::sync_channel(QUEUE_INPUTS);
         let stop = Arc::new(AtomicBool::new(false));
-        let lossy = Arc::new(AtomicBool::new(false));
+        let lossy = Arc::new(Loss::default());
         let thread = {
             let (stop, lossy) = (stop.clone(), lossy.clone());
             std::thread::Builder::new()
@@ -169,9 +195,7 @@ impl Writer {
         let Some(sender) = &self.sender else { return };
         match sender.try_send(input) {
             Ok(()) => {}
-            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => {
-                self.lossy.store(true, Ordering::Relaxed);
-            }
+            Err(TrySendError::Full(_)) | Err(TrySendError::Disconnected(_)) => self.lossy.note(),
         }
     }
 
@@ -182,6 +206,11 @@ impl Writer {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mark_lossy_for_test(&self) {
+        self.lossy.note();
     }
 
     /// Writes what is queued, then waits for the thread.
@@ -201,7 +230,7 @@ impl Drop for Writer {
     }
 }
 
-fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: Arc<AtomicBool>) {
+fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: Arc<Loss>) {
     let mut conn = match open(&path) {
         Ok(conn) => conn,
         Err(error) => {
@@ -210,26 +239,48 @@ fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: A
         }
     };
     while let Ok(first) = receiver.recv() {
-        if stop.load(Ordering::SeqCst) {
-            return;
-        }
         let mut rows = Vec::new();
-        rows_of(first, &mut rows);
-        while rows.len() < ROWS_PER_TRANSACTION {
-            match receiver.try_recv() {
-                Ok(more) => rows_of(more, &mut rows),
-                Err(_) => break,
+        let mut next = Some(first);
+        while let Some(input) = next.take() {
+            if stop.load(Ordering::SeqCst) {
+                return;
             }
+            match input {
+                Input::Coverage { rooms, from, to } => {
+                    // A span is only recorded once the events before it are
+                    // written, and never over a dropped one.
+                    let lost = flush(&mut conn, &mut rows, &lossy);
+                    if !lost && from > lossy.at.load(Ordering::SeqCst) {
+                        if let Err(error) = coverage::extend(&mut conn, &rooms, from, to) {
+                            eprintln!("kuzz-desktop: message store: coverage failed: {error}");
+                        }
+                    }
+                }
+                other => rows_of(other, &mut rows),
+            }
+            if rows.len() >= ROWS_PER_TRANSACTION {
+                flush(&mut conn, &mut rows, &lossy);
+            }
+            next = receiver.try_recv().ok();
         }
-        if rows.is_empty() {
-            continue;
-        }
-        if let Err(error) = write(&mut conn, &rows) {
-            eprintln!("kuzz-desktop: message store: write failed: {error}");
-            lossy.store(true, Ordering::Relaxed);
-        }
-        if lossy.swap(false, Ordering::Relaxed) {
-            let _ = note_lossy(&conn);
-        }
+        flush(&mut conn, &mut rows, &lossy);
     }
+}
+
+/// Writes `rows`; returns whether anything was lost since the last flush, in
+/// which case the file is marked lossy and its coverage forgotten.
+fn flush(conn: &mut Connection, rows: &mut Vec<Filed>, lossy: &Loss) -> bool {
+    if !rows.is_empty() {
+        if let Err(error) = write(conn, rows) {
+            eprintln!("kuzz-desktop: message store: write failed: {error}");
+            lossy.note();
+        }
+        rows.clear();
+    }
+    if !lossy.pending.swap(false, Ordering::SeqCst) {
+        return false;
+    }
+    let _ = note_lossy(conn);
+    let _ = coverage::clear(conn);
+    true
 }

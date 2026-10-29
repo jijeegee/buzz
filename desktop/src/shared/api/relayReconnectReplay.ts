@@ -10,6 +10,7 @@ import {
   shouldDispatchSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import type { ChannelReconnectRepairRequest } from "@/shared/api/channelReconnectRepair";
+import { noteStoreRepairCompleted } from "@/shared/api/relayStoreCoverage";
 import {
   isRateLimited,
   waitForRateLimit,
@@ -393,6 +394,7 @@ export async function replayLiveSubscriptions({
           // window may release it.
           if (completed) {
             subscription.pendingReplaySince = undefined;
+            noteStoreRepairCompleted(subscription, replaySince);
             markReconnectRepairDone(subscription, generation);
           }
           return;

@@ -28,6 +28,7 @@ import 'relay_provider.dart';
 import 'relay_rate_limit_gate.dart';
 import 'relay_session_types.dart';
 import 'relay_socket.dart';
+import 'room_bundle_coverage.dart';
 
 export 'relay_session_types.dart';
 
@@ -154,6 +155,13 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// Received events are kept on the device under this account's scope.
   MessageStore? _messageStore;
   MessageStoreLease? _storeLease;
+  late final _storeCoverage = RoomBundleCoverage(
+    scope: () => switch ((_messageStore, _storeLease)) {
+      (final store?, final lease?) => (store: store, lease: lease),
+      _ => null,
+    },
+    query: queryRelayJson,
+  );
 
   @override
   SessionState build() {
@@ -842,6 +850,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       }
       _eventBuffer.add(_BufferedEvent(subId, event));
       _scheduleFlush();
+      _storeCoverage.noteEvent(liveSub, liveSub.filter, _connectionGeneration);
     }
   }
 
@@ -867,6 +876,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     if (liveSub != null) {
       _resetClosedRetry(liveSub);
       _flushBufferedEventsNow();
+      _storeCoverage.noteEose(liveSub, liveSub.filter, _connectionGeneration);
       liveSub.onStatusChanged?.call(RelaySubscriptionStatus.ready);
     }
     if (liveSub != null &&
