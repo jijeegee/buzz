@@ -129,6 +129,49 @@ void main() {
     }
   });
 
+  test('a store open waits for queued writes and distrusts a loss', () async {
+    final fixture =
+        jsonDecode(
+              File(
+                '../test-fixtures/message-store-room-head.json',
+              ).readAsStringSync(),
+            )
+            as Map<String, dynamic>;
+    final room = fixture['room'] as String;
+    final kinds = (fixture['kinds'] as List).cast<int>();
+    final testCase = (fixture['cases'] as List).first as Map<String, dynamic>;
+    final dir = await Directory.systemTemp.createTemp('message_store_drain');
+    final store = MessageStore(
+      factory: () => databaseFactoryFfi,
+      directory: () async => dir.path,
+      // A busy test machine can take longer than the app's wait to open.
+      drainWait: const Duration(seconds: 30),
+    );
+    final lease = store.lease(_relay, _account)!;
+    try {
+      // Read straight after queueing: the read sees what was queued.
+      store.submit(lease, testCase['events'] as List);
+      for (final span in testCase['coverage'] as List) {
+        store.extendCoverage(lease, [room], span[0] as int, span[1] as int);
+      }
+      Future<List<Map<String, dynamic>>?> read() => store.certainRoomHead(
+        lease,
+        room: room,
+        kinds: kinds,
+        limit: testCase['limit'] as int,
+        liveAt: testCase['live_at'] as int,
+      );
+      expect(await read(), isNotNull);
+
+      // A loss not yet written down: the read cannot vouch for the window.
+      store.noteLossForTest(lease);
+      expect(await read(), isNull);
+    } finally {
+      await store.forget(_relay, _account);
+      await dir.delete(recursive: true);
+    }
+  });
+
   test(
     'a room is live only from EOSE on the current connection until CLOSED',
     () async {

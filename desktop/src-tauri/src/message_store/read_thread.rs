@@ -97,7 +97,7 @@ pub(crate) fn thread_head(
             Some(root_at) => covered(conn, room, root_at - ROW_RECEIVE_MARGIN_SECS, live_at)?,
             None => false,
         }
-    };
+    } && super::coverage::is_current(conn)?;
     head.next_cursor = oldest.filter(|_| head.has_more);
     Ok(head)
 }

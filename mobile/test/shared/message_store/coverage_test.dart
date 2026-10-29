@@ -180,7 +180,8 @@ void main() {
       expect(requests, hasLength(2));
       expect(requests.first['#h'], ['r1']);
       expect(requests.first['since'], 10000 - storeResumeLookbackSecs);
-      expect(requests.first['until'], 20000);
+      // The first page is not cut at this device's clock.
+      expect(requests.first.containsKey('until'), isFalse);
       expect(requests.first.containsKey('before_id'), isFalse);
       expect(requests.last['until'], 19000);
       expect(requests.last['before_id'], 'p${storeCatchUpPageLimit - 1}');

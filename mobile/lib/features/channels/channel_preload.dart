@@ -194,6 +194,7 @@ class ChannelPreloader {
       // A room opened meanwhile persists its own, newer page.
       if (_ref.exists(channelMessagesProvider(channelId))) continue;
       await cache.store(scope, channelId, window);
+      _ref.read(relayFetchedRoomsProvider).add(channelId);
       stored.add(channelId);
     }
     return stored;

@@ -2,6 +2,7 @@ import { CONVERSATION_CACHE_GC_MS } from "@/shared/api/queryClient";
 import type { QueryClient } from "@tanstack/react-query";
 
 import { reconcileFetchedChannelWindow } from "@/features/messages/hooks";
+import { markStoreRoomHeadFetched } from "@/features/messages/lib/storeRoomHead";
 import {
   channelHeadHydration,
   markPaintableChannelSnapshot,
@@ -129,6 +130,8 @@ async function storeChannelPage(
     gcTime: MESSAGES_GC_MS,
   });
   if (queryClient.getQueryState(queryKey)?.status !== "success") return false;
+  // A relay page: the next fetch of this room asks the relay, not the store.
+  markStoreRoomHeadFetched(queryClient, channelId);
   // An empty page holds the skeleton on open, as an empty persisted head does.
   if ((queryClient.getQueryData<unknown[]>(queryKey)?.length ?? 0) === 0) {
     return false;

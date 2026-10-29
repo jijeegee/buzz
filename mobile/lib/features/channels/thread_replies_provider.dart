@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show KeepAliveLink;
 
+import '../../shared/message_store/store_compare.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
@@ -192,8 +193,14 @@ final threadRepliesProvider = FutureProvider.autoDispose
       final window = ref.read(threadWindowProvider(args).notifier);
       if (unconfirmedIds == null || unconfirmedIds.isEmpty) {
         try {
+          final response = await _openThreadWindowResponse(
+            session,
+            args,
+            window.hasLoaded,
+            ref.read(storedThreadHeadProvider),
+          );
           final page = parseThreadWindowPage(
-            await _openThreadWindowResponse(session, args, window.hasLoaded),
+            response.events,
             channelId: args.channelId,
             rootId: args.rootId,
           );
@@ -207,15 +214,26 @@ final threadRepliesProvider = FutureProvider.autoDispose
                   .read(channelProvider.notifier)
                   .cacheConfirmedThreadReplies(page.events);
             }
+            // Drawn from the store: ask the relay once it shows (the window
+            // has loaded, so the rerun goes there) and log how they compare.
+            if (response.stored) {
+              window.storedPage = page.events;
+              unawaited(Future(() => ref.mounted ? refresh() : null));
+            } else if (window.storedPage case final stored?) {
+              window.storedPage = null;
+              logStoreComparison('thread ${args.rootId}', stored, page.events);
+            }
             return folded.events;
           }
         } catch (_) {
+          window.storedPage = null;
           if (queryVersion != null) {
             channelMessages?.failThreadQuery(args.rootId, queryVersion);
           }
           rethrow;
         }
       }
+      window.storedPage = null;
       try {
         final replies = await fetchCompleteThreadReplies(session, args);
         // A complete scan holds the whole thread: nothing older to page.
@@ -280,6 +298,43 @@ final threadRepliesProvider = FutureProvider.autoDispose
       }
     });
 
+/// Reads a thread's certain newest replies from the device store; overridden
+/// in tests.
+final storedThreadHeadProvider = Provider<StoredThreadHeadReader>(
+  (ref) =>
+      (session, args) => session.certainThreadHead(
+        args.channelId,
+        args.rootId,
+        kinds: threadWindowKinds,
+        limit: threadWindowPageReplies,
+      ),
+);
+
+typedef StoredThreadHeadReader =
+    Future<List<NostrEvent>?> Function(
+      RelaySessionNotifier session,
+      ThreadRepliesArgs args,
+    );
+
+/// The newest reply window: on a thread's first load, the store's window
+/// when it is certain (docs/message-sync.md#opening-a-thread-from-the-store);
+/// otherwise, and on every later load, the relay's. [stored] says which.
+Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
+  RelaySessionNotifier session,
+  ThreadRepliesArgs args,
+  bool loaded,
+  StoredThreadHeadReader readStore,
+) async {
+  if (!loaded) {
+    final stored = await readStore(session, args);
+    if (stored != null) return (events: stored, stored: true);
+  }
+  final events = await session.queryRelay([
+    threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
+  ]);
+  return (events: events, stored: false);
+}
+
 /// The replies one thread holds in newest-first windows, and how far back
 /// they reach. Lives as long as the thread's query (see
 /// [threadRepliesProvider]); older pages fold in here without refetching it.
@@ -287,28 +342,6 @@ final threadRepliesProvider = FutureProvider.autoDispose
 /// A thread can also be opened at a reply ([openAt]); it then pages toward
 /// the present with [loadNewer], and the query's newest-page refreshes leave
 /// it alone until they connect to it.
-/// The newest reply window: on a thread's first load, the store's window
-/// when it is certain (docs/message-sync.md#opening-a-thread-from-the-store);
-/// otherwise, and on every later load, the relay's.
-Future<List<NostrEvent>> _openThreadWindowResponse(
-  RelaySessionNotifier session,
-  ThreadRepliesArgs args,
-  bool loaded,
-) async {
-  if (!loaded) {
-    final stored = await session.certainThreadHead(
-      args.channelId,
-      args.rootId,
-      kinds: threadWindowKinds,
-      limit: threadWindowPageReplies,
-    );
-    if (stored != null) return stored;
-  }
-  return session.queryRelay([
-    threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
-  ]);
-}
-
 class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   final ThreadRepliesArgs args;
 
@@ -317,6 +350,10 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   bool _loadingOlder = false;
   bool _loadingNewer = false;
   int _windowGeneration = 0;
+
+  /// The page the store opened this thread with, until the relay's replaces
+  /// it.
+  List<NostrEvent>? storedPage;
 
   @override
   ThreadWindow? build() => null;

@@ -29,6 +29,9 @@ pub(crate) enum Input {
         from: i64,
         to: i64,
     },
+    /// Answers once everything queued before it is written: `true` when
+    /// nothing was lost.
+    Barrier(SyncSender<bool>),
 }
 
 fn rows_of(input: Input, rows: &mut Vec<Filed>) {
@@ -41,7 +44,7 @@ fn rows_of(input: Input, rows: &mut Vec<Filed>) {
             }
         }
         Input::Events(events) => rows.extend(events.iter().filter_map(classify)),
-        Input::Coverage { .. } => {}
+        Input::Coverage { .. } | Input::Barrier(_) => {}
     }
 }
 
@@ -56,6 +59,8 @@ CREATE TABLE IF NOT EXISTS events(
   created_at INTEGER NOT NULL, room TEXT, root TEXT,
   broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL);
 CREATE INDEX IF NOT EXISTS events_room_order ON events(room, root, created_at, id);
+CREATE INDEX IF NOT EXISTS events_job_rooms ON events(room) WHERE kind BETWEEN 43001 AND 43006;
+CREATE INDEX IF NOT EXISTS events_room_rows ON events(room, created_at DESC, id) WHERE root IS NULL OR broadcast = 1;
 CREATE TABLE IF NOT EXISTS targets(id TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(target, id));
 CREATE TABLE IF NOT EXISTS summaries(
   root TEXT PRIMARY KEY, room TEXT, created_at INTEGER NOT NULL, raw TEXT NOT NULL);
@@ -88,6 +93,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|error| error.to_string())?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(|error| error.to_string())?;
+    coverage::drop_stale(&conn).map_err(|error| error.to_string())?;
     Ok(conn)
 }
 
@@ -199,6 +205,20 @@ impl Writer {
         }
     }
 
+    /// Asks to be told once everything queued so far is written. `None` when
+    /// the writer is gone or full, or something was lost: a read then cannot
+    /// vouch for what was received. Wait on the answer without holding the
+    /// store's lock.
+    pub(crate) fn barrier(&self) -> Option<Receiver<bool>> {
+        let sender = self.sender.as_ref()?;
+        if self.lossy.pending.load(Ordering::SeqCst) {
+            return None;
+        }
+        let (reply, answer) = mpsc::sync_channel(1);
+        sender.try_send(Input::Barrier(reply)).ok()?;
+        Some(answer)
+    }
+
     /// Stops after the batch in hand, discarding queued ones, and waits.
     pub(crate) fn stop(mut self) {
         self.stop.store(true, Ordering::SeqCst);
@@ -256,6 +276,10 @@ fn run(path: PathBuf, receiver: Receiver<Input>, stop: Arc<AtomicBool>, lossy: A
                         }
                     }
                 }
+                Input::Barrier(reply) => {
+                    let lost = flush(&mut conn, &mut rows, &lossy);
+                    let _ = reply.try_send(!lost);
+                }
                 other => rows_of(other, &mut rows),
             }
             if rows.len() >= ROWS_PER_TRANSACTION {
@@ -280,7 +304,11 @@ fn flush(conn: &mut Connection, rows: &mut Vec<Filed>, lossy: &Loss) -> bool {
     if !lossy.pending.swap(false, Ordering::SeqCst) {
         return false;
     }
-    let _ = note_lossy(conn);
-    let _ = coverage::clear(conn);
+    // Until the spans are gone the loss stays pending, so reads stay
+    // uncertain and the next flush tries again.
+    if let Err(error) = note_lossy(conn).and_then(|()| coverage::clear(conn)) {
+        eprintln!("kuzz-desktop: message store: forgetting coverage failed: {error}");
+        lossy.pending.store(true, Ordering::SeqCst);
+    }
     true
 }

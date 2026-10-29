@@ -5,7 +5,11 @@ import {
   sortMessages,
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
-import { certainStoredThreadPage } from "@/features/messages/lib/storeThreadHead";
+import {
+  certainStoredThreadPage,
+  compareThreadRelayPage,
+  refreshThreadAfterStore,
+} from "@/features/messages/lib/storeThreadHead";
 import {
   getThreadWindows,
   type ThreadWindowPage,
@@ -201,12 +205,20 @@ export async function loadNewestThreadReplies(
 ): Promise<RelayEvent[] | null> {
   const limitRows = options.limitRows ?? THREAD_PAGE_ROWS;
   const stateKey = threadWindowStateKey(channelId, rootId);
-  // A thread never loaded opens from the store when that is certain.
-  const page =
-    (queryClient.getQueryData(stateKey) === undefined
+  // A thread never loaded opens from the store when that is certain, then
+  // asks the relay. A link to a reply goes to the relay: the walk to the
+  // reply pages the relay anyway.
+  const stored =
+    queryClient.getQueryData(stateKey) === undefined && !options.mustInclude
       ? await certainStoredThreadPage(channelId, rootId, limitRows)
-      : null) ?? (await fetchThreadPage(channelId, rootId, null, limitRows));
+      : null;
+  if (stored) {
+    void refreshThreadAfterStore(queryClient, channelId, rootId, stored.events);
+  }
+  const page =
+    stored ?? (await fetchThreadPage(channelId, rootId, null, limitRows));
   if (!page) return null;
+  if (!stored) compareThreadRelayPage(queryClient, rootId, page.events);
   let { events, state } = mergeNewestThreadPage(
     queryClient.getQueryData<RelayEvent[]>(threadRepliesKey(channelId, rootId)),
     queryClient.getQueryData<ThreadWindowState>(stateKey),

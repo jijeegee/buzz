@@ -62,16 +62,6 @@ class StoredThreadHead {
   }
 }
 
-Map<String, dynamic>? _parse(Object? raw) {
-  if (raw is! String) return null;
-  try {
-    final decoded = jsonDecode(raw);
-    return decoded is Map<String, dynamic> ? decoded : null;
-  } catch (_) {
-    return null;
-  }
-}
-
 Future<bool> _covered(
   DatabaseExecutor db,
   String room,
@@ -102,25 +92,36 @@ Future<StoredThreadHead> readThreadHead(
     const page = 200;
     var offset = 0;
     while (!hasMore) {
+      // Ids first; raw only for the replies kept.
       final candidates = await db.rawQuery(
-        'SELECT id, pubkey, created_at, raw FROM events '
+        'SELECT id, pubkey, created_at FROM events '
         'WHERE room = ? AND root = ? AND kind IN (${kinds.join(', ')}) '
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
         [room, root, page, offset],
       );
       offset += candidates.length;
-      for (final candidate in candidates) {
-        final id = candidate['id']! as String;
-        final event = _parse(candidate['raw']);
-        if (event == null) continue;
-        if (await isStoredDeleted(db, id, candidate['pubkey']! as String)) {
-          continue;
-        }
-        oldest = (candidate['created_at']! as int, id);
-        rows.add(event);
-        if (rows.length == limit) {
-          hasMore = true;
-          break;
+      final deleted = await storedDeletedIds(db, candidates);
+      final kept = [
+        for (final candidate in candidates)
+          if (!deleted.contains(candidate['id'])) candidate,
+      ];
+      var next = 0;
+      while (next < kept.length && !hasMore) {
+        final chunk = kept
+            .skip(next)
+            .take(limit - rows.length)
+            .toList(growable: false);
+        next += chunk.length;
+        final events = await storedEventsById(db, [
+          for (final candidate in chunk) candidate['id']! as String,
+        ]);
+        for (final candidate in chunk) {
+          final id = candidate['id']! as String;
+          final event = events[id];
+          if (event == null) continue;
+          oldest = (candidate['created_at']! as int, id);
+          rows.add(event);
+          if (rows.length == limit) hasMore = true;
         }
       }
       if (candidates.length < page) break;

@@ -99,6 +99,16 @@ fn overlays(conn: &Connection, targets: &[String], kinds: &str) -> rusqlite::Res
     Ok(rows.filter_map(|raw| raw.ok().and_then(parse)).collect())
 }
 
+/// Whether a thread summary (39005) counts at least one reply.
+fn has_replies(summary: &Value) -> bool {
+    summary
+        .get("content")
+        .and_then(Value::as_str)
+        .and_then(|content| serde_json::from_str::<Value>(content).ok())
+        .and_then(|payload| payload.get("reply_count")?.as_i64())
+        .is_some_and(|count| count > 0)
+}
+
 fn id_of(event: &Value) -> String {
     event
         .get("id")
@@ -171,8 +181,10 @@ pub(crate) fn room_head(
             "SELECT raw FROM summaries WHERE root IN ({marks}) ORDER BY root"
         ))?;
         let summaries = statement.query_map(params_from_iter(&row_ids), |row| row.get(0))?;
+        // The relay sends no summary for a thread without replies.
         head.summaries = summaries
             .filter_map(|raw| raw.ok().and_then(parse))
+            .filter(has_replies)
             .collect();
     }
 
@@ -189,6 +201,17 @@ pub(crate) fn room_head(
                 live_at
             ])?,
         _ => false,
-    };
+    } && !has_job_rows(conn, room)?
+        && super::coverage::is_current(conn)?;
     Ok(head)
+}
+
+/// Job rows (43001-43006) show in the window but no live REQ carries them, so
+/// coverage never vouches for them: a room that ever stored one is opened from
+/// the relay.
+fn has_job_rows(conn: &Connection, room: &str) -> rusqlite::Result<bool> {
+    conn.prepare_cached(
+        "SELECT 1 FROM events WHERE room = ?1 AND kind BETWEEN 43001 AND 43006 LIMIT 1",
+    )?
+    .exists(params![room])
 }

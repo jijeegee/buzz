@@ -9,6 +9,36 @@ use rusqlite::{params, Connection, OptionalExtension};
 /// The stream a room's own timeline is recorded under.
 pub(crate) const ROOM_STREAM: &str = "room";
 
+/// What a span promises. Raised when that changes (2: job rows, clock check,
+/// scope pinning); spans an older build wrote are then dropped.
+pub(crate) const COVERAGE_VERSION: i64 = 2;
+
+/// Drops spans written under another [`COVERAGE_VERSION`] (writer, on open).
+pub(crate) fn drop_stale(conn: &Connection) -> rusqlite::Result<()> {
+    if is_current(conn)? {
+        return Ok(());
+    }
+    conn.execute_batch("BEGIN IMMEDIATE; DELETE FROM coverage;")?;
+    conn.execute(
+        "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('coverage_version', ?1)",
+        params![COVERAGE_VERSION.to_string()],
+    )?;
+    conn.execute_batch("COMMIT;")
+}
+
+/// Whether the file's spans were written under [`COVERAGE_VERSION`]; reads
+/// trust no span otherwise.
+pub(crate) fn is_current(conn: &Connection) -> rusqlite::Result<bool> {
+    let version: Option<String> = conn
+        .query_row(
+            "SELECT value FROM sync_state WHERE key = 'coverage_version'",
+            [],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(version.as_deref() == Some(COVERAGE_VERSION.to_string().as_str()))
+}
+
 /// `segments` (sorted by lo) after the span `[from, to]` is known complete:
 /// segments it overlaps or touches merge into it.
 pub(crate) fn merge(segments: &[(i64, i64)], from: i64, to: i64) -> Vec<(i64, i64)> {

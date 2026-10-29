@@ -108,8 +108,16 @@ type LiveSubscription = {
   };
   closedRetryAttempt?: number;
   closedRetryTimeout?: number;
-  /** Device-store coverage since this REQ's last EOSE on `generation`. */
-  storeCoverage?: { generation: number; liveAt: number; markedAt: number };
+  /**
+   * Device-store coverage since this REQ's last EOSE on `generation`, for
+   * the store `scope` (server file and sign-in) current at that EOSE.
+   */
+  storeCoverage?: {
+    generation: number;
+    liveAt: number;
+    markedAt: number;
+    scope: Promise<string | null>;
+  };
 };
 
 export type PendingEvent = {

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:kuzz/features/channels/channel_head_cache.dart';
+import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -178,6 +179,8 @@ void main() {
         expect(filter.extensions['top_level'], isTrue);
         expect(stored, hasLength(11));
         expect(stored, isNot(contains('room-3')));
+        // Rooms taken from the relay here skip the store when opened.
+        expect(container.read(relayFetchedRoomsProvider), stored.toSet());
         final head = await container
             .read(channelHeadCacheProvider)
             .load(_scope, 'room-5');

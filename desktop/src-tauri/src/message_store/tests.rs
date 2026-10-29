@@ -518,3 +518,111 @@ fn thread_head_follows_shared_fixture() {
         );
     }
 }
+
+#[test]
+fn a_room_head_read_waits_for_queued_writes_and_distrusts_a_loss() {
+    let fixture: Value = serde_json::from_str(
+        &std::fs::read_to_string("../../test-fixtures/message-store-room-head.json").unwrap(),
+    )
+    .unwrap();
+    let room = fixture["room"].as_str().unwrap();
+    let kinds: Vec<u64> = fixture["kinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|kind| kind.as_u64().unwrap())
+        .collect();
+    let case = &fixture["cases"][0];
+    assert!(case["expect"]["certain"].as_bool().unwrap());
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let lease = store.lease(RELAY, ACCOUNT).unwrap();
+    let fill = |store: &MessageStore| {
+        store.submit(
+            &lease,
+            Input::Events(case["events"].as_array().unwrap().clone()),
+        );
+        for span in case["coverage"].as_array().unwrap() {
+            store.submit(
+                &lease,
+                Input::Coverage {
+                    rooms: vec![room.to_owned()],
+                    from: span[0].as_i64().unwrap(),
+                    to: span[1].as_i64().unwrap(),
+                },
+            );
+        }
+    };
+    let limit = case["limit"].as_u64().unwrap() as usize;
+    let live_at = case["live_at"].as_i64();
+
+    // Read straight after queueing: the read sees what was queued.
+    fill(&store);
+    assert!(
+        store
+            .room_head(&lease, room, &kinds, limit, live_at)
+            .certain
+    );
+
+    // A loss not yet written down: the read cannot vouch for the window.
+    store
+        .inner
+        .lock()
+        .unwrap()
+        .writers
+        .get(&lease.stem)
+        .unwrap()
+        .mark_lossy_for_test();
+    assert!(
+        !store
+            .room_head(&lease, room, &kinds, limit, live_at)
+            .certain
+    );
+    finish(&store);
+}
+
+#[test]
+fn spans_an_older_build_wrote_are_dropped_and_not_trusted() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let lease = store.lease(RELAY, ACCOUNT).unwrap();
+    let rooms = vec!["room-1".to_owned()];
+    store.submit(
+        &lease,
+        Input::Coverage {
+            rooms: rooms.clone(),
+            from: 100,
+            to: 200,
+        },
+    );
+    finish(&store);
+    assert_eq!(store.resume_points(&lease, &rooms, 1000).len(), 1);
+
+    // An older build's file: same spans, no coverage version.
+    let conn = rusqlite::Connection::open(store.path_of(&lease)).unwrap();
+    conn.execute("DELETE FROM sync_state WHERE key = 'coverage_version'", [])
+        .unwrap();
+    assert!(!super::coverage::is_current(&conn).unwrap());
+    drop(conn);
+
+    // The next writer drops them.
+    store.submit(&lease, Input::Events(vec![]));
+    finish(&store);
+    assert!(store.resume_points(&lease, &rooms, 1000).is_empty());
+}
+
+#[test]
+fn coverage_is_refused_without_the_scope_of_its_eose() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let scope = store.lease(RELAY, ACCOUNT).unwrap().token();
+    let extend = |scope: Option<&str>| {
+        store.extend_coverage(RELAY, ACCOUNT, scope, vec!["room".into()], 10, 20)
+    };
+    assert!(extend(None).is_err(), "no scope");
+    assert!(extend(Some("other:0")).is_err(), "another file");
+    assert!(extend(Some(&scope)).is_ok());
+    // A sign-out ends the scope: spans from before it are refused.
+    store.forget(RELAY, ACCOUNT);
+    assert!(extend(Some(&scope)).is_err(), "signed out since");
+}

@@ -16,6 +16,7 @@ import {
   channelHeadHydration,
 } from "./channelHeadCache";
 import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
+import { isStoredWindow, storeFollowUp } from "./storedWindows";
 
 /** Keep the rendered timeline cache aligned with its authoritative window. */
 export function projectChannelWindowMessages(
@@ -34,6 +35,7 @@ export function projectChannelWindowMessages(
 export async function refreshChannelWindowMessages(
   queryClient: QueryClient,
   channelId: string,
+  joinStoreFollowUp = true,
 ) {
   const queryKey = channelMessagesKey(channelId);
   // Sequence behind persisted-head hydration. While the channel query is parked
@@ -53,6 +55,11 @@ export async function refreshChannelWindowMessages(
   if (seeded) {
     await query.promise?.catch(() => {});
   }
+  // A room just opened from the store is already asking the relay.
+  const followUp = joinStoreFollowUp
+    ? storeFollowUp(queryClient, channelId)
+    : undefined;
+  if (followUp) return followUp;
   await queryClient.invalidateQueries(
     { queryKey, exact: true, refetchType: "active" },
     { cancelRefetch: !seeded, throwOnError: true },
@@ -84,7 +91,12 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
-  const scope = persistHead ? channelHeadCacheScope(queryClient) : null;
+  // A window from the device store is not persisted; the relay's answer
+  // that follows is.
+  const scope =
+    persistHead && !isStoredWindow(events)
+      ? channelHeadCacheScope(queryClient)
+      : null;
   if (scope) {
     void storeChannelHeadCache(scope, channelId, events).catch((error) => {
       console.warn("Failed to persist channel head", channelId, error);

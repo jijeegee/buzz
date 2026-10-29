@@ -8,6 +8,27 @@ import 'package:sqflite/sqflite.dart';
 /// The stream a room's own timeline is recorded under.
 const _roomStream = 'room';
 
+/// What a span promises. Raised when that changes (2: job rows, clock check,
+/// scope pinning); spans an older build wrote are then dropped. Mirrors
+/// desktop `COVERAGE_VERSION`.
+const coverageVersion = 2;
+
+/// Drops spans written under another [coverageVersion] (on open).
+Future<void> dropStaleCoverage(Database db) async {
+  final rows = await db.rawQuery(
+    "SELECT value FROM sync_state WHERE key = 'coverage_version'",
+  );
+  if (rows.isNotEmpty && rows.first['value'] == '$coverageVersion') return;
+  await db.transaction((txn) async {
+    await txn.rawDelete('DELETE FROM coverage');
+    await txn.rawInsert(
+      'INSERT OR REPLACE INTO sync_state(key, value) '
+      "VALUES ('coverage_version', ?)",
+      ['$coverageVersion'],
+    );
+  });
+}
+
 /// [segments] (sorted by lo) after the span `[from, to]` is known complete:
 /// segments it overlaps or touches merge into it.
 List<(int, int)> mergeCoverage(List<(int, int)> segments, int from, int to) {

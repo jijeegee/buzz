@@ -778,9 +778,9 @@ export function useChannelSubscription(channel: Channel | null) {
   const [settleTimers] = useState(createSettleTimers);
   // biome-ignore lint/correctness/useExhaustiveDependencies: drop the closed room's follow-up refreshes
   useEffect(() => settleTimers.clear, [channelId, settleTimers]);
-  const refreshNewestWindow = useEffectEvent(async () => {
+  const refreshNewestWindow = useEffectEvent(async (join = true) => {
     if (!channelId) return;
-    await refreshChannelWindowMessages(queryClient, channelId);
+    await refreshChannelWindowMessages(queryClient, channelId, join);
   });
 
   const appendMessage = useEffectEvent((event: RelayEvent) => {
@@ -858,7 +858,7 @@ export function useChannelSubscription(channel: Channel | null) {
     let isDisposed = false;
     let cleanup: (() => Promise<void>) | undefined;
     const disposeReconnectListener = relayClient.subscribeToReconnects(() => {
-      void refreshNewestWindow().catch((error) => {
+      void refreshNewestWindow(false).catch((error) => {
         if (!isDisposed) {
           console.error(
             "Failed to refresh channel window after reconnecting",

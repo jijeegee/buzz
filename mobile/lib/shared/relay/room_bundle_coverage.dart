@@ -131,7 +131,10 @@ class RoomBundleCoverage {
         ? 0
         : oldest - storeResumeLookbackSecs;
     if (since < liveAt - storeCatchUpMaxAgeSecs) return false;
-    var until = liveAt;
+    // The first page starts at the relay's newest, not at this device's
+    // clock: rows the relay stamped after liveAt but sent before EOSE are
+    // fetched too.
+    int? until;
     String? beforeId;
     for (var page = 0; page < storeCatchUpMaxPages; page++) {
       final decoded = await query([
@@ -140,7 +143,7 @@ class RoomBundleCoverage {
           'kinds': EventKind.channelEventKinds,
           'since': since,
           'limit': storeCatchUpPageLimit,
-          'until': until,
+          'until': ?until,
           'before_id': ?beforeId,
         },
       ]);

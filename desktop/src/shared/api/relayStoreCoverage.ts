@@ -30,7 +30,15 @@ type LiveSubscription = Extract<RelaySubscription, { mode: "live" }>;
 
 type CoverageDeps = {
   nowSecs: () => number;
-  extend: (roomIds: string[], from: number, to: number) => Promise<void>;
+  /** The store scope coverage is recorded for now (`null`: none). */
+  scope: () => Promise<string | null>;
+  /** Refused when `scope` is no longer current. */
+  extend: (
+    roomIds: string[],
+    from: number,
+    to: number,
+    scope: string,
+  ) => Promise<void>;
   resumePoints: (
     roomIds: string[],
     before: number,
@@ -46,8 +54,14 @@ type CoverageDeps = {
 
 const defaultDeps: CoverageDeps = {
   nowSecs: () => Math.floor(Date.now() / 1000),
-  extend: (roomIds, from, to) =>
-    invokeTauri<void>("message_store_extend_coverage", { roomIds, from, to }),
+  scope: () => invokeTauri<string | null>("message_store_scope"),
+  extend: (roomIds, from, to, scope) =>
+    invokeTauri<void>("message_store_extend_coverage", {
+      roomIds,
+      from,
+      to,
+      scope,
+    }),
   resumePoints: async (roomIds, before) => {
     const points = await invokeTauri<Record<string, number> | null>(
       "message_store_resume_points",
@@ -72,8 +86,23 @@ export function setStoreCoverageDeps(next: Partial<CoverageDeps>) {
   };
 }
 
-function record(roomIds: string[], from: number, to: number) {
-  void deps.extend(roomIds, from, to).catch(() => {});
+function record(
+  roomIds: string[],
+  from: number,
+  to: number,
+  scope: Promise<string | null>,
+) {
+  // No scope (signed out at the time): nothing is recorded.
+  void scope
+    .then((current) =>
+      current === null ? undefined : deps.extend(roomIds, from, to, current),
+    )
+    .catch(() => {});
+}
+
+/** The scope of a span with no EOSE to pin it to: whatever is current. */
+function currentScope() {
+  return deps.scope().catch(() => null);
 }
 
 /** Room ids of a live REQ carrying every channel event of explicit rooms. */
@@ -102,11 +131,15 @@ export function noteStoreLiveEose(
   const roomIds = storeCoveredRooms(subscription.filter);
   if (!roomIds) return;
   const liveAt = deps.nowSecs();
-  subscription.storeCoverage = { generation, liveAt, markedAt: liveAt };
+  const scope = currentScope();
+  const coverage = { generation, liveAt, markedAt: liveAt, scope };
+  subscription.storeCoverage = coverage;
   liveSubscriptions.add(subscription);
-  record(roomIds, liveAt, liveAt);
+  record(roomIds, liveAt, liveAt, scope);
   if (subscription.reconnectReplay?.generation !== generation) {
-    void catchUpFromStore(roomIds, liveAt).catch(() => {});
+    // Stops once this REQ's coverage is retired or replaced.
+    const live = () => subscription.storeCoverage === coverage;
+    void catchUpFromStore(roomIds, liveAt, scope, live).catch(() => {});
   }
 }
 
@@ -140,7 +173,7 @@ export function noteStoreLiveEvent(
   const roomIds = storeCoveredRooms(subscription.filter);
   if (!roomIds) return;
   coverage.markedAt = now;
-  record(roomIds, coverage.liveAt, now);
+  record(roomIds, coverage.liveAt, now, coverage.scope);
 }
 
 /** A reconnect repair walked every event of the REQ's rooms since `since`. */
@@ -149,7 +182,8 @@ export function noteStoreRepairCompleted(
   since: number,
 ) {
   const roomIds = storeCoveredRooms(subscription.filter);
-  if (roomIds) record(roomIds, since, deps.nowSecs());
+  const scope = subscription.storeCoverage?.scope ?? currentScope();
+  if (roomIds) record(roomIds, since, deps.nowSecs(), scope);
 }
 
 /**
@@ -157,7 +191,12 @@ export function noteStoreRepairCompleted(
  * and `liveAt`, into the store only (nothing is shown). Rooms never covered
  * are skipped; a gap too old or too large is left to opening the room.
  */
-export async function catchUpFromStore(roomIds: string[], liveAt: number) {
+export async function catchUpFromStore(
+  roomIds: string[],
+  liveAt: number,
+  scope: Promise<string | null> = currentScope(),
+  live: () => boolean = () => true,
+) {
   // Spans opened at liveAt (this REQ's own) may be written already.
   const points = await deps.resumePoints(roomIds, liveAt);
   const covered = roomIds.filter((roomId) => points[roomId] !== undefined);
@@ -165,10 +204,13 @@ export async function catchUpFromStore(roomIds: string[], liveAt: number) {
   const oldest = Math.min(...covered.map((roomId) => points[roomId]));
   const since = Math.max(0, oldest - STORE_RESUME_LOOKBACK_SECS);
   if (since < liveAt - STORE_CATCH_UP_MAX_AGE_SECS) return false;
-  let until = liveAt;
+  // The first page starts at the relay's newest, not at this PC's clock: rows
+  // the relay stamped after liveAt but sent before EOSE are fetched too.
+  let until: number | undefined;
   let beforeId: string | undefined;
   for (let page = 0; page < STORE_CATCH_UP_MAX_PAGES; page++) {
     if (isRateLimited()) await waitForRateLimit();
+    if (!live()) return false;
     const events = await deps.requestPage({
       channelIds: covered,
       since,
@@ -178,7 +220,8 @@ export async function catchUpFromStore(roomIds: string[], liveAt: number) {
     });
     const terminal = events.at(-1);
     if (events.length < STORE_CATCH_UP_PAGE_LIMIT || !terminal) {
-      record(covered, since, liveAt);
+      if (!live()) return false;
+      record(covered, since, liveAt, scope);
       return true;
     }
     if (terminal.created_at === until && terminal.id === beforeId) return false;

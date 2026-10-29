@@ -1,32 +1,80 @@
 /**
  * Opening a room from the device store: when the store's newest window is
- * certain (docs/message-sync.md#opening-a-room-from-the-store), the first
- * fetch of a room takes it instead of waiting for the relay. Later fetches
- * (refresh after subscribing, reconnects) still ask the relay.
+ * certain (docs/message-sync.md#opening-a-room-from-the-store), the room's
+ * first fetch in this run takes it instead of waiting for the relay, and the
+ * relay is asked right after (once: the refresh after the room's live
+ * subscription joins that request). Later fetches ask the relay.
  */
-import type { QueryClient } from "@tanstack/react-query";
+import { CancelledError, type QueryClient } from "@tanstack/react-query";
 
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
+import { logStoreComparison } from "@/features/messages/lib/storeCompare";
+import {
+  markStoredWindow,
+  setStoreFollowUp,
+  storeOpenLiveAt,
+} from "@/features/messages/lib/storedWindows";
+import { refreshChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
-import { storeLiveAt } from "@/shared/api/relayStoreCoverage";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
+import { CHANNEL_TIMELINE_CONTENT_KINDS } from "@/shared/constants/kinds";
+
+const TIMELINE_KINDS = new Set<number>(CHANNEL_TIMELINE_CONTENT_KINDS);
 
 type StoreRoomHeadDeps = {
   liveAt: (roomId: string) => number | null;
   roomHead: (roomId: string, liveAt: number) => Promise<RelayEvent[] | null>;
   relayWindow: (roomId: string) => Promise<RelayEvent[]>;
+  relayRefresh: (queryClient: QueryClient, roomId: string) => Promise<void>;
 };
 
 const defaultDeps: StoreRoomHeadDeps = {
-  liveAt: storeLiveAt,
+  liveAt: storeOpenLiveAt,
   roomHead: (roomId, liveAt) =>
     invokeTauri<RelayEvent[] | null>("message_store_room_head", {
       roomId,
       liveAt,
     }),
   relayWindow: (roomId) => getChannelWindowEvents(roomId),
+  relayRefresh: (queryClient, roomId) =>
+    refreshChannelWindowMessages(queryClient, roomId, false),
 };
+
+/**
+ * Rooms fetched at least once in this run (from the store or the relay), per
+ * query cache: a community switch starts a new one.
+ */
+let fetchedRooms = new WeakMap<QueryClient, Set<string>>();
+/** Relay window requests started per room, to spot one overtaking a store read. */
+let relayStarts = new WeakMap<QueryClient, Map<string, number>>();
+/** A stored window awaiting the relay's, to compare them. */
+let storedAwaitingRelay = new WeakMap<QueryClient, Map<string, RelayEvent[]>>();
+
+function perClient<T>(
+  map: WeakMap<QueryClient, T>,
+  queryClient: QueryClient,
+  make: () => T,
+) {
+  let value = map.get(queryClient);
+  if (value === undefined) {
+    value = make();
+    map.set(queryClient, value);
+  }
+  return value;
+}
+
+function fetchedIn(queryClient: QueryClient) {
+  return perClient(fetchedRooms, queryClient, () => new Set<string>());
+}
+
+/** A relay page for `channelId` landed some other way (preload). */
+export function markStoreRoomHeadFetched(
+  queryClient: QueryClient,
+  channelId: string,
+) {
+  fetchedIn(queryClient).add(channelId);
+}
 
 let deps = defaultDeps;
 
@@ -51,17 +99,80 @@ async function certainStoreWindow(channelId: string) {
   }
 }
 
+/**
+ * The store only draws the first frame: once this fetch has settled, the
+ * relay's window replaces it as an ordinary refresh would.
+ */
+async function relayAfterSettle(queryClient: QueryClient, channelId: string) {
+  await Promise.resolve();
+  const query = queryClient
+    .getQueryCache()
+    .find({ queryKey: channelMessagesKey(channelId), exact: true });
+  await query?.promise?.catch(() => {});
+  try {
+    await deps.relayRefresh(queryClient, channelId);
+  } catch (error) {
+    console.error("Failed to refresh a room opened from the store", error);
+  }
+  storedAwaitingRelay.get(queryClient)?.delete(channelId);
+}
+
+/** The relay's window, compared with a stored one it replaces. */
+async function relayWindowFor(queryClient: QueryClient, channelId: string) {
+  const starts = perClient(relayStarts, queryClient, () => new Map());
+  starts.set(channelId, (starts.get(channelId) ?? 0) + 1);
+  const waiting = perClient(storedAwaitingRelay, queryClient, () => new Map());
+  const stored = waiting.get(channelId);
+  waiting.delete(channelId);
+  const events = await deps.relayWindow(channelId);
+  if (stored) {
+    const timeline = (rows: RelayEvent[]) =>
+      rows.filter((event) => TIMELINE_KINDS.has(event.kind));
+    logStoreComparison(
+      `room ${channelId.slice(0, 8)}`,
+      timeline(stored),
+      timeline(events),
+    );
+  }
+  return events;
+}
+
+/** Forget which rooms were fetched (tests). */
+export function resetStoreRoomHeadRooms() {
+  fetchedRooms = new WeakMap();
+  relayStarts = new WeakMap();
+  storedAwaitingRelay = new WeakMap();
+}
+
 /** The newest window to open `channelId` with, in the relay's shape. */
 export async function openChannelWindowEvents(
   queryClient: QueryClient,
   channelId: string,
 ): Promise<RelayEvent[]> {
-  const fetchedBefore =
-    (queryClient.getQueryState(channelMessagesKey(channelId))?.dataUpdatedAt ??
-      0) > 0;
-  if (!fetchedBefore) {
+  const rooms = fetchedIn(queryClient);
+  const first = !rooms.has(channelId);
+  rooms.add(channelId);
+  if (first) {
+    const startsBefore = relayStarts.get(queryClient)?.get(channelId) ?? 0;
     const stored = await certainStoreWindow(channelId);
-    if (stored) return stored;
+    // A refresh that cancelled this fetch has already asked the relay; this
+    // fetch's answer is discarded, so it asks nothing more.
+    if ((relayStarts.get(queryClient)?.get(channelId) ?? 0) !== startsBefore) {
+      throw new CancelledError();
+    }
+    if (stored) {
+      markStoredWindow(stored);
+      perClient(storedAwaitingRelay, queryClient, () => new Map()).set(
+        channelId,
+        stored,
+      );
+      setStoreFollowUp(
+        queryClient,
+        channelId,
+        relayAfterSettle(queryClient, channelId),
+      );
+      return stored;
+    }
   }
-  return deps.relayWindow(channelId);
+  return relayWindowFor(queryClient, channelId);
 }

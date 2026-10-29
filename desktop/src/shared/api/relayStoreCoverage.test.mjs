@@ -18,11 +18,13 @@ import {
 const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 function harness({ now = 10_000, points = {}, pages = [] } = {}) {
-  const state = { now, extended: [], requests: [] };
+  const state = { now, extended: [], requests: [], scope: "s1", scopes: [] };
   const restore = setStoreCoverageDeps({
     nowSecs: () => state.now,
-    extend: async (roomIds, from, to) => {
+    scope: async () => state.scope,
+    extend: async (roomIds, from, to, scope) => {
       state.extended.push([roomIds, from, to]);
+      state.scopes.push(scope);
     },
     resumePoints: async (_roomIds, before) => {
       state.resumeBefore = before;
@@ -62,7 +64,8 @@ test("EOSE opens coverage and catches up stored rooms only", async () => {
     await tick();
     assert.deepEqual(state.requests[0].channelIds, ["r1"]);
     assert.equal(state.requests[0].since, 5_000 - STORE_RESUME_LOOKBACK_SECS);
-    assert.equal(state.requests[0].until, 10_000);
+    // The first page is not cut at this PC's clock.
+    assert.equal(state.requests[0].until, undefined);
     assert.deepEqual(state.extended, [
       [["r1", "r2"], 10_000, 10_000],
       [["r1"], 5_000 - STORE_RESUME_LOOKBACK_SECS, 10_000],
@@ -85,7 +88,7 @@ test("a reconnect repair on this connection skips the store catch-up", async () 
   }
 });
 
-test("events extend coverage at most once a minute, on the same connection", () => {
+test("events extend coverage at most once a minute, on the same connection", async () => {
   const { state, restore } = harness();
   try {
     const subscription = bundle();
@@ -95,6 +98,7 @@ test("events extend coverage at most once a minute, on the same connection", () 
     state.now += 40;
     noteStoreLiveEvent(subscription, 2);
     noteStoreLiveEvent(subscription, 1);
+    await tick();
     assert.deepEqual(state.extended.slice(1), [[["r1", "r2"], 10_000, 10_070]]);
   } finally {
     restore();
@@ -141,6 +145,47 @@ test("a room is live from its REQ's EOSE until the REQ is retired", () => {
     assert.equal(storeLiveAt("x1"), 10_000);
     retireLiveSubscription(subscription);
     assert.equal(storeLiveAt("x1"), 10_050);
+  } finally {
+    restore();
+  }
+});
+
+test("spans carry the scope of their EOSE, and a retired REQ stops its catch-up", async () => {
+  const gate = Promise.withResolvers();
+  const { state, restore } = harness({ points: { r1: 5_000 } });
+  setStoreCoverageDeps({
+    requestPage: async (request) => {
+      state.requests.push(request);
+      await gate.promise;
+      return page(1, 9_000);
+    },
+  });
+  try {
+    const subscription = bundle();
+    noteStoreLiveEose(subscription, 1);
+    await tick();
+    assert.equal(state.requests.length, 1);
+    // The account switches; the REQ is retired while its walk is in flight.
+    state.scope = "s2";
+    retireLiveSubscription(subscription);
+    gate.resolve();
+    await tick();
+    await tick();
+    assert.deepEqual(state.extended, [[["r1", "r2"], 10_000, 10_000]]);
+    assert.deepEqual(state.scopes, ["s1"]);
+  } finally {
+    restore();
+  }
+});
+
+test("with no store scope (signed out) nothing is recorded", async () => {
+  const { state, restore } = harness({ points: { r1: 5_000 } });
+  state.scope = null;
+  try {
+    noteStoreLiveEose(bundle(), 1);
+    await tick();
+    await tick();
+    assert.deepEqual(state.extended, []);
   } finally {
     restore();
   }

@@ -69,6 +69,58 @@ void main() {
     }
   }
 
+  test('a file an older build created gains the newer indexes', () async {
+    final lease = store.lease(_relay, _account)!;
+    final old = await databaseFactoryFfi.openDatabase(
+      await store.pathOf(lease),
+      options: OpenDatabaseOptions(
+        version: 1,
+        onCreate: (db, _) => db.execute(
+          'CREATE TABLE events(id TEXT PRIMARY KEY, kind INTEGER NOT NULL, '
+          'pubkey TEXT NOT NULL, created_at INTEGER NOT NULL, room TEXT, '
+          'root TEXT, broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL)',
+        ),
+      ),
+    );
+    await old.close();
+    store.submit(lease, [_event('a1', 10)]);
+    await store.flushed();
+    final indexes = await rows(
+      lease,
+      "SELECT name FROM sqlite_master WHERE type = 'index'",
+    );
+    expect(
+      indexes.map((row) => row['name']),
+      containsAll(['events_room_rows', 'events_job_rooms']),
+    );
+  });
+
+  test('spans an older build wrote are dropped on open', () async {
+    final lease = store.lease(_relay, _account)!;
+    // An older build's file: a span and no coverage version.
+    final old = await databaseFactoryFfi.openDatabase(
+      await store.pathOf(lease),
+      options: OpenDatabaseOptions(
+        version: 1,
+        onCreate: (db, _) async {
+          await db.execute(
+            'CREATE TABLE coverage(room TEXT NOT NULL, stream TEXT NOT NULL, '
+            'lo_at INTEGER NOT NULL, lo_id TEXT NOT NULL, '
+            'hi_at INTEGER NOT NULL, hi_id TEXT NOT NULL)',
+          );
+          await db.execute(
+            'CREATE TABLE sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+          );
+          await db.rawInsert(
+            "INSERT INTO coverage VALUES ('r1', 'room', 100, '', 200, '')",
+          );
+        },
+      ),
+    );
+    await old.close();
+    expect(await store.resumePoints(lease, ['r1'], 1000), isEmpty);
+  });
+
   test('classification follows the shared fixture', () {
     final fixture =
         jsonDecode(

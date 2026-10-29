@@ -21,7 +21,7 @@ globalThis.__TAURI_INTERNALS__ = {
   transformCallback: () => Math.random(),
 };
 
-const { QueryClient } = await import("@tanstack/react-query");
+const { QueryClient, QueryObserver } = await import("@tanstack/react-query");
 const {
   loadNewestThreadReplies,
   loadOlderThreadReplies,
@@ -290,6 +290,18 @@ test("no window from the relay resolves to null for the full-read fallback", asy
 
 const { setStoreThreadHeadDeps } = await import("./storeThreadHead.ts");
 
+function captureStoreLog() {
+  const lines = [];
+  const { info, warn } = console;
+  console.info = (line) => lines.push(line);
+  console.warn = (line) => lines.push(line);
+  lines.restore = () => {
+    console.info = info;
+    console.warn = warn;
+  };
+  return lines;
+}
+
 function storeHarness(stored, liveAt = 500) {
   const asked = [];
   const restore = setStoreThreadHeadDeps({
@@ -348,5 +360,70 @@ test("an uncertain store, no live REQ or a loaded thread asks the relay", async 
     } finally {
       restore();
     }
+  }
+});
+
+test("a thread opened from the store is refetched from the relay once it settles", async () => {
+  const { restore } = storeHarness(rawPage(11, 60, true));
+  const queryClient = newClient();
+  const queryKey = threadRepliesKey(ROOM, ROOT);
+  const observer = new QueryObserver(queryClient, {
+    queryKey,
+    queryFn: () => loadNewestThreadReplies(queryClient, ROOM, ROOT),
+    staleTime: 0,
+  });
+  // The relay has one newer reply than the store.
+  pages = [rawPage(12, 61, true)];
+  const lines = captureStoreLog();
+  const unsubscribe = observer.subscribe(() => {});
+  try {
+    for (let i = 0; i < 50; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (calls.some((call) => call.command === "get_thread_windows")) break;
+    }
+    await queryClient.getQueryCache().find({ queryKey })?.promise;
+    const events = queryClient.getQueryData(queryKey);
+    assert.equal(events.at(-1).created_at, 61, "the relay's newer reply");
+    assert.equal(events[0].created_at, 11, "stored replies kept");
+    assert.equal(
+      calls.filter((call) => call.command === "get_thread_windows").length,
+      1,
+    );
+    // Compared with the relay's page itself, inside the range both cover.
+    assert.equal(lines.length, 1);
+    assert.match(lines[0], /store matches relay \(49\)/);
+  } finally {
+    lines.restore();
+    unsubscribe();
+    restore();
+  }
+});
+
+test("a thread closed before its relay request logs no comparison", async () => {
+  const { restore } = storeHarness(rawPage(11, 60, true));
+  const lines = captureStoreLog();
+  try {
+    // No observer: the refetch after the store open fetches nothing.
+    await loadNewestThreadReplies(newClient(), ROOM, ROOT);
+    for (let i = 0; i < 5; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    }
+    assert.equal(lines.length, 0);
+  } finally {
+    lines.restore();
+    restore();
+  }
+});
+
+test("a link to a reply reads the relay, not the store", async () => {
+  const { asked, restore } = storeHarness(rawPage(11, 60, true));
+  try {
+    pages = [rawPage(1, 3, false)];
+    await loadNewestThreadReplies(newClient(), ROOM, ROOT, {
+      mustInclude: reply(2).id,
+    });
+    assert.equal(asked.length, 0);
+  } finally {
+    restore();
   }
 });

@@ -199,44 +199,73 @@ Merging rules and cases: `test-fixtures/message-store-coverage.json`.
 - **Catch-up:** at EOSE (desktop: unless its repair runs), for the chunk's
   rooms that have a span starting before L, take the oldest of their latest
   `hi`, minus 1865 s (relay future tolerance 900 + storage fence 960 + 5). One
-  keyset walk (`#h`, repair kinds, `since`, `until` L, `before_id`, 500 per
-  page) into the store only; nothing is shown. When it ends within 4 pages it
+  keyset walk (`#h`, repair kinds, `since`, `before_id`, 500 per page; the
+  first page has no `until`, so rows the relay stamped after the local L are
+  not cut off by a slow clock) into the store only; nothing is shown. When it ends within 4 pages it
   records `[since, L]`. A longer or more than 7-day gap records nothing and
   is left for opening the room. Rooms without coverage are never fetched.
 - **Order and loss:** spans go through the same write queue as events, so a
   span is recorded only after the events received before it are written. A
   dropped event or failed write clears every span of the file, and any later
   span starting at or before the time of the loss is not recorded.
+- **Version:** the file records which coverage version wrote its spans
+  (`sync_state.coverage_version`, now 2). On open, spans of another version
+  are deleted; desktop reads also trust no span until the version matches.
+- **Scope (desktop):** each span carries the store scope (server file,
+  account, sign-out epoch) current when its live REQ reached EOSE; a span
+  arriving after that scope changed, or with no scope (signed out), is refused, and a catch-up whose REQ was
+  retired stops before recording.
 - **Sign-out** deletes coverage with the file.
 
 ### Opening a room from the store
 
-On a room's first fetch (nothing loaded for it yet), the client reads the
-room's newest window from the store and uses it as the relay's
-channel-window answer when it is certain; otherwise it asks the relay as
-before. Later refreshes always ask the relay. Cases:
-`test-fixtures/message-store-room-head.json`.
+On a room's first fetch, the client reads the room's newest window from the
+store and uses it as the relay's channel-window answer when it is certain;
+otherwise it asks the relay as before. A first fetch is one for a room this
+run has not yet fetched from the store or the relay, the background preload
+included. Desktop tracks this per query cache (a community switch starts a
+new one); mobile per room notifier, which lives for the run, and for the
+preload per account and server. A stored window only draws the first frame: once that fetch has
+settled, the client asks the relay once (on desktop, the refresh after the
+room's live subscription joins that request rather than sending another) and
+its window replaces the stored rows (stored rows the relay no longer has are dropped; live arrivals stay).
+This extra request is a safety net until the store-vs-relay log shows no
+differences (stage 5 then skips it for certain rooms). Later refreshes always
+ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
 
 - **Rows:** timeline kinds of the channel window, top-level (no `reply`
   marker) or depth-1 broadcast replies (parent is the root), newest 50 by
   `created_at DESC, id ASC`. A row targeted by a removal (9005) or by its
   author's deletion (5) is left out.
 - **With the rows:** overlays targeting them (5, 7, 9005, 40003), removals of
-  those overlays (5, 9005), the stored thread summary of each row, and one
+  those overlays (5, 9005), the stored thread summary of each row that counts
+  at least one reply (the relay sends none for `reply_count` 0), and one
   `39006` bounds event (`d = <room>:head`, unsigned, `next_cursor` = the
   oldest row) so older pages load from the relay as usual.
 - **Certain** when all of: the window has 50 rows; a live REQ carrying the
   room reached EOSE at L on the current connection and has not been closed
-  since (the client passes L; none means not certain); and one coverage span
-  has `lo ≤ created_at of the 50th row − 1865` and `hi ≥ L`.
+  since (the client passes L; none means not certain); one coverage span
+  has `lo ≤ created_at of the 50th row − 1865` and `hi ≥ L`; and the room
+  has never stored a job row (43001–43006). Job rows show in the window, but
+  live REQs do not carry them (that set is frozen), so coverage cannot vouch
+  for them. A room's first job row is still missed until something stores
+  one; the relay request after a stored open (above) corrects that frame.
+- **Written first:** the read waits (at most 0.5 s) until every event
+  received before it is written. A writer that is gone, still busy after the
+  wait, or holding a loss not yet written down means not certain.
 
 ### Opening a thread from the store
 
-On a thread's first load (no reply page folded in yet), the client reads the
+On a thread's first load (no reply page held for it: desktop's thread
+window state, mobile's thread window; both are released some time after the
+thread closes, and the next open counts as first again), the client reads the
 thread's newest replies from the store and uses them as the relay's
 thread-window answer when it is certain; otherwise it asks the relay as
-before. Later loads and older pages always ask the relay. Cases:
-`test-fixtures/message-store-thread-head.json`.
+before. As with rooms, the thread then asks the relay once and folds its
+newest page in. On desktop, a load that must include a linked reply skips
+the store (its walk to the reply pages the relay anyway); mobile opens linked
+replies with a separate relay window (`openAt`). Later loads and older pages always ask
+the relay. Cases: `test-fixtures/message-store-thread-head.json`.
 
 - **Rows:** replies of the thread-window kinds (9, 40002) whose root is the
   thread's root, at any depth, newest 50 by `created_at DESC, id ASC`. The
@@ -250,3 +279,45 @@ before. Later loads and older pages always ask the relay. Cases:
   current connection and has not been closed since, and one coverage span has
   `hi ≥ L` and `lo ≤` (full window: the oldest reply's `created_at`; fewer
   replies: the root's `created_at`, which must be stored in the room) `− 1865`.
+- **Written first:** as for rooms.
+
+### Limits
+
+- **since_join rooms:** the relay hides rows from before the reader joined.
+  The store keeps only what the relay sent this account, so it holds no such
+  rows, but rows kept from an earlier membership (left, then re-added) stay
+  and can open in a stored window until the relay's answer replaces it.
+- **Deletions without an event:** the store drops a row only for a removal
+  (9005) or author deletion (5) it has received. A row the relay deletes
+  without publishing such an event (an admin deletion today) cannot be seen
+  from the store, so a stored window may show it until the relay's answer
+  replaces it. The relay request after every stored open covers this until
+  the relay keeps a deletion record clients can fetch (a later stage).
+- **Job rows:** see the room's certain rule above.
+- **Scope capture (desktop):** a span's scope is read just after its EOSE,
+  not at it; an account switch on the same server in that moment could
+  file the span under the new account. Not yet closed.
+- **Build switch:** `VITE_KUZZ_STORE_OPEN=off` (desktop) or
+  `--dart-define=KUZZ_STORE_OPEN=off` (mobile) opens every room and thread
+  from the relay. Events are still stored and covered.
+- **Head cache:** only a relay window is saved as a room's head cache, never
+  a window opened from the store.
+
+### Clock check
+
+Coverage times and L come from this device's clock. Each successful `/query`
+answer's `Date` header is compared with that clock; while the last
+difference is over 60 s, or no answer has been compared yet, rooms and
+threads open from the relay. The difference is not corrected.
+
+### Store-vs-relay log
+
+When the relay's answer replaces a window opened from the store, the client
+compares it with the relay's page itself (never the merged result, and
+nothing when no relay page arrived), by row ids inside the range both cover: from the newer of the two
+oldest rows up to the stored newest row (rows that arrived live afterwards,
+or fell off the end of the relay's page, are not differences). It logs one
+line: `[message-store] <room|thread> <id>: store matches relay (<n>)`, or
+`store differs from relay` with the ids missing from the store and the ids
+only the store had. Rooms compare timeline rows of the newest page; threads
+compare replies.

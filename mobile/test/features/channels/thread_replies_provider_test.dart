@@ -1,8 +1,11 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -12,6 +15,8 @@ class _FakeRelaySession extends RelaySessionNotifier {
   final filtersSeen = <NostrFilter>[];
   List<NostrEvent> replies = const [];
   Completer<List<NostrEvent>>? nextQueryGate;
+  List<NostrEvent>? threadWindow;
+  int threadWindowQueries = 0;
 
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
@@ -28,7 +33,8 @@ class _FakeRelaySession extends RelaySessionNotifier {
     // A relay without thread windows: the thread query falls back to its
     // complete scan, which these tests exercise.
     if (filters.any((filter) => filter.extensions['thread_window'] == true)) {
-      return const [];
+      threadWindowQueries++;
+      return threadWindow ?? const [];
     }
     queryCount++;
     filtersSeen.addAll(filters);
@@ -58,8 +64,69 @@ NostrEvent _reply(String id, int createdAt) => NostrEvent(
   sig: '',
 );
 
+NostrEvent _threadBounds() => NostrEvent(
+  id: 'f' * 64,
+  pubkey: 'relay',
+  createdAt: 0,
+  kind: threadWindowBoundsKind,
+  tags: const [
+    ['h', 'chan'],
+    ['e', 'root'],
+  ],
+  content: jsonEncode({'version': 1, 'has_more': false, 'next_cursor': null}),
+  sig: '',
+);
+
 void main() {
   const args = ThreadRepliesArgs(channelId: 'chan', rootId: 'root');
+
+  test(
+    'a thread opened from the store asks the relay once and takes its page',
+    () async {
+      var storeReads = 0;
+      final session = _FakeRelaySession()
+        ..threadWindow = [
+          _reply('newer', 3),
+          _reply('kept', 1),
+          _threadBounds(),
+        ];
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => session),
+          storedThreadHeadProvider.overrideWithValue((_, _) async {
+            storeReads++;
+            return [_reply('deleted', 2), _reply('kept', 1), _threadBounds()];
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      final logged = <String>[];
+      final print = debugPrint;
+      debugPrint = (message, {wrapWidth}) => logged.add(message ?? '');
+      addTearDown(() => debugPrint = print);
+      container.listen(threadRepliesProvider(args), (_, _) {});
+      final stored = await container.read(threadRepliesProvider(args).future);
+      expect(stored.map((event) => event.id), ['kept', 'deleted']);
+      expect(session.threadWindowQueries, 0);
+
+      for (var i = 0; i < 5; i++) {
+        await Future<void>.delayed(Duration.zero);
+      }
+      final relay = await container.read(threadRepliesProvider(args).future);
+      expect(relay.map((event) => event.id), ['kept', 'newer']);
+      expect(storeReads, 1);
+      expect(session.threadWindowQueries, 1);
+      // Compared with the relay's page: the store had a reply it lacks.
+      expect(
+        logged.where((line) => line.startsWith('[message-store] thread root')),
+        [
+          contains(
+            'store differs from relay (compared 2, missing 0 (), extra 1 (deleted))',
+          ),
+        ],
+      );
+    },
+  );
 
   test('complete scan includes a legal 80-deep reply chain', () async {
     final session = _FakeRelaySession()

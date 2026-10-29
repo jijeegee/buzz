@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/message_store/store_compare.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
@@ -43,6 +44,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _headRestoreStarted = false;
   bool _relayHistoryArrived = false;
   Set<String> _cachedHeadIds = const {};
+  List<NostrEvent>? _storedHead;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
   final Map<String, NostrEvent> _deepLinkEvents = {};
@@ -83,6 +85,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool get _summaryMounted => ref.mounted;
   RelaySessionNotifier get _summarySession =>
       ref.read(relaySessionProvider.notifier);
+  List<NostrEvent>? get _shownMessages => state.value;
+  StoredRoomHeadReader get _storedRoomHead => ref.read(storedRoomHeadProvider);
+  bool get _preloadedFromRelay =>
+      ref.read(relayFetchedRoomsProvider).contains(channelId);
 
   /// The relay's NIP-11 document; an unreadable one is retried next time
   /// rather than taken as proof that an extension is missing.
@@ -238,38 +244,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         return;
       }
 
-      final historyVersion = ++_threadQuerySerial;
-      final history = await _fetchNewestHistory(session);
-      if (!_isCurrentInit(initVersion)) return;
-      // Only relay rows confirm a send; the window's live overlay also holds
-      // the unconfirmed local rows themselves.
-      _confirmLocalMessages(
-        _usingChannelWindow
-            ? [
-                for (final page in _windowStore.allPages)
-                  for (final row in page.rows) row.event.id,
-              ]
-            : history.map((event) => event.id),
-      );
-
-      // The relay page is authoritative: drop cached rows it no longer has
-      // (e.g. deleted while the app was closed), keeping live arrivals.
-      final cachedHeadIds = _cachedHeadIds;
-      _cachedHeadIds = const {};
-      final existing = [
-        for (final event in state.value ?? const <NostrEvent>[])
-          if (!cachedHeadIds.contains(event.id)) event,
-      ];
-      final existingIds = existing.map((event) => event.id).toSet();
-      final merged = _withDeepLinkEvents([
-        ...existing,
-        ...history.where((event) => existingIds.add(event.id)),
-      ]);
-      _lastKnownMessages = merged;
-      _reconcileRetainedSummaryPayloads(merged);
-      _reconcileRetainedAggregates(historyVersion);
-      state = AsyncData(merged);
-      _summaryRefreshes.resume();
+      await _syncNewest(session, initVersion);
     } catch (e, st) {
       if (!_isCurrentInit(initVersion)) return;
       final fallbackMessages = state.value ?? _lastKnownMessages;
@@ -304,7 +279,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         page,
         retainLiveSummaryRootIds: _liveSummaryRootsDuringInitialWindowQuery,
       );
-      _persistHead(response);
+      // Only the relay's window is persisted, not the store's.
+      if (_storedHead == null) _persistHead(response);
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       _pruneOffWindowReplies();
       _usingChannelWindow = true;

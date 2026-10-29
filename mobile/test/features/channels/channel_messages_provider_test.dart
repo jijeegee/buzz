@@ -1,9 +1,11 @@
 import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
+import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/pending_local_messages_provider.dart';
 import 'package:kuzz/features/channels/room_live_router.dart';
@@ -81,6 +83,71 @@ void main() {
           .value!
           .map((event) => event.id);
       expect(ids, containsAll(['history', 'live', 'reply']));
+    },
+  );
+
+  test(
+    'a room opened from the store asks the relay once and takes its window',
+    () async {
+      final relayWindow = Completer<List<NostrEvent>>();
+      final relaySession = _RecordingRelaySessionNotifier(
+        queryResults: [relayWindow.future],
+      );
+      var storeReads = 0;
+      final headCache = _RecordingHeadCache();
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => relaySession),
+          channelHeadScopeProvider.overrideWithValue(
+            const ChannelHeadScope(relayUrl: 'wss://r', pubkey: 'me'),
+          ),
+          channelHeadCacheProvider.overrideWithValue(headCache),
+          storedRoomHeadProvider.overrideWithValue((
+            session,
+            roomId,
+            filter,
+          ) async {
+            storeReads++;
+            return [
+              _event(id: 'deleted', createdAt: 20),
+              _event(id: 'kept', createdAt: 10),
+              _bounds(),
+            ];
+          }),
+        ],
+      );
+      addTearDown(container.dispose);
+      List<String> ids() => container
+          .read(channelMessagesProvider(_channelId))
+          .value!
+          .map((event) => event.id)
+          .toList();
+
+      container.read(channelMessagesProvider(_channelId));
+      await relaySession.subscribed;
+      for (var i = 0; i < 5; i++) {
+        await _pumpEventQueue();
+      }
+      expect(ids(), ['kept', 'deleted']);
+      expect(relaySession.queryFilters, hasLength(1));
+      // The store's window is not persisted as the head cache.
+      expect(headCache.stored, isEmpty);
+
+      relaySession.emit(_event(id: 'live', createdAt: 25));
+      relayWindow.complete([
+        _event(id: 'newer', createdAt: 22),
+        _event(id: 'kept', createdAt: 10),
+        _bounds(),
+      ]);
+      for (var i = 0; i < 5; i++) {
+        await _pumpEventQueue();
+      }
+      expect(ids(), ['kept', 'newer', 'live']);
+      expect(storeReads, 1);
+      expect(headCache.stored, [
+        ['newer', 'kept', 'bounds-false-none'],
+      ]);
+      expect(relaySession.queryFilters, hasLength(1));
     },
   );
 
@@ -5514,5 +5581,30 @@ class _RecordingRelaySessionNotifier extends RelaySessionNotifier {
     if (!_history.isCompleted) {
       _history.completeError(error);
     }
+  }
+}
+
+class _RecordingHeadCache extends ChannelHeadCache {
+  _RecordingHeadCache() : super(() async => Directory.systemTemp);
+
+  final stored = <List<String>>[];
+
+  @override
+  Future<List<NostrEvent>?> load(
+    ChannelHeadScope scope,
+    String channelId,
+  ) async => null;
+
+  @override
+  Future<DateTime?> storedAt(ChannelHeadScope scope, String channelId) async =>
+      null;
+
+  @override
+  Future<void> store(
+    ChannelHeadScope scope,
+    String channelId,
+    List<NostrEvent> events,
+  ) async {
+    stored.add([for (final event in events) event.id]);
   }
 }

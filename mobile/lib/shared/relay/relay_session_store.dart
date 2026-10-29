@@ -1,9 +1,23 @@
 part of 'relay_session.dart';
 
+/// A build with `--dart-define=KUZZ_STORE_OPEN=off` opens everything from the
+/// relay.
+const storeOpensEnabled = String.fromEnvironment('KUZZ_STORE_OPEN') != 'off';
+
 /// Opening rooms and threads from the device store
 /// (docs/message-sync.md#opening-a-room-from-the-store,
 /// docs/message-sync.md#opening-a-thread-from-the-store).
 extension RelaySessionStore on RelaySessionNotifier {
+  /// Keeps a `/query` answer and compares the relay's clock with this one's.
+  void _storeQueryAnswer(
+    MessageStoreLease? lease,
+    Object? decoded,
+    String? date,
+  ) {
+    noteServerDate(date, DateTime.now().millisecondsSinceEpoch ~/ 1000);
+    if (decoded is List) _messageStore?.submit(lease, decoded);
+  }
+
   /// When [roomId]'s live REQ reached EOSE on this connection, if it has
   /// been receiving every event of the room since.
   int? _storeLiveAt(String roomId) {
@@ -31,6 +45,7 @@ extension RelaySessionStore on RelaySessionNotifier {
     final lease = _storeLease;
     final liveAt = _storeLiveAt(roomId);
     if (store == null || lease == null || liveAt == null) return null;
+    if (!storeOpensEnabled || !clockTrusted) return null;
     final events = await store.certainThreadHead(
       lease,
       room: roomId,
@@ -64,6 +79,7 @@ extension RelaySessionStore on RelaySessionNotifier {
     final lease = _storeLease;
     final liveAt = _storeLiveAt(roomId);
     if (store == null || lease == null || liveAt == null) return null;
+    if (!storeOpensEnabled || !clockTrusted) return null;
     final events = await store.certainRoomHead(
       lease,
       room: roomId,

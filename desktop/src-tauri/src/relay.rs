@@ -541,6 +541,13 @@ async fn send_query_request_as<T: DeserializeOwned>(
     if !response.status().is_success() {
         return Err(relay_error_message(response).await);
     }
+    crate::message_store::note_server_date(
+        response
+            .headers()
+            .get(reqwest::header::DATE)
+            .and_then(|value| value.to_str().ok()),
+        chrono::Utc::now().timestamp(),
+    );
     parse_json_response(response).await
 }
 

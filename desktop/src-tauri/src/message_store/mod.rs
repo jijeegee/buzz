@@ -3,12 +3,15 @@
 //! Rules: docs/message-sync.md#message-store.
 
 mod classify;
+mod clock;
 mod coverage;
 mod read;
 mod read_thread;
 #[cfg(test)]
 mod tests;
 mod writer;
+
+pub(crate) use clock::note_server_date;
 
 use std::{
     collections::{HashMap, VecDeque},
@@ -53,6 +56,8 @@ pub(crate) fn token_frame(token: &str, account: &str) -> Value {
 
 /// Recently issued AUTH tokens remembered, by hash, for their account.
 const TOKENS_KEPT: usize = 32;
+/// How long a store open waits for queued writes before asking the relay.
+const DRAIN_WAIT: std::time::Duration = std::time::Duration::from_millis(500);
 
 /// The scope a receive belongs to, taken when the request or socket starts.
 /// A lease from before the account signed out of that server writes nothing.
@@ -61,6 +66,12 @@ pub(crate) struct Lease {
     /// `<origin hash>-<account>`: one file, one epoch.
     stem: String,
     epoch: u64,
+}
+
+impl Lease {
+    fn token(&self) -> String {
+        format!("{}:{}", self.stem, self.epoch)
+    }
 }
 
 pub(crate) struct MessageStore {
@@ -123,6 +134,28 @@ impl MessageStore {
         let stem = file_stem(&origin, &account);
         let epoch = *self.inner.lock().ok()?.epochs.get(&stem).unwrap_or(&0);
         Some(Lease { stem, epoch })
+    }
+
+    /// Queues a coverage span for the file current for `relay_url` and
+    /// `account`, if `scope` (taken at the span's EOSE) is still that file and
+    /// sign-in. A span without a scope cannot be placed and is refused too.
+    pub(crate) fn extend_coverage(
+        &self,
+        relay_url: &str,
+        account: &str,
+        scope: Option<&str>,
+        rooms: Vec<String>,
+        from: i64,
+        to: i64,
+    ) -> Result<(), String> {
+        let Some(lease) = self.lease(relay_url, account) else {
+            return Ok(());
+        };
+        if scope != Some(lease.token().as_str()) {
+            return Err("message store scope changed".into());
+        }
+        self.submit(&lease, Input::Coverage { rooms, from, to });
+        Ok(())
     }
 
     /// Hands a receive to the writer of `lease`'s file. Never blocks on the
@@ -200,6 +233,22 @@ impl MessageStore {
         .unwrap_or_default()
     }
 
+    /// Whether everything received for `lease` so far is written and nothing
+    /// was lost (docs/message-sync.md#opening-a-room-from-the-store). A file
+    /// with no writer has nothing queued.
+    fn drained(&self, lease: &Lease) -> bool {
+        let answer = {
+            let Ok(inner) = self.inner.lock() else {
+                return false;
+            };
+            match inner.writers.get(&lease.stem) {
+                None => return true,
+                Some(writer) => writer.barrier(),
+            }
+        };
+        answer.is_some_and(|answer| answer.recv_timeout(DRAIN_WAIT).unwrap_or(false))
+    }
+
     pub(crate) fn room_head(
         &self,
         lease: &Lease,
@@ -208,6 +257,9 @@ impl MessageStore {
         limit: usize,
         live_at: Option<i64>,
     ) -> read::RoomHead {
+        if !self.drained(lease) {
+            return read::RoomHead::default();
+        }
         self.read(lease, "room head", |conn| {
             read::room_head(conn, room, kinds, limit, live_at)
         })
@@ -223,6 +275,9 @@ impl MessageStore {
         limit: usize,
         live_at: Option<i64>,
     ) -> read_thread::ThreadHead {
+        if !self.drained(lease) {
+            return read_thread::ThreadHead::default();
+        }
         self.read(lease, "thread head", |conn| {
             read_thread::thread_head(conn, room, root, kinds, limit, live_at)
         })
@@ -325,15 +380,20 @@ impl SocketTap {
 pub(crate) fn extend_coverage(
     relay_url: &str,
     account: &str,
+    scope: Option<&str>,
     rooms: Vec<String>,
     from: i64,
     to: i64,
-) {
-    let Some(store) = global() else { return };
-    let Some(lease) = store.lease(relay_url, account) else {
-        return;
-    };
-    store.submit(&lease, Input::Coverage { rooms, from, to });
+) -> Result<(), String> {
+    let Some(store) = global() else { return Ok(()) };
+    store.extend_coverage(relay_url, account, scope, rooms, from, to)
+}
+
+/// The file and sign-in a coverage span is meant for, taken when its live
+/// REQ reached EOSE: a span recorded after an account or server switch, or
+/// a sign-out, is refused.
+pub(crate) fn scope_token(relay_url: &str, account: &str) -> Option<String> {
+    Some(global()?.lease(relay_url, account)?.token())
 }
 
 /// The end of each room's latest coverage span begun before `before`.
@@ -362,6 +422,9 @@ pub(crate) fn certain_room_head(
     limit: usize,
     live_at: i64,
 ) -> Option<Vec<Value>> {
+    if !clock::clock_trusted() {
+        return None;
+    }
     let store = global()?;
     let lease = store.lease(relay_url, account)?;
     let head = store.room_head(&lease, room, kinds, limit, Some(live_at));
@@ -379,6 +442,9 @@ pub(crate) fn certain_thread_head(
     limit: usize,
     live_at: i64,
 ) -> Option<(Vec<Value>, Option<(i64, String)>)> {
+    if !clock::clock_trusted() {
+        return None;
+    }
     let store = global()?;
     let lease = store.lease(relay_url, account)?;
     let head = store.thread_head(&lease, room, root, kinds, limit, Some(live_at));

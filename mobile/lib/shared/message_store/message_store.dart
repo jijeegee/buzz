@@ -14,6 +14,8 @@ import 'package:sqflite/sqflite.dart';
 import 'coverage.dart' as spans;
 import 'room_head.dart';
 import 'thread_head.dart';
+
+export 'clock_check.dart' show clockTrusted, noteServerDate;
 import 'stored_event.dart';
 
 const messageStoreSchemaVersion = 1;
@@ -25,12 +27,17 @@ const _queueLimit = 4096;
 /// Rows written per transaction.
 const _rowsPerTransaction = 512;
 
+/// How long a store open waits for queued writes before asking the relay.
+const _drainWait = Duration(milliseconds: 500);
+
 const _schema = [
   '''CREATE TABLE IF NOT EXISTS events(
   id TEXT PRIMARY KEY, kind INTEGER NOT NULL, pubkey TEXT NOT NULL,
   created_at INTEGER NOT NULL, room TEXT, root TEXT,
   broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL)''',
   'CREATE INDEX IF NOT EXISTS events_room_order ON events(room, root, created_at, id)',
+  'CREATE INDEX IF NOT EXISTS events_job_rooms ON events(room) WHERE kind BETWEEN 43001 AND 43006',
+  'CREATE INDEX IF NOT EXISTS events_room_rows ON events(room, created_at DESC, id) WHERE root IS NULL OR broadcast = 1',
   'CREATE TABLE IF NOT EXISTS targets(id TEXT NOT NULL, target TEXT NOT NULL, PRIMARY KEY(target, id))',
   '''CREATE TABLE IF NOT EXISTS summaries(
   root TEXT PRIMARY KEY, room TEXT, created_at INTEGER NOT NULL, raw TEXT NOT NULL)''',
@@ -113,10 +120,42 @@ class _Writer {
     lossy = true;
     lostAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
   }
+
+  /// Inputs ever queued, and how many of them are written (or dropped).
+  int queued = 0;
+  int passed = 0;
+  final List<(int, Completer<void>)> _waiters = [];
+
+  void enqueue(Object input) {
+    queue.add(input);
+    queued++;
+  }
+
+  /// Completes once every input queued so far is written or dropped, however
+  /// much is queued after it.
+  Future<void> barrier() {
+    if (passed >= queued) return Future.value();
+    final waiter = Completer<void>();
+    _waiters.add((queued, waiter));
+    return waiter.future;
+  }
+
+  void advance(int count) {
+    passed = (passed + count).clamp(0, queued);
+    _waiters.removeWhere((entry) {
+      if (entry.$1 > passed) return false;
+      entry.$2.complete();
+      return true;
+    });
+  }
 }
 
 class MessageStore {
-  MessageStore({required this.factory, required this.directory});
+  MessageStore({
+    required this.factory,
+    required this.directory,
+    this.drainWait = _drainWait,
+  });
 
   /// Read when a file is first opened: the platform factory is not there
   /// in widget tests that never write.
@@ -124,6 +163,9 @@ class MessageStore {
 
   /// Where the files live; resolved once, lazily.
   final Future<String> Function() directory;
+
+  /// How long a store open waits for queued writes before giving up.
+  final Duration drainWait;
 
   final Map<String, _Writer> _writers = {};
   final Map<String, int> _epochs = {};
@@ -165,7 +207,7 @@ class MessageStore {
         writer.noteLoss();
         break;
       }
-      writer.queue.add(event);
+      writer.enqueue(event);
     }
     _schedule(writer);
   }
@@ -182,7 +224,7 @@ class MessageStore {
     if (rooms.isEmpty || from > to) return;
     final writer = _writerFor(lease);
     if (writer == null) return;
-    writer.queue.add(_CoverageOp(List.of(rooms), from, to));
+    writer.enqueue(_CoverageOp(List.of(rooms), from, to));
     _schedule(writer);
   }
 
@@ -211,15 +253,19 @@ class MessageStore {
     required int limit,
     required int liveAt,
   }) async {
+    if (!await _drainedFor(lease)) return null;
     final head = await _read(
       lease,
       'room head',
-      (db) => readRoomHead(
-        db,
-        room: room,
-        kinds: kinds,
-        limit: limit,
-        liveAt: liveAt,
+      // One transaction: the paged reads see one state of the file.
+      (db) => db.transaction(
+        (txn) => readRoomHead(
+          txn,
+          room: room,
+          kinds: kinds,
+          limit: limit,
+          liveAt: liveAt,
+        ),
       ),
     );
     return head != null && head.certain ? head.toResponse(room) : null;
@@ -235,19 +281,37 @@ class MessageStore {
     required int limit,
     required int liveAt,
   }) async {
+    if (!await _drainedFor(lease)) return null;
     final head = await _read(
       lease,
       'thread head',
-      (db) => readThreadHead(
-        db,
-        room: room,
-        root: root,
-        kinds: kinds,
-        limit: limit,
-        liveAt: liveAt,
+      // One transaction: the paged reads see one state of the file.
+      (db) => db.transaction(
+        (txn) => readThreadHead(
+          txn,
+          room: room,
+          root: root,
+          kinds: kinds,
+          limit: limit,
+          liveAt: liveAt,
+        ),
       ),
     );
     return head != null && head.certain ? head.toResponse(room, root) : null;
+  }
+
+  /// Whether everything received for [lease] so far is written and nothing
+  /// was lost, waiting at most [drainWait] (and not for what arrives later)
+  /// (docs/message-sync.md#opening-a-room-from-the-store).
+  Future<bool> _drainedFor(MessageStoreLease? lease) async {
+    final writer = _writerFor(lease);
+    if (writer == null || writer.stopped || writer.lossy) return false;
+    try {
+      await writer.barrier().timeout(drainWait);
+    } on TimeoutException {
+      return false;
+    }
+    return !writer.stopped && !writer.lossy;
   }
 
   /// Runs [read] on [lease]'s file; `null` when there is no file yet or it
@@ -289,6 +353,10 @@ class MessageStore {
 
   /// Completes once everything submitted so far is written (tests).
   @visibleForTesting
+  void noteLossForTest(MessageStoreLease lease) =>
+      _writerFor(lease)?.noteLoss();
+
+  @visibleForTesting
   Future<void> flushed() => Future.wait(_writers.values.map((w) => w.drained));
 
   Future<Database> _open(MessageStoreLease lease) async {
@@ -301,10 +369,13 @@ class MessageStore {
         onConfigure: (db) async {
           await db.rawQuery('PRAGMA journal_mode=WAL');
         },
-        onCreate: (db, _) async {
+        // Every open, not only the first: indexes added later reach files
+        // an older build created.
+        onOpen: (db) async {
           for (final statement in _schema) {
             await db.execute(statement);
           }
+          await spans.dropStaleCoverage(db);
         },
         onDowngrade: (db, from, to) =>
             throw StateError('message store version $from is newer than $to'),
@@ -319,10 +390,12 @@ class MessageStore {
         final head = writer.queue.first;
         final _CoverageOp? coverage;
         final List<Map<String, dynamic>> events;
+        final int taken;
         if (head is _CoverageOp) {
           writer.queue.removeAt(0);
           coverage = head;
           events = const [];
+          taken = 1;
         } else {
           coverage = null;
           var take = 0;
@@ -333,11 +406,15 @@ class MessageStore {
           }
           events = writer.queue.sublist(0, take).cast();
           writer.queue.removeRange(0, take);
+          taken = take;
         }
         final rows = events.map(classifyStoredEvent).nonNulls.toList();
         final lossy = writer.lossy;
         writer.lossy = false;
-        if (rows.isEmpty && !lossy && coverage == null) continue;
+        if (rows.isEmpty && !lossy && coverage == null) {
+          writer.advance(taken);
+          continue;
+        }
         final db = await (writer.database ??= writer.open());
         if (writer.stopped) return;
         await db.transaction((txn) async {
@@ -361,6 +438,7 @@ class MessageStore {
             );
           }
         });
+        writer.advance(taken);
       }
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
@@ -368,6 +446,8 @@ class MessageStore {
       writer.noteLoss();
     } finally {
       writer.scheduled = false;
+      // Dropped on failure or stop: nothing left to wait for.
+      if (writer.queue.isEmpty || writer.stopped) writer.advance(writer.queued);
     }
   }
 
@@ -418,7 +498,8 @@ class MessageStore {
       if (_writers.remove(stem) case final writer?)
         writer
           ..stopped = true
-          ..queue.clear(),
+          ..queue.clear()
+          ..advance(writer.queued),
     ];
     final previous = _forgetting[stem] ?? Future<void>.value();
     final done = previous.then((_) => _delete(stopping, stem));

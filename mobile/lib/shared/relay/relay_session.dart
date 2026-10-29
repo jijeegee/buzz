@@ -335,7 +335,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       throw RelayException(response.statusCode, response.body);
     }
     final decoded = jsonDecode(response.body);
-    if (decoded is List) _messageStore?.submit(storeLease, decoded);
+    _storeQueryAnswer(storeLease, decoded, response.headers['date']);
     return decoded;
   }
 

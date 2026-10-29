@@ -684,6 +684,281 @@
           "h1"
         ]
       }
+    },
+    {
+      "name": "a room that ever stored a job row (43001-43006) is never certain: live REQs do not carry them",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "r1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 6000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r4",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r3",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r5",
+          "kind": 40002,
+          "pubkey": "alice",
+          "created_at": 8000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "job",
+          "kind": 43003,
+          "pubkey": "bot",
+          "created_at": 1500,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "r5",
+          "r3",
+          "r4"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          7000,
+          "r4"
+        ]
+      }
+    },
+    {
+      "name": "a summary of a thread whose replies are all gone (reply_count 0) is left out, as the relay does",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "t1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "t2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "p1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "reply"
+            ],
+            [
+              "broadcast",
+              "1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5400,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "p1",
+              "",
+              "reply"
+            ],
+            [
+              "broadcast",
+              "1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x1",
+          "kind": 45001,
+          "pubkey": "alice",
+          "created_at": 5500,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "s-t1",
+          "kind": 39005,
+          "pubkey": "relay",
+          "created_at": 5300,
+          "tags": [
+            [
+              "e",
+              "t1"
+            ],
+            [
+              "d",
+              "t1"
+            ],
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": "{\"reply_count\": 0, \"descendant_count\": 0, \"last_reply_at\": null, \"participants\": []}"
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "b1",
+          "t2",
+          "t1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "t1"
+        ]
+      }
     }
   ]
 }
