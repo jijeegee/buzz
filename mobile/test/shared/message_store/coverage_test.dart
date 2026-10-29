@@ -225,6 +225,31 @@ void main() {
       });
     });
 
+    test('a switch during the catch-up records nothing', () async {
+      store.extendCoverage(lease, ['r1'], 9000, 10000);
+      await store.flushed();
+      var signedIn = true;
+      coverage = RoomBundleCoverage(
+        scope: () => signedIn ? (store: store, lease: lease) : null,
+        nowSecs: () => now,
+        query: (filters) async {
+          requests.add(filters.single);
+          // The account changes while the page is on its way.
+          signedIn = false;
+          return const <Map<String, dynamic>>[];
+        },
+      );
+      final done = await coverage.catchUp(
+        (store: store, lease: lease),
+        ['r1'],
+        20000,
+      );
+      expect(done, isFalse);
+      expect(requests, hasLength(1));
+      await store.flushed();
+      expect(await store.resumePoints(lease, ['r1'], _later), {'r1': 10000});
+    });
+
     test('a gap too large is left alone', () async {
       store.extendCoverage(lease, ['r1'], 9000, 10000);
       await store.flushed();

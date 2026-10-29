@@ -171,6 +171,9 @@ class RoomBundleCoverage {
     int liveAt, {
     int? captured,
   }) async {
+    // After an account or server switch the pages are stored for the new
+    // lease, so they say nothing about this one's rooms.
+    bool switched() => scope.lease != this.scope()?.lease;
     // Spans opened at liveAt (this REQ's own) may be written already.
     final points = await scope.store.resumePoints(scope.lease, roomIds, liveAt);
     final covered = roomIds.where(points.containsKey).toList();
@@ -188,6 +191,7 @@ class RoomBundleCoverage {
     int? until;
     String? beforeId;
     for (var page = 0; page < storeCatchUpMaxPages; page++) {
+      if (switched()) return false;
       final decoded = await query([
         {
           '#h': covered,
@@ -198,7 +202,7 @@ class RoomBundleCoverage {
           'before_id': ?beforeId,
         },
       ]);
-      if (decoded is! List) return false;
+      if (decoded is! List || switched()) return false;
       final terminal = decoded.isEmpty ? null : decoded.last;
       if (decoded.length < storeCatchUpPageLimit || terminal == null) {
         scope.store.extendCoverage(
