@@ -363,6 +363,34 @@ test("head refetch clears live summaries in favor of the fresh snapshot", () => 
   assert.equal(channelWindowThreadSummaries(store).get(root.id).replyCount, 4);
 });
 
+test("a live recount pushed after the refetched snapshot is kept", () => {
+  const root = event("a", 100);
+  const other = event("b", 90);
+  let store = mergeLiveThreadSummary(
+    emptyChannelWindowStore(),
+    root.id,
+    live(5, 300),
+  );
+  store = mergeLiveThreadSummary(store, other.id, live(9, 300));
+  // Assembled at 250: root's summary snapshot predates the push at 300; the
+  // other root, with no summary in the page, is judged by the page's time.
+  const refreshed = { ...page(null, [root, other], { hasMore: false }) };
+  refreshed.assembledAt = 250;
+  refreshed.rows[0].thread = summary(4);
+  refreshed.rows[0].threadAt = 250;
+  store = replaceNewestChannelWindow(store, refreshed);
+  const summaries = channelWindowThreadSummaries(store);
+  assert.equal(summaries.get(root.id).replyCount, 5);
+  assert.equal(summaries.get(other.id).replyCount, 9);
+
+  // A snapshot taken in the push's second or later wins.
+  refreshed.assembledAt = 300;
+  refreshed.rows[0].threadAt = 300;
+  store = replaceNewestChannelWindow(store, refreshed);
+  assert.deepEqual(store.liveSummaries, {});
+  assert.equal(channelWindowThreadSummaries(store).get(root.id).replyCount, 4);
+});
+
 test("live summaries survive scrollback pages and still win for their root", () => {
   const head = event("b", 200);
   const older = event("a", 100);

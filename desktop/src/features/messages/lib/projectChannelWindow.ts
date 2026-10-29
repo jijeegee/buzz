@@ -17,6 +17,11 @@ import {
 } from "./channelHeadCache";
 import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
 import { isStoredWindow, storeFollowUp } from "./storedWindows";
+import {
+  noteRoomWindowCommitted,
+  type RoomWindowListener,
+  windowFetchedLive,
+} from "./windowLiveToken";
 
 /**
  * When each room last committed a fetched window (relay, or a certain one from
@@ -74,6 +79,8 @@ export async function refreshChannelWindowMessages(
   queryClient: QueryClient,
   channelId: string,
   joinStoreFollowUp = true,
+  // The open's room listener, when this is the refresh after it went live.
+  liveListener?: RoomWindowListener,
 ) {
   const queryKey = channelMessagesKey(channelId);
   // Sequence behind persisted-head hydration. While the channel query is parked
@@ -98,10 +105,22 @@ export async function refreshChannelWindowMessages(
     ? storeFollowUp(queryClient, channelId)
     : undefined;
   if (followUp) return followUp;
-  await queryClient.invalidateQueries(
-    { queryKey, exact: true, refetchType: "active" },
-    { cancelRefetch: !seeded, throwOnError: true },
-  );
+  // The open's own request already went out with its listener live.
+  const fetching = query?.state.fetchStatus === "fetching";
+  const live =
+    liveListener !== undefined &&
+    (await windowFetchedLive(
+      queryClient,
+      channelId,
+      liveListener,
+      fetching ? query?.promise : undefined,
+    ));
+  if (!live) {
+    await queryClient.invalidateQueries(
+      { queryKey, exact: true, refetchType: "active" },
+      { cancelRefetch: !seeded, throwOnError: true },
+    );
+  }
   projectChannelWindowMessages(queryClient, channelId);
 }
 
@@ -129,6 +148,7 @@ export function reconcileFetchedChannelWindow(
     emptyChannelWindowStore();
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
+  noteRoomWindowCommitted(events);
   let commits = windowCommits.get(queryClient);
   if (!commits) {
     commits = new Map();

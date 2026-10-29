@@ -15,10 +15,7 @@ import {
 } from "@/features/messages/lib/messageQueryKeys";
 import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
 import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
-import {
-  getChannelWindowEvents,
-  getChannelWindowsEvents,
-} from "@/shared/api/channelWindow";
+import { getChannelWindowsEvents } from "@/shared/api/channelWindow";
 import { getEventsByIds } from "@/shared/api/tauri";
 import {
   getThreadWindows,
@@ -32,26 +29,10 @@ const MESSAGES_GC_MS = CONVERSATION_CACHE_GC_MS;
 const PRELOAD_RETRY = 1;
 
 /**
- * Load a room's newest page in the background so opening it paints at once.
- * Rooms that already have messages cached are not reloaded (see
- * `keepCachedChannel`). Opening still revalidates as usual.
- * Resolves to false when the room was skipped or the load failed.
- */
-export async function preloadChannelMessages(
-  queryClient: QueryClient,
-  channelId: string,
-  limitRows: number,
-): Promise<boolean> {
-  await channelHeadHydration(queryClient);
-  if (keepCachedChannel(queryClient, channelId)) return false;
-  return storeChannelPage(queryClient, channelId, () =>
-    getChannelWindowEvents(channelId, null, limitRows),
-  );
-}
-
-/**
- * Load the newest page of several rooms in one relay round trip. Resolves to
- * the rooms loaded.
+ * Load the newest page of several rooms in one relay round trip, so opening
+ * them paints at once. Rooms that already have messages cached are not
+ * reloaded (see `keepCachedChannel`); opening still revalidates as usual.
+ * Resolves to the rooms loaded.
  */
 export async function preloadChannelsMessages(
   queryClient: QueryClient,

@@ -8,6 +8,7 @@ import {
 import type {
   ChannelWindowCursor,
   ChannelWindowPage,
+  ChannelWindowRow,
   ChannelWindowThreadSummary,
   LiveThreadSummary,
 } from "./channelWindowStore";
@@ -89,10 +90,12 @@ export function parseChannelWindowResponse(
 ): ChannelWindowPage {
   const rows = events
     .filter((event) => CONTENT_KINDS.has(event.kind))
-    .map((event) => ({
-      event,
-      thread: null as ChannelWindowThreadSummary | null,
-    }));
+    .map(
+      (event): ChannelWindowRow => ({
+        event,
+        thread: null,
+      }),
+    );
   const rowById = new Map(rows.map((row) => [row.event.id, row]));
 
   for (const event of events) {
@@ -102,6 +105,7 @@ export function parseChannelWindowResponse(
     if (!row) continue;
     const payload = parseJson<SummaryPayload>(event, "thread summary");
     row.thread = mapSummary(payload);
+    row.threadAt = event.created_at;
   }
 
   const boundsEvents = events.filter(
@@ -126,5 +130,12 @@ export function parseChannelWindowResponse(
 
   // Summaries/bounds are metadata, never durable raw timeline events.
   const aux = events.filter((event) => AUX_KINDS.has(event.kind));
-  return { startCursor, rows, aux, nextCursor, hasMore: bounds.has_more };
+  return {
+    startCursor,
+    rows,
+    aux,
+    nextCursor,
+    hasMore: bounds.has_more,
+    assembledAt: boundsEvent.created_at,
+  };
 }

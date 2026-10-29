@@ -11,6 +11,8 @@ export type ChannelWindowThreadSummary = {
 export type ChannelWindowRow = {
   event: RelayEvent;
   thread: ChannelWindowThreadSummary | null;
+  /** `created_at` of the relay 39005 that carried `thread`, when known. */
+  threadAt?: number;
 };
 export type LiveThreadSummary = {
   summary: ChannelWindowThreadSummary;
@@ -23,6 +25,8 @@ export type ChannelWindowPage = {
   aux: RelayEvent[];
   nextCursor: ChannelWindowCursor | null;
   hasMore: boolean;
+  /** `created_at` of the relay's bounds overlay: when it assembled the page. */
+  assembledAt?: number;
 };
 export type ChannelWindowStore = {
   pages: ChannelWindowPage[];
@@ -170,7 +174,14 @@ export function replaceNewestChannelWindow(
     pages.flatMap((retained) => retained.rows.map((row) => row.event.id)),
   );
   const auxIds = new Set(page.aux.map((event) => event.id));
-  const pageRootIds = new Set(page.rows.map((row) => row.event.id));
+  // When the page's snapshot of each root's summary was taken (unknown: the
+  // page wins, as for every page before these times were kept).
+  const snapshotAt = new Map(
+    page.rows.map((row) => [
+      row.event.id,
+      row.threadAt ?? page.assembledAt ?? Number.POSITIVE_INFINITY,
+    ]),
+  );
   const liveOverlay = current.liveOverlay.filter((event) => !ids.has(event.id));
   const shownRootIds = new Set([
     ...(older?.rows ?? []).map((row) => row.event.id),
@@ -182,12 +193,16 @@ export function replaceNewestChannelWindow(
     liveAux: current.liveAux.filter((event) => !auxIds.has(event.id)),
     // A head refetch is the authoritative resync moment (subscribe/reconnect
     // both funnel here): live summaries for the roots it re-delivers yield to
-    // its snapshot; those for kept older rows and overlay rows stay, and the
-    // rest go with their rows.
+    // its snapshot unless pushed after it (a recount the snapshot missed);
+    // those for kept older rows and overlay rows stay, and the rest go with
+    // their rows.
     liveSummaries: Object.fromEntries(
-      Object.entries(current.liveSummaries).filter(
-        ([rootId]) => !pageRootIds.has(rootId) && shownRootIds.has(rootId),
-      ),
+      Object.entries(current.liveSummaries).filter(([rootId, live]) => {
+        const at = snapshotAt.get(rootId);
+        return at === undefined
+          ? shownRootIds.has(rootId)
+          : live.createdAt > at;
+      }),
     ),
   };
 }
@@ -232,7 +247,8 @@ export function appendOlderChannelWindow(
  * latest push is authoritative for that root — including counting *down*
  * after a delete. Retained across scrollback pages (a racing push can be
  * fresher than a just-fetched page summary) and cleared only by a head
- * refetch that re-delivers the root (`replaceNewestChannelWindow`).
+ * refetch that re-delivers the root with a summary at least as new
+ * (`replaceNewestChannelWindow`).
  */
 export function mergeLiveThreadSummary(
   current: ChannelWindowStore,

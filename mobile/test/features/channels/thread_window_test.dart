@@ -265,6 +265,41 @@ void main() {
     );
   });
 
+  group('foldLiveThreadReply', () {
+    test('a window at the newest page takes the reply, coverage unchanged', () {
+      final cached = mergeNewestThreadPage(null, _page(1, 5, hasMore: false));
+      final folded = foldLiveThreadReply(cached, _reply(6))!;
+      expect(_ids(folded), _range(1, 6));
+      expect(folded.state.newestCovered, _cursor(5));
+      expect(identical(foldLiveThreadReply(folded, _reply(6)), folded), isTrue);
+    });
+
+    test('a reply within loaded pages folds while older pages remain', () {
+      final cached = mergeNewestThreadPage(null, _page(11, 20, hasMore: true));
+      expect(_ids(foldLiveThreadReply(cached, _reply(21))!), _range(11, 21));
+      // At or past the oldest loaded reply it would sit beyond the gap.
+      expect(foldLiveThreadReply(cached, _reply(11)), isNull);
+      expect(foldLiveThreadReply(cached, _reply(5)), isNull);
+    });
+
+    test('no window, a window opened in the middle, or a non-window kind', () {
+      expect(foldLiveThreadReply(null, _reply(6)), isNull);
+      final middle = mergeMiddleThreadPages(
+        null,
+        _page(11, 30, hasMore: true),
+        ThreadWindowPage(
+          events: [for (var n = 31; n <= 50; n++) _reply(n)],
+          hasMore: true,
+          nextCursor: _cursor(50),
+          direction: WindowPageDirection.newer,
+        ),
+      );
+      expect(foldLiveThreadReply(middle, _reply(60)), isNull);
+      final cached = mergeNewestThreadPage(null, _page(1, 5, hasMore: false));
+      expect(foldLiveThreadReply(cached, _reply(6, kind: 45001)), isNull);
+    });
+  });
+
   group('middle thread window', () {
     // Opened at reply 30: older 11..30, newer 31..50 with more to come.
     ThreadWindow middle() => mergeMiddleThreadPages(

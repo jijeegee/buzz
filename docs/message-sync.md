@@ -62,6 +62,35 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   rooms only, never thread summaries. Each keeps its existing duplicate
   handling.
 
+## Open room and thread requests
+
+- **Room refresh after subscribing (desktop).** Opening a room fetches its
+  newest window; once the room's listener is set up, the client fetches it
+  again to close the gap between that window and the listener going live.
+  That second request is skipped when the open's own window request went out
+  while this open's room listener was attached and a live REQ carrying the
+  room had reached EOSE, and both are unchanged when the refresh runs: the
+  same listener, and each such REQ live since that EOSE (no CLOSED, socket
+  loss or retirement in between). A request still running is waited for; if
+  it fails or is replaced, the refresh runs. A window fetched without this
+  open's listener (the background preload, an earlier visit) never counts,
+  and the refresh after a reconnect always runs. This assumes the newest
+  window is read from the relay's primary database: the relay may serve it
+  from a read replica when `KUZZ_REPLICA_READ_MAX_AGE_MS` is set, and the
+  window request has no way to pin the primary. Mobile subscribes before it
+  fetches the room, so it asks once.
+- **Live replies in an open thread.** A reply from the relay joins the
+  thread's held replies without a request: desktop merges every one; mobile
+  folds it into the thread's window when that window shows the newest page.
+  Mobile still marks the thread stale (fetched again at once while open, or
+  when reopened) when its window was opened at a reply and has newer pages
+  to load, when the reply is not newer than the oldest loaded reply while
+  older pages remain, while the thread's own request is running or its last
+  one failed (a failed refresh after a reconnect may hide a gap), and while
+  another send in the thread awaits proof (the reply's own echo does not
+  count); and, as before, on reconnect and for a thread held under the
+  reply's parent rather than its root.
+
 ## Reconnect
 
 - Desktop re-sends each chunk unchanged and repairs the missed window over
@@ -394,9 +423,11 @@ that position.
   overlays, go with them. A new page with
   no more history proves every older row gone. Pages that do not join leave
   only the new page. Live thread summaries of kept rows stay; for roots the
-  new page delivers, desktop takes the page's summary and mobile keeps a live
-  one newer than it (as before); desktop drops the rest unless the root is a
-  live overlay row. A mobile window opened at a
+  new page delivers, both keep a live one pushed after the page's summary
+  (`created_at` of its 39005; desktop judges a root without one by the page's
+  bounds overlay, mobile keeps its live summary, and mobile also keeps those
+  received while the page was being fetched); desktop drops the rest unless
+  the root is a live overlay row. A mobile window opened at a
   message starts over at the newest page. Cases:
   `test-fixtures/channel-window-replace.json`.
 - **Limit:** a kept older row keeps what it had: if it was deleted, edited,

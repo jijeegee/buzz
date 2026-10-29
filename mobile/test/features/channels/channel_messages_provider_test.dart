@@ -940,22 +940,10 @@ void main() {
   );
 
   test(
-    'websocket fallback refetches an open thread when a reply arrives live',
+    'websocket fallback shows a live reply in an open thread without refetching',
     () async {
       final relaySession = _RecordingRelaySessionNotifier(
-        queryResults: [
-          Exception('channel window unavailable'),
-          <NostrEvent>[],
-          [
-            _event(
-              id: 'reply',
-              createdAt: 20,
-              extraTags: const [
-                ['e', 'root', '', 'reply'],
-              ],
-            ),
-          ],
-        ],
+        queryResults: [Exception('channel window unavailable'), <NostrEvent>[]],
       );
       final container = _buildContainer(relaySession);
       addTearDown(container.dispose);
@@ -968,11 +956,12 @@ void main() {
 
       const args = ThreadRepliesArgs(channelId: _channelId, rootId: 'root');
       final subscription = container.listen(
-        threadRepliesProvider(args),
+        threadRepliesWithLocalProvider(args),
         (_, _) {},
       );
       addTearDown(subscription.close);
       expect(await container.read(threadRepliesProvider(args).future), isEmpty);
+      final queries = relaySession.queryFilters.length;
 
       relaySession.emit(
         _event(
@@ -985,10 +974,13 @@ void main() {
       );
       await _pumpEventQueue();
 
+      // Folded into the thread's window, not fetched again.
+      expect(relaySession.queryFilters, hasLength(queries));
       expect(
-        (await container.read(
-          threadRepliesProvider(args).future,
-        )).map((event) => event.id),
+        container
+            .read(threadRepliesWithLocalProvider(args))
+            .value
+            ?.map((event) => event.id),
         ['reply'],
       );
     },

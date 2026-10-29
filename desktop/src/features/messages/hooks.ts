@@ -66,6 +66,7 @@ import {
   sendChannelMessage,
 } from "@/shared/api/tauri";
 import { openChannelWindowEvents } from "@/features/messages/lib/storeRoomHead";
+import { listenRoomWindow } from "@/features/messages/lib/windowLiveToken";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
@@ -778,10 +779,12 @@ export function useChannelSubscription(channel: Channel | null) {
   const [settleTimers] = useState(createSettleTimers);
   // biome-ignore lint/correctness/useExhaustiveDependencies: drop the closed room's follow-up refreshes
   useEffect(() => settleTimers.clear, [channelId, settleTimers]);
-  const refreshNewestWindow = useEffectEvent(async (join = true) => {
-    if (!channelId) return;
-    await refreshChannelWindowMessages(queryClient, channelId, join);
-  });
+  const refreshNewestWindow = useEffectEvent(
+    async (join = true, live?: () => Promise<void>) => {
+      if (!channelId) return;
+      await refreshChannelWindowMessages(queryClient, channelId, join, live);
+    },
+  );
 
   const appendMessage = useEffectEvent((event: RelayEvent) => {
     if (!channelId) return;
@@ -870,15 +873,13 @@ export function useChannelSubscription(channel: Channel | null) {
     });
 
     // The live subscription starts at "now", so it cannot close the gap
-    // between the last page snapshot and subscription establishment. Always
-    // refresh once subscription setup settles — on success because freshness
-    // alone is not proof that no relay events landed in that interval, and on
-    // failure because a hydrated channel has no other authoritative fetch:
-    // the relay window endpoint may be healthy even when the live socket is
-    // not, and the reconnect listener above re-syncs when it recovers.
+    // between the last page snapshot and subscription establishment. Refresh
+    // once setup settles, unless this open's own window request went out with
+    // its listener already live (windowLiveToken.ts); on failure always, as a
+    // hydrated channel has no other authoritative fetch.
     const refreshAfterSubscribe = (outcome: string) => {
       if (isDisposed) return;
-      void refreshNewestWindow().catch((error) => {
+      void refreshNewestWindow(true, cleanup).catch((error) => {
         if (!isDisposed) {
           console.error(
             `Failed to refresh channel window after ${outcome}`,
@@ -888,26 +889,24 @@ export function useChannelSubscription(channel: Channel | null) {
         }
       });
     };
-    relayClient
-      .subscribeToChannelLive(channelId, (event) => {
-        if (!isDisposed) {
-          appendMessage(event);
+    listenRoomWindow(relayClient, channelId, (event) => {
+      if (!isDisposed) {
+        appendMessage(event);
+      }
+    }).then(
+      (dispose) => {
+        if (isDisposed) {
+          void dispose();
+          return;
         }
-      })
-      .then(
-        (dispose) => {
-          if (isDisposed) {
-            void dispose();
-            return;
-          }
-          cleanup = dispose;
-          refreshAfterSubscribe("subscribing");
-        },
-        (error) => {
-          console.error("Failed to subscribe to channel", channelId, error);
-          refreshAfterSubscribe("subscription failure");
-        },
-      );
+        cleanup = dispose;
+        refreshAfterSubscribe("subscribing");
+      },
+      (error) => {
+        console.error("Failed to subscribe to channel", channelId, error);
+        refreshAfterSubscribe("subscription failure");
+      },
+    );
 
     return () => {
       isDisposed = true;

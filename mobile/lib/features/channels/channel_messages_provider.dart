@@ -19,6 +19,7 @@ import 'window_anchor.dart';
 
 part 'channel_messages_provider/open_at.dart';
 part 'channel_messages_provider/store_head.dart';
+part 'channel_messages_provider/thread_live.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
 // Channel history keeps partial reply evidence; full threads stay route-scoped.
@@ -427,9 +428,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   }) {
     final before = _lastKnownMessages ?? const <NostrEvent>[];
     _replyOwnership.record([event]);
-    // Invalidate the thread query independently of the selected channel-history
-    // path. The websocket fallback does not merge through the window store.
-    _invalidateThreadReplies(event);
+    // Update the thread independently of the selected channel-history path.
+    // The websocket fallback does not merge through the window store.
+    _updateThreadReplies(event, authoritative: authoritative);
     // A live summary can race the initial channel-window query. Buffer it in
     // the window store even before that query installs its first page, rather
     // than treating metadata as an ordinary websocket timeline event.
@@ -510,27 +511,22 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     state = AsyncData(flattened);
   }
 
-  void _invalidateThreadReplies(NostrEvent event) {
-    if (!EventKind.channelTimelineContentKinds.contains(event.kind)) return;
-    final thread = event.threadReference;
-    if (thread.parentId == null) return;
-
-    final rootId = thread.rootId;
-    if (rootId != null) {
-      _markThreadStale(ThreadRepliesArgs(channelId: channelId, rootId: rootId));
-    }
-    final parentId = thread.parentId;
-    if (parentId != null && parentId != rootId) {
-      _markThreadStale(
-        ThreadRepliesArgs(channelId: channelId, rootId: parentId),
-      );
-    }
-  }
-
   /// An open thread refreshes now; a closed, retained one when reopened.
   void _markThreadStale(ThreadRepliesArgs args) {
     if (!ref.exists(threadRepliesProvider(args))) return;
     ref.read(threadRepliesStaleProvider(args).notifier).markStale();
+  }
+
+  /// The window of a held thread whose last query succeeded and is not
+  /// loading, else null. A failed refresh (after a reconnect) may leave a gap
+  /// under the replies it still shows.
+  ThreadWindowNotifier? _settledThreadWindow(ThreadRepliesArgs args) {
+    final query = threadRepliesProvider(args);
+    final window = threadWindowProvider(args);
+    if (!ref.exists(query) || !ref.exists(window)) return null;
+    final state = ref.read(query);
+    final settled = !state.isLoading && !state.hasError && state.hasValue;
+    return settled ? ref.read(window.notifier) : null;
   }
 
   bool _mergeWindowEventIntoStore(NostrEvent event, {int? summaryVersion}) {

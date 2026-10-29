@@ -15,6 +15,7 @@ import {
   storeOpenLiveAt,
 } from "@/features/messages/lib/storedWindows";
 import { refreshChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
+import { sendRoomWindow } from "@/features/messages/lib/windowLiveToken";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
@@ -121,7 +122,9 @@ async function relayWindowFor(queryClient: QueryClient, channelId: string) {
   const waiting = perClient(storedAwaitingRelay, queryClient, () => new Map());
   const stored = waiting.get(channelId);
   waiting.delete(channelId);
-  const events = await deps.relayWindow(channelId);
+  const events = await sendRoomWindow(queryClient, channelId, () =>
+    deps.relayWindow(channelId),
+  );
   if (stored) {
     logStoreComparison(`room ${channelId.slice(0, 8)}`, "room", stored, events);
   }

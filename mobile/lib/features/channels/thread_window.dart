@@ -220,6 +220,30 @@ ThreadWindow mergeNewestThreadPage(
   );
 }
 
+/// Folds a reply that arrived live into a window showing the newest page,
+/// without asking the relay. Returns null when the window cannot place it: no
+/// window yet, a reply kind thread windows do not page, a window opened at a
+/// reply with newer pages still to load, or a reply no newer than the oldest
+/// loaded one while older pages remain. `newestCovered` stays as it was: only
+/// relay reads vouch for coverage, so a later newest page still decides
+/// whether it connects.
+ThreadWindow? foldLiveThreadReply(ThreadWindow? cached, NostrEvent reply) {
+  if (cached == null ||
+      cached.state.hasNewer ||
+      !threadWindowKinds.contains(reply.kind)) {
+    return null;
+  }
+  final older = cached.state.olderCursor;
+  if (cached.state.hasOlder && (older == null || !_isNewerThan(reply, older))) {
+    return null;
+  }
+  if (cached.events.any((event) => event.id == reply.id)) return cached;
+  return ThreadWindow(
+    events: _sorted([...cached.events, reply]),
+    state: cached.state,
+  );
+}
+
 /// Folds an older page (fetched from `olderCursor`) into the cached replies.
 /// Mirrors desktop's `mergeOlderThreadPage`.
 ThreadWindow mergeOlderThreadPage(ThreadWindow? cached, ThreadWindowPage page) {

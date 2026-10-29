@@ -382,6 +382,15 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   ThreadWindow foldNewest(ThreadWindowPage page) =>
       state = mergeNewestThreadPage(state, page);
 
+  /// Folds a reply that arrived live instead of refetching the thread.
+  /// Returns false when the window cannot place it ([foldLiveThreadReply]).
+  bool foldLive(NostrEvent reply) {
+    final next = foldLiveThreadReply(state, reply);
+    if (next == null) return false;
+    if (!identical(next, state)) state = next;
+    return true;
+  }
+
   /// Opens the thread at a reply ([eventId] at [createdAt]) or, without an
   /// id, after a read marker at [createdAt], with a page each way. Returns
   /// false, leaving the window as it was, when the relay lacks

@@ -8,7 +8,6 @@ globalThis.localStorage ??= { getItem: () => null };
 
 /** @type {Array<{ command: string, args: any }>} */
 const calls = [];
-let failWindow = false;
 /** @type {any[]} */
 let threadReplies = [];
 
@@ -45,10 +44,6 @@ function windowEvents(channelId) {
 globalThis.__TAURI_INTERNALS__ = {
   invoke: (command, args) => {
     calls.push({ command, args });
-    if (command === "get_channel_window") {
-      if (failWindow) return Promise.reject(new Error("relay down"));
-      return Promise.resolve(windowEvents(args.channelId));
-    }
     if (command === "get_channel_windows") {
       if (failBatch) return Promise.reject(new Error("batch down"));
       return Promise.resolve(
@@ -105,8 +100,9 @@ globalThis.__TAURI_INTERNALS__ = {
 };
 
 const { QueryClient } = await import("@tanstack/react-query");
-const { preloadChannelMessages, preloadChannelsMessages, preloadThreads } =
-  await import("./channelPreload.ts");
+const { preloadChannelsMessages, preloadThreads } = await import(
+  "./channelPreload.ts"
+);
 const { getRememberedRouteEvent } = await import("./lib/routeEventCache.ts");
 const { threadWindowStateKey } = await import("./lib/threadWindowCache.ts");
 const { hasPersistedHydratedChannel, hydrateChannelHeads } = await import(
@@ -129,7 +125,6 @@ function newClient() {
 
 beforeEach(() => {
   calls.length = 0;
-  failWindow = false;
   failBatch = false;
   inaccessible.clear();
   threadReplies = [];
@@ -140,34 +135,23 @@ afterEach(() => {
   for (const client of clients.splice(0)) client.clear();
 });
 
-test("loads a cold room's newest page and lets it paint on open", async () => {
-  const client = newClient();
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), true);
-  assert.deepEqual(
-    calls.map((call) => [call.command, call.args.limitRows]),
-    [["get_channel_window", 20]],
-  );
-  assert.equal(client.getQueryData(channelMessagesKey(ROOM)).length, 1);
-  assert.equal(hasPersistedHydratedChannel(client, ROOM), true);
-});
-
 test("background loads never rank as visits in the persisted-head cache", async () => {
   const client = newClient();
   await hydrateChannelHeads(client, {
     pubkey: "a".repeat(64),
     relayUrl: "wss://r",
   });
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), true);
+  assert.deepEqual(await preloadChannelsMessages(client, [ROOM], 20), [ROOM]);
   assert.deepEqual(
     calls.map((call) => call.command),
-    ["channel_head_cache_load", "get_channel_window"],
+    ["channel_head_cache_load", "get_channel_windows"],
   );
 });
 
 test("leaves rooms that already have messages cached alone", async () => {
   const client = newClient();
   client.setQueryData(channelMessagesKey(ROOM), []);
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
+  assert.deepEqual(await preloadChannelsMessages(client, [ROOM], 20), []);
   assert.equal(calls.length, 0);
   // Nothing to paint: an empty copy keeps the skeleton on open.
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
@@ -191,7 +175,7 @@ test("a room the relay already delivered paints that copy on open", async () => 
     liveAux: [],
     liveSummaries: {},
   });
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
+  assert.deepEqual(await preloadChannelsMessages(client, [ROOM], 20), []);
   assert.equal(calls.length, 0);
   assert.equal(hasPersistedHydratedChannel(client, ROOM), true);
 });
@@ -199,7 +183,7 @@ test("a room the relay already delivered paints that copy on open", async () => 
 test("a room seeded only by live events keeps its skeleton", async () => {
   const client = newClient();
   client.setQueryData(channelMessagesKey(ROOM), windowEvents(ROOM).slice(0, 1));
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
+  assert.deepEqual(await preloadChannelsMessages(client, [ROOM], 20), []);
   assert.equal(calls.length, 0);
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
 });
@@ -238,13 +222,6 @@ test("a failed batch loads nothing and leaves the retry to a later pass", async 
     calls.map((call) => call.command),
     ["get_channel_windows"],
   );
-  assert.equal(client.getQueryData(channelMessagesKey(ROOM)), undefined);
-});
-
-test("a failed load caches nothing and does not mark the room paintable", async () => {
-  const client = newClient();
-  failWindow = true;
-  assert.equal(await preloadChannelMessages(client, ROOM, 20), false);
   assert.equal(client.getQueryData(channelMessagesKey(ROOM)), undefined);
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
 });

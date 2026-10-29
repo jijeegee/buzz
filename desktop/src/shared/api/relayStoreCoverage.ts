@@ -149,16 +149,37 @@ export function noteStoreLiveEose(
  */
 export function storeLiveAt(roomId: string): number | null {
   let liveAt: number | null = null;
+  for (const { coverage } of storeLiveCoverage(roomId)) {
+    if (liveAt === null || coverage.liveAt < liveAt) liveAt = coverage.liveAt;
+  }
+  return liveAt;
+}
+
+export type StoreLiveCoverage = {
+  subscription: LiveSubscription;
+  coverage: NonNullable<LiveSubscription["storeCoverage"]>;
+};
+
+/**
+ * The live REQs carrying `roomId` that reached EOSE and have received
+ * everything since. Each coverage object is made at one EOSE and cleared
+ * when its REQ stops receiving (retired, CLOSED, socket lost), never reused:
+ * while `subscription.storeCoverage === coverage`, that REQ has been live
+ * without a gap since.
+ */
+export function storeLiveCoverage(roomId: string): StoreLiveCoverage[] {
+  const live: StoreLiveCoverage[] = [];
   for (const subscription of liveSubscriptions) {
     const coverage = subscription.storeCoverage;
     if (!coverage) {
       liveSubscriptions.delete(subscription);
       continue;
     }
-    if (!storeCoveredRooms(subscription.filter)?.includes(roomId)) continue;
-    if (liveAt === null || coverage.liveAt < liveAt) liveAt = coverage.liveAt;
+    if (storeCoveredRooms(subscription.filter)?.includes(roomId)) {
+      live.push({ subscription, coverage });
+    }
   }
-  return liveAt;
+  return live;
 }
 
 /** An event arrived on `generation`: the REQ was still live, so extend. */
