@@ -6,6 +6,11 @@
       "binaries/kuzz-dev-mcp",
       "binaries/git-credential-nostr",
       "binaries/kuzz"
-    ]
+    ],
+    "windows": {
+      "nsis": {
+        "template": "windows/installer.nsi"
+      }
+    }
   }
 }
