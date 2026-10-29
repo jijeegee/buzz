@@ -344,3 +344,93 @@ fn coverage_is_recorded_after_its_events_and_forgotten_when_lossy() {
     );
     assert!(store.resume_points(&lease, &rooms, later).is_empty());
 }
+
+#[test]
+fn room_head_follows_shared_fixture() {
+    let text = include_str!("../../../../test-fixtures/message-store-room-head.json");
+    let fixture: Value = serde_json::from_str(text).unwrap();
+    let room = fixture["room"].as_str().unwrap();
+    let kinds: Vec<u64> = fixture["kinds"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|kind| kind.as_u64().unwrap())
+        .collect();
+    let ids = |events: &[Value]| -> Vec<String> {
+        events
+            .iter()
+            .map(|event| event["id"].as_str().unwrap().to_owned())
+            .collect()
+    };
+    let sorted = |mut list: Vec<String>| {
+        list.sort();
+        list
+    };
+    let strings = |value: &Value| -> Vec<String> {
+        value
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap().to_owned())
+            .collect()
+    };
+    for case in fixture["cases"].as_array().unwrap() {
+        let name = case["name"].as_str().unwrap();
+        let dir = tempfile::tempdir().unwrap();
+        let store = MessageStore::new(dir.path().to_path_buf());
+        let lease = store.lease(RELAY, ACCOUNT).unwrap();
+        store.submit(
+            &lease,
+            Input::Events(case["events"].as_array().unwrap().clone()),
+        );
+        for span in case["coverage"].as_array().unwrap() {
+            store.submit(
+                &lease,
+                Input::Coverage {
+                    rooms: vec![room.to_owned()],
+                    from: span[0].as_i64().unwrap(),
+                    to: span[1].as_i64().unwrap(),
+                },
+            );
+        }
+        finish(&store);
+        let head = store.room_head(
+            &lease,
+            room,
+            &kinds,
+            case["limit"].as_u64().unwrap() as usize,
+            case["live_at"].as_i64(),
+        );
+        let expect = &case["expect"];
+        assert_eq!(head.certain, expect["certain"].as_bool().unwrap(), "{name}");
+        assert_eq!(ids(&head.rows), strings(&expect["rows"]), "{name}: rows");
+        assert_eq!(
+            sorted(ids(&head.aux)),
+            sorted(strings(&expect["aux"])),
+            "{name}: aux"
+        );
+        let roots: Vec<String> = head
+            .summaries
+            .iter()
+            .map(|summary| summary["tags"][0][1].as_str().unwrap().to_owned())
+            .collect();
+        assert_eq!(
+            sorted(roots),
+            sorted(strings(&expect["summaries"])),
+            "{name}: summaries"
+        );
+        let cursor = &expect["next_cursor"];
+        assert_eq!(
+            head.next_cursor.clone(),
+            Some((
+                cursor[0].as_i64().unwrap(),
+                cursor[1].as_str().unwrap().to_owned()
+            )),
+            "{name}: cursor"
+        );
+        let response = head.into_response(room);
+        let bounds = response.last().unwrap();
+        assert_eq!(bounds["kind"], 39006, "{name}");
+        assert_eq!(bounds["tags"][0][1], format!("{room}:head"), "{name}");
+    }
+}

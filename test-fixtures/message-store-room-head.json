@@ -1,0 +1,689 @@
+{
+  "description": "Opening a room from the device store: the newest window of top-level rows, rebuilt by the relay's channel-window rules, and whether it is certain. Shared by desktop (message_store/read.rs) and mobile (message_store/room_head.dart). Rules: docs/message-sync.md#opening-a-room-from-the-store. Each case stores `events` into an empty store for room `room-1`, records `coverage` spans, then reads the window with `kinds`, `limit` and the live REQ's EOSE time `live_at`. `aux` and `summaries` are compared as sets (summaries by root).",
+  "room": "room-1",
+  "kinds": [
+    9,
+    40002,
+    40008,
+    40099,
+    43001,
+    43002,
+    43003,
+    43004,
+    43005,
+    43006,
+    48100
+  ],
+  "cases": [
+    {
+      "name": "newest rows in relay order, ties by id ascending",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "r1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 6000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r4",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r3",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 7000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "r5",
+          "kind": 40002,
+          "pubkey": "alice",
+          "created_at": 8000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "r5",
+          "r3",
+          "r4"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          7000,
+          "r4"
+        ]
+      }
+    },
+    {
+      "name": "only top-level rows and depth-1 broadcast replies",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "t1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "t2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "p1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "reply"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b1",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "reply"
+            ],
+            [
+              "broadcast",
+              "1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "b2",
+          "kind": 9,
+          "pubkey": "bob",
+          "created_at": 5400,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "t1",
+              "",
+              "root"
+            ],
+            [
+              "e",
+              "p1",
+              "",
+              "reply"
+            ],
+            [
+              "broadcast",
+              "1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "x1",
+          "kind": 45001,
+          "pubkey": "alice",
+          "created_at": 5500,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "s-t1",
+          "kind": 39005,
+          "pubkey": "relay",
+          "created_at": 5300,
+          "tags": [
+            [
+              "e",
+              "t1"
+            ],
+            [
+              "d",
+              "t1"
+            ],
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": "{\"reply_count\": 3, \"descendant_count\": 3, \"last_reply_at\": 5300, \"participants\": [\"bob\"]}"
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "b1",
+          "t2",
+          "t1"
+        ],
+        "aux": [],
+        "summaries": [
+          "t1"
+        ],
+        "next_cursor": [
+          5000,
+          "t1"
+        ]
+      }
+    },
+    {
+      "name": "deleted rows are left out, overlays come with their rows",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "m1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m3",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5200,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "m4",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5300,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d1",
+          "kind": 9005,
+          "pubkey": "admin",
+          "created_at": 5400,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m4"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d2",
+          "kind": 5,
+          "pubkey": "mallory",
+          "created_at": 5401,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m3"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "d3",
+          "kind": 5,
+          "pubkey": "alice",
+          "created_at": 5402,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m2"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "e1",
+          "kind": 40003,
+          "pubkey": "alice",
+          "created_at": 5403,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "m3"
+            ]
+          ],
+          "content": "edited"
+        },
+        {
+          "id": "k1",
+          "kind": 7,
+          "pubkey": "bob",
+          "created_at": 5404,
+          "tags": [
+            [
+              "e",
+              "m1"
+            ]
+          ],
+          "content": "+"
+        },
+        {
+          "id": "d4",
+          "kind": 5,
+          "pubkey": "bob",
+          "created_at": 5405,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ],
+            [
+              "e",
+              "k1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "k2",
+          "kind": 7,
+          "pubkey": "bob",
+          "created_at": 5406,
+          "tags": [
+            [
+              "e",
+              "m4"
+            ]
+          ],
+          "content": "+"
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "m3",
+          "m1"
+        ],
+        "aux": [
+          "d2",
+          "e1",
+          "k1",
+          "d4"
+        ],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "m1"
+        ]
+      }
+    },
+    {
+      "name": "fewer rows than the limit is not certain",
+      "limit": 3,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "f1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "f2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "f2",
+          "f1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "f1"
+        ]
+      }
+    },
+    {
+      "name": "coverage must reach the live REQ",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          1000,
+          18000
+        ],
+        [
+          19000,
+          19500
+        ]
+      ],
+      "events": [
+        {
+          "id": "c1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "c2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "c2",
+          "c1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "c1"
+        ]
+      }
+    },
+    {
+      "name": "coverage must start a margin before the oldest row",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          4000,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "g1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "g2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": false,
+        "rows": [
+          "g2",
+          "g1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "g1"
+        ]
+      }
+    },
+    {
+      "name": "margin met exactly is certain",
+      "limit": 2,
+      "live_at": 19000,
+      "coverage": [
+        [
+          3135,
+          20000
+        ]
+      ],
+      "events": [
+        {
+          "id": "h1",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5000,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        },
+        {
+          "id": "h2",
+          "kind": 9,
+          "pubkey": "alice",
+          "created_at": 5100,
+          "tags": [
+            [
+              "h",
+              "room-1"
+            ]
+          ],
+          "content": ""
+        }
+      ],
+      "expect": {
+        "certain": true,
+        "rows": [
+          "h2",
+          "h1"
+        ],
+        "aux": [],
+        "summaries": [],
+        "next_cursor": [
+          5000,
+          "h1"
+        ]
+      }
+    }
+  ]
+}

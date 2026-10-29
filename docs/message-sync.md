@@ -131,8 +131,10 @@ per client:
 ## Message store
 
 Every room event the device receives is kept on the device, with the spans
-known complete ([Coverage](#coverage)). Nothing reads the store yet; rooms and
-threads still load from the relay.
+known complete ([Coverage](#coverage)). Opening a room reads its newest
+window from the store when it is certain
+([Opening a room from the store](#opening-a-room-from-the-store)); threads
+and older pages still load from the relay.
 
 - **One file per server and account:** `messages/<first 8 bytes of
   sha256(origin) in hex>-<account pubkey>.db`, where the origin is the relay's
@@ -191,3 +193,24 @@ Merging rules and cases: `test-fixtures/message-store-coverage.json`.
   dropped event or failed write clears every span of the file, and any later
   span starting at or before the time of the loss is not recorded.
 - **Sign-out** deletes coverage with the file.
+
+### Opening a room from the store
+
+On a room's first fetch (nothing loaded for it yet), the client reads the
+room's newest window from the store and uses it as the relay's
+channel-window answer when it is certain; otherwise it asks the relay as
+before. Later refreshes always ask the relay. Cases:
+`test-fixtures/message-store-room-head.json`.
+
+- **Rows:** timeline kinds of the channel window, top-level (no `reply`
+  marker) or depth-1 broadcast replies (parent is the root), newest 50 by
+  `created_at DESC, id ASC`. A row targeted by a removal (9005) or by its
+  author's deletion (5) is left out.
+- **With the rows:** overlays targeting them (5, 7, 9005, 40003), removals of
+  those overlays (5, 9005), the stored thread summary of each row, and one
+  `39006` bounds event (`d = <room>:head`, unsigned, `next_cursor` = the
+  oldest row) so older pages load from the relay as usual.
+- **Certain** when all of: the window has 50 rows; a live REQ carrying the
+  room reached EOSE at L on the current connection and has not been closed
+  since (the client passes L; none means not certain); and one coverage span
+  has `lo ≤ created_at of the 50th row − 1865` and `hi ≥ L`.

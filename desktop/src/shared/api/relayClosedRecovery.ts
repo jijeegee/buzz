@@ -28,6 +28,12 @@ export function clearClosedRetry(subscription: LiveSubscription) {
   subscription.closedRetryTimeout = undefined;
 }
 
+/** A live REQ stops receiving (removed or its socket gone). */
+export function retireLiveSubscription(subscription: LiveSubscription) {
+  clearClosedRetry(subscription);
+  subscription.storeCoverage = undefined;
+}
+
 export function handleRelayClosed({
   subscriptions,
   subId,
@@ -136,6 +142,8 @@ function recoverLiveSubscriptionFromClosed({
 }) {
   subscription.resolveReady?.("closed");
   subscription.resolveReady = undefined;
+  // Closed until its retry reaches EOSE again: not receiving meanwhile.
+  subscription.storeCoverage = undefined;
 
   // A deadline on a live sub is treated as retryable: resubscribe with the
   // same filter under the 1-30s backoff, which can keep retrying at the cap.

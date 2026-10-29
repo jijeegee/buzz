@@ -12,6 +12,7 @@ import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 
 import 'coverage.dart' as spans;
+import 'room_head.dart';
 import 'stored_event.dart';
 
 const messageStoreSchemaVersion = 1;
@@ -190,19 +191,58 @@ class MessageStore {
     List<String> rooms,
     int before,
   ) async {
+    if (rooms.isEmpty) return const {};
+    final points = await _read(
+      lease,
+      'resume points',
+      (db) => spans.coverageResumePoints(db, rooms, before),
+    );
+    return points ?? const {};
+  }
+
+  /// [room]'s newest window as a channel-window response, only when it is
+  /// certain (docs/message-sync.md#opening-a-room-from-the-store).
+  Future<List<Map<String, dynamic>>?> certainRoomHead(
+    MessageStoreLease? lease, {
+    required String room,
+    required List<int> kinds,
+    required int limit,
+    required int liveAt,
+  }) async {
+    final head = await _read(
+      lease,
+      'room head',
+      (db) => readRoomHead(
+        db,
+        room: room,
+        kinds: kinds,
+        limit: limit,
+        liveAt: liveAt,
+      ),
+    );
+    return head != null && head.certain ? head.toResponse(room) : null;
+  }
+
+  /// Runs [read] on [lease]'s file; `null` when there is no file yet or it
+  /// fails. Never creates the file.
+  Future<T?> _read<T>(
+    MessageStoreLease? lease,
+    String what,
+    Future<T> Function(Database db) read,
+  ) async {
     try {
       final writer = _writerFor(lease);
-      if (writer == null || rooms.isEmpty) return const {};
+      if (writer == null) return null;
       if (writer.database == null &&
           !await File(await pathOf(lease!)).exists()) {
-        return const {};
+        return null;
       }
       final db = await (writer.database ??= writer.open());
-      if (writer.stopped) return const {};
-      return await spans.coverageResumePoints(db, rooms, before);
+      if (writer.stopped) return null;
+      return await read(db);
     } catch (error) {
-      debugPrint('[MessageStore] resume points failed: $error');
-      return const {};
+      debugPrint('[MessageStore] $what failed: $error');
+      return null;
     }
   }
 

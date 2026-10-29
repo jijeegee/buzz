@@ -33,6 +33,7 @@ import 'room_bundle_coverage.dart';
 export 'relay_session_types.dart';
 
 part 'relay_session_auth.dart';
+part 'relay_session_store.dart';
 
 class _HistorySubscription {
   final List<NostrEvent> events = [];
@@ -909,6 +910,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
     final liveSub = _liveSubscriptions[subId];
     if (liveSub == null) return;
+    _storeCoverage.noteClosed(liveSub);
     final readyCompleter = liveSub.readyCompleter;
     // A deadline is terminal for one-shot history, but a live subscription
     // retries it: same filter under backoff, which can keep retrying at the

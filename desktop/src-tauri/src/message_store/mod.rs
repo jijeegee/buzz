@@ -1,9 +1,10 @@
 //! Device message store: every received room event, kept per server and
-//! account in its own SQLite file. Capture only so far — nothing reads it
-//! yet. Rules: docs/message-sync.md#message-store.
+//! account in its own SQLite file, read to open rooms when certain.
+//! Rules: docs/message-sync.md#message-store.
 
 mod classify;
 mod coverage;
+mod read;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -165,27 +166,53 @@ impl MessageStore {
             .map(|(_, account)| account.clone())
     }
 
-    pub(crate) fn resume_points(
+    /// Runs `read` on a read-only connection to `lease`'s file; `None` when
+    /// there is no file yet or it fails.
+    fn read<T>(
         &self,
         lease: &Lease,
-        rooms: &[String],
-        before: i64,
-    ) -> HashMap<String, i64> {
+        what: &str,
+        read: impl FnOnce(&rusqlite::Connection) -> rusqlite::Result<T>,
+    ) -> Option<T> {
         let path = self.path_of(lease);
         if !path.exists() {
-            return HashMap::new();
+            return None;
         }
         let flags =
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX;
         rusqlite::Connection::open_with_flags(&path, flags)
             .and_then(|conn| {
                 conn.busy_timeout(std::time::Duration::from_secs(5))?;
-                coverage::resume_points(&conn, rooms, before)
+                read(&conn)
             })
-            .unwrap_or_else(|error| {
-                eprintln!("kuzz-desktop: message store: resume points failed: {error}");
-                HashMap::new()
-            })
+            .map_err(|error| eprintln!("kuzz-desktop: message store: {what} failed: {error}"))
+            .ok()
+    }
+
+    pub(crate) fn resume_points(
+        &self,
+        lease: &Lease,
+        rooms: &[String],
+        before: i64,
+    ) -> HashMap<String, i64> {
+        self.read(lease, "resume points", |conn| {
+            coverage::resume_points(conn, rooms, before)
+        })
+        .unwrap_or_default()
+    }
+
+    pub(crate) fn room_head(
+        &self,
+        lease: &Lease,
+        room: &str,
+        kinds: &[u64],
+        limit: usize,
+        live_at: Option<i64>,
+    ) -> read::RoomHead {
+        self.read(lease, "room head", |conn| {
+            read::room_head(conn, room, kinds, limit, live_at)
+        })
+        .unwrap_or_default()
     }
 
     /// Ends every lease of `account`, stops its writers and deletes its files.
@@ -315,6 +342,22 @@ pub(crate) fn resume_points(
         return HashMap::new();
     };
     store.resume_points(&lease, rooms, before)
+}
+
+/// `room`'s newest window from the store as a channel-window response, only
+/// when it is certain (docs/message-sync.md#opening-a-room-from-the-store).
+pub(crate) fn certain_room_head(
+    relay_url: &str,
+    account: &str,
+    room: &str,
+    kinds: &[u64],
+    limit: usize,
+    live_at: i64,
+) -> Option<Vec<Value>> {
+    let store = global()?;
+    let lease = store.lease(relay_url, account)?;
+    let head = store.room_head(&lease, room, kinds, limit, Some(live_at));
+    head.certain.then(|| head.into_response(room))
 }
 
 /// The scope of a `/query` to `api_base_url` as `account`, taken before it

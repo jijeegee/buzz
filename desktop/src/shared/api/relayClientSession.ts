@@ -25,7 +25,7 @@ import {
   buildGlobalStreamFilter,
 } from "@/shared/api/relayChannelFilters";
 import {
-  clearClosedRetry,
+  retireLiveSubscription,
   flushEvents,
   handleRelayClosed,
   handleSubscriptionEose,
@@ -178,7 +178,7 @@ export class RelayClient {
         window.clearTimeout(sub.timeout);
         sub.reject(error);
       } else {
-        clearClosedRetry(sub);
+        retireLiveSubscription(sub);
         sub.onRemoved?.();
       }
       this.subscriptions.delete(subId);
@@ -652,7 +652,7 @@ export class RelayClient {
       if (this.subscriptions.get(subId) !== subscription) return;
       this.subscriptions.delete(subId);
       this.liveReqDrain.cancel(subId);
-      clearClosedRetry(subscription);
+      retireLiveSubscription(subscription);
       onRemoved();
       // Workspace teardown closes its socket; never send on its replacement.
       if (epoch === this.sessionEpoch) await this.closeSubscription(subId);
@@ -1185,7 +1185,7 @@ export class RelayClient {
       }
       subscription.resolveReady?.("closed");
       subscription.resolveReady = undefined;
-      clearClosedRetry(subscription);
+      retireLiveSubscription(subscription);
     }
     for (const [eventId, pendingEvent] of this.pendingEvents) {
       window.clearTimeout(pendingEvent.timeout);

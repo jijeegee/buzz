@@ -789,6 +789,7 @@ pub fn run() {
             get_channel_reconnect_repair,
             message_store_resume_points,
             message_store_extend_coverage,
+            message_store_room_head,
             get_channel_window,
             get_channel_windows,
             get_thread_windows,

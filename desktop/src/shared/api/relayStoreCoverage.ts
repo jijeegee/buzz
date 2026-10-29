@@ -9,7 +9,10 @@ import {
   type RelaySubscription,
   type RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
-import { isRateLimited, waitForRateLimit } from "@/shared/api/relayRateLimitGate";
+import {
+  isRateLimited,
+  waitForRateLimit,
+} from "@/shared/api/relayRateLimitGate";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
@@ -57,6 +60,9 @@ const defaultDeps: CoverageDeps = {
 
 let deps = defaultDeps;
 
+/** Covered live REQs that reached EOSE; retired ones drop their coverage. */
+const liveSubscriptions = new Set<LiveSubscription>();
+
 /** Replace the store bridge (tests). Returns the restore function. */
 export function setStoreCoverageDeps(next: Partial<CoverageDeps>) {
   const previous = deps;
@@ -97,10 +103,29 @@ export function noteStoreLiveEose(
   if (!roomIds) return;
   const liveAt = deps.nowSecs();
   subscription.storeCoverage = { generation, liveAt, markedAt: liveAt };
+  liveSubscriptions.add(subscription);
   record(roomIds, liveAt, liveAt);
   if (subscription.reconnectReplay?.generation !== generation) {
     void catchUpFromStore(roomIds, liveAt).catch(() => {});
   }
+}
+
+/**
+ * When the live REQ carrying `roomId` reached EOSE, if one is receiving now:
+ * from then on the store has every event of the room as it arrives.
+ */
+export function storeLiveAt(roomId: string): number | null {
+  let liveAt: number | null = null;
+  for (const subscription of liveSubscriptions) {
+    const coverage = subscription.storeCoverage;
+    if (!coverage) {
+      liveSubscriptions.delete(subscription);
+      continue;
+    }
+    if (!storeCoveredRooms(subscription.filter)?.includes(roomId)) continue;
+    if (liveAt === null || coverage.liveAt < liveAt) liveAt = coverage.liveAt;
+  }
+  return liveAt;
 }
 
 /** An event arrived on `generation`: the REQ was still live, so extend. */

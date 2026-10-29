@@ -1,5 +1,5 @@
-//! Coverage of the device message store for the active account's relay
-//! (docs/message-sync.md#coverage).
+//! Coverage of the device message store for the active account's relay, and
+//! opening rooms from it (docs/message-sync.md#coverage).
 
 use std::collections::HashMap;
 
@@ -37,3 +37,30 @@ pub fn message_store_extend_coverage(
     crate::message_store::extend_coverage(&relay, &account, room_ids, from, to);
     Ok(())
 }
+
+/// `room_id`'s newest window from the store, in the shape of
+/// `get_channel_window`, or `None` unless it is certain. `live_at` is when
+/// the room's live REQ reached EOSE on the current connection.
+#[tauri::command]
+pub fn message_store_room_head(
+    room_id: String,
+    live_at: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<Vec<serde_json::Value>>, String> {
+    let (relay, account) = scope(&state)?;
+    let kinds: Vec<u64> = super::channel_window::TIMELINE_KINDS
+        .iter()
+        .map(|&kind| u64::from(kind))
+        .collect();
+    Ok(crate::message_store::certain_room_head(
+        &relay,
+        &account,
+        &room_id,
+        &kinds,
+        ROOM_HEAD_ROWS,
+        live_at,
+    ))
+}
+
+/// Rows of a room's first window, as `get_channel_window` asks by default.
+const ROOM_HEAD_ROWS: usize = 50;

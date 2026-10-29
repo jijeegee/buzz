@@ -65,7 +65,7 @@ import {
   removeReaction,
   sendChannelMessage,
 } from "@/shared/api/tauri";
-import { getChannelWindowEvents } from "@/shared/api/channelWindow";
+import { openChannelWindowEvents } from "@/features/messages/lib/storeRoomHead";
 import type { Channel, Identity, RelayEvent } from "@/shared/api/types";
 // Same .mjs the renderer uses, so the cache-update projection can't drift
 // from the on-render overlay.
@@ -757,7 +757,7 @@ export function useChannelMessagesQuery(channel: Channel | null) {
       }
       const previousMessages =
         queryClient.getQueryData<RelayEvent[]>(queryKey) ?? [];
-      const events = await getChannelWindowEvents(channel.id);
+      const events = await openChannelWindowEvents(queryClient, channel.id);
       return reconcileFetchedChannelWindow(
         queryClient,
         channel.id,

@@ -17,6 +17,7 @@ import 'timeline_message.dart';
 import 'window_anchor.dart';
 
 part 'channel_messages_provider/open_at.dart';
+part 'channel_messages_provider/store_head.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
 // Channel history keeps partial reply evidence; full threads stay route-scoped.
@@ -294,7 +295,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     try {
       _initialWindowQueryInFlight = true;
       final pageVersion = ++_threadQuerySerial;
-      final response = await session.queryRelay([_channelWindowFilter(null)]);
+      final response = await _openWindowResponse(session);
       _relayHistoryArrived = true;
       final page = parseChannelWindowResponse(response, channelId, null);
       _initialWindowQueryInFlight = false;

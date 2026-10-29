@@ -7,7 +7,7 @@ use std::collections::HashMap;
 use rusqlite::{params, Connection, OptionalExtension};
 
 /// The stream a room's own timeline is recorded under.
-const ROOM_STREAM: &str = "room";
+pub(crate) const ROOM_STREAM: &str = "room";
 
 /// `segments` (sorted by lo) after the span `[from, to]` is known complete:
 /// segments it overlaps or touches merge into it.

@@ -83,6 +83,17 @@ class RoomBundleCoverage {
     );
   }
 
+  /// When [subscription] reached EOSE on connection [generation], if it has
+  /// been receiving every event of its rooms since.
+  int? liveAtOf(Object subscription, int generation) {
+    final live = _live[subscription];
+    return live != null && live.generation == generation ? live.liveAt : null;
+  }
+
+  /// The relay closed [subscription]: not receiving until its retry reaches
+  /// EOSE again.
+  void noteClosed(Object subscription) => _live[subscription] = null;
+
   /// An event arrived on [generation]: the REQ was still live, so extend.
   void noteEvent(Object subscription, NostrFilter filter, int generation) {
     final live = _live[subscription];

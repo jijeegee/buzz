@@ -2,12 +2,14 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
+import { retireLiveSubscription } from "./relayClosedRecovery.ts";
 import { RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS } from "./relayReconnectReplay.ts";
 import {
   catchUpFromStore,
   noteStoreLiveEose,
   noteStoreLiveEvent,
   setStoreCoverageDeps,
+  storeLiveAt,
   STORE_CATCH_UP_MAX_PAGES,
   STORE_CATCH_UP_PAGE_LIMIT,
   STORE_RESUME_LOOKBACK_SECS,
@@ -34,9 +36,9 @@ function harness({ now = 10_000, points = {}, pages = [] } = {}) {
   return { state, restore };
 }
 
-const bundle = () => ({
+const bundle = (rooms = ["r1", "r2"]) => ({
   mode: "live",
-  filter: { kinds: [...CHANNEL_EVENT_KINDS], "#h": ["r1", "r2"], limit: 0 },
+  filter: { kinds: [...CHANNEL_EVENT_KINDS], "#h": rooms, limit: 0 },
   onEvent: () => {},
 });
 
@@ -47,7 +49,10 @@ const page = (count, createdAt) =>
   }));
 
 test("resume margin matches reconnect repair", () => {
-  assert.equal(STORE_RESUME_LOOKBACK_SECS, RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS);
+  assert.equal(
+    STORE_RESUME_LOOKBACK_SECS,
+    RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS,
+  );
 });
 
 test("EOSE opens coverage and catches up stored rooms only", async () => {
@@ -117,6 +122,25 @@ test("a gap older than a week is left to opening the room", async () => {
   try {
     assert.equal(await catchUpFromStore(["r1"], 10 * 24 * 60 * 60), false);
     assert.equal(state.requests.length, 0);
+  } finally {
+    restore();
+  }
+});
+
+test("a room is live from its REQ's EOSE until the REQ is retired", () => {
+  const { state, restore } = harness();
+  try {
+    const subscription = bundle(["x1", "x2"]);
+    assert.equal(storeLiveAt("x1"), null);
+    noteStoreLiveEose(subscription, 1);
+    assert.equal(storeLiveAt("x1"), 10_000);
+    assert.equal(storeLiveAt("x3"), null);
+    // A second chunk carrying the room since later does not move it.
+    state.now += 50;
+    noteStoreLiveEose(bundle(["x1"]), 1);
+    assert.equal(storeLiveAt("x1"), 10_000);
+    retireLiveSubscription(subscription);
+    assert.equal(storeLiveAt("x1"), 10_050);
   } finally {
     restore();
   }
