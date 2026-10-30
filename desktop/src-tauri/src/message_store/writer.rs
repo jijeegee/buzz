@@ -20,6 +20,7 @@ use super::classify::{classify, Filed};
 use super::coverage;
 use super::head::{self, HeadSpan};
 use super::purge;
+use super::snapshot;
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
 /// Each input queued for a file takes the next number of that file's
@@ -59,6 +60,8 @@ pub(crate) enum Input {
     /// The head spans read from the answer to the request marked
     /// `captured`; empty only releases the mark.
     Heads { heads: Vec<HeadSpan>, captured: u64 },
+    /// Replace launch snapshot `kind` (docs/message-sync.md#launch-snapshots).
+    Snapshot { kind: String, blob: String },
 }
 
 #[cfg(test)]
@@ -97,7 +100,8 @@ fn rows_of(input: Input) -> (Vec<Filed>, Option<Arc<str>>) {
         | Input::ForgetExcept { .. }
         | Input::Barrier(_)
         | Input::HeadSent { .. }
-        | Input::Heads { .. } => (Vec::new(), None),
+        | Input::Heads { .. }
+        | Input::Snapshot { .. } => (Vec::new(), None),
     }
 }
 
@@ -152,6 +156,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
     }
     conn.execute_batch(SCHEMA)
         .and_then(|()| conn.execute_batch(purge::MARKS_SCHEMA))
+        .and_then(|()| conn.execute_batch(snapshot::SNAPSHOT_SCHEMA))
         .map_err(|error| error.to_string())?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(|error| error.to_string())?;
@@ -297,6 +302,12 @@ impl Writer {
         sent
     }
 
+    /// Queues `input` when there is room, without marking the file lossy
+    /// when there is not (for inputs that are not receives).
+    pub(crate) fn offer(&self, input: Input) -> bool {
+        self.sender.is_some() && self.send(input)
+    }
+
     /// Asks to be told once everything queued so far is written. `None` when
     /// the writer is gone or full, or something was lost: a read then cannot
     /// vouch for what was received. Wait on the answer without holding the
@@ -424,6 +435,11 @@ fn run(
                 }
                 Input::ForgetExcept { .. } => {}
                 Input::HeadSent { rooms } => marks.open(sequence, rooms),
+                Input::Snapshot { kind, blob } => {
+                    if let Err(error) = snapshot::write(&conn, &kind, &blob) {
+                        eprintln!("kuzz-desktop: message store: snapshot failed: {error}");
+                    }
+                }
                 Input::Heads { heads, captured } => {
                     let lost = flush(&mut conn, &mut rows, &lossy);
                     // Unknown marks (a plain capture, dropped) record nothing.

@@ -14,6 +14,9 @@ mod paint_tests;
 mod purge;
 mod read;
 mod read_thread;
+mod snapshot;
+#[cfg(test)]
+mod snapshot_tests;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -33,6 +36,7 @@ use sha2::{Digest, Sha256};
 pub(crate) use classify::{classify, Filed};
 pub(crate) use head::HeadSpan;
 pub(crate) use paint::{paint_room_head, paint_thread_head};
+pub(crate) use snapshot::{read_snapshot, write_snapshot};
 use writer::{Input, Writer};
 
 static STORE: OnceLock<MessageStore> = OnceLock::new();

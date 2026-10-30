@@ -79,7 +79,7 @@ import { seedProjectSnapshot } from "@/features/projects/projectSnapshot";
 import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProvider";
 import { OwnerDevicesProvider } from "@/shared/api/OwnerDevicesContext";
 import { createKuzzQueryClient } from "@/shared/api/queryClient";
-import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
+import { hydrateFromDevice } from "@/app/hydrateFromDevice";
 import { setStoreScope } from "@/features/messages/lib/paintCoverage";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { isSharedIdentity as isSharedIdentityCmd } from "@/shared/api/tauri";
@@ -263,7 +263,7 @@ function CommunityQueryProvider({
     if (pubkey && relayUrl) {
       seedProjectSnapshot(client, { pubkey, relayUrl });
       setStoreScope(client, { pubkey, relayUrl });
-      void hydrateChannelHeads(client, { pubkey, relayUrl });
+      void hydrateFromDevice(client, { pubkey, relayUrl });
     }
     return client;
   });

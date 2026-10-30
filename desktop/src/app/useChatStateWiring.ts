@@ -13,6 +13,10 @@ import {
 } from "@/features/chats/chatListState";
 import { patchChatLists } from "@/features/chats/chatListSync";
 import {
+  keptRowsWithLocalReads,
+  useShownChatRows,
+} from "@/features/chats/chatRowsSnapshot";
+import {
   chatStateCapabilityKey,
   getChatStateCapability,
   setChatStateCapability,
@@ -90,7 +94,9 @@ function applyOwnWrite(queryClient: QueryClient, written: ChatStateWritten) {
  * server rows and this device's reads, unread marks and follow choices are
  * mirrored to it, bound to the account (relay + pubkey) they were made under.
  * Otherwise (off, unknown) nothing changes: `serverChats` is undefined and
- * no writes are sent. Local read markers (30078), thread follows and thread
+ * no writes are sent, except that until the capability is first known the
+ * rows kept from the last run are drawn (chatRowsSnapshot); "off" drops
+ * them. Local read markers (30078), thread follows and thread
  * mutes keep working unchanged.
  *
  * This hook re-renders only when the capability or the server rows change;
@@ -297,15 +303,24 @@ export function useChatStateWiring({
     [threadUnreadGuard],
   );
 
-  const on = capability === "on";
-  const shownRows = on ? rows : undefined;
+  // Until the relay's first page this run, the rows kept from last time.
+  const shownRows = useShownChatRows(capability, rows, pubkey, relayUrl);
+  // Kept rows: this device's reads over their counts; no row actions yet.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion signals that local read positions moved
+  const listedRows = React.useMemo(
+    () =>
+      shownRows && shownRows !== rows
+        ? keptRowsWithLocalReads(shownRows, getOwnReadAt)
+        : shownRows,
+    [getOwnReadAt, readStateVersion, rows, shownRows],
+  );
   const threadSearchBinding = React.useMemo(
     () => (pubkey && relayUrl ? { pubkey, relayUrl } : undefined),
     [pubkey, relayUrl],
   );
   const serverChats = React.useMemo<ServerChats | undefined>(
     () =>
-      shownRows
+      listedRows
         ? {
             forcedUnreadChannelIds,
             getReadAt: getOwnReadAt,
@@ -313,7 +328,7 @@ export function useChatStateWiring({
             onOpenThread: openThread,
             pinnedThreadIds,
             readStateVersion,
-            rows: shownRows,
+            rows: listedRows,
             threadSearchBinding,
           }
         : undefined,
@@ -323,8 +338,8 @@ export function useChatStateWiring({
       mutedRootIds,
       openThread,
       pinnedThreadIds,
+      listedRows,
       readStateVersion,
-      shownRows,
       threadSearchBinding,
     ],
   );

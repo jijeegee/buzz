@@ -1,7 +1,7 @@
 import * as React from "react";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { useCommunities } from "@/features/communities/useCommunities";
+import { storeScope } from "@/features/messages/lib/paintCoverage";
 import {
   usersBatchEntryKey,
   type UsersBatchEntry,
@@ -26,8 +26,6 @@ export function useNotificationSenderName(): (
   pubkey: string | undefined,
 ) => string | null {
   const queryClient = useQueryClient();
-  const { activeCommunity } = useCommunities();
-  const relayUrl = activeCommunity?.relayUrl ?? "";
 
   return React.useCallback(
     (pubkey) => {
@@ -45,9 +43,8 @@ export function useNotificationSenderName(): (
         return senderNameFromSummary(entry.summary);
       }
 
-      const cached = relayUrl
-        ? readCachedUserLabels(relayUrl, [normalized])
-        : undefined;
+      const scope = storeScope(queryClient);
+      const cached = readCachedUserLabels(scope, [normalized]);
       const cachedSummary = cached?.profiles[normalized];
       if (cachedSummary) {
         return senderNameFromSummary(cachedSummary);
@@ -62,15 +59,13 @@ export function useNotificationSenderName(): (
               fetchedAt: Date.now(),
             },
           );
-          if (relayUrl) {
-            writeCachedUserLabels(relayUrl, fresh.profiles, fresh.missing);
-          }
+          writeCachedUserLabels(scope, fresh.profiles, fresh.missing);
         })
         .catch(() => {
           // Warm-up is best effort; the toast already shipped with fallback copy.
         });
       return null;
     },
-    [queryClient, relayUrl],
+    [queryClient],
   );
 }

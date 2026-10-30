@@ -14,7 +14,7 @@ fn scope(state: &AppState) -> Result<(String, String), String> {
 
 /// Store reads run on a blocking thread: a sync command would hold the main
 /// thread (and every other IPC call) while SQLite reads.
-async fn off_main<T: Send + 'static>(
+pub(super) async fn off_main<T: Send + 'static>(
     read: impl FnOnce() -> T + Send + 'static,
 ) -> Result<T, String> {
     tokio::task::spawn_blocking(read)
@@ -111,7 +111,7 @@ pub async fn message_store_room_head(
 /// The store scope a paint reads, only while it is still the one the caller
 /// opened the room under (`account`, `relay_url`): a paint asked before an
 /// account or community switch reads nothing rather than the new scope.
-fn paint_scope(
+pub(super) fn paint_scope(
     state: &AppState,
     account: &str,
     relay_url: &str,

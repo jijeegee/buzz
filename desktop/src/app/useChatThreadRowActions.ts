@@ -2,6 +2,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import * as React from "react";
 
 import { CHAT_LIST_QUERY_KEY } from "@/features/chats/chatListState";
+import { isKeptChatRows } from "@/features/chats/chatRowsSnapshot";
 import { useThreadCloseToggle } from "@/features/messages/useThreadCloseToggle";
 import type { ServerChats } from "@/features/sidebar/ui/ChatList";
 import type { ChatThreadRowActions } from "@/features/sidebar/ui/ChatThreadRowMenu";
@@ -10,6 +11,7 @@ import type { ChatThreadRowActions } from "@/features/sidebar/ui/ChatThreadRowMe
  * The server chats list with its thread rows' menu attached. Thread rows
  * exist only while the relay keeps chat state, so every action here may use
  * it; each one is the same action the thread header or message menu runs.
+ * Rows kept from the last run, drawn before the relay answered, get no menu.
  */
 export function useChatThreadRowActions({
   beforeExplicitThreadRead,
@@ -65,7 +67,14 @@ export function useChatThreadRowActions({
   );
   return React.useMemo(
     () =>
-      serverChats ? { ...serverChats, threadActions: actions } : undefined,
+      serverChats
+        ? {
+            ...serverChats,
+            threadActions: isKeptChatRows(serverChats.rows)
+              ? undefined
+              : actions,
+          }
+        : undefined,
     [actions, serverChats],
   );
 }

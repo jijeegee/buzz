@@ -19,7 +19,10 @@ import {
 } from "@/features/notifications/lib/sound";
 import { buildEventNotificationTarget } from "@/features/notifications/lib/target";
 import { t } from "@/shared/i18n";
-import { readCachedUserLabels } from "@/features/profile/lib/userLabelStorage";
+import {
+  hydrateWatchedUserLabels,
+  readCachedUserLabels,
+} from "@/features/profile/lib/userLabelStorage";
 import { ReadOnlyRelayClient } from "@/shared/api/readOnlyRelayClient";
 import { checkRemoteSignOut } from "@/shared/api/remoteSignOut";
 import { accountAuthFrame } from "@/shared/api/relayAuthFrame";
@@ -36,11 +39,16 @@ import { relayOrigin, type WatchTarget, watchTargets } from "./targets";
 import { InactiveAccountWatcher, type WatcherDeps } from "./watcher";
 import { watchedUnreadStore } from "./store";
 
-function senderName(relayUrl: string, pubkey: string): string | null {
+/** From labels this account kept (read when it was last active this run). */
+function senderName(
+  relayUrl: string,
+  account: string,
+  pubkey: string,
+): string | null {
   const normalized = pubkey.toLowerCase();
-  const summary = readCachedUserLabels(relayUrl, [normalized])?.profiles[
-    normalized
-  ];
+  const summary = readCachedUserLabels({ relayUrl, pubkey: account }, [
+    normalized,
+  ])?.profiles[normalized];
   return summary ? senderNameFromSummary(summary) : null;
 }
 
@@ -66,7 +74,7 @@ function watcherDeps(target: WatchTarget): WatcherDeps {
       const settings = readStoredNotificationSettings(pubkey);
       const { title, body } = formatMessageNotification({
         source: slot,
-        senderName: senderName(target.relayUrl, event.pubkey),
+        senderName: senderName(target.relayUrl, pubkey, event.pubkey),
         channelName: channel.name ?? null,
         content: event.content,
       });
@@ -170,6 +178,11 @@ export function useInactiveAccountWatch(enabled: boolean): void {
         watcherDeps(target),
       );
       running.set(target.key, watcher);
+      // Kept names for its notifications (read once per account and run).
+      void hydrateWatchedUserLabels({
+        relayUrl: target.relayUrl,
+        pubkey: target.account.pubkey,
+      });
       watcher.start();
     }
   }, [targets]);

@@ -39,6 +39,7 @@ import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audi
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
+import { handleSnapshotMockCommand } from "./e2eBridgeSnapshots.ts";
 import {
   createMockSubscription,
   hasMockSubscription,
@@ -15887,6 +15888,8 @@ export function maybeInstallE2eTauriMocks() {
       default: {
         const goals = handleGoalsMockCommand(command, payload);
         if (goals) return goals.value;
+        const snapshot = handleSnapshotMockCommand(command, payload);
+        if (snapshot) return snapshot.value;
         throw new Error(`Unsupported mocked Tauri command: ${command}`);
       }
     }

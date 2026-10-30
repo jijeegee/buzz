@@ -4,6 +4,7 @@ import { type QueryClient, useQueryClient } from "@tanstack/react-query";
 import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlightNavigation";
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
+import { useChannelFromRow } from "@/app/routes/useChannelFromRow";
 import { channelFromAgentChatRow } from "@/features/agents/ownerView/agentChatList";
 import type { OwnerViewChat } from "@/features/agents/ownerView/OwnerViewLayout";
 import { OwnerViewBar } from "@/features/agents/ownerView/OwnerViewBar";
@@ -187,10 +188,21 @@ export function ChannelRouteScreen({
       : null,
   );
   const referencedChannel = reference.channel;
+  const openableReference = isChannelReferenceOpenable(referencedChannel)
+    ? referencedChannel
+    : null;
+  // Not in the list (yet): open from its Chats row rather than wait.
+  const rowChannel = useChannelFromRow({
+    channelId,
+    enabled:
+      !memberChannel &&
+      !ownerViewChannel &&
+      !openableReference &&
+      !isHuddleTranscript,
+    listLoaded: channelsQuery.isSuccess,
+  });
   const activeChannel =
-    ownerViewChannel ??
-    memberChannel ??
-    (isChannelReferenceOpenable(referencedChannel) ? referencedChannel : null);
+    ownerViewChannel ?? memberChannel ?? openableReference ?? rowChannel;
   const enumeratedProjectHome = findProjectHomeByChannelId(
     channelId,
     projectsQuery.data ?? [],

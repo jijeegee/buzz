@@ -42,9 +42,12 @@ import {
   resolveAvatarDataUrl,
 } from "@/features/profile/lib/selfProfileStorage";
 import {
+  getUserLabelsVersion,
   resolveUserLabelPlaceholderData,
+  subscribeUserLabels,
   writeCachedUserLabels,
 } from "@/features/profile/lib/userLabelStorage";
+import { storeScope } from "@/features/messages/lib/paintCoverage";
 import { createUsersBatchLoader } from "@/features/profile/lib/usersBatchLoader";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { updateCachedChannelMemberDisplayName } from "@/features/channels/channelMemberProfileCache";
@@ -383,8 +386,11 @@ export function useUsersBatchQuery(
   },
 ) {
   const queryClient = useQueryClient();
-  const { activeCommunity } = useCommunities();
-  const relayUrl = activeCommunity?.relayUrl ?? "";
+  // Kept labels are this account's on this server (the community's cache).
+  const labelScope = storeScope(queryClient);
+  // Re-render once the kept labels are read from the device at launch, so
+  // the placeholder below picks them up.
+  React.useSyncExternalStore(subscribeUserLabels, getUserLabelsVersion);
   const normalizedPubkeys = [
     ...new Set(pubkeys.map((pubkey) => pubkey.toLowerCase())),
   ]
@@ -422,9 +428,7 @@ export function useUsersBatchQuery(
         const loader = usersBatchLoaderFor(queryClient);
         const fresh = await loader(toFetch);
         loader.assertActive();
-        if (relayUrl) {
-          writeCachedUserLabels(relayUrl, fresh.profiles, fresh.missing);
-        }
+        writeCachedUserLabels(labelScope, fresh.profiles, fresh.missing);
         for (const pubkey of toFetch) {
           const summary = fresh.profiles[pubkey] ?? null;
           queryClient.setQueryData<UsersBatchEntry>(
@@ -446,7 +450,11 @@ export function useUsersBatchQuery(
     placeholderData: (previousData) =>
       knownProfilesPlaceholder(
         queryClient,
-        resolveUserLabelPlaceholderData(undefined, relayUrl, normalizedPubkeys),
+        resolveUserLabelPlaceholderData(
+          undefined,
+          labelScope,
+          normalizedPubkeys,
+        ),
         previousData,
         normalizedPubkeys,
       ),
