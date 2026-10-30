@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:kuzz/features/sign_in/token_session_gate.dart';
 import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/auth/default_community.dart';
@@ -90,6 +92,55 @@ void main() {
     );
     await frames(tester);
   }
+
+  testWidgets('a saved sign-in of the shown account draws the app before '
+      'the rotation, with no banner; a refused rotation signs out', (
+    tester,
+  ) async {
+    await pump(
+      tester,
+      arrange: () {
+        tokens.data[_origin] = StoredTokenSession(
+          refreshToken: 'bzr_1',
+          principalId: _principal,
+        );
+        server.refreshResponses.add(
+          (_) => FakeAuthServer.authError(401, 'refresh_reused'),
+        );
+      },
+    );
+    // The refresh was refused at once: signed out, sign-in page.
+    expect(
+      container.read(tokenSessionProvider(_origin)).status,
+      TokenSessionStatus.signedOut,
+    );
+    expect(find.byKey(const Key('gated-home')), findsNothing);
+
+    tokens.data[_origin] = StoredTokenSession(
+      refreshToken: 'bzr_1',
+      principalId: _principal,
+    );
+    server.refreshResponses.add(
+      (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+    );
+    final persist = tokens.writeGate = Completer<void>();
+    container.invalidate(tokenSessionControllerProvider(_origin));
+    await frames(tester);
+    expect(
+      container.read(tokenSessionProvider(_origin)).status,
+      TokenSessionStatus.resuming,
+    );
+    expect(find.byKey(const Key('gated-home')), findsOneWidget);
+    expect(find.byKey(const Key('token-session-banner')), findsNothing);
+
+    persist.complete();
+    await frames(tester);
+    expect(
+      container.read(tokenSessionProvider(_origin)).status,
+      TokenSessionStatus.signedIn,
+    );
+    expect(find.byKey(const Key('gated-home')), findsOneWidget);
+  });
 
   testWidgets('a stalled community without a saved sign-in can be removed', (
     tester,

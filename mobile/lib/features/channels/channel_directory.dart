@@ -105,10 +105,11 @@ final _cutShort = Expando<bool>('cutShort');
 /// short or names no room (whatever is shown joined). Only under a store
 /// capture taken before that fetch for [myPk] that is still current. Then
 /// learns the relay's signing key, so its notices can forget rooms
-/// (docs/message-sync.md#forgetting-a-room).
+/// (docs/message-sync.md#forgetting-a-room). Queued off the startup path
+/// ([DeferredStoreWork]); the capture still decides what may be forgotten,
+/// and rooms shown as joined when it runs are kept as well.
 void _forgetStoredRoomsMissingFrom(
   Ref ref,
-  RelaySessionNotifier session,
   StoreCapture? scope,
   String myPk,
   List<NostrEvent> memberships,
@@ -119,13 +120,24 @@ void _forgetStoredRoomsMissingFrom(
     return;
   }
   if (scope?.lease.account != myPk.toLowerCase()) return;
-  if (!session.forgetStoredRoomsExcept(scope, keep)) return;
-  unawaited(
-    ref
-        .read(relayInfoProvider.future)
-        .then((info) => session.noteStoreRelayKey(scope, info?.relaySelf))
-        .catchError((Object _) {}),
-  );
+  ref.read(deferredStoreWorkProvider).run((ref) {
+    // Rooms joined while this waited are kept too.
+    final joinedNow = <String>{
+      for (final channel
+          in ref.read(channelsProvider).value ?? const <Channel>[])
+        if (channel.isMember) channel.id,
+    };
+    final session = ref.read(relaySessionProvider.notifier);
+    if (!session.forgetStoredRoomsExcept(scope, keep.union(joinedNow))) {
+      return;
+    }
+    unawaited(
+      ref
+          .read(relayInfoProvider.future)
+          .then((info) => session.noteStoreRelayKey(scope, info?.relaySelf))
+          .catchError((Object _) {}),
+    );
+  });
 }
 
 Future<List<NostrEvent>> _fetchChannelDirectoryMetas(

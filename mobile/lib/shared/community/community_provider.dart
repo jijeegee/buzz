@@ -26,6 +26,11 @@ final class CommunityTransitionCoordinator {
   final Map<Object, Future<void> Function()> _callbacks = {};
   Future<void>? _inFlight;
   Future<void> _operationTail = Future.value();
+  int _running = 0;
+
+  /// Whether a community mutation (sign-in, sign-out, switch, removal) or
+  /// its cleanup is running now. Those flows move screens themselves.
+  bool get isBusy => _running > 0 || _inFlight != null;
 
   void Function() register(Future<void> Function() callback) {
     final owner = Object();
@@ -39,7 +44,14 @@ final class CommunityTransitionCoordinator {
   /// mutate credentials or the active community must queue the whole operation
   /// here so they cannot race after sharing the same cleanup future.
   Future<T> runExclusive<T>(Future<T> Function() operation) {
-    final result = _operationTail.then((_) => operation());
+    final result = _operationTail.then((_) async {
+      _running++;
+      try {
+        return await operation();
+      } finally {
+        _running--;
+      }
+    });
     _operationTail = result.then<void>(
       (_) {},
       onError: (Object _, StackTrace _) {},

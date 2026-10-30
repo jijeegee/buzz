@@ -798,11 +798,12 @@ export function useUnreadChannels(
   ]);
 
   // Derive unread and high-priority projections together so they invalidate
-  // from the same read-state snapshot.
+  // from the same read-state snapshot. Device read markers draw them at once;
+  // the relay's merge in later (docs/message-sync.md#launch-order).
   const rawUnread =
     // biome-ignore lint/correctness/useExhaustiveDependencies: readStateVersion and latestVersion are intentional invalidation signals
     React.useMemo(() => {
-      if (!isReadStateReady || !observedPersistence.isScopeLoaded()) {
+      if (!isReadStateLoaded || !observedPersistence.isScopeLoaded()) {
         return {
           unreadChannelIds: new Set<string>(),
           topLevelUnreadChannelIds: new Set<string>(),
@@ -900,7 +901,7 @@ export function useUnreadChannels(
       channels,
       getEffectiveTimestamp,
       getOwnTimestamp,
-      isReadStateReady,
+      isReadStateLoaded,
       latestVersion,
       readStateVersion,
     ]);

@@ -15,8 +15,9 @@ export type InboxPreloadRunDeps = {
   /** Gates each background-wave request. */
   waitIdle: () => Promise<boolean>;
   /**
-   * Preloads rooms; `beforeFetch` gates the relay request once the store
-   * check is done (the background wave re-checks that the user is idle).
+   * Preloads rooms. The first wave (`beforeFetch` absent) asks the relay at
+   * once; the background wave checks the store first, and `beforeFetch`
+   * gates its relay request once that check is done (the user is idle).
    */
   preloadRooms: (
     channelIds: string[],

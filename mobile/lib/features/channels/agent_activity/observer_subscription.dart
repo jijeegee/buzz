@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../../../shared/crypto/nip44.dart';
 import '../../../shared/relay/relay.dart';
+import '../channels_provider.dart';
 import 'observer_models.dart';
 import 'transcript_builder.dart';
 
@@ -19,6 +21,22 @@ const _observerBatchKind = 'batch';
 /// Same as desktop (test-fixtures/agent-observer.json).
 const observerLiveLookbackSeconds = 300;
 const observerLiveLimit = 1000;
+
+/// Frames that arrive within this long are published as one state update,
+/// so a replay of up to [observerLiveLimit] frames rebuilds readers about
+/// once per drawn frame rather than once per frame received.
+const observerPublishInterval = Duration(milliseconds: 16);
+
+/// Whether the agent-activity replay may start: once the channel list has
+/// resolved, so its lookback replay never competes with the first screen
+/// (it starts with up to five minutes of frames). Override in tests.
+final observerReplayReadyProvider = Provider<bool>(
+  (ref) => ref.watch(
+    channelsProvider.select(
+      (channels) => channels.hasValue || channels.hasError,
+    ),
+  ),
+);
 
 /// Key for channel-scoped transcript reads.
 typedef ObserverKey = ({String channelId, String agentPubkey});
@@ -73,11 +91,13 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
   String? _errorMessage;
   int _subscriptionEpoch = 0;
   bool _disposed = false;
+  Timer? _publishTimer;
 
   @override
   ObserverRelayState build() {
     final config = ref.watch(relayConfigProvider);
     final sessionState = ref.watch(relaySessionProvider);
+    final replayReady = ref.watch(observerReplayReadyProvider);
     final identityKey = '${config.baseUrl}|${config.nsec ?? ''}';
 
     _disposed = false;
@@ -91,7 +111,7 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
       _reset();
     });
 
-    if (sessionState.status == SessionStatus.connected) {
+    if (sessionState.status == SessionStatus.connected && replayReady) {
       Future.microtask(_ensureSubscribed);
     }
 
@@ -156,7 +176,7 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
         onClosed: (message) {
           _unsubscribe = null;
           _errorMessage = 'Observer subscription closed: $message';
-          _emit(connection: ObserverConnectionState.error);
+          _emitError();
         },
       );
 
@@ -172,7 +192,7 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
         return;
       }
       _errorMessage = _observerErrorMessage(error);
-      _emit(connection: ObserverConnectionState.error);
+      _emitError();
     } finally {
       if (epoch == _subscriptionEpoch) {
         _startFuture = null;
@@ -214,7 +234,15 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
 
     if (storageChanged) {
       _errorMessage = null;
-      _emit(connection: ObserverConnectionState.open);
+      _publishTimer ??= Timer(observerPublishInterval, () {
+        _publishTimer = null;
+        // The current state: an error or close shown meanwhile stays shown.
+        _emit(
+          connection: _errorMessage == null
+              ? ObserverConnectionState.open
+              : ObserverConnectionState.error,
+        );
+      });
     }
   }
 
@@ -283,9 +311,17 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
       ];
     } catch (error) {
       _errorMessage = 'Observer event decrypt failed: $error';
-      _emit(connection: ObserverConnectionState.error);
+      _emitError();
       return null;
     }
+  }
+
+  /// Shows the error or close now; a batched `open` update still pending
+  /// must not replace it.
+  void _emitError() {
+    _publishTimer?.cancel();
+    _publishTimer = null;
+    _emit(connection: ObserverConnectionState.error);
   }
 
   void _emit({required ObserverConnectionState connection}) {
@@ -305,6 +341,8 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
   }
 
   void _reset() {
+    _publishTimer?.cancel();
+    _publishTimer = null;
     _subscriptionEpoch += 1;
     _unsubscribe?.call();
     _unsubscribe = null;

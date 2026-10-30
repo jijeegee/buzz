@@ -3,6 +3,7 @@ import {
   requestWithStoreHeads,
   roomWindowAnswer,
 } from "@/shared/api/relayStoreHeads";
+import { trackOpenWindow } from "@/shared/api/openWindowRequests";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { ChannelPageCursor, RelayEvent } from "@/shared/api/types";
 
@@ -26,10 +27,12 @@ export async function getChannelWindowEvents(
         : null,
     });
   if (cursor || !recordsStoreHead(options, limitRows)) return request();
-  return requestWithStoreHeads([channelId], request, (events) => {
-    const answer = roomWindowAnswer(channelId, events);
-    return answer ? [answer] : [];
-  });
+  return trackOpenWindow(
+    requestWithStoreHeads([channelId], request, (events) => {
+      const answer = roomWindowAnswer(channelId, events);
+      return answer ? [answer] : [];
+    }),
+  );
 }
 
 /**

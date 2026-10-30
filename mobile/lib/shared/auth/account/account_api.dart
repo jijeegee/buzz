@@ -366,7 +366,7 @@ class AccountApi {
   }) async {
     // A session nobody has restored yet (the gate normally does) has no
     // refresh token in memory: restore it rather than report signed out.
-    if (_session.state.status == TokenSessionStatus.restoring) {
+    if (_session.state.status.isRestoring) {
       await _session.restore();
     }
     var token = await _session.ensureFreshAccessToken();

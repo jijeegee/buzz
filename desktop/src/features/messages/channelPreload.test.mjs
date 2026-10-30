@@ -356,6 +356,40 @@ test("an untrusted clock skips the wait and the store check", async () => {
   assert.deepEqual(store.asked, []);
 });
 
+test("the first wave asks the relay at once, without the store wait or check", async () => {
+  const client = newClient();
+  store.live.set(ROOM, 900);
+  store.certain.add(ROOM);
+  assert.deepEqual(
+    await preloadChannelsMessages(client, [ROOM], 20, { storeCheck: false }),
+    [ROOM],
+  );
+  assert.deepEqual(store.waited, []);
+  assert.deepEqual(store.asked, []);
+  assert.deepEqual(
+    calls.map((call) => [call.command, call.args.limitRows]),
+    [["get_channel_windows", 20]],
+  );
+});
+
+test("the room on screen is never in a preload request", async () => {
+  const { setVisibleChannel } = await import("@/shared/api/relayClient");
+  const client = newClient();
+  const other = "11111111-2222-4333-8444-555555555555";
+  setVisibleChannel(ROOM);
+  try {
+    assert.deepEqual(
+      await preloadChannelsMessages(client, [ROOM, other], 20, {
+        storeCheck: false,
+      }),
+      [other],
+    );
+    assert.deepEqual(calls[0].args.channelIds, [other]);
+  } finally {
+    setVisibleChannel(null);
+  }
+});
+
 test("a pass cancelled during the store wait sends nothing", async () => {
   const client = newClient();
   const abort = new AbortController();

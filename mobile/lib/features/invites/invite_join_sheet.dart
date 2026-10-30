@@ -155,7 +155,8 @@ class InviteJoinSheet extends ConsumerWidget {
                 switch (tokenStatus) {
                   TokenSessionStatus.signedIn => l10n.inviteSessionSignedIn,
                   TokenSessionStatus.signingIn => l10n.inviteSessionSigningIn,
-                  TokenSessionStatus.restoring => l10n.inviteSessionChecking,
+                  TokenSessionStatus.restoring ||
+                  TokenSessionStatus.resuming => l10n.inviteSessionChecking,
                   TokenSessionStatus.retrying || TokenSessionStatus.stalled =>
                     l10n.inviteSessionNeedsConnection,
                   TokenSessionStatus.signedOut => l10n.inviteSessionSignedOut,

@@ -13,6 +13,7 @@ class _RecordingPreloader extends ChannelPreloader {
   _RecordingPreloader(super.ref);
 
   final List<List<String>> roomBatches = [];
+  final List<bool> firstWaves = [];
   final Map<String, int> roomLatestAt = {};
   final List<List<String>> threadBatches = [];
 
@@ -20,8 +21,10 @@ class _RecordingPreloader extends ChannelPreloader {
   Future<List<String>> preloadRooms(
     List<ChannelPreloadTarget> targets, {
     Future<bool> Function()? beforeFetch,
+    bool firstWave = false,
   }) async {
     roomBatches.add([for (final target in targets) target.channelId]);
+    firstWaves.add(firstWave);
     for (final target in targets) {
       roomLatestAt[target.channelId] = target.latestAt;
     }
@@ -102,6 +105,8 @@ void main() {
 
     expect(preloader.roomBatches.map((batch) => batch.length), [12, 12, 6]);
     expect(preloader.roomBatches.first.first, 'room-0');
+    // Only the first wave skips the store check and asks for fewer rows.
+    expect(preloader.firstWaves, [true, false, false]);
     expect(preloader.threadBatches, [
       ['root-0'],
     ]);

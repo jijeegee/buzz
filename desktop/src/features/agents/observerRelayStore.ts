@@ -18,6 +18,7 @@ import {
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { useQueryClient } from "@tanstack/react-query";
 import { agentConfigSurfaceQueryKey } from "@/features/agents/hooks";
+import { afterStartupWindows } from "@/features/agents/startupObserverGate";
 import type {
   ConnectionState,
   ObserverEvent,
@@ -807,15 +808,23 @@ export function useManagedAgentObserverBridge(
     };
   }, [subscriptionId, agentPubkeys]);
 
+  // The indicator replay waits for the launch's channel list and first room
+  // window (docs/message-sync.md#launch-order).
+  const queryClient = useQueryClient();
   React.useEffect(() => {
     if (!hasManagedAgent) {
       return;
     }
-    void ensureRelayObserverSubscription();
-  }, [hasManagedAgent]);
+    let cancelled = false;
+    void afterStartupWindows(queryClient).then(() => {
+      if (!cancelled) void ensureRelayObserverSubscription();
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [hasManagedAgent, queryClient]);
 
   // Wire up config-surface query invalidation when session_config_captured fires.
-  const queryClient = useQueryClient();
   React.useEffect(() => {
     setSessionConfigCapturedCallback((pubkey) => {
       void queryClient.invalidateQueries({

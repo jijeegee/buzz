@@ -50,7 +50,7 @@ class ControllerRelayAccessTokens implements RelayAccessTokens {
   Future<String?> fresh() async {
     // Nothing may have started the restore yet (no UI watches the session
     // provider during a cold background start); restore() is single-flight.
-    if (_controller.state.status == TokenSessionStatus.restoring) {
+    if (_controller.state.status.isRestoring) {
       await _controller.restore();
     }
     return _controller.ensureFreshAccessToken();

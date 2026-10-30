@@ -314,6 +314,23 @@ class _TokenGateIfNeeded extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final origin = ref.watch(activeTokenOriginProvider);
     if (origin == null) return child;
+    // A session that ends while the app is shown (signed out elsewhere, or a
+    // resumed one whose first rotation is refused) must not leave a chat
+    // pushed above the sign-in page. A sign-out, switch or removal moves its
+    // own screens (and may still show why it failed), so it is left alone.
+    ref.listen(tokenSessionProvider(origin), (previous, next) {
+      if (next.status != TokenSessionStatus.signedOut) return;
+      if (ref.read(communityTransitionProvider).isBusy) return;
+      if (previous?.status
+          case TokenSessionStatus.signedIn ||
+              TokenSessionStatus.resuming ||
+              TokenSessionStatus.retrying ||
+              TokenSessionStatus.stalled) {
+        _mobileRootNavigatorKey.currentState?.popUntil(
+          (route) => route.isFirst,
+        );
+      }
+    });
     return TokenSessionGate(
       key: ValueKey(origin),
       origin: origin,

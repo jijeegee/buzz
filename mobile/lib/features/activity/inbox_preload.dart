@@ -20,6 +20,14 @@ const inboxPreloadBackgroundRows = 48;
 const _recentInput = Duration(milliseconds: 1500);
 const _idlePoll = Duration(milliseconds: 500);
 
+/// Poll interval before the first wave: it goes out right after connect.
+/// After [_fastStartFor] without a connection the usual intervals apply.
+const _startPoll = Duration(milliseconds: 100);
+const _fastStartFor = Duration(seconds: 3);
+
+/// The first wave waits at most this long for the room on screen.
+const _visibleRoomCap = Duration(seconds: 3);
+
 /// Poll interval while the relay is unavailable or rate limiting.
 const _unavailablePoll = Duration(seconds: 5);
 
@@ -88,7 +96,8 @@ List<ThreadRepliesArgs> _threads(Iterable<InboxPreloadTarget> targets) => [
 ];
 
 /// Two waves, as desktop does: the rooms behind the top [inboxPreloadRows]
-/// rows in one request and their threads four per request, right away; then
+/// rows in one request ([channelPreloadFirstMessages] each, no store check)
+/// and their threads four per request, right away; then
 /// rows up to [inboxPreloadBackgroundRows], [maxChannelWindowsPerRequest]
 /// rooms per request, each request waiting until [waitIdle] resolves true.
 /// [waitStart] (default: [waitReady]) gates the first wave, after the first
@@ -105,7 +114,7 @@ Future<void> runInboxPreload(
 
   if (!await (waitStart ?? waitReady)()) return;
   final firstRooms = _rooms(first);
-  await preloader.preloadRooms(firstRooms);
+  await preloader.preloadRooms(firstRooms, firstWave: true);
   await preloader.preloadThreads(_threads(first), beforeRequest: waitReady);
 
   final loaded = {for (final room in firstRooms) room.channelId};
@@ -186,9 +195,14 @@ void Function() useInboxPreload(
         isReady() &&
         !keyboardVisible.value &&
         DateTime.now().difference(lastInputAt.value) >= _recentInput;
-    Future<bool> waitUntil(bool Function() condition) async {
+    Future<bool> waitUntil(
+      bool Function() condition, {
+      Duration? Function()? poll,
+    }) async {
       while (!cancelled && !condition()) {
-        await sleep(preloader.canRequest ? _idlePoll : _unavailablePoll);
+        await sleep(
+          poll?.call() ?? (preloader.canRequest ? _idlePoll : _unavailablePoll),
+        );
       }
       return !cancelled;
     }
@@ -200,10 +214,24 @@ void Function() useInboxPreload(
         waitReady: () => waitUntil(isReady),
         waitIdle: () => waitUntil(isIdle),
         // Never on the startup path: the first wave starts after the first
-        // frame is drawn (docs/message-sync.md#store-first-preload).
+        // frame is drawn, as soon as the session connects, and behind the
+        // first window of the room on screen (at most [_visibleRoomCap])
+        // (docs/message-sync.md#store-first-preload).
         waitStart: () async {
           await SchedulerBinding.instance.endOfFrame;
-          return waitUntil(isReady);
+          final fastUntil = DateTime.now().add(_fastStartFor);
+          Duration? startPoll() =>
+              DateTime.now().isBefore(fastUntil) ? _startPoll : null;
+          if (!await waitUntil(isReady, poll: startPoll)) return false;
+          final capAt = DateTime.now().add(_visibleRoomCap);
+          return waitUntil(
+            () =>
+                isReady() &&
+                (!preloader.visibleRoomLoading ||
+                    DateTime.now().isAfter(capAt)),
+            // Fast only while waiting for the room on screen.
+            poll: () => preloader.canRequest ? _startPoll : null,
+          );
         },
       ),
     );

@@ -5,6 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../app_update/app_update.dart';
+import '../../community/community.dart';
 import '../../community/community_provider.dart';
 import '../../device_key/device_key.dart';
 import '../../device_key/device_proof_client.dart';
@@ -89,10 +90,32 @@ final tokenSessionControllerProvider =
         timerFactory: ref.watch(sessionTimerFactoryProvider),
         deviceName: ref.watch(authDeviceNameProvider),
         installIds: ref.watch(installIdStoreProvider),
+        canResumeQuietly: (principal) => _showsAccount(
+          ref.read(activeCommunityProvider).value,
+          origin,
+          principal,
+        ),
       );
       ref.onDispose(controller.dispose);
       return controller;
     });
+
+/// Whether [active] is the token community of [origin] signed in as exactly
+/// [principal]: then its stored content may be drawn before the first
+/// rotation (TokenSessionStatus.resuming).
+bool _showsAccount(Community? active, String origin, String principal) {
+  if (active == null ||
+      !active.tokenAuth ||
+      active.signedOut ||
+      active.pubkey != principal) {
+    return false;
+  }
+  try {
+    return normalizeRelayOrigin(active.relayUrl) == origin;
+  } on FormatException {
+    return false;
+  }
+}
 
 final keyBackupSessionControllerProvider =
     Provider.family<TokenSessionController, String>((ref, origin) {

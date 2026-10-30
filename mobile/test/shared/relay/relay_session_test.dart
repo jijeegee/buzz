@@ -50,6 +50,7 @@ void main() {
         overrides: [
           ageSignalProvider.overrideWith(() => age),
           relaySessionProvider.overrideWith(() => session),
+          observerReplayReadyProvider.overrideWithValue(true),
           relayConfigProvider.overrideWith(
             () => _FakeRelayConfigNotifier(
               baseUrl: 'https://relay.example',

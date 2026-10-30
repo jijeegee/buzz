@@ -1,5 +1,9 @@
 import * as React from "react";
 
+import {
+  relayConnectHeldSlow,
+  subscribeRelayConnectHold,
+} from "@/shared/api/relayConnectGate";
 import { useRelayConnection } from "@/shared/api/useRelayConnection";
 import { useReconnectRelay } from "@/shared/api/useReconnectRelay";
 import { isRelayUnreachableError } from "@/shared/lib/relayError";
@@ -75,7 +79,15 @@ export function useSidebarRelayConnectionCard(
   // a dedicated error path instead.
   const hasNonUnreachableError =
     Boolean(errorMessage) && !hasRelayUnreachableError;
+  // The socket held for a slow sign-in restore shows the card as connecting,
+  // so the drawn app does not look live (docs/message-sync.md#launch-order).
+  const isConnectHeld = React.useSyncExternalStore(
+    subscribeRelayConnectHold,
+    relayConnectHeldSlow,
+    () => false,
+  );
   const isRelayConnectionStateDegraded =
+    isConnectHeld ||
     relayConnectionState === "reconnecting" ||
     relayConnectionState === "stalled" ||
     (relayConnectionState === "disconnected" && !hasNonUnreachableError);
@@ -110,7 +122,9 @@ export function useSidebarRelayConnectionCard(
   const connectivityFrameRef = React.useRef<number | null>(null);
   const connectivityTimeoutRef = React.useRef<number | null>(null);
   const isRelayReconnectPending =
-    isReconnectPending || connectivityAction === "relay-connection";
+    isConnectHeld ||
+    isReconnectPending ||
+    connectivityAction === "relay-connection";
 
   React.useEffect(() => {
     if (outageRelayLifecycleKeyRef.current !== relayLifecycleKey) {

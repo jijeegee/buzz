@@ -22,6 +22,11 @@ enum TokenSessionStatus {
   /// Reading the stored refresh token / first rotation.
   restoring,
 
+  /// The stored session belongs to the account the device already shows, and
+  /// its first rotation is still in flight. The app may draw from device
+  /// storage; there is no access token yet, so this is not [signedIn].
+  resuming,
+
   /// No session. Offer "Sign in with Google".
   signedOut,
 
@@ -37,8 +42,15 @@ enum TokenSessionStatus {
 
   /// Retries are exhausted (or the keychain could not be read). The stored
   /// session is kept; the UI must offer retry and sign-in.
-  stalled,
+  stalled;
+
+  /// The stored session is being restored ([restoring] or [resuming]).
+  bool get isRestoring => this == restoring || this == resuming;
 }
+
+/// Whether a stored session for [principal] may resume quietly: the device
+/// already shows exactly that account.
+typedef QuietResumeCheck = bool Function(String principal);
 
 /// Immutable snapshot for the UI. The access token is deliberately not part
 /// of it; read it from [TokenSessionController.currentAccessToken].
@@ -143,7 +155,9 @@ class TokenSessionController {
     SessionTimerFactory? timerFactory,
     this.deviceName,
     InstallIdStore? installIds,
+    QuietResumeCheck? canResumeQuietly,
   }) : _installIds = installIds,
+       _canResumeQuietly = canResumeQuietly,
        _api = api,
        _store = store,
        _launcher = launcher,
@@ -185,6 +199,7 @@ class TokenSessionController {
   final GoogleAccountPicker? _accountPicker;
   final SessionClock _clock;
   final SessionTimerFactory _timerFactory;
+  final QuietResumeCheck? _canResumeQuietly;
 
   TokenSessionState _state = const TokenSessionState(
     status: TokenSessionStatus.restoring,
@@ -430,6 +445,15 @@ class TokenSessionController {
     _principalId = stored.principalId;
     _identityMode = stored.identityMode;
     _failures = 0;
+    // The same account the device shows: draw it now, rotate behind it.
+    if (_canResumeQuietly?.call(stored.principalId) ?? false) {
+      _emit(
+        TokenSessionState(
+          status: TokenSessionStatus.resuming,
+          principalId: stored.principalId,
+        ),
+      );
+    }
     await _refresh();
   }
 

@@ -16,6 +16,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => _RecordingRelaySession()),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: null),
         ),
@@ -34,6 +35,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => _RecordingRelaySession()),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: 'nsec1invalid'),
         ),
@@ -57,6 +59,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => _RecordingRelaySession()),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: null),
         ),
@@ -89,6 +92,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => relaySession),
+          observerReplayReadyProvider.overrideWithValue(true),
           relayConfigProvider.overrideWith(
             () => _FakeRelayConfigNotifier(nsec: nsec),
           ),
@@ -129,6 +133,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => relaySession),
+          observerReplayReadyProvider.overrideWithValue(true),
           relayConfigProvider.overrideWith(
             () => _FakeRelayConfigNotifier(nsec: userKeychain.nsec),
           ),
@@ -162,6 +167,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: userKeychain.nsec),
         ),
@@ -188,6 +194,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: firstUser.nsec),
         ),
@@ -234,6 +241,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => relaySession),
+          observerReplayReadyProvider.overrideWithValue(true),
           relayConfigProvider.overrideWith(
             () => _FakeRelayConfigNotifier(nsec: nsec),
           ),
@@ -276,6 +284,7 @@ void main() {
       );
 
       relaySession.emit(NostrEvent.fromJson(event.toMap()));
+      await _published();
 
       final state = container.read(observerSubscriptionProvider(key));
       expect(state.connection, ObserverConnectionState.open);
@@ -301,6 +310,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
         ),
@@ -339,6 +349,7 @@ void main() {
         },
       ),
     );
+    await _published();
 
     final relayState = container.read(observerRelayProvider);
     final frames = relayState.framesByAgent[agentKeychain.public];
@@ -368,6 +379,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
         ),
@@ -418,9 +430,11 @@ void main() {
     );
 
     relaySession.emit(event);
+    await _published();
     expect(openStateUpdates, 1);
 
     relaySession.emit(event);
+    await _published();
     expect(openStateUpdates, 1);
   });
 
@@ -431,6 +445,7 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWithValue(true),
         relayConfigProvider.overrideWith(
           () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
         ),
@@ -459,6 +474,7 @@ void main() {
         },
       ),
     );
+    await _published();
 
     final state = container.read(observerRelayProvider);
     expect(state.connection, ObserverConnectionState.open);
@@ -476,6 +492,7 @@ void main() {
       final container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => relaySession),
+          observerReplayReadyProvider.overrideWithValue(true),
           relayConfigProvider.overrideWith(
             () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
           ),
@@ -513,11 +530,107 @@ void main() {
           },
         ),
       );
+      await _published();
 
       final state = container.read(observerRelayProvider);
       expect(state.connection, ObserverConnectionState.error);
       expect(state.errorMessage, contains('Observer event decrypt failed'));
       expect(state.framesByAgent[agentKeychain.public], isNull);
+    },
+  );
+
+  test('waits for the channel list before replaying, then publishes a '
+      'replay burst as one update', () async {
+    final ownerKeychain = nostr.Keys.generate();
+    final agentKeychain = nostr.Keys.generate();
+    final relaySession = _RecordingRelaySession();
+    final ready = NotifierProvider<_Flag, bool>(_Flag.new);
+    final container = ProviderContainer(
+      overrides: [
+        relaySessionProvider.overrideWith(() => relaySession),
+        observerReplayReadyProvider.overrideWith((ref) => ref.watch(ready)),
+        relayConfigProvider.overrideWith(
+          () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    var updates = 0;
+    final listener = container.listen(observerRelayProvider, (_, _) {
+      updates += 1;
+    });
+    addTearDown(listener.close);
+    await Future<void>.delayed(Duration.zero);
+    expect(relaySession.filters, isEmpty, reason: 'channel list pending');
+
+    container.read(ready.notifier).set();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(relaySession.filters, hasLength(1));
+
+    updates = 0;
+    for (var seq = 1; seq <= 5; seq++) {
+      relaySession.emit(
+        _observerEvent(
+          ownerKeychain: ownerKeychain,
+          agentKeychain: agentKeychain,
+          payload: _observerFrameJson(
+            seq: seq,
+            channelId: 'test-channel',
+            turnId: 'turn-$seq',
+          ),
+        ),
+      );
+    }
+    expect(updates, 0);
+    await _published();
+    expect(updates, 1);
+    expect(
+      container.read(observerRelayProvider).framesByAgent[agentKeychain.public],
+      hasLength(5),
+    );
+  });
+
+  test(
+    'a close shown before a batched update is not replaced by open',
+    () async {
+      final ownerKeychain = nostr.Keys.generate();
+      final agentKeychain = nostr.Keys.generate();
+      final relaySession = _RecordingRelaySession();
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(() => relaySession),
+          observerReplayReadyProvider.overrideWithValue(true),
+          relayConfigProvider.overrideWith(
+            () => _FakeRelayConfigNotifier(nsec: ownerKeychain.nsec),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      final listener = container.listen(observerRelayProvider, (_, _) {});
+      addTearDown(listener.close);
+      await Future<void>.delayed(Duration.zero);
+
+      relaySession.emit(
+        _observerEvent(
+          ownerKeychain: ownerKeychain,
+          agentKeychain: agentKeychain,
+          payload: _observerFrameJson(
+            seq: 1,
+            channelId: 'test-channel',
+            turnId: 'turn-1',
+          ),
+        ),
+      );
+      relaySession.closeAll('restricted');
+      await _published();
+
+      final state = container.read(observerRelayProvider);
+      expect(state.connection, ObserverConnectionState.error);
+      expect(state.errorMessage, contains('restricted'));
+      // The frame that arrived before the close is still kept.
+      expect(state.framesByAgent[agentKeychain.public], hasLength(1));
     },
   );
 }
@@ -631,4 +744,14 @@ class _FakeRelayConfigNotifier extends RelayConfigNotifier {
     _nsec = nsec;
     state = RelayConfig(baseUrl: 'http://localhost:3000', nsec: _nsec);
   }
+}
+
+/// Lets the batched observer state update go out.
+Future<void> _published() => Future<void>.delayed(observerPublishInterval * 2);
+
+class _Flag extends Notifier<bool> {
+  @override
+  bool build() => false;
+
+  void set() => state = true;
 }

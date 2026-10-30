@@ -19,6 +19,7 @@ import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'deferred_store_work.dart';
 import 'room_live_router.dart';
 import 'huddle_channel_filter.dart';
 import 'timeline_message.dart' show SystemEvent, SystemEventType;
@@ -228,7 +229,6 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     _cacheMemberSnapshots(memberships, replaceAll: true);
     _forgetStoredRoomsMissingFrom(
       ref,
-      session,
       storeScope,
       myPk,
       memberships,

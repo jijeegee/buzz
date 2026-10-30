@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/shared/auth/token/refresh_token_store.dart';
 import 'package:kuzz/shared/relay/service_address.dart';
@@ -185,6 +186,46 @@ void main() {
       expect(prefs.getString('kuzz-drafts:$_old:$_pk'), 'old');
     });
 
+    test('a migrated keychain is not read again before the first frame; '
+        'without the preference copy its own marker still holds', () async {
+      SharedPreferences.setMockInitialValues({});
+      final prefs = await SharedPreferences.getInstance();
+      secure['kuzz.auth.refresh.v1:$_old'] = 'token';
+      await migrateServiceScopedStorage(
+        prefs: prefs,
+        secure: secure,
+        addresses: _moved(),
+      );
+      expect(
+        prefs.getStringList(serviceScopeSecureMigratedKey),
+        unorderedEquals([_old, 'https://jihobuzz.duckdns.org']),
+      );
+
+      // Every later start: the keychain is not touched at all.
+      final watched = _WatchedSecureStorage();
+      await migrateServiceScopedStorage(
+        prefs: prefs,
+        secure: watched,
+        addresses: _moved(),
+      );
+      expect(watched.reads, 0);
+
+      // Preferences lost (reinstall): the keychain marker still says done,
+      // so a signed-out token is not resurrected; the copy is rewritten.
+      await prefs.clear();
+      await secure.delete(key: 'kuzz.auth.refresh.v1:kuzz');
+      await migrateServiceScopedStorage(
+        prefs: prefs,
+        secure: secure,
+        addresses: _moved(),
+      );
+      expect(secure['kuzz.auth.refresh.v1:kuzz'], isNull);
+      expect(
+        prefs.getStringList(serviceScopeSecureMigratedKey),
+        unorderedEquals([_old, 'https://jihobuzz.duckdns.org']),
+      );
+    });
+
     test('a newly added previous address is migrated later', () async {
       SharedPreferences.setMockInitialValues({
         serviceScopeMigratedKey: ['https://jihobuzz.duckdns.org:8443'],
@@ -230,4 +271,35 @@ void main() {
       expect(prefs.getKeys(), {'kuzz-drafts:$_old:$_pk'});
     });
   });
+}
+
+class _WatchedSecureStorage extends FakeSecureStorage {
+  var reads = 0;
+
+  @override
+  Future<String?> read({
+    required String key,
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    reads++;
+    return null;
+  }
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) async {
+    reads++;
+    return {};
+  }
 }

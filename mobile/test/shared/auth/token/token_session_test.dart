@@ -15,7 +15,7 @@ const stored1 = StoredTokenSession(
 );
 
 class Harness {
-  Harness({StoredTokenSession? stored}) {
+  Harness({StoredTokenSession? stored, this.canResumeQuietly}) {
     if (stored != null) store.data[origin] = stored;
   }
 
@@ -24,6 +24,7 @@ class Harness {
   final clock = FakeClock(DateTime.utc(2026, 1, 1));
   final launcher = FakeWebAuthLauncher(FakeWebAuthLauncher.success);
   final List<TokenSessionState> states = [];
+  final QuietResumeCheck? canResumeQuietly;
 
   late final TokenSessionController controller = () {
     final controller = TokenSessionController(
@@ -34,6 +35,7 @@ class Harness {
       clock: clock.call,
       timerFactory: clock.createTimer,
       deviceName: 'Test phone',
+      canResumeQuietly: canResumeQuietly,
     );
     controller.addListener(states.add);
     return controller;
@@ -125,6 +127,63 @@ void main() {
         expect(h.clock.active, isEmpty);
       },
     );
+
+    test('the account the device shows resumes quietly: drawn before the '
+        'rotation, without a token until it lands', () async {
+      final asked = <String>[];
+      final h = Harness(
+        stored: stored1,
+        canResumeQuietly: (principal) {
+          asked.add(principal);
+          return true;
+        },
+      );
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+      );
+      final gate = h.store.writeGate = Completer<void>();
+      final restoring = h.controller.restore();
+      await settle();
+      expect(asked, [principal]);
+      expect(h.status, TokenSessionStatus.resuming);
+      expect(h.controller.state.principalId, principal);
+      expect(h.controller.currentAccessToken, isNull);
+      final waiting = h.controller.ensureFreshAccessToken();
+      gate.complete();
+      await restoring;
+      expect(await waiting, 'bzs_2');
+      expect(h.states.map((s) => s.status), [
+        TokenSessionStatus.resuming,
+        TokenSessionStatus.signedIn,
+      ]);
+    });
+
+    test('another account stays restoring until the rotation lands', () async {
+      final h = Harness(stored: stored1, canResumeQuietly: (_) => false);
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+      );
+      await h.controller.restore();
+      expect(
+        h.states.any((s) => s.status == TokenSessionStatus.resuming),
+        isFalse,
+      );
+      expect(h.status, TokenSessionStatus.signedIn);
+    });
+
+    test('a refused rotation after a quiet resume signs out', () async {
+      final h = Harness(stored: stored1, canResumeQuietly: (_) => true);
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'refresh_reused'),
+      );
+      await h.controller.restore();
+      await settle();
+      expect(h.states.map((s) => s.status), [
+        TokenSessionStatus.resuming,
+        TokenSessionStatus.signedOut,
+      ]);
+      expect(h.store.data[origin], isNull);
+    });
 
     test('a terminal 401 signs out and deletes the stored session', () async {
       final h = Harness(stored: stored1);

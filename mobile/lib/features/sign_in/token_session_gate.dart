@@ -17,7 +17,9 @@ import 'token_sign_in_page.dart';
 /// view that always offers "Retry", "Sign in again", switching to another
 /// community and removing this one.
 ///
-/// A session that is only reconnecting (retrying / stalled with a saved
+/// A stored session of the account the community records (`resuming`) shows
+/// [child] at once while its first rotation runs behind it. A session that
+/// is only reconnecting (retrying / stalled with a saved
 /// principal) keeps [child] usable under a non-blocking banner, so cached
 /// content and the app's own community switcher stay reachable
 /// (AGENTS.md rule 6).
@@ -75,6 +77,12 @@ class TokenSessionGate extends HookConsumerWidget {
     final principalMatches =
         principal != null &&
         (active == null || !active.tokenAuth || active.pubkey == principal);
+    // Drawing before the first rotation needs the exact account shown.
+    final showsPrincipal =
+        principal != null &&
+        active != null &&
+        active.tokenAuth &&
+        active.pubkey == principal;
 
     return switch (session.status) {
       TokenSessionStatus.signedIn when staleIdentity =>
@@ -88,9 +96,13 @@ class TokenSessionGate extends HookConsumerWidget {
                 },
               ),
       TokenSessionStatus.signedIn => _SessionShell(child: child),
-      TokenSessionStatus.restoring => _GateSplash(
-        semanticLabel: context.l10n.signInSigningIn,
+      // The stored account draws from device storage while its token
+      // rotates; no banner (AGENTS.md rule 6).
+      TokenSessionStatus.resuming when showsPrincipal => _SessionShell(
+        child: child,
       ),
+      TokenSessionStatus.restoring || TokenSessionStatus.resuming =>
+        _GateSplash(semanticLabel: context.l10n.signInSigningIn),
       TokenSessionStatus.signedOut ||
       TokenSessionStatus.signingIn => TokenSignInPage(lockedOrigin: origin),
       TokenSessionStatus.retrying || TokenSessionStatus.stalled

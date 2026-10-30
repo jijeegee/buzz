@@ -4,6 +4,7 @@ import * as React from "react";
 import type { InboxItem } from "@/features/home/lib/inbox";
 import {
   INBOX_PRELOAD_BACKGROUND_ROWS,
+  INBOX_PRELOAD_FIRST_MESSAGES,
   INBOX_PRELOAD_MESSAGES,
   inboxPreloadTargetKey,
   inboxPreloadTargets,
@@ -14,6 +15,8 @@ import {
   preloadChannelsMessages,
   preloadThreads,
 } from "@/features/messages/channelPreload";
+import { openWindowsInFlight } from "@/shared/api/openWindowRequests";
+import { relayClient } from "@/shared/api/relayClient";
 import { isDocumentVisible } from "@/shared/lib/useDocumentVisible";
 
 /** Input this recent means the user is typing or clicking: yield to them. */
@@ -23,30 +26,28 @@ const IDLE_POLL_MS = 500;
 const RETRY_AFTER_MS = 5 * 60 * 1_000;
 /** A room drawn from the store is looked at again after this. */
 const CERTAIN_RETRY_AFTER_MS = 60 * 1_000;
-/** The first pass waits for the browser to be idle, at most this long. */
-const STARTUP_IDLE_TIMEOUT_MS = 2_000;
+/** The first wave lets a room being opened go first, at most this long. */
+const FOREGROUND_FIRST_MAX_MS = 3_000;
+const FOREGROUND_POLL_MS = 100;
 
-/** Resolves when the browser is idle (or after `timeoutMs`); `cancel` ends it. */
-function idleCallback(timeoutMs: number) {
-  let cancel = () => {};
-  const done = new Promise<void>((resolve) => {
-    if ("requestIdleCallback" in window) {
-      const id = window.requestIdleCallback(() => resolve(), {
-        timeout: timeoutMs,
-      });
-      cancel = () => {
-        window.cancelIdleCallback(id);
-        resolve();
-      };
-    } else {
-      const timer = setTimeout(resolve, timeoutMs);
-      cancel = () => {
-        clearTimeout(timer);
-        resolve();
-      };
-    }
+/** Resolves once the relay socket is connected, or when `signal` aborts. */
+function relayConnected(signal: AbortSignal): Promise<void> {
+  return new Promise((resolve) => {
+    let unsubscribe: (() => void) | null = null;
+    let done = false;
+    const finish = () => {
+      done = true;
+      unsubscribe?.();
+      signal.removeEventListener("abort", finish);
+      resolve();
+    };
+    if (signal.aborted) return finish();
+    signal.addEventListener("abort", finish);
+    unsubscribe = relayClient.subscribeToConnectionState((state) => {
+      if (state === "connected") finish();
+    });
+    if (done) unsubscribe();
   });
-  return { done, cancel };
 }
 
 /**
@@ -55,10 +56,11 @@ function idleCallback(timeoutMs: number) {
  * the rooms and threads of rows up to {@link INBOX_PRELOAD_BACKGROUND_ROWS}
  * (see `runInboxPreload`), so opening them paints at once. Rooms the store
  * holds certainly are not requested (docs/message-sync.md#store-first-preload).
- * The first pass starts once the browser is idle after launch, never on the
- * startup path; the background wave and later passes pause while the user
- * types or clicks, while a room is loading in the foreground, and while the
- * app is hidden.
+ * The first pass's first wave asks the relay right after the socket connects,
+ * {@link INBOX_PRELOAD_FIRST_MESSAGES} rows per room and no store check, once
+ * a room being opened has its window (docs/message-sync.md#launch-order); the
+ * background wave and later passes pause while the user types or clicks,
+ * while a room is loading in the foreground, and while the app is hidden.
  */
 export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
   const queryClient = useQueryClient();
@@ -110,6 +112,19 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
       while (!cancelled && isBusy()) await sleep(IDLE_POLL_MS);
       return !cancelled;
     };
+    // The room on screen asks first: its open window, or its fetch.
+    const waitForeground = async () => {
+      const until = Date.now() + FOREGROUND_FIRST_MAX_MS;
+      while (
+        !cancelled &&
+        Date.now() < until &&
+        (openWindowsInFlight() > 0 ||
+          queryClient.isFetching({ queryKey: ["channel-messages"] }) > 0)
+      ) {
+        await sleep(FOREGROUND_POLL_MS);
+      }
+      return !cancelled;
+    };
 
     const now = Date.now();
     for (const [key, at] of attemptedAtRef.current) {
@@ -119,12 +134,11 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
       (target) => !attemptedAtRef.current.has(inboxPreloadTargetKey(target)),
     );
 
-    // The first pass after launch waits only for the browser to be idle:
-    // that is when the rooms are about to be opened. Later passes yield to
-    // the user.
+    // The first pass after launch asks as soon as the relay is connected
+    // and the room on screen has its window: that is when the rooms are
+    // about to be opened. Later passes yield to the user.
     const firstPass = firstPassRef.current;
     firstPassRef.current = false;
-    const idle = firstPass ? idleCallback(STARTUP_IDLE_TIMEOUT_MS) : null;
     const markThreads = (threads: readonly PreloadThread[]) => {
       for (const thread of threads) {
         attemptedAtRef.current.set(
@@ -139,9 +153,9 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     if (pending.length > 0) {
       void runInboxPreload(pending, {
         waitStart: async () => {
-          if (!idle) return waitIdle();
-          await idle.done;
-          return !cancelled;
+          if (!firstPass) return waitIdle();
+          await relayConnected(abort.signal);
+          return !cancelled && waitForeground();
         },
         waitFirstThreads: async () => (firstPass ? !cancelled : waitIdle()),
         waitIdle,
@@ -150,13 +164,16 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
           for (const channelId of channelIds) {
             attemptedAtRef.current.set(channelId, Date.now());
           }
+          // The first wave (no `beforeFetch`) asks at once, a screenful.
+          const firstWave = beforeFetch === undefined;
           await preloadChannelsMessages(
             queryClient,
             channelIds,
-            INBOX_PRELOAD_MESSAGES,
+            firstWave ? INBOX_PRELOAD_FIRST_MESSAGES : INBOX_PRELOAD_MESSAGES,
             {
               signal: abort.signal,
               beforeFetch,
+              storeCheck: !firstWave,
               // Store-drawn rooms are looked at again sooner than failures.
               onCertain: (roomIds) => {
                 const at =
@@ -181,7 +198,6 @@ export function useInboxPreload(items: readonly InboxItem[], enabled: boolean) {
     return () => {
       cancelled = true;
       abort.abort();
-      idle?.cancel();
       for (const [timer, resolve] of sleepers) {
         clearTimeout(timer);
         resolve();

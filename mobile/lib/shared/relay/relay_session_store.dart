@@ -36,6 +36,12 @@ extension RelaySessionStore on RelaySessionNotifier {
     _messageStore?.noteRelayKey(scope.lease, key);
   }
 
+  /// The room on screen now (the newest registered), if any. Background
+  /// loads wait for its first window rather than go out ahead of it.
+  String? get visibleChannelId => _visibleChannelsByOwner.isEmpty
+      ? null
+      : _visibleChannelsByOwner.values.last;
+
   /// When [roomId]'s live REQ reached EOSE on this connection, if it has
   /// been receiving every event of the room since.
   int? _storeLiveAt(String roomId) {

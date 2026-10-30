@@ -37,6 +37,7 @@ pub(crate) mod pkce;
 pub(crate) mod redact;
 pub(crate) mod refresh;
 pub(crate) mod restore;
+pub(crate) mod saved_session;
 pub(crate) mod service;
 pub(crate) mod signed_out;
 pub(crate) mod watchdog;

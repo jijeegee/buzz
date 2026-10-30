@@ -82,6 +82,15 @@ export function getTokenAuthStatus(): Promise<TokenAuthStatus> {
 }
 
 /**
+ * The active account has a saved sign-in for the key held here: launch may
+ * draw it from device storage while {@link getTokenAuthStatus} restores the
+ * session in the background. Local reads only.
+ */
+export function savedSessionReady(): Promise<boolean> {
+  return invokeTauri<boolean>("saved_session_ready");
+}
+
+/**
  * Open the system browser for Google sign-in; resolves once signed in. The
  * chosen Google account decides the Kuzz account, which becomes the active
  * account; accounts already signed in here stay signed in. `connect` links

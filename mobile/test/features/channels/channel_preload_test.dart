@@ -245,6 +245,42 @@ void main() {
       expect(head?.map((event) => event.id), ['certain-stored']);
     });
 
+    test('the first wave asks the relay at once for twenty rows, without '
+        'waiting for live REQs or checking the store', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      liveRooms.add('certain');
+      certainRooms.add('certain');
+      final stored = await preloader.preloadRooms([
+        (channelId: 'certain', latestAt: 100),
+        (channelId: 'cold', latestAt: 100),
+      ], firstWave: true);
+
+      expect(waited, isEmpty);
+      expect(session.requests, hasLength(1));
+      expect(session.requests.single.map((f) => f.tags['#h']!.single), [
+        'certain',
+        'cold',
+      ]);
+      expect(
+        session.requests.single.map((f) => f.limit),
+        everyElement(channelPreloadFirstMessages),
+      );
+      expect(stored, ['certain', 'cold']);
+    });
+
+    test('the first wave leaves out the room on screen', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      final release = session.registerVisibleChannel('open');
+      addTearDown(release);
+      await preloader.preloadRooms([
+        (channelId: 'open', latestAt: 100),
+        (channelId: 'cold', latestAt: 100),
+      ], firstWave: true);
+      expect(session.requests.single.map((f) => f.tags['#h']!.single), [
+        'cold',
+      ]);
+    });
+
     test('a certain room is looked at again after a minute', () async {
       final preloader = container.read(channelPreloaderProvider);
       liveRooms.add('certain');

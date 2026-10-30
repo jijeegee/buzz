@@ -705,6 +705,7 @@ pub fn run() {
             build_observer_control_event,
             create_auth_event,
             auth::commands::get_token_auth_status,
+            auth::saved_session::saved_session_ready,
             auth::commands::auth_update_required,
             auth::commands::login_with_google,
             auth::commands::own_agent_pubkeys,

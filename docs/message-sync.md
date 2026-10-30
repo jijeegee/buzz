@@ -177,6 +177,57 @@ per client:
   so the overlap with what a reader already holds is harmless.
 - **Agent online status** comes with everyone else's presence on the
   presence subscription; it needs no REQ of its own.
+- **Start.** The REQ opened for the account's agents at launch waits until
+  the channel list and the first room window have loaded
+  ([Launch order](#launch-order)). Opening an agent's session or sending it
+  a control starts it at once.
+
+## Launch order
+
+An account with data on the device draws from that data first; the server's
+answers follow in the background, in this order, and never block the screen.
+
+1. **Draw.** The active account is drawn from device storage: channel list
+   snapshot, stored rooms ([Painting from the store](#painting-from-the-store)),
+   and unread badges from the device's read markers (the relay's markers
+   merge in later; markers only advance). No loading text while stored data
+   exists; the splash only fades (no minimum time).
+2. **Sign-in restore.** When the device holds a saved session whose bound
+   account key is the key held here (desktop: `saved_session_ready`, local
+   reads only), the app draws before the restore (relay info, token
+   refresh, account check) and runs it in the background. Otherwise
+   (legacy token accounts, no saved session, signed out here, or a session
+   already ended this run) it waits for the restore as before. If the
+   background restore ends the session, signs this device out, or yields
+   another identity, the app reloads into the regular launch, which shows
+   the signed-out screen or the new account. Mobile: right after the saved
+   session is read, when its account (`principal_id`) is exactly the active
+   community's key on the same server, the token session reports
+   `resuming` (never `signedIn`: there is no access token yet) and the gate
+   shows the app with no banner while the refresh runs; requests that need
+   a token wait for it. A refused refresh signs out: chats pushed above the
+   app are closed and the sign-in page shows (a sign-out, switch or removal
+   in progress moves its own screens). Mobile reads its migration marker
+   from preferences, not the keychain, before the first frame.
+3. **Connect.** The relay socket connects once the restore has settled
+   (signed in, needs login, or no session). A restore that times out while
+   still retrying keeps the socket held until a token status event reports
+   a settled state. After 3 s held, the existing connection card shows
+   "connecting" so the drawn list does not look live.
+4. **The room on screen and the channel list** ask first; profiles follow
+   as rows need them.
+5. **First preload wave** right after the socket connects, once the room on
+   screen has its window (at most 3 s), with 20 rows per room and no store
+   check ([Store-first preload](#store-first-preload)).
+6. **Agent indicator replay** ([Agent activity](#agent-activity)) after the
+   channel list and the first room window (with no room open, 2 s after the
+   channel list; at most 10 s after launch). Mobile starts it once the
+   channel list has resolved, and publishes the replayed frames as one
+   update per 16 ms.
+7. **Background preload wave** and cleanup, when the user is idle. Mobile
+   queues forgetting left rooms ([Forgetting a room](#forgetting-a-room))
+   until after the first frame and the first window of the room on screen
+   (at most 5 s), then runs each list as its own task between frames.
 
 ## Message store
 
@@ -426,16 +477,21 @@ store before the relay, so rooms it already holds certainly cost no request
 and open from the store. Desktop and mobile behave the same. Cases:
 `test-fixtures/message-store-preload-plan.json`.
 
-- **Start:** never on the startup path. Desktop's first pass waits for the
-  browser to be idle (`requestIdleCallback`, at most 2 s); mobile's first
-  wave waits for the first frame and a usable session. A room the user
-  opens meanwhile loads itself and is left out.
-- **Waves:** the rooms behind the top 12 rows in one request, then their
-  threads four per request; then the rooms of rows 13 to 48 not already
-  loaded, 12 per request, and their threads, each request waiting until the
-  user is idle (no input for 1.5 s, nothing loading in the foreground, app
-  visible; mobile also keyboard down and relay usable).
-- **Wait:** each room request first waits, at most 3 s, until a live REQ
+- **Start:** never ahead of the room on screen ([Launch order](#launch-order)).
+  Desktop's first wave goes right after the relay socket connects, once no
+  room's open window is out (at most 3 s); mobile's first wave goes after
+  the first frame as soon as the session is usable (checked every 100 ms
+  for the first 3 s, then at the usual intervals), once the room on screen
+  has its first window (at most 3 s). The first wave leaves out the room on
+  screen; a room the user opens meanwhile loads itself and is left out.
+- **Waves:** the rooms behind the top 12 rows in one request (20 rows per
+  room, asked at once with no wait or store check below; 20 rows record no
+  head span), then their threads four per request; then the rooms of rows
+  13 to 48 not already loaded, 12 per request (50 rows), and their threads,
+  each request waiting until the user is idle (no input for 1.5 s, nothing
+  loading in the foreground, app visible; mobile also keyboard down and
+  relay usable).
+- **Wait (background wave only):** each room request first waits, at most 3 s, until a live REQ
   carrying each of its rooms has reached EOSE and the catch-up (or
   reconnect repair) begun there has ended, completed or not. With store
   opens off, no store or an untrusted clock (desktop reads it through
@@ -443,7 +499,7 @@ and open from the store. Desktop and mobile behave the same. Cases:
   and every room counts as without a token. Signing out, switching account
   or leaving Home ends the wait; nothing is then requested, and the request
   is also dropped if the account or server changed meanwhile.
-- **Check:** rooms with a token (a live REQ that reached EOSE) are asked of
+- **Check (background wave only):** rooms with a token (a live REQ that reached EOSE) are asked of
   the store (desktop: one call, one drain), with the rule of [opening a room
   from the store](#opening-a-room-from-the-store); the call returns each
   certain room's window. A certain room is not requested and not marked
@@ -546,7 +602,10 @@ older rows it should no longer see. Cases:
   joined at settlement (desktop: `isJoinedChat` in the authoritative list
   and the displayed cache; mobile: members in the channels state). A kept
   room first written after the fetch's capture is left alone too and stays
-  kept for the next list.
+  kept for the next list. Mobile applies the list later
+  ([Launch order](#launch-order)) and then also keeps the rooms shown as
+  joined at that moment; the capture taken before the fetch still decides
+  scope and what may be forgotten.
 - **Same scope only:** the capture is taken before the fetch for the same
   identity (desktop: by `get_channels` from the same pubkey it fetches for;
   mobile: the capture's account must be the fetching pubkey). The store

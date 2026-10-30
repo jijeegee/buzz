@@ -51,7 +51,7 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
       }
       // A controller that never restored holds no tokens yet and would only
       // forget locally, stranding the live device session on the relay.
-      if (controller.state.status == TokenSessionStatus.restoring) {
+      if (controller.state.status.isRestoring) {
         await controller.restore();
       }
       await controller.signOut();
@@ -79,7 +79,7 @@ final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>
     if (deviceOnly) {
       unawaited(controller.revokeOnServerBestEffort());
     } else {
-      if (controller.state.status == TokenSessionStatus.restoring) {
+      if (controller.state.status.isRestoring) {
         await controller.restore();
       }
       await controller.signOut();

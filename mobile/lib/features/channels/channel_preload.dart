@@ -12,6 +12,10 @@ import 'thread_replies_provider.dart';
 /// answer can vouch for it (docs/message-sync.md#head-spans).
 const channelPreloadMessages = 50;
 
+/// Newest messages per room in the first wave, asked right after connect:
+/// about one screen, so the request stays small.
+const channelPreloadFirstMessages = 20;
+
 /// Newest replies loaded per preloaded thread, about one thread screen.
 const threadPreloadReplies = 20;
 
@@ -35,12 +39,15 @@ const _threadWindowKinds = [EventKind.streamMessage, EventKind.streamMessageV2];
 
 /// The newest-window filter of one room, as the room itself requests it but
 /// with a smaller page.
-NostrFilter channelPreloadFilter(String channelId) => NostrFilter(
+NostrFilter channelPreloadFilter(
+  String channelId, {
+  int limit = channelPreloadMessages,
+}) => NostrFilter(
   kinds: EventKind.channelTimelineContentKinds,
   tags: {
     '#h': [channelId],
   },
-  limit: channelPreloadMessages,
+  limit: limit,
   extensions: const {
     'top_level': true,
     'include_summaries': true,
@@ -153,6 +160,19 @@ class ChannelPreloader {
     return !_ref.read(relaySessionProvider.notifier).isRateLimited;
   }
 
+  /// Whether the room on screen is still waiting for its first window:
+  /// background loads must not go out ahead of it.
+  bool get visibleRoomLoading {
+    final room = _visibleRoom;
+    if (room == null || !_ref.exists(channelMessagesProvider(room))) {
+      return false;
+    }
+    return !_ref.read(channelMessagesProvider(room).notifier).hasLoadedMessages;
+  }
+
+  String? get _visibleRoom =>
+      _ref.read(relaySessionProvider.notifier).visibleChannelId;
+
   StorePreloadBridge get _storeBridge {
     if (_store case final store?) return store;
     final session = _ref.read(relaySessionProvider.notifier);
@@ -187,15 +207,17 @@ class ChannelPreloader {
     ];
     final check = planStorePreload(cold, tokens, const {}).check;
     final windows = <String, List<NostrEvent>>{};
-    for (final room in check) {
-      try {
-        if (await store.certain(room) case final window?) {
-          windows[room] = window;
-        }
-      } catch (_) {
-        // Unreadable: the relay is asked.
-      }
-    }
+    // The rooms are independent: read them together.
+    await Future.wait([
+      for (final room in check)
+        store.certain(room).then<void>(
+          (window) {
+            if (window != null) windows[room] = window;
+          },
+          // Unreadable: the relay is asked.
+          onError: (Object _) {},
+        ),
+    ]);
     final plan = planStorePreload(cold, tokens, windows.keys.toSet());
     debugPrint(storePreloadSummary(plan));
     if (_ref.read(channelHeadScopeProvider) != scope) return const [];
@@ -223,18 +245,26 @@ class ChannelPreloader {
   ///
   /// [beforeFetch] runs right before the relay request, after the store
   /// check, and skips the request when it resolves to false.
+  ///
+  /// The [firstWave] asks the relay at once for [channelPreloadFirstMessages]
+  /// per room: no wait for live REQs and no store check, which only the later
+  /// waves make, and not for the room on screen, which loads itself
+  /// (docs/message-sync.md#store-first-preload).
   Future<List<String>> preloadRooms(
     List<ChannelPreloadTarget> targets, {
     Future<bool> Function()? beforeFetch,
+    bool firstWave = false,
   }) async {
     final scope = _ref.read(channelHeadScopeProvider);
     if (scope == null) return const [];
     final cache = _ref.read(channelHeadCacheProvider);
+    final visible = firstWave ? _visibleRoom : null;
     final cold = <String>[];
     for (final target in targets) {
       final channelId = target.channelId;
       if (cold.length == maxChannelWindowsPerRequest) break;
       if (cold.contains(channelId) ||
+          channelId == visible ||
           _recentlyAttempted('room:$channelId') ||
           _ref.exists(channelMessagesProvider(channelId))) {
         continue;
@@ -251,7 +281,7 @@ class ChannelPreloader {
     for (final channelId in cold) {
       _attemptedAt['room:$channelId'] = attemptedAt;
     }
-    final fetch = await _roomsNeedingRelay(cold, scope);
+    final fetch = firstWave ? cold : await _roomsNeedingRelay(cold, scope);
     if (fetch.isEmpty || _ref.read(channelHeadScopeProvider) != scope) {
       return const [];
     }
@@ -263,7 +293,13 @@ class ChannelPreloader {
       events = await _ref
           .read(relaySessionProvider.notifier)
           .queryRelayWithStoreHeads([
-            for (final channelId in fetch) channelPreloadFilter(channelId),
+            for (final channelId in fetch)
+              channelPreloadFilter(
+                channelId,
+                limit: firstWave
+                    ? channelPreloadFirstMessages
+                    : channelPreloadMessages,
+              ),
           ]);
     } catch (error) {
       // The scheduler tries again in a later pass.

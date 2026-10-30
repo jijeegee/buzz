@@ -12,5 +12,13 @@ export const relayClient = new RelayClient();
  * Call with `null` when the user navigates away from a channel view.
  */
 export function setVisibleChannel(id: string | null): void {
+  visibleChannel = id;
   relayClient.setVisibleChannelId(id);
+}
+
+let visibleChannel: string | null = null;
+
+/** The channel currently visible in the UI, or null. */
+export function getVisibleChannel(): string | null {
+  return visibleChannel;
 }

@@ -290,7 +290,7 @@ class TokenSignInPage extends HookConsumerWidget {
     final busy =
         checking.value ||
         completing.value ||
-        status == TokenSessionStatus.restoring ||
+        (status?.isRestoring ?? false) ||
         status == TokenSessionStatus.signingIn;
     final errorText =
         message.value ??

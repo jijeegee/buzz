@@ -13,6 +13,12 @@ import 'service_address.dart';
 /// survives an app reinstall while preferences do not.
 const serviceScopeMigratedKey = 'kuzz.service-scope-migrated.v1';
 
+/// Copy in SharedPreferences of the secure-storage done-marker, so a start
+/// whose keychain is already migrated does not read the keychain before the
+/// first frame. Without it (first start, or preferences lost on a reinstall)
+/// the keychain marker is read as before and this copy is written.
+const serviceScopeSecureMigratedKey = 'kuzz.service-scope-migrated.secure.v1';
+
 /// One-time copy of every stored entry whose key embeds a service address
 /// (see [ServiceAddresses]) to the same key with that address replaced by
 /// the service scope, e.g. `kuzz.auth.refresh.v1:https://host:8443` to
@@ -43,7 +49,13 @@ Future<void> migrateServiceScopedStorage({
     debugPrint('[Kuzz] preference scope migration failed: $error');
   }
   try {
-    await _migrateSecure(secure ?? const FlutterSecureStorage(), service);
+    final known = {...?prefs.getStringList(serviceScopeSecureMigratedKey)};
+    if (service.origins.every(known.contains)) return;
+    final done = await _migrateSecure(
+      secure ?? const FlutterSecureStorage(),
+      service,
+    );
+    await prefs.setStringList(serviceScopeSecureMigratedKey, done.toList());
   } catch (error) {
     debugPrint('[Kuzz] secure scope migration failed: $error');
   }
@@ -129,7 +141,8 @@ Future<void> _migratePrefs(
   }
 }
 
-Future<void> _migrateSecure(
+/// The origins the keychain marker lists once this pass is done.
+Future<Set<String>> _migrateSecure(
   FlutterSecureStorage secure,
   ServiceAddresses service,
 ) async {
@@ -144,7 +157,7 @@ Future<void> _migrateSecure(
     }
   }
   final pending = service.origins.where((o) => !done.contains(o)).toList();
-  if (pending.isEmpty) return;
+  if (pending.isEmpty) return done;
   // iOS filters keychain queries by accessibility, so each class of item is
   // read and copied with the options it was written with. Refresh tokens
   // first: elsewhere readAll returns every item and the default pass then
@@ -178,4 +191,5 @@ Future<void> _migrateSecure(
       value: jsonEncode(done.toList()),
     );
   }
+  return done;
 }

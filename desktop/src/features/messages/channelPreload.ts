@@ -26,6 +26,7 @@ import {
 } from "@/features/messages/lib/storedWindows";
 import { seedThreadPages } from "@/features/messages/lib/threadWindowCache";
 import { getChannelWindowsEvents } from "@/shared/api/channelWindow";
+import { getVisibleChannel } from "@/shared/api/relayClient";
 import {
   STORE_LIVE_WAIT_MS,
   waitStoreLive,
@@ -89,6 +90,11 @@ export type PreloadChannelsOptions = {
   onCertain?: (roomIds: string[]) => void;
   /** Runs right before the relay request; false skips it (user busy). */
   beforeFetch?: () => Promise<boolean>;
+  /**
+   * False asks the relay for every cold room at once, without waiting for
+   * live REQs or asking the store which rooms are certain (the first wave).
+   */
+  storeCheck?: boolean;
 };
 
 function sameScope(
@@ -174,9 +180,20 @@ export async function preloadChannelsMessages(
     (channelId) => !keepCachedChannel(queryClient, channelId),
   );
   if (cold.length === 0) return [];
-  const fetch = await roomsNeedingRelay(queryClient, cold, options);
-  if (!fetch || fetch.length === 0) return [];
+  const candidates =
+    options.storeCheck === false
+      ? cold
+      : await roomsNeedingRelay(queryClient, cold, options);
+  if (!candidates || candidates.length === 0) return [];
   if (options.beforeFetch && !(await options.beforeFetch())) return [];
+  // The room on screen, and any room loading itself, asks for its own window.
+  const visible = getVisibleChannel();
+  const fetch = candidates.filter(
+    (channelId) =>
+      channelId !== visible &&
+      queryClient.isFetching({ queryKey: channelMessagesKey(channelId) }) === 0,
+  );
+  if (fetch.length === 0) return [];
   // Signed out, switched account or left: nothing more goes out.
   if (
     options.signal?.aborted ||

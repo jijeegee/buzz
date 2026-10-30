@@ -144,7 +144,8 @@ class CommunityRecoveryActions extends HookConsumerWidget {
 
 /// Whether the active community has a signed-in session for "Sign out" to
 /// end: not signed out, and for a token community a stored or live token
-/// session (not `signedOut`, `signingIn` or still `restoring`).
+/// session (not `signedOut`, `signingIn` or still `restoring`; `resuming`
+/// holds a stored session of the shown account).
 final _hasSignedInSessionProvider = Provider<bool>((ref) {
   final active = ref.watch(activeCommunityProvider).value;
   if (active == null || active.signedOut) return false;
@@ -152,6 +153,7 @@ final _hasSignedInSessionProvider = Provider<bool>((ref) {
   if (origin == null) return true;
   return switch (ref.watch(tokenSessionProvider(origin)).status) {
     TokenSessionStatus.signedIn ||
+    TokenSessionStatus.resuming ||
     TokenSessionStatus.retrying ||
     TokenSessionStatus.stalled => true,
     TokenSessionStatus.restoring ||

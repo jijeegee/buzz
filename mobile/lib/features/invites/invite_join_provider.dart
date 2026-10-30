@@ -449,7 +449,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
   Future<void> _joinTokenRelay(InviteDeepLink invite, String origin) async {
     final displayName = Community.nameFromUrl(invite.relayUrl);
     final controller = ref.read(tokenSessionControllerProvider(origin));
-    if (controller.state.status == TokenSessionStatus.restoring) {
+    if (controller.state.status.isRestoring) {
       await controller.restore();
     }
     var token = await controller.ensureFreshAccessToken();

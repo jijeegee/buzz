@@ -8,6 +8,8 @@ export const INBOX_PRELOAD_ROWS = 12;
 export const INBOX_PRELOAD_BACKGROUND_ROWS = 48;
 /** Newest messages loaded per preloaded room: a whole open window. */
 export const INBOX_PRELOAD_MESSAGES = 50;
+/** Newest messages per room of the first wave: a screenful, asked at once. */
+export const INBOX_PRELOAD_FIRST_MESSAGES = 20;
 
 export type InboxPreloadTarget = {
   channelId: string;

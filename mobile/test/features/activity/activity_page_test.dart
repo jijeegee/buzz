@@ -1225,7 +1225,14 @@ class _RecordingPreloader extends ChannelPreloader {
   bool get canRequest => true;
 
   @override
-  Future<List<String>> preloadRooms(List<ChannelPreloadTarget> targets) async {
+  bool get visibleRoomLoading => false;
+
+  @override
+  Future<List<String>> preloadRooms(
+    List<ChannelPreloadTarget> targets, {
+    Future<bool> Function()? beforeFetch,
+    bool firstWave = false,
+  }) async {
     preloadedRooms.addAll(targets.map((target) => target.channelId));
     return const [];
   }

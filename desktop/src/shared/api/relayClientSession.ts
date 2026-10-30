@@ -1,6 +1,7 @@
 import { t } from "@/shared/i18n";
 import { Channel, invoke } from "@tauri-apps/api/core";
 import { buildRelayAuthFrame } from "@/shared/api/relayAuthFrame";
+import { relayConnectAllowed } from "@/shared/api/relayConnectGate";
 import { getRelayWsUrl, signRelayEvent } from "@/shared/api/tauri";
 import type { PresenceStatus, RelayEvent } from "@/shared/api/types";
 import {
@@ -567,9 +568,8 @@ export class RelayClient {
       inbound.receive(delivery),
     );
     try {
-      if (!this.relayUrl) {
-        this.relayUrl = await getRelayWsUrl();
-      }
+      await relayConnectAllowed();
+      this.relayUrl ||= await getRelayWsUrl();
       const wsId = await invoke<number>("plugin:websocket|connect", {
         url: this.relayUrl,
         onMessage: this.onMessageChannel,

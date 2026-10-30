@@ -10,6 +10,9 @@ const calls = [];
 const pendingTrust = [];
 let holdTrust = false;
 let tokenStatus;
+let savedSession = false;
+let heldStatus = null;
+let failIdentity = false;
 const listeners = [];
 const callbacks = [];
 let tokenAuthApi;
@@ -31,8 +34,15 @@ before(async () => {
           pendingTrust.push({ resolve, reject });
         });
       }
-      if (command === "get_identity") return { pubkey: "a".repeat(64) };
-      if (command === "get_token_auth_status") return tokenStatus;
+      if (command === "get_identity") {
+        if (failIdentity) throw new Error("identity unavailable");
+        return { pubkey: "a".repeat(64) };
+      }
+      if (command === "saved_session_ready") return savedSession;
+      if (command === "get_token_auth_status") {
+        if (heldStatus) return heldStatus.promise;
+        return tokenStatus;
+      }
       if (command === "plugin:event|listen") {
         listeners.push({ event: args.event, handler: args.handler });
         return listeners.length;
@@ -67,6 +77,9 @@ afterEach(async () => {
   calls.length = 0;
   listeners.length = 0;
   tokenStatus = undefined;
+  savedSession = false;
+  heldStatus = null;
+  failIdentity = false;
   localStorage.clear();
 });
 after(() => dom.window.close());
@@ -315,4 +328,162 @@ test("a held account action defers the reload until it settles", async (t) => {
   assert.equal(reload.mock.callCount(), 0, "held");
   action.cancel();
   assert.equal(reload.mock.callCount(), 1, "released into the asked reload");
+});
+
+function holdStatus() {
+  let resolve;
+  const promise = new Promise((r) => (resolve = r));
+  heldStatus = { promise, resolve };
+  return (status) => act(async () => resolve(status));
+}
+
+// Launch order: a saved session of the key held here draws the stored account
+// before the restore, and the relay socket waits for the restore.
+test("a saved session draws at once and holds the relay until the restore", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const { relayConnectAllowed } = await import("@/shared/api/relayConnectGate");
+  savedSession = true;
+  const finish = holdStatus();
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  assert.equal(result.current.identityPubkey, "a".repeat(64));
+  assert.equal(result.current.deviceSignedOut, false);
+  let connected = false;
+  void relayConnectAllowed().then(() => (connected = true));
+  await act(async () => {});
+  assert.equal(connected, false, "the socket waits for the restore");
+  await finish({
+    ...tokenStatusOf("active", "c".repeat(64)),
+    keyBackup: true,
+    signingPubkey: "a".repeat(64),
+  });
+  await waitFor(() => assert.equal(connected, true));
+  assert.equal(reload.mock.callCount(), 0, "same account: stays drawn");
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+});
+
+for (const [name, status] of [
+  ["the session ended", { ...tokenStatusOf("needs_login"), keyBackup: true }],
+  [
+    "this computer was signed out",
+    {
+      ...tokenStatusOf("signed_out"),
+      keyBackup: true,
+      deviceSignedOut: true,
+    },
+  ],
+  [
+    "another identity",
+    {
+      ...tokenStatusOf("active", "c".repeat(64)),
+      keyBackup: true,
+      signingPubkey: "d".repeat(64),
+    },
+  ],
+]) {
+  test(`a drawn account reloads into the regular launch when ${name}`, async (t) => {
+    const reload = t.mock.method(
+      tokenAuthApi.identityReload,
+      "reload",
+      () => {},
+    );
+    savedSession = true;
+    const finish = holdStatus();
+    const { result } = mount([a, b]);
+    await waitFor(() => assert.equal(result.current.isReady, true));
+    assert.equal(reload.mock.callCount(), 0);
+    await finish(status);
+    await waitFor(() => assert.equal(reload.mock.callCount(), 1));
+  });
+}
+
+test("without a saved session the launch still waits for the restore", async () => {
+  savedSession = false;
+  const finish = holdStatus();
+  const { result } = mount([a, b]);
+  await act(async () => {});
+  await act(async () => {});
+  assert.equal(result.current.isReady, false);
+  await finish({ ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true });
+  await waitFor(() => assert.equal(result.current.isReady, true));
+});
+
+test("a restore still retrying keeps the socket held until it settles", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  const { relayConnectAllowed } = await import("@/shared/api/relayConnectGate");
+  savedSession = true;
+  const finish = holdStatus();
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  let connected = false;
+  void relayConnectAllowed().then(() => (connected = true));
+  await finish({ ...tokenStatusOf("restoring"), keyBackup: true });
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  assert.equal(connected, false, "half-restored: still held");
+  heldStatus = null;
+  tokenStatus = { ...tokenStatusOf("restoring"), keyBackup: true };
+  await act(async () => emitTokenAuthChanged());
+  await act(async () => {});
+  assert.equal(connected, false);
+  tokenStatus = {
+    ...tokenStatusOf("active", "c".repeat(64)),
+    keyBackup: true,
+    signingPubkey: "a".repeat(64),
+  };
+  await act(async () => emitTokenAuthChanged());
+  await waitFor(() => assert.equal(connected, true));
+  assert.equal(reload.mock.callCount(), 0);
+});
+
+test("a session that ends later reloads, whatever its code", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = { ...tokenStatusOf("active", "c".repeat(64)), keyBackup: true };
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  tokenStatus = {
+    ...tokenStatusOf("needs_login"),
+    keyBackup: true,
+    reason: "backup_binding_unavailable",
+  };
+  await act(async () => emitTokenAuthChanged());
+  await waitFor(() => assert.equal(reload.mock.callCount(), 1));
+});
+
+test("a launch that starts ended does not reload on its own status", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  tokenStatus = { ...tokenStatusOf("needs_login"), keyBackup: true };
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  await act(async () => emitTokenAuthChanged());
+  await act(async () => {});
+  assert.equal(reload.mock.callCount(), 0);
+});
+
+test("a failed identity read after the restore still watches the session", async (t) => {
+  const reload = t.mock.method(tokenAuthApi.identityReload, "reload", () => {});
+  t.mock.method(console, "error", () => {});
+  savedSession = true;
+  const finish = holdStatus();
+  const { result } = mount([a, b]);
+  await waitFor(() => assert.equal(result.current.isReady, true));
+  failIdentity = true;
+  await finish({
+    ...tokenStatusOf("active", "c".repeat(64)),
+    keyBackup: true,
+    signingPubkey: "a".repeat(64),
+  });
+  await waitFor(() =>
+    assert.ok(listeners.some((l) => l.event === "token-auth-changed")),
+  );
+  assert.equal(reload.mock.callCount(), 0);
 });

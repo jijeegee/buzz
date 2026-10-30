@@ -95,12 +95,8 @@ import { FlappingBee } from "@/shared/ui/kuzz-logo/FlappingBee";
 import { FuzzyLogo } from "@/shared/ui/kuzz-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
-// Minimum time the cold-boot splash stays on screen. A real boot resolves the
-// community in well under 100ms, and the native window setup plus first paint
-// can take longer than that — without a hold, the bee is unmounted before it is
-// ever visible. The hold runs as an overlay above the already-mounted app, so
-// time-to-interactive is unchanged; only the reveal waits.
-const BOOT_SPLASH_MIN_VISIBLE_MS = 1_200;
+// The cold-boot splash fades out as soon as the app below it can draw (from
+// device storage, docs/message-sync.md#launch-order); there is no minimum hold.
 const BOOT_SPLASH_FADE_MS = 200;
 const INITIAL_RENDER_READY_EVENT = "initial-render-ready";
 
@@ -116,28 +112,29 @@ function useInitialRenderReady() {
   }, []);
 }
 
-// E2E runs skip the hold (it would slow every spec's boot and block pointer
-// actionability); a spec can opt back in via __KUZZ_E2E__.bootSplashHoldMs.
-function bootSplashHoldMs(): number {
+// E2E runs skip the splash (it would block pointer actionability); a spec can
+// opt back in via __KUZZ_E2E__.bootSplashHoldMs, a hold before the fade.
+function bootSplashHoldMs(): number | null {
   const e2e = (
     window as Window & {
       __KUZZ_E2E__?: { bootSplashHoldMs?: number };
     }
   ).__KUZZ_E2E__;
   if (e2e) {
-    return e2e.bootSplashHoldMs ?? 0;
+    return e2e.bootSplashHoldMs ? e2e.bootSplashHoldMs : null;
   }
-  return BOOT_SPLASH_MIN_VISIBLE_MS;
+  return 0;
 }
 
-function useBootSplashHold(): BootSplashPhase {
+/** The splash overlay fades once the app below it has mounted (`ready`). */
+function useBootSplashHold(ready: boolean): BootSplashPhase {
   const [phase, setPhase] = useState<BootSplashPhase>(() =>
-    bootSplashHoldMs() > 0 ? "holding" : "done",
+    bootSplashHoldMs() === null ? "done" : "holding",
   );
 
   useEffect(() => {
     const holdMs = bootSplashHoldMs();
-    if (holdMs <= 0) {
+    if (holdMs === null || !ready) {
       return;
     }
     const fadeTimer = window.setTimeout(() => setPhase("fading"), holdMs);
@@ -149,7 +146,7 @@ function useBootSplashHold(): BootSplashPhase {
       window.clearTimeout(fadeTimer);
       window.clearTimeout(doneTimer);
     };
-  }, []);
+  }, [ready]);
 
   return phase;
 }
@@ -596,7 +593,9 @@ function CommunityApp({
     transitionCommunity,
   ]);
 
-  const bootSplashPhase = useBootSplashHold();
+  const bootSplashPhase = useBootSplashHold(
+    community.isReady && community.appliedKey === communityKey,
+  );
 
   const transaction = communityOnboarding.transaction;
   useEffect(() => {
@@ -733,8 +732,8 @@ function CommunityApp({
   // starter team" screen visibly restarts mid-handoff.
   const isEnteringCurtain = transaction?.stage === "entering";
 
-  // The app mounts (and starts loading data) beneath the splash overlay; the
-  // overlay just keeps the bee on screen long enough to be seen, then fades.
+  // The app mounts (and draws from device storage) beneath the splash
+  // overlay, which then fades.
   // Community switches keep their quiet gate.
   const showBootSplashOverlay =
     bootSplashPhase !== "done" && !isCommunitySwitch && !isContinuingOnboarding;

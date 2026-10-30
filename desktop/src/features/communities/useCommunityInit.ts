@@ -18,13 +18,11 @@ import {
   setAgentAvatarCommunities,
 } from "@/shared/api/tauriWorkspace";
 import { getIdentity } from "@/shared/api/tauriIdentity";
+import { getTokenAuthStatus, savedSessionReady } from "@/shared/api/tokenAuth";
 import {
-  getTokenAuthStatus,
-  onActiveAccountChanged,
-  onTokenAuthChanged,
-  tokenIdentityChanged,
-} from "@/shared/api/tokenAuth";
-import { requestIdentityReload } from "@/features/accounts/lib/accountSwitch";
+  holdRelayConnect,
+  releaseRelayConnect,
+} from "@/shared/api/relayConnectGate";
 import { setQuickReactionAccount } from "@/features/messages/ui/useQuickReactionEmojis";
 import { clearTrayAgentActivity } from "@/shared/api/trayMenu";
 import { getOverrides } from "@/shared/features";
@@ -57,6 +55,8 @@ import {
 } from "@/features/agents/activeAgentTurnsStore";
 import { resetAgentWorkingSignal } from "@/features/agents/agentWorkingSignal";
 import { resetAgentObserverStore } from "@/features/agents/observerRelayStore";
+import { resetStartupObserverGate } from "@/features/agents/startupObserverGate";
+import { resetOpenWindows } from "@/shared/api/openWindowRequests";
 import { resetAvatarPresentations } from "@/features/profile/avatarPresentationStore";
 import { resetAvatarProfileSync } from "@/features/profile/avatarProfileSync";
 import { resetSidebarRelayConnectionCardState } from "@/features/sidebar/ui/useSidebarRelayConnectionCard";
@@ -71,6 +71,12 @@ import {
 } from "./communityStorage";
 import type { Community } from "./types";
 import { communityRelaySetKey } from "./communityRelaySet";
+import {
+  restoreDrawnAccount,
+  type TokenAuthWatchScope,
+  watchActiveAccount,
+  watchTokenStatus,
+} from "./tokenAuthWatch";
 
 /**
  * Tear down all community-scoped module singletons so the new
@@ -91,6 +97,8 @@ async function resetCommunityState({
   resetRateLimitGate();
   clearAllDrafts();
   resetAgentObserverStore();
+  resetStartupObserverGate();
+  resetOpenWindows();
   resetActiveAgentTurnsStore();
   resetAgentWorkingSignal();
   if (isTauri() && isMacPlatform()) {
@@ -214,8 +222,7 @@ export function useCommunityInit(
   // biome-ignore lint/correctness/useExhaustiveDependencies: we intentionally depend on specific properties (id/relayUrl/token/reposDir) — depending on the whole object would trigger resets on name-only changes
   useEffect(() => {
     let cancelled = false;
-    let unlistenTokenAuth: (() => void) | undefined;
-    let unlistenActiveAccount: (() => void) | undefined;
+    const unlisteners: (() => void)[] = [];
 
     async function init() {
       if (!activeCommunity) {
@@ -317,6 +324,8 @@ export function useCommunityInit(
         needsSetup: false,
         appliedKey: communityKey,
       });
+      // A hold left by the previous community's restore never delays this one.
+      releaseRelayConnect();
 
       // Resolve the active signer before resetting singletons so
       // identity-scoped state is discarded when the pubkey changed, not only
@@ -433,57 +442,43 @@ export function useCommunityInit(
       // the relay socket and "me" use the account principal, not the key.
       // The status call awaits any restore already in flight (single-flight
       // on the Rust side), so it reads a settled state.
+      //
+      // A saved session of the key held here draws the stored account at once
+      // and restores in the background; the relay socket still waits for it
+      // (docs/message-sync.md#launch-order).
       let deviceSignedOut = false;
-      try {
-        const tokenAuth = await getTokenAuthStatus();
-        deviceSignedOut = tokenAuth.deviceSignedOut === true;
-        if (tokenAuth.state === "active") {
-          identityPubkey = (await getIdentity()).pubkey;
-          appliedPubkeyRef.current = identityPubkey;
+      const scope: TokenAuthWatchScope = {
+        isCancelled: () => cancelled,
+        keep: (unlisten) => unlisteners.push(unlisten),
+      };
+      const drawnPubkey = identityPubkey;
+      const drawStored =
+        drawnPubkey !== null && (await savedSessionReady().catch(() => false));
+      if (cancelled) return;
+      if (drawStored && drawnPubkey !== null) {
+        const release = holdRelayConnect();
+        watchActiveAccount(drawnPubkey, scope);
+        void restoreDrawnAccount(
+          getTokenAuthStatus(),
+          drawnPubkey,
+          release,
+          scope,
+        );
+      } else {
+        try {
+          const tokenAuth = await getTokenAuthStatus();
+          deviceSignedOut = tokenAuth.deviceSignedOut === true;
+          if (tokenAuth.state === "active") {
+            identityPubkey = (await getIdentity()).pubkey;
+            appliedPubkeyRef.current = identityPubkey;
+          }
+          if (tokenAuth.supported && !cancelled) {
+            watchTokenStatus(tokenAuth, identityPubkey, scope);
+            watchActiveAccount(identityPubkey, scope);
+          }
+        } catch (error) {
+          console.error("[useCommunityInit] token auth status failed:", error);
         }
-        if (tokenAuth.supported && !cancelled) {
-          // If the account identity changes after init (a restore that was
-          // still retrying completes, or another path signs in), every
-          // identity-scoped store must restart under it, as sign-in does.
-          const appliedPrincipal =
-            tokenAuth.keyBackup || tokenAuth.keyBackupSupported
-              ? identityPubkey
-              : tokenAuth.state === "active"
-                ? tokenAuth.principal
-                : null;
-          void onTokenAuthChanged(() => {
-            if (cancelled) return;
-            void getTokenAuthStatus()
-              .then((next) => {
-                if (
-                  !cancelled &&
-                  (tokenIdentityChanged(appliedPrincipal, next) ||
-                    (next.deviceSignedOut === true) !== deviceSignedOut)
-                ) {
-                  requestIdentityReload();
-                }
-              })
-              .catch(() => {});
-          }).then((unlisten) => {
-            if (cancelled) unlisten();
-            else unlistenTokenAuth = unlisten;
-          });
-          // Another account became active (a switch from another window, or
-          // a session ending here). It is announced even when the new
-          // account's session cannot be restored right now (offline), which
-          // the status check above would not see as a change.
-          const appliedAccount = identityPubkey;
-          void onActiveAccountChanged((pubkey) => {
-            if (!cancelled && pubkey !== appliedAccount) {
-              requestIdentityReload();
-            }
-          }).then((unlisten) => {
-            if (cancelled) unlisten();
-            else unlistenActiveAccount = unlisten;
-          });
-        }
-      } catch (error) {
-        console.error("[useCommunityInit] token auth status failed:", error);
       }
       if (cancelled) return;
 
@@ -525,8 +520,7 @@ export function useCommunityInit(
 
     return () => {
       cancelled = true;
-      unlistenTokenAuth?.();
-      unlistenActiveAccount?.();
+      for (const unlisten of unlisteners) unlisten();
     };
   }, [
     activeCommunity?.id,
