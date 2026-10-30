@@ -39,7 +39,12 @@ class StoredRoomHead {
 
   /// The window in the shape of a relay channel-window response: rows,
   /// overlays, summaries and one `39006` bounds event for [room]'s head.
-  List<Map<String, dynamic>> toResponse(String room) {
+  /// [contiguous] adds `contiguous_from` to the bounds (see
+  /// [storedRowsContiguousFrom]) for a window drawn before the relay's.
+  List<Map<String, dynamic>> toResponse(
+    String room, {
+    ({int? from})? contiguous,
+  }) {
     final cursor = nextCursor;
     return [
       ...rows,
@@ -60,6 +65,7 @@ class StoredRoomHead {
           'next_cursor': cursor == null
               ? null
               : {'created_at': cursor.$1, 'id': cursor.$2},
+          if (contiguous != null) 'contiguous_from': contiguous.from,
         }),
       },
     ];
@@ -273,4 +279,41 @@ Future<StoredRoomHead> readRoomHead(
     summaries: summaries,
     nextCursor: nextCursor,
   );
+}
+
+/// The oldest `created_at` from which [room]'s stored rows run without a gap
+/// up to [newest] (the newest stored row's): a room span alone, or a head
+/// span (docs/message-sync.md#head-spans) reaching [newest] itself or by a
+/// room span. `null` when no span vouches for any of them.
+Future<int?> storedRowsContiguousFrom(
+  DatabaseExecutor db, {
+  required String room,
+  required int newest,
+}) async {
+  final spans = await db.rawQuery(
+    'SELECT stream, lo_at, lo_id, hi_at FROM coverage '
+    'WHERE room = ? AND stream IN (?, ?)',
+    [room, _roomStream, headStream],
+  );
+  final roomSpans = [
+    for (final span in spans)
+      if (span['stream'] == _roomStream)
+        (span['lo_at']! as int, span['hi_at']! as int),
+  ];
+  int? from;
+  void take(int at) => from = from == null || at < from! ? at : from;
+  for (final (lo, hi) in roomSpans) {
+    if (hi >= newest) take(lo + rowReceiveMarginSecs);
+  }
+  for (final span in spans) {
+    if (span['stream'] != headStream) continue;
+    final hi = span['hi_at']! as int;
+    if (hi < newest && !roomSpans.any((r) => r.$1 <= hi && r.$2 >= newest)) {
+      continue;
+    }
+    // Rows of the oldest row's second with a greater id may be missing.
+    final loId = span['lo_id']! as String;
+    take(loId.isEmpty ? 0 : (span['lo_at']! as int) + 1);
+  }
+  return from;
 }

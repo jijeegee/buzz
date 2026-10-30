@@ -265,7 +265,7 @@ test("a failed batch loads nothing and leaves the retry to a later pass", async 
   assert.equal(hasPersistedHydratedChannel(client, ROOM), false);
 });
 
-test("a room the store holds certainly is not requested and opens from the store", async () => {
+test("a room the store holds certainly is not preloaded and paints from the store", async () => {
   const client = newClient();
   const other = "11111111-2222-4333-8444-555555555555";
   store.live.set(ROOM, 900);
@@ -294,24 +294,24 @@ test("a room the store holds certainly is not requested and opens from the store
     true,
   );
 
-  // Opening the certain room draws from the store; the preloaded one asks
-  // the relay.
+  // Opening the certain room draws from the store while its relay request
+  // is out; the preloaded one only asks the relay.
   const stored = windowEvents(ROOM);
   const relayAsked = [];
   const restore = setStoreRoomHeadDeps({
-    liveAt: () => 900,
-    roomHead: async () => stored,
+    roomPaint: async () => ({ window: stored, completeFrom: null }),
     relayWindow: async (roomId) => {
       relayAsked.push(roomId);
+      await new Promise((resolve) => setTimeout(resolve, 5));
       return windowEvents(roomId);
     },
     relayRefresh: async () => {},
   });
   try {
     assert.equal(await openChannelWindowEvents(client, ROOM), stored);
-    assert.deepEqual(relayAsked, []);
+    assert.deepEqual(relayAsked, [ROOM]);
     await openChannelWindowEvents(client, other);
-    assert.deepEqual(relayAsked, [other]);
+    assert.deepEqual(relayAsked, [ROOM, other]);
   } finally {
     restore();
   }

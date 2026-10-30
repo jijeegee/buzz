@@ -1,0 +1,213 @@
+{
+  "description": "Paint first, confirm after (docs/message-sync.md#painting-from-the-store and #opening-at-a-position). `paint`: a room or thread opened for the first time this run reads its stored window and asks the relay at the same time; whichever answers first is drawn. `store` is what the store read returns (`rows`, `empty`, `fails`), `first` which side answers first, `relay` how the relay request ends (`ok`, `fails`). Expect: `draws` = the first window drawn (`stored`, `relay`, or `error`), `then` = what replaces a stored window (`relay` or null), `relay_requests` = relay requests sent for the open, including the refresh that follows a stored paint. Painting never depends on the connection or on the room's live subscription having loaded, and a painted window never counts as a fetched (current) window. `anchor`: where the open lands, decided on the rows held, stored or not. `rows` are the loaded top-level rows oldest first (`[id, created_at]`), `has_older` whether older pages exist, `frontier` the read marker (null: never read), `first_unread` the first unread top-level row among them, `remembered` the reading position kept for the room (null: none), `current` whether the rows are a window fetched during this visit. Expect `open` (a row id, or null for the newest) or `seek: true` (ask the relay for older pages first; the only case that shows loading), and `provisional` (decided on rows that are not current; may be moved once). `reanchor`: a provisional decision and the decision the same rule gives once the relay's window is shown; the open moves (or seeks older pages, `seek: true`) only when the reader has not scrolled. `paint_gap`: whether a store paint may decide at all. `complete_from` is how far back the store holds the room's events without a gap (null: unknown), `first_unread` the first unread top-level row's time among the painted rows (null: none), `frontier` the read marker (null: never read); a thread passes `read_before` (the time of the newest read reply before the first unread one, null when it is the oldest loaded) and `has_older` instead of `frontier`. Expect `decides` (false: the open waits for the relay's window). Desktop: desktop/src/features/messages/lib/storeRoomHead.ts, desktop/src/features/channels/lib/openAnchorDecision.ts; mobile: to follow.",
+  "paint": [
+    {
+      "name": "stored rows draw at once, then the relay's window replaces them",
+      "store": "rows",
+      "first": "store",
+      "relay": "ok",
+      "expect": { "draws": "stored", "then": "relay", "relay_requests": 1 }
+    },
+    {
+      "name": "a relay answer before the store read is drawn instead",
+      "store": "rows",
+      "first": "relay",
+      "relay": "ok",
+      "expect": { "draws": "relay", "then": null, "relay_requests": 1 }
+    },
+    {
+      "name": "nothing stored waits for the relay",
+      "store": "empty",
+      "first": "store",
+      "relay": "ok",
+      "expect": { "draws": "relay", "then": null, "relay_requests": 1 }
+    },
+    {
+      "name": "a failed store read waits for the relay",
+      "store": "fails",
+      "first": "store",
+      "relay": "ok",
+      "expect": { "draws": "relay", "then": null, "relay_requests": 1 }
+    },
+    {
+      "name": "a relay failure before the store answers still draws the stored rows",
+      "store": "rows",
+      "first": "relay",
+      "relay": "fails",
+      "expect": { "draws": "stored", "then": null, "relay_requests": 1 }
+    },
+    {
+      "name": "a relay failure with nothing stored is an error",
+      "store": "empty",
+      "first": "relay",
+      "relay": "fails",
+      "expect": { "draws": "error", "then": null, "relay_requests": 1 }
+    }
+  ],
+  "anchor": [
+    {
+      "name": "stored rows reaching the read marker open at the first unread on the first frame",
+      "rows": [["r1", 100], ["u1", 200], ["u2", 210]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": "u1",
+      "remembered": null,
+      "current": false,
+      "expect": { "open": "u1", "provisional": true }
+    },
+    {
+      "name": "stored rows that are all unread with older history ask the relay for older pages",
+      "rows": [["u1", 200], ["u2", 210]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": "u1",
+      "remembered": null,
+      "current": false,
+      "expect": { "seek": true }
+    },
+    {
+      "name": "stored rows that are all unread and the whole history open at the first unread",
+      "rows": [["u1", 200], ["u2", 210]],
+      "has_older": false,
+      "frontier": 150,
+      "first_unread": "u1",
+      "remembered": null,
+      "current": false,
+      "expect": { "open": "u1", "provisional": true }
+    },
+    {
+      "name": "nothing unread opens at the remembered row when it is stored",
+      "rows": [["r1", 100], ["r2", 120]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": null,
+      "remembered": "r1",
+      "current": false,
+      "expect": { "open": "r1", "provisional": true }
+    },
+    {
+      "name": "a remembered row older than the stored rows is sought",
+      "rows": [["r1", 100], ["r2", 120]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": null,
+      "remembered": "r0",
+      "current": false,
+      "expect": { "seek": true }
+    },
+    {
+      "name": "nothing unread and no remembered row open at the newest",
+      "rows": [["r1", 100], ["r2", 120]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": null,
+      "remembered": null,
+      "current": false,
+      "expect": { "open": null, "provisional": true }
+    },
+    {
+      "name": "a room never read opens at the newest",
+      "rows": [["r1", 100]],
+      "has_older": true,
+      "frontier": null,
+      "first_unread": null,
+      "remembered": null,
+      "current": false,
+      "expect": { "open": null, "provisional": true }
+    },
+    {
+      "name": "a current window decides for good",
+      "rows": [["r1", 100], ["u1", 200]],
+      "has_older": true,
+      "frontier": 150,
+      "first_unread": "u1",
+      "remembered": null,
+      "current": true,
+      "expect": { "open": "u1", "provisional": false }
+    }
+  ],
+  "reanchor": [
+    {
+      "name": "the relay brings a first unread the store lacked: move there",
+      "provisional_open": null,
+      "on_current": { "open": "u1" },
+      "reader_moved": false,
+      "expect": { "open": "u1" }
+    },
+    {
+      "name": "a reader who scrolled is not moved",
+      "provisional_open": null,
+      "on_current": { "open": "u1" },
+      "reader_moved": true,
+      "expect": { "open": null }
+    },
+    {
+      "name": "the relay agrees with the stored rows: nothing moves",
+      "provisional_open": "u1",
+      "on_current": { "open": "u1" },
+      "reader_moved": false,
+      "expect": { "open": "u1" }
+    },
+    {
+      "name": "a row only older pages could find is sought before the open moves",
+      "provisional_open": "r1",
+      "on_current": { "seek": true },
+      "reader_moved": false,
+      "expect": { "seek": true }
+    },
+    {
+      "name": "a reader who scrolled is not moved to seek either",
+      "provisional_open": "r1",
+      "on_current": { "seek": true },
+      "reader_moved": true,
+      "expect": { "open": "r1" }
+    }
+  ],
+  "paint_gap": [
+    {
+      "name": "a room held without a gap since the read marker decides",
+      "complete_from": 100, "first_unread": 200, "frontier": 150,
+      "expect": { "decides": true }
+    },
+    {
+      "name": "a hole between yesterday's read marker and today's rows waits for the relay",
+      "complete_from": 180, "first_unread": 200, "frontier": 150,
+      "expect": { "decides": false }
+    },
+    {
+      "name": "unknown coverage with an unread row waits for the relay",
+      "complete_from": null, "first_unread": 200, "frontier": 150,
+      "expect": { "decides": false }
+    },
+    {
+      "name": "nothing unread among the painted rows decides",
+      "complete_from": null, "first_unread": null, "frontier": 150,
+      "expect": { "decides": true }
+    },
+    {
+      "name": "a room never read decides (it opens at the newest)",
+      "complete_from": 180, "first_unread": 200, "frontier": null,
+      "expect": { "decides": true }
+    },
+    {
+      "name": "thread: held since the newest read reply decides",
+      "thread": true, "complete_from": 100, "first_unread": 200, "read_before": 120, "has_older": false,
+      "expect": { "decides": true }
+    },
+    {
+      "name": "thread: a hole after the newest read reply waits for the relay",
+      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": 120, "has_older": false,
+      "expect": { "decides": false }
+    },
+    {
+      "name": "thread: the oldest loaded reply unread with older pages decides (older pages are sought)",
+      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": null, "has_older": true,
+      "expect": { "decides": true }
+    },
+    {
+      "name": "thread: the oldest stored reply unread without a whole history waits",
+      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": null, "has_older": false,
+      "expect": { "decides": false }
+    }
+  ]
+}

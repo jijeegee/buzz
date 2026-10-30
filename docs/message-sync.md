@@ -181,12 +181,12 @@ per client:
 ## Message store
 
 Every room event the device receives is kept on the device, with the spans
-known complete ([Coverage](#coverage)). Opening a room reads its newest
-window from the store when it is certain
-([Opening a room from the store](#opening-a-room-from-the-store)), and
-opening a thread its newest replies
-([Opening a thread from the store](#opening-a-thread-from-the-store)); older
-pages still load from the relay.
+known complete ([Coverage](#coverage)). Opening a room or thread draws its
+stored newest window at once while asking the relay
+([Painting from the store](#painting-from-the-store)); a certain window
+(below) lets the preload skip a room
+([Store-first preload](#store-first-preload)). Older pages still load from
+the relay.
 
 - **One file per server and account:** `messages/<first 8 bytes of
   sha256(origin) in hex>-<account pubkey>.db`, where the origin is the relay's
@@ -329,21 +329,65 @@ coverage can still open from the store. Cases:
   root, or bounds whose `direction` is not `older` record nothing for that
   root.
 
+### Painting from the store
+
+Paintable is not the same as certain. A room or thread opened for the first
+time in this run (as defined below) reads its stored newest window and asks
+the relay at the same time; neither waits for the other.
+
+- **Stored rows draw at once** when the store answers before the relay, or
+  when the relay fails first. They draw before the connection is up and
+  before the room's live subscription has loaded: no EOSE, coverage or
+  write wait is asked for. The rows and bounds are the ones a certain read
+  would give (below).
+- **Marked unconfirmed:** a painted window never counts as a window fetched
+  during this visit, so it neither decides a position for good
+  ([Opening at a position](#opening-at-a-position)) nor vouches for the
+  live token.
+- **The relay's answer replaces it silently** as the refresh that follows.
+  That refresh takes the request already out: one relay request per open.
+  On desktop the request is sent once the effects of the render that opened
+  the room have run, so the room listener attached in that render goes with
+  it and the refresh after subscribing is not needed.
+- **Nothing stored, or a failed store read:** the relay's answer is drawn
+  when it arrives (the only case that shows loading). A relay answer before
+  the store read is drawn instead, and the late stored rows are ignored.
+- **Certain** (below) keeps its rule; it now only decides what the
+  store-first preload may skip.
+- **How far back it is whole:** each paint also returns `complete_from`,
+  the earliest time from which the store holds the room's events without a
+  gap, or none when unknown. It chains the room's spans (a room span vouches
+  from `lo + 1865`, a head span from its `lo`, or from 0 for a whole
+  history) back from the newest painted row, and is none when the room is
+  not current or has ever stored a job row. A thread paint uses the room
+  spans and the thread's head span. See [Opening at a
+  position](#opening-at-a-position) for how a gap is used.
+- **Same account and server:** a paint names the account and the relay it
+  is for (desktop: from the community's query cache); the store answers
+  nothing when the open store belongs to another account or server.
+- **Thread confirmed by its relay page:** a painted thread counts as
+  confirmed only once the relay's page has been folded into it; a refresh
+  that was dropped (the thread closed) leaves it unconfirmed.
+
+Cases: `test-fixtures/message-store-paint-first.json` (`paint`). Desktop:
+`storeRoomHead.ts`, `threadWindowCache.ts`; mobile: to follow.
+
 ### Opening a room from the store
 
 On a room's first fetch, the client reads the room's newest window from the
-store and uses it as the relay's channel-window answer when it is certain;
-otherwise it asks the relay as before. A first fetch is one for a room this
+store and draws it while the relay is asked
+([Painting from the store](#painting-from-the-store); before that rule it
+used the window only when certain). A first fetch is one for a room this
 run has not yet fetched from the store or the relay, the background
 preload's requests included (a room the preload left to the store is not
 fetched; see [Store-first preload](#store-first-preload)). Desktop tracks this per query cache (a community switch starts a
 new one); mobile per room notifier, which lives for the run, and for the
 preload per account and server. A stored window only draws the first frame: once that fetch has
-settled, the client asks the relay once (on desktop, the refresh after the
-room's live subscription joins that request rather than sending another) and
-its window replaces the stored rows (stored rows inside its span that the relay no longer has are dropped; older rows that join it stay, see [Opening at a position](#opening-at-a-position); live arrivals stay).
-This extra request is a safety net until the store-vs-relay log shows no
-differences (stage 5 then skips it for certain rooms). Later refreshes always
+settled, the relay's answer to the request sent with it (one request; on
+desktop, the refresh after the room's live subscription joins it) replaces the stored rows (stored rows inside its span that the relay no longer has are dropped; older rows that join it stay, see [Opening at a position](#opening-at-a-position); live arrivals stay).
+A painted window is not certain, so this request is always sent (stage 5
+may later skip it for certain rooms once the store-vs-relay log shows no
+differences). Later refreshes always
 ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
 
 - **Rows:** timeline kinds of the channel window, top-level (no `reply`
@@ -369,9 +413,11 @@ ask the relay. Cases: `test-fixtures/message-store-room-head.json`.
   live REQs do not carry them (that set is frozen), so coverage cannot vouch
   for them. A room's first job row is still missed until something stores
   one; the relay request after a stored open (above) corrects that frame.
-- **Written first:** the read waits (at most 0.5 s) until every event
-  received before it is written. A writer that is gone, still busy after the
-  wait, or holding a loss not yet written down means not certain.
+- **Written first:** the certain read waits (at most 0.5 s) until every
+  event received before it is written. A writer that is gone, still busy
+  after the wait, or holding a loss not yet written down means not certain.
+  The paint read does not wait: rows still in the write queue are missing
+  from the first frame and arrive with the relay's window.
 
 ### Store-first preload
 
@@ -422,10 +468,9 @@ and open from the store. Desktop and mobile behave the same. Cases:
 On a thread's first load (no reply page held for it: desktop's thread
 window state, mobile's thread window; both are released some time after the
 thread closes, and the next open counts as first again), the client reads the
-thread's newest replies from the store and uses them as the relay's
-thread-window answer when it is certain; otherwise it asks the relay as
-before. As with rooms, the thread then asks the relay once and folds its
-newest page in. On desktop, a load that must include a linked reply skips
+thread's newest replies from the store and draws them while the relay is
+asked ([Painting from the store](#painting-from-the-store)). As with rooms,
+the relay's page then folds in, from the same single request. On desktop, a load that must include a linked reply skips
 the store (its walk to the reply pages the relay anyway); mobile opens linked
 replies with a separate relay window (`openAt`). Later loads and older pages always ask
 the relay. Cases: `test-fixtures/message-store-thread-head.json`.
@@ -445,7 +490,7 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   `− 1865`; or the thread's head span (`head:<root>`) reaches the window's
   oldest reply as for rooms and one room span has `lo ≤` its `hi` and
   `hi ≥ L`. A quiet thread is certain this way without its root stored.
-- **Written first:** as for rooms.
+- **Written first:** as for rooms (the paint read does not wait).
 
 ### Forgetting a room
 
@@ -645,16 +690,38 @@ A room opens at, in order: a linked message, the first unread message, where
 the reader left it, the newest message. The list is drawn once, already at
 that position.
 
-- **Decided on a current window (desktop):** the position is chosen only on
-  a window fetched during this visit (from the relay, or a certain window
-  from the store), or one fetched earlier whose newest row is at least as new
-  as the channel's last message. A head cache from an earlier run, the fetch
-  that only hands it over, and rows merged live never count as fetched: they
-  can miss newer unread rows, so the skeleton stays until the relay
-  answers, at most 1.5 s, after which the rows held decide. A visit that
-  cannot have unread rows (last message not after the read frontier) and has
-  no remembered row opens at the newest at once. A window counts once its
-  newest row has reached the rows drawn, not when it is merely announced.
+- **Decided on the rows held, on the first frame:** stored rows (a paint, a
+  head cache) and the device's read markers decide at once when they reach
+  back to the read marker: the first unread row among them, else the
+  remembered row if held, else the newest. A store paint decides only when
+  it has no gap back to the read marker: its `complete_from` is at or
+  before the marker, or no painted row is unread, or the room was never
+  read. For a thread the reply before the first unread one stands in for
+  the marker; when the first unread reply is the oldest loaded, the paint
+  decides only if older replies can be paged or `complete_from` is 0 (whole
+  history). Otherwise an earlier unread row may be missing, and the open
+  waits for the relay's window. Only when every held row is
+  unread and older history exists, or the remembered row is older than
+  them, is the relay asked for older pages first (below); that is the only
+  case that shows loading.
+- **Provisional until current (desktop):** a decision on rows that are not a
+  current window is provisional. A current window is one fetched during
+  this visit from the relay, or one fetched earlier whose newest row is at
+  least as new as the channel's last message; it counts once its newest row
+  has reached the rows drawn. It also stays provisional until the relay's
+  read markers have been taken in (or their fetch gave up): a marker taken
+  from the device before then is taken again as the later of the two, and
+  the rule runs again. When it is shown the same rule runs again; if it
+  gives another row and the reader has not moved, the open moves there
+  once, silently; if the new row is only in older pages, those are sought
+  first (as on a first open) and the open moves when found. The reader has
+  moved after a wheel or touch scroll, a scroll key or a pointer press
+  outside a text field (scrollbar drag, jump buttons, autoscroll), find in
+  page, or a scroll of the message list more than 0.75 s after the open
+  (earlier scrolls are the list placing itself). This resets on each new
+  room or thread. If the reader moved, it stays. Threads follow the same
+  rule against the relay's replies. Cases:
+  `test-fixtures/message-store-paint-first.json` (`anchor`, `reanchor`).
 - **Threads:** the same order: a linked reply, the first unread reply (near
   the top), where the reader left the thread, the newest reply. The reading
   position is kept per thread under `<channel id>/<root id>`. Desktop pages
@@ -670,14 +737,14 @@ that position.
   A visit that only ran out of time (a slow relay, no read state in time)
   keeps it for the next visit; settling at the newest during that visit does
   not forget it until the reader has scrolled away once.
-- **Waiting for the read state:** first unread and the remembered row are
-  only known with the read state. A room or thread opened before its first
-  load stays hidden for up to 1 s, decides once when it is ready, and
-  otherwise opens at the newest without trusting a remembered row or (for
-  a thread) its unread replies. A read state that is stuck loading costs one
-  wait per session, not one per room. With no read state at all (no account
-  signed in) nothing waits. Opening does not mark the room read before
-  that decision. A link does not wait.
+- **The device's read markers decide (desktop):** first unread and the
+  remembered row use the read markers stored on the device, loaded as the
+  app starts; the relay's markers are not waited for and merge in later. A
+  room or thread opened before the device's markers have loaded waits for
+  them up to 1 s (once per session), and otherwise opens at the newest
+  without trusting a remembered row or (for a thread) its unread replies.
+  With no read state at all (no account signed in) nothing waits. Opening
+  does not mark the room read before that decision. A link does not wait.
 - **Opening at a message does not wait for the newest page (mobile):** a
   room opened from a certain stored window fetches the two pages around the
   message as soon as the stored window is shown, without waiting for the

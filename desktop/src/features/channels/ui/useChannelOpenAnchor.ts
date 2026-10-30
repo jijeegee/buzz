@@ -1,12 +1,21 @@
 import * as React from "react";
 
+import { useAppShell } from "@/app/AppShellContext";
 import { hasPendingLandAtLatest } from "@/features/channels/lib/landAtLatest";
 import {
   type ReadingPosition,
   readingPositionStore,
 } from "@/features/channels/readingPositionStore";
+import {
+  decideOpenAnchor,
+  reanchorTarget,
+  roomPaintDecides,
+} from "@/features/channels/lib/openAnchorDecision";
+import { paintCoverage } from "@/features/messages/lib/paintCoverage";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import type { RelayEvent } from "@/shared/api/types";
+
+import { useReaderMoved } from "./useReaderMoved";
 
 /**
  * Older pages fetched while looking for the first unread or the remembered
@@ -20,12 +29,6 @@ export const UNREAD_SEEK_DEADLINE_MS = 2000;
 /** Pause before a failed seek page is asked again. */
 export const UNREAD_SEEK_RETRY_MS = 250;
 
-/**
- * How long a visit waits for a current window before deciding on the rows it
- * has (an offline relay must not hold the skeleton forever).
- */
-export const OPEN_WINDOW_WAIT_MS = 1500;
-
 export type OpenWindowCommit = {
   at: number;
   newestRowAt: number | null;
@@ -34,12 +37,12 @@ export type OpenWindowCommit = {
 };
 
 /**
- * Whether the room's window is current enough to decide where the visit
- * opens: a window fetched during this visit (from the relay, or a certain one
- * from the device store), or one fetched earlier whose newest row is at least
- * as new as the channel's last message. A head cache from an earlier run, or
- * rows that arrived live on an older window, can miss newer unread rows, and
- * the relay page that replaces them may not join them.
+ * Whether the room's window is current enough to decide for good where the
+ * visit opens: a window fetched during this visit (from the relay, or a
+ * certain one from the device store), or one fetched earlier whose newest row
+ * is at least as new as the channel's last message. A stored paint, a head
+ * cache from an earlier run, or rows that arrived live on an older window can
+ * miss newer unread rows: a decision on them is provisional.
  */
 export function isOpenWindowCurrent(
   commit: OpenWindowCommit | null,
@@ -97,8 +100,11 @@ type OpenPlan = {
    */
   landsAtLatest: boolean;
   visitStartedAt: number;
-  /** OPEN_WINDOW_WAIT_MS passed without a current window. */
-  waitExpired: boolean;
+  /**
+   * Decided on rows that are not a current window: once one is shown the
+   * rule runs again, and the open moves if the reader has not scrolled.
+   */
+  provisional: boolean;
 };
 
 type UseChannelOpenAnchorOptions = {
@@ -133,12 +139,13 @@ type UseChannelOpenAnchorOptions = {
 /**
  * Decides once per channel visit where the main timeline opens: at the first
  * unread message when there is one, otherwise where the reader left the
- * channel, otherwise at the newest message. It decides only on a current
- * window (isOpenWindowCurrent), unless nothing can be unread and there is no
- * remembered row. When the row to open at may be older than the loaded ones,
- * older pages are fetched first (up to MAX_UNREAD_SEEK_PAGES) while the
- * timeline keeps its loading state; the list then mounts directly at its
- * final position.
+ * channel, otherwise at the newest message. It decides on the first rows held,
+ * stored or fetched (decideOpenAnchor); on rows that are not a current window
+ * (isOpenWindowCurrent) the decision is provisional and runs again once a
+ * current window is shown, moving the open only if the reader has not
+ * scrolled. When the row to open at may be older than the loaded ones, older
+ * pages are fetched first (up to MAX_UNREAD_SEEK_PAGES) while the timeline
+ * keeps its loading state; the list then mounts directly at its position.
  */
 export function useChannelOpenAnchor({
   channelId,
@@ -160,6 +167,9 @@ export function useChannelOpenAnchor({
   const lastMessageAtSeconds = Number.isNaN(parsedLastMessageAt)
     ? null
     : Math.floor(parsedLastMessageAt / 1000);
+  // An open on the device's read markers stays provisional until the
+  // relay's have been taken in (useChannelUnreadState retakes them).
+  const { isReadStateSettled } = useAppShell();
   const planRef = React.useRef<OpenPlan | null>(null);
   if (channelId === null) {
     planRef.current = null;
@@ -179,7 +189,7 @@ export function useChannelOpenAnchor({
         : null,
       landsAtLatest: hasPendingLandAtLatest(channelId),
       visitStartedAt: Date.now(),
-      waitExpired: false,
+      provisional: false,
       keepsRemembered: false,
       keptOnOpen: false,
     };
@@ -187,80 +197,90 @@ export function useChannelOpenAnchor({
   const plan = planRef.current;
 
   let needsOlder = false;
-  let waitsForWindow = false;
-  if (plan && !plan.decided && messages !== undefined) {
-    const decide = (
-      anchorMessageId: string | null,
-      anchorTopPx: number | null = null,
-      keepsRemembered = false,
-    ) => {
-      plan.decided = true;
-      plan.anchorMessageId = anchorMessageId;
-      plan.anchorTopPx = anchorMessageId === null ? null : anchorTopPx;
-      plan.keptOnOpen = keepsRemembered && plan.remembered !== null;
-      plan.keepsRemembered = plan.keptOnOpen;
-    };
-    const canSeekOlder =
-      hasOlderMessages &&
-      !plan.seekExpired &&
-      plan.pagesFetched < MAX_UNREAD_SEEK_PAGES;
-    const nothingUnread =
-      frontierSeconds !== null &&
-      lastMessageAtSeconds !== null &&
-      lastMessageAtSeconds <= frontierSeconds;
-    if (opensElsewhere || plan.landsAtLatest) {
-      decide(null);
-    } else if (frontierPending) {
+  const readerMoved = React.useRef(false);
+  if (plan && messages !== undefined && (!plan.decided || plan.provisional)) {
+    const current =
+      isOpenWindowCurrent(
+        windowCommit,
+        plan.visitStartedAt,
+        lastMessageAtSeconds,
+      ) && windowRowsShown(windowCommit, messages);
+    const oldestTopLevel = messages.find(
+      (event) => getThreadReference(event.tags).parentId === null,
+    );
+    const decision = decideOpenAnchor({
+      opensElsewhere: opensElsewhere || plan.landsAtLatest,
+      frontierSeconds,
+      frontierUnknown,
+      firstUnreadMessageId,
+      remembered: plan.remembered,
+      hasRow: (id) => messages.some((event) => event.id === id),
+      oldestTopLevelAt: oldestTopLevel?.created_at ?? null,
+      hasOlderMessages,
+      canSeekOlder:
+        hasOlderMessages &&
+        !plan.seekExpired &&
+        plan.pagesFetched < MAX_UNREAD_SEEK_PAGES,
+      seekExpired: plan.seekExpired,
+    });
+    if (plan.decided) {
+      // A current window is shown: a provisional open follows it unless the
+      // reader has moved, seeking older pages first when it must.
+      if (current) {
+        if (isReadStateSettled) plan.provisional = false;
+        const next = reanchorTarget(
+          plan.anchorMessageId,
+          decision,
+          readerMoved.current,
+        );
+        if (next?.kind === "open") {
+          plan.anchorMessageId = next.anchorMessageId;
+          plan.anchorTopPx = next.anchorTopPx;
+          plan.keptOnOpen = false;
+          plan.keepsRemembered = false;
+        } else if (next?.kind === "seek") {
+          plan.decided = false;
+          plan.provisional = false;
+          needsOlder = true;
+        }
+      }
+    } else if (frontierPending && !(opensElsewhere || plan.landsAtLatest)) {
       // Unread rows and the remembered row are only known with the frontier.
     } else if (
-      !plan.waitExpired &&
-      !(
-        isOpenWindowCurrent(
-          windowCommit,
-          plan.visitStartedAt,
-          lastMessageAtSeconds,
-        ) && windowRowsShown(windowCommit, messages)
+      !current &&
+      !roomPaintDecides(
+        paintCoverage(channelId),
+        opensElsewhere || plan.landsAtLatest ? null : firstUnreadMessageId,
+        frontierSeconds,
       )
     ) {
-      if (nothingUnread && plan.remembered === null) decide(null);
-      else waitsForWindow = true;
-    } else if (frontierSeconds === null || firstUnreadMessageId === null) {
-      // Nothing unread: go back to where the reader left, if it is close.
-      const remembered = frontierUnknown ? null : plan.remembered;
-      if (remembered === null) {
-        decide(null, null, frontierUnknown);
-      } else if (messages.some((event) => event.id === remembered.messageId)) {
-        decide(remembered.messageId, remembered.topPx);
-      } else if (canSeekOlder) {
-        needsOlder = true;
-      } else {
-        // Out of time (a slow relay) keeps the row; out of pages forgets it.
-        decide(null, null, plan.seekExpired || plan.waitExpired);
-      }
+      // Stored rows with a hole after the read marker: an earlier unread row
+      // may be missing, so the relay's window decides.
+    } else if (decision.kind === "seek") {
+      needsOlder = true;
     } else {
-      const oldestTopLevel = messages.find(
-        (event) => getThreadReference(event.tags).parentId === null,
-      );
-      const everyLoadedRowUnread =
-        oldestTopLevel !== undefined &&
-        oldestTopLevel.created_at > frontierSeconds;
-      if (!everyLoadedRowUnread || !hasOlderMessages) {
-        decide(firstUnreadMessageId);
-      } else if (!canSeekOlder) {
-        // Unread for too long: the start is too far back to open at.
-        decide(null);
-      } else {
-        needsOlder = true;
-      }
+      plan.decided = true;
+      plan.provisional = !current || !isReadStateSettled;
+      plan.anchorMessageId = decision.anchorMessageId;
+      plan.anchorTopPx = decision.anchorTopPx;
+      plan.keptOnOpen = decision.keepsRemembered && plan.remembered !== null;
+      plan.keepsRemembered = plan.keptOnOpen;
     }
   }
 
   // A visit that opens anywhere but the remembered row starts the reader
   // somewhere new, so the old spot must not come back on the next visit.
   // A visit that ran out of time (a slow relay) or opened without the read
-  // state keeps the spot for the next one.
+  // state keeps the spot for the next one, and a provisional open keeps it
+  // until the relay's window settles where the visit stays.
+  useReaderMoved(
+    readerMoved,
+    plan?.decided === true && plan.provisional,
+    channelId,
+  );
   const staleRemembered =
     plan?.decided === true &&
+    !plan.provisional &&
     plan.remembered !== null &&
     plan.anchorMessageId !== plan.remembered.messageId &&
     !plan.keptOnOpen;
@@ -269,18 +289,6 @@ export function useChannelOpenAnchor({
     plan.remembered = null;
     readingPositionStore.set(plan.scope, plan.channelId, null);
   }, [plan, staleRemembered]);
-
-  React.useEffect(() => {
-    if (!waitsForWindow || !plan) return;
-    const timer = window.setTimeout(
-      () => {
-        plan.waitExpired = true;
-        rerender();
-      },
-      Math.max(0, plan.visitStartedAt + OPEN_WINDOW_WAIT_MS - Date.now()),
-    );
-    return () => window.clearTimeout(timer);
-  }, [plan, waitsForWindow]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: tick re-checks a settled page
   React.useEffect(() => {

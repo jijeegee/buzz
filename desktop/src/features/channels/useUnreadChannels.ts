@@ -147,6 +147,8 @@ export function useUnreadChannels(
   const {
     getEffectiveTimestamp,
     isReady: isReadStateReady,
+    isLocalLoaded: isReadStateLoaded,
+    getRelayTimestamp: getRelayReadAt,
     markContextRead,
     drainSyncedAdvances,
     setContextParentResolver,
@@ -997,6 +999,10 @@ export function useUnreadChannels(
     isReadStateInitialized,
     /** The read state finished its first load (local and relay). */
     isReadStateReady,
+    /** The device's own read markers are loaded (the relay's may follow). */
+    isReadStateLoaded,
+    /** A read marker as the relay has it, without this session's marks. */
+    getRelayReadAt,
     /** Mirror the user's own reads to the relay's chat state (Chats S4). */
     setReadStateServerMirror,
     participatedRootIds,

@@ -8,6 +8,9 @@ mod coverage;
 mod head;
 #[cfg(test)]
 mod head_tests;
+mod paint;
+#[cfg(test)]
+mod paint_tests;
 mod purge;
 mod read;
 mod read_thread;
@@ -29,6 +32,7 @@ use sha2::{Digest, Sha256};
 #[cfg(test)]
 pub(crate) use classify::{classify, Filed};
 pub(crate) use head::HeadSpan;
+pub(crate) use paint::{paint_room_head, paint_thread_head};
 use writer::{Input, Writer};
 
 static STORE: OnceLock<MessageStore> = OnceLock::new();

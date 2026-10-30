@@ -107,7 +107,8 @@ void main() {
       container.listen(threadRepliesProvider(args), (_, _) {});
       final stored = await container.read(threadRepliesProvider(args).future);
       expect(stored.map((event) => event.id), ['kept', 'deleted']);
-      expect(session.threadWindowQueries, 0);
+      // The relay request went out with the store check, not after it.
+      expect(session.threadWindowQueries, 1);
 
       for (var i = 0; i < 5; i++) {
         await Future<void>.delayed(Duration.zero);

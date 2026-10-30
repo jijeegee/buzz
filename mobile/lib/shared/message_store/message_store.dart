@@ -481,6 +481,67 @@ class MessageStore {
     return head != null && head.certain ? head.toResponse(room, root) : null;
   }
 
+  /// [room]'s newest window as the store holds it, certain or not, to draw
+  /// before the relay answers
+  /// (docs/message-sync.md#opening-a-room-from-the-store). It does not wait
+  /// for the writer: rows still queued are missing, and the relay's window
+  /// replaces these rows anyway. Its bounds say from when the rows run
+  /// without a gap. `null` when none are stored.
+  Future<List<Map<String, dynamic>>?> paintableRoomHead(
+    MessageStoreLease? lease, {
+    required String room,
+    required List<int> kinds,
+    required int limit,
+  }) => _read<List<Map<String, dynamic>>?>(
+    lease,
+    'room paint',
+    (db) => db.transaction((txn) async {
+      final head = await readRoomHead(
+        txn,
+        room: room,
+        kinds: kinds,
+        limit: limit,
+        liveAt: null,
+      );
+      final newest = head.rows.firstOrNull?['created_at'];
+      if (newest is! int) return null;
+      final from = await storedRowsContiguousFrom(
+        txn,
+        room: room,
+        newest: newest,
+      );
+      return head.toResponse(room, contiguous: (from: from));
+    }),
+  );
+
+  /// [root]'s newest replies in [room] as the store holds them, certain or
+  /// not, without waiting for the writer; `null` when none are stored.
+  Future<List<Map<String, dynamic>>?> paintableThreadHead(
+    MessageStoreLease? lease, {
+    required String room,
+    required String root,
+    required List<int> kinds,
+    required int limit,
+  }) async {
+    final head = await _read(
+      lease,
+      'thread paint',
+      (db) => db.transaction(
+        (txn) => readThreadHead(
+          txn,
+          room: room,
+          root: root,
+          kinds: kinds,
+          limit: limit,
+          liveAt: null,
+        ),
+      ),
+    );
+    return head == null || head.rows.isEmpty
+        ? null
+        : head.toResponse(room, root);
+  }
+
   /// Whether everything received for [lease] so far is written and nothing
   /// was lost, waiting at most [drainWait] (and not for what arrives later)
   /// (docs/message-sync.md#opening-a-room-from-the-store).

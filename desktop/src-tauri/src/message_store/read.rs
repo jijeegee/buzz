@@ -218,7 +218,7 @@ pub(crate) fn room_head(
 /// Job rows (43001-43006) show in the window but no live REQ carries them, so
 /// coverage never vouches for them: a room that ever stored one is opened from
 /// the relay.
-fn has_job_rows(conn: &Connection, room: &str) -> rusqlite::Result<bool> {
+pub(crate) fn has_job_rows(conn: &Connection, room: &str) -> rusqlite::Result<bool> {
     conn.prepare_cached(
         "SELECT 1 FROM events WHERE room = ?1 AND kind BETWEEN 43001 AND 43006 LIMIT 1",
     )?

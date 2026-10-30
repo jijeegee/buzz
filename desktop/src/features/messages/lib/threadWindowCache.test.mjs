@@ -11,6 +11,8 @@ let pages = [];
 
 globalThis.__TAURI_INTERNALS__ = {
   invoke: (command, args) => {
+    // A first open also reads the device store (nothing stored here).
+    if (command === "message_store_thread_paint") return Promise.resolve(null);
     calls.push({ command, args });
     if (command === "get_thread_windows") {
       const next = pages.shift();
@@ -302,47 +304,73 @@ function captureStoreLog() {
   return lines;
 }
 
-function storeHarness(stored, liveAt = 500) {
+function storeHarness(stored, delayMs = 0) {
   const asked = [];
   const restore = setStoreThreadHeadDeps({
-    liveAt: () => liveAt,
-    threadHead: async (channelId, rootId, limit, at) => {
-      asked.push([channelId, rootId, limit, at]);
-      return stored ? stored() : null;
+    threadPaint: async (_queryClient, channelId, rootId, limit) => {
+      asked.push([channelId, rootId, limit]);
+      if (delayMs) await new Promise((resolve) => setTimeout(resolve, delayMs));
+      return stored ? { window: stored(), complete_from: null } : null;
     },
   });
   return { asked, restore };
 }
 
-test("a thread never loaded opens from the certain stored page", async () => {
+const relayRequests = () =>
+  calls.filter((call) => call.command === "get_thread_windows").length;
+
+/** Holds the relay's answers until `release()`, so the store answers first. */
+function holdRelay() {
+  const invoke = globalThis.__TAURI_INTERNALS__.invoke;
+  let release = () => {};
+  const held = new Promise((resolve) => {
+    release = resolve;
+  });
+  globalThis.__TAURI_INTERNALS__.invoke = async (command, args) => {
+    const answer = invoke(command, args);
+    if (command === "get_thread_windows") await held;
+    return answer;
+  };
+  return {
+    release,
+    restore: () => {
+      globalThis.__TAURI_INTERNALS__.invoke = invoke;
+    },
+  };
+}
+
+test("a thread never loaded paints its stored page while asking the relay", async () => {
   const { asked, restore } = storeHarness(rawPage(11, 60, true));
+  const relay = holdRelay();
   try {
-    const queryClient = new QueryClient();
+    const queryClient = newClient();
+    pages = [rawPage(12, 61, true)];
     const events = await loadNewestThreadReplies(queryClient, ROOM, ROOT);
     assert.equal(events.length, 50);
-    assert.deepEqual(asked, [[ROOM, ROOT, 50, 500]]);
-    assert.equal(
-      calls.filter((call) => call.command === "get_thread_windows").length,
-      0,
-    );
+    assert.equal(events[0].created_at, 11);
+    assert.deepEqual(asked, [[ROOM, ROOT, 50]]);
+    // The relay request went out at the same time, not after the store.
+    assert.equal(relayRequests(), 1);
     const state = queryClient.getQueryData(threadWindowStateKey(ROOM, ROOT));
     assert.equal(state.hasOlder, true);
     assert.equal(state.olderCursor.createdAt, 11);
   } finally {
+    relay.release();
+    relay.restore();
     restore();
   }
 });
 
-test("an uncertain store, no live REQ or a loaded thread asks the relay", async () => {
-  for (const [stored, liveAt, preload] of [
-    [null, 500, false],
-    [rawPage(11, 60, true), null, false],
-    [rawPage(11, 60, true), 500, true],
+test("nothing stored, a relay that answers first or a loaded thread draws the relay's page", async () => {
+  for (const [stored, preload, storeDelay] of [
+    [null, false, 0],
+    [rawPage(11, 60, true), false, 20],
+    [rawPage(11, 60, true), true, 0],
   ]) {
     calls.length = 0;
-    const { asked, restore } = storeHarness(stored, liveAt);
+    const { asked, restore } = storeHarness(stored, storeDelay);
     try {
-      const queryClient = new QueryClient();
+      const queryClient = newClient();
       if (preload) {
         queryClient.setQueryData(threadWindowStateKey(ROOM, ROOT), {
           hasOlder: false,
@@ -356,15 +384,17 @@ test("an uncertain store, no live REQ or a loaded thread asks the relay", async 
         events.map((event) => event.created_at),
         [1, 2, 3],
       );
-      assert.equal(asked.length, liveAt === null || preload ? 0 : 1);
+      assert.equal(asked.length, preload ? 0 : 1);
+      assert.equal(relayRequests(), 1);
     } finally {
       restore();
     }
   }
 });
 
-test("a thread opened from the store is refetched from the relay once it settles", async () => {
+test("a thread painted from the store takes the relay's page once it settles", async () => {
   const { restore } = storeHarness(rawPage(11, 60, true));
+  const relay = holdRelay();
   const queryClient = newClient();
   const queryKey = threadRepliesKey(ROOM, ROOT);
   const observer = new QueryObserver(queryClient, {
@@ -379,20 +409,26 @@ test("a thread opened from the store is refetched from the relay once it settles
   try {
     for (let i = 0; i < 50; i++) {
       await new Promise((resolve) => setTimeout(resolve, 0));
-      if (calls.some((call) => call.command === "get_thread_windows")) break;
+      if (queryClient.getQueryData(queryKey)) break;
+    }
+    assert.equal(queryClient.getQueryData(queryKey).at(-1).created_at, 60);
+    relay.release();
+    for (let i = 0; i < 50; i++) {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+      if (queryClient.getQueryData(queryKey).at(-1).created_at === 61) break;
     }
     await queryClient.getQueryCache().find({ queryKey })?.promise;
     const events = queryClient.getQueryData(queryKey);
     assert.equal(events.at(-1).created_at, 61, "the relay's newer reply");
     assert.equal(events[0].created_at, 11, "stored replies kept");
-    assert.equal(
-      calls.filter((call) => call.command === "get_thread_windows").length,
-      1,
-    );
+    // One relay request: the refetch took the one sent with the paint.
+    assert.equal(relayRequests(), 1);
     // Compared with the relay's page itself, inside the range both cover.
     assert.equal(lines.length, 1);
     assert.match(lines[0], /store matches relay \(49\)/);
   } finally {
+    relay.release();
+    relay.restore();
     lines.restore();
     unsubscribe();
     restore();

@@ -16,7 +16,11 @@ import {
   channelHeadHydration,
 } from "./channelHeadCache";
 import { markRenderScopedReactionsLoaded } from "./renderScopedReactions";
-import { isStoredWindow, storeFollowUp } from "./storedWindows";
+import {
+  isPaintedWindow,
+  isStoredWindow,
+  storeFollowUp,
+} from "./storedWindows";
 import {
   noteRoomWindowCommitted,
   type RoomWindowListener,
@@ -26,7 +30,8 @@ import {
 /**
  * When each room last committed a fetched window (relay, or a certain one from
  * the device store), per query cache. Seeded head caches, the snapshot fetch
- * that consumes them and live merges never count: they can miss newer rows.
+ * that consumes them, stored paints and live merges never count: they can
+ * miss newer rows.
  */
 const windowCommits = new WeakMap<QueryClient, Map<string, number>>();
 const commitListeners = new Set<() => void>();
@@ -115,6 +120,11 @@ export async function refreshChannelWindowMessages(
       liveListener,
       fetching ? query?.promise : undefined,
     ));
+  // A store open that settled while this waited is asking the relay now.
+  const joined = joinStoreFollowUp
+    ? storeFollowUp(queryClient, channelId)
+    : undefined;
+  if (joined) return joined;
   if (!live) {
     await queryClient.invalidateQueries(
       { queryKey, exact: true, refetchType: "active" },
@@ -149,13 +159,16 @@ export function reconcileFetchedChannelWindow(
   const next = replaceNewestChannelWindow(current, page);
   queryClient.setQueryData(windowKey, next);
   noteRoomWindowCommitted(events);
-  let commits = windowCommits.get(queryClient);
-  if (!commits) {
-    commits = new Map();
-    windowCommits.set(queryClient, commits);
+  // A stored paint is drawn but not fetched: the relay's answer commits.
+  if (!isPaintedWindow(events)) {
+    let commits = windowCommits.get(queryClient);
+    if (!commits) {
+      commits = new Map();
+      windowCommits.set(queryClient, commits);
+    }
+    commits.set(channelId, Date.now());
+    for (const listener of commitListeners) listener();
   }
-  commits.set(channelId, Date.now());
-  for (const listener of commitListeners) listener();
   // A window from the device store is not persisted; the relay's answer
   // that follows is.
   const scope =

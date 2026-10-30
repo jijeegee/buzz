@@ -62,7 +62,7 @@ import 'channel_messages_provider.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'channels_provider.dart';
-import 'unread_badge/observed_unread_event.dart';
+import 'initial_unread.dart';
 import 'compose_bar.dart';
 import 'composer_quote_chip.dart';
 import 'composer_quote_provider.dart';
@@ -90,7 +90,6 @@ import 'message_quote.dart';
 import 'message_quote_header.dart';
 import 'new_messages_divider.dart';
 import '../../shared/read_state/deferred_read_state_update.dart';
-import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/read_state/read_state_time.dart';
 import 'reaction_row.dart';
@@ -352,6 +351,8 @@ class ChannelDetailPage extends HookConsumerWidget {
       channelsProvider.select(selectChannel(channel.id)),
     );
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
+    // Whether the rows saved on the device were looked up yet.
+    final savedChecked = ref.watch(channelSavedRowsCheckedProvider(channel.id));
     final opensThreadDirectly =
         initialThreadRootId != null &&
         !channel.isForum &&
@@ -370,28 +371,11 @@ class ChannelDetailPage extends HookConsumerWidget {
     final initialForcedUnreadMessageIdsRef = useRef<Set<String>>(const {});
     final didCaptureInitialReadAt = useRef(false);
     if (readState.isReady && !didCaptureInitialReadAt.value) {
-      final channelReadAt = readState.effectiveTimestamp(channel.id);
-      final ordinaryUnreadEvents = [
-        for (final event
-            in channelsNotifier
-                    .observedUnreadEventsByChannel[channel.id]
-                    ?.values ??
-                const <ObservedUnreadEvent>[])
-          if (event.rootId == null &&
-              event.createdAt >
-                  (observedUnreadEventReadAt(
-                        event,
-                        channelReadAt,
-                        (rootId) => readState.effectiveTimestamp(
-                          threadContextKey(rootId),
-                        ),
-                        (messageId) => readState.effectiveTimestamp(
-                          msgContextKey(messageId),
-                        ),
-                      ) ??
-                      0))
-            event,
-      ]..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      final ordinaryUnreadEvents = observedUnreadEvents(
+        readState,
+        channelsNotifier.observedUnreadEventsByChannel,
+        channel.id,
+      );
       initialOrdinaryUnreadMessageIdsRef.value = {
         for (final event in ordinaryUnreadEvents) event.id,
       };
@@ -784,6 +768,8 @@ class ChannelDetailPage extends HookConsumerWidget {
         // has nothing to open at, so it starts at the newest rows.
         opening = messagesNotifier.jumpToLatest().then((_) => false);
       } else {
+        // The saved rows come first: they may hold the target.
+        if (!savedChecked) return null;
         final loaded = messagesState.value ?? const <NostrEvent>[];
         final anchors = <({String id, int createdAt})>[];
         for (final id in target.ids) {
@@ -809,10 +795,15 @@ class ChannelDetailPage extends HookConsumerWidget {
           isUnread: target.isUnread,
           edge: target.edge,
         );
-        opening = messagesNotifier.openAt(
-          createdAt: anchor.createdAt,
-          eventId: anchor.id,
-        );
+        // Rows at hand that reach the target open there on the first frame;
+        // only a target beyond them waits for the relay's pages around it.
+        opening =
+            messagesNotifier.openOnRowsAtHand(anchor, unread: target.isUnread)
+            ? Future.value(true)
+            : messagesNotifier.openAt(
+                createdAt: anchor.createdAt,
+                eventId: anchor.id,
+              );
       }
       didStartOpening.value = true;
       unawaited(
@@ -830,7 +821,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         }),
       );
       return null;
-    }, [deepLinkLoads.value, messagesState.value, readDecided]);
+    }, [deepLinkLoads.value, messagesState.value, readDecided, savedChecked]);
     final isOpenedAtMessage =
         openPhase.value == _OpenPhase.positioning ||
         openPhase.value == _OpenPhase.opened;
@@ -1179,17 +1170,20 @@ class ChannelDetailPage extends HookConsumerWidget {
                             : SkeletonReveal(
                                 loading:
                                     showInitialConnectionSkeleton ||
-                                    showConnectionSkeleton.value ||
                                     messagesState.isLoading ||
                                     openPhase.value == _OpenPhase.opening ||
                                     openPhase.value == _OpenPhase.positioning,
                                 shimmerEnabled:
                                     sessionStatus != SessionStatus.disconnected,
-                                skeleton: _MessageTimelineSkeleton(
-                                  appBarTitleContentHeight:
-                                      appBarTitleContentHeight,
-                                  status: sessionStatus,
-                                ),
+                                // Blank, not a skeleton, until the saved rows
+                                // were looked up: most rooms have some.
+                                skeleton: savedChecked
+                                    ? _MessageTimelineSkeleton(
+                                        appBarTitleContentHeight:
+                                            appBarTitleContentHeight,
+                                        status: sessionStatus,
+                                      )
+                                    : const SizedBox.shrink(),
                                 content: messagesState.when(
                                   loading: SizedBox.shrink,
                                   error: (e, _) => Padding(

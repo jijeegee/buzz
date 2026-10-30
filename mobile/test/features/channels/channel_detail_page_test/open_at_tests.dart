@@ -43,6 +43,43 @@ class _WindowRelaySession extends _IdentityUpdateRelaySession {
   }
 }
 
+/// A relay that answers nothing until [gate] completes.
+class _GatedWindowRelaySession extends _WindowRelaySession {
+  _GatedWindowRelaySession(super.rows);
+
+  final gate = Completer<void>();
+
+  @override
+  Future<List<NostrEvent>> queryRelay(
+    List<NostrFilter> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    await gate.future;
+    return super.queryRelay(filters, timeout: timeout);
+  }
+
+  @override
+  Future<List<NostrEvent>> fetchHistory(
+    NostrFilter filter, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    await gate.future;
+    return super.fetchHistory(filter, timeout: timeout);
+  }
+}
+
+class _NoHeadCache extends ChannelHeadCache {
+  _NoHeadCache() : super(() async => throw UnimplementedError());
+
+  @override
+  Future<List<NostrEvent>?> load(ChannelHeadScope scope, String id) async =>
+      null;
+
+  @override
+  Future<void> store(ChannelHeadScope scope, String id, List<NostrEvent> e) =>
+      Future.value();
+}
+
 void openAtTests() {
   group('Opening at a message', () {
     final rows = [for (var n = 100; n < 300; n++) _openAtRow(n)];
@@ -64,8 +101,10 @@ void openAtTests() {
       int? firstUnread,
       Widget? home,
       _SynchronousReadStateNotifier? readState,
+      List<Override> overrides = const [],
     }) => _buildTestable(
       home: home,
+      overrides: overrides,
       huddleCurrentPubkey: 'self',
       messages: const [],
       realMessages: true,
@@ -275,6 +314,59 @@ void openAtTests() {
       expect(findRichText('row 298'), findsOneWidget);
     });
 
+    // The newest 50 rows saved on the device, drawn before the relay answers.
+    List<Override> savedNewest() => [
+      channelHeadScopeProvider.overrideWithValue(
+        const ChannelHeadScope(relayUrl: 'wss://r', pubkey: 'self'),
+      ),
+      channelHeadCacheProvider.overrideWithValue(_NoHeadCache()),
+      paintableRoomHeadProvider.overrideWithValue(
+        (_, _, filter) async =>
+            serveChannelWindow(_channelId, rows.sublist(150), filter),
+      ),
+    ];
+
+    testWidgets('saved rows without a target draw before the relay answers', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final session = _GatedWindowRelaySession(rows);
+      await tester.pumpWidget(testable(session, overrides: savedNewest()));
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+
+      expect(timelineVisible(tester), isTrue);
+      expect(findRichText('row 299'), findsOneWidget);
+      session.gate.complete();
+      await tester.pumpAndSettle();
+      expect(findRichText('row 299'), findsOneWidget);
+    });
+
+    testWidgets('a target beyond the saved rows is never drawn at the newest', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final session = _GatedWindowRelaySession(rows);
+      await tester.pumpWidget(
+        testable(session, firstUnread: 150, overrides: savedNewest()),
+      );
+      for (var i = 0; i < 10; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+        expect(timelineVisible(tester), isFalse);
+      }
+
+      session.gate.complete();
+      final divider = find.byKey(
+        const ValueKey('channel-new-messages-divider'),
+      );
+      final rects = await visibleRects(tester, divider);
+      expect(rects, isNotEmpty);
+      expect(rects, everyElement(tester.getRect(divider)));
+      expect(findRichText('row 299'), findsNothing);
+      expect(notifierOf(tester).isInMiddleWindow, isTrue);
+    });
+
     testWidgets('without newer pages it opens at the latest as before', (
       tester,
     ) async {
@@ -326,7 +418,8 @@ void openAtTests() {
         expect(rect!.top, closeTo(before.top, 1));
       }
       expect(findRichText('row 299'), findsNothing);
-      expect(notifierOf(tester).isInMiddleWindow, isTrue);
+      // The saved row is among the rows at hand: no window of its own.
+      expect(notifierOf(tester).isInMiddleWindow, isFalse);
     });
 
     testWidgets('unread messages win over a saved position', (tester) async {

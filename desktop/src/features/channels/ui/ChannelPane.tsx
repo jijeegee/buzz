@@ -85,6 +85,8 @@ import { useIsThreadPanelOverlay } from "@/shared/hooks/use-mobile";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { cn } from "@/shared/lib/cn";
 import { useThreadOpenTarget } from "./useThreadOpenTarget";
+import { useThreadRepliesConfirmed } from "./useThreadRepliesConfirmed";
+import { useTimelineAnchorKey } from "./useTimelineAnchorKey";
 import { useT } from "@/shared/i18n";
 const HUDDLE_TRANSCRIPT_ROOT_STYLE = {
   "--kuzz-channel-content-top-padding": "0rem",
@@ -551,6 +553,12 @@ export const ChannelPane = React.memo(function ChannelPane({
     showIdleAuxiliaryOverThread,
     markExitComplete,
   );
+  // A provisional open that moves mounts the list again at its new place.
+  const timelineKey = useTimelineAnchorKey(
+    activeChannel?.id,
+    initialAnchorMessageId,
+    isTimelineLoading,
+  );
   const threadOpen = useThreadOpenTarget({
     channelId: activeChannel?.id ?? null,
     rootId: threadHeadMessage?.id ?? null,
@@ -560,6 +568,10 @@ export const ChannelPane = React.memo(function ChannelPane({
     isLoading: threadMessagesPending,
     firstUnreadReplyId: threadFirstUnreadReplyId ?? null,
     readState: threadOpenRead,
+    repliesConfirmed: useThreadRepliesConfirmed(
+      activeChannel?.id,
+      threadHeadMessage?.id,
+    ),
     hasOlderReplies: threadHasOlderReplies,
     isFetchingOlder: threadIsFetchingOlderReplies,
     fetchOlder: onFetchOlderThreadReplies,
@@ -723,6 +735,7 @@ export const ChannelPane = React.memo(function ChannelPane({
           <MessageQuoteScope value={composerQuotes.mainScope}>
             <div className="relative isolate flex min-h-0 min-w-0 flex-1 flex-col">
               <MessageTimeline
+                key={timelineKey}
                 ref={messageTimelineRef}
                 channelId={activeChannel?.id}
                 channelIntro={channelIntro}

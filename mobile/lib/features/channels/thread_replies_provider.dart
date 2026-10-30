@@ -196,7 +196,7 @@ final threadRepliesProvider = FutureProvider.autoDispose
           final response = await _openThreadWindowResponse(
             session,
             args,
-            window.hasLoaded,
+            window,
             ref.read(storedThreadHeadProvider),
           );
           final page = parseThreadWindowPage(
@@ -239,6 +239,7 @@ final threadRepliesProvider = FutureProvider.autoDispose
         }
       }
       window.storedPage = null;
+      window.pendingRelayPage = null;
       try {
         final replies = await fetchCompleteThreadReplies(session, args);
         // A complete scan holds the whole thread: nothing older to page.
@@ -322,22 +323,36 @@ typedef StoredThreadHeadReader =
     );
 
 /// The newest reply window: on a thread's first load, the store's window
-/// when it is certain (docs/message-sync.md#opening-a-thread-from-the-store);
-/// otherwise, and on every later load, the relay's. [stored] says which.
+/// when it is certain and answers before the relay
+/// (docs/message-sync.md#opening-a-thread-from-the-store); otherwise, and on
+/// every later load, the relay's. [stored] says which. The relay request goes
+/// out at once rather than after the store check, which may wait for the
+/// writer; when the store wins, the same request answers the next load.
 Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
   RelaySessionNotifier session,
   ThreadRepliesArgs args,
-  bool loaded,
+  ThreadWindowNotifier window,
   StoredThreadHeadReader readStore,
 ) async {
-  if (!loaded) {
-    final stored = await readStore(session, args);
-    if (stored != null) return (events: stored, stored: true);
-  }
-  final events = await session.queryRelayWithStoreHeads([
+  final pending = window.pendingRelayPage;
+  window.pendingRelayPage = null;
+  if (pending != null) return (events: await pending, stored: false);
+  final relay = session.queryRelayWithStoreHeads([
     threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
   ]);
-  return (events: events, stored: false);
+  if (window.hasLoaded) return (events: await relay, stored: false);
+  final stored = readStore(
+    session,
+    args,
+  ).then<List<NostrEvent>?>((events) => events, onError: (_) => null);
+  final storeFirst = await Future.any([
+    relay.then((_) => false, onError: (_) => false),
+    stored.then((events) => events != null),
+  ]);
+  final events = storeFirst ? await stored : null;
+  if (events == null) return (events: await relay, stored: false);
+  window.pendingRelayPage = relay;
+  return (events: events, stored: true);
 }
 
 /// The replies one thread holds in newest-first windows, and how far back
@@ -359,6 +374,10 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   /// The page the store opened this thread with, until the relay's replaces
   /// it.
   List<NostrEvent>? storedPage;
+
+  /// The relay request sent alongside the store check that opened this
+  /// thread, until the next load takes its answer.
+  Future<List<NostrEvent>>? pendingRelayPage;
 
   @override
   ThreadWindow? build() => null;

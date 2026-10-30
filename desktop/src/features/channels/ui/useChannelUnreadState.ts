@@ -1,6 +1,8 @@
 import * as React from "react";
 
+import { useAppShell } from "@/app/AppShellContext";
 import type { ForcedUnreadSource } from "@/features/channels/forcedUnreadStore";
+import { msgContextKey } from "@/features/channels/readState/readStateFormat";
 import {
   buildCreatedAtByMessageId,
   buildDirectReplyIdsByParentId,
@@ -27,7 +29,11 @@ import { isConversationalUnreadKind } from "@/shared/constants/kinds";
 
 import { useWelcomeInitialUnreadSuppression } from "./useWelcomeInitialUnreadSuppression";
 
-/** How long a channel waits for the read state before it opens without it. */
+/**
+ * How long a channel waits for the device's read markers before it opens
+ * without them. They load as the app starts, so this is rarely reached; the
+ * relay's markers are never waited for.
+ */
 export const READ_STATE_OPEN_WAIT_MS = 1000;
 
 type UseChannelUnreadStateOptions = {
@@ -95,8 +101,8 @@ export function useChannelUnreadState({
   // when the channel id changes, never when the frontier advances, or the
   // divider would vanish the moment the open marks the channel read.
   const openFrontierRef = React.useRef(new Map<string, number | null>());
-  // Before the read state's first load the frontier may be missing: wait for
-  // it up to READ_STATE_OPEN_WAIT_MS, then take what there is.
+  // Before the device's read markers load the frontier may be missing: wait
+  // for them up to READ_STATE_OPEN_WAIT_MS, then take what there is.
   // One wait per session: a read state stuck loading does not hold every
   // room for a second, as on mobile.
   // Keyed by account, so a newly switched account gets its own wait.
@@ -123,6 +129,12 @@ export function useChannelUnreadState({
   // Rooms whose frontier was taken without the read state: no reading
   // position is trusted for them, as on mobile.
   const frontierWithoutReadStateRef = React.useRef(new Set<string>());
+  // Markers taken before the relay's arrived (the device's own only) are
+  // taken again once they have, so a room read on another device opens past
+  // it while the open is still provisional (docs/message-sync.md#opening-at-a-position).
+  const { isReadStateSettled, getRelayReadAt } = useAppShell();
+  const takenBeforeRelayRef = React.useRef(new Set<string>());
+  const relayRetakeRef = React.useRef(0);
   if (
     activeChannelId &&
     !awaitingReadState &&
@@ -136,6 +148,24 @@ export function useChannelUnreadState({
       frontierWithoutReadStateRef.current.delete(activeChannelId);
     } else {
       frontierWithoutReadStateRef.current.add(activeChannelId);
+    }
+    if (isReadStateSettled) {
+      takenBeforeRelayRef.current.delete(activeChannelId);
+    } else {
+      takenBeforeRelayRef.current.add(activeChannelId);
+    }
+  }
+  if (
+    activeChannelId &&
+    isReadStateSettled &&
+    takenBeforeRelayRef.current.delete(activeChannelId)
+  ) {
+    const relayAt = getRelayReadAt(activeChannelId);
+    const takenAt = openFrontierRef.current.get(activeChannelId) ?? null;
+    if (relayAt !== null && (takenAt === null || relayAt > takenAt)) {
+      openFrontierRef.current.set(activeChannelId, relayAt);
+      frontierWithoutReadStateRef.current.delete(activeChannelId);
+      relayRetakeRef.current += 1;
     }
   }
   const openFrontierSeconds = activeChannelId
@@ -303,6 +333,25 @@ export function useChannelUnreadState({
   if (openThreadHeadId && !threadReadPending && !isReadStateReady) {
     threadsWithoutReadStateRef.current.add(openThreadHeadId);
   }
+  const threadsTakenBeforeRelayRef = React.useRef(new Set<string>());
+  if (openThreadHeadId && !threadReadPending && !isReadStateSettled) {
+    threadsTakenBeforeRelayRef.current.add(openThreadHeadId);
+  }
+  if (
+    openThreadHeadId &&
+    isReadStateSettled &&
+    threadsTakenBeforeRelayRef.current.delete(openThreadHeadId)
+  ) {
+    const snapshot = threadOpenReadSnapshotRef.current.get(openThreadHeadId);
+    for (const [replyId, takenAt] of snapshot ?? []) {
+      const relayAt = getRelayReadAt(msgContextKey(replyId));
+      if (relayAt !== null && (takenAt === null || relayAt > takenAt)) {
+        snapshot?.set(replyId, relayAt);
+      }
+    }
+    threadsWithoutReadStateRef.current.delete(openThreadHeadId);
+    relayRetakeRef.current += 1;
+  }
   if (openThreadHeadId && !threadReadPending) {
     // Capture each visible reply's read state the first render it appears —
     // before the on-open mark-read effect advances its marker. Replies revealed
@@ -320,6 +369,7 @@ export function useChannelUnreadState({
     return () => {
       threadOpenReadSnapshotRef.current.delete(rootId);
       threadsWithoutReadStateRef.current.delete(rootId);
+      threadsTakenBeforeRelayRef.current.delete(rootId);
     };
   }, [openThreadHeadId]);
   // Mark the revealed set read when the thread opens (LP4 v3): only the replies
@@ -345,7 +395,10 @@ export function useChannelUnreadState({
   // before the mark-read effect above), so the divider does not collapse the
   // instant open marks the revealed replies read. A reply absent from the
   // snapshot (loaded after open) falls back to its live marker.
+  // Snapshots retaken against the relay's markers are read again.
+  const relayRetakes = relayRetakeRef.current;
   const { firstUnreadReplyId: threadMarkerReplyId } = React.useMemo(() => {
+    void relayRetakes;
     if (!openThreadHeadId || threadMessages.length === 0) {
       return { firstUnreadReplyId: null, unreadCount: 0 };
     }
@@ -365,7 +418,13 @@ export function useChannelUnreadState({
           : getMessageReadAt(replyId),
       currentPubkey,
     );
-  }, [currentPubkey, getMessageReadAt, openThreadHeadId, threadMessages]);
+  }, [
+    currentPubkey,
+    getMessageReadAt,
+    openThreadHeadId,
+    relayRetakes,
+    threadMessages,
+  ]);
   const threadFirstUnreadReplyId =
     openThreadHeadId && threadsWithoutReadStateRef.current.has(openThreadHeadId)
       ? null

@@ -127,18 +127,18 @@ class _MessageList extends HookConsumerWidget {
       );
       holdsNewerRows.value = false;
       awaitingPlacementLayout.value = true;
-    } else if (notifier.isInMiddleWindow && renderedEntries.value != null) {
-      // Rows paged in (or arriving) below a window opened at a message would
-      // move every visible row. Redraw the list around the row the reader is
-      // looking at instead, once nothing is scrolling.
+    } else if ((notifier.isInMiddleWindow || openedAt != null) &&
+        renderedEntries.value != null) {
+      // Rows paged in (or arriving, or the relay's) below a list opened at a
+      // message would move every visible row. Redraw it around the row being
+      // read instead, once nothing is scrolling.
       final rendered = groupMembershipTimelineEntries(renderedEntries.value!);
+      // A newest row gone (deleted meanwhile, or not in the relay's) too.
       final previousNewestIndex = rendered.isEmpty
-          ? null
+          ? 0
           : _reversedGroupIndex(displayEntries, rendered.last.first.message.id);
       final followsTail = followsLatest.value && !hasUserScrolled.value;
-      if (previousNewestIndex != null &&
-          previousNewestIndex > 0 &&
-          !followsTail) {
+      if ((previousNewestIndex ?? 1) > 0 && !followsTail) {
         if (isPositioning ||
             isUserScrolling.value ||
             isAutoScrolling.value ||
@@ -725,8 +725,7 @@ class _MessageList extends HookConsumerWidget {
       return null;
     }, [channelId]);
 
-    // A replaced window is drawn afresh, at its newest row unless more rows
-    // remain below it.
+    // A replaced window is drawn afresh: at its newest row unless more remain.
     final seenWindowGeneration = useRef(windowGeneration);
     useEffect(() {
       if (seenWindowGeneration.value == windowGeneration) return null;

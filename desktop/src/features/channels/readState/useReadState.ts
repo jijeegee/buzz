@@ -28,6 +28,9 @@ export function useReadState(
   const [initializedPubkey, setInitializedPubkey] = React.useState<
     string | null
   >(null);
+  // The device's own read markers load as initialize starts, before the
+  // relay's are fetched: an open uses them at once.
+  const [localPubkey, setLocalPubkey] = React.useState<string | null>(null);
   const managerRef = React.useRef<ReadStateManager | null>(null);
   // Outlives manager re-creation so a mirror set once follows the identity.
   const serverMirrorRef = React.useRef<ReadStateServerMirror | null>(null);
@@ -35,6 +38,7 @@ export function useReadState(
   // Create/destroy manager when pubkey becomes available/changes
   React.useEffect(() => {
     setInitializedPubkey(null);
+    setLocalPubkey(null);
     if (!pubkey || !relayClient) return;
 
     let isCancelled = false;
@@ -51,6 +55,7 @@ export function useReadState(
         setInitializedPubkey(pubkey);
       }
     });
+    setLocalPubkey(pubkey);
 
     return () => {
       isCancelled = true;
@@ -63,6 +68,13 @@ export function useReadState(
   const getEffectiveTimestamp = React.useCallback(
     (contextId: string): number | null => {
       return managerRef.current?.getEffectiveTimestamp(contextId) ?? null;
+    },
+    [],
+  );
+
+  const getRelayTimestamp = React.useCallback(
+    (contextId: string): number | null => {
+      return managerRef.current?.getRelayTimestamp(contextId) ?? null;
     },
     [],
   );
@@ -122,11 +134,16 @@ export function useReadState(
   const isReady = Boolean(
     pubkey && relayClient && initializedPubkey === pubkey,
   );
+  const isLocalLoaded = Boolean(
+    pubkey && relayClient && localPubkey === pubkey,
+  );
 
   if (!pubkey || !relayClient) {
     return {
       getEffectiveTimestamp: noopGetTimestamp,
       isReady: false,
+      isLocalLoaded: false,
+      getRelayTimestamp: noopGetTimestamp,
       markContextRead: noopMarkRead,
       seedContextRead: noopMarkRead,
       drainSyncedAdvances: noopDrainAdvances,
@@ -142,6 +159,8 @@ export function useReadState(
   return {
     getEffectiveTimestamp,
     isReady,
+    isLocalLoaded,
+    getRelayTimestamp,
     markContextRead,
     seedContextRead,
     drainSyncedAdvances,

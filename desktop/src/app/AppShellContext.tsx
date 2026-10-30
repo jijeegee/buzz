@@ -58,9 +58,14 @@ type AppShellContextValue = {
   // Bump-counter that invalidates whenever the read marker changes. Include
   // in memo deps that consume getChannelReadAt.
   readStateVersion: number;
-  // The read state finished its first load; until then read markers may be
-  // missing, so a channel waits for it before deciding where it opens.
+  // The device's own read markers are loaded (the relay's may still follow);
+  // a channel opened before that waits for them briefly.
   isReadStateReady: boolean;
+  // The relay's read markers were fetched (or the fetch gave up): an open
+  // decided before that is checked again against them.
+  isReadStateSettled: boolean;
+  // A read marker as the relay has it, without this session's own marks.
+  getRelayReadAt: (contextId: string) => number | null;
   // Inject the thread→channel parent resolver derived from the event graph
   // (NIP-RS hierarchical frontier). Set by the active channel surface.
   setContextParentResolver: (resolver: ContextParentResolver | null) => void;
@@ -113,6 +118,8 @@ const AppShellContext = React.createContext<AppShellContextValue>({
   getReadContexts: () => ({}),
   readStateVersion: 0,
   isReadStateReady: true,
+  isReadStateSettled: true,
+  getRelayReadAt: () => null,
   setContextParentResolver: () => {},
   followThread: () => {},
   unfollowThread: () => {},

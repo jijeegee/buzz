@@ -11,6 +11,7 @@ import React from "react";
 import { useChannelMessagesQuery, useChannelSubscription } from "./hooks.ts";
 import { preloadChannelsMessages } from "./channelPreload.ts";
 import { channelMessagesKey } from "./lib/messageQueryKeys.ts";
+import { setStoreScope } from "./lib/paintCoverage.ts";
 import { relayClient } from "../../shared/api/relayClient.ts";
 import { retireLiveSubscription } from "../../shared/api/relayClosedRecovery.ts";
 import { noteStoreLiveEose } from "../../shared/api/relayStoreCoverage.ts";
@@ -97,14 +98,15 @@ function deferred() {
  */
 async function setUpRoom() {
   window.localStorage.clear();
-  const calls = { window: 0, windows: 0 };
+  const calls = { window: 0, windows: 0, paints: [] };
   const windowSent = deferred();
   const storeHead = deferred();
   storeHead.resolve();
   const harnessState = { storeHead: storeHead.promise };
   window.__TAURI_INTERNALS__ = {
-    invoke: async (command) => {
-      if (command === "message_store_room_head") {
+    invoke: async (command, args) => {
+      if (command === "message_store_room_paint") {
+        calls.paints.push(args);
         await harnessState.storeHead;
         return null;
       }
@@ -147,7 +149,7 @@ async function setUpRoom() {
     windowSent: windowSent.promise,
     eose: () => noteStoreLiveEose(chunk, ++generation),
     releaseListen: () => listen.resolve(),
-    /** Hold the open's device-store read; returns its release. */
+    /** Hold the open's device-store paint read; returns its release. */
     holdStoreHead: () => {
       const held = deferred();
       harnessState.storeHead = held.promise;
@@ -191,6 +193,8 @@ function newClient() {
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false } },
   });
+  // The paint reads only in the cache's own account and server.
+  setStoreScope(client, { pubkey: "a".repeat(64), relayUrl: "wss://relay" });
   clients.push(client);
   return client;
 }
@@ -218,8 +222,7 @@ test("an open whose request went out with the chunk live asks the relay once", a
   assert.equal(harness.calls.window, 1);
 });
 
-test("in ChannelScreen's hook order, a refresh before the open's request waits for it", async () => {
-  const { act } = await import("@testing-library/react");
+test("in ChannelScreen's hook order, the open's request goes out with the listener, without waiting for the store", async () => {
   const harness = await setUpRoom();
   harness.eose();
   const releaseStoreHead = harness.holdStoreHead();
@@ -231,14 +234,15 @@ test("in ChannelScreen's hook order, a refresh before the open's request waits f
     return invalidate(...args);
   });
   const { settle } = await openRoom(client, { queryFirst: true });
-  // The listen settles while the open is still reading the device store, so
-  // its window request has not gone out when the refresh runs.
-  harness.releaseListen();
-  await act(() => new Promise((resolve) => setTimeout(resolve, 20)));
-  assert.equal(harness.calls.window, 0);
-  releaseStoreHead();
+  // The device store read is still out: the window request does not wait
+  // for it, and the listener attached in the same commit goes with it.
   await harness.windowSent;
+  harness.releaseListen();
   await settle();
+  releaseStoreHead();
+  assert.equal(harness.calls.paints.length, 1);
+  assert.equal(harness.calls.paints[0].account, "a".repeat(64));
+  assert.equal(harness.calls.paints[0].relayUrl, "wss://relay");
   assert.equal(harness.calls.window, 1);
   assert.equal(invalidations, 0);
 });

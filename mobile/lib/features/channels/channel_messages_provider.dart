@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:hooks_riverpod/misc.dart' show ProviderListenable;
 
 import '../../shared/message_store/store_compare.dart';
 import '../../shared/relay/relay.dart';
@@ -19,6 +21,7 @@ import 'window_anchor.dart';
 
 part 'channel_messages_provider/open_at.dart';
 part 'channel_messages_provider/store_head.dart';
+part 'channel_messages_provider/stored_paint.dart';
 part 'channel_messages_provider/thread_live.dart';
 part 'channel_messages_provider/thread_summaries.dart';
 
@@ -46,6 +49,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _relayHistoryArrived = false;
   Set<String> _cachedHeadIds = const {};
   List<NostrEvent>? _storedHead;
+  Future<List<NostrEvent>>? _pendingRelayWindow;
+  ({int createdAt, String id})? _paintedAnchor;
+  int? _paintedContiguousFrom = 0;
   bool _followingStoredHead = false;
   Completer<void>? _storedHeadShown;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
@@ -86,6 +92,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ChannelMessagesNotifier(this.channelId);
 
   bool get _summaryMounted => ref.mounted;
+  T _read<T>(ProviderListenable<T> provider) => ref.read(provider);
   RelaySessionNotifier get _summarySession =>
       ref.read(relaySessionProvider.notifier);
   List<NostrEvent>? get _shownMessages => state.value;
@@ -159,7 +166,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       final scope = _readHeadScope();
       if (scope != null) {
         _headRestoreStarted = true;
-        unawaited(_restoreCachedHead(scope));
+        unawaited(_restoreSavedRows(scope));
+      } else {
+        Future.microtask(_markSavedRowsChecked);
       }
     }
 
@@ -228,6 +237,8 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     final initVersion = ++_initVersion;
     _initInFlight = true;
     _followingStoredHead = false;
+    _pendingRelayWindow = null;
+    _paintedAnchor = null;
     _clearSubscription();
     try {
       final session = ref.read(relaySessionProvider.notifier);
@@ -285,6 +296,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
       final page = parseChannelWindowResponse(response, channelId, null);
       _initialWindowQueryInFlight = false;
+      if (await _openAroundPaintedAnchor(session, page)) {
+        _liveSummaryRootsDuringInitialWindowQuery.clear();
+        return flattenChannelWindowEvents(_windowStore);
+      }
       _windowStore = replaceNewestChannelWindow(
         _windowStore,
         page,
@@ -321,36 +336,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _relayHistoryArrived = true;
       history.sort(compareChannelTimelineEventsChronologically);
       return history;
-    }
-  }
-
-  /// Paints the persisted newest page while the relay query is in flight.
-  /// Relay-loaded or live state always wins, and the next relay page replaces
-  /// the cached rows.
-  Future<void> _restoreCachedHead(ChannelHeadScope scope) async {
-    try {
-      final events = await ref
-          .read(channelHeadCacheProvider)
-          .load(scope, channelId);
-      if (events == null ||
-          !ref.mounted ||
-          _relayHistoryArrived ||
-          _lastKnownMessages != null ||
-          _readHeadScope() != scope) {
-        return;
-      }
-      _windowStore = replaceNewestChannelWindow(
-        _windowStore,
-        parseChannelWindowResponse(events, channelId, null),
-      );
-      final messages = flattenChannelWindowEvents(_windowStore);
-      _cachedHeadIds = {for (final event in messages) event.id};
-      _lastKnownMessages = messages;
-      state = AsyncData(messages);
-    } catch (error) {
-      debugPrint(
-        '[ChannelMessagesNotifier] cached head unavailable for $channelId: $error',
-      );
     }
   }
 
@@ -998,6 +983,15 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   /// the newest row. It stays so until [jumpToLatest], even once its newer
   /// pages reach the present.
   bool get isInMiddleWindow => _windowStore.isMiddle;
+
+  /// Whether the rows shown reach [row] (saved, from the relay or live; not
+  /// only a link target held beside them), so the room opens there without
+  /// the relay's pages. Saved rows must run without a gap from it; a first
+  /// [unread] row also needs an older row shown, or no older history.
+  bool openOnRowsAtHand(
+    ({String id, int createdAt}) row, {
+    bool unread = false,
+  }) => _openOnRowsAtHand(row.id, createdAt: row.createdAt, unread: unread);
 
   /// Whether rows newer than the loaded ones remain to page in with
   /// [fetchNewer]. Live main-timeline rows wait meanwhile instead of showing

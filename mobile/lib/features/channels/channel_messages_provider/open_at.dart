@@ -4,10 +4,9 @@ part of '../channel_messages_provider.dart';
 /// paging from there toward the present (NIP-CW newer direction).
 extension _OpenAtWindow on ChannelMessagesNotifier {
   Future<bool> _openAt({required int createdAt, String? eventId}) async {
+    // Saved rows still shown are replaced by the window opened here.
     await _awaitOpenableWindow();
-    if (!_summaryMounted || !_usingChannelWindow || isShowingCachedHead) {
-      return false;
-    }
+    if (!_summaryMounted || !_usingChannelWindow) return false;
     // Without newer pages the window could only show the anchor past a gap;
     // keep the newest window and let the caller page back as before.
     if (!await _relaySupportsNewerWindows()) return false;
@@ -18,32 +17,16 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     }
     final initVersion = _initVersion;
     final opVersion = ++_windowOpVersion;
-    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
-    final cursor = ChannelPageCursor(
-      createdAt: anchor.createdAt,
-      eventId: anchor.eventId,
-    );
-    final session = _summarySession;
     try {
-      final pageVersion = ++_threadQuerySerial;
-      final pages = await Future.wait([
-        _fetchWindowPage(session, cursor),
-        _fetchWindowPage(session, cursor, direction: WindowPageDirection.newer),
-      ]);
-      if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
-      _windowStore = openMiddleChannelWindow(
-        _windowStore,
-        pages[0],
-        pages[1],
-        anchorId: eventId,
+      final pages = await _fetchPagesAround(
+        _summarySession,
+        createdAt: createdAt,
+        eventId: eventId,
       );
+      if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
+      _foldPagesAround(pages.pages, pages.version, eventId);
       _windowGeneration++;
-      _pruneOffWindowReplies();
-      for (final page in pages) {
-        _reconcilePageSummaries(page, pageVersion);
-      }
-      _reachedOldest = !channelWindowHasMore(_windowStore);
-      _publishWindow(pages.expand((page) => page.rows));
+      _publishWindow(pages.pages.expand((page) => page.rows));
       return true;
     } catch (error) {
       debugPrint(
@@ -51,6 +34,46 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       );
       return false;
     }
+  }
+
+  /// The relay's page each way around a message.
+  Future<({List<ChannelWindowPage> pages, int version})> _fetchPagesAround(
+    RelaySessionNotifier session, {
+    required int createdAt,
+    String? eventId,
+  }) async {
+    final anchor = windowAnchorCursor(createdAt: createdAt, eventId: eventId);
+    final cursor = ChannelPageCursor(
+      createdAt: anchor.createdAt,
+      eventId: anchor.eventId,
+    );
+    final version = ++_threadQuerySerial;
+    final pages = await Future.wait([
+      _fetchWindowPage(session, cursor),
+      _fetchWindowPage(session, cursor, direction: WindowPageDirection.newer),
+    ]);
+    return (pages: pages, version: version);
+  }
+
+  /// Makes [pages] (from [_fetchPagesAround]) the window, in place of the
+  /// rows shown.
+  void _foldPagesAround(
+    List<ChannelWindowPage> pages,
+    int version,
+    String? anchorId,
+  ) {
+    _windowStore = openMiddleChannelWindow(
+      _windowStore,
+      pages[0],
+      pages[1],
+      anchorId: anchorId,
+    );
+    _cachedHeadIds = const {};
+    _pruneOffWindowReplies();
+    for (final page in pages) {
+      _reconcilePageSummaries(page, version);
+    }
+    _reachedOldest = !channelWindowHasMore(_windowStore);
   }
 
   Future<bool> _canOpenAt() async {

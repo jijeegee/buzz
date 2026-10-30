@@ -280,6 +280,8 @@ export class ReadStateManager {
   private slotId: string;
   private extraSlotIds: string[];
   private effectiveState = new Map<string, number>();
+  /** The relay's markers alone, without this session's own marks. */
+  private relayState = new Map<string, number>();
   private publishableContextIds = new Set<string>();
   private lastPublishedContexts: Record<string, number> = {};
   private debounceTimer: number | null = null;
@@ -410,6 +412,25 @@ export class ReadStateManager {
     });
   }
 
+  private noteRelayTimestamp(contextId: string, timestamp: number) {
+    if (timestamp > (this.relayState.get(contextId) ?? 0)) {
+      this.relayState.set(contextId, timestamp);
+    }
+  }
+
+  /**
+   * The read marker as the relay has it (other devices, earlier sessions),
+   * without this session's own marks, folded like getEffectiveTimestamp. An
+   * open whose marker was taken before the relay's arrived takes it again.
+   */
+  getRelayTimestamp(contextId: string): number | null {
+    return resolveEffectiveTimestamp({
+      effectiveState: this.relayState,
+      contextId,
+      parentResolver: this.parentResolver,
+    });
+  }
+
   /**
    * The context's OWN merged read marker, WITHOUT the hierarchical parent term.
    * Callers that evaluate a `thread:<root>` context outside the active channel
@@ -519,6 +540,7 @@ export class ReadStateManager {
       );
 
       for (const [ctx, ts] of Object.entries(parsed.blob.contexts)) {
+        this.noteRelayTimestamp(ctx, ts);
         const result = applyRemoteContextTimestamp({
           effectiveState: this.effectiveState,
           contextSourceCreatedAt: this.contextSourceCreatedAt,
@@ -630,6 +652,7 @@ export class ReadStateManager {
     const { blob } = parsed;
     let anyAdvanced = false;
     for (const [ctx, ts] of Object.entries(blob.contexts)) {
+      this.noteRelayTimestamp(ctx, ts);
       const result = applyRemoteContextTimestamp({
         effectiveState: this.effectiveState,
         contextSourceCreatedAt: this.contextSourceCreatedAt,

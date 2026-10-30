@@ -47,7 +47,11 @@ extension _StoreHead on ChannelMessagesNotifier {
       _storedHead = null;
     }
     if (stored == null || !_isCurrentInit(initVersion)) return;
-    if (_usingChannelWindow && _windowStore.isMiddle) return;
+    if (_usingChannelWindow && _windowStore.isMiddle) {
+      // A window opened at a message first: the newest answer is not needed.
+      _pendingRelayWindow = null;
+      return;
+    }
     _followingStoredHead = true;
     _storedHeadShown?.complete();
     _storedHeadShown = null;
@@ -121,20 +125,36 @@ extension _StoreHead on ChannelMessagesNotifier {
   }
 
   /// The newest window: on the room's first fetch, the store's window when it
-  /// is certain; otherwise (and on every later fetch) the relay's.
+  /// is certain and answers before the relay; otherwise (and on every later
+  /// fetch) the relay's. The relay request goes out at once rather than after
+  /// the store check, which may wait for the writer; when the store wins, the
+  /// same request is the relay follow-up.
   Future<List<NostrEvent>> _openWindowResponse(
     RelaySessionNotifier session,
   ) async {
+    final pending = _pendingRelayWindow;
+    _pendingRelayWindow = null;
+    if (pending != null) return pending;
+    final initVersion = _initVersion;
     final filter = _channelWindowFilter(null);
-    if (!_relayHistoryArrived && !_preloadedFromRelay) {
-      final stored = await _storedRoomHead(session, channelId, filter);
-      if (stored != null) {
-        _storedHead = stored;
-        return stored;
-      }
-    }
     // Records the room's head span when its live REQ stays live
     // (docs/message-sync.md#head-spans).
-    return session.queryRelayWithStoreHeads([filter]);
+    final relay = session.queryRelayWithStoreHeads([filter]);
+    if (_relayHistoryArrived || _preloadedFromRelay) return relay;
+    final stored = _storedRoomHead(
+      session,
+      channelId,
+      filter,
+    ).then<List<NostrEvent>?>((events) => events, onError: (_) => null);
+    final storeFirst = await Future.any([
+      relay.then((_) => false, onError: (_) => false),
+      stored.then((events) => events != null),
+    ]);
+    final events = storeFirst ? await stored : null;
+    // A later init asks again; this one's store answer must not leak to it.
+    if (events == null || !_isCurrentInit(initVersion)) return relay;
+    _storedHead = events;
+    _pendingRelayWindow = relay;
+    return events;
   }
 }

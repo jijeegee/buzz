@@ -18,6 +18,23 @@ export function isStoredWindow(events: readonly RelayEvent[]) {
   return stored.has(events);
 }
 
+/**
+ * Stored windows drawn before the relay confirmed them (a paint,
+ * docs/message-sync.md#painting-from-the-store): they never count as a
+ * fetched window, so where the room opens stays provisional until the
+ * relay's answer is shown.
+ */
+const painted = new WeakSet<readonly RelayEvent[]>();
+
+export function markPaintedWindow(events: readonly RelayEvent[]) {
+  stored.add(events);
+  painted.add(events);
+}
+
+export function isPaintedWindow(events: readonly RelayEvent[]) {
+  return painted.has(events);
+}
+
 /** A build with `VITE_KUZZ_STORE_OPEN=off` opens everything from the relay. */
 export function storeOpensEnabled(): boolean {
   return import.meta.env?.VITE_KUZZ_STORE_OPEN !== "off";

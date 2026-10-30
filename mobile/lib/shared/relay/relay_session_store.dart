@@ -150,6 +150,48 @@ extension RelaySessionStore on RelaySessionNotifier {
     return _storedEvents(events);
   }
 
+  /// [roomId]'s newest window as the store holds it, certain or not, to draw
+  /// before the connection and the room's live REQ are up. Never a reason to
+  /// skip a relay request; `null` when nothing is stored or store opens are
+  /// off.
+  Future<List<NostrEvent>?> paintableRoomHead(
+    String roomId, {
+    required List<int> kinds,
+    required int limit,
+  }) async {
+    final store = _messageStore;
+    if (store == null || !storeOpensEnabled) return null;
+    return _storedEvents(
+      await store.paintableRoomHead(
+        _storeLease,
+        room: roomId,
+        kinds: kinds,
+        limit: limit,
+      ),
+    );
+  }
+
+  /// [rootId]'s newest replies in [roomId] as the store holds them, certain
+  /// or not, to draw while the thread's relay page is out.
+  Future<List<NostrEvent>?> paintableThreadHead(
+    String roomId,
+    String rootId, {
+    required List<int> kinds,
+    required int limit,
+  }) async {
+    final store = _messageStore;
+    if (store == null || !storeOpensEnabled) return null;
+    return _storedEvents(
+      await store.paintableThreadHead(
+        _storeLease,
+        room: roomId,
+        root: rootId,
+        kinds: kinds,
+        limit: limit,
+      ),
+    );
+  }
+
   /// [filters] sent through [queryRelay], recording the head span of each
   /// newest room or thread window they ask for whose room's live REQs were
   /// live as the request went out and still are when it is answered

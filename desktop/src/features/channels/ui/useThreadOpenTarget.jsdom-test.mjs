@@ -220,3 +220,30 @@ test("opening at a first unread reply forgets the old spot", () => {
     view.unmount();
   }
 });
+
+test("stored replies decide at once; the relay's replies move the open unless the reader scrolled", () => {
+  for (const scrolled of [false, true]) {
+    window.localStorage.clear();
+    const view = mount({
+      replies: replies("r1", "r2"),
+      repliesConfirmed: false,
+    });
+    try {
+      assert.equal(view.last().isResolving, false);
+      assert.equal(view.last().targetId, null);
+      if (scrolled) {
+        act(() => {
+          window.dispatchEvent(new window.WheelEvent("wheel", { deltaY: 40 }));
+        });
+      }
+      view.update({
+        replies: replies("r1", "r2", "r3"),
+        firstUnreadReplyId: "r3",
+        repliesConfirmed: true,
+      });
+      assert.equal(view.last().targetId, scrolled ? null : "r3");
+    } finally {
+      view.unmount();
+    }
+  }
+});

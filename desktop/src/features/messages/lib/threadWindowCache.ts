@@ -5,10 +5,14 @@ import {
   sortMessages,
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
+import { storeBeforeRelay } from "@/features/messages/lib/paintFirst";
 import {
-  certainStoredThreadPage,
   compareThreadRelayPage,
+  notePaintedThread,
+  noteThreadConfirmed,
+  paintedThreadPage,
   refreshThreadAfterStore,
+  takePendingThreadRelay,
 } from "@/features/messages/lib/storeThreadHead";
 import {
   getThreadWindows,
@@ -207,23 +211,46 @@ export async function loadNewestThreadReplies(
 ): Promise<RelayEvent[] | null> {
   const limitRows = options.limitRows ?? THREAD_PAGE_ROWS;
   const stateKey = threadWindowStateKey(channelId, rootId);
-  // A thread never loaded opens from the store when that is certain, then
-  // asks the relay. A link to a reply goes to the relay: the walk to the
-  // reply pages the relay anyway.
-  const stored =
-    queryClient.getQueryData(stateKey) === undefined && !options.mustInclude
-      ? await certainStoredThreadPage(channelId, rootId, limitRows)
-      : null;
-  if (stored) {
-    void refreshThreadAfterStore(queryClient, channelId, rootId, stored.events);
+  // A thread never loaded paints its stored replies while the relay is
+  // asked; a painted thread's refetch takes that request. A link to a reply
+  // goes to the relay: the walk to the reply pages the relay anyway.
+  const first =
+    queryClient.getQueryData(stateKey) === undefined && !options.mustInclude;
+  const relay =
+    (first
+      ? undefined
+      : takePendingThreadRelay(queryClient, channelId, rootId)) ??
+    fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
+  const race = first
+    ? await storeBeforeRelay(
+        paintedThreadPage(queryClient, channelId, rootId, limitRows),
+        relay,
+      )
+    : null;
+  const stored = race?.stored.page ?? null;
+  if (race) {
+    notePaintedThread(
+      queryClient,
+      channelId,
+      rootId,
+      race.relayFailed ? null : relay,
+      race.stored.completeFrom,
+    );
+    if (!race.relayFailed) {
+      void refreshThreadAfterStore(
+        queryClient,
+        channelId,
+        rootId,
+        race.stored.page.events,
+      );
+    }
   }
-  const page =
-    stored ??
-    (await fetchThreadPage(channelId, rootId, null, limitRows, {
-      storeHead: true,
-    }));
+  const page = stored ?? (await relay);
   if (!page) return null;
-  if (!stored) compareThreadRelayPage(queryClient, rootId, page.events);
+  if (!stored) {
+    compareThreadRelayPage(queryClient, rootId, page.events);
+    noteThreadConfirmed(queryClient, channelId, rootId);
+  }
   let { events, state } = mergeNewestThreadPage(
     queryClient.getQueryData<RelayEvent[]>(threadRepliesKey(channelId, rootId)),
     queryClient.getQueryData<ThreadWindowState>(stateKey),

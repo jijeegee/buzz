@@ -19,6 +19,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show Override;
+import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:lucide_icons_flutter/lucide_icons.dart';
@@ -232,6 +233,13 @@ NostrEvent _edit({
   sig: '',
 );
 
+class _SavedRowsChecked extends ChannelSavedRowsChecked {
+  _SavedRowsChecked() : super(_channelId);
+
+  @override
+  bool build() => true;
+}
+
 Widget _buildTestable({
   required List<NostrEvent> messages,
   PresenceCacheNotifier? presenceCache,
@@ -301,6 +309,11 @@ Widget _buildTestable({
         channelMessagesProvider(
           _channelId,
         ).overrideWith(() => fakeMessagesNotifier),
+      // A fake timeline has no saved rows to look up.
+      if (!realMessages)
+        channelSavedRowsCheckedProvider(
+          _channelId,
+        ).overrideWith(_SavedRowsChecked.new),
       if (relayInfo != null)
         relayInfoProvider.overrideWith((ref) async => relayInfo),
       channelTypingProvider(
@@ -2037,7 +2050,7 @@ void main() {
       },
     );
 
-    testWidgets('debounces same-slot reconnect skeletons before revealing', (
+    testWidgets('keeps saved rows without a skeleton through a reconnect', (
       tester,
     ) async {
       final relaySession = _ReconnectingRelaySession();
@@ -2059,69 +2072,23 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.text('Existing message'), findsOneWidget);
-      expect(
-        tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
-        isFalse,
-      );
-
-      await tester.pump(const Duration(milliseconds: 1999));
-      expect(
-        tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
-        isFalse,
-      );
-
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump();
-      final skeleton = find.byKey(
-        const Key('channel-detail-connection-skeleton'),
-      );
-      expect(skeleton, findsOneWidget);
-      expect(
-        find.descendant(of: skeleton, matching: find.byType(SkeletonBar)),
-        findsWidgets,
-      );
-      expect(find.text('Existing message'), findsOneWidget);
-      expect(find.byType(CircularProgressIndicator), findsNothing);
-      expect(
-        tester
-            .widget<Opacity>(
-              find.byKey(const Key('skeleton-reveal-placeholder')),
-            )
-            .opacity,
-        1,
-      );
+      // Rows at hand stay drawn however long the connection takes; the
+      // relay's answer merges into them.
+      for (final wait in const [Duration.zero, Duration(seconds: 5)]) {
+        await tester.pump(wait);
+        expect(find.text('Existing message'), findsOneWidget);
+        expect(
+          tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
+          isFalse,
+        );
+      }
 
       relaySession.connect();
       await tester.pump();
-      await tester.pump();
+      expect(find.text('Existing message'), findsOneWidget);
       expect(
         tester.widget<SkeletonReveal>(find.byType(SkeletonReveal)).loading,
         isFalse,
-      );
-      await tester.pump(const Duration(milliseconds: 200));
-
-      expect(
-        tester
-            .widget<Opacity>(
-              find.byKey(const Key('skeleton-reveal-placeholder')),
-            )
-            .opacity,
-        closeTo(0.5, 0.01),
-      );
-      expect(
-        tester
-            .widget<Opacity>(find.byKey(const Key('skeleton-reveal-content')))
-            .opacity,
-        closeTo(0.5, 0.01),
-      );
-
-      await tester.pump(const Duration(milliseconds: 200));
-      expect(
-        tester
-            .widget<Opacity>(find.byKey(const Key('skeleton-reveal-content')))
-            .opacity,
-        1,
       );
     });
 

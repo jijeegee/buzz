@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-// Where a channel visit opens is decided only on a current window: never on
-// a head cache from an earlier run or a window cached before the visit that
-// may miss newer unread rows (docs/message-sync.md#opening-at-a-position).
+// Where a channel visit opens is decided on the rows held at once. Rows that
+// are not a current window (a stored paint, a head cache from an earlier run,
+// a window cached before the visit) decide provisionally: once the relay's
+// window is shown the open moves if the reader has not scrolled
+// (docs/message-sync.md#opening-at-a-position).
 
 const React = (await import("react")).default;
 const { act } = await import("react");
 const { createRoot } = await import("react-dom/client");
-const { useChannelOpenAnchor, OPEN_WINDOW_WAIT_MS } = await import(
-  "./useChannelOpenAnchor.ts"
-);
+const { useChannelOpenAnchor } = await import("./useChannelOpenAnchor.ts");
 
 const { readingPositionScope, readingPositionStore } = await import(
   "../readingPositionStore.ts"
@@ -60,7 +60,7 @@ function mount(initial) {
 
 const rows = [message("old", 100), message("unread", 200)];
 
-test("a head cache from an earlier run waits for the relay's window", () => {
+test("a head cache from an earlier run opens at once, then moves to the relay's first unread", () => {
   const view = mount({
     messages: [message("old", 100)],
     windowCommit: null,
@@ -69,7 +69,7 @@ test("a head cache from an earlier run waits for the relay's window", () => {
     firstUnreadMessageId: null,
   });
   try {
-    assert.equal(view.last().isResolving, true);
+    assert.equal(view.last().isResolving, false);
     assert.equal(view.last().anchorMessageId, null);
     view.update({
       messages: rows,
@@ -115,7 +115,7 @@ test("a window cached before the visit is current when it has the last message",
   }
 });
 
-test("without a current window the visit decides on its rows after the wait", async () => {
+test("without a current window the visit decides on its rows at once", () => {
   const view = mount({
     messages: rows,
     windowCommit: { at: Date.now() - 60_000, newestRowAt: 200 },
@@ -124,13 +124,39 @@ test("without a current window the visit decides on its rows after the wait", as
     firstUnreadMessageId: "unread",
   });
   try {
-    assert.equal(view.last().isResolving, true);
-    await act(
-      () =>
-        new Promise((resolve) => setTimeout(resolve, OPEN_WINDOW_WAIT_MS + 50)),
-    );
     assert.equal(view.last().isResolving, false);
     assert.equal(view.last().anchorMessageId, "unread");
+    // The relay's window agrees: nothing moves.
+    view.update({
+      messages: [...rows, message("newer", 300)],
+      windowCommit: { at: Date.now(), newestRowAt: 300 },
+    });
+    assert.equal(view.last().anchorMessageId, "unread");
+  } finally {
+    view.unmount();
+  }
+});
+
+test("a reader who scrolled before the relay's window is not moved", () => {
+  const view = mount({
+    messages: [message("old", 100)],
+    windowCommit: null,
+    lastMessageAt: iso(200),
+    frontierSeconds: 150,
+    firstUnreadMessageId: null,
+  });
+  try {
+    assert.equal(view.last().anchorMessageId, null);
+    act(() => {
+      window.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -40 }));
+    });
+    view.update({
+      messages: rows,
+      windowCommit: { at: Date.now(), newestRowAt: 200 },
+      firstUnreadMessageId: "unread",
+    });
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().anchorMessageId, null);
   } finally {
     view.unmount();
   }
@@ -251,7 +277,7 @@ test("a read marker from another device keeps where the visit opened", () => {
   }
 });
 
-test("a commit announced before its rows reach the timeline waits for them", () => {
+test("a commit announced before its rows reach the timeline is not current yet", () => {
   const view = mount({
     messages: [message("old", 100)],
     windowCommit: { at: Date.now(), newestRowAt: 200, newestRowId: "unread" },
@@ -260,7 +286,9 @@ test("a commit announced before its rows reach the timeline waits for them", () 
     firstUnreadMessageId: null,
   });
   try {
-    assert.equal(view.last().isResolving, true);
+    // Opens on the rows held; the announced commit does not decide yet.
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().anchorMessageId, null);
     view.update({ messages: rows, firstUnreadMessageId: "unread" });
     assert.equal(view.last().isResolving, false);
     assert.equal(view.last().anchorMessageId, "unread");
@@ -315,6 +343,90 @@ test("a remembered row that is not there any more is forgotten", () => {
   try {
     assert.equal(view.last().anchorMessageId, null);
     assert.equal(readingPositionStore.get(scope, "room"), null);
+  } finally {
+    view.unmount();
+  }
+});
+
+const { notePaintCoverage, resetPaintCoverage } = await import(
+  "../../messages/lib/paintCoverage.ts"
+);
+
+test("a store paint with a hole after the read marker waits for the relay's window", () => {
+  notePaintCoverage("room", 180);
+  const view = mount({
+    messages: [message("unread", 200)],
+    windowCommit: null,
+    lastMessageAt: iso(200),
+    frontierSeconds: 150,
+    firstUnreadMessageId: "unread",
+  });
+  try {
+    assert.equal(view.last().isResolving, true);
+    view.update({
+      messages: [
+        message("old", 100),
+        message("early", 170),
+        message("unread", 200),
+      ],
+      windowCommit: { at: Date.now(), newestRowAt: 200 },
+      firstUnreadMessageId: "early",
+    });
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().anchorMessageId, "early");
+  } finally {
+    view.unmount();
+    resetPaintCoverage();
+  }
+});
+
+test("a provisional open whose relay answer is in older pages seeks them", () => {
+  let calls = 0;
+  const view = mount({
+    messages: [message("old", 100)],
+    windowCommit: null,
+    lastMessageAt: iso(210),
+    frontierSeconds: 150,
+    firstUnreadMessageId: null,
+    fetchOlder: () => {
+      calls += 1;
+      return new Promise(() => {});
+    },
+  });
+  try {
+    assert.equal(view.last().isResolving, false);
+    view.update({
+      messages: unreadOnly,
+      windowCommit: { at: Date.now(), newestRowAt: 210 },
+      firstUnreadMessageId: "u1",
+      hasOlderMessages: true,
+    });
+    assert.equal(view.last().isResolving, true);
+    assert.ok(calls >= 1, `${calls} requests`);
+  } finally {
+    view.unmount();
+  }
+});
+
+test("a scroll in one room does not keep the next room's open in place", () => {
+  const view = mount({
+    messages: [message("old", 100)],
+    windowCommit: null,
+    lastMessageAt: iso(200),
+    frontierSeconds: 150,
+    firstUnreadMessageId: null,
+  });
+  try {
+    act(() => {
+      window.dispatchEvent(new window.WheelEvent("wheel", { deltaY: -40 }));
+    });
+    view.update({ channelId: "room2" });
+    view.update({
+      messages: rows,
+      windowCommit: { at: Date.now(), newestRowAt: 200 },
+      firstUnreadMessageId: "unread",
+    });
+    assert.equal(view.last().anchorMessageId, "unread");
   } finally {
     view.unmount();
   }

@@ -80,6 +80,7 @@ import { EncryptedBackupProvider } from "@/features/settings/EncryptedBackupProv
 import { OwnerDevicesProvider } from "@/shared/api/OwnerDevicesContext";
 import { createKuzzQueryClient } from "@/shared/api/queryClient";
 import { hydrateChannelHeads } from "@/features/messages/lib/channelHeadCache";
+import { setStoreScope } from "@/features/messages/lib/paintCoverage";
 import { useIdentityQuery } from "@/shared/api/hooks";
 import { isSharedIdentity as isSharedIdentityCmd } from "@/shared/api/tauri";
 import { getProfile } from "@/shared/api/tauriProfiles";
@@ -264,6 +265,7 @@ function CommunityQueryProvider({
     const client = createKuzzQueryClient();
     if (pubkey && relayUrl) {
       seedProjectSnapshot(client, { pubkey, relayUrl });
+      setStoreScope(client, { pubkey, relayUrl });
       void hydrateChannelHeads(client, { pubkey, relayUrl });
     }
     return client;

@@ -24,7 +24,8 @@ import 'android_ime_lift.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_link_navigation.dart';
 import 'channel_messages_provider.dart';
-import 'channel_preload.dart';
+import 'thread_saved_replies.dart';
+import 'initial_unread.dart';
 import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'thread_depth.dart';
@@ -181,7 +182,10 @@ class ThreadDetailPage extends HookConsumerWidget {
     );
     final relayReplyState = ref.watch(threadRepliesProvider(repliesArgs));
     final repliesState = ref.watch(threadRepliesWithLocalProvider(repliesArgs));
-    final relayRepliesAvailable = relayReplyState.value != null;
+    // Saved replies opened at stay until the relay's around them land.
+    final aroundSaved = useState(false);
+    final relayRepliesAvailable =
+        relayReplyState.value != null && !aroundSaved.value;
     // The thread query is one-shot and asks only for content kinds, so a
     // reaction, edit, or deletion that lands while the thread is open never
     // reaches it — a new pill (and its burst) only showed up after leaving and
@@ -226,11 +230,12 @@ class ThreadDetailPage extends HookConsumerWidget {
       liveChannelEvents,
       threadHead.id,
     );
-    // Replies preloaded from the inbox paint with the route snapshot until
-    // the full scan lands; they never replace it.
+    // Replies preloaded from the inbox (else stored on the device) paint with
+    // the route snapshot until the full scan lands; they never replace it.
     final preloadedReplies = relayRepliesAvailable
         ? const <NostrEvent>[]
-        : ref.watch(preloadedThreadRepliesProvider(repliesArgs));
+        : ref.watch(savedThreadRepliesProvider(repliesArgs));
+    final savedLoading = ref.watch(savedRepliesLoadingProvider(repliesArgs));
     final allMsgs = fetchedReplies == null || !relayRepliesAvailable
         ? _provisionalThreadMessages(
             allMessages,
@@ -340,33 +345,14 @@ class ThreadDetailPage extends HookConsumerWidget {
     // The unread replies of a top-level thread as it opens.
     final initialUnreadReplies = useRef<List<ObservedUnreadEvent>?>(null);
     if (initialUnreadReplies.value == null && readState.isReady) {
-      final channelReadAt = readState.effectiveTimestamp(channelId);
-      initialUnreadReplies.value =
-          threadHead.rootId != null
-                ? const []
-                : [
-                    for (final event
-                        in ref
-                                .read(channelsProvider.notifier)
-                                .observedUnreadEventsByChannel[channelId]
-                                ?.values ??
-                            const <ObservedUnreadEvent>[])
-                      if (event.rootId == threadHead.id &&
-                          event.createdAt >
-                              (observedUnreadEventReadAt(
-                                    event,
-                                    channelReadAt,
-                                    (rootId) => readState.effectiveTimestamp(
-                                      threadContextKey(rootId),
-                                    ),
-                                    (messageId) => readState.effectiveTimestamp(
-                                      msgContextKey(messageId),
-                                    ),
-                                  ) ??
-                                  0))
-                        event,
-                  ]
-            ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
+      initialUnreadReplies.value = threadHead.rootId != null
+          ? const []
+          : observedUnreadEvents(
+              readState,
+              ref.read(channelsProvider.notifier).observedUnreadEventsByChannel,
+              channelId,
+              rootId: threadHead.id,
+            );
     }
     // A link or notification opens at its reply, unread replies at the first
     // of them, and otherwise a saved position at its reply, instead of the
@@ -453,6 +439,20 @@ class ThreadDetailPage extends HookConsumerWidget {
           );
           return null;
         }
+        if (savedLoading) return null;
+        // Held replies reaching the target open there at once.
+        final unread = target.isUnread;
+        if (heldReplyToOpenAt(allReplies, target.id, unread: unread)
+            case final held?) {
+          didStartOpening.value = true;
+          openedCreatedAt.value = held.createdAt;
+          listGeneration.value += 1;
+          openedGeneration.value = listGeneration.value;
+          openPhase.value = _ThreadOpenPhase.positioning;
+          if (relayReplyState.value != null) return null;
+          openAroundSavedReply(windowNotifier, aroundSaved, held, context);
+          return null;
+        }
         if (supportsOpenAt.value != true) return null;
         final createdAt =
             target.createdAt ??
@@ -497,6 +497,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         canUseMessagesForInitialTarget,
         relayRepliesAvailable,
         readDecided,
+        savedLoading,
       ],
     );
     // The window shows once the thread query is in too; a query that failed
@@ -649,13 +650,12 @@ class ThreadDetailPage extends HookConsumerWidget {
       // move every reply on screen. Redraw the list around the reply being
       // read instead, once nothing is scrolling.
       final rendered = renderedReplies.value!;
+      // A newest reply gone (deleted meanwhile, or not in the relay's) too.
       final previousNewestIndex = rendered.isEmpty
-          ? null
+          ? 0
           : _reversedReplyIndex(replies, rendered.last.id);
       final followsTail = isAtLatest.value && listCenteredAtNewest.value;
-      if (previousNewestIndex != null &&
-          previousNewestIndex > 0 &&
-          !followsTail) {
+      if ((previousNewestIndex ?? 1) > 0 && !followsTail) {
         if (isPositioning ||
             isUserScrolling.value ||
             programmaticScrollInFlight.value ||

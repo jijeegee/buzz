@@ -108,6 +108,103 @@ pub async fn message_store_room_head(
     .await
 }
 
+/// The store scope a paint reads, only while it is still the one the caller
+/// opened the room under (`account`, `relay_url`): a paint asked before an
+/// account or community switch reads nothing rather than the new scope.
+fn paint_scope(
+    state: &AppState,
+    account: &str,
+    relay_url: &str,
+) -> Result<Option<(String, String)>, String> {
+    let (relay, current) = scope(state)?;
+    Ok(same_scope(account, relay_url, &current, &relay).then_some((relay, current)))
+}
+
+/// The paint's expected account and server are the current ones (a `wss://`
+/// socket and an `https://` query to one server count as the same).
+fn same_scope(account: &str, relay_url: &str, current: &str, current_relay: &str) -> bool {
+    let origin = crate::message_store::http_origin(relay_url);
+    origin.is_some()
+        && origin == crate::message_store::http_origin(current_relay)
+        && current.eq_ignore_ascii_case(account)
+}
+
+/// A painted window and how far back the store holds its room's events
+/// without a gap (0: the whole history; `None`: unknown).
+#[derive(serde::Serialize)]
+pub struct StorePaint<T> {
+    window: T,
+    complete_from: Option<i64>,
+}
+
+/// `room_id`'s newest stored window, in the shape of `get_channel_window`,
+/// read at once and certain or not, or `None` when nothing is stored. It is
+/// drawn while the relay is asked at the same time
+/// (docs/message-sync.md#painting-from-the-store).
+#[tauri::command]
+pub async fn message_store_room_paint(
+    room_id: String,
+    account: String,
+    relay_url: String,
+    state: State<'_, AppState>,
+) -> Result<Option<StorePaint<Vec<serde_json::Value>>>, String> {
+    let Some((relay, account)) = paint_scope(&state, &account, &relay_url)? else {
+        return Ok(None);
+    };
+    let kinds: Vec<u64> = super::channel_window::TIMELINE_KINDS
+        .iter()
+        .map(|&kind| u64::from(kind))
+        .collect();
+    off_main(move || {
+        crate::message_store::paint_room_head(&relay, &account, &room_id, &kinds, ROOM_HEAD_ROWS)
+            .map(|(window, complete_from)| StorePaint {
+                window,
+                complete_from: complete_from.map(|at| at.max(0)),
+            })
+    })
+    .await
+}
+
+/// `root_id`'s newest stored replies, in the shape of a `get_thread_windows`
+/// page, read at once and certain or not, or `None` when none is stored.
+#[tauri::command]
+pub async fn message_store_thread_paint(
+    channel_id: String,
+    root_id: String,
+    limit: usize,
+    account: String,
+    relay_url: String,
+    state: State<'_, AppState>,
+) -> Result<Option<StorePaint<super::thread_window::ThreadWindowPage>>, String> {
+    let Some((relay, account)) = paint_scope(&state, &account, &relay_url)? else {
+        return Ok(None);
+    };
+    let kinds: Vec<u64> = super::thread_window::THREAD_ROW_KINDS
+        .iter()
+        .map(|&kind| u64::from(kind))
+        .collect();
+    off_main(move || {
+        crate::message_store::paint_thread_head(
+            &relay,
+            &account,
+            &channel_id,
+            &root_id,
+            &kinds,
+            limit.clamp(1, 200),
+        )
+        .map(|(events, next_cursor, complete_from)| StorePaint {
+            window: super::thread_window::ThreadWindowPage::from_store(
+                channel_id,
+                root_id,
+                events,
+                next_cursor,
+            ),
+            complete_from: complete_from.map(|at| at.max(0)),
+        })
+    })
+    .await
+}
+
 /// One room to check for [`message_store_certain_rooms`]: `live_at` is when
 /// its live REQ reached EOSE on the current connection.
 #[derive(serde::Deserialize)]
@@ -260,4 +357,26 @@ pub async fn message_store_record_heads(
         })
         .collect();
     crate::message_store::record_heads(&relay, &account, scope.as_deref(), heads)
+}
+
+#[cfg(test)]
+mod paint_scope_tests {
+    use super::same_scope;
+
+    #[test]
+    fn a_paint_reads_only_in_the_scope_it_was_asked_for() {
+        let me = "ab".repeat(32);
+        let other = "cd".repeat(32);
+        let api = "https://relay.example";
+        assert!(same_scope(&me, "wss://relay.example", &me, api));
+        assert!(same_scope(
+            &me.to_uppercase(),
+            "wss://Relay.example/",
+            &me,
+            api
+        ));
+        assert!(!same_scope(&other, "wss://relay.example", &me, api));
+        assert!(!same_scope(&me, "wss://other.example", &me, api));
+        assert!(!same_scope(&me, "", &me, api));
+    }
 }
