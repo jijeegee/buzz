@@ -228,7 +228,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       rethrow;
     } catch (error) {
       // A failed relay list keeps the saved one shown and asks again.
+      final scope = (_memberSnapshotRelayBaseUrl, _memberSnapshotPubkey);
       await _listSnapshot.pending;
+      if (scope != (_memberSnapshotRelayBaseUrl, _memberSnapshotPubkey)) {
+        throw const _StaleChannelRefresh();
+      }
       if (!_listSnapshot.shown) rethrow;
       _recovery.failed(error);
       return state.value ?? const [];

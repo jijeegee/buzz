@@ -16,15 +16,24 @@ class HeldComposer extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (!composerHeld(ref, channelId)) return child;
+    final held = composerHeld(ref, channelId);
+    // The same wrappers either way, so lifting the hold keeps the composer's
+    // state (draft, shared text).
     return IgnorePointer(
-      key: const Key('held-composer'),
-      child: ExcludeFocus(child: Opacity(opacity: 0.4, child: child)),
+      key: held ? const Key('held-composer') : null,
+      ignoring: held,
+      child: ExcludeFocus(
+        excluding: held,
+        child: Opacity(opacity: held ? 0.4 : 1, child: child),
+      ),
     );
   }
 }
 
-/// Whether the relay has not confirmed room [channelId] yet.
+/// Whether the relay has not confirmed room [channelId] yet: held only while
+/// its details are still on their way. A failed lookup releases it, as a
+/// cached error would otherwise hold rooms the relay's list leaves out
+/// (hidden DMs, huddle rooms) for good.
 bool composerHeld(WidgetRef ref, String channelId) {
   final channels = ref.watch(channelsProvider).value;
   final notifier = ref.read(channelsProvider.notifier);
@@ -33,5 +42,6 @@ bool composerHeld(WidgetRef ref, String channelId) {
       (channels?.any((channel) => channel.id == channelId) ?? false)) {
     return false;
   }
-  return !ref.watch(channelDetailsProvider(channelId)).hasValue;
+  final details = ref.watch(channelDetailsProvider(channelId));
+  return !details.hasValue && !details.hasError;
 }
