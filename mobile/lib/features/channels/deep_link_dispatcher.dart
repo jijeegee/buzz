@@ -13,14 +13,17 @@ import '../invites/invite_join_sheet.dart';
 import 'channel.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
+import '../chats/chat_list_provider.dart';
+import '../chats/chat_row_channel.dart';
 
 /// Routes pending `kuzz://message` deep links into the channel view.
 ///
 /// Wraps the authenticated home subtree. Whenever a parsed link is parked in
 /// [pendingDeepLinkProvider] and the channel list is available, this pushes
-/// the target [ChannelDetailPage] on the enclosing [Navigator]. Links are
-/// held (not dropped) while channels are still loading, so cold-start links
-/// dispatch as soon as the first channel fetch completes.
+/// the target [ChannelDetailPage] on the enclosing [Navigator]. A room the
+/// channel list (saved or the relay's) or a Chats row knows opens at once;
+/// other links are held (not dropped) until the relay's list arrives, and
+/// only a room missing from it is reported as not found.
 typedef DeepLinkDestinationBuilder =
     Widget Function(Channel channel, KuzzDeepLink link);
 
@@ -134,15 +137,24 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
       _ => throw StateError('unsupported navigable deep link: $link'),
     };
     final channels = ref.read(channelsProvider).asData?.value;
-    // Channels not loaded yet — keep the link parked; the channelsProvider
-    // listener re-attempts once data arrives.
-    if (channels == null) return;
-
-    final channel = channels
-        .where((c) => c.id == channelId)
-        .cast<Channel?>()
-        .firstOrNull;
+    // The listed room, else the room its Chats row describes (when the
+    // Chats list is already up; it is not started here): either opens at
+    // once, before the relay's channel list.
+    final channel =
+        channels?.where((c) => c.id == channelId).firstOrNull ??
+        (ref.exists(chatListProvider)
+            ? channelFromChatRows(
+                ref.read(chatListProvider).value?.rows ?? const [],
+                channelId,
+              )
+            : null);
     if (channel == null) {
+      // Not known yet (no list, or only the saved one) — keep the link
+      // parked; the channelsProvider listener re-attempts as lists arrive.
+      if (channels == null ||
+          ref.read(channelsProvider.notifier).showsSavedList) {
+        return;
+      }
       ref.read(pendingDeepLinkProvider.notifier).consume();
       debugPrint(
         'deep-link: channel $channelId not found in workspace; dropping link',

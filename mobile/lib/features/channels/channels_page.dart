@@ -39,6 +39,7 @@ import 'group_avatar.dart';
 import 'chats_order.dart';
 import 'channel_actions_sheet.dart';
 import 'channel_detail_page.dart';
+import 'channel_list_retry_row.dart';
 import 'channel_management_provider.dart';
 import 'dm_channel_labels.dart';
 import 'ephemeral_channel_display.dart';
@@ -262,6 +263,13 @@ class ChannelsPage extends HookConsumerWidget {
       cachedChannels.value = data;
     }
     final channels = cachedChannels.value;
+    // The relay's list failed under a list drawn from saved data: the list
+    // stays, with a retry. An empty saved list (a switch with nothing saved)
+    // waits on the skeleton, not "no channels".
+    final relayError = ref.watch(channelListLoadErrorProvider);
+    final savedListEmpty =
+        ref.read(channelsProvider.notifier).showsSavedList &&
+        (channels?.isEmpty ?? false);
     Future<void> openChannel(Channel channel) async {
       if (!context.mounted) return;
       await Navigator.of(context).push(
@@ -294,8 +302,11 @@ class ChannelsPage extends HookConsumerWidget {
     // Keep cached content steady through brief socket flaps. A sustained
     // reconnect swaps to element-shaped skeletons that match desktop.
     final showConnectionSkeleton = useState(false);
+    // The saved list drawn at launch stays as it is while the first
+    // connection comes up (docs/message-sync.md#launch-order).
     final isReconnectingWithContent =
         channels != null &&
+        !ref.read(channelsProvider.notifier).showsSavedList &&
         (sessionState.status == SessionStatus.connecting ||
             sessionState.status == SessionStatus.reconnecting);
     useEffect(() {
@@ -394,6 +405,10 @@ class ChannelsPage extends HookConsumerWidget {
         showError: showError.value,
         sessionStatus: sessionState.status,
         showConnectionSkeleton: showConnectionSkeleton.value,
+        savedListEmpty: savedListEmpty,
+        relayError: relayError,
+        onRetryRelayList: () =>
+            ref.read(channelsProvider.notifier).retryRelayList(),
         currentPubkey: currentPubkey,
         topSectionHeight: topSectionHeight,
         usesPinnedGradient: usesPinnedGradient,

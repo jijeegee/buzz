@@ -6,6 +6,8 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/crypto/nip_oa.dart';
+import '../../shared/message_store/message_store_provider.dart';
+import '../../shared/profile/profile_snapshot.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
@@ -72,6 +74,7 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
   Map<String, dynamic> _metadata = {};
   bool _hasHydrated = false;
   int _lastCreatedAt = 0;
+  int _build = 0;
   Future<void> _patchQueue = Future.value();
 
   @override
@@ -85,7 +88,40 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
       session: ref.read(relaySessionProvider.notifier),
     );
     _hasHydrated = false;
+    final build = ++_build;
+    if (!state.hasValue) unawaited(_drawSaved(config, pubkey, build));
     return _fetch(context);
+  }
+
+  /// Draws the profile saved on the device while the relay's is out
+  /// (docs/message-sync.md#launch-order); the relay's answer replaces it.
+  Future<void> _drawSaved(RelayConfig config, String? pubkey, int build) async {
+    final store = ref.read(messageStoreProvider);
+    final lease = store.lease(config.baseUrl, pubkey);
+    if (lease == null) return;
+    final saved = decodeProfileSnapshot(
+      await store.readSnapshot(lease, selfProfileSnapshotKey),
+    );
+    if (saved == null ||
+        !ref.mounted ||
+        build != _build ||
+        _hasHydrated ||
+        state.hasValue ||
+        saved.profile.pubkey != pubkey?.toLowerCase()) {
+      return;
+    }
+    state = AsyncData(saved.profile);
+  }
+
+  /// Saves the relay's profile for the next launch.
+  void _save(_ProfileWriteContext context, UserProfile profile) {
+    final store = ref.read(messageStoreProvider);
+    unawaited(
+      store.writeSnapshots(
+        store.lease(context.config.baseUrl, context.pubkey),
+        {selfProfileSnapshotKey: encodeProfileSnapshot(profile)},
+      ),
+    );
   }
 
   Future<UserProfile?> _fetch(_ProfileWriteContext context) async {
@@ -122,6 +158,7 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     _metadata = metadata;
     _lastCreatedAt = latest.createdAt;
     _hasHydrated = true;
+    _save(context, profile);
     return profile;
   }
 
@@ -239,6 +276,7 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
       ownerPubkey: verifiedOaOwnerPubkey(submittedEvent.tags, pubkey),
     );
     state = AsyncData(profile);
+    _save(context, profile);
     // Record the confirmed event order with the profile so an older batch
     // completing after this save cannot replace it.
     ref.read(userCacheProvider.notifier).cacheProfileEvent(submittedEvent);

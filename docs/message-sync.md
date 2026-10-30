@@ -192,6 +192,13 @@ answers follow in the background, in this order, and never block the screen.
    and unread badges from the device's read markers (the relay's markers
    merge in later; markers only advance). No loading text while stored data
    exists; the splash only fades (no minimum time).
+   Desktop also draws the Chats rows and other people's names and pictures
+   from their [launch snapshots](#launch-snapshots), read when the
+   community's query cache is made.
+   Mobile draws the channel list, other people's profiles and the
+   account's own profile from its [launch snapshots](#launch-snapshots)
+   before the token and the socket; the channel list's server requests
+   after the memberships run in parallel.
 2. **Sign-in restore.** When the device holds a saved session whose bound
    account key is the key held here (desktop: `saved_session_ready`, local
    reads only), the app draws before the restore (relay info, token
@@ -547,6 +554,72 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   oldest reply as for rooms and one room span has `lo ≤` its `hi` and
   `hi ≥ L`. A quiet thread is certain this way without its root stored.
 - **Written first:** as for rooms (the paint read does not wait).
+
+### Launch snapshots
+
+Desktop keeps small snapshots of what the first screen shows in the same
+store file (table `snapshot`, one blob per kind), so they are per account
+and server, and a sign-out deletes them with the file. They only draw; no
+snapshot counts as a stored room or takes part in [forgetting a
+room](#forgetting-a-room).
+
+- **Read and written like a paint:** each call names the account and the
+  relay; the app answers nothing (and writes nothing) when they are not the
+  active ones, or after that account signed out of that server. Writes go
+  through the file's write queue (a full queue drops the snapshot, never
+  marking the file lossy). One read is allowed for any other account
+  signed in on this computer and not signed out of that server: background
+  notifications for an account that is not active read its `profiles`
+  (read only; writes stay with the active account).
+- **Chats rows (`chat_rows`):** the first 200 rows of the relay's chat list
+  as last shown, saved 2 s after they change. At launch they draw until the
+  relay's first page of this run arrives, which replaces them in its order;
+  a relay that turns chat state off drops them. While they draw, this
+  device's read positions apply over their kept counts and marks (opening
+  a room clears its badge), and thread rows have no menu (pin, unfollow,
+  mark unread) until the relay's chat state is on.
+- **Profiles (`profiles`):** other people's names, NIP-05 and picture URLs,
+  the 500 most recently answered, read into memory at launch before any
+  profile request; relay answers overwrite entries (a newer entry is never
+  replaced by an older stored one) and are saved 1.5 s later. A save waits
+  until that account's stored profiles have been read, and is built when it
+  is written, so it never replaces them with less; switching the active
+  account writes waiting saves at once (refused if no longer active).
+  Pictures draw from the stored URL through the image cache. The labels
+  earlier builds kept in localStorage per server (no account split) move to
+  the account opening that server only when it is the only account signed
+  in there; the merged set is written and the key deleted when the store
+  has it. With more than one account signed in on that server, the key is
+  deleted without moving anything.
+- **Opening from a row:** a room the channel list does not hold yet (list
+  still loading, a new DM, a notification, a deep link, a search result)
+  opens at once from its Chats row (name, kind, member) instead of a
+  loading screen; the stored window then paints. That channel only stands
+  in for display: it names no members (nothing routes to, mentions or marks
+  agents from it), the composer is replaced by a loading line until the real
+  channel arrives, and a DM is titled by its people's stored profile names,
+  else a short id. A loaded list lacking the room is fetched again once. The
+  relay's "not found" for the room, or an answer that it cannot be opened,
+  keeps the existing handling.
+- Own profile stays in its own per-account cache (`selfProfileStorage`).
+
+Desktop: `deviceSnapshot.ts`, `chatRowsSnapshot.ts`, `chatRowChannel.ts`,
+`userLabelStorage.ts`, `message_store/snapshot.rs`.
+
+Mobile keeps the same `snapshot` table in its store file (key, value,
+time), wiped with the file at sign-out. The channel list (`channels`) is
+saved 1 s after the relay's list is shown and drawn at launch until the
+relay's list replaces it; it never counts as the loaded list nor keeps a
+room for forgetting, and an account or server switch clears the shown list
+at once. Other people's profiles (`profile:<pubkey>`, newest 500, saved
+after each batch of changes) are drawn at launch and each is asked for again once;
+the relay's answer overwrites it. The account's own profile
+(`self_profile`) draws before its fetch. Chats rows, search results,
+the thread's group button, notifications and deep links open a room the
+list lacks from its Chats row (or its id) at once; a deep link to a room no
+row names waits for the relay's list, and a room missing from it keeps the
+not-found handling. Mobile: `snapshot.dart`, `channel_list_snapshot.dart`,
+`profile_snapshot.dart`, `chat_row_channel.dart`.
 
 ### Forgetting a room
 

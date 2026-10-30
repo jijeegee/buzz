@@ -31,6 +31,7 @@ import '../channels/dm_channel_labels.dart';
 import '../forum/forum_thread_page.dart';
 import '../activity/inbox_item.dart';
 import '../chats/chat_list.dart';
+import '../chats/chat_row_channel.dart';
 import '../chats/chats_page.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';

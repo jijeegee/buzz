@@ -332,4 +332,62 @@ void main() {
     expect(_shown(container), contains(rows[50].id));
     expect(container.read(channelSavedRowsCheckedProvider(_channelId)), true);
   });
+
+  test("an account switch drops the previous account's rows at once", () async {
+    final rows = [for (var n = 1; n <= 60; n++) _row(n)];
+    // The relay's rows for the first account only.
+    final relayRows = [...rows];
+    final session = _Session(relayRows);
+    var current = 'me';
+    final account = NotifierProvider<_Account, String>(_Account.new);
+    final container = ProviderContainer(
+      overrides: [
+        relaySessionProvider.overrideWith(() => session),
+        myPubkeyProvider.overrideWith((ref) => ref.watch(account)),
+        channelHeadScopeProvider.overrideWith(
+          (ref) =>
+              ChannelHeadScope(relayUrl: 'wss://r', pubkey: ref.watch(account)),
+        ),
+        channelHeadCacheProvider.overrideWithValue(_NoHeadCache()),
+        // Only the first account has saved rows.
+        paintableRoomHeadProvider.overrideWithValue(
+          (_, _, filter) async => current == 'me'
+              ? serveChannelWindow(_channelId, rows.sublist(0, 55), filter)
+              : null,
+        ),
+        relayInfoProvider.overrideWith(
+          (ref) async => RelayInfo(supportedExtensions: {newerWindowExtension}),
+        ),
+        storedRoomHeadProvider.overrideWithValue((_, _, _) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    final seenAfterSwitch = <String>{};
+    var switched = false;
+    container.listen(channelMessagesProvider(_channelId), (_, next) {
+      if (switched) {
+        seenAfterSwitch.addAll([for (final e in next.value ?? const []) e.id]);
+      }
+    });
+    session.headGate.complete();
+    await _settle();
+    expect(_shown(container).last, rows.last.id);
+
+    switched = true;
+    current = 'other';
+    relayRows.clear();
+    container.read(account.notifier).state = 'other';
+    expect(_shown(container), isEmpty);
+    await _settle();
+    expect(seenAfterSwitch, isEmpty);
+    expect(_shown(container), isEmpty);
+  });
+}
+
+class _Account extends Notifier<String> {
+  @override
+  String build() => 'me';
+
+  @override
+  set state(String value) => super.state = value;
 }

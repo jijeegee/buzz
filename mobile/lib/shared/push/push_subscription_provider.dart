@@ -17,9 +17,11 @@ final pushSubscriptionSyncProvider = Provider<void>((ref) {
   final active = ref.watch(activeCommunityProvider).value;
   final channels = ref.watch(channelsProvider).value;
   final mutes = ref.watch(channelMutesProvider);
+  // Only the relay's list decides subscriptions, never the saved one.
   if (active == null ||
       !active.pushNotificationsEnabled ||
       channels == null ||
+      ref.read(channelsProvider.notifier).showsSavedList ||
       !mutes.isReady) {
     return;
   }

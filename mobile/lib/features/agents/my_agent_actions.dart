@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -10,6 +11,10 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channel_management_provider.dart';
+import '../channels/channels_provider.dart';
+import '../chats/chat_list_provider.dart';
+import '../chats/chat_row_channel.dart';
+import '../../shared/relay/relay.dart';
 import '../channels/send_message_provider.dart';
 import 'agent_settings_page.dart';
 import 'my_agents.dart';
@@ -124,9 +129,12 @@ Future<void> openMyAgentDm(
   final navigator = Navigator.of(context);
   final messenger = ScaffoldMessenger.of(context);
   final l10n = context.l10n;
+  // A DM the device already knows (saved or loaded list, or a Chats row)
+  // opens at once; only a new one waits for the relay.
+  final known = _knownDmWith(ref, agentPubkey);
   final Channel channel;
   try {
-    channel = await ref.read(myAgentDmProvider)(agentPubkey);
+    channel = known ?? await ref.read(myAgentDmProvider)(agentPubkey);
   } catch (failure) {
     messenger.showSnackBar(
       SnackBar(content: Text(l10n.agentsOpenDmError(name, '$failure'))),
@@ -138,6 +146,25 @@ Future<void> openMyAgentDm(
       builder: (_) => ChannelDetailPage(channel: channel),
     ),
   );
+}
+
+/// The 1:1 DM between this account and [agentPubkey] that the channel list
+/// or a Chats row already holds, if any.
+Channel? _knownDmWith(WidgetRef ref, String agentPubkey) {
+  final me = ref.read(myPubkeyProvider)?.toLowerCase();
+  if (me == null) return null;
+  final pair = {me, agentPubkey.toLowerCase()};
+  bool isPair(Iterable<String> people) =>
+      setEquals({for (final pubkey in people) pubkey.toLowerCase()}, pair);
+  for (final channel in ref.read(channelsProvider).value ?? const <Channel>[]) {
+    if (channel.isDm && isPair(channel.participantPubkeys)) return channel;
+  }
+  for (final row in ref.read(chatListProvider).value?.rows ?? const []) {
+    if (!row.isThread && row.isDm && isPair(row.dmMembers)) {
+      return channelFromChatRow(row);
+    }
+  }
+  return null;
 }
 
 /// Asks the agent to stop after confirming. Stop sends the owner's

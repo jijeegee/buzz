@@ -45,7 +45,9 @@ class ProfileAvatar extends ConsumerWidget {
       error: (_, _) => 'offline',
     );
 
+    // A reconnect keeps the profile shown (saved or loaded) in place.
     return profileAsync.when(
+      skipLoadingOnReload: true,
       loading: () => _buildPlaceholder(context),
       error: (_, _) => _buildAvatar(context, null, presence),
       data: (profile) => _buildAvatar(context, profile, presence),

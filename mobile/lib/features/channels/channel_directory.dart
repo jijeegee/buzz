@@ -121,12 +121,9 @@ void _forgetStoredRoomsMissingFrom(
   }
   if (scope?.lease.account != myPk.toLowerCase()) return;
   ref.read(deferredStoreWorkProvider).run((ref) {
-    // Rooms joined while this waited are kept too.
-    final joinedNow = <String>{
-      for (final channel
-          in ref.read(channelsProvider).value ?? const <Channel>[])
-        if (channel.isMember) channel.id,
-    };
+    // Rooms joined while this waited are kept too (never from the saved
+    // list drawn before the relay's).
+    final joinedNow = ref.read(channelsProvider.notifier).relayJoinedChannelIds;
     final session = ref.read(relaySessionProvider.notifier);
     if (!session.forgetStoredRoomsExcept(scope, keep.union(joinedNow))) {
       return;
@@ -234,17 +231,25 @@ Future<T> _fenced<T>(_ChannelRefreshFence fence, Future<T> future) async {
 /// Resolves display labels for the other participants in every DM meta.
 ///
 /// The relay stores DM channels with the literal name "DM", and the pure-Nostr
-/// architecture puts name resolution in the client. So collect the non-self
-/// participant pubkeys across all DM metas and batch-fetch their kind:0
-/// profiles in one round-trip. Returns lowercase pubkey to label.
+/// architecture puts name resolution in the client. People whose profile is
+/// already [known] (saved on the device or fetched this run) are named from
+/// it; only the rest are batch-fetched as kind:0 profiles in one round-trip,
+/// and each fetched profile goes to [onProfile] so it is kept too. Returns
+/// lowercase pubkey to label.
 ///
 /// Lives in this part file because `channels_provider.dart` sits against the
 /// repository-wide 1200-line file ceiling enforced by `just file-size-check`.
-Future<Map<String, String>> _resolveDmDisplayNames(
+/// Also returns the people named from [known] (saved or cached profiles),
+/// asked for again once the relay's list is shown. Profiles answered after
+/// [fence] was retired (another account or server) are not passed on.
+Future<({Map<String, String> names, Set<String> fromKnown})>
+_resolveDmDisplayNames(
   RelaySessionNotifier session,
   _ChannelRefreshFence fence,
   Iterable<NostrEvent> dedupedMetas,
   String myPk,
+  Map<String, UserProfile> known,
+  void Function(NostrEvent event) onProfile,
 ) async {
   final dmParticipants = <String>{};
   final myPkLower = myPk.toLowerCase();
@@ -256,25 +261,42 @@ Future<Map<String, String>> _resolveDmDisplayNames(
       if (lower != myPkLower) dmParticipants.add(lower);
     }
   }
-  if (dmParticipants.isEmpty) return const {};
+  if (dmParticipants.isEmpty) {
+    return (names: const <String, String>{}, fromKnown: const <String>{});
+  }
 
-  final profileEvents = await _fenced(
-    fence,
-    session.fetchHistory(NostrFilters.profilesBatch(dmParticipants.toList())),
+  final displayNames = <String, String>{
+    for (final pubkey in dmParticipants)
+      if (known[pubkey] case final profile?)
+        pubkey: _dmLabel(pubkey, profile.displayName, profile.nip05Handle),
+  };
+  final fromKnown = displayNames.keys.toSet();
+  final unknown = dmParticipants.difference(fromKnown);
+  if (unknown.isEmpty) return (names: displayNames, fromKnown: fromKnown);
+  final profileEvents = await session.fetchHistory(
+    NostrFilters.profilesBatch(unknown.toList()),
   );
-  final displayNames = <String, String>{};
+  fence.ensureCurrent();
   for (final event in profileEvents) {
     if (event.kind != 0) continue;
     final profile = ProfileData.fromEvent(event);
-    final label = profile.displayName?.trim().isNotEmpty == true
-        ? profile.displayName!.trim()
-        : profile.nip05?.trim().isNotEmpty == true
-        ? profile.nip05!.trim()
-        : shortPubkey(profile.pubkey);
-    displayNames[profile.pubkey.toLowerCase()] = label;
+    displayNames[profile.pubkey.toLowerCase()] = _dmLabel(
+      profile.pubkey,
+      profile.displayName,
+      profile.nip05,
+    );
+    onProfile(event);
   }
-  return displayNames;
+  return (names: displayNames, fromKnown: fromKnown);
 }
+
+/// A DM participant's label: name, else NIP-05, else the short key.
+String _dmLabel(String pubkey, String? displayName, String? nip05) =>
+    displayName?.trim().isNotEmpty == true
+    ? displayName!.trim()
+    : nip05?.trim().isNotEmpty == true
+    ? nip05!.trim()
+    : shortPubkey(pubkey);
 
 Future<Set<String>> _fetchHiddenDmIds(
   RelaySessionNotifier session,

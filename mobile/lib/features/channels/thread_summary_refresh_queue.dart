@@ -36,6 +36,14 @@ class ThreadSummaryRefreshQueue {
     resume();
   }
 
+  /// Drops all queued work (an account switch); running scans are fenced by
+  /// their owner.
+  void clear() {
+    _queued.clear();
+    _timer?.cancel();
+    _timer = null;
+  }
+
   /// Removes queued work when a relay summary already supplied the answer.
   void cancel(String rootId) => _queued.remove(rootId);
 

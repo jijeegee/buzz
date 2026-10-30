@@ -9,6 +9,8 @@ import '../../shared/deeplink/deep_link.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/read_state/read_state_format.dart';
 import '../../shared/read_state/read_state_provider.dart';
+import '../chats/chat_list_provider.dart';
+import '../chats/chat_row_channel.dart';
 import 'channel_detail_page.dart';
 import 'channels_provider.dart';
 import 'send_message_provider.dart';
@@ -96,17 +98,19 @@ class ThreadGroupButton extends ConsumerWidget {
           navigator.pop();
           return;
         }
-        final channel = ref
-            .read(channelsProvider)
-            .value
-            ?.where((channel) => channel.id == channelId)
-            .firstOrNull;
-        if (channel == null) {
-          ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-            SnackBar(content: Text(context.l10n.threadGroupStillLoading)),
-          );
-          return;
-        }
+        // A group the channel list does not hold yet opens from its Chats
+        // row, else by id; the group page loads the rest.
+        final channel =
+            ref
+                .read(channelsProvider)
+                .value
+                ?.where((channel) => channel.id == channelId)
+                .firstOrNull ??
+            channelFromChatRows(
+              ref.read(chatListProvider).value?.rows ?? const [],
+              channelId,
+            ) ??
+            channelFromId(channelId);
         unawaited(
           navigator.pushReplacement(
             MaterialPageRoute<void>(

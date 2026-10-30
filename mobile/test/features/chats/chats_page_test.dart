@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/chats/chats_page.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -57,6 +58,7 @@ void main() {
   Future<void> pumpChats(
     WidgetTester tester, {
     List<ChatListRow>? chatRows,
+    NavigatorObserver? observer,
   }) async {
     SharedPreferences.setMockInitialValues({});
     final prefs = await SharedPreferences.getInstance();
@@ -66,7 +68,11 @@ void main() {
           savedPrefsProvider.overrideWithValue(prefs),
           chatsRowsProvider.overrideWithValue(chatRows ?? rows),
         ],
-        child: MaterialApp(theme: AppTheme.light(), home: const ChatsPage()),
+        child: MaterialApp(
+          theme: AppTheme.light(),
+          navigatorObservers: [?observer],
+          home: const ChatsPage(),
+        ),
       ),
     );
     await tester.pump();
@@ -170,14 +176,38 @@ void main() {
     expect(find.text('+ 25 more threads'), findsOneWidget);
   });
 
-  testWidgets('a chat that is not loaded yet says so instead of opening', (
+  testWidgets('a chat tapped before the channel list loads opens at once', (
     tester,
   ) async {
-    await pumpChats(tester);
+    final pushed = <Route<dynamic>>[];
+    await pumpChats(tester, observer: _PushObserver(pushed));
+    pushed.clear();
 
     await tester.tap(find.byKey(ValueKey('chat-row-tap-$_dm')));
     await tester.pump();
 
-    expect(find.text('This chat is still loading.'), findsOneWidget);
+    expect(find.byType(SnackBar), findsNothing);
+    expect(pushed, hasLength(1));
+    final page = (pushed.single as MaterialPageRoute<void>).builder(
+      tester.element(find.byType(ChatsPage)),
+    );
+    expect(page, isA<ChannelDetailPage>());
+    final channel = (page as ChannelDetailPage).channel;
+    expect(channel.id, _dm);
+    expect(channel.name, 'Mina');
+    expect(channel.channelType, 'dm');
+    expect(channel.participantPubkeys, [_them]);
+    expect(channel.isMember, isTrue);
   });
+}
+
+class _PushObserver extends NavigatorObserver {
+  _PushObserver(this.pushed);
+
+  final List<Route<dynamic>> pushed;
+
+  @override
+  void didPush(Route<dynamic> route, Route<dynamic>? previousRoute) {
+    pushed.add(route);
+  }
 }

@@ -45,6 +45,7 @@ class SearchChatResult {
     required this.at,
     this.channel,
     this.thread,
+    this.room,
   });
 
   final String channelId;
@@ -54,6 +55,9 @@ class SearchChatResult {
 
   /// The Chats thread row, for a thread result.
   final ChatListRow? thread;
+
+  /// The Chats room row, for a room result found among Chats rows.
+  final ChatListRow? room;
 
   /// The group's name or the DM's people.
   final String channelName;
@@ -136,6 +140,7 @@ SearchChatResults buildSearchChatResults({
       result: SearchChatResult(
         channelId: row.channelId,
         channel: channel,
+        room: row,
         channelName: label,
         title: label,
         at: row.at,

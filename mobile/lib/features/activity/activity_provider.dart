@@ -78,7 +78,13 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     // React to the DM channel set (loading → data, membership changes) so a
     // cold start where channels resolve after the first fetch still surfaces
     // DMs without a manual refresh.
-    ref.watch(channelsProvider.select(_dmChannelKey));
+    // The saved list drawn at launch is not the relay's: it counts as none.
+    final channelsNotifier = ref.read(channelsProvider.notifier);
+    ref.watch(
+      channelsProvider.select(
+        (v) => channelsNotifier.showsSavedList ? null : _dmChannelKey(v),
+      ),
+    );
 
     final generation = ++_subscriptionGeneration;
     final currentPubkey = ref.read(myPubkeyProvider)?.toLowerCase();
@@ -126,8 +132,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
       }
       _unsubscribeAddressed = unsubscribeAddressed;
 
-      final channels =
-          ref.read(channelsProvider).asData?.value ?? const <Channel>[];
+      final channels = _relayChannels(ref);
       final dmChannelIds = [
         for (final channel in channels)
           if (channel.isPersonChat && channel.isMember) channel.id,
@@ -291,6 +296,8 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
   ) async {
     try {
       await ref.read(channelsProvider.future);
+      // The saved list drawn first is not the relay's.
+      await waitForRelayChannelList(ref);
     } catch (error) {
       if (expectedScope == _dmResurfaceScope) {
         debugPrint(
@@ -462,8 +469,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     // DM source is skipped, and build() rebuilds when it resolves (see the
     // channelsProvider watch above).
     final dmChannelIds = [
-      for (final channel
-          in ref.read(channelsProvider).asData?.value ?? const <Channel>[])
+      for (final channel in _relayChannels(ref))
         if (channel.isPersonChat && channel.isMember) channel.id,
     ];
 
@@ -694,7 +700,12 @@ final channelActivityProvider = FutureProvider.autoDispose<List<FeedItem>>((
   final connected = ref.watch(
     relaySessionProvider.select((s) => s.status == SessionStatus.connected),
   );
-  final channelKey = ref.watch(channelsProvider.select(_joinedChannelKey));
+  final channelsNotifier = ref.read(channelsProvider.notifier);
+  final channelKey = ref.watch(
+    channelsProvider.select(
+      (v) => channelsNotifier.showsSavedList ? null : _joinedChannelKey(v),
+    ),
+  );
   if (!connected || channelKey == null || channelKey.isEmpty) return const [];
 
   // One filter per channel so busy rooms cannot crowd quiet ones out of a
@@ -785,6 +796,12 @@ const _relayFilterBatchSize = 10;
 
 /// Sorted ids of joined, non-archived channels (DMs included), or null while
 /// channels are loading.
+/// The relay's channel list, or none while only the saved list is drawn.
+List<Channel> _relayChannels(Ref ref) =>
+    ref.read(channelsProvider.notifier).showsSavedList
+    ? const <Channel>[]
+    : ref.read(channelsProvider).asData?.value ?? const <Channel>[];
+
 String? _joinedChannelKey(AsyncValue<List<Channel>> channels) {
   final value = channels.asData?.value;
   if (value == null) return null;

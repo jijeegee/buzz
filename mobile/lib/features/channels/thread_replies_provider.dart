@@ -103,6 +103,8 @@ final threadRepliesProvider = FutureProvider.autoDispose
       // a stale mark while closed (a live reply, a reconnect) is held until the
       // thread is reopened, then refreshed while the kept replies still show.
       final retention = ref.keepAlive();
+      // Another account's replies are never kept for this one.
+      ref.watch(myPubkeyProvider);
       var listened = true;
       var stale = false;
       void refresh() {

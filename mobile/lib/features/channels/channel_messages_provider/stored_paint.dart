@@ -28,6 +28,9 @@ class ChannelSavedRowsChecked extends Notifier<bool> {
   bool build() => false;
 
   void markChecked() => state = true;
+
+  /// Another account: its saved rows are looked up anew.
+  void reset() => state = false;
 }
 
 /// Drawing a room's saved rows before the connection, the room's live REQ or

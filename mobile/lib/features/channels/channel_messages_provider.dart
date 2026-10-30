@@ -19,6 +19,7 @@ import 'thread_reply_ownership.dart';
 import 'timeline_message.dart';
 import 'window_anchor.dart';
 
+part 'channel_messages_provider/account_scope.dart';
 part 'channel_messages_provider/open_at.dart';
 part 'channel_messages_provider/store_head.dart';
 part 'channel_messages_provider/stored_paint.dart';
@@ -162,18 +163,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _summaryRefreshes.pause();
       _clearSubscription();
     });
-    if (!_headRestoreStarted && _lastKnownMessages == null) {
-      final scope = _readHeadScope();
-      if (scope != null) {
-        _headRestoreStarted = true;
-        unawaited(_restoreSavedRows(scope));
-      } else {
-        Future.microtask(_markSavedRowsChecked);
-      }
-    }
-
-    final me = ref.watch(myPubkeyProvider);
     // [me] is this build's signer; a switch rebuilds and restores its own.
+    final me = ref.watch(myPubkeyProvider);
+    _scopeToAccount();
+
     Future.microtask(() => restoreLocalSends(ref, this, me));
     final localSends = splitLocalSendsBySigner(
       ref.read(pendingLocalMessagesProvider(channelId)),

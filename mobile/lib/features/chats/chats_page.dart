@@ -27,6 +27,7 @@ import '../agents/owner_view/owner_view.dart';
 import '../agents/owner_view/owner_view_seen.dart';
 import '../channels/channel.dart';
 import '../channels/channel_detail_page.dart';
+import '../channels/channel_list_retry_row.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channel_mutes/channel_mutes_provider.dart';
 import '../channels/channel_stars/channel_stars_provider.dart';
@@ -40,6 +41,7 @@ import '../people/blocked_users_provider.dart';
 import '../search/search_page.dart';
 import 'chat_list.dart';
 import 'chat_list_provider.dart';
+import 'chat_row_channel.dart';
 import 'chat_row_visible_latest.dart';
 import 'chat_thread_row_menu.dart';
 import 'chat_working.dart';
@@ -248,13 +250,8 @@ class ChatsPage extends HookConsumerWidget {
     );
 
     Future<void> openRow(ChatListRow row) async {
-      final channel = channelById[row.channelId];
-      if (channel == null) {
-        ScaffoldMessenger.maybeOf(context)?.showSnackBar(
-          SnackBar(content: Text(context.l10n.chatsStillLoading)),
-        );
-        return;
-      }
+      // A room the channel list does not hold yet opens from its row.
+      final channel = channelById[row.channelId] ?? channelFromChatRow(row);
       unawaited(HapticFeedback.selectionClick());
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
@@ -372,6 +369,7 @@ class ChatsPage extends HookConsumerWidget {
           slivers: [
             SliverToBoxAdapter(child: SizedBox(height: topSectionHeight)),
             const SliverToBoxAdapter(child: GroupInvitationsRow()),
+            const SliverToBoxAdapter(child: ChannelListRetryRow()),
             SliverPadding(
               padding: EdgeInsets.only(
                 top: Grid.xxs,

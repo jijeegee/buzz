@@ -3,6 +3,8 @@ import 'dart:math' show max;
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 
+import 'held_composer.dart';
+
 /// Android keeps the message viewport fixed while the IME animates. Only this
 /// small wrapper follows the frame-by-frame inset; timelines apply the final
 /// inset once metrics settle.
@@ -10,12 +12,23 @@ class AndroidImeLift extends StatelessWidget {
   /// The composer subtree that follows the animated Android IME inset.
   final Widget child;
 
+  /// The room whose composer is held until the relay confirms it
+  /// ([HeldComposer]); `null` never holds.
+  final String? heldFor;
+
   /// Creates a wrapper that lifts [child] without resizing its surrounding
   /// message viewport on Android.
-  const AndroidImeLift({super.key, required this.child});
+  const AndroidImeLift({super.key, required this.child, this.heldFor});
 
   @override
   Widget build(BuildContext context) {
+    final held = heldFor;
+    if (held != null) {
+      return HeldComposer(
+        channelId: held,
+        child: AndroidImeLift(child: child),
+      );
+    }
     if (!usesFixedAndroidImeViewport) return child;
     final imeBottom = MediaQuery.viewInsetsOf(context).bottom;
     final systemBottom = MediaQuery.viewPaddingOf(context).bottom;

@@ -7,7 +7,11 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/community/community_provider.dart';
-import '../../shared/message_store/message_store.dart' show StoreCapture;
+import '../../shared/message_store/message_store.dart'
+    show MessageStoreLease, StoreCapture;
+import '../../shared/message_store/message_store_provider.dart';
+import '../../shared/profile/user_cache_provider.dart';
+import '../../shared/profile/user_profile.dart';
 import '../../shared/push/push_presentation_cache.dart';
 import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
@@ -19,6 +23,7 @@ import 'channel_live_events.dart';
 import 'channel_management_provider.dart'
     show ChannelMember, channelDetailsProvider;
 import 'channel_mutes/channel_mutes_provider.dart';
+import 'channel_snapshot_codec.dart';
 import 'deferred_store_work.dart';
 import 'room_live_router.dart';
 import 'huddle_channel_filter.dart';
@@ -30,6 +35,9 @@ import 'unread_badge/observed_unread_event.dart';
 import 'unread_badge/should_notify_for_event.dart';
 
 part 'channel_directory.dart';
+part 'channel_list_recovery.dart';
+part 'channel_list_requests.dart';
+part 'channel_list_snapshot.dart';
 part 'channel_push_cache.dart';
 part 'channel_member_snapshots.dart';
 part 'channels_provider_lifecycle.dart';
@@ -82,6 +90,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   Set<String> _authoredRootIds = {};
   String? _threadInterestPubkey;
   bool _hasLoaded = false;
+  late final _listSnapshot = _ChannelListSnapshot(this);
+  late final _recovery = _ChannelListRecovery(this);
   String? _memberSnapshotRelayBaseUrl;
   String? _memberSnapshotPubkey;
   Map<String, List<ChannelMember>> _memberSnapshotsByChannelId = const {};
@@ -113,7 +123,23 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
 
   Set<String> get hiddenDmIds => Set.unmodifiable(_hiddenDmIds);
 
+  /// Whether the list is the relay's, not the saved one drawn before it.
   bool get hasLoaded => _hasLoaded;
+
+  /// Whether the list shown is the saved one (or, right after an account
+  /// switch, none yet), drawn before the relay's list replaces it.
+  bool get showsSavedList => _listSnapshot.shown;
+
+  /// Rooms the relay's list shows joined; none while the saved list is
+  /// shown, so it never keeps a room from the left-room purge.
+  Set<String> get relayJoinedChannelIds => _listSnapshot.shown
+      ? const {}
+      : {
+          for (final channel in state.value ?? const <Channel>[])
+            if (channel.isMember) channel.id,
+        };
+
+  void _showList(List<Channel> channels) => state = AsyncData(channels);
 
   Map<String, Map<String, ObservedUnreadEvent>>
   get observedUnreadEventsByChannel =>
@@ -129,8 +155,18 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     _coverageRouter = ref.read(roomLiveRouterProvider);
     if (_memberSnapshotRelayBaseUrl != relayBaseUrl ||
         _memberSnapshotPubkey != pubkey) {
+      final switched = _memberSnapshotPubkey != null;
       _memberSnapshotRelayBaseUrl = relayBaseUrl;
       _memberSnapshotPubkey = pubkey;
+      // Another account or server: its list is not the one shown, so the
+      // previous one goes at once (the saved list of this one follows).
+      _hasLoaded = false;
+      _listSnapshot.resetScope();
+      _recovery.resetScope();
+      if (switched) {
+        _listSnapshot.shown = true;
+        _showList(const []);
+      }
       _memberSnapshotsByChannelId = const {};
       _directoryMetas = const [];
       _hiddenDmIds = const {};
@@ -164,7 +200,10 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       }
     });
 
+    listenSelf((_, next) => _listSnapshot.listShown(next));
     ref.onDispose(() {
+      _listSnapshot.dispose();
+      _recovery.dispose();
       _clearLiveSubscriptions();
       _latestObservedByChannel.clear();
       _observedUnreadEventsByChannel.clear();
@@ -174,14 +213,30 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       _metadataRefreshTimer = null;
     });
 
+    // The saved list draws while the socket and the relay's list are on
+    // their way.
+    if (!_hasLoaded) _listSnapshot.paint(relayBaseUrl, pubkey);
     if (sessionState.status != SessionStatus.connected) {
-      // Keep the prior community's cache visible until the new relay connects.
+      // Keep this scope's list visible through a reconnect.
       if (_hasLoaded) return state.value ?? const [];
       await connected.future;
     }
 
-    return _fetch(subscribeLive: true);
+    try {
+      return await _fetch(subscribeLive: true);
+    } on _StaleChannelRefresh {
+      rethrow;
+    } catch (error) {
+      // A failed relay list keeps the saved one shown and asks again.
+      await _listSnapshot.pending;
+      if (!_listSnapshot.shown) rethrow;
+      _recovery.failed(error);
+      return state.value ?? const [];
+    }
   }
+
+  /// Asks for the relay's channel list now (the pages' retry).
+  Future<void> retryRelayList() => _recovery.retryNow();
 
   Future<List<Channel>> _fetch({
     bool subscribeLive = false,
@@ -194,6 +249,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       fetchDirectory: fetchDirectory,
     );
     _hasLoaded = true;
+    _listSnapshot.shown = false;
+    _recovery.loaded();
     return channels;
   }
 
@@ -232,31 +289,23 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       storeScope,
       myPk,
       memberships,
-      memberChannelIds.union({
-        for (final channel in state.value ?? const <Channel>[])
-          if (channel.isMember) channel.id,
-      }),
+      memberChannelIds.union(relayJoinedChannelIds),
     );
 
-    // Step 2: pull metadata for joined channels. A user with no memberships
-    // must still continue to directory discovery below.
-    final memberMetas = memberChannelIds.isEmpty
-        ? const <NostrEvent>[]
-        : await _fenced(
-            fence,
-            session.fetchHistory(
-              NostrFilters.channelMetadata(memberChannelIds.toList()),
-            ),
-          );
-
-    // Step 3: fetch the open-channel directory. The relay filters this global
-    // kind:39000 query by the caller's access, but the client still rejects
-    // private channels and DMs below so discovery fails closed if that contract
-    // ever regresses. The composite cursor preserves tied-timestamp rows.
-    if (fetchDirectory) {
-      final metas = await _refreshCoordinator.loadDirectory(session, fence);
-      if (metas != null) _directoryMetas = metas;
-    }
+    // Step 2: the requests that need only the membership list, at once.
+    final parts = await _fetchMembershipParts(
+      session,
+      fence,
+      memberChannelIds.toList(),
+      myPk,
+      fetchDirectory: fetchDirectory,
+    );
+    final memberMetas = parts.memberMetas;
+    if (parts.directory case final metas?) _directoryMetas = metas;
+    final hiddenDmIds = parts.hiddenDmIds;
+    final memberEvents = parts.memberEvents;
+    final huddleStarts = parts.huddleStarts;
+    _hiddenDmIds = Set.unmodifiable(hiddenDmIds);
 
     // Merge and dedupe by `d` tag. Kind:39000 is parameterized-replaceable,
     // but stale revisions from before the relay's d_tag backfill can linger.
@@ -274,70 +323,60 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       }
     }
     final dedupedMetas = latestMetaPerId.values.toList();
-
-    // Resolve DM participant display names. Extracted into the part file so
-    // `channels_provider.dart` stays under the 1200-line ceiling enforced by
-    // `just file-size-check`.
-    final displayNames = await _resolveDmDisplayNames(
-      session,
-      fence,
-      dedupedMetas,
-      myPk,
-    );
-
-    final hiddenDmIds = await _fenced(fence, _fetchHiddenDmIds(session, myPk));
-    _hiddenDmIds = Set.unmodifiable(hiddenDmIds);
-    // Fetch the authoritative membership snapshots before filtering Huddle
-    // backing channels. The relay-signed kind:39000 metadata identifies the
-    // relay, not the channel creator; the owner role in kind:39002 is the
-    // canonical creator identity used to reject forged Huddle links.
-    final memberCountChannelIds = memberChannelIds.toList();
-    final memberEvents = memberCountChannelIds.isEmpty
-        ? const <NostrEvent>[]
-        : await _fenced(
-            fence,
-            session.fetchHistory(
-              NostrFilter(
-                kinds: const [39002],
-                tags: {'#d': memberCountChannelIds},
-                limit: memberCountChannelIds.length,
-              ),
-            ),
-          );
-    final huddleStarts = memberCountChannelIds.isEmpty
-        ? const <NostrEvent>[]
-        : await _fenced(
-            fence,
-            _fetchHuddleStarts(session, memberCountChannelIds),
-          );
     final huddleBackingIds = huddleBackingChannelIds(
       huddleStarts,
       memberEvents,
     );
 
-    final channels = <Channel>[];
-    for (final event in dedupedMetas) {
-      final id = event.getTagValue('d');
-      if (id == null) continue;
-      final isMember = memberChannelIds.contains(id);
-      final channel = _channelFromMeta(
-        event,
-        isMember: isMember,
-        displayNames: displayNames,
-      );
-      if (!isMember && (channel.isPrivate || channel.isDm)) continue;
-      if (channel.isDm && hiddenDmIds.contains(channel.id)) continue;
-      if (huddleBackingIds.contains(channel.id) &&
-          channel.isStream &&
-          channel.isPrivate) {
-        continue;
-      }
-      // Ephemeral (TTL) channels are surfaced in the list with an
-      // `_EphemeralBadge` rendered in `channels_page.dart` — they shouldn't be
-      // hidden. Desktop shows them too. Previously dropped here unconditionally,
-      // which made TTL channels invisible on iOS even when the user was a member.
-      channels.add(channel);
-    }
+    List<Channel> listedChannels(Map<String, String> displayNames) => [
+      for (final event in dedupedMetas)
+        if (event.getTagValue('d') case final id?)
+          if (_channelFromMeta(
+                event,
+                isMember: memberChannelIds.contains(id),
+                displayNames: displayNames,
+              )
+              case final channel
+              when (channel.isMember ||
+                      (!channel.isPrivate && !channel.isDm)) &&
+                  !(channel.isDm && hiddenDmIds.contains(channel.id)) &&
+                  !(huddleBackingIds.contains(channel.id) &&
+                      channel.isStream &&
+                      channel.isPrivate))
+            // Ephemeral (TTL) channels stay listed with their badge, as on
+            // desktop.
+            channel,
+    ];
+
+    // Step 3: DM participant names (from saved profiles; only unknown people
+    // are asked for) and, unless this is a backstop refresh, the most recent
+    // message per channel, at once. kind:39000 metadata carries no message
+    // timestamps; without them unread detection and badges see every channel
+    // as empty. Backstop refreshes skip them: live subscriptions keep
+    // lastMessageAt current after the initial load.
+    final activeChannels = [
+      for (final channel in listedChannels(const {}))
+        if (channel.isMember && !channel.isArchived) channel,
+    ];
+    final named = await _fenced(
+      fence,
+      Future.wait<Object?>([
+        _resolveDmDisplayNames(
+          session,
+          fence,
+          dedupedMetas,
+          myPk,
+          ref.read(userCacheProvider),
+          ref.read(userCacheProvider.notifier).cacheProfileEvent,
+        ),
+        fetchLastMessage
+            ? _fetchLastMessageEvents(session, activeChannels)
+            : Future.value(),
+      ]),
+    );
+    final dmNames =
+        named[0] as ({Map<String, String> names, Set<String> fromKnown});
+    final channels = listedChannels(dmNames.names);
 
     // Use the membership snapshots already fetched above for both Huddle
     // linkage validation and member-count hydration.
@@ -366,23 +405,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       }
     }
 
-    // Step 3: fetch the most recent message per channel to populate lastMessageAt.
-    // kind:39000 metadata doesn't carry message timestamps, so channels load with
-    // lastMessageAt: null. Without this, unread detection and badge computation
-    // see every channel as having no messages. Skipped on backstop refreshes since
-    // live subscriptions keep lastMessageAt current after the initial load.
     if (fetchLastMessage) {
-      final activeChannels = [
-        for (final channel in channels)
-          if (channel.isMember && !channel.isArchived) channel,
-      ];
       final channelById = {
         for (final channel in activeChannels) channel.id: channel,
       };
-      final events = await _fenced(
-        fence,
-        _fetchLastMessageEvents(session, activeChannels),
-      );
+      final events = named[1] as List<NostrEvent>?;
       final lastMessageMap = <String, int>{};
       // An unavailable batch keeps the timestamps already known rather than
       // installing channels whose latest message looks absent.
@@ -481,6 +508,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     if (subscribeLive) {
       unawaited(_subscribeLive(channels, fence));
     }
+    _recovery.recheckDmNames(dmNames.fromKnown);
     // Guard the provider-state write in `retryDirectory` and `build`: the
     // caller assigns whatever this returns, so the last check belongs here.
     fence.ensureCurrent();
@@ -957,6 +985,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       return;
     } catch (error) {
       debugPrint('[ChannelsNotifier] backstop refresh failed: $error');
+      if (_listSnapshot.shown) _recovery.failed(error);
     }
   }
 
@@ -980,6 +1009,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     } on _StaleChannelRefresh {
       return;
     } catch (error, stackTrace) {
+      if (_listSnapshot.shown) return _recovery.failed(error);
       state = AsyncError(error, stackTrace);
     }
   }

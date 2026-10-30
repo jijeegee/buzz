@@ -2368,36 +2368,35 @@ void main() {
     },
   );
 
-  test(
-    'refreshes cached channels after a disconnected community switch',
-    () async {
-      final session = _FakeRelaySession(
-        memberships: [_membership(_channelA, myPk)],
-        metadata: [_meta(id: _channelA, name: 'general')],
-      );
-      final container = _buildContainer(session: session);
-      addTearDown(container.dispose);
+  test('drops the previous community list at a disconnected switch, then '
+      'loads the new one', () async {
+    final session = _FakeRelaySession(
+      memberships: [_membership(_channelA, myPk)],
+      metadata: [_meta(id: _channelA, name: 'general')],
+    );
+    final container = _buildContainer(session: session);
+    addTearDown(container.dispose);
 
-      expect(
-        (await container.read(channelsProvider.future)).single.name,
-        'general',
-      );
+    expect(
+      (await container.read(channelsProvider.future)).single.name,
+      'general',
+    );
 
-      session.setStatus(SessionStatus.disconnected);
-      session.memberships = [_membership(_channelB, myPk)];
-      session.metadata = [_meta(id: _channelB, name: 'random')];
-      container
-          .read(relayConfigProvider.notifier)
-          .update(baseUrl: 'https://new-community.example');
-      await Future<void>.delayed(Duration.zero);
-      expect(container.read(channelsProvider).value?.single.name, 'general');
+    session.setStatus(SessionStatus.disconnected);
+    session.memberships = [_membership(_channelB, myPk)];
+    session.metadata = [_meta(id: _channelB, name: 'random')];
+    container
+        .read(relayConfigProvider.notifier)
+        .update(baseUrl: 'https://new-community.example');
+    await Future<void>.delayed(Duration.zero);
+    // Another community's rooms are never shown for this one.
+    expect(container.read(channelsProvider).value, isEmpty);
 
-      session.setStatus(SessionStatus.connected);
-      await Future<void>.delayed(Duration.zero);
+    session.setStatus(SessionStatus.connected);
+    await Future<void>.delayed(Duration.zero);
 
-      expect(container.read(channelsProvider).value?.single.name, 'random');
-    },
-  );
+    expect(container.read(channelsProvider).value?.single.name, 'random');
+  });
 
   test('recovers an initial fetch failure after reconnecting', () async {
     final session = _FakeRelaySession(

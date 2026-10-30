@@ -630,6 +630,7 @@ class _DeletionOwnerQueue {
   final _pending = <Future<bool> Function()>[];
   int _active = 0;
   bool _paused = false;
+  int _epoch = 0;
 
   _DeletionOwnerQueue({required this.canRun, required this.onCapacity});
 
@@ -643,6 +644,12 @@ class _DeletionOwnerQueue {
   }
 
   void pause() => _paused = true;
+
+  /// Drops pending work (an account switch); running work is not retried.
+  void clear() {
+    _epoch++;
+    _pending.clear();
+  }
 
   void resume() {
     _paused = false;
@@ -658,11 +665,12 @@ class _DeletionOwnerQueue {
   }
 
   Future<void> _run(Future<bool> Function() request) async {
+    final epoch = _epoch;
     try {
       // Interrupted work keeps its place in the same total admission budget.
       // Reconnect resumes it with a fresh connection generation, but the
       // original summary version still fences it against newer root evidence.
-      if (!await request()) _pending.insert(0, request);
+      if (!await request() && epoch == _epoch) _pending.insert(0, request);
     } finally {
       _active--;
       _drain();

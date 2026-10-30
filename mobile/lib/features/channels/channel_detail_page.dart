@@ -668,8 +668,7 @@ class ChannelDetailPage extends HookConsumerWidget {
           : null,
     );
 
-    // The account this page opened under keeps its positions, even if the
-    // account changes while the page is open.
+    // Positions stay with the account this page opened under, even mid-switch.
     final roomPositions = useMemoized(
       () => channel.isForum ? null : ref.read(roomPositionStoreProvider),
     );
@@ -1313,6 +1312,7 @@ class ChannelDetailPage extends HookConsumerWidget {
                   ),
                   if (showsComposer)
                     AndroidImeLift(
+                      heldFor: channel.id,
                       child: Align(
                         alignment: Alignment.bottomCenter,
                         child: ComposerDockSizeReporter(

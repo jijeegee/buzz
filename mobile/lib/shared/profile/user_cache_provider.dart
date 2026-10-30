@@ -3,13 +3,21 @@ import 'dart:async';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../community/community_provider.dart';
+import '../message_store/message_store.dart' show MessageStoreLease;
+import '../message_store/message_store_provider.dart';
 import '../push/push_presentation_cache.dart';
 import '../push/push_presentation_export_recovery.dart';
 import '../relay/relay.dart';
 import 'user_profile.dart';
 import 'profile_event_parser.dart';
+import 'profile_snapshot.dart';
 
-/// In-memory cache of user profiles, fetched in batches from the relay.
+/// Cache of user profiles, fetched in batches from the relay.
+///
+/// Profiles are also saved in the account's store file (at most
+/// [profileSnapshotLimit]) and drawn from it at launch; each saved one is
+/// asked for again once this run, and the relay's answer replaces it
+/// (docs/message-sync.md#launch-order).
 ///
 /// Lookups requested via [get] or [preload] are coalesced into a single
 /// kind:0 batch query (NIP-01 `authors` filter) every 50ms. Larger requests
@@ -27,12 +35,30 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   Timer? _batchTimer;
   Completer<bool>? _batchCompleter;
 
+  /// Saved profiles drawn this run and not asked for again yet.
+  final Set<String> _saved = {};
+  final Set<String> _unsaved = {};
+  bool _saveQueued = false;
+
+  /// This build's account and server file; saves never go elsewhere.
+  MessageStoreLease? _lease;
+
   @override
   Map<String, UserProfile> build() {
-    ref.watch(relayConfigProvider);
+    final config = ref.watch(relayConfigProvider);
+    final store = ref.read(messageStoreProvider);
+    // Saved per account and server: another account never draws them.
+    final lease = store.lease(config.baseUrl, ref.watch(myPubkeyProvider));
+    _lease = lease;
     _generation++;
     _profileEventOrders.clear();
+    _saved.clear();
+    _unsaved.clear();
+    final generation = _generation;
+    if (lease != null) unawaited(_restoreSaved(lease, generation));
     ref.onDispose(() {
+      // A pending save never reaches another account's file (it checks the
+      // generation).
       _generation++;
       _pending.clear();
       _batchTimer?.cancel();
@@ -46,15 +72,23 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   /// Request a profile for [pubkey]. Returns immediately from cache if
   /// available, otherwise schedules a batch fetch.
   UserProfile? get(String pubkey) {
-    final cached = state[pubkey.toLowerCase()];
-    if (cached != null) return cached;
-    _scheduleFetch(pubkey.toLowerCase());
+    final key = pubkey.toLowerCase();
+    final cached = state[key];
+    if (cached != null) {
+      // A saved profile is drawn now and asked for again once.
+      if (_saved.remove(key)) _schedulePending(key);
+      return cached;
+    }
+    _scheduleFetch(key);
     return null;
   }
 
   /// Stores a profile that was fetched or updated outside the batch loader.
   void put(UserProfile profile) {
-    state = {...state, profile.pubkey.toLowerCase(): profile};
+    final key = profile.pubkey.toLowerCase();
+    state = {...state, key: profile};
+    _saved.remove(key);
+    _noteChanged([key]);
   }
 
   /// Preload profiles for a list of pubkeys (e.g. channel members).
@@ -64,7 +98,11 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
     final alreadyPending = normalized.any(_pending.contains);
     final uncached = normalized
         .map((pk) => pk.toLowerCase())
-        .where((pk) => !state.containsKey(pk) && !_pending.contains(pk))
+        .where(
+          (pk) =>
+              (!state.containsKey(pk) || _saved.remove(pk)) &&
+              !_pending.contains(pk),
+        )
         .toList();
     if (uncached.isEmpty && !alreadyPending) return Future.value(true);
     _pending.addAll(uncached);
@@ -113,7 +151,11 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
 
   void _scheduleFetch(String pubkey) {
     if (state.containsKey(pubkey) || _pending.contains(pubkey)) return;
-    _pending.add(pubkey);
+    _schedulePending(pubkey);
+  }
+
+  void _schedulePending(String pubkey) {
+    if (!_pending.add(pubkey)) return;
     _batchCompleter ??= Completer<bool>();
     _scheduleBatch();
   }
@@ -226,9 +268,14 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
         createdAt: parsed.createdAt,
         eventId: parsed.eventId,
       );
+      _saved.remove(parsed.profile.pubkey);
+      _unsaved.add(parsed.profile.pubkey);
       changed = true;
     }
-    if (changed) state = updated;
+    if (changed) {
+      state = updated;
+      _noteChanged(const []);
+    }
   }
 
   bool _isNewer(String pubkey, int createdAt, String eventId) {
@@ -248,7 +295,80 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       createdAt: event.createdAt,
       eventId: event.id,
     );
+    _saved.remove(pubkey);
+    _noteChanged([pubkey]);
     return true;
+  }
+
+  /// Draws the profiles saved for [lease], under what the relay already
+  /// answered this run.
+  Future<void> _restoreSaved(MessageStoreLease lease, int generation) async {
+    final raw = await ref
+        .read(messageStoreProvider)
+        .readSnapshots(
+          lease,
+          profileSnapshotPrefix,
+          limit: profileSnapshotLimit,
+        );
+    if (!_isCurrent(generation) || raw.isEmpty) return;
+    final restored = <String, UserProfile>{};
+    for (final value in raw.values) {
+      final saved = decodeProfileSnapshot(value);
+      if (saved == null) continue;
+      final pubkey = saved.profile.pubkey;
+      if (state.containsKey(pubkey) ||
+          _profileEventOrders.containsKey(pubkey)) {
+        continue;
+      }
+      restored[pubkey] = saved.profile;
+      if (saved.eventId.isNotEmpty) {
+        _profileEventOrders[pubkey] = (
+          createdAt: saved.createdAt,
+          eventId: saved.eventId,
+        );
+      }
+    }
+    if (restored.isEmpty) return;
+    _saved.addAll(restored.keys);
+    state = {...restored, ...state};
+  }
+
+  /// Saves the changed profiles once the current batch of changes is in
+  /// (one write per batch, through the store's write queue).
+  void _noteChanged(Iterable<String> pubkeys) {
+    _unsaved.addAll(pubkeys);
+    if (_unsaved.isEmpty || _saveQueued) return;
+    _saveQueued = true;
+    final generation = _generation;
+    scheduleMicrotask(() {
+      _saveQueued = false;
+      if (!_isCurrent(generation)) return;
+      if (_lease case final lease?) _saveNow(lease);
+    });
+  }
+
+  void _saveNow(MessageStoreLease lease) {
+    if (_unsaved.isEmpty) return;
+    final values = <String, String>{
+      for (final pubkey in _unsaved)
+        if (state[pubkey] case final profile?)
+          '$profileSnapshotPrefix$pubkey': encodeProfileSnapshot(
+            profile,
+            createdAt: _profileEventOrders[pubkey]?.createdAt ?? 0,
+            eventId: _profileEventOrders[pubkey]?.eventId ?? '',
+          ),
+    };
+    _unsaved.clear();
+    unawaited(
+      ref
+          .read(messageStoreProvider)
+          .writeSnapshots(
+            lease,
+            values,
+            trimPrefix: profileSnapshotPrefix,
+            keep: profileSnapshotLimit,
+          ),
+    );
   }
 }
 

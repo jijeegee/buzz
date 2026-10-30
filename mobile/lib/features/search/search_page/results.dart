@@ -9,13 +9,13 @@ Set<String> _dmPartners(Channel channel, String? me) => {
 /// Opens a chat found by name as its Chats row does: a thread opens straight
 /// into the thread.
 void _openChatResult(BuildContext context, SearchChatResult result) {
-  final channel = result.channel;
-  if (channel == null) {
-    ScaffoldMessenger.maybeOf(
-      context,
-    )?.showSnackBar(SnackBar(content: Text(context.l10n.searchStillLoading)));
-    return;
-  }
+  // A chat the channel list does not hold yet opens from its Chats row.
+  final row = result.thread ?? result.room;
+  final channel =
+      result.channel ??
+      (row != null
+          ? channelFromChatRow(row)
+          : channelFromId(result.channelId).copyWith(name: result.channelName));
   final rootId = result.thread?.rootId;
   Navigator.of(context).push(
     MaterialPageRoute<void>(

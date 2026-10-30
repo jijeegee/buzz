@@ -18,6 +18,7 @@ import 'head_coverage.dart';
 export 'head_coverage.dart' show StoreHeadSpan;
 import 'purge.dart' as purge;
 import 'room_head.dart';
+import 'snapshot.dart';
 import 'thread_head.dart';
 
 export 'clock_check.dart' show clockTrusted, noteServerDate;
@@ -56,6 +57,7 @@ const _schema = [
   'CREATE INDEX IF NOT EXISTS coverage_stream ON coverage(room, stream)',
   'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
   ...purge.roomMarksSchema,
+  snapshotSchema,
 ];
 
 /// `https://host[:port]` for any relay URL, so every request to one server
@@ -540,6 +542,56 @@ class MessageStore {
     return head == null || head.rows.isEmpty
         ? null
         : head.toResponse(room, root);
+  }
+
+  /// The saved value [key] of [lease]'s file (docs/message-sync.md#launch-order),
+  /// or `null` when none is saved, the file does not exist or the lease has
+  /// ended. Never waits for the writer.
+  Future<String?> readSnapshot(MessageStoreLease? lease, String key) =>
+      _read<String?>(lease, 'snapshot', (db) => readSnapshotValue(db, key));
+
+  /// The saved values under [prefix], newest first, at most [limit].
+  Future<Map<String, String>> readSnapshots(
+    MessageStoreLease? lease,
+    String prefix, {
+    required int limit,
+  }) async =>
+      await _read(
+        lease,
+        'snapshots',
+        (db) => readSnapshotValues(db, prefix, limit),
+      ) ??
+      const {};
+
+  /// Saves [values] in [lease]'s file, after the writes queued before it;
+  /// with [trimPrefix], only the [keep] newest keys under it stay. Nothing is
+  /// written once the lease has ended (signed out), and the file's deletion
+  /// waits for a save in progress.
+  Future<void> writeSnapshots(
+    MessageStoreLease? lease,
+    Map<String, String> values, {
+    String? trimPrefix,
+    int keep = 0,
+  }) {
+    final writer = _writerFor(lease);
+    if (writer == null || values.isEmpty) return Future.value();
+    final saved = writer.drained.then((_) async {
+      if (writer.stopped) return;
+      try {
+        final db = await (writer.database ??= writer.open());
+        if (writer.stopped) return;
+        await writeSnapshotValues(
+          db,
+          values,
+          trimPrefix: trimPrefix,
+          keep: keep,
+        );
+      } catch (error) {
+        debugPrint('[MessageStore] snapshot write failed: $error');
+      }
+    });
+    writer.drained = saved;
+    return saved;
   }
 
   /// Whether everything received for [lease] so far is written and nothing

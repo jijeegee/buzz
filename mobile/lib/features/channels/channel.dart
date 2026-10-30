@@ -200,6 +200,7 @@ class Channel {
     bool? isMember,
     bool? goalsEnabled,
     Object? picture = _sentinel,
+    List<String>? participants,
     List<String>? participantPubkeys,
     bool? historyAll,
   }) => Channel(
@@ -219,7 +220,7 @@ class Channel {
     archivedAt: identical(archivedAt, _sentinel)
         ? this.archivedAt
         : archivedAt as DateTime?,
-    participants: participants,
+    participants: participants ?? this.participants,
     participantPubkeys: participantPubkeys ?? this.participantPubkeys,
     isMember: isMember ?? this.isMember,
     ttlSeconds: ttlSeconds,

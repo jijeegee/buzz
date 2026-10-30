@@ -27,16 +27,16 @@ const observerLiveLimit = 1000;
 /// once per drawn frame rather than once per frame received.
 const observerPublishInterval = Duration(milliseconds: 16);
 
-/// Whether the agent-activity replay may start: once the channel list has
-/// resolved, so its lookback replay never competes with the first screen
-/// (it starts with up to five minutes of frames). Override in tests.
-final observerReplayReadyProvider = Provider<bool>(
-  (ref) => ref.watch(
-    channelsProvider.select(
-      (channels) => channels.hasValue || channels.hasError,
-    ),
-  ),
-);
+/// Whether the agent-activity replay may start: once the relay's channel
+/// list has resolved (not the saved one drawn before it), so its lookback
+/// replay never competes with the first screen (it starts with up to five
+/// minutes of frames). Override in tests.
+final observerReplayReadyProvider = Provider<bool>((ref) {
+  final channels = ref.watch(channelsProvider);
+  return channels.hasError ||
+      (channels.hasValue &&
+          !ref.read(channelsProvider.notifier).showsSavedList);
+});
 
 /// Key for channel-scoped transcript reads.
 typedef ObserverKey = ({String channelId, String agentPubkey});

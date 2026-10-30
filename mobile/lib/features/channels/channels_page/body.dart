@@ -6,6 +6,9 @@ class _ChannelsBody extends StatelessWidget {
   final bool showError;
   final SessionStatus sessionStatus;
   final bool showConnectionSkeleton;
+  final bool savedListEmpty;
+  final Object? relayError;
+  final Future<void> Function() onRetryRelayList;
   final String? currentPubkey;
   final double topSectionHeight;
   final bool usesPinnedGradient;
@@ -19,6 +22,9 @@ class _ChannelsBody extends StatelessWidget {
     required this.showError,
     required this.sessionStatus,
     required this.showConnectionSkeleton,
+    required this.savedListEmpty,
+    required this.relayError,
+    required this.onRetryRelayList,
     required this.currentPubkey,
     required this.topSectionHeight,
     required this.usesPinnedGradient,
@@ -31,12 +37,20 @@ class _ChannelsBody extends StatelessWidget {
   Widget build(BuildContext context) {
     final barHeight = topSectionHeight;
     final loadedChannels = channels;
+    final relayError = this.relayError;
     final loading =
-        showConnectionSkeleton || (loadedChannels == null && !showError);
+        showConnectionSkeleton ||
+        (loadedChannels == null && !showError) ||
+        (savedListEmpty && relayError == null);
     final content = showError && channelsAsync.hasError
         ? Padding(
             padding: EdgeInsets.only(top: barHeight),
             child: _ErrorView(error: channelsAsync.error!, onRetry: onRefresh),
+          )
+        : savedListEmpty && relayError != null
+        ? Padding(
+            padding: EdgeInsets.only(top: barHeight),
+            child: _ErrorView(error: relayError, onRetry: onRetryRelayList),
           )
         : loadedChannels == null
         ? const SizedBox.shrink()
@@ -174,6 +188,7 @@ class _SliverChannelsList extends HookConsumerWidget {
       ),
       sliver: SliverList.list(
         children: [
+          const ChannelListRetryRow(),
           if (starsState.errorMessage case final error?)
             ListTile(
               title: Text(error),
