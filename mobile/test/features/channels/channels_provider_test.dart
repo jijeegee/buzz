@@ -1750,6 +1750,96 @@ void main() {
     });
   });
 
+  group('rate-limited latest-message batch', () {
+    Object rateLimited(int seconds) => RelayException(
+      429,
+      '{"error":"rate-limited: quota exceeded; retry in ${seconds}s"}',
+    );
+    bool isLatest(List<NostrFilter> batch) =>
+        batch.isNotEmpty && batch.every((filter) => filter.since == null);
+    NostrEvent message(String id, int createdAt) => NostrEvent(
+      id: id,
+      pubkey: 'alice',
+      createdAt: createdAt,
+      kind: EventKind.streamMessageV2,
+      tags: const [
+        ['h', _channelA],
+      ],
+      content: 'hi',
+      sig: 'sig',
+    );
+
+    test('is retried once as one batch, never one read per room', () async {
+      final session = _FakeRelaySession(
+        memberships: [
+          _membership(_channelA, myPk),
+          _membership(_channelB, myPk),
+        ],
+        metadata: [
+          _meta(id: _channelA, name: 'general'),
+          _meta(id: _channelB, name: 'random'),
+        ],
+        recentMessages: [message('m1', 30)],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _settle();
+      session.latestBatchError = rateLimited(0);
+      await container.read(channelsProvider.notifier).refresh();
+      await _settle();
+      final latest = session.queryBatches.where(isLatest).toList();
+      // The cold load, then the refused batch and its one retry.
+      expect(latest, hasLength(3));
+      expect(latest[1], hasLength(2));
+      expect(latest[2], hasLength(2));
+      expect(session.messageHistoryCount, 0);
+      // Unavailable: the shown timestamps stay.
+      final general = container
+          .read(channelsProvider)
+          .value!
+          .firstWhere((channel) => channel.id == _channelA);
+      expect(
+        general.lastMessageAt,
+        DateTime.fromMillisecondsSinceEpoch(30 * 1000, isUtc: true),
+      );
+    });
+
+    test('a retry that succeeds installs its result', () async {
+      final session =
+          _FakeRelaySession(
+              memberships: [_membership(_channelA, myPk)],
+              metadata: [_meta(id: _channelA, name: 'general')],
+              recentMessages: [message('m1', 30)],
+            )
+            ..latestBatchError = rateLimited(0)
+            ..latestBatchErrorRemaining = 1;
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _settle();
+      expect(session.queryBatches.where(isLatest), hasLength(2));
+      expect(session.messageHistoryCount, 0);
+      expect(
+        container.read(channelsProvider).value!.single.lastMessageAt,
+        DateTime.fromMillisecondsSinceEpoch(30 * 1000, isUtc: true),
+      );
+    });
+
+    test('a window longer than the cap gives up without a retry', () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'general')],
+      )..latestBatchError = rateLimited(120);
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _settle();
+      expect(session.queryBatches.where(isLatest), hasLength(1));
+      expect(session.messageHistoryCount, 0);
+    });
+  });
+
   group('deadline-unavailable channel batches', () {
     Object deadline() => RelayException(503, '{"error":"query timed out"}');
     bool isUnread(List<NostrFilter> batch) =>
@@ -2647,6 +2737,10 @@ class _FakeRelaySession extends RelaySessionNotifier {
   final List<List<NostrFilter>> queryBatches = [];
   Object? messageBatchError;
   Object? latestBatchError;
+
+  /// How many more latest-message batches [latestBatchError] fails; null
+  /// fails every one.
+  int? latestBatchErrorRemaining;
   Object? messageHistoryError;
   int messageHistoryCount = 0;
 
@@ -3012,7 +3106,13 @@ class _FakeRelaySession extends RelaySessionNotifier {
     // request time so a parked response reflects the scope that asked for it.
     final isUnreadCatchUp =
         filters.isNotEmpty && filters.every((filter) => filter.since != null);
-    if (!isUnreadCatchUp && latestBatchError != null) throw latestBatchError!;
+    if (!isUnreadCatchUp && latestBatchError != null) {
+      final error = latestBatchError!;
+      final remaining = latestBatchErrorRemaining;
+      if (remaining != null && remaining <= 1) latestBatchError = null;
+      if (remaining != null) latestBatchErrorRemaining = remaining - 1;
+      throw error;
+    }
     final messageSnapshot = List.of(recentMessages);
     if (isUnreadCatchUp) {
       // Claim the parked slot so the refresh that follows the switch can run

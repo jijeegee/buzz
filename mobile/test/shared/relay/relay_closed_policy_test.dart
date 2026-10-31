@@ -43,4 +43,35 @@ void main() {
       isNull,
     );
   });
+
+  test('isRelayRateLimitError matches HTTP 429 and rate-limited notices', () {
+    expect(isRelayRateLimitError(RelayException(429, '')), isTrue);
+    expect(
+      isRelayRateLimitError(Exception('rate-limited: quota exceeded')),
+      isTrue,
+    );
+    expect(isRelayRateLimitError(RelayException(503, '')), isFalse);
+    expect(isRelayRateLimitError(Exception('bridge down')), isFalse);
+  });
+
+  test('relayRateLimitedBatchRetryDelay follows the hint up to the cap', () {
+    RelayException refused(String body) => RelayException(429, body);
+    expect(
+      relayRateLimitedBatchRetryDelay(
+        refused('{"error":"rate-limited: quota exceeded; retry in 4s"}'),
+      ),
+      const Duration(seconds: 4),
+    );
+    expect(
+      relayRateLimitedBatchRetryDelay(refused('{"error":"rate-limited: x"}')),
+      relayRateLimitedBatchDefaultRetry,
+    );
+    expect(
+      relayRateLimitedBatchRetryDelay(
+        refused('{"error":"rate-limited: quota exceeded; retry in 120s"}'),
+      ),
+      isNull,
+    );
+    expect(relayRateLimitedBatchRetryDelay(Exception('bridge down')), isNull);
+  });
 }

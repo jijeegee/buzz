@@ -374,7 +374,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
           ref.read(userCacheProvider.notifier).cacheProfileEvent,
         ),
         fetchLastMessage
-            ? _fetchLastMessageEvents(session, activeChannels)
+            ? _fetchLastMessageEvents(
+                session,
+                activeChannels,
+                isCurrent: () => fence.isCurrent,
+              )
             : Future.value(),
       ]),
     );
@@ -525,8 +529,9 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   /// burst of websocket REQs on communities with many channels.
   Future<List<NostrEvent>?> _fetchLastMessageEvents(
     RelaySessionNotifier session,
-    List<Channel> channels,
-  ) async {
+    List<Channel> channels, {
+    required bool Function() isCurrent,
+  }) async {
     if (channels.isEmpty) return const [];
 
     final filters = [
@@ -544,14 +549,20 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       session,
       filters,
       operation: 'latest-message query',
+      isCurrent: isCurrent,
     );
   }
 
-  /// Returns null when the batch is unavailable: it hit a relay deadline.
+  /// Returns null when the batch is unavailable: it hit a relay deadline, or
+  /// it stayed rate-limited after its one retry.
+  ///
+  /// [isCurrent] is checked before the rate-limit retry, so a refresh retired
+  /// during the wait sends nothing more.
   Future<List<NostrEvent>?> _fetchChannelHistoryBatch(
     RelaySessionNotifier session,
     List<NostrFilter> filters, {
     required String operation,
+    required bool Function() isCurrent,
   }) async {
     if (filters.isEmpty) return const [];
 
@@ -562,6 +573,26 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
       if (isRelayDeadlineError(error)) {
         debugPrint('[ChannelsNotifier] batched $operation hit the deadline');
         return null;
+      }
+      // Back-pressure: one request per room would only add to it. The same
+      // single batch goes once more after the relay's hint; failing again,
+      // the batch is unavailable and what is shown stays.
+      if (isRelayRateLimitError(error)) {
+        final delay = relayRateLimitedBatchRetryDelay(error);
+        if (delay == null) {
+          debugPrint('[ChannelsNotifier] batched $operation rate-limited');
+          return null;
+        }
+        await Future<void>.delayed(delay);
+        if (!isCurrent()) return null;
+        try {
+          return await session.queryRelay(filters);
+        } catch (retryError) {
+          debugPrint(
+            '[ChannelsNotifier] batched $operation retry failed: $retryError',
+          );
+          return null;
+        }
       }
       debugPrint(
         '[ChannelsNotifier] batched $operation failed; '
@@ -714,6 +745,8 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         session,
         filters,
         operation: 'unread catch-up',
+        isCurrent: () =>
+            ref.mounted && !_isCatchUpRetired(fence, subscriptionGeneration),
       );
       // Unavailable: keep the unread state already observed.
       if (events == null) return;

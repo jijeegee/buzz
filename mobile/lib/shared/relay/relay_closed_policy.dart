@@ -88,6 +88,40 @@ int? parseRateLimitRetrySeconds(String message) {
   return match == null ? null : int.tryParse(match.group(1)!);
 }
 
+/// Returns true when [error] is relay back-pressure: an HTTP 429 from
+/// `/query` or `/count`, or a `rate-limited:` relay message (CLOSED/NOTICE).
+bool isRelayRateLimitError(Object error) {
+  if (error is RelayException) return error.statusCode == 429;
+  var message = error.toString().trim().toLowerCase();
+  const prefix = 'exception: ';
+  if (message.startsWith(prefix)) message = message.substring(prefix.length);
+  return classifyRelayClosed(message) == RelayClosedClass.rateLimited;
+}
+
+/// Wait before the one retry of a rate-limited batch when the relay gives no
+/// `retry in Ns` hint.
+const relayRateLimitedBatchDefaultRetry = Duration(seconds: 2);
+
+/// Longest hint a rate-limited batch waits out before its one retry. A longer
+/// window gives up instead: a retry sent inside it is only refused again.
+const relayRateLimitedBatchMaxRetry = Duration(seconds: 30);
+
+/// When to send the one retry of a batch refused with [error], or null when
+/// it must not be retried: not back-pressure, or the relay's window is longer
+/// than [relayRateLimitedBatchMaxRetry].
+///
+/// A rate-limited batch is retried as one batch, never fanned out per room:
+/// one request per room only adds to the back-pressure.
+Duration? relayRateLimitedBatchRetryDelay(Object error) {
+  if (!isRelayRateLimitError(error)) return null;
+  final seconds = parseRateLimitRetrySeconds(
+    error is RelayException ? error.body : error.toString(),
+  );
+  if (seconds == null) return relayRateLimitedBatchDefaultRetry;
+  final delay = Duration(seconds: seconds);
+  return delay > relayRateLimitedBatchMaxRetry ? null : delay;
+}
+
 /// Whether [value] has settled on a relay deadline.
 ///
 /// The forum periodic poll timers pause while a query is in this state;
