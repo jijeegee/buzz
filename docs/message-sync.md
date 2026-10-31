@@ -105,6 +105,15 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 ## Reconnect
 
+- **Usable at once.** The socket counts as connected (sends, new REQs, room
+  and thread window requests) once it is authenticated and its live REQs are
+  re-sent; the repair and catch-up of missed messages run behind them and
+  hold nothing. They still run to the end under their own rules: no room is
+  certain before its repair or catch-up has ended ([Coverage](#coverage),
+  [Store-first preload](#store-first-preload)). Desktop's connect resolves
+  once the REQs are back on the socket; mobile marks the session connected
+  at AUTH OK and re-sends the REQs behind it. The first connect after launch
+  has no live REQs to re-send or repair yet.
 - Desktop re-sends each chunk unchanged and repairs the missed window over
   HTTP: one keyset walk per chunk covering all its rooms, from the chunk's
   last-seen event time (or its start) minus the 1865 s lookback. Every row

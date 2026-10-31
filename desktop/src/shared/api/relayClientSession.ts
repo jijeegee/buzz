@@ -34,7 +34,7 @@ import {
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
 import {
-  replayLiveSubscriptions,
+  replayUntilRequestsRestored,
   reconnectCursors,
 } from "@/shared/api/relayReconnectReplay";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
@@ -1045,25 +1045,24 @@ export class RelayClient {
     return [...this.subscriptions.values()].some((s) => s.mode === "live");
   }
 
-  private async replayLiveSubscriptions() {
+  /** Resolves once live REQs are re-sent; repair walks continue behind. */
+  private replayLiveSubscriptions() {
     const generation = this.connectionGeneration;
-    try {
-      await replayLiveSubscriptions({
+    return replayUntilRequestsRestored(
+      {
         subscriptions: this.subscriptions,
         sendRaw: (payload) => this.sendRaw(payload),
         requestRepair: getChannelReconnectRepairEvents,
         generation,
         visibleChannelId: this.visibleChannelId,
         isActive: () => this.connectionGeneration === generation,
-      });
-    } catch (error) {
-      const reconnectError =
-        error instanceof Error
-          ? error
-          : new Error("Failed to restore relay subscriptions.");
-      this.resetConnection(reconnectError);
-      throw reconnectError;
-    }
+      },
+      (error) => {
+        // A late failure must not tear down a newer connection.
+        if (this.connectionGeneration === generation)
+          this.resetConnection(error);
+      },
+    );
   }
 
   private scheduleReconnect() {

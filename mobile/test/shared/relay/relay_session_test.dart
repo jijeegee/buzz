@@ -1493,6 +1493,76 @@ void main() {
   });
 
   test(
+    'an unfinished reconnect replay holds no send, REQ or history request',
+    () async {
+      final replayDelayCompleter = Completer<void>();
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier(
+        replayDelay: (_) => replayDelayCompleter.future,
+      );
+      final container = ProviderContainer(
+        overrides: [
+          authProvider.overrideWith(() => _PendingAuthNotifier()),
+          relaySessionProvider.overrideWith(() => session),
+          relayConfigProvider.overrideWith(
+            () => _FakeRelayConfigNotifier(
+              baseUrl: 'https://relay.example',
+              nsec: null,
+            ),
+          ),
+          myPubkeyProvider.overrideWithValue('alice'),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.read(relaySessionProvider);
+      session.debugAttachSocketForTest(socket);
+
+      for (var i = 0; i < 9; i++) {
+        final subscribe = session.subscribe(
+          _filterForChannel('channel-$i'),
+          (_) {},
+        );
+        session.debugHandleMessage(['EOSE', 'l-${i + 1}']);
+        await subscribe;
+      }
+      socket.messages.clear();
+
+      // docs/message-sync.md#reconnect: usable once the socket is
+      // authenticated; the replay goes on behind.
+      final connected = session.debugHandleConnected();
+      await Future<void>.delayed(Duration.zero);
+      expect(_reqs(socket), hasLength(8), reason: 'replay paused mid-way');
+      expect(session.state.status, SessionStatus.connected);
+
+      final publish = session.publish(_event(id: 'during-replay'));
+      final history = session.fetchHistory(_filterForChannel('channel-new'));
+      final subscribe = session.subscribe(
+        _filterForChannel('channel-new'),
+        (_) {},
+      );
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        socket.messages
+            .where((message) => message[0] == 'EVENT')
+            .map((message) => (message[1] as Map<String, dynamic>)['id']),
+        ['during-replay'],
+      );
+      expect(_reqs(socket), hasLength(10));
+
+      session.debugHandleMessage(['OK', 'during-replay', true, '']);
+      session.debugHandleMessage(['EOSE', 'h-10']);
+      session.debugHandleMessage(['EOSE', 'l-11']);
+      await publish;
+      await history;
+      final unsubscribe = await subscribe;
+      replayDelayCompleter.complete();
+      await connected;
+      expect(_reqs(socket), hasLength(11), reason: 'the replay completed');
+      unsubscribe();
+    },
+  );
+
+  test(
     'replay generation guard bails after a connection is superseded',
     () async {
       final replayDelayCompleter = Completer<void>();

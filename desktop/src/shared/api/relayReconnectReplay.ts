@@ -246,7 +246,13 @@ export async function replayLiveSubscriptions({
   setTimeoutFn = (fn: () => void, ms: number) =>
     window.setTimeout(fn, ms) as unknown as number,
   isActive = () => true,
+  onRequestsRestored,
 }: {
+  /**
+   * Called once every live REQ is back on the socket, before the repair
+   * walks: the connection is usable from here on.
+   */
+  onRequestsRestored?: () => void;
   subscriptions: Map<string, RelaySubscription>;
   sendRaw: (payload: unknown[]) => Promise<void>;
   requestRepair: (
@@ -389,6 +395,8 @@ export async function replayLiveSubscriptions({
     }
   }
 
+  onRequestsRestored?.();
+
   await runWithConcurrency(
     replayRequests.filter(
       (
@@ -469,4 +477,35 @@ export async function replayLiveSubscriptions({
       }
     },
   );
+}
+
+type ReplayOptions = Omit<
+  Parameters<typeof replayLiveSubscriptions>[0],
+  "onRequestsRestored"
+>;
+
+/**
+ * Replays live subscriptions, resolving once their REQs are back on the
+ * socket; the repair walks go on behind (docs/message-sync.md#reconnect), so
+ * sends, new REQs and room windows never wait for them. `onFailed` gets a
+ * failure from any point of the replay; one before the REQs are restored
+ * also rejects.
+ */
+export function replayUntilRequestsRestored(
+  options: ReplayOptions,
+  onFailed: (error: Error) => void,
+): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    replayLiveSubscriptions({ ...options, onRequestsRestored: resolve }).then(
+      resolve,
+      (error: unknown) => {
+        const failure =
+          error instanceof Error
+            ? error
+            : new Error("Failed to restore relay subscriptions.");
+        onFailed(failure);
+        reject(failure);
+      },
+    );
+  });
 }
