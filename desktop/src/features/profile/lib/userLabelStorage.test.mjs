@@ -7,6 +7,7 @@ import {
   hydrateUserLabels,
   hydrateWatchedUserLabels,
   readCachedUserLabels,
+  readKnownUserProfiles,
   removeUserLabelCacheForRelay,
   resetUserLabelStorageCache,
   resetUserLabelsForTests,
@@ -338,4 +339,79 @@ test("ignores malformed kept payloads", async () => {
   );
   await hydrateUserLabels(scope);
   assert.equal(readCachedUserLabels(scope, ["abc"]), undefined);
+});
+
+test("profiles saved with created_at, check time and owner come back whole; others are unknown", async () => {
+  const store = installStore();
+  const agent = {
+    ...alice,
+    ownerPubkey: ME,
+    isAgent: true,
+    createdAt: 1_700,
+    verifiedAt: 9_000,
+    eventId: "e".repeat(64),
+  };
+  store.blobs.set(
+    store.key("profiles", scope),
+    JSON.stringify({
+      version: 1,
+      profiles: {
+        [OTHER]: { ...agent, ownerCreatedAt: 1_700, updatedAt: 100 },
+        // Owner validated from another event: not kept whole.
+        cccc: { ...agent, ownerCreatedAt: 1_600, updatedAt: 100 },
+        // Never confirmed by a relay read: not kept whole.
+        dddd: {
+          ...agent,
+          verifiedAt: undefined,
+          ownerCreatedAt: 1_700,
+          updatedAt: 100,
+        },
+        // No event id (or not a hex one): not kept whole.
+        eeee: {
+          ...agent,
+          eventId: "E".repeat(64),
+          ownerCreatedAt: 1_700,
+          updatedAt: 100,
+        },
+        abcdef: { ...alice, updatedAt: 100 },
+      },
+    }),
+  );
+  await hydrateUserLabels(scope);
+
+  assert.deepEqual(
+    readKnownUserProfiles(scope, [
+      OTHER,
+      "cccc",
+      "dddd",
+      "eeee",
+      "abcdef",
+      "none",
+    ]),
+    { [OTHER]: agent },
+  );
+  // The placeholder read stays presentation-only.
+  assert.equal(
+    readCachedUserLabels(scope, [OTHER]).profiles[OTHER].ownerPubkey,
+    null,
+  );
+
+  writeCachedUserLabels(scope, {
+    abcdef: {
+      ...alice,
+      ownerPubkey: OTHER,
+      isAgent: true,
+      createdAt: 1_800,
+      verifiedAt: 9_500,
+      eventId: "f".repeat(64),
+    },
+  });
+  assert.deepEqual(readKnownUserProfiles(scope, ["abcdef"]).abcdef, {
+    ...alice,
+    ownerPubkey: OTHER,
+    isAgent: true,
+    createdAt: 1_800,
+    verifiedAt: 9_500,
+    eventId: "f".repeat(64),
+  });
 });

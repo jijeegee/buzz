@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use kuzz_core_pkg::PresenceStatus;
+use serde::Deserialize;
 use serde_json::Value;
 use tauri::State;
 
@@ -220,27 +221,130 @@ pub async fn get_user_profile(
         .unwrap_or_else(|| empty_profile_info(&target)))
 }
 
+/// Most filters one batch profile read sends: the relay's REQ limit
+/// (`MAX_FILTERS_PER_REQ`).
+const USERS_BATCH_MAX_FILTERS: usize = 10;
+
+/// How far before a profile's last check a read looks again (seconds):
+/// covers clock skew between the device that checked and the one that
+/// edited. Profiles edited in that window come back and are dropped unless
+/// newer than the one held.
+const USERS_BATCH_VERIFY_MARGIN_SECS: i64 = 86_400;
+
+/// A profile the caller already holds.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KnownProfile {
+    /// `created_at` of the kind:0 event it came from.
+    pub created_at: i64,
+    /// This device's clock (unix seconds) when the relay last answered a
+    /// read covering it.
+    pub verified_at: i64,
+    /// Id (hex) of that kind:0 event, for the relay's same-second tie-break.
+    pub event_id: String,
+}
+
+impl KnownProfile {
+    fn is_valid(&self) -> bool {
+        self.created_at >= 0
+            && self.verified_at >= 0
+            && self.event_id.len() == 64
+            && self
+                .event_id
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+    }
+}
+
+/// Filters for one batch profile read. Pubkeys with no known profile are
+/// asked for in full, in one filter. Known pubkeys are asked only for what
+/// changed since their last check: sorted by `verified_at`, split into the
+/// remaining filter slots at the largest gaps (so pubkeys checked in the
+/// same launch share a group), each group asking `since` its oldest check
+/// minus [`USERS_BATCH_VERIFY_MARGIN_SECS`].
+fn users_batch_filters(pubkeys: &[String], known: &HashMap<String, KnownProfile>) -> Vec<Value> {
+    let mut unknown = Vec::new();
+    let mut held = Vec::new();
+    for pubkey in pubkeys {
+        match known.get(pubkey) {
+            Some(profile) => held.push((profile.verified_at, pubkey)),
+            None => unknown.push(pubkey),
+        }
+    }
+    let mut filters = Vec::new();
+    if !unknown.is_empty() {
+        filters.push(serde_json::json!({ "kinds": [0], "authors": unknown }));
+    }
+    held.sort();
+    let slots = USERS_BATCH_MAX_FILTERS - filters.len();
+    for group in known_profile_groups(&held, slots) {
+        let authors: Vec<&String> = group.iter().map(|(_, pubkey)| *pubkey).collect();
+        filters.push(serde_json::json!({
+            "kinds": [0],
+            "authors": authors,
+            "since": (group[0].0 - USERS_BATCH_VERIFY_MARGIN_SECS).max(0),
+        }));
+    }
+    filters
+}
+
+/// Splits `held` (sorted by `verified_at`) into at most `slots` contiguous
+/// groups, cutting at the largest gaps between consecutive values.
+fn known_profile_groups<T>(held: &[(i64, T)], slots: usize) -> Vec<&[(i64, T)]> {
+    if held.is_empty() || slots == 0 {
+        return Vec::new();
+    }
+    // (gap, index the next group would start at)
+    let mut cuts: Vec<(i64, usize)> = (1..held.len())
+        .map(|index| (held[index].0 - held[index - 1].0, index))
+        .filter(|(gap, _)| *gap > 0)
+        .collect();
+    cuts.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
+    let mut starts: Vec<usize> = std::iter::once(0)
+        .chain(cuts.iter().take(slots - 1).map(|(_, start)| *start))
+        .collect();
+    starts.sort_unstable();
+    starts
+        .iter()
+        .enumerate()
+        .map(|(i, start)| &held[*start..starts.get(i + 1).copied().unwrap_or(held.len())])
+        .collect()
+}
+
+/// Reads other people's profiles. `known` holds the profiles the caller
+/// already has: only what changed since their last check is fetched, an
+/// answer not newer than the held `created_at` is dropped, and a known
+/// pubkey with nothing newer comes back `unchanged`, not `missing`.
 #[tauri::command]
 pub async fn get_users_batch(
     pubkeys: Vec<String>,
+    known: Option<HashMap<String, KnownProfile>>,
     state: State<'_, AppState>,
 ) -> Result<UsersBatchResponse, String> {
     if pubkeys.is_empty() {
         return Ok(UsersBatchResponse {
             profiles: HashMap::new(),
             missing: Vec::new(),
+            unchanged: Vec::new(),
         });
     }
-    let events = query_relay(
-        &state,
-        &[serde_json::json!({
-            "kinds": [0],
-            "authors": pubkeys,
-        })],
-    )
-    .await?;
+    let requested: std::collections::HashSet<&String> = pubkeys.iter().collect();
+    let known: HashMap<String, KnownProfile> = known
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|(pubkey, profile)| profile.is_valid() && requested.contains(pubkey))
+        .collect();
+    let events = query_relay(&state, &users_batch_filters(&pubkeys, &known)).await?;
+    let known_created_at: HashMap<String, (i64, String)> = known
+        .into_iter()
+        .map(|(pubkey, profile)| (pubkey, (profile.created_at, profile.event_id)))
+        .collect();
 
-    Ok(nostr_convert::users_batch_from_events(&events, &pubkeys))
+    Ok(nostr_convert::users_batch_from_events(
+        &events,
+        &pubkeys,
+        &known_created_at,
+    ))
 }
 
 #[tauri::command]
@@ -494,6 +598,154 @@ mod tests {
         assert_eq!(filter["search_mode"], serde_json::json!("prefix"));
         assert_eq!(filter["limit"], serde_json::json!(25));
         assert_eq!(filter["page"], serde_json::json!(1));
+    }
+
+    fn pubkeys(count: usize) -> Vec<String> {
+        (0..count).map(|i| format!("{i:064x}")).collect()
+    }
+
+    fn known_at(verified_at: i64) -> KnownProfile {
+        KnownProfile {
+            created_at: 1,
+            verified_at,
+            event_id: "a".repeat(64),
+        }
+    }
+
+    #[test]
+    fn known_profiles_need_a_hex_event_id() {
+        assert!(known_at(1).is_valid());
+        for event_id in [String::new(), "A".repeat(64), "a".repeat(63)] {
+            assert!(!KnownProfile {
+                event_id,
+                ..known_at(1)
+            }
+            .is_valid());
+        }
+    }
+
+    #[test]
+    fn users_batch_filters_ask_unknown_pubkeys_in_full() {
+        let all = pubkeys(3);
+        let filters = users_batch_filters(&all, &HashMap::new());
+
+        assert_eq!(
+            filters,
+            vec![serde_json::json!({ "kinds": [0], "authors": all })]
+        );
+    }
+
+    #[test]
+    fn users_batch_filters_ask_known_pubkeys_since_a_day_before_their_check() {
+        let all = pubkeys(5);
+        let launch = 1_800_000_000;
+        let known = HashMap::from([
+            (all[1].clone(), known_at(launch + 2)),
+            (all[2].clone(), known_at(launch)),
+            (all[3].clone(), known_at(1_000)),
+        ]);
+        let filters = users_batch_filters(&all, &known);
+
+        assert_eq!(
+            filters,
+            vec![
+                serde_json::json!({ "kinds": [0], "authors": [all[0], all[4]] }),
+                serde_json::json!({ "kinds": [0], "authors": [all[3]], "since": 0 }),
+                serde_json::json!({
+                    "kinds": [0],
+                    "authors": [all[2]],
+                    "since": launch - 86_400,
+                }),
+                serde_json::json!({
+                    "kinds": [0],
+                    "authors": [all[1]],
+                    "since": launch + 2 - 86_400,
+                }),
+            ]
+        );
+    }
+
+    #[test]
+    fn users_batch_filters_ask_a_launch_since_a_day_before_it() {
+        let all = pubkeys(200);
+        let launch = 1_800_000_000;
+        // Everyone checked within a few seconds at the last launch.
+        let known: HashMap<String, KnownProfile> = all
+            .iter()
+            .enumerate()
+            .map(|(i, pubkey)| (pubkey.clone(), known_at(launch + (i % 3) as i64)))
+            .collect();
+        let filters = users_batch_filters(&all, &known);
+
+        assert!(filters.len() <= USERS_BATCH_MAX_FILTERS);
+        for filter in &filters {
+            let since = filter["since"].as_i64().unwrap();
+            assert!((launch - 86_400..=launch + 2 - 86_400).contains(&since));
+        }
+    }
+
+    #[test]
+    fn users_batch_filters_stay_within_the_relay_filter_limit() {
+        let all = pubkeys(200);
+        let verified_at = |i: usize| 1_000_000 + (i as i64) * 7_919 % 100_003;
+        let some_known: HashMap<String, KnownProfile> = all[..150]
+            .iter()
+            .enumerate()
+            .map(|(i, pubkey)| (pubkey.clone(), known_at(verified_at(i))))
+            .collect();
+        let all_known: HashMap<String, KnownProfile> = all
+            .iter()
+            .enumerate()
+            .map(|(i, pubkey)| (pubkey.clone(), known_at(verified_at(i))))
+            .collect();
+
+        for (known, full_filters, filter_count) in [
+            (HashMap::new(), 1, 1),
+            (some_known, 1, USERS_BATCH_MAX_FILTERS),
+            (all_known, 0, USERS_BATCH_MAX_FILTERS),
+        ] {
+            let filters = users_batch_filters(&all, &known);
+            assert_eq!(filters.len(), filter_count);
+            let asked: usize = filters
+                .iter()
+                .map(|filter| filter["authors"].as_array().unwrap().len())
+                .sum();
+            assert_eq!(asked, all.len());
+            assert_eq!(
+                filters.iter().filter(|f| f.get("since").is_none()).count(),
+                full_filters
+            );
+            for filter in filters.iter().filter(|f| f.get("since").is_some()) {
+                let oldest = filter["authors"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .map(|pubkey| known[pubkey.as_str().unwrap()].verified_at)
+                    .min()
+                    .unwrap();
+                assert_eq!(filter["since"], serde_json::json!(oldest - 86_400));
+            }
+        }
+    }
+
+    #[test]
+    fn known_profile_groups_cut_at_the_largest_gaps() {
+        let held: Vec<(i64, ())> = [10, 11, 12, 500, 501, 900, 2_000, 2_001]
+            .into_iter()
+            .map(|at| (at, ()))
+            .collect();
+        let groups: Vec<Vec<i64>> = known_profile_groups(&held, 3)
+            .into_iter()
+            .map(|group| group.iter().map(|(at, _)| *at).collect())
+            .collect();
+
+        assert_eq!(
+            groups,
+            vec![vec![10, 11, 12], vec![500, 501, 900], vec![2_000, 2_001]]
+        );
+        // Equal values are never split.
+        let same: Vec<(i64, ())> = vec![(5, ()); 4];
+        assert_eq!(known_profile_groups(&same, 10).len(), 1);
     }
 
     #[tokio::test]

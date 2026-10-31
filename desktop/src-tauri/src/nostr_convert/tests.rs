@@ -372,17 +372,114 @@ fn users_batch_keeps_latest_and_reports_missing() {
     let resp = users_batch_from_events(
         &[e1, e_old, e_new],
         &[pk.clone(), other_pk.clone(), missing_pk.clone()],
+        &HashMap::new(),
     );
     assert_eq!(resp.profiles.len(), 2);
     assert_eq!(resp.profiles[&pk].display_name.as_deref(), Some("New"));
+    assert_eq!(resp.profiles[&pk].created_at, 2000);
     assert_eq!(resp.missing, vec![missing_pk]);
+    assert!(resp.unchanged.is_empty());
+}
+
+fn profile_at(keys: &Keys, name: &str, at: u64) -> Event {
+    EventBuilder::new(Kind::Metadata, format!(r#"{{"name":"{name}"}}"#))
+        .custom_created_at(nostr::Timestamp::from(at))
+        .sign_with_keys(keys)
+        .unwrap()
+}
+
+#[test]
+fn users_batch_applies_only_profiles_newer_than_known() {
+    let (changed, same, older, fresh) = (
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+        Keys::generate(),
+    );
+    let hex = |keys: &Keys| keys.public_key().to_hex();
+    let absent_known = "e".repeat(64);
+    let absent_unknown = "f".repeat(64);
+    let events = [
+        profile_at(&changed, "Changed", 150),
+        profile_at(&same, "Same", 200),
+        profile_at(&older, "Older", 250),
+        profile_at(&fresh, "Fresh", 50),
+    ];
+    let held_id = "0".repeat(64);
+    let known = HashMap::from([
+        (hex(&changed), (100, held_id.clone())),
+        // The very event held: it does not replace itself.
+        (hex(&same), (200, events[1].id.to_hex())),
+        (hex(&older), (300, held_id.clone())),
+        (absent_known.clone(), (400, held_id)),
+    ]);
+    let requested = [
+        hex(&changed),
+        hex(&same),
+        hex(&older),
+        hex(&fresh),
+        absent_known.clone(),
+        absent_unknown.clone(),
+    ];
+
+    let resp = users_batch_from_events(&events, &requested, &known);
+
+    assert_eq!(resp.profiles.len(), 2);
+    assert_eq!(resp.profiles[&hex(&changed)].created_at, 150);
+    assert_eq!(
+        resp.profiles[&hex(&changed)].event_id,
+        events[0].id.to_hex()
+    );
+    assert_eq!(resp.profiles[&hex(&fresh)].created_at, 50);
+    assert_eq!(resp.missing, vec![absent_unknown]);
+    assert_eq!(resp.unchanged, vec![hex(&same), hex(&older), absent_known]);
+}
+
+#[test]
+fn users_batch_breaks_same_second_ties_by_lowest_id_like_the_relay() {
+    let keys = Keys::generate();
+    let pk = keys.public_key().to_hex();
+    let mut pair = [profile_at(&keys, "One", 500), profile_at(&keys, "Two", 500)];
+    pair.sort_by_key(|event| event.id.to_hex());
+    let [low, high] = pair;
+
+    // Holding the higher id: the relay's lower-id edit in the same second wins.
+    let known = HashMap::from([(pk.clone(), (500, high.id.to_hex()))]);
+    let resp = users_batch_from_events(
+        std::slice::from_ref(&low),
+        std::slice::from_ref(&pk),
+        &known,
+    );
+    assert_eq!(resp.profiles[&pk].event_id, low.id.to_hex());
+
+    // Holding the lower id: the higher one never replaces it.
+    let known = HashMap::from([(pk.clone(), (500, low.id.to_hex()))]);
+    let resp = users_batch_from_events(
+        std::slice::from_ref(&high),
+        std::slice::from_ref(&pk),
+        &known,
+    );
+    assert!(resp.profiles.is_empty());
+    assert_eq!(resp.unchanged, vec![pk.clone()]);
+
+    // Unknown: of two same-second answers the lower id is kept.
+    let resp = users_batch_from_events(
+        &[high, low.clone()],
+        std::slice::from_ref(&pk),
+        &HashMap::new(),
+    );
+    assert_eq!(resp.profiles[&pk].event_id, low.id.to_hex());
 }
 
 #[test]
 fn users_batch_marks_valid_nip_oa_profiles_as_agents() {
     let (agent, owner_pubkey) = oa_profile_event(r#"{"display_name":"Mira"}"#);
     let pubkey = agent.pubkey.to_hex();
-    let resp = users_batch_from_events(std::slice::from_ref(&agent), std::slice::from_ref(&pubkey));
+    let resp = users_batch_from_events(
+        std::slice::from_ref(&agent),
+        std::slice::from_ref(&pubkey),
+        &HashMap::new(),
+    );
 
     assert!(resp.profiles[&pubkey].is_agent);
     assert_eq!(

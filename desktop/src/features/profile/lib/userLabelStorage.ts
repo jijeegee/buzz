@@ -14,6 +14,13 @@
  *
  * A save waits until its scope's kept labels have been read, and is built
  * when it is written, so it always holds everything known by then.
+ *
+ * Entries saved from a relay answer also keep the kind:0 `createdAt`, when
+ * the relay last confirmed them (`verifiedAt`, this device's clock) and the
+ * agent owner validated from that same event (`ownerCreatedAt`), so a later
+ * read asks only for changes since then and keeps the whole saved profile
+ * when there are none (`readKnownUserProfiles`). Entries from earlier builds
+ * lack them and are read in full.
  */
 import { normalizeRelayUrl } from "@/features/profile/lib/selfProfileStorage";
 import type {
@@ -40,7 +47,24 @@ type CachedUserLabel = {
   /** Kept so a restart draws a known avatar at once. */
   avatarUrl: string | null;
   updatedAt: number;
+  /** The kind:0 event's `created_at`; absent in entries from earlier builds. */
+  createdAt?: number;
+  /** When the relay last confirmed this profile (device clock, seconds). */
+  verifiedAt?: number;
+  /** Id (hex) of the kind:0 event, for the relay's same-second tie-break. */
+  eventId?: string;
+  /** The `createdAt` of the event the owner fields were validated from;
+   * they are used only while it equals `createdAt`. */
+  ownerCreatedAt?: number;
+  ownerPubkey?: string | null;
+  isAgent?: boolean;
 };
+
+function positiveSeconds(value: unknown): number | undefined {
+  return typeof value === "number" && Number.isSafeInteger(value) && value > 0
+    ? value
+    : undefined;
+}
 
 type UserLabelCache = {
   version: 1;
@@ -83,6 +107,9 @@ function parseCachedUserLabel(value: unknown): CachedUserLabel | null {
   ) {
     return null;
   }
+  const ownerPubkey = nullableString(raw.ownerPubkey) ?? null;
+  const createdAt = positiveSeconds(raw.createdAt);
+  const verifiedAt = positiveSeconds(raw.verifiedAt);
   return {
     displayName,
     name,
@@ -92,6 +119,16 @@ function parseCachedUserLabel(value: unknown): CachedUserLabel | null {
       typeof raw.updatedAt === "number" && Number.isFinite(raw.updatedAt)
         ? raw.updatedAt
         : 0,
+    ...(createdAt !== undefined && { createdAt }),
+    ...(verifiedAt !== undefined && { verifiedAt }),
+    ...(typeof raw.eventId === "string" &&
+      /^[0-9a-f]{64}$/.test(raw.eventId) && { eventId: raw.eventId }),
+    ...(createdAt !== undefined &&
+      raw.ownerCreatedAt === createdAt && {
+        ownerCreatedAt: createdAt,
+        ownerPubkey,
+        isAgent: raw.isAgent === true,
+      }),
   };
 }
 
@@ -291,6 +328,45 @@ export function readCachedUserLabels(
     : undefined;
 }
 
+/**
+ * Whole saved profiles a relay read may keep when nothing changed: those with
+ * `createdAt`, `verifiedAt`, `eventId` and an owner validated from that same
+ * event.
+ * Entries from earlier builds lack them and are left out.
+ */
+export function readKnownUserProfiles(
+  scope: UserLabelScope | null,
+  pubkeys: string[],
+): Record<string, UserProfileSummary> {
+  const known: Record<string, UserProfileSummary> = {};
+  const map = scope ? labels.get(scopeKey(scope)) : undefined;
+  if (!map) return known;
+  for (const pubkey of pubkeys) {
+    const normalizedPubkey = pubkey.toLowerCase();
+    const cached = map.get(normalizedPubkey);
+    if (
+      cached?.createdAt === undefined ||
+      cached.verifiedAt === undefined ||
+      cached.eventId === undefined ||
+      cached.ownerCreatedAt !== cached.createdAt
+    ) {
+      continue;
+    }
+    known[normalizedPubkey] = {
+      displayName: cached.displayName,
+      name: cached.name,
+      avatarUrl: cached.avatarUrl,
+      nip05Handle: cached.nip05Handle,
+      ownerPubkey: cached.ownerPubkey ?? null,
+      isAgent: cached.isAgent === true,
+      createdAt: cached.createdAt,
+      verifiedAt: cached.verifiedAt,
+      eventId: cached.eventId,
+    };
+  }
+  return known;
+}
+
 export function resolveUserLabelPlaceholderData(
   previousData: UsersBatchResponse | undefined,
   scope: UserLabelScope | null,
@@ -315,6 +391,13 @@ export function writeCachedUserLabels(
       nip05Handle: profile.nip05Handle,
       avatarUrl: profile.avatarUrl,
       updatedAt: now,
+      createdAt: profile.createdAt,
+      verifiedAt: profile.verifiedAt,
+      eventId: profile.eventId,
+      // Owner fields come from the same summary, so the same event.
+      ownerCreatedAt: profile.createdAt,
+      ownerPubkey: profile.ownerPubkey,
+      isAgent: profile.isAgent,
     });
     const normalizedPubkey = pubkey.toLowerCase();
     if (label) map.set(normalizedPubkey, label);

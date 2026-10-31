@@ -1,5 +1,6 @@
 import { invokeTauri } from "@/shared/api/tauri";
 import type {
+  KnownProfile,
   Profile,
   UpdateProfileInput,
   UserProfileSummary,
@@ -21,11 +22,14 @@ type RawProfile = {
 type RawUserProfileSummary = Omit<RawProfile, "pubkey" | "about"> & {
   name?: string | null;
   is_agent?: boolean;
+  created_at?: number;
+  event_id?: string;
 };
 
 type RawUsersBatchResponse = {
   profiles: Record<string, RawUserProfileSummary>;
   missing: string[];
+  unchanged?: string[];
 };
 
 type RawUserSearchResult = RawUserProfileSummary & { pubkey: string };
@@ -57,6 +61,10 @@ function fromRawUserProfileSummary(
     nip05Handle: profile.nip05_handle,
     ownerPubkey: profile.owner_pubkey,
     isAgent: profile.is_agent ?? false,
+    ...(typeof profile.created_at === "number" &&
+      profile.created_at > 0 && { createdAt: profile.created_at }),
+    ...(typeof profile.event_id === "string" &&
+      /^[0-9a-f]{64}$/.test(profile.event_id) && { eventId: profile.event_id }),
   };
 }
 
@@ -101,21 +109,31 @@ export async function getUserProfile(pubkey?: string): Promise<Profile> {
   return fromRawProfile(profile);
 }
 
+/**
+ * Reads other people's profiles. `known` holds the profiles already held:
+ * only what changed since their `verifiedAt` is fetched, and one with
+ * nothing newer comes back in `unchanged` instead of `missing`. Returned
+ * profiles are stamped `verifiedAt` now.
+ */
 export async function getUsersBatch(
   pubkeys: string[],
+  known?: Record<string, KnownProfile>,
 ): Promise<UsersBatchResponse> {
+  const verifiedAt = Math.floor(Date.now() / 1000);
   const response = await invokeTauri<RawUsersBatchResponse>("get_users_batch", {
     pubkeys,
+    ...(known && Object.keys(known).length > 0 && { known }),
   });
 
   return {
     profiles: Object.fromEntries(
       Object.entries(response.profiles).map(([pubkey, profile]) => [
         pubkey,
-        fromRawUserProfileSummary(profile),
+        { ...fromRawUserProfileSummary(profile), verifiedAt },
       ]),
     ),
     missing: response.missing,
+    ...(response.unchanged?.length ? { unchanged: response.unchanged } : {}),
   };
 }
 

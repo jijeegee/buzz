@@ -19,6 +19,11 @@ import 'profile_snapshot.dart';
 /// asked for again once this run, and the relay's answer replaces it
 /// (docs/message-sync.md#launch-order).
 ///
+/// A held profile whose kind:0 event and last relay confirmation are known
+/// is asked for only if it may have changed since
+/// ([NostrFilters.profilesSince]); no answer means it is unchanged and stays.
+/// Only pubkeys without both can come back missing.
+///
 /// Lookups requested via [get] or [preload] are coalesced into a single
 /// kind:0 batch query (NIP-01 `authors` filter) every 50ms. Larger requests
 /// drain sequentially in pages bounded by the relay response limit.
@@ -29,6 +34,13 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
   final Set<String> _pending = {};
   final _pushExport = PushPresentationExportRecovery();
   final Map<String, ({int createdAt, String eventId})> _profileEventOrders = {};
+
+  /// When (this device's clock, unix seconds) the relay last answered a read
+  /// covering each held profile.
+  final Map<String, int> _verifiedAt = {};
+
+  /// The signed kind:0 event each held profile came from, when known.
+  final Map<String, NostrEvent> _profileEvents = {};
   int _generation = 0;
   bool _flushInFlight = false;
   Future<void> _verificationQueue = Future.value();
@@ -52,6 +64,8 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
     _lease = lease;
     _generation++;
     _profileEventOrders.clear();
+    _verifiedAt.clear();
+    _profileEvents.clear();
     _saved.clear();
     _unsaved.clear();
     final generation = _generation;
@@ -127,11 +141,13 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       final session = ref.read(relaySessionProvider.notifier);
       for (final batch in _profileQueryBatches(normalized)) {
         if (!_isCurrent(generation)) return false;
+        final sentAt = _now();
         final events = await session.fetchHistory(
           NostrFilters.profilesBatch(batch),
         );
         if (!_isCurrent(generation)) return false;
         if (!await _verifyAndMerge(events, generation)) return false;
+        _markVerified(batch, sentAt);
       }
       return true;
     } catch (_) {
@@ -178,11 +194,18 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       var remaining = pubkeys.length;
       for (final batch in _profileQueryBatches(pubkeys)) {
         if (!_isCurrent(generation)) return;
-        final events = await session.fetchHistory(
-          NostrFilters.profilesBatch(batch),
-        );
+        final known = _known(batch);
+        // One request per batch: a lone filter keeps the history REQ; more
+        // (at most kMaxFiltersPerReq) go together in one /query.
+        final filters = NostrFilters.profilesSince(batch, known);
+        final sentAt = _now();
+        final events = filters.length == 1
+            ? await session.fetchHistory(filters.single)
+            : await session.queryRelay(filters);
         if (!_isCurrent(generation)) return;
         if (!await _verifyAndMerge(events, generation)) return;
+        // Answered ones and known ones left out (unchanged) are confirmed.
+        _markVerified(batch, sentAt);
         remaining -= batch.length;
         if (remaining == 0) {
           // All requested pages are ready. Native export does not gate readers.
@@ -192,8 +215,11 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
         if (communityID != null) {
           // Drain each page before fetching another, retaining at most one raw
           // response while later requests coalesce as pubkeys in _pending.
+          // Known profiles left out are unchanged: export their saved
+          // events again so the push cache stays fresh, as the answer would.
+          final exported = [...events, ..._unchangedEvents(known.keys, events)];
           await _pushExport.export(
-            () => cacheKuzzPushProfileEvents(communityID, events),
+            () => cacheKuzzPushProfileEvents(communityID, exported),
           );
         }
       }
@@ -219,11 +245,49 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
     }
   }
 
+  /// The last confirmation of each of [pubkeys] whose cached profile came
+  /// from a known kind:0 event and has one; the rest are unknown.
+  Map<String, int> _known(List<String> pubkeys) => {
+    for (final pubkey in pubkeys)
+      if (state.containsKey(pubkey) && _profileEventOrders.containsKey(pubkey))
+        pubkey: ?_verifiedAt[pubkey],
+  };
+
+  /// Notes that the relay answered a read sent at [sentAt] covering
+  /// [pubkeys]: each one now held from a known event is confirmed, and saved.
+  void _markVerified(List<String> pubkeys, int sentAt) {
+    for (final pubkey in pubkeys) {
+      if (!state.containsKey(pubkey) ||
+          !_profileEventOrders.containsKey(pubkey)) {
+        continue;
+      }
+      _verifiedAt[pubkey] = sentAt;
+      _unsaved.add(pubkey);
+    }
+    _noteChanged(const []);
+  }
+
+  /// The held events of [known] pubkeys that [answer] left out.
+  List<NostrEvent> _unchangedEvents(
+    Iterable<String> known,
+    List<NostrEvent> answer,
+  ) {
+    final answered = {for (final event in answer) event.pubkey.toLowerCase()};
+    return [
+      for (final pubkey in known)
+        if (!answered.contains(pubkey)) ?_profileEvents[pubkey],
+    ];
+  }
+
+  static int _now() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
   void _scheduleBatch() {
     if (_flushInFlight) return;
     _batchTimer ??= Timer(const Duration(milliseconds: 50), _flushPending);
   }
 
+  /// Merges [events]; an answer counts only when the relay would keep it over
+  /// the held event (the `since` margin can return unchanged profiles).
   Future<bool> _verifyAndMerge(List<NostrEvent> events, int generation) {
     // Both refresh and preload share one worker slot. Keep this queue across
     // community changes so an old worker cannot overlap a new community's job.
@@ -231,16 +295,31 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       if (!_isCurrent(generation)) return false;
       // Match live-cache admission before parsing. In particular, a malformed
       // stale profile must not fail a refresh that previously ignored it.
-      final pending = [
-        for (final event in events)
-          if (event.kind == 0 &&
-              _isNewer(event.pubkey.toLowerCase(), event.createdAt, event.id))
-            event,
-      ];
+      // Whatever the relay keeps wins: a newer created_at, or the lower id
+      // on a tie (NIP-01). The held event itself fills in a missing saved
+      // copy (profiles saved before events were kept).
+      final pending = <NostrEvent>[];
+      var filled = false;
+      for (final event in events) {
+        if (event.kind != 0) continue;
+        final pubkey = event.pubkey.toLowerCase();
+        if (_isNewer(pubkey, event.createdAt, event.id)) {
+          pending.add(event);
+        } else if (_profileEventOrders[pubkey]?.eventId == event.id &&
+            state.containsKey(pubkey) &&
+            !_profileEvents.containsKey(pubkey)) {
+          _profileEvents[pubkey] = event;
+          _unsaved.add(pubkey);
+          filled = true;
+        }
+      }
+      if (filled) _noteChanged(const []);
       if (pending.isEmpty) return true;
       final profiles = await ref.read(profileEventBatchParserProvider)(pending);
       if (!_isCurrent(generation)) return false;
-      _mergeParsedProfiles(profiles);
+      _mergeParsedProfiles(profiles, {
+        for (final event in pending) event.id: event,
+      });
       return true;
     });
     // Callers receive the original error; only the sequencing tail recovers so
@@ -254,7 +333,10 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
 
   bool _isCurrent(int generation) => ref.mounted && generation == _generation;
 
-  void _mergeParsedProfiles(List<ParsedProfileEvent> profiles) {
+  void _mergeParsedProfiles(
+    List<ParsedProfileEvent> profiles,
+    Map<String, NostrEvent> eventsById,
+  ) {
     // Read the current state after the isolate completes: live events and other
     // batches may have installed newer profiles while this batch was parsing.
     final updated = Map<String, UserProfile>.from(state);
@@ -268,6 +350,11 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
         createdAt: parsed.createdAt,
         eventId: parsed.eventId,
       );
+      if (eventsById[parsed.eventId] case final event?) {
+        _profileEvents[parsed.profile.pubkey] = event;
+      } else {
+        _profileEvents.remove(parsed.profile.pubkey);
+      }
       _saved.remove(parsed.profile.pubkey);
       _unsaved.add(parsed.profile.pubkey);
       changed = true;
@@ -295,6 +382,7 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
       createdAt: event.createdAt,
       eventId: event.id,
     );
+    _profileEvents[pubkey] = event;
     _saved.remove(pubkey);
     _noteChanged([pubkey]);
     return true;
@@ -326,6 +414,8 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
           createdAt: saved.createdAt,
           eventId: saved.eventId,
         );
+        if (saved.verifiedAt > 0) _verifiedAt[pubkey] = saved.verifiedAt;
+        if (saved.event case final event?) _profileEvents[pubkey] = event;
       }
     }
     if (restored.isEmpty) return;
@@ -356,6 +446,8 @@ class UserCacheNotifier extends Notifier<Map<String, UserProfile>> {
             profile,
             createdAt: _profileEventOrders[pubkey]?.createdAt ?? 0,
             eventId: _profileEventOrders[pubkey]?.eventId ?? '',
+            verifiedAt: _verifiedAt[pubkey] ?? 0,
+            event: _profileEvents[pubkey],
           ),
     };
     _unsaved.clear();

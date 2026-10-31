@@ -142,11 +142,30 @@ export type UserProfileSummary = {
   nip05Handle: string | null;
   ownerPubkey: string | null;
   isAgent?: boolean;
+  /** `created_at` (unix seconds) of the kind:0 event this came from, so a
+   * later read asks only for a newer one. Absent when unknown. */
+  createdAt?: number;
+  /** This device's clock (unix seconds) when the relay last answered a read
+   * covering this profile; later reads ask only for changes since then. */
+  verifiedAt?: number;
+  /** Id (hex) of that kind:0 event: the relay keeps the lowest id among
+   * same-second edits. */
+  eventId?: string;
+};
+
+/** A held profile as a batch read is told about it. */
+export type KnownProfile = {
+  createdAt: number;
+  verifiedAt: number;
+  eventId: string;
 };
 
 export type UsersBatchResponse = {
   profiles: Record<string, UserProfileSummary>;
+  /** Asked-for pubkeys with no profile on the relay and none held. */
   missing: string[];
+  /** Pubkeys whose held profile (passed as `known`) is still current. */
+  unchanged?: string[];
 };
 
 export type UserSearchResult = {

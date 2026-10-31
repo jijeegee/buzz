@@ -612,14 +612,43 @@ saved 1 s after the relay's list is shown and drawn at launch until the
 relay's list replaces it; it never counts as the loaded list nor keeps a
 room for forgetting, and an account or server switch clears the shown list
 at once. Other people's profiles (`profile:<pubkey>`, newest 500, saved
-after each batch of changes) are drawn at launch and each is asked for again once;
-the relay's answer overwrites it. The account's own profile
+after each batch of changes) are drawn at launch and each is checked again once
+([Rechecking stored profiles](#rechecking-stored-profiles)). The account's own profile
 (`self_profile`) draws before its fetch. Chats rows, search results,
 the thread's group button, notifications and deep links open a room the
 list lacks from its Chats row (or its id) at once; a deep link to a room no
 row names waits for the relay's list, and a room missing from it keeps the
 not-found handling. Mobile: `snapshot.dart`, `channel_list_snapshot.dart`,
 `profile_snapshot.dart`, `chat_row_channel.dart`.
+
+### Rechecking stored profiles
+
+A stored profile of another person is asked for again only as "newer than
+what I hold", so an unchanged one costs no download. Desktop and mobile
+behave the same.
+
+- **Held with it:** the kind:0's `created_at` and event id, and
+  `verifiedAt`: this device's clock when a relay read covering that person
+  was sent and succeeded. An entry without all three (saved by an earlier
+  build) is unknown and read in full once.
+- **Request:** unknown people share one full filter. Known people are sorted
+  by `verifiedAt` and cut at the largest gaps into groups, at most 10
+  filters in all; each group asks `since = max(0, oldest verifiedAt − 86400)`.
+  The day of margin covers clock skew between devices. Several filters go
+  in one `/query` request.
+- **Answer:** an event replaces the held profile only if the relay would
+  keep it over the held one (newer `created_at`, or the same second and a
+  lower id). Profiles edited within the margin come back and are dropped.
+  A known person the answer leaves out is unchanged: kept, its
+  `verifiedAt` moved to the request's time, never treated as missing. Only
+  an unknown person left out is missing. A failed read stamps nothing.
+- **Desktop:** the stored owner (`ownerPubkey`, `isAgent`) is reused only
+  when it was taken from the same kind:0 (`ownerCreatedAt == createdAt`);
+  otherwise that person is read in full.
+- **Mobile:** the signed kind:0 (up to 16 KB) is stored too, so an
+  unchanged profile is re-exported to the iOS push cache as before.
+- **Limit:** a kind:0 removed on the relay is not noticed; devices that hold
+  it keep showing it.
 
 ### Forgetting a room
 

@@ -7,6 +7,14 @@ import 'nostr_models.dart';
 /// than this must be split into multiple REQs, each within the cap.
 const int kMaxExplicitChannelValues = 128;
 
+/// Filters the relay accepts in one REQ. Mirrors `MAX_FILTERS_PER_REQ` in
+/// `crates/kuzz-relay/src/protocol.rs`.
+const int kMaxFiltersPerReq = 10;
+
+/// Margin [NostrFilters.profilesSince] subtracts from a profile's last
+/// confirmation, covering clock skew between this device and the relay.
+const int profileSinceMarginSeconds = 86400;
+
 /// Canonical [NostrFilter] constructors for common Kuzz queries.
 ///
 /// Centralising filter shapes keeps relay queries consistent across providers
@@ -41,6 +49,57 @@ abstract final class NostrFilters {
   /// Batch user profiles (kind:0) for multiple pubkeys.
   static NostrFilter profilesBatch(List<String> pubkeys) =>
       NostrFilter(kinds: [0], authors: pubkeys, limit: pubkeys.length);
+
+  /// Profiles (kind:0) for [pubkeys], asking only for ones that may have
+  /// changed since the relay last confirmed them ([verifiedAt], this
+  /// device's clock in unix seconds).
+  ///
+  /// Pubkeys with no known confirmation share one full filter. Known ones
+  /// are sorted by [verifiedAt] and cut at the largest gaps into groups so the
+  /// whole REQ stays within [kMaxFiltersPerReq] (pubkeys confirmed in the
+  /// same launch share a group). Each group asks `since` its oldest
+  /// confirmation minus [profileSinceMarginSeconds] for clock skew, so it may
+  /// return profiles already held; callers drop answers not newer than theirs.
+  static List<NostrFilter> profilesSince(
+    List<String> pubkeys,
+    Map<String, int> verifiedAt,
+  ) {
+    final unknown = [
+      for (final pubkey in pubkeys)
+        if (!verifiedAt.containsKey(pubkey)) pubkey,
+    ];
+    final known = [
+      for (final pubkey in pubkeys)
+        if (verifiedAt.containsKey(pubkey)) pubkey,
+    ]..sort((a, b) => verifiedAt[a]!.compareTo(verifiedAt[b]!));
+    final filters = [if (unknown.isNotEmpty) profilesBatch(unknown)];
+    if (known.isEmpty) return filters;
+    int at(int index) => verifiedAt[known[index]]!;
+    // Cut before the indices with the largest positive gaps.
+    final gaps = [
+      for (var i = 1; i < known.length; i++)
+        if (at(i) > at(i - 1)) i,
+    ]..sort((a, b) => (at(b) - at(b - 1)).compareTo(at(a) - at(a - 1)));
+    final cuts = [
+      ...gaps.take(kMaxFiltersPerReq - filters.length - 1),
+      known.length,
+    ]..sort();
+    var start = 0;
+    for (final end in cuts) {
+      final group = known.sublist(start, end);
+      final since = at(start) - profileSinceMarginSeconds;
+      filters.add(
+        NostrFilter(
+          kinds: [0],
+          authors: group,
+          since: since < 0 ? 0 : since,
+          limit: group.length,
+        ),
+      );
+      start = end;
+    }
+    return filters;
+  }
 
   /// Channel messages (all event kinds that appear in channels).
   static NostrFilter messages(

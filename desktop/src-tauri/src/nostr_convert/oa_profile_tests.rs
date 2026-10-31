@@ -72,7 +72,11 @@ fn assert_ownership(event: &Event, expected: Option<String>) {
     assert_eq!(search.is_agent, expected.is_some());
     assert_eq!(search.pubkey, event.pubkey.to_hex());
     let pubkey = event.pubkey.to_hex();
-    let batch = users_batch_from_events(std::slice::from_ref(event), std::slice::from_ref(&pubkey));
+    let batch = users_batch_from_events(
+        std::slice::from_ref(event),
+        std::slice::from_ref(&pubkey),
+        &Default::default(),
+    );
     assert_eq!(batch.profiles[&pubkey].owner_pubkey, expected);
     assert_eq!(batch.profiles[&pubkey].is_agent, expected.is_some());
     let owners = verified_agent_owners_from_profiles(std::slice::from_ref(event));

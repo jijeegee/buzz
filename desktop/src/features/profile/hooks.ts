@@ -43,12 +43,18 @@ import {
 } from "@/features/profile/lib/selfProfileStorage";
 import {
   getUserLabelsVersion,
+  readKnownUserProfiles,
   resolveUserLabelPlaceholderData,
   subscribeUserLabels,
+  type UserLabelScope,
   writeCachedUserLabels,
 } from "@/features/profile/lib/userLabelStorage";
 import { storeScope } from "@/features/messages/lib/paintCoverage";
-import { createUsersBatchLoader } from "@/features/profile/lib/usersBatchLoader";
+import {
+  applyUsersBatchAnswer,
+  createUsersBatchLoader,
+  newerHeldProfile,
+} from "@/features/profile/lib/usersBatchLoader";
 import { useCommunities } from "@/features/communities/useCommunities";
 import { updateCachedChannelMemberDisplayName } from "@/features/channels/channelMemberProfileCache";
 
@@ -355,6 +361,31 @@ function usersBatchLoaderFor(queryClient: QueryClient) {
 }
 
 /**
+ * The profiles already held for `pubkeys` (this session's entries, any age,
+ * or ones saved on the device), the newer one when both exist. Their
+ * `createdAt`/`verifiedAt` let the relay read skip unchanged ones.
+ */
+function heldUserProfiles(
+  queryClient: QueryClient,
+  scope: UserLabelScope | null,
+  pubkeys: string[],
+): Record<string, UserProfileSummary> {
+  const saved = readKnownUserProfiles(scope, pubkeys);
+  const held: Record<string, UserProfileSummary> = {};
+  for (const pubkey of pubkeys) {
+    const entry = queryClient.getQueryData<UsersBatchEntry>(
+      usersBatchEntryKey(pubkey),
+    );
+    const summary = newerHeldProfile(
+      entry?.summary ?? undefined,
+      saved[pubkey],
+    );
+    if (summary) held[pubkey] = summary;
+  }
+  return held;
+}
+
+/**
  * What the batch can show before the relay answers: stored labels, overlaid
  * by this session's per-pubkey entries, overlaid by the previous answer.
  * Undefined when nothing is known.
@@ -425,15 +456,25 @@ export function useUsersBatchQuery(
         }
       }
       if (toFetch.length > 0) {
+        // Profiles already held are asked only for a newer one; an
+        // unchanged one is kept as it is and is never missing.
+        const held = heldUserProfiles(queryClient, labelScope, toFetch);
+        // Checked as of before the read was asked.
+        const verifiedAt = Math.floor(Date.now() / 1000);
         const loader = usersBatchLoaderFor(queryClient);
-        const fresh = await loader(toFetch);
+        const answer = await loader(toFetch, held);
         loader.assertActive();
+        const fresh = applyUsersBatchAnswer(toFetch, held, answer, verifiedAt);
         writeCachedUserLabels(labelScope, fresh.profiles, fresh.missing);
+        const freshMissing = new Set(fresh.missing);
         for (const pubkey of toFetch) {
-          const summary = fresh.profiles[pubkey] ?? null;
+          const summary = fresh.profiles[pubkey];
+          // Neither (an unchanged answer with no held profile anywhere, which
+          // the loader rules out): leave it to be asked again.
+          if (!summary && !freshMissing.has(pubkey)) continue;
           queryClient.setQueryData<UsersBatchEntry>(
             usersBatchEntryKey(pubkey),
-            { summary, fetchedAt: now },
+            { summary: summary ?? null, fetchedAt: now },
           );
           if (summary) profiles[pubkey] = summary;
           else missing.push(pubkey);

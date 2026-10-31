@@ -742,6 +742,8 @@ type RawUserProfileSummary = {
   nip05_handle: string | null;
   owner_pubkey: string | null;
   is_agent?: boolean;
+  created_at?: number;
+  event_id?: string;
 };
 
 type RawUsersBatchResponse = {
@@ -7193,9 +7195,14 @@ async function handleGetUserProfile(
   };
 }
 
+/** Mock profiles have no event; they all read as this kind:0 `created_at`. */
+const MOCK_PROFILE_CREATED_AT = 1_700_000_000;
+
 async function handleGetUsersBatch(
   args: {
     pubkeys: string[];
+    /** Held profiles (`createdAt`/`verifiedAt`); the mock reads in full. */
+    known?: Record<string, unknown>;
   },
   config: E2eConfig | undefined,
 ) {
@@ -7232,6 +7239,7 @@ async function handleGetUsersBatch(
         nip05_handle: profile.nip05_handle,
         owner_pubkey: profile.owner_pubkey,
         is_agent: profile.is_agent ?? false,
+        created_at: MOCK_PROFILE_CREATED_AT,
       };
     }
 
@@ -7265,6 +7273,8 @@ async function handleGetUsersBatch(
               Array.isArray(tag) && tag[0] === "auth" && tag.length === 4,
           )
         : false,
+      created_at: ev.created_at ?? MOCK_PROFILE_CREATED_AT,
+      event_id: ev.id,
     };
   }
   for (const pubkey of args.pubkeys) {
@@ -7286,6 +7296,7 @@ async function handleGetUsersBatch(
       nip05_handle: profile.nip05_handle,
       owner_pubkey: profile.owner_pubkey,
       is_agent: profile.is_agent ?? false,
+      created_at: MOCK_PROFILE_CREATED_AT,
     };
   }
   const missing = args.pubkeys.filter((p) => !found.has(p.toLowerCase()));

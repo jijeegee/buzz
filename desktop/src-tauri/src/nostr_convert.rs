@@ -358,18 +358,34 @@ pub fn profile_info_from_event(event: &Event) -> Result<ProfileInfo, String> {
 /// Convert multiple kind:0 events to [`UsersBatchResponse`].
 ///
 /// `requested_pubkeys` lets us populate `missing` for any pubkey that had
-/// no metadata event in the input set.
+/// no metadata event in the input set. `known` holds the `created_at` and
+/// event id of the profile the caller already has per pubkey: an event that
+/// does not replace it is dropped, and a known pubkey without one is
+/// `unchanged`, never `missing`.
 pub fn users_batch_from_events(
     events: &[Event],
     requested_pubkeys: &[String],
+    known: &HashMap<String, (i64, String)>,
 ) -> UsersBatchResponse {
-    // Keep only the most recent kind:0 per pubkey.
+    // Keep only the replacing kind:0 per pubkey.
     let mut latest: HashMap<String, &Event> = HashMap::new();
     for ev in events {
         let pk = ev.pubkey.to_hex();
+        let (created_at, id) = (ev.created_at.as_secs() as i64, ev.id.to_hex());
+        if known
+            .get(&pk)
+            .is_some_and(|(held_at, held_id)| !replaces(created_at, &id, *held_at, held_id))
+        {
+            continue;
+        }
         let take = match latest.get(&pk) {
             None => true,
-            Some(prev) => ev.created_at > prev.created_at,
+            Some(prev) => replaces(
+                created_at,
+                &id,
+                prev.created_at.as_secs() as i64,
+                &prev.id.to_hex(),
+            ),
         };
         if take {
             latest.insert(pk, ev);
@@ -391,17 +407,29 @@ pub fn users_batch_from_events(
             nip05_handle: v.get("nip05").and_then(Value::as_str).map(str::to_string),
             is_agent: owner_pubkey.is_some(),
             owner_pubkey,
+            created_at: ev.created_at.as_secs() as i64,
+            event_id: ev.id.to_hex(),
         };
         profiles.insert(pk.clone(), summary);
     }
 
-    let missing: Vec<String> = requested_pubkeys
+    let (unchanged, missing): (Vec<String>, Vec<String>) = requested_pubkeys
         .iter()
         .filter(|pk| !profiles.contains_key(*pk))
         .cloned()
-        .collect();
+        .partition(|pk| known.contains_key(pk));
 
-    UsersBatchResponse { profiles, missing }
+    UsersBatchResponse {
+        profiles,
+        missing,
+        unchanged,
+    }
+}
+
+/// Whether a replaceable event (`created_at`, hex `id`) replaces a held one:
+/// newer, or the same second with a lower id, the relay's tie-break.
+fn replaces(created_at: i64, id: &str, held_at: i64, held_id: &str) -> bool {
+    created_at > held_at || (created_at == held_at && id < held_id)
 }
 
 // ── kind:1 (notes) ──────────────────────────────────────────────────────────

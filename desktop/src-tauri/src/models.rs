@@ -54,12 +54,25 @@ pub struct UserProfileSummaryInfo {
     pub owner_pubkey: Option<String>,
     #[serde(default)]
     pub is_agent: bool,
+    /// `created_at` (unix seconds) of the kind:0 event this summary came
+    /// from. Clients keep it so a later batch read asks only for newer ones.
+    #[serde(default)]
+    pub created_at: i64,
+    /// Id (hex) of that kind:0 event: breaks same-second ties the way the
+    /// relay does (lowest id wins).
+    #[serde(default)]
+    pub event_id: String,
 }
 
 #[derive(Serialize, Deserialize)]
 pub struct UsersBatchResponse {
     pub profiles: HashMap<String, UserProfileSummaryInfo>,
+    /// Requested pubkeys with no profile and none held by the caller.
     pub missing: Vec<String>,
+    /// Pubkeys the caller already held a profile for that is still current:
+    /// keep the held one. Never reported as missing.
+    #[serde(default)]
+    pub unchanged: Vec<String>,
 }
 
 #[derive(Serialize, Deserialize)]
