@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/read_state/read_state_time.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/relay/relay_connection_epoch.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
@@ -74,7 +75,10 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
   @override
   Future<HomeFeedResponse> build() async {
     ref.watch(relayConfigProvider);
-    final sessionState = ref.watch(relaySessionProvider);
+    // Once per usable connection, not per status step: each step (and each
+    // reconnect attempt) would fetch the feed and resubscribe again. A
+    // reconnect refetches, so nothing missed while away is lost.
+    ref.watch(relayConnectionEpochProvider);
     // React to the DM channel set (loading → data, membership changes) so a
     // cold start where channels resolve after the first fetch still surfaces
     // DMs without a manual refresh.
@@ -101,7 +105,7 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     });
 
     final response = await _fetch();
-    if (sessionState.status == SessionStatus.connected &&
+    if (ref.read(relaySessionProvider).status == SessionStatus.connected &&
         generation == _subscriptionGeneration) {
       unawaited(_subscribeLive(generation));
     }

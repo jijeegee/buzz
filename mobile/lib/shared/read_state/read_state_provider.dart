@@ -84,7 +84,11 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     _forcedUnreadContexts.clear();
 
     final relayConfig = ref.watch(relayConfigProvider);
-    ref.watch(relaySessionProvider);
+    // The session, not its connection state: each status step (and each
+    // reconnect attempt) would build a new manager that fetches and
+    // subscribes again, and drop forced-unread flags. Becoming connected
+    // syncs the manager below.
+    ref.watch(relaySessionProvider.notifier);
     final activeCommunity = ref.watch(activeCommunityProvider).value;
 
     final String pubkey;
@@ -163,7 +167,13 @@ class ReadStateNotifier extends Notifier<ReadStateState> {
     });
 
     Future.microtask(() async {
-      await manager.initialize();
+      if (_manager != manager) return;
+      // A session not connected yet drops the fetch: becoming connected
+      // syncs the manager instead (the listener above).
+      await manager.initialize(
+        syncRemote:
+            ref.read(relaySessionProvider).status == SessionStatus.connected,
+      );
       if (_manager != manager) return;
       _isInitialized = true;
       _emitManagerState(manager);

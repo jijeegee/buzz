@@ -6,6 +6,7 @@ import 'package:nostr/nostr.dart' as nostr;
 
 import '../../shared/crypto/nip44.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/relay/relay_connection_epoch.dart';
 
 /// NIP-ER event reminder kind — matches desktop's `KIND_EVENT_REMINDER`.
 const kindEventReminder = 30300;
@@ -152,7 +153,8 @@ class RemindersNotifier extends AsyncNotifier<List<Reminder>> {
   @override
   Future<List<Reminder>> build() {
     ref.watch(relayConfigProvider);
-    ref.watch(relaySessionProvider);
+    // Once per usable connection, not per session status step.
+    ref.watch(relayConnectionEpochProvider);
     return _fetch();
   }
 

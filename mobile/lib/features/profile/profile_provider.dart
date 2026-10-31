@@ -11,6 +11,7 @@ import '../../shared/profile/profile_snapshot.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/relay/relay_connection_epoch.dart';
 import '../../shared/theme/theme.dart';
 
 /// Signals that a profile write no longer belongs to the active community.
@@ -81,7 +82,8 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
   Future<UserProfile?> build() {
     final config = ref.watch(relayConfigProvider);
     final pubkey = ref.watch(myPubkeyProvider);
-    ref.watch(relaySessionProvider);
+    // Once per usable connection, not per session status step.
+    ref.watch(relayConnectionEpochProvider);
     final context = _ProfileWriteContext(
       config: config,
       pubkey: pubkey,

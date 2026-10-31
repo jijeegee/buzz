@@ -59,6 +59,10 @@ class ReadStateManager {
 
   Timer? _debounceTimer;
   void Function()? _unsubscribeLive;
+
+  /// The newest remote sync; an older one still waiting on its fetch or
+  /// subscription stops, so overlapping syncs keep one live subscription.
+  int _remoteSyncGeneration = 0;
   bool _initialized = false;
   bool _disposed = false;
   bool _isPublishing = false;
@@ -93,25 +97,21 @@ class ReadStateManager {
 
   int? getEffectiveTimestamp(String contextId) => _effectiveState[contextId];
 
-  Future<void> initialize() async {
+  /// Loads the read state. [syncRemote] false (the session is not connected
+  /// yet) keeps it local; [reinitializeRemote] syncs once connected.
+  Future<void> initialize({bool syncRemote = true}) async {
     if (_initialized || _disposed) return;
     _initialized = true;
     debugPrint(
       '[ReadStateManager] initialize pubkey=${pubkey.substring(0, min(8, pubkey.length))}… clientId=${_clientId.substring(0, 8)}… slotId=$_slotId',
     );
 
-    if (!_remoteEnabled || _relaySession == null) {
+    if (!_remoteEnabled || _relaySession == null || !syncRemote) {
       _onChanged();
       return;
     }
 
-    await _fetchAndMerge();
-    await _startLiveSubscription();
-    if (!_isIdenticalToLastPublished(_currentContexts())) {
-      _schedulePublish();
-    }
-
-    _onChanged();
+    await _syncRemote();
     debugPrint(
       '[ReadStateManager] initialize complete maxFetchedCreatedAt=$_maxFetchedCreatedAt contexts=${_effectiveState.length}',
     );
@@ -142,10 +142,21 @@ class ReadStateManager {
     if (_isPublishing) {
       await _publishCompleter?.future;
     }
+    await _syncRemote();
+  }
+
+  /// Fetches the remote read state, then replaces the live subscription. A
+  /// newer sync started meanwhile (a reconnect overlapping the first load)
+  /// owns the subscription; this one stops.
+  Future<void> _syncRemote() async {
+    if (_disposed) return;
+    final generation = ++_remoteSyncGeneration;
     _unsubscribeLive?.call();
     _unsubscribeLive = null;
     await _fetchAndMerge();
-    await _startLiveSubscription();
+    if (_disposed || generation != _remoteSyncGeneration) return;
+    await _startLiveSubscription(generation);
+    if (_disposed || generation != _remoteSyncGeneration) return;
     if (!_isIdenticalToLastPublished(_currentContexts())) {
       _schedulePublish();
     }
@@ -271,7 +282,7 @@ class ReadStateManager {
     }
   }
 
-  Future<void> _startLiveSubscription() async {
+  Future<void> _startLiveSubscription(int generation) async {
     try {
       final unsub = await _relaySession!.subscribe(
         NostrFilter(
@@ -284,7 +295,7 @@ class ReadStateManager {
         ),
         _handleIncomingEvent,
       );
-      if (_disposed) {
+      if (_disposed || generation != _remoteSyncGeneration) {
         unsub.call();
         return;
       }
