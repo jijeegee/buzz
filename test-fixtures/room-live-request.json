@@ -1,0 +1,8 @@
+{
+  "_doc": "The open room's own live REQ (docs/message-sync.md#open-room-req): one filter per kind, always all of them, live only, for the room in #h. Read by desktop relayRoomLiveRegistry.test.mjs and mobile room_live_request_test.dart.",
+  "room": "11111111-0000-4000-8000-000000000001",
+  "filters": [
+    { "kinds": [20002], "#h": ["11111111-0000-4000-8000-000000000001"], "limit": 0 },
+    { "kinds": [40110], "#h": ["11111111-0000-4000-8000-000000000001"], "limit": 0 }
+  ]
+}

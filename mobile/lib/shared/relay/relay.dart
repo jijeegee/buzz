@@ -15,5 +15,6 @@ export 'relay_provider.dart';
 export 'relay_rate_limit_gate.dart';
 export 'relay_session.dart';
 export 'relay_socket.dart';
+export 'room_live_request.dart';
 export 'service_address.dart';
 export 'signed_event_relay.dart';
