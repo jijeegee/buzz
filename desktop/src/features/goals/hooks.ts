@@ -2,7 +2,7 @@ import * as React from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useUsersBatchQuery } from "@/features/profile/hooks";
-import { relayClient } from "@/shared/api/relayClient";
+import { roomLive } from "@/shared/api/relayRoomLive";
 import {
   applyGoalOp,
   applyGoalOps,
@@ -25,8 +25,9 @@ const goalHistoryKey = (channelId: string | null) => [
 ];
 
 /**
- * The live goal tree of a channel or DM. A relay subscription refetches it
- * whenever anyone (human or agent) publishes a new revision.
+ * The live goal tree of a channel or DM. The room's live REQ refetches it
+ * whenever anyone (human or agent) publishes a new revision, and after a
+ * reconnect.
  */
 export function useGoalTreeQuery(channelId: string | null, enabled = true) {
   const queryClient = useQueryClient();
@@ -34,39 +35,17 @@ export function useGoalTreeQuery(channelId: string | null, enabled = true) {
 
   React.useEffect(() => {
     if (!active || !channelId) return;
-    let disposed = false;
-    let cleanup: (() => void) | undefined;
-    relayClient
-      .subscribeLive(
-        {
-          kinds: [KIND_GOAL_TREE],
-          "#h": [channelId],
-          limit: 1,
-          since: Math.floor(Date.now() / 1000),
-        },
-        () => {
-          void queryClient.invalidateQueries({
-            queryKey: goalTreeKey(channelId),
-          });
-          void queryClient.invalidateQueries({
-            queryKey: goalHistoryKey(channelId),
-          });
-        },
-      )
-      .then((dispose) => {
-        if (disposed) {
-          void dispose();
-          return;
-        }
-        cleanup = () => void dispose();
-      })
-      .catch((error) => {
-        console.error("[goals] subscription failed:", error);
+    // The open room's own REQ (shared with typing) carries new revisions; a
+    // reconnect may have missed some, so it reads the tree again then too.
+    const refetch = () => {
+      void queryClient.invalidateQueries({ queryKey: goalTreeKey(channelId) });
+      void queryClient.invalidateQueries({
+        queryKey: goalHistoryKey(channelId),
       });
-    return () => {
-      disposed = true;
-      cleanup?.();
     };
+    return roomLive.listen(channelId, KIND_GOAL_TREE, refetch, {
+      onResync: refetch,
+    });
   }, [active, channelId, queryClient]);
 
   return useQuery({

@@ -403,20 +403,6 @@ export class RelayClient {
     );
   }
 
-  async subscribeToTypingIndicators(
-    channelId: string,
-    onEvent: (event: RelayEvent) => void,
-  ) {
-    return this.subscribe(
-      {
-        kinds: [KIND_TYPING_INDICATOR],
-        "#h": [channelId],
-        limit: 10,
-        since: Math.floor(Date.now() / 1_000) - 10,
-      },
-      onEvent,
-    );
-  }
   async publishUserStatus(status: UserStatusInput): Promise<RelayEvent> {
     await this.ensureConnected();
     const tags: string[][] = [["d", "general"]];

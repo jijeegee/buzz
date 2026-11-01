@@ -72,7 +72,8 @@ export class RoomLiveRegistry {
 
   constructor(
     open: OpenRoomLiveRequest,
-    defer: (fn: () => void) => void = queueMicrotask,
+    // Wrapped: browsers throw "Illegal invocation" for a detached queueMicrotask.
+    defer: (fn: () => void) => void = (fn) => queueMicrotask(fn),
   ) {
     this.open = open;
     this.defer = defer;
