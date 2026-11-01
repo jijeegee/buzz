@@ -81,3 +81,38 @@ test("a message in a hidden DM brings it back, uncounted until then", async ({
   );
   expect(await notificationCount(page)).toBe(notificationsBefore);
 });
+
+/** Room-bundle REQs sent so far (only bundle chunks carry 39005). */
+async function bundleReqCount(page: Page) {
+  return page.evaluate(
+    () =>
+      (window.__KUZZ_E2E_REQ_LOG__?.() ?? []).filter(
+        (entry) =>
+          entry.type === "REQ" &&
+          entry.filters.some((filter) =>
+            ((filter as { kinds?: number[] }).kinds ?? []).includes(39005),
+          ),
+      ).length,
+  );
+}
+
+test("hiding a DM moves it to the quiet rooms on the same chunk: no REQ", async ({
+  page,
+}) => {
+  // The hide resolves after 3 s, well past the 1 s room grace.
+  await installMockBridge(page, { hideDmDelayMs: 3_000 });
+  await page.goto("/");
+  await expect(page.getByTestId(`channel-${HIDDEN_DM}`)).toBeVisible();
+  await expect.poll(() => hiddenDmIsLive(page)).toBe(true);
+  // Let the launch settle before counting.
+  await page.waitForTimeout(2_000);
+  const before = await bundleReqCount(page);
+
+  await page.getByTestId(`channel-${HIDDEN_DM}`).hover();
+  await page.getByTestId(`hide-dm-${HIDDEN_DM}`).click();
+  await expect(page.getByTestId(`channel-${HIDDEN_DM}`)).toHaveCount(0);
+  await page.waitForTimeout(4_500);
+
+  expect(await bundleReqCount(page)).toBe(before);
+  expect(await hiddenDmIsLive(page)).toBe(true);
+});

@@ -418,6 +418,8 @@ type E2eConfig = {
      *  them out and the kind:30622 snapshot read returns them. Opening the DM
      *  again shows it. Hiding a DM adds it here. */
     hiddenDms?: string[];
+    /** Holds `hide_dm` this long before it resolves. */
+    hideDmDelayMs?: number;
     sendMessageDelayMs?: number;
     /** Delay (ms) for `start_managed_agent` so e2e tests can switch the
      *  community mid-startup and observe the fail-closed scope check.
@@ -7707,6 +7709,10 @@ async function handleHideDm(
   if (!identity) {
     if (!mockChannels.some((channel) => channel.id === args.channelId)) {
       throw new Error(`DM ${args.channelId} not found.`);
+    }
+    const delayMs = config?.mock?.hideDmDelayMs ?? 0;
+    if (delayMs > 0) {
+      await new Promise((resolve) => window.setTimeout(resolve, delayMs));
     }
     // Hidden, not deleted: membership stays, as on the relay (NIP-DV).
     mockHiddenDmIds().add(args.channelId);

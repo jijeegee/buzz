@@ -627,16 +627,35 @@ export function useHideDmMutation() {
   return useMutation({
     mutationFn: (channelId: string) => hideDm(channelId),
     onMutate: async (channelId) => {
-      await queryClient.cancelQueries({ queryKey: channelsQueryKey });
+      await Promise.all([
+        queryClient.cancelQueries({ queryKey: channelsQueryKey }),
+        queryClient.cancelQueries({ queryKey: dmVisibilityKey }),
+      ]);
       const previous = queryClient.getQueryData<Channel[]>(channelsQueryKey);
+      const wasHidden =
+        queryClient
+          .getQueryData<Set<string>>(dmVisibilityKey)
+          ?.has(channelId) ?? false;
+      // Listed no more and hidden at once: the room moves from the member
+      // rooms to the quiet rooms on the same live chunk (no REQ either way).
       queryClient.setQueryData<Channel[]>(channelsQueryKey, (current = []) =>
         current.filter((channel) => channel.id !== channelId),
       );
-      return { previous };
+      queryClient.setQueryData<Set<string>>(dmVisibilityKey, (current) =>
+        new Set(current).add(channelId),
+      );
+      return { previous, wasHidden };
     },
-    onError: (_error, _channelId, context) => {
+    onError: (_error, channelId, context) => {
       if (context?.previous) {
         queryClient.setQueryData(channelsQueryKey, context.previous);
+      }
+      if (context && !context.wasHidden) {
+        queryClient.setQueryData<Set<string>>(dmVisibilityKey, (current) => {
+          const next = new Set(current);
+          next.delete(channelId);
+          return next;
+        });
       }
     },
     onSuccess: (_data, channelId) => {

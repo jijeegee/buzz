@@ -303,6 +303,8 @@ type MockBridgeOptions = {
   openDmDelayMs?: number;
   /** DMs (by channel name) hidden at launch (kind:30622). */
   hiddenDms?: string[];
+  /** Holds `hide_dm` this long before it resolves. */
+  hideDmDelayMs?: number;
   sendMessageDelayMs?: number;
   /** Delay (ms) for `start_managed_agent` so e2e tests can switch the
    * community mid-startup and observe the fail-closed scope check. */

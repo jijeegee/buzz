@@ -1,13 +1,12 @@
 import * as React from "react";
 
+import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
 import { relayClient } from "@/shared/api/relayClient";
 import type { RelayEvent } from "@/shared/api/types";
-import { MAX_EXPLICIT_CHANNEL_VALUES } from "@/shared/api/relayClientShared";
 import {
   getChannelMembers,
   type OpenDmInput,
 } from "@/shared/api/tauriChannels";
-import { CHANNEL_MESSAGE_EVENT_KINDS } from "@/shared/constants/kinds";
 import { relayEventChannelId } from "./dmResurface";
 import { createHiddenDmResurfaceCoordinator } from "./hiddenDmResurfaceCoordinator";
 import { resurfaceHiddenDmMessage } from "./hiddenDmResurfaceAction";
@@ -22,19 +21,17 @@ type UseDmResurfaceFromMessagesOptions = {
 /**
  * Resurfaces a hidden DM row the moment new activity lands in it.
  *
- * The subscription is `#h`-scoped to the current hidden-DM id set: channel
- * messages carry a `channel_id`, and the relay only fans channel-scoped events
- * to channel-scoped subscriptions (`fan_out_scoped`), so a community-global
- * `#p` filter would never receive them. Scoping to `#h` also means every
- * delivered event is already for a hidden DM the reader belongs to (hiding
- * never drops membership), so no per-event visibility fetch is needed and
- * untagged CLI/agent DMs resurface too.
+ * Hidden DMs ride the client's room bundle as quiet rooms
+ * (`RoomLiveBundle.setQuietRooms`): the same `#h` chunks as the listed rooms,
+ * no REQ of their own. Their events reach the quiet listener here and never
+ * the all-rooms listeners, so nothing counts a hidden DM as unread until it is
+ * shown again. Missed messages come back through the bundle's reconnect
+ * repair, like any room's. Hiding never drops membership, so `#h` access
+ * holds.
  *
- * The relay rejects a REQ whose aggregate explicit `#h` values exceed
- * {@link MAX_EXPLICIT_CHANNEL_VALUES}, so the hidden set is split into batches
- * of at most that size, each its own subscription. Every batch is owned by the
- * current effect generation and disposed together on hidden-set/relay/signer
- * change, so an over-limit hidden set no longer silently disables resurfacing.
+ * A bundle reset (community switch) empties the quiet set; it is applied
+ * again on reset. The huddle window carries no rooms and owns no resurface:
+ * the main window does it.
  */
 export function useDmResurfaceFromMessages({
   pubkey,
@@ -56,20 +53,22 @@ export function useDmResurfaceFromMessages({
     const expectedRelayUrl = relayUrl?.trim() ?? "";
     const channelIds = hiddenDmKey.length > 0 ? hiddenDmKey.split(",") : [];
     const generation = ++generationRef.current;
-    if (!expectedSignerPubkey || !expectedRelayUrl || channelIds.length === 0) {
+    if (
+      !expectedSignerPubkey ||
+      !expectedRelayUrl ||
+      channelIds.length === 0 ||
+      huddleWindowChannelId()
+    ) {
       return;
     }
 
     const hiddenDmIdSet = new Set(channelIds);
     let disposed = false;
-    const unsubscribers: Array<() => Promise<void>> = [];
     const isCurrent = () => !disposed && generationRef.current === generation;
 
     // A coordinator owned by this generation: coalescing and cleanup touch only
     // its private map, so a torn-down generation's in-flight attempt can never
-    // drop a follower coalesced onto the replacement subscription. One
-    // coordinator spans every batch — the map is keyed by channel id, so which
-    // batch delivered an event is irrelevant.
+    // drop a follower coalesced onto the replacement listener.
     const coordinator = createHiddenDmResurfaceCoordinator({
       resurface: (event) =>
         resurfaceHiddenDmMessage({
@@ -96,46 +95,18 @@ export function useDmResurfaceFromMessages({
       coordinator.handle(channelId, event);
     };
 
-    const since = Math.floor(Date.now() / 1_000) - 5;
-    for (
-      let start = 0;
-      start < channelIds.length;
-      start += MAX_EXPLICIT_CHANNEL_VALUES
-    ) {
-      const batch = channelIds.slice(
-        start,
-        start + MAX_EXPLICIT_CHANNEL_VALUES,
-      );
-      void relayClient
-        .subscribeLive(
-          {
-            kinds: [...CHANNEL_MESSAGE_EVENT_KINDS],
-            "#h": batch,
-            since,
-            limit: 100,
-          },
-          handleEvent,
-        )
-        .then((dispose) => {
-          if (!isCurrent()) {
-            void dispose().catch(() => {});
-            return;
-          }
-          unsubscribers.push(dispose);
-        })
-        .catch((error) => {
-          if (isCurrent()) {
-            console.error("Failed to subscribe to hidden DM activity", error);
-          }
-        });
-    }
+    const rooms = relayClient.liveRooms;
+    const stopListening = rooms.listenQuietRooms(handleEvent);
+    const applyQuietRooms = () => rooms.setQuietRooms(channelIds);
+    applyQuietRooms();
+    const stopReapplying = rooms.onReset(applyQuietRooms);
 
     return () => {
       disposed = true;
       generationRef.current += 1;
-      for (const unsubscribe of unsubscribers) {
-        void unsubscribe().catch(() => {});
-      }
+      stopReapplying();
+      stopListening();
+      rooms.setQuietRooms([]);
     };
   }, [pubkey, relayUrl, hiddenDmKey]);
 }
