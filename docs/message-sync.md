@@ -53,10 +53,21 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   drop events stamped in the past within the relay's skew allowance. Huddle
   lifecycle (48100–48103) is a channel kind, so huddle views ride the bundle
   too (desktop `roomHuddleLifecycle.ts`: one listener and one history read
-  per room for the indicator, every card and the roster).
+  per room for the indicator, every card and the roster). The desktop
+  huddle presence runtime (who is in which huddle) listens on all rooms in
+  the main window (`huddlePresenceSources.ts`); the huddle window carries no
+  rooms and keeps its own `limit: 0` lifecycle REQ per 128 rooms.
 - **Rooms outside the bundle.** A room opened before its chunk is live (cold
   start) or without membership (a browsed open channel) gets a one-room live
   REQ, closed once a live chunk covers it.
+- **Quiet rooms.** Hidden DMs ride the same chunks without being listed
+  (desktop `setQuietRooms`, mobile `setQuietRooms`): chunk ids are
+  member ∪ quiet, so hiding or resurfacing a DM moves it between the two
+  sets on the same chunk and sends no REQ. Desktop keeps a room that leaves
+  both sets in its chunk for 1 s (refetch lag), except when another room
+  joins in the same change or the chunk is not live yet. A chunk made only of
+  stale hidden ids is closed by the relay and not reopened; nothing is lost
+  (its rooms are gone).
 - **Replacing a chunk.** When the room set changes, the new chunk is opened
   first and the old one is closed only after the new one is live. Overlapping
   deliveries are expected.
@@ -65,8 +76,14 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   events arrive, so a history read started afterwards misses nothing. It
   resolves at the first of: a chunk (or the room's own REQ) carrying the room
   is live; the member list is known and nothing will carry the room
-  (archived, hidden, the huddle window, not a member); 1.5 s. Before the
-  member list is first known (cold start) only the bound ends it.
+  (archived, the huddle window, not a member); 1.5 s. A quiet room (hidden
+  DM) waits for its chunk like a member room. Before the member list is
+  first known (cold start) only the bound ends it. Desktop
+  `whenRoomsCovered(ids)` waits for several rooms with one timer and returns
+  false when the bound ended it; mobile `whenRoomsCovered` waits for each.
+  Features that read history after the wait read again once coverage
+  completes when the bound ended it (huddle presence, remote start, the
+  mobile visible-DM feed).
 
 ## Placing an event
 
@@ -88,6 +105,16 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 - **All-rooms consumers** (unread, notifications, chat list, inbox): member
   rooms only, never thread summaries or room metadata. Each keeps its
   existing duplicate handling.
+- **Quiet listeners** (hidden-DM resurface; desktop remote start in a hidden
+  agent DM): every event of a quiet room once, never thread summaries or
+  room metadata. Quiet rooms never reach the all-rooms consumers: no unread,
+  badge, notification or chat row until the DM is resurfaced (then it is a
+  member room again, on the same chunk). Desktop `listenQuietRooms`, mobile
+  `listenQuiet`.
+- **Passive room listeners** (mobile `listenRoomEvents`: roster and bot-role
+  refresh on a 40099 membership notice, at 0, 1 and 4 s because the relay
+  rebuilds the 39002 list after the notice): a room's events from its chunk
+  or its own REQ. They open nothing and do not make the room wanted.
 - **Room metadata listeners** (thread names): every 40009 of every room the
   bundle carries, member or browsed, once. Nothing else gets them: not the
   timeline, not unread, not the chat list, not the store. Desktop
@@ -180,6 +207,17 @@ live REQ per room, shared by every screen of that room (desktop
   up as new notifications or activity.
 - Mobile re-sends each chunk unchanged; the open room refetches its newest
   page and the open thread its replies, as before.
+- **Quiet rooms after a drop.** Desktop: the chunk repair covers them, under
+  the same chunk-start floor, and hands their rows to the quiet listeners.
+  Mobile: the activity notifier records when a connection drops (not before
+  the first connect). On the next connection it waits until every chunk
+  carrying a quiet room is ready again (its EOSE after the re-send; at most
+  1.5 s), then reads the hidden DMs' gap once over HTTP (`since` = drop time
+  minus 1865 s, 128 rooms per filter) and routes it as quiet backfill. If
+  the wait hit its bound it reads anyway and once more when ready (at most
+  30 s later); the router's duplicate check keeps it to one resurface.
+  Backfill rows older than the room's start on the bundle minus 5 s are
+  dropped, so a DM hidden a moment ago is not reopened by an old message.
 - **Live-only REQs go back unchanged.** Every REQ whose filter has
   `limit: 0` (room chunks, both account bundles, the community bundle with
   its current filter set, one-room REQs) is re-sent byte-identical, with no
@@ -428,6 +466,55 @@ Mobile reads the heads of the account's own 30078 lanes (mutes, stars,
 theme, ...) together when they start within 50 ms of each other: one
 one-shot `{30078, authors:[me], #d:[lanes], limit:N}`, and each lane gets
 its newest event (`lane_head_batch.dart`).
+
+## Live REQ budget
+
+The open live REQs per checkpoint are pinned in
+`test-fixtures/live-req-budget.json` (desktop: Playwright
+`tests/e2e/live-req-budget.spec.ts`; mobile:
+`mobile/test/live_req_budget_test.dart`). A change in the count or in a
+signature fails the test; update with `KUZZ_UPDATE_REQ_BUDGET=1` and say why
+in the commit.
+
+| Checkpoint (fixture key) | Desktop | Mobile |
+|---|---|---|
+| Idle (`idle`) | 5 (a landing room is always open) | 4 |
+| Agents view, no room (`agentsView`) | 4 | — |
+| Room open (`roomA`/`roomB` · `roomOpen`) | 5 | 5 |
+| Thread open (`threadOpen`) | 5 | 5 |
+| DM open (`dmOpen`) | 5 | 6 (DM identity) |
+| Room with 10 / 50 thread rows (`rows10`, `rows50`) | 5 | 5 |
+| Idle with an agent DM (`idleWithAgent`) | 5 | — |
+| Idle as the relay's own key (`idleRelaySelf`) | 5 | — |
+| Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
+| Activity inbox (`activityInbox`) | — | 4 |
+
+The REQs behind them: the community bundle, the room bundle (one per 128
+rooms), the account bundles (authored and addressed), and per open room its
+typing + goal-tree REQ.
+
+Rules:
+- No REQ per row (thread rows, inbox rows, search hits): rows ride a bundle
+  and read history in batches.
+- Fixed filters: a REQ's filter does not change with what is on screen.
+- `limit: 0` REQs are re-sent byte-identical on reconnect
+  ([Reconnect](#reconnect)).
+- Each feature names its recovery (repair, catch-up, refetch or one-shot
+  read) where it is described above.
+
+Allowed exceptions:
+- a one-room REQ for a non-member room, or a room not yet covered;
+- mobile DM identity (`{0, 10100}` by participants, `limit: 0`; filters with
+  `authors` cannot ride the room bundle);
+- admin join alerts (2 REQs, admins only);
+- the mobile huddle sheet's room REQ and in-call reactions (desktop
+  `HuddleBar` in-call reactions too);
+- the huddle window's socket (its own lifecycle REQ, see
+  [Live room bundle](#live-room-bundle)).
+
+Budget probes: putting an old per-feature REQ back fails its checkpoint
+(hidden-DM batch, remote-start REQ, huddle lifecycle REQ, visible-DM batch,
+per-room 39002).
 
 ## Message store
 
