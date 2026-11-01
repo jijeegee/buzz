@@ -38,6 +38,9 @@ final class NotificationService: UNNotificationServiceExtension {
       Bundle.main.object(
         forInfoDictionaryKey: "KuzzKeychainAccessGroup"
       ) as? String
+    // Read once per run, off the request path. Without it requests are
+    // signed as before, with no device tag.
+    let deviceSigner = Self.loadDeviceSigner(keychainAccessGroup: keychainAccessGroup)
     return KuzzPushNotificationResolver(
       session: .shared,
       loadCommunitiesData: { [self] in
@@ -51,7 +54,8 @@ final class NotificationService: UNNotificationServiceExtension {
       },
       loadPresentationCacheData: { [self] in
         Self.loadPushSnapshotData(appGroupIdentifier: self.appGroupIdentifier)
-      }
+      },
+      deviceSigner: { deviceSigner }
     )
   }()
 
@@ -178,6 +182,38 @@ final class NotificationService: UNNotificationServiceExtension {
       let data = item as? Data
     else { return nil }
     return String(data: data, encoding: .utf8)
+  }
+
+  /// This install's device key (`DeviceKeyPlugin`, tag `kuzz.device-key.v1`),
+  /// read from the keychain group the app and this extension share. Never
+  /// created here: if the extension can't read the key, nil.
+  private static func loadDeviceSigner(keychainAccessGroup: String?) -> DeviceEventSigning? {
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: Data("kuzz.device-key.v1".utf8),
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+      kSecReturnRef as String: true,
+    ]
+    if let keychainAccessGroup, !keychainAccessGroup.isEmpty {
+      query[kSecAttrAccessGroup as String] = keychainAccessGroup
+    }
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+      let item, CFGetTypeID(item) == SecKeyGetTypeID()
+    else { return nil }
+    let key = item as! SecKey
+    guard let publicKey = SecKeyCopyPublicKey(key),
+      let raw = SecKeyCopyExternalRepresentation(publicKey, nil) as Data?
+    else { return nil }
+    return DeviceEventSigning(
+      publicKeySEC1: raw,
+      signDER: { message in
+        var error: Unmanaged<CFError>?
+        let signature = SecKeyCreateSignature(
+          key, .ecdsaSignatureMessageX962SHA256, message as CFData, &error)
+        return signature as Data?
+      })
   }
 
   private static func loadPushSnapshotData(appGroupIdentifier: String?) -> Data? {

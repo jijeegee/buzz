@@ -59,15 +59,19 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
   private let loadCommunitiesData: () -> Data?
   private let loadPresentationCacheData: () -> Data?
   private let loadPrivateKey: (String) -> String?
+  private let deviceSigner: () -> DeviceEventSigning?
   private let now: () -> Date
   private let presentationCacheLifetime: TimeInterval
 
   /// Creates a resolver around the notification extension's App Group and Keychain I/O.
+  /// `deviceSigner` returns this install's device key signer, or nil when the
+  /// extension can't read it (requests are then signed without a device tag).
   public init(
     session: URLSession,
     loadCommunitiesData: @escaping () -> Data?,
     loadPrivateKey: @escaping (String) -> String?,
     loadPresentationCacheData: @escaping () -> Data? = { nil },
+    deviceSigner: @escaping () -> DeviceEventSigning? = { nil },
     now: @escaping () -> Date = Date.init,
     presentationCacheLifetime: TimeInterval = KuzzPushPresentationCacheStore.freshnessLifetime
   ) {
@@ -75,6 +79,7 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     self.loadCommunitiesData = loadCommunitiesData
     self.loadPresentationCacheData = loadPresentationCacheData
     self.loadPrivateKey = loadPrivateKey
+    self.deviceSigner = deviceSigner
     self.now = now
     self.presentationCacheLifetime = presentationCacheLifetime
   }
@@ -141,7 +146,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
     guard
       let auth = try? NostrHTTPAuth.authorizationHeader(
-        url: url, method: "POST", body: body, privateKeyHex: privateKey
+        url: url, method: "POST", body: body, privateKeyHex: privateKey,
+        deviceSigner: deviceSigner()
       )
     else {
       completion(nil)
@@ -359,7 +365,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
         url: url,
         method: "POST",
         body: body,
-        privateKeyHex: privateKey
+        privateKeyHex: privateKey,
+        deviceSigner: deviceSigner()
       )
     else {
       completion(nil, nil, nil)
