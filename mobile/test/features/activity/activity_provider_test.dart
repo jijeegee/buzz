@@ -105,6 +105,7 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     // A hidden-DM resurface subscription carries the full channel-message kind
     // set plus an `#h` tag; the visible-DM sub uses only kind 9. Batching and

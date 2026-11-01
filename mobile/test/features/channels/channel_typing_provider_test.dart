@@ -59,6 +59,7 @@ class _TypingRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     filters.add(filter);
     final opened = Completer<void>();

@@ -211,6 +211,70 @@ void main() {
     relay.opened.single.onEvent(_event('c1', 3, const []));
     expect(seen, isEmpty);
   });
+
+  test('onGap fires once per listener on a full catch-up page only', () async {
+    final relay = _FakeBundleRelay();
+    final bundle = relay.bundle();
+    final gaps = <String>[];
+    NostrFilter addressed(int kind) => NostrFilter(
+      kinds: [kind],
+      tags: {
+        '#p': [_me],
+      },
+      limit: 0,
+    );
+    final first = bundle.subscribe(
+      addressed(44100),
+      (_) {},
+      onGap: () => gaps.add('a'),
+    );
+    await pumpEventQueue();
+    relay.opened.single.release();
+    await first;
+    await bundle.subscribe(
+      addressed(40007),
+      (_) {},
+      onGap: () => gaps.add('b'),
+    );
+
+    List<NostrEvent> page(int count) => [
+      for (var i = 0; i < count; i++)
+        _event('e$count-$i', 9, [
+          ['p', _me],
+        ]),
+    ];
+    relay.fetchResult = page(499);
+    await bundle.catchUp(100);
+    expect(gaps, isEmpty, reason: 'a short page is complete');
+
+    relay.fetchResult = page(500);
+    await bundle.catchUp(100);
+    expect(gaps..sort(), ['a', 'b'], reason: 'every listener in the scope');
+  });
+
+  test('onGap fires when the last catch-up attempt fails, not after reset', () {
+    fakeAsync((async) {
+      final relay = _FakeBundleRelay();
+      final bundle = relay.bundle();
+      var gaps = 0;
+      bundle.subscribe(_doc('channel-mutes'), (_) {}, onGap: () => gaps++);
+      async.flushMicrotasks();
+      relay.opened.single.release();
+      async.flushMicrotasks();
+
+      relay.fetchFailures = 3;
+      bundle.catchUp(1000);
+      async.elapse(const Duration(seconds: 10));
+      expect(gaps, 1);
+
+      relay.fetchFailures = 3;
+      bundle.catchUp(1000);
+      async.flushMicrotasks();
+      bundle.reset();
+      async.elapse(const Duration(seconds: 10));
+      expect(gaps, 1, reason: 'a reset generation stays quiet');
+    });
+  });
 }
 
 NostrFilter _doc(String dTag) => NostrFilter(

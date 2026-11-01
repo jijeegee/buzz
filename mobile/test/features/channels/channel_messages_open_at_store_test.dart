@@ -53,8 +53,8 @@ class _GatedRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
-  }) async =>
-      () {};
+    void Function()? onGap,
+  }) async => () {};
 }
 
 ProviderContainer _container(

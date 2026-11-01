@@ -15819,6 +15819,7 @@ class _IdentityUpdateRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     if (filter.kinds.contains(10100)) {
       identityFilter = filter;
@@ -15909,6 +15910,7 @@ class _ProfileSubscriptionRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     if (filter.kinds.contains(0)) profileSubscriptions++;
     return () {};
@@ -15940,6 +15942,7 @@ class _HuddleReactionRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     if (filter.kinds.contains(EventKind.huddleReaction)) {
       reactionFilter = filter;

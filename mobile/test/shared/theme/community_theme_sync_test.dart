@@ -458,6 +458,7 @@ class _FakeSession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String)? onClosed,
+    void Function()? onGap,
   }) async {
     subscribeCalls++;
     _listeners.add(onEvent);

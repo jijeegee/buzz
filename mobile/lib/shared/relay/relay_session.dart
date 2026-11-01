@@ -385,15 +385,16 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     return completer.future;
   }
 
-  /// Filters about the account (one pubkey in `authors` or `#p`) share two
-  /// REQs through [_meBundle] (docs/message-sync.md); others get their own.
+  /// Filters about the account share two REQs through [_meBundle], which
+  /// alone calls [onGap] (docs/message-sync.md); others get their own.
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) => meScopeOf(filter) == null
       ? _subscribe(filter, onEvent, onClosed: onClosed)
-      : _meBundle.subscribe(filter, onEvent, onClosed: onClosed);
+      : _meBundle.subscribe(filter, onEvent, onClosed: onClosed, onGap: onGap);
 
   late final _meBundle = MeLiveBundle(
     open: (filter, onEvent, onClosed) =>
@@ -401,8 +402,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     fetch: fetchHistory,
   );
 
-  /// When the connection dropped, for the account bundle's catch-up.
-  int? _meDroppedAt;
+  int? _meDroppedAt; // When the connection dropped, for the bundle catch-up.
 
   /// Subscribe to a live stream and observe its recovery lifecycle.
   ///

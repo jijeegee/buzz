@@ -222,6 +222,7 @@ class _TerminalRelaySession extends _FakeRelaySession {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     final unsubscribe = await super.subscribe(
       filter,

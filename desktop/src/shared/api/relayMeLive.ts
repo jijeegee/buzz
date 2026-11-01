@@ -4,7 +4,11 @@ import type {
   LiveSubscriptionReadiness,
   RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
-import { MeLiveBundle, meScopeOf } from "@/shared/api/relayMeBundle";
+import {
+  MeLiveBundle,
+  type MeListenerOptions,
+  meScopeOf,
+} from "@/shared/api/relayMeBundle";
 import { RECONNECT_REPLAY_CHANNEL_LOOKBACK_SECS } from "@/shared/api/relayReconnectReplay";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -61,19 +65,21 @@ function watchConnection() {
 /**
  * `relayClient.subscribeLive` for a filter about the account: one pubkey in
  * `authors` or `#p`. Such filters share two REQs (see `MeLiveBundle`); any
- * other filter gets its own REQ as before. An object so tests can stub it.
+ * other filter gets its own REQ as before, and `options` (bundle signals)
+ * never fire for it. An object so tests can stub it.
  */
 export const meLive = {
   subscribe(
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    options?: MeListenerOptions,
   ): Promise<() => Promise<void>> {
     if (!meScopeOf(filter)) {
       return relayClient.subscribeLive(filter, onEvent, onReady);
     }
     watchConnection();
-    return bundle.subscribe(filter, onEvent, onReady);
+    return bundle.subscribe(filter, onEvent, onReady, options);
   },
 };
 
