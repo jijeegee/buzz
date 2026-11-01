@@ -33,10 +33,12 @@ import {
   prepareSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
+import { replayUntilRequestsRestored } from "@/shared/api/relayReconnectReplay";
 import {
-  replayUntilRequestsRestored,
-  reconnectCursors,
-} from "@/shared/api/relayReconnectReplay";
+  type LiveSessionHost,
+  sendRawWithReconnectRetry,
+  subscribeLiveSession,
+} from "@/shared/api/relayLiveSubscribe";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
@@ -127,6 +129,21 @@ export class RelayClient {
   );
   private authOkTracker = new AuthOkTracker();
   private terminal = false;
+  /** The session as live REQs see it (`relayLiveSubscribe.ts`). */
+  private readonly liveHost: LiveSessionHost = {
+    subscriptions: this.subscriptions,
+    liveReqDrain: this.liveReqDrain,
+    sessionEpoch: () => this.sessionEpoch,
+    sessionSignal: () => this.liveSessionAbort.signal,
+    connectionGeneration: () => this.connectionGeneration,
+    visibleChannelId: () => this.visibleChannelId,
+    ensureConnected: () => this.ensureConnected(),
+    sendRawForGeneration: (payload, generation) =>
+      this.sendRawForGeneration(payload, generation),
+    recoverFromSocketFailure: (error, fallback) =>
+      this.recoverFromSocketFailure(error, fallback),
+    closeSubscription: (subId) => this.closeSubscription(subId),
+  };
 
   private connectionStateEmitter = new RelayConnectionStateEmitter("idle");
   private stallWatchdog = new RelayStallWatchdog({
@@ -618,7 +635,7 @@ export class RelayClient {
     }
   }
 
-  private async subscribe(
+  private subscribe(
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
@@ -627,87 +644,18 @@ export class RelayClient {
     onGone?: () => void,
     priority?: "interactive",
   ) {
-    const epoch = this.sessionEpoch;
-    const sessionSignal = this.liveSessionAbort.signal;
-    signal?.throwIfAborted();
-    const subId = `live-${crypto.randomUUID()}`;
-    let fallbackTimeout: number | undefined;
-    let settleReady = () => {};
-    const onRemoved = () => {
-      signal?.removeEventListener("abort", abort);
-      sessionSignal.removeEventListener("abort", abort);
-      window.clearTimeout(fallbackTimeout);
-      settleReady();
-      onGone?.();
-    };
-    const subscription: Extract<RelaySubscription, { mode: "live" }> = {
-      mode: "live",
+    return subscribeLiveSession(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
       filter,
-      priority,
       onEvent,
-      onRemoved,
-      ...reconnectCursors(filter, this.subscriptions.values()),
-    };
-    const dispose = async () => {
-      if (this.subscriptions.get(subId) !== subscription) return;
-      this.subscriptions.delete(subId);
-      this.liveReqDrain.cancel(subId);
-      retireLiveSubscription(subscription);
-      onRemoved();
-      // Workspace teardown closes its socket; never send on its replacement.
-      if (epoch === this.sessionEpoch) await this.closeSubscription(subId);
-    };
-    let rejectCancelled = (_error: Error) => {};
-    const cancelled = new Promise<never>((_resolve, reject) => {
-      rejectCancelled = reject;
-    });
-    const abort = () => {
-      rejectCancelled(
-        new DOMException("Live subscription cancelled.", "AbortError"),
-      );
-      void dispose().catch(() => {});
-      onRemoved();
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    sessionSignal.addEventListener("abort", abort, { once: true });
-    try {
-      await Promise.race([this.ensureConnected(), cancelled]);
-      signal?.throwIfAborted();
-      sessionSignal.throwIfAborted();
-      const ready = new Promise<void>((resolve) => {
-        settleReady = resolve;
-      });
-      let readySettled = false;
-      subscription.resolveReady = (readiness) => {
-        if (readySettled) return;
-        readySettled = true;
-        window.clearTimeout(fallbackTimeout);
-        onReady?.(readiness);
-        settleReady();
-      };
-      this.subscriptions.set(subId, subscription);
-      await Promise.race([
-        this.sendRawWithReconnectRetry(
-          ["REQ", subId, filter],
-          "Failed to restore relay subscription.",
-          () => {
-            if (readySettled) return;
-            window.clearTimeout(fallbackTimeout);
-            fallbackTimeout = window.setTimeout(
-              () => subscription.resolveReady?.("timeout"),
-              readinessTimeoutMs,
-            );
-          },
-        ),
-        cancelled,
-      ]);
-      await Promise.race([ready, cancelled]);
-      return dispose;
-    } catch (error) {
-      await dispose().catch(() => {});
-      onRemoved();
-      throw error;
-    }
+      onReady,
+      readinessTimeoutMs,
+      signal,
+      onGone,
+      priority,
+    );
   }
 
   private async sendRaw(payload: unknown[]) {
@@ -748,92 +696,17 @@ export class RelayClient {
     return normalizedError;
   }
 
-  private async sendRawWithReconnectRetry(
+  private sendRawWithReconnectRetry(
     payload: unknown[],
     fallbackMessage: string,
     onDispatch?: () => void,
   ) {
-    const epoch = this.sessionEpoch;
-    const subId = payload[1] as string;
-    const subscription = this.subscriptions.get(subId);
-    const isOwned = () =>
-      subscription !== undefined &&
-      epoch === this.sessionEpoch &&
-      this.subscriptions.get(subId) === subscription;
-    const checkOwned = () => {
-      if (!isOwned())
-        throw new DOMException("Relay subscription retired.", "AbortError");
-    };
-    let generation = this.connectionGeneration;
-    const send = async () => {
-      checkOwned();
-      generation = this.connectionGeneration;
-      try {
-        onDispatch?.();
-        await this.sendRawForGeneration(payload, generation);
-      } finally {
-        // A dispatched REQ cannot be unsent. Converge to CLOSE on that socket,
-        // without touching a replacement workspace or connection.
-        if (
-          !isOwned() &&
-          epoch === this.sessionEpoch &&
-          generation === this.connectionGeneration
-        ) {
-          await this.closeSubscription(subId).catch(() => {});
-        }
-      }
-    };
-    const dispatch = () => {
-      const queuedGeneration = this.connectionGeneration;
-      return subscription?.mode === "live"
-        ? this.liveReqDrain.run(
-            subId,
-            () => isOwned() && queuedGeneration === this.connectionGeneration,
-            () =>
-              subscription.priority === "interactive" ||
-              (this.visibleChannelId !== null &&
-                subscription.filter["#h"]?.includes(this.visibleChannelId) ===
-                  true)
-                ? 0
-                : subscription.filter.limit === 0
-                  ? 1
-                  : 2,
-            send,
-          )
-        : send();
-    };
-    try {
-      await dispatch();
-    } catch (error) {
-      checkOwned(); // Cancellation is not a socket failure and must not reconnect.
-      if (generation !== this.connectionGeneration) {
-        // Live entries survive reset and belong to the new connection's replay.
-        // A late old-socket failure must not tear down that retained ownership.
-        if (subscription?.mode === "live") return;
-        throw error;
-      }
-      const normalizedError = this.recoverFromSocketFailure(
-        error,
-        fallbackMessage,
-      );
-      let retryGeneration: number | null = null;
-      try {
-        await this.ensureConnected();
-        checkOwned();
-        retryGeneration = this.connectionGeneration;
-        await dispatch();
-      } catch (retryError) {
-        checkOwned();
-        if (generation !== this.connectionGeneration) {
-          if (retryGeneration !== null && subscription?.mode === "live") return;
-          throw retryError;
-        }
-        throw this.recoverFromSocketFailure(
-          retryError,
-          normalizedError.message,
-        );
-      }
-    }
+    return sendRawWithReconnectRetry(
+      this.liveHost,
+      payload,
+      fallbackMessage,
+      onDispatch,
+    );
   }
 
   private async closeSubscription(subId: string) {
