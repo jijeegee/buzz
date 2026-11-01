@@ -462,6 +462,16 @@ void _writeMeasured(Iterable<String> keys) {
   debugPrint('Wrote mobile ${keys.join(', ')} to ${_fixtureFile.path}');
 }
 
+/// HTTP `/query` calls that ask for thread names (40009).
+int _threadNameHttpQueries(ScriptedRelay relay) => relay.httpQueries
+    .where(
+      (filters) => filters.any(
+        (filter) =>
+            (filter['kinds'] as List?)?.contains(EventKind.threadName) == true,
+      ),
+    )
+    .length;
+
 int _ceiling(String key, int measured) {
   final previous = (_expected['idle'] as Map?)?[key] as int?;
   return previous == null || measured > previous ? measured : previous;
@@ -569,6 +579,22 @@ void main() {
       final mounted = _threadSummaryRow.evaluate().length;
       measured['seededRows'] = rows;
       measured['mountedRows'] = mounted;
+      // A ceiling: update mode keeps the maximum over runs.
+      final threadNameQueries = _threadNameHttpQueries(h.relay);
+      final previousQueries =
+          (_expected['rows$rows'] as Map?)?['http40009'] as int?;
+      if (_update) {
+        measured['http40009'] =
+            previousQueries == null || threadNameQueries > previousQueries
+            ? threadNameQueries
+            : previousQueries;
+      } else if (previousQueries != null) {
+        expect(
+          threadNameQueries,
+          lessThanOrEqualTo(previousQueries),
+          reason: 'rows$rows: more thread-name HTTP queries than the ceiling',
+        );
+      }
       expect(mounted, greaterThanOrEqualTo(10), reason: 'too few rows mounted');
       if (rows == 50) {
         final ten = _measured['rows10'] as Map?;

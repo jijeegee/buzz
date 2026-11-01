@@ -35,18 +35,24 @@ const SUMMARY_IN_TIMELINE =
 type CheckpointName =
   | "idle"
   | "idleWithAgent"
+  | "idleRelaySelf"
   | "agentsView"
   | "roomA"
   | "roomB"
   | "threadOpen"
   | "dmOpen";
 type Checkpoint = { live: number; signatures: string[] };
-type RowsCheckpoint = Checkpoint & { mountedRows: number };
+type RowsCheckpoint = Checkpoint & {
+  mountedRows: number;
+  /** One-shot thread-name (40009) REQs sent in that run: a ceiling. */
+  oneShot40009?: number;
+};
 type DesktopBudget = {
   launch: { oneShot: number; liveSends: number };
   checkpoints: Record<CheckpointName, Checkpoint>;
   threadRows: {
     rows10: RowsCheckpoint;
+    rows50?: RowsCheckpoint;
     livePerMountedRow: number;
     perRowSignatures: string[];
   };
@@ -132,6 +138,17 @@ async function snapshot(page: Page): Promise<Snapshot> {
       quietForMs: lastWire ? Date.now() - lastWire.at : Date.now(),
     };
   }, SUMMARY_IN_TIMELINE);
+}
+
+/** One-shot REQs that ask for thread names (40009). */
+function threadNameOneShots(snap: Snapshot) {
+  return snap.reqs.filter(
+    (req) =>
+      !req.live &&
+      req.filters.some((filter) =>
+        ((filter as { kinds?: number[] }).kinds ?? []).includes(40009),
+      ),
+  ).length;
 }
 
 function sortedSignatures(snap: Snapshot) {
@@ -275,11 +292,18 @@ const MANAGED_AGENT = {
 // (docs/message-sync.md#launch-order); measure after that.
 const OBSERVER_START_MAX_MS = 11_000;
 
-async function openHome(page: Page, withAgent = false) {
-  await installMockBridge(
-    page,
-    withAgent ? { managedAgents: [MANAGED_AGENT] } : undefined,
-  );
+// The relay's own key: with it the huddle presence runtime starts
+// (HuddlePresenceContext), as in production.
+const RELAY_SELF = "ab".repeat(32);
+
+async function openHome(
+  page: Page,
+  options: { withAgent?: boolean; relaySelf?: boolean } = {},
+) {
+  await installMockBridge(page, {
+    ...(options.withAgent ? { managedAgents: [MANAGED_AGENT] } : {}),
+    ...(options.relaySelf ? { relaySelf: RELAY_SELF } : {}),
+  });
   await page.goto("/");
   await expect(page.getByTestId("channel-general")).toBeVisible();
 }
@@ -289,7 +313,7 @@ async function idleCheckpoint(
   page: Page,
   testInfo: TestInfo,
   measured: Partial<Record<CheckpointName, Checkpoint>>,
-  name: "idle" | "idleWithAgent" = "idle",
+  name: "idle" | "idleWithAgent" | "idleRelaySelf" = "idle",
 ) {
   const title = page.getByTestId("chat-title");
   await expect(title).toHaveText(LANDING_ROOM);
@@ -437,11 +461,28 @@ test.describe("live REQ budget", () => {
     test.setTimeout(120_000);
     const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
     const launchedAt = Date.now();
-    await openHome(page, true);
+    await openHome(page, { withAgent: true });
     await page.waitForTimeout(
       Math.max(0, launchedAt + OBSERVER_START_MAX_MS - Date.now()),
     );
     await idleCheckpoint(page, testInfo, measured, "idleWithAgent");
+    if (UPDATE) {
+      writeDesktop((desktop) => {
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
+      });
+    }
+  });
+
+  test("idle with the relay's own key holds its live subscription budget", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
+    await openHome(page, { relaySelf: true });
+    await idleCheckpoint(page, testInfo, measured, "idleRelaySelf");
     if (UPDATE) {
       writeDesktop((desktop) => {
         desktop.checkpoints = {
@@ -495,6 +536,13 @@ test.describe("live REQ budget", () => {
     expect(rows10.mountedRows, "all 10 seeded rows mount").toBe(10);
     if (budget) {
       assertCheckpoint("rows10", rows10, budget.threadRows.rows10);
+      const ceiling = budget.threadRows.rows10.oneShot40009;
+      if (ceiling !== undefined) {
+        expect(
+          threadNameOneShots(rows10),
+          "rows10 thread-name one-shots",
+        ).toBeLessThanOrEqual(ceiling);
+      }
     }
 
     const perRow = budget?.threadRows.livePerMountedRow;
@@ -517,6 +565,8 @@ test.describe("live REQ budget", () => {
         mounted50: rows50.mountedRows,
         live10: rows10.live.length,
         live50: rows50.live.length,
+        oneShot40009At10: threadNameOneShots(rows10),
+        oneShot40009At50: threadNameOneShots(rows50),
         perRowSignatures: [...new Set(perRowSignatures)],
       }),
       contentType: "application/json",
@@ -535,14 +585,46 @@ test.describe("live REQ budget", () => {
         [...new Set(perRowSignatures)].sort(),
         "per-row live subscription shapes",
       ).toEqual(budget.threadRows.perRowSignatures);
+      const pinned = budget.threadRows.rows50;
+      if (pinned) {
+        expect(rows50.mountedRows, "rows50 mounted rows").toBe(
+          pinned.mountedRows,
+        );
+        assertCheckpoint("rows50", rows50, pinned);
+        if (pinned.oneShot40009 !== undefined) {
+          expect(
+            threadNameOneShots(rows50),
+            "rows50 thread-name one-shots",
+          ).toBeLessThanOrEqual(pinned.oneShot40009);
+        }
+      }
     } else {
       expect(extraLive % extraRows, "per-row cost is a whole number").toBe(0);
       writeDesktop((desktop) => {
+        const previous = desktop.threadRows as
+          | DesktopBudget["threadRows"]
+          | undefined;
+        // One-shot counts are ceilings: max of the fixture and this run.
+        const ceiling = (before: number | undefined, now: number) =>
+          Math.max(before ?? 0, now);
         desktop.threadRows = {
           rows10: {
             live: rows10.live.length,
             mountedRows: rows10.mountedRows,
             signatures: sortedSignatures(rows10),
+            oneShot40009: ceiling(
+              previous?.rows10.oneShot40009,
+              threadNameOneShots(rows10),
+            ),
+          },
+          rows50: {
+            live: rows50.live.length,
+            mountedRows: rows50.mountedRows,
+            signatures: sortedSignatures(rows50),
+            oneShot40009: ceiling(
+              previous?.rows50?.oneShot40009,
+              threadNameOneShots(rows50),
+            ),
           },
           livePerMountedRow: extraLive / extraRows,
           perRowSignatures: [...new Set(perRowSignatures)].sort(),
