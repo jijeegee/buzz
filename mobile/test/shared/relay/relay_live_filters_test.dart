@@ -258,6 +258,39 @@ void main() {
       hasLength(1),
     );
   });
+
+  test('community presence: an author added after ready is no second ready '
+      '(presence would blank)', () async {
+    final heard = <RelaySubscriptionStatus>[];
+    final pending = session.communityPresence(
+      (_) {},
+      onStatusChanged: heard.add,
+    );
+    session.addPresenceAuthors([_a]);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final subId = reqs().single[1] as String;
+    expect(reqs().single.sublist(2), [
+      _status.toJson(),
+      _presence([_a]).toJson(),
+    ]);
+    session.debugHandleMessage(['EOSE', subId]);
+    final stop = await pending;
+    expect(heard, [RelaySubscriptionStatus.ready]);
+
+    session.addPresenceAuthors([_b]);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(reqs(), hasLength(2));
+    expect(reqs().last, [
+      'REQ',
+      subId,
+      _status.toJson(),
+      _presence([_a, _b]).toJson(),
+    ]);
+    session.debugHandleMessage(['EOSE', subId]);
+    await Future<void>.delayed(Duration.zero);
+    expect(heard, [RelaySubscriptionStatus.ready]);
+    stop();
+  });
 }
 
 class _RecordingRelaySocket extends RelaySocket {

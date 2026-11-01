@@ -18,6 +18,7 @@ import '../auth/token/token_session.dart';
 import '../device_key/device_proof.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
+import 'community_live_bundle.dart';
 import 'me_live_bundle.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
@@ -393,15 +394,74 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   }
 
   /// Filters about the account share two REQs through [_meBundle], which
-  /// alone calls [onGap] (docs/message-sync.md); others get their own.
+  /// alone calls [onGap] (docs/message-sync.md); community-wide ones ride
+  /// [_communityBundle], which reopens itself and never calls [onClosed];
+  /// others get their own.
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
     void Function()? onGap,
-  }) => meScopeOf(filter) == null
-      ? _subscribe(filter, onEvent, onClosed: onClosed)
-      : _meBundle.subscribe(filter, onEvent, onClosed: onClosed, onGap: onGap);
+  }) {
+    if (meScopeOf(filter) != null) {
+      return _meBundle.subscribe(
+        filter,
+        onEvent,
+        onClosed: onClosed,
+        onGap: onGap,
+      );
+    }
+    if (communityScopeOf(filter) != null) {
+      return _communityBundle.subscribe(filter, onEvent);
+    }
+    return _subscribe(filter, onEvent, onClosed: onClosed);
+  }
+
+  /// Live presence for the bundle's author set ([addPresenceAuthors]), on
+  /// the community REQ. [onStatusChanged] hears "ready" on open, replay and
+  /// reopen (not on author updates) and "retrying" while it is down;
+  /// [onReset] means the set was cleared: add your keys again.
+  Future<void Function()> communityPresence(
+    void Function(NostrEvent) onEvent, {
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+    void Function()? onReset,
+  }) async {
+    if (onReset != null) _communityResetListeners.add(onReset);
+    void forget() {
+      if (onReset != null) _communityResetListeners.remove(onReset);
+    }
+
+    try {
+      final stop = await subscribeWithStatus(
+        communityRowFilters[CommunityRow.presence]!,
+        onEvent,
+        onStatusChanged: onStatusChanged,
+      );
+      return () {
+        forget();
+        stop();
+      };
+    } catch (_) {
+      forget();
+      rethrow;
+    }
+  }
+
+  final _communityResetListeners = <void Function()>[];
+
+  /// Add people to the community presence author set. Returns the keys past
+  /// its cap, which the caller keeps polling.
+  List<String> addPresenceAuthors(Iterable<String> pubkeys) =>
+      _communityBundle.addPresenceAuthors(pubkeys);
+
+  late final _communityBundle = CommunityLiveBundle(
+    open: (filters, onEvent, onStatus, onGone) => _subscribeFilters(
+      filters,
+      onEvent,
+      onClosed: (_) => onGone(),
+      onStatusChanged: onStatus,
+    ),
+  );
 
   late final _meBundle = MeLiveBundle(
     open: (filter, onEvent, onClosed) =>
@@ -420,17 +480,21 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// when a retryable or rate-limited CLOSED begins backoff. Terminal CLOSED
   /// invokes [onClosed] and removes the subscription instead of retrying it.
   /// Calling the cleanup callback cancels pending retries and sends CLOSE.
+  /// Community-wide filters ride [_communityBundle] instead, which reopens
+  /// after a terminal CLOSED and never invokes [onClosed].
   Future<void Function()> subscribeWithStatus(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
     required void Function(RelaySubscriptionStatus status) onStatusChanged,
-  }) => _subscribe(
-    filter,
-    onEvent,
-    onClosed: onClosed,
-    onStatusChanged: onStatusChanged,
-  );
+  }) => communityScopeOf(filter) != null
+      ? _communityBundle.subscribe(filter, onEvent, onStatus: onStatusChanged)
+      : _subscribe(
+          filter,
+          onEvent,
+          onClosed: onClosed,
+          onStatusChanged: onStatusChanged,
+        );
 
   Future<void Function()> _subscribe(
     NostrFilter filter,
@@ -1027,6 +1091,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _rejectAllPending(null);
     _meBundle.reset();
     _meDroppedAt = null;
+    _communityBundle.reset();
+    for (final onReset in [..._communityResetListeners]) {
+      onReset();
+    }
     final subscriptions = _liveSubscriptions.values.toList();
     _liveSubscriptions.clear();
     for (final subscription in subscriptions) {

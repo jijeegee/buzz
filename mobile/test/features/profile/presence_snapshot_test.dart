@@ -161,23 +161,14 @@ void main() {
     });
   });
 
-  test('terminal close fences late events and recovers at bounded cadence', () {
+  test('tracked keys join the presence author set, again after a reset', () {
     scenario((time, container, relay) {
-      final emitOld = relay.emit;
-      final stale = relay.results.removeAt(0);
-      relay.close('restricted');
-      emitOld(presenceEvent('alice', 'online'));
-      stale.complete([presenceEvent('alice', 'online')]);
-      time.flushMicrotasks();
-      expect(container.read(presenceCacheProvider), isEmpty);
-      time.elapse(const Duration(seconds: 59));
-      expect(relay.subscriptions, 1);
-      time.elapse(const Duration(seconds: 1));
-      expect(relay.subscriptions, 2);
-      relay.results.removeAt(0).complete([]);
-      time.flushMicrotasks();
-      relay.emit(presenceEvent('alice', 'away'));
-      expect(container.read(presenceCacheProvider)['alice'], 'away');
+      expect(relay.authors, {'alice', 'bob'});
+      container.read(presenceCacheProvider.notifier).track(['carol']);
+      expect(relay.authors, {'alice', 'bob', 'carol'});
+      relay.authors.clear();
+      relay.reset!();
+      expect(relay.authors, {'alice', 'bob', 'carol'});
     });
   });
 
@@ -328,7 +319,8 @@ class PresenceTestRelay extends RelaySessionNotifier {
   final results = <Completer<List<NostrEvent>>>[];
   late void Function(NostrEvent) emit;
   late void Function(RelaySubscriptionStatus) status;
-  late void Function(String) close;
+  final authors = <String>{};
+  void Function()? reset;
   Completer<void>? ready;
   bool failSubscribe = false;
   bool emptySnapshots = false;
@@ -353,10 +345,29 @@ class PresenceTestRelay extends RelaySessionNotifier {
     if (failSubscribe) throw StateError('unavailable');
     emit = onEvent;
     status = onStatusChanged;
-    close = onClosed!;
     onStatusChanged(RelaySubscriptionStatus.ready);
     if (ready != null) await ready!.future;
     return () => unsubscribes++;
+  }
+
+  @override
+  Future<void Function()> communityPresence(
+    void Function(NostrEvent) onEvent, {
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+    void Function()? onReset,
+  }) {
+    reset = onReset;
+    return super.communityPresence(
+      onEvent,
+      onStatusChanged: onStatusChanged,
+      onReset: onReset,
+    );
+  }
+
+  @override
+  List<String> addPresenceAuthors(Iterable<String> pubkeys) {
+    authors.addAll(pubkeys);
+    return const [];
   }
 
   @override
