@@ -40,9 +40,21 @@ Date.now = () => now;
 const { RelayClient } = await import("./relayClientSession.ts");
 const { resetRateLimitGate } = await import("./relayRateLimitGate.ts");
 
-const { openPresenceSubscription } = await import(
-  "./presenceRelaySubscription.ts"
-);
+/** A `limit: 0` REQ with a 5 s readiness budget that must see EOSE. */
+async function openStrictLive(client) {
+  const readiness = { value: "timeout" };
+  const dispose = await client.subscribeLive(
+    { kinds: [20001], authors: ["a".repeat(64)], limit: 0 },
+    () => {},
+    (next) => {
+      readiness.value = next;
+    },
+    5_000,
+  );
+  if (readiness.value === "eose") return dispose;
+  await dispose();
+  throw new Error(`not ready: ${readiness.value}`);
+}
 
 beforeEach(() => {
   resetRateLimitGate();
@@ -347,7 +359,7 @@ test("125 refused live subscriptions cannot stampede beside a publish when coold
     assert.ok(retries[i].at - retries[i - 1].at >= 250);
 });
 
-test("presence waits beyond its 5s budget behind the gate, then EOSE before IPC settles succeeds", async () => {
+test("a limit:0 REQ waits beyond its 5s budget behind the gate, then EOSE before IPC settles succeeds", async () => {
   const client = session();
   const background = start(client, 32);
   await flush();
@@ -356,11 +368,7 @@ test("presence waits beyond its 5s budget behind the gate, then EOSE before IPC 
     "rate-limited: quota exceeded; retry in 6s",
   ]);
   let outcome = "pending";
-  const presence = openPresenceSubscription(
-    ["a".repeat(64)],
-    () => {},
-    client.subscribeLive.bind(client),
-  );
+  const presence = openStrictLive(client);
   presence.then(
     () => {
       outcome = "ready";

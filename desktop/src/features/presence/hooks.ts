@@ -17,8 +17,8 @@ import {
   PRESENCE_TTL_SECONDS,
   resolveAutomaticPresenceStatus,
 } from "@/features/presence/lib/presence";
-import { PresenceSubscriptionReconciler } from "@/features/presence/lib/presenceSubscriptionReconciler";
-import { openPresenceSubscription } from "@/shared/api/presenceRelaySubscription";
+import { communityLive } from "@/shared/api/relayCommunityLive";
+import { KIND_PRESENCE_UPDATE } from "@/shared/constants/kinds";
 import type { PresenceLookup, PresenceStatus } from "@/shared/api/types";
 
 const PRESENCE_STATUS_TICK_INTERVAL_MS = 30_000;
@@ -117,9 +117,13 @@ export function usePresenceQuery(
 }
 
 /**
- * Keep one live presence subscription scoped to pubkeys requested by active
- * TanStack queries. Replacement subscriptions open before the old one closes,
- * avoiding a live-update gap while query observers change.
+ * Live presence for everyone an active TanStack query asks about. One
+ * listener rides the community bundle's presence row for the app's
+ * lifetime; the query cache observer adds the pubkeys it sees to the
+ * bundle's author set (grow-only, at most one re-REQ per 30 s). A person
+ * shown for the first time gets their snapshot from the query's own fetch
+ * at once; their live updates follow within 30 s. After a session reset the
+ * set is empty again and the observer re-adds every active key.
  */
 export function usePresenceSubscription() {
   const queryClient = useQueryClient();
@@ -146,18 +150,28 @@ export function usePresenceSubscription() {
       );
     }
 
-    const reconciler = new PresenceSubscriptionReconciler({
-      open: (authors) =>
-        openPresenceSubscription(authors, handlePresenceEvent, (...args) =>
-          relayClient.subscribeLive(...args),
-        ),
-    });
-
     function reconcileActiveQueries() {
-      reconciler.setAuthors(
+      if (isCancelled) return;
+      // Keys past the bundle's cap stay on the 60 s query poll.
+      communityLive.addPresenceAuthors(
         activePresencePubkeys(queryClient.getQueryCache().getAll()),
       );
     }
+
+    let stopListening: (() => Promise<void>) | null = null;
+    void communityLive
+      .subscribe(
+        { kinds: [KIND_PRESENCE_UPDATE], limit: 0 },
+        handlePresenceEvent,
+        { onReset: reconcileActiveQueries },
+      )
+      .then((stop) => {
+        if (isCancelled) void stop();
+        else stopListening = stop;
+      })
+      .catch((error) => {
+        console.error("Failed to listen for presence", error);
+      });
 
     function scheduleReconcile() {
       if (reconcileTimer) return;
@@ -188,7 +202,7 @@ export function usePresenceSubscription() {
       unsubQueryCache();
       unsubReconnect();
       if (reconcileTimer) clearTimeout(reconcileTimer);
-      reconciler.dispose();
+      if (stopListening) void stopListening();
     };
   }, [queryClient]);
 }
