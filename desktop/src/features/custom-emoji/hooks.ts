@@ -10,6 +10,7 @@ import {
   setCustomEmoji,
 } from "@/shared/api/customEmoji";
 import { relayClient } from "@/shared/api/relayClient";
+import { communityLive } from "@/shared/api/relayCommunityLive";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import type { CustomEmoji } from "@/shared/lib/remarkCustomEmoji";
 
@@ -84,8 +85,9 @@ export function useCommunityEmojiLiveUpdates(): void {
     let disposed = false;
     let dispose: (() => void) | undefined;
 
-    void relayClient
-      .subscribeLive(
+    // Rides the community bundle REQ (relayCommunityLive.ts).
+    void communityLive
+      .subscribe(
         { kinds: [KIND_EMOJI_SET], "#d": [CUSTOM_EMOJI_SET_D_TAG], limit: 0 },
         () => {
           void queryClient.invalidateQueries({ queryKey: customEmojiQueryKey });

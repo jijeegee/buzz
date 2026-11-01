@@ -431,14 +431,6 @@ export class RelayClient {
     );
   }
 
-  /** Subscribe to kind:30315 user status events (live only, no backfill). */
-  async subscribeToUserStatusUpdates(onEvent: (event: RelayEvent) => void) {
-    return this.subscribe(
-      { kinds: [KIND_USER_STATUS], "#d": ["general"], limit: 0 },
-      onEvent,
-    );
-  }
-
   async subscribeToAllStreamMessages(onEvent: (event: RelayEvent) => void) {
     return this.subscribe(buildGlobalStreamFilter(50), onEvent);
   }

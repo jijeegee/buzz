@@ -35,6 +35,7 @@ const SUMMARY_IN_TIMELINE =
 type CheckpointName =
   | "idle"
   | "idleWithAgent"
+  | "agentsView"
   | "roomA"
   | "roomB"
   | "threadOpen"
@@ -371,6 +372,22 @@ test.describe("live REQ budget", () => {
         ceiling.liveSends,
       );
     }
+
+    // The team catalog rides the community bundle: opening Agents sends
+    // no live REQ of its own.
+    await page.getByTestId("open-agents-view").click();
+    await expect(
+      page.getByRole("heading", { level: 1, name: "Agents" }),
+    ).toBeVisible();
+    const agents = await checkpoint(page, "agentsView", testInfo, measured);
+    expect(
+      agents.reqs
+        .slice(idle.reqs.length)
+        .filter((req) => req.live)
+        .map((req) => subscriptionSignature(req.filters)),
+      "opening Agents logs no new live REQ",
+    ).toEqual([]);
+    await page.getByTestId("open-chats-view").click();
 
     // Seed B's thread before B is ever opened.
     const [threadHead] = await seedThreads(page, ROOM_B, 1);

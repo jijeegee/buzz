@@ -7,6 +7,7 @@ import {
 } from "@/features/agents/lib/personaCatalogRelay";
 import { invalidatePersonaEditCaches } from "@/features/agents/lib/personaEditCaches";
 import { relayClient } from "@/shared/api/relayClient";
+import { communityLive } from "@/shared/api/relayCommunityLive";
 import { useFocusedRefetchInterval } from "@/shared/lib/useDocumentVisible";
 import {
   setPersonaShared,
@@ -56,8 +57,9 @@ export function usePersonaCatalogLiveUpdates(communityId: string | null): void {
     let disposed = false;
     let dispose: (() => Promise<void>) | null = null;
 
-    void relayClient
-      .subscribeLive({ kinds: [KIND_PERSONA], limit: 0 }, () => {
+    // Rides the community bundle REQ (relayCommunityLive.ts).
+    void communityLive
+      .subscribe({ kinds: [KIND_PERSONA], limit: 0 }, () => {
         void queryClient.invalidateQueries({
           queryKey: personaCatalogQueryKey(communityId),
         });
