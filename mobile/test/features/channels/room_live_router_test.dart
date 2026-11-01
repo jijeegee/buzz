@@ -231,6 +231,22 @@ void main() {
       await Future<void>.delayed(Duration.zero);
       expect(done, isTrue);
     });
+
+    test('whenRoomsCovered completes once every room is covered', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setBundleRooms({'a', 'b'})
+        ..setCoveredRooms({'a'});
+      expect(router.isRoomCovered('a'), isTrue);
+      expect(router.isRoomCovered('b'), isFalse);
+      var done = false;
+      unawaited(router.whenRoomsCovered(['a', 'b']).then((_) => done = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isFalse);
+      router.setCoveredRooms({'a', 'b'});
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+      expect(router.isRoomCovered('b'), isTrue);
+    });
   });
 
   group('quiet rooms', () {

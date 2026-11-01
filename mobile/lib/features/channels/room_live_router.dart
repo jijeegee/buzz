@@ -234,6 +234,14 @@ class RoomLiveRouter {
     return waiter.done.future;
   }
 
+  /// [whenRoomCovered] for each of [roomIds], all at once.
+  Future<void> whenRoomsCovered(Iterable<String> roomIds) =>
+      Future.wait([for (final roomId in roomIds) whenRoomCovered(roomId)]);
+
+  /// Whether [roomId]'s live events reach this router now (see
+  /// [whenRoomCovered]).
+  bool isRoomCovered(String roomId) => _roomCovered(roomId);
+
   /// Listens to [roomId]'s live events, thread summaries included. Completes
   /// once the room is covered by the bundle or its own subscription is set up,
   /// with the function that stops listening.

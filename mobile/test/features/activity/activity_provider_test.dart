@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:kuzz/features/activity/activity_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_live_events.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/room_live_router.dart';
@@ -1132,34 +1133,79 @@ void main() {
       expect(reopened, isEmpty);
     });
 
-    test(
-      '129 visible DMs batch under the cap and hidden activity still resurfaces',
-      () async {
-        final visibleChannels = [
-          for (var i = 0; i < 129; i++)
-            _dmChannel('visible-${i.toString().padLeft(4, '0')}'),
-        ];
-        final session = _RecordingSessionNotifier();
-        final reopened = <List<String>>[];
-        final container = containerFor(
-          session,
-          visible: visibleChannels,
-          reopened: reopened,
+    NostrEvent dmMessage(String id, String roomId, {int kind = 9}) =>
+        NostrEvent(
+          id: id,
+          pubkey: alice,
+          createdAt: nowSeconds(),
+          kind: kind,
+          tags: [
+            ['h', roomId],
+          ],
+          content: 'Hi',
+          sig: '',
         );
-        await start(container);
-        await _waitFor(() => session.visibleDmSubscriptionBatches.length == 2);
 
-        // Every visible-DM REQ stays within the cap, split 128 + 1.
-        final visibleBatches = session.visibleDmSubscriptionBatches;
-        expect(visibleBatches.map((batch) => batch.length), [128, 1]);
-        expect(visibleBatches.expand((batch) => batch).toSet(), hasLength(129));
+    int feedQueries(_RecordingSessionNotifier session) =>
+        session.calls.where((call) => call == 'query').length;
 
-        // Hidden activity still resurfaces its DM.
-        _emitQuiet(container, hiddenMessage('hidden-message'));
-        await _waitFor(() => reopened.isNotEmpty);
-        expect(reopened.single, [alice]);
-      },
-    );
+    test('129 visible DMs open no REQ; a kind 9 in one on the room bundle '
+        'refreshes the feed', () async {
+      final visibleChannels = [
+        for (var i = 0; i < 129; i++)
+          _dmChannel('visible-${i.toString().padLeft(4, '0')}'),
+      ];
+      final visibleIds = {for (final channel in visibleChannels) channel.id};
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(
+        session,
+        visible: visibleChannels,
+        reopened: reopened,
+      );
+      container.read(roomLiveRouterProvider)
+        ..setBundleRooms(visibleIds)
+        ..setCoveredRooms(visibleIds);
+      await start(container);
+
+      expect(session.visibleDmSubscriptionBatches, isEmpty);
+      expect(session.subscribedRooms.intersection(visibleIds), isEmpty);
+
+      // Covered at fetch time: no coverage refresh follows.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final afterBuild = feedQueries(session);
+
+      final live = container.read(channelLiveEventsProvider);
+      live
+        ..emit(dmMessage('reaction', 'visible-0005', kind: 7))
+        ..emit(dmMessage('other-room', 'channel-1'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(feedQueries(session), afterBuild);
+
+      live.emit(dmMessage('dm-message', 'visible-0128'));
+      await _waitFor(() => feedQueries(session) == afterBuild + 1);
+
+      // Hidden activity still resurfaces its DM.
+      _emitQuiet(container, hiddenMessage('hidden-message'));
+      await _waitFor(() => reopened.isNotEmpty);
+      expect(reopened.single, [alice]);
+    });
+
+    test('a DM the bundle did not cover at fetch time refreshes once when it '
+        'is covered', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session, visible: [_dmChannel('late-dm')]);
+      final router = container.read(roomLiveRouterProvider)
+        ..setBundleRooms({'late-dm'});
+      await start(container);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final afterBuild = feedQueries(session);
+
+      router.setCoveredRooms({'late-dm'});
+      await _waitFor(() => feedQueries(session) == afterBuild + 1);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(feedQueries(session), afterBuild + 1);
+    });
   });
 }
 
