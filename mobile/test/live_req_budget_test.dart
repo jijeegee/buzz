@@ -88,6 +88,10 @@ final Map<String, dynamic> _expected =
 /// What this run measured, merged into the fixture in update mode.
 final _measured = <String, dynamic>{};
 
+/// Owner rule (A4): 50 thread rows read their names in at most this many
+/// HTTP queries.
+const _ownerRows50NameReads = 2;
+
 NostrEvent _ev(
   String id,
   int kind,
@@ -596,6 +600,23 @@ void main() {
         );
       }
       expect(mounted, greaterThanOrEqualTo(10), reason: 'too few rows mounted');
+      // Owner rule (A4), in both modes: a room with 10 or 50 thread rows holds
+      // the room's own live REQs only, and 50 names come in at most 2 reads.
+      final roomOpen = (_measured['roomOpen'] ?? _expected['roomOpen']) as Map?;
+      if (roomOpen != null) {
+        expect(
+          measured['live'],
+          roomOpen['live'],
+          reason: 'rows$rows live must equal roomOpen live',
+        );
+      }
+      if (rows == 50) {
+        expect(
+          threadNameQueries,
+          lessThanOrEqualTo(_ownerRows50NameReads),
+          reason: 'rows50: thread names must arrive in batched reads',
+        );
+      }
       if (rows == 50) {
         final ten = _measured['rows10'] as Map?;
         expect(ten, isNotNull, reason: 'the 10-row test must run first');
@@ -608,6 +629,7 @@ void main() {
           reason: 'live delta $liveDelta is not a whole cost per row $rowDelta',
         );
         final perRow = liveDelta ~/ rowDelta;
+        expect(perRow, 0, reason: 'a mounted thread row costs no live REQ');
         _measured['threadRows'] = {'livePerMountedRow': perRow};
         if (!_update) {
           expect(

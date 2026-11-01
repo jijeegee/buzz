@@ -145,11 +145,10 @@
       ]
     },
     "roomOpenWithThreadRow": {
-      "live": 8,
+      "live": 7,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since",
         "#d:[general]|kinds:[30315]|limit:0",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:0 + #h:1|kinds:[40110]|limit:0",
         "#h:1|kinds:[9]|limit:100|since",
         "#h:5|kinds:[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103]|limit:0",
@@ -158,11 +157,10 @@
       ]
     },
     "threadOpen": {
-      "live": 8,
+      "live": 7,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since",
         "#d:[general]|kinds:[30315]|limit:0",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:0 + #h:1|kinds:[40110]|limit:0",
         "#h:1|kinds:[9]|limit:100|since",
         "#h:5|kinds:[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103]|limit:0",
@@ -184,20 +182,10 @@
       ]
     },
     "rows10": {
-      "live": 17,
+      "live": 7,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since",
         "#d:[general]|kinds:[30315]|limit:0",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:0 + #h:1|kinds:[40110]|limit:0",
         "#h:1|kinds:[9]|limit:100|since",
         "#h:5|kinds:[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103]|limit:0",
@@ -206,63 +194,13 @@
       ],
       "seededRows": 10,
       "mountedRows": 10,
-      "http40009": 10
+      "http40009": 1
     },
     "rows50": {
-      "live": 57,
+      "live": 7,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since",
         "#d:[general]|kinds:[30315]|limit:0",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
-        "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:0 + #h:1|kinds:[40110]|limit:0",
         "#h:1|kinds:[9]|limit:100|since",
         "#h:5|kinds:[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103]|limit:0",
@@ -271,10 +209,10 @@
       ],
       "seededRows": 50,
       "mountedRows": 50,
-      "http40009": 50
+      "http40009": 1
     },
     "threadRows": {
-      "livePerMountedRow": 1
+      "livePerMountedRow": 0
     }
   },
   "target": {

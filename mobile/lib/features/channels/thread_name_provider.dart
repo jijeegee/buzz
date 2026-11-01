@@ -9,6 +9,8 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
+import 'room_live_router.dart';
+import 'thread_name_batch.dart';
 
 typedef ThreadNameKey = ({String channelId, String headId});
 
@@ -142,6 +144,10 @@ class ThreadNameState {
   const ThreadNameState(this.value, {this.error});
 }
 
+/// One thread's name. History comes from the batched read
+/// ([ThreadNameBatcher]); live renames come from the room bundle's metadata
+/// ([RoomLiveRouter.listenMetadata]), so a row costs no live REQ. A reconnect
+/// rebuilds this and re-reads through the batcher.
 class ThreadNameNotifier extends Notifier<ThreadNameState> {
   final ThreadNameKey key;
   ThreadNameNotifier(this.key);
@@ -169,6 +175,18 @@ class ThreadNameNotifier extends Notifier<ThreadNameState> {
     ref.onDispose(() {
       _generation++;
     });
+    final stopLive = ref.watch(roomLiveRouterProvider).listenMetadata((event) {
+      if (event.channelId != key.channelId ||
+          event.getTagValue('e') != key.headId) {
+        return;
+      }
+      unawaited(
+        _merge(generation, storage, [
+          event,
+        ]).catchError((Object e, StackTrace st) => _failure(generation, e, st)),
+      );
+    });
+    ref.onDispose(stopLive);
     if (connected) unawaited(_load(generation, storage));
     return ThreadNameState(_latest);
   }
@@ -198,28 +216,12 @@ class ThreadNameNotifier extends Notifier<ThreadNameState> {
   }
 
   Future<void> _load(int generation, ThreadNameStorage storage) async {
-    final session = ref.read(relaySessionProvider.notifier);
-    void Function()? stop;
-    ref.onDispose(() => stop?.call());
+    final batcher = ref.read(threadNameBatcherProvider);
     try {
-      // Subscribe before history to cover edits arriving during the query.
-      stop = await session.subscribe(
-        _filter,
-        (event) {
-          unawaited(
-            _merge(generation, storage, [event]).catchError(
-              (Object e, StackTrace st) => _failure(generation, e, st),
-            ),
-          );
-        },
-        onClosed: (message) =>
-            _failure(generation, StateError(message), StackTrace.current),
-      );
-      if (!_current(generation)) {
-        stop();
-        return;
-      }
-      await _merge(generation, storage, await session.queryRelay([_filter]));
+      // The batcher reads once the room's live events arrive, and _merge keeps
+      // the newest, so a live rename during the read is never replaced.
+      final name = await batcher.load(key);
+      await _merge(generation, storage, [?name]);
     } catch (error, stack) {
       _failure(generation, error, stack);
     }
