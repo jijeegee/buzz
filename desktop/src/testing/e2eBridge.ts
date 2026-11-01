@@ -41,6 +41,18 @@ import { selectMockHistory } from "./e2eBridgeHistory.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
 import { handleSnapshotMockCommand } from "./e2eBridgeSnapshots.ts";
 import {
+  getOpenSubscriptions,
+  getReqLog,
+  type OpenSubscription,
+  type ReqLogEntry,
+  recordClose,
+  recordRelayClosed,
+  recordReq,
+  recordSocketClosed,
+  recordSocketOpened,
+  resetReqLog,
+} from "./e2eBridgeReqLog.ts";
+import {
   createMockSubscription,
   hasMockSubscription,
 } from "./e2eBridgeSubscriptions.ts";
@@ -1469,6 +1481,12 @@ declare global {
       unavailable: boolean,
     ) => void;
     __KUZZ_E2E_GET_WEBSOCKET_CONNECT_ATTEMPTS__?: () => number[];
+    /** Cumulative mock-socket wire log (REQ, CLOSE, CLOSED, connects). */
+    __KUZZ_E2E_REQ_LOG__?: () => ReqLogEntry[];
+    /** Subscriptions REQ'd and not yet closed, derived from the wire log. */
+    __KUZZ_E2E_LIVE_REQS__?: () => OpenSubscription[];
+    /** Mock sockets currently open. */
+    __KUZZ_E2E_MOCK_SOCKET_COUNT__?: () => number;
     __KUZZ_E2E_ACTIVATE_RELAY_RATE_LIMIT__?: (seconds: number) => void;
     __KUZZ_E2E_RESET_WEBSOCKET_CONNECT_ATTEMPTS__?: () => void;
     __KUZZ_E2E_SET_MESH__?: (mesh: {
@@ -4643,6 +4661,13 @@ function resolveRawHandler(handler: unknown): WsHandler {
 }
 
 function sendWsText(handler: WsHandler, payload: unknown[]) {
+  if (payload[0] === "CLOSED") {
+    for (const [socketId, socket] of mockSockets) {
+      if (socket.handler === handler) {
+        recordRelayClosed(socketId, String(payload[1]), String(payload[2]));
+      }
+    }
+  }
   handler({
     type: "Text",
     data: JSON.stringify(payload),
@@ -11249,6 +11274,7 @@ async function connectMockSocket(args: { onMessage: unknown }) {
     handler,
     subscriptions: new Map(),
   });
+  recordSocketOpened(wsId);
 
   if (getConfig()?.mock?.websocketAuthBeforeConnectResolves) {
     sendWsText(handler, ["AUTH", `mock-challenge-${wsId}`]);
@@ -11306,6 +11332,7 @@ function sendToMockSocket(args: {
 
   if (args.message.type === "Close") {
     mockSockets.delete(args.id);
+    recordSocketClosed(args.id);
     sendWsClose(socket.handler);
     return;
   }
@@ -11337,6 +11364,8 @@ function sendToMockSocket(args: {
   if (type === "REQ") {
     const subId = rest[0] as string;
     const filters = rest.slice(1) as MockFilter[];
+    // Logged before the p-gate so rejected REQs still count as sends.
+    recordReq(args.id, subId, filters);
     if (
       !filters.every((filter) =>
         isPGatedFilterAuthorized(filter, MOCK_IDENTITY_PUBKEY),
@@ -11556,6 +11585,7 @@ function sendToMockSocket(args: {
 
   if (type === "CLOSE") {
     const subId = rest[0] as string;
+    recordClose(args.id, subId);
     socket.subscriptions.delete(subId);
     return;
   }
@@ -11831,6 +11861,7 @@ function disconnectMockSocket(id: number) {
   }
 
   mockSockets.delete(id);
+  recordSocketClosed(id);
   sendWsClose(socket.handler);
 }
 
@@ -11890,6 +11921,7 @@ export function maybeInstallE2eTauriMocks() {
   mockAuthResponses.length = 0;
   mockChannelHistoryCloses.length = 0;
   relayWebsocketConnectAttemptStarts.length = 0;
+  resetReqLog();
   mockAuthSigningAttempts = 0;
   deferredSendMessageLiveEchoes.length = 0;
   deferredLinkPreviewMetadataQueue = [];
@@ -12379,6 +12411,7 @@ export function maybeInstallE2eTauriMocks() {
   };
   window.__KUZZ_E2E_RESTART_MOCK_WEBSOCKETS__ = () => {
     const sockets = [...mockSockets.values()];
+    for (const socketId of mockSockets.keys()) recordSocketClosed(socketId);
     mockSockets.clear();
     for (const socket of sockets) {
       sendWsClose(socket.handler, 1012, "relay restarting");
@@ -12398,6 +12431,9 @@ export function maybeInstallE2eTauriMocks() {
   window.__KUZZ_E2E_RESET_WEBSOCKET_CONNECT_ATTEMPTS__ = () => {
     relayWebsocketConnectAttemptStarts.length = 0;
   };
+  window.__KUZZ_E2E_REQ_LOG__ = getReqLog;
+  window.__KUZZ_E2E_LIVE_REQS__ = getOpenSubscriptions;
+  window.__KUZZ_E2E_MOCK_SOCKET_COUNT__ = () => mockSockets.size;
   window.__KUZZ_E2E_RELEASE_SEND_MESSAGE_LIVE_ECHO__ = () => {
     const queued = deferredSendMessageLiveEchoes.splice(0);
     for (const { channelId, event } of queued) {

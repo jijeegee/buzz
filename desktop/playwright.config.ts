@@ -24,6 +24,7 @@ export default defineConfig({
         "**/owned-agent-discovery.spec.ts",
         "**/thread-head-stale-edit.spec.ts",
         "**/thread-name.spec.ts",
+        "**/live-req-budget.spec.ts",
         "**/thread-follow.spec.ts",
         "**/sidebar-offcanvas-rail.spec.ts",
         "**/tooltip-semantics.spec.ts",
