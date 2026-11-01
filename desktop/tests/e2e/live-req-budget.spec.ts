@@ -1,5 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
+import { subscriptionSignature } from "../../src/testing/e2eBridgeReqLog";
 import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
 // Live REQ budget (stage A0 of the subscription consolidation plan).
@@ -63,7 +64,7 @@ type Snapshot = {
   sockets: number;
   connects: number;
   logLength: number;
-  reqs: { subId: string; live: boolean }[];
+  reqs: { subId: string; live: boolean; filters: unknown[] }[];
   quietForMs: number;
 };
 
@@ -118,7 +119,13 @@ async function snapshot(page: Page): Promise<Snapshot> {
       logLength: log.length,
       reqs: log.flatMap((entry) =>
         entry.type === "REQ"
-          ? [{ subId: entry.subId, live: entry.subId.startsWith("live-") }]
+          ? [
+              {
+                subId: entry.subId,
+                live: entry.subId.startsWith("live-"),
+                filters: entry.filters,
+              },
+            ]
           : [],
       ),
       quietForMs: lastWire ? Date.now() - lastWire.at : Date.now(),
@@ -341,6 +348,18 @@ test.describe("live REQ budget", () => {
     };
     await testInfo.attach("launch.json", {
       body: JSON.stringify(launch),
+      contentType: "application/json",
+    });
+    // What the launch one-shots asked for, so a ceiling change can be read.
+    await testInfo.attach("launch-one-shots.json", {
+      body: JSON.stringify(
+        idle.reqs
+          .filter((req) => !req.live)
+          .map((req) => subscriptionSignature(req.filters))
+          .sort(),
+        null,
+        2,
+      ),
       contentType: "application/json",
     });
     if (!UPDATE) {

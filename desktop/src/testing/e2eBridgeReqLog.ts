@@ -72,13 +72,31 @@ export function openSubscriptionsFromLog(
   return [...open.values()];
 }
 
-function describeTagValue(value: unknown): string {
-  return Array.isArray(value) ? String(value.length) : "?";
+const ID_LIKE =
+  /^([0-9a-f]{64}|[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i;
+
+function isIdLike(value: unknown) {
+  return typeof value === "string" && ID_LIKE.test(value);
+}
+
+/** Ids, pubkeys and room ids count; other values (`general`) stay. */
+function describeList(value: unknown): string {
+  if (!Array.isArray(value)) return "?";
+  if (value.every(isIdLike)) return String(value.length);
+  return `[${value.map((item) => (isIdLike(item) ? "*" : String(item))).join(",")}]`;
+}
+
+function isPresenceFilter(record: Record<string, unknown>) {
+  const kinds = record.kinds;
+  return Array.isArray(kinds) && kinds.length === 1 && kinds[0] === 20001;
 }
 
 /**
- * Normalised filter shape with ids, pubkeys and timestamps stripped:
- * kinds and limit keep their values, tag/id lists keep only their length.
+ * Normalised filter shape with ids, pubkeys and timestamps stripped: kinds
+ * (sorted) and limit keep their values, id lists keep only their length,
+ * other tag values stay. The presence author set grows with what the screen
+ * shows, so its size is `authors:+`. Same rules as mobile's
+ * `test/helpers/scripted_relay.dart`.
  */
 export function filterSignature(filter: unknown): string {
   if (!filter || typeof filter !== "object") return String(filter);
@@ -92,7 +110,8 @@ export function filterSignature(filter: unknown): string {
       }
       if (key === "limit") return `limit:${String(value)}`;
       if (key === "since" || key === "until" || key === "search") return key;
-      return `${key}:${describeTagValue(value)}`;
+      if (key === "authors" && isPresenceFilter(record)) return "authors:+";
+      return `${key}:${describeList(value)}`;
     })
     .join("|");
 }

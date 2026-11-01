@@ -511,6 +511,13 @@ void main() {
       );
     }
     debugPrint('launch: $launch');
+    // What the launch one-shots asked for, so a ceiling change can be read.
+    final launchOneShots = [
+      for (final frame in h.relay.frames)
+        if (frame.type == 'REQ' && frame.subId.startsWith('h-'))
+          reqSignature(frame.filters),
+    ]..sort();
+    debugPrint('launch one-shots:\n  ${launchOneShots.join('\n  ')}');
 
     // Room A: a plain stream room with no thread rows.
     await h.open(tester, find.text('alpha'));

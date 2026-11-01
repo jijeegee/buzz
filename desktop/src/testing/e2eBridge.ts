@@ -38,6 +38,10 @@ import { switchManagedAgentModel } from "@/shared/api/agentControl";
 import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audioMediaLoadScheduler";
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
+import {
+  answerEachFilter,
+  mockLiveFiltersMatch,
+} from "./e2eBridgeMultiFilter.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
 import { handleSnapshotMockCommand } from "./e2eBridgeSnapshots.ts";
 import {
@@ -5046,7 +5050,7 @@ function prependMockHistory(input: {
 }
 
 function emitMockHistory(
-  socket: MockSocket,
+  send: (frame: unknown[]) => void,
   subId: string,
   channelIds: string[],
   filter: MockFilter,
@@ -5058,9 +5062,9 @@ function emitMockHistory(
 
   const emit = () => {
     for (const event of events) {
-      sendWsText(socket.handler, ["EVENT", subId, event]);
+      send(["EVENT", subId, event]);
     }
-    sendWsText(socket.handler, ["EOSE", subId]);
+    send(["EOSE", subId]);
   };
 
   emit();
@@ -5158,9 +5162,7 @@ function emitMockGlobalEvent(event: RelayEvent) {
   }
   for (const socket of mockSockets.values()) {
     for (const [subId, subscription] of socket.subscriptions) {
-      if (subscription.kinds && !subscription.kinds.includes(event.kind)) {
-        continue;
-      }
+      if (!mockLiveFiltersMatch(subscription.filters, event)) continue;
       sendWsText(socket.handler, ["EVENT", subId, event]);
     }
   }
@@ -11310,6 +11312,175 @@ async function sendToRealSocket(args: {
   }
 }
 
+/** Answer one filter of a one-shot (non-`live-`) REQ, ending in EOSE or CLOSED. */
+function answerMockOneShot(
+  send: (frame: unknown[]) => void,
+  subId: string,
+  filter: MockFilter,
+) {
+  if (filter.kinds?.includes(13534)) {
+    send(["EVENT", subId, createMockRelayMembershipEvent()]);
+    const eoseDelayMs = getConfig()?.mock?.relayMembershipEoseDelayMs ?? 0;
+    if (eoseDelayMs > 0) {
+      window.setTimeout(() => send(["EOSE", subId]), eoseDelayMs);
+    } else {
+      send(["EOSE", subId]);
+    }
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_EMOJI_SET)) {
+    // Honor `authors` so `fetchOwnEmoji` (authors:[me]) sees only the
+    // caller's set, while the union fetch (no authors) sees every member's —
+    // matching the real relay and the own-vs-community split in the UI.
+    const authors = filter.authors?.map((a) => a.toLowerCase());
+    for (const emojiEvent of createMockCustomEmojiSetEvents()) {
+      if (authors && !authors.includes(emojiEvent.pubkey.toLowerCase())) {
+        continue;
+      }
+      send(["EVENT", subId, emojiEvent]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_USER_STATUS)) {
+    for (const statusEvent of filterMockUserStatuses(filter)) {
+      send(["EVENT", subId, statusEvent]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_EVENT_REMINDER)) {
+    const authors = filter.authors?.map((a) => a.toLowerCase());
+    for (const event of mockReminderEvents) {
+      if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+      send(["EVENT", subId, event]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_AGENT_TEAM)) {
+    const authors = filter.authors?.map((author) => author.toLowerCase());
+    for (const event of mockAgentTeamEvents) {
+      if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+      send(["EVENT", subId, event]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_PERSONA)) {
+    const authors = filter.authors?.map((author) => author.toLowerCase());
+    const sourceIds = filter["#d"];
+    for (const event of mockPersonaEvents) {
+      if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+      if (
+        event.pubkey.toLowerCase() !== MOCK_IDENTITY_PUBKEY.toLowerCase() &&
+        !hasExactSharedTag(event)
+      ) {
+        continue;
+      }
+      const sourceId = event.tags.find((tag) => tag[0] === "d")?.[1];
+      if (sourceIds && (!sourceId || !sourceIds.includes(sourceId))) continue;
+      send(["EVENT", subId, event]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_TEAM_CATALOG)) {
+    const authors = filter.authors?.map((author) => author.toLowerCase());
+    const teamDTags = filter["#d"];
+    for (const event of mockTeamCatalogEvents) {
+      if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
+      // Own heads are readable unshared (the owner sees their own state);
+      // anyone else's must carry the exact shared tag, like the relay gate.
+      if (
+        event.pubkey.toLowerCase() !== MOCK_IDENTITY_PUBKEY.toLowerCase() &&
+        !hasExactSharedTag(event)
+      ) {
+        continue;
+      }
+      const teamDTag = event.tags.find((tag) => tag[0] === "d")?.[1];
+      if (teamDTags && (!teamDTag || !teamDTags.includes(teamDTag))) continue;
+      send(["EVENT", subId, event]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  // Project queries: NIP-34 kinds, or kind:1 comments scoped by repo `a`
+  // tag or by issue/PR root `e` tag (discussions, approvals, review
+  // requests, assignment operations). Channel messages are kind 9, so a
+  // kind:1 `#e` query can only target project discussion events.
+  if (
+    filter.kinds?.some((kind) => MOCK_PROJECT_KINDS.has(kind)) ||
+    (filter.kinds?.includes(1) && (filter["#a"] || filter["#e"]))
+  ) {
+    window.__KUZZ_E2E_PROJECT_QUERY_FILTERS__ ??= [];
+    window.__KUZZ_E2E_PROJECT_QUERY_FILTERS__.push(filter);
+    const rejectedKinds = window.__KUZZ_E2E_REJECT_PROJECT_QUERY_KINDS__ ?? [];
+    if (filter.kinds?.some((kind) => rejectedKinds.includes(kind))) {
+      send(["CLOSED", subId, "mock project query failure"]);
+      return;
+    }
+    if (
+      window.__KUZZ_E2E_DEFER_FULL_PROJECT_QUERIES__ &&
+      !filter.authors &&
+      !filter["#a"] &&
+      !filter["#kuzz-channel"] &&
+      !filter["#d"] &&
+      !filter["#e"] &&
+      !filter.ids
+    ) {
+      return;
+    }
+    for (const event of filterMockProjectEvents(filter)) {
+      send(["EVENT", subId, event]);
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  const channelIds = filter["#h"] ?? [];
+  if (channelIds.length > 0 && subId.startsWith("history-")) {
+    const closeReason = mockChannelHistoryCloses.shift();
+    if (closeReason) {
+      send(["CLOSED", subId, closeReason]);
+      return;
+    }
+  }
+  if (channelIds.length === 0) {
+    // Aux-backfill filters (reactions/deletions) are `#e`-keyed with no
+    // channel tag — serve them across all channel stores like the relay.
+    const referencedIds = filter["#e"];
+    if (referencedIds && referencedIds.length > 0) {
+      const targets = new Set(referencedIds);
+      for (const events of mockMessages.values()) {
+        for (const event of events) {
+          if (filter.kinds && !filter.kinds.includes(event.kind)) {
+            continue;
+          }
+          if (
+            event.tags.some(
+              (tag) => tag[0] === "e" && tag[1] && targets.has(tag[1]),
+            )
+          ) {
+            send(["EVENT", subId, event]);
+          }
+        }
+      }
+    }
+    send(["EOSE", subId]);
+    return;
+  }
+
+  emitMockHistory(send, subId, channelIds, filter);
+}
+
 function sendToMockSocket(args: {
   id: number;
   message?: {
@@ -11406,180 +11577,14 @@ function sendToMockSocket(args: {
       return;
     }
 
-    const filter = rest[1] as MockFilter;
-    if (filter.kinds?.includes(13534)) {
-      sendWsText(socket.handler, [
-        "EVENT",
-        subId,
-        createMockRelayMembershipEvent(),
-      ]);
-      const eoseDelayMs = getConfig()?.mock?.relayMembershipEoseDelayMs ?? 0;
-      if (eoseDelayMs > 0) {
-        window.setTimeout(
-          () => sendWsText(socket.handler, ["EOSE", subId]),
-          eoseDelayMs,
-        );
-      } else {
-        sendWsText(socket.handler, ["EOSE", subId]);
-      }
-      return;
+    const send = (frame: unknown[]) => sendWsText(socket.handler, frame);
+    if (filters.length === 1) {
+      answerMockOneShot(send, subId, filters[0]);
+    } else {
+      answerEachFilter(filters, send, (filter, relay) =>
+        answerMockOneShot(relay, subId, filter),
+      );
     }
-
-    if (filter.kinds?.includes(KIND_EMOJI_SET)) {
-      // Honor `authors` so `fetchOwnEmoji` (authors:[me]) sees only the
-      // caller's set, while the union fetch (no authors) sees every member's —
-      // matching the real relay and the own-vs-community split in the UI.
-      const authors = filter.authors?.map((a) => a.toLowerCase());
-      for (const emojiEvent of createMockCustomEmojiSetEvents()) {
-        if (authors && !authors.includes(emojiEvent.pubkey.toLowerCase())) {
-          continue;
-        }
-        sendWsText(socket.handler, ["EVENT", subId, emojiEvent]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    if (filter.kinds?.includes(KIND_USER_STATUS)) {
-      for (const statusEvent of filterMockUserStatuses(filter)) {
-        sendWsText(socket.handler, ["EVENT", subId, statusEvent]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    if (filter.kinds?.includes(KIND_EVENT_REMINDER)) {
-      const authors = filter.authors?.map((a) => a.toLowerCase());
-      for (const event of mockReminderEvents) {
-        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
-        sendWsText(socket.handler, ["EVENT", subId, event]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    if (filter.kinds?.includes(KIND_AGENT_TEAM)) {
-      const authors = filter.authors?.map((author) => author.toLowerCase());
-      for (const event of mockAgentTeamEvents) {
-        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
-        sendWsText(socket.handler, ["EVENT", subId, event]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    if (filter.kinds?.includes(KIND_PERSONA)) {
-      const authors = filter.authors?.map((author) => author.toLowerCase());
-      const sourceIds = filter["#d"];
-      for (const event of mockPersonaEvents) {
-        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
-        if (
-          event.pubkey.toLowerCase() !== MOCK_IDENTITY_PUBKEY.toLowerCase() &&
-          !hasExactSharedTag(event)
-        ) {
-          continue;
-        }
-        const sourceId = event.tags.find((tag) => tag[0] === "d")?.[1];
-        if (sourceIds && (!sourceId || !sourceIds.includes(sourceId))) continue;
-        sendWsText(socket.handler, ["EVENT", subId, event]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    if (filter.kinds?.includes(KIND_TEAM_CATALOG)) {
-      const authors = filter.authors?.map((author) => author.toLowerCase());
-      const teamDTags = filter["#d"];
-      for (const event of mockTeamCatalogEvents) {
-        if (authors && !authors.includes(event.pubkey.toLowerCase())) continue;
-        // Own heads are readable unshared (the owner sees their own state);
-        // anyone else's must carry the exact shared tag, like the relay gate.
-        if (
-          event.pubkey.toLowerCase() !== MOCK_IDENTITY_PUBKEY.toLowerCase() &&
-          !hasExactSharedTag(event)
-        ) {
-          continue;
-        }
-        const teamDTag = event.tags.find((tag) => tag[0] === "d")?.[1];
-        if (teamDTags && (!teamDTag || !teamDTags.includes(teamDTag))) continue;
-        sendWsText(socket.handler, ["EVENT", subId, event]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    // Project queries: NIP-34 kinds, or kind:1 comments scoped by repo `a`
-    // tag or by issue/PR root `e` tag (discussions, approvals, review
-    // requests, assignment operations). Channel messages are kind 9, so a
-    // kind:1 `#e` query can only target project discussion events.
-    if (
-      filter.kinds?.some((kind) => MOCK_PROJECT_KINDS.has(kind)) ||
-      (filter.kinds?.includes(1) && (filter["#a"] || filter["#e"]))
-    ) {
-      window.__KUZZ_E2E_PROJECT_QUERY_FILTERS__ ??= [];
-      window.__KUZZ_E2E_PROJECT_QUERY_FILTERS__.push(filter);
-      const rejectedKinds =
-        window.__KUZZ_E2E_REJECT_PROJECT_QUERY_KINDS__ ?? [];
-      if (filter.kinds?.some((kind) => rejectedKinds.includes(kind))) {
-        sendWsText(socket.handler, [
-          "CLOSED",
-          subId,
-          "mock project query failure",
-        ]);
-        return;
-      }
-      if (
-        window.__KUZZ_E2E_DEFER_FULL_PROJECT_QUERIES__ &&
-        !filter.authors &&
-        !filter["#a"] &&
-        !filter["#kuzz-channel"] &&
-        !filter["#d"] &&
-        !filter["#e"] &&
-        !filter.ids
-      ) {
-        return;
-      }
-      for (const event of filterMockProjectEvents(filter)) {
-        sendWsText(socket.handler, ["EVENT", subId, event]);
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    const channelIds = filter["#h"] ?? [];
-    if (channelIds.length > 0 && subId.startsWith("history-")) {
-      const closeReason = mockChannelHistoryCloses.shift();
-      if (closeReason) {
-        sendWsText(socket.handler, ["CLOSED", subId, closeReason]);
-        return;
-      }
-    }
-    if (channelIds.length === 0) {
-      // Aux-backfill filters (reactions/deletions) are `#e`-keyed with no
-      // channel tag — serve them across all channel stores like the relay.
-      const referencedIds = filter["#e"];
-      if (referencedIds && referencedIds.length > 0) {
-        const targets = new Set(referencedIds);
-        for (const events of mockMessages.values()) {
-          for (const event of events) {
-            if (filter.kinds && !filter.kinds.includes(event.kind)) {
-              continue;
-            }
-            if (
-              event.tags.some(
-                (tag) => tag[0] === "e" && tag[1] && targets.has(tag[1]),
-              )
-            ) {
-              sendWsText(socket.handler, ["EVENT", subId, event]);
-            }
-          }
-        }
-      }
-      sendWsText(socket.handler, ["EOSE", subId]);
-      return;
-    }
-
-    emitMockHistory(socket, subId, channelIds, filter);
     return;
   }
 

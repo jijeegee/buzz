@@ -54,12 +54,31 @@ test("a non-live id left open is reported as unclassified, not dropped", () => {
   assert.equal(classifySubId("live-1"), "live");
 });
 
+const ROOM = "aaaaaaaa-0000-4000-8000-000000000001";
+const PK = "b".repeat(64);
+
 test("signatures strip ids and timestamps but keep kinds, limit and list sizes", () => {
   assert.equal(
     subscriptionSignature([
-      { "#h": ["a", "b"], kinds: [9, 7], since: 123, limit: 0 },
-      { authors: ["pk"], kinds: [0] },
+      { "#h": [ROOM, ROOM], kinds: [9, 7], since: 123, limit: 0 },
+      { authors: [PK], kinds: [0] },
     ]),
     "#h:2|kinds:[7,9]|limit:0|since + authors:1|kinds:[0]",
+  );
+});
+
+test("signatures keep non-id tag values and fold the presence author set", () => {
+  assert.equal(
+    subscriptionSignature([
+      { kinds: [30315], "#d": ["general"], limit: 0 },
+      { kinds: [20001], authors: [PK, PK, PK], limit: 0 },
+      { kinds: [30030], "#d": ["kuzz:custom-emoji", PK], limit: 0 },
+    ]),
+    "#d:[general]|kinds:[30315]|limit:0 + #d:[kuzz:custom-emoji,*]|kinds:[30030]|limit:0 + authors:+|kinds:[20001]|limit:0",
+  );
+  // Only a presence-only filter folds its authors.
+  assert.equal(
+    subscriptionSignature([{ kinds: [0, 20001], authors: [PK], limit: 1 }]),
+    "authors:1|kinds:[0,20001]|limit:1",
   );
 });

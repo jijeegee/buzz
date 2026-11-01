@@ -322,16 +322,28 @@ class ScriptedRelay {
 }
 
 /// The normalised shape of one REQ: each filter's keys in sorted order, with
-/// ids, pubkeys and room ids reduced to a count and timestamps to `*`, so a
-/// signature names what a subscription asks for, not whose data it is.
-/// Filters of a multi-filter REQ are joined with ` + `.
+/// ids, pubkeys and room ids reduced to a count, timestamps to their key and
+/// kinds sorted, so a signature names what a subscription asks for, not whose
+/// data it is. The presence author set grows with what the screen shows, so
+/// its size is `authors:+`. Filters of a multi-filter REQ are joined with
+/// ` + ` in sorted order. Same rules as desktop's `e2eBridgeReqLog.ts`.
 String reqSignature(List<Map<String, dynamic>> filters) =>
-    filters.map(filterSignature).join(' + ');
+    (filters.map(filterSignature).toList()..sort()).join(' + ');
 
 String filterSignature(Map<String, dynamic> filter) {
   final keys = filter.keys.toList()..sort();
+  final presence =
+      filter['kinds'] is List &&
+      (filter['kinds'] as List).length == 1 &&
+      (filter['kinds'] as List).single == EventKind.presenceUpdate;
   return [
-    for (final key in keys) '$key:${_signatureValue(key, filter[key])}',
+    for (final key in keys)
+      if (key == 'since' || key == 'until' || key == 'search')
+        key
+      else if (key == 'authors' && presence)
+        'authors:+'
+      else
+        '$key:${_signatureValue(key, filter[key])}',
   ].join('|');
 }
 
@@ -341,9 +353,10 @@ final _idLike = RegExp(
 );
 
 String _signatureValue(String key, Object? value) {
-  if (key == 'since' || key == 'until') return '*';
   if (value is List) {
-    if (key == 'kinds') return '[${value.join(',')}]';
+    if (key == 'kinds') {
+      return '[${([for (final v in value) v as int]..sort()).join(',')}]';
+    }
     if (value.every((v) => v is String && _idLike.hasMatch(v))) {
       return '${value.length}';
     }
