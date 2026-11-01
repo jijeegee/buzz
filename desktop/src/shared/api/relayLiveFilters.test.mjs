@@ -32,7 +32,9 @@ globalThis.window = {
 };
 Date.now = () => now;
 const { RelayClient } = await import("./relayClientSession.ts");
-const { assertBundleLiveFilters } = await import("./relayLiveFilters.ts");
+const { assertBundleLiveFilters, assertRoomLiveFilters } = await import(
+  "./relayLiveFilters.ts"
+);
 const { resetRateLimitGate } = await import("./relayRateLimitGate.ts");
 
 beforeEach(() => {
@@ -235,4 +237,123 @@ test("close resolves a pending update and sends CLOSE", async () => {
     writes.some((w) => w.frame[0] === "CLOSE" && w.frame[1] === subId),
   );
   assert.equal(client.subscriptions.has(subId), false);
+});
+
+const ROOM = "11111111-0000-4000-8000-000000000001";
+const TYPING = { kinds: [20002], "#h": [ROOM], limit: 0 };
+const GOALS = { kinds: [40110], "#h": [ROOM], limit: 0 };
+
+async function openRoom(filters = [TYPING, GOALS], onGone) {
+  const client = new RelayClient();
+  client.wsId = 7;
+  clients.push(client);
+  const events = [];
+  const pending = client.subscribeRoomLiveFilters(
+    filters,
+    (e) => events.push(e),
+    undefined,
+    undefined,
+    onGone,
+  );
+  await flush();
+  await tickTo(now + 10);
+  const subId = reqs().at(-1).frame[1];
+  await deliver(client, ["EOSE", subId]);
+  const dispose = await pending;
+  return { client, dispose, subId, events };
+}
+
+test("room filters are live only and name the same single room", () => {
+  assert.throws(() => assertRoomLiveFilters([]));
+  assert.throws(() => assertRoomLiveFilters([{ kinds: [20002], limit: 0 }]));
+  assert.throws(() =>
+    assertRoomLiveFilters([TYPING, { kinds: [40110], limit: 0 }]),
+  );
+  assert.throws(() =>
+    assertRoomLiveFilters([TYPING, { ...GOALS, "#h": ["other"] }]),
+  );
+  assert.throws(() =>
+    assertRoomLiveFilters([{ ...TYPING, "#h": [ROOM, "other"] }]),
+  );
+  assert.throws(() => assertRoomLiveFilters([{ ...TYPING, limit: 10 }]));
+  assert.throws(() => assertRoomLiveFilters([{ ...TYPING, since: 5 }]));
+  assert.throws(() => assertRoomLiveFilters([{ ...TYPING, until: 5 }]));
+  assert.throws(() =>
+    assertRoomLiveFilters(Array.from({ length: 11 }, () => TYPING)),
+  );
+  assertRoomLiveFilters([TYPING, GOALS]);
+});
+
+test("a room REQ carries both filters and replays them byte-identical", async () => {
+  const { client, subId, events } = await openRoom();
+  assert.deepEqual(reqs()[0].frame, ["REQ", subId, TYPING, GOALS]);
+  const typing = {
+    id: "1".repeat(64),
+    pubkey: A,
+    kind: 20002,
+    content: "",
+    created_at: 1,
+    tags: [["h", ROOM]],
+    sig: "",
+  };
+  await deliver(client, ["EVENT", subId, typing]);
+  await tickTo(now + 100);
+  assert.deepEqual(
+    events.map((e) => e.id),
+    [typing.id],
+  );
+  client.resetConnection(new Error("socket lost"));
+  window.clearTimeout(client.reconnectTimeout);
+  client.reconnectTimeout = null;
+  client.wsId = 8;
+  // A +290 s gap adds no `since`, even after a live typing event.
+  now += 290_000;
+  await client.replayLiveSubscriptions();
+  client.reconnectWaiters.settle();
+  await flush();
+  assert.deepEqual(
+    reqs()
+      .filter((w) => w.socket === 8)
+      .map((w) => w.frame),
+    [["REQ", subId, TYPING, GOALS]],
+  );
+});
+
+test("a CLOSED retry re-sends both room filters", async () => {
+  const { client, subId } = await openRoom();
+  await deliver(client, ["CLOSED", subId, "error: temporary failure"]);
+  await tickTo(now + 1_500);
+  assert.equal(reqs().length, 2);
+  assert.deepEqual(reqs()[1].frame, ["REQ", subId, TYPING, GOALS]);
+});
+
+test("a terminal CLOSED drops the room REQ and calls onGone", async () => {
+  let gone = 0;
+  const { client, subId } = await openRoom(undefined, () => {
+    gone += 1;
+  });
+  await deliver(client, ["CLOSED", subId, "restricted: not a member"]);
+  await tickTo(now + 60_000);
+  assert.equal(gone, 1);
+  assert.equal(client.subscriptions.has(subId), false);
+  assert.equal(reqs().length, 1, "no retry after a terminal CLOSED");
+});
+
+test("the open room's REQ drains before other cold REQs", async () => {
+  const client = new RelayClient();
+  client.wsId = 7;
+  clients.push(client);
+  client.setVisibleChannelId(ROOM);
+  const quiet = (promise) => promise.catch(() => {});
+  quiet(client.subscribeLive({ kinds: [1], limit: 0 }, () => {}));
+  await flush();
+  await tickTo(now + 10);
+  assert.equal(reqs().length, 1, "the first REQ goes out at once");
+  // Another cold `limit: 0` REQ queued first: only the visible room's
+  // priority puts the room REQ ahead of it.
+  quiet(client.subscribeLive({ kinds: [7], limit: 0 }, () => {}));
+  quiet(client.subscribeRoomLiveFilters([TYPING, GOALS], () => {}));
+  await flush();
+  await tickTo(now + 300);
+  assert.deepEqual(reqs()[1].frame.slice(2), [TYPING, GOALS]);
 });

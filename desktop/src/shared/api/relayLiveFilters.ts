@@ -187,3 +187,72 @@ export async function subscribeLiveFilters(
     },
   };
 }
+
+/**
+ * Open-room filters are live only: `limit: 0`, no `since`/`until`, no search,
+ * at most ten, and every filter names the same single room in `#h` (the relay
+ * scopes a REQ to a room only when every filter has `#h`).
+ */
+export function assertRoomLiveFilters(filters: RelaySubscriptionFilter[]) {
+  if (filters.length === 0 || filters.length > MAX_LIVE_FILTERS) {
+    throw new Error(`A live room REQ needs 1-${MAX_LIVE_FILTERS} filters.`);
+  }
+  const roomId = filters[0]["#h"]?.[0];
+  for (const filter of filters) {
+    const rooms = filter["#h"];
+    if (
+      !roomId ||
+      rooms?.length !== 1 ||
+      rooms[0] !== roomId ||
+      filter.limit !== 0 ||
+      filter.since !== undefined ||
+      filter.until !== undefined ||
+      "search" in filter
+    ) {
+      throw new Error(
+        "A live room filter must be limit 0 for one room, without history.",
+      );
+    }
+  }
+}
+
+/**
+ * Open one live REQ with several `limit: 0` filters for one room. Its filter
+ * set never changes, so reconnect replay and a CLOSED retry re-send it
+ * byte-identical (`liveReqFrame`). Resolves with the function that closes it
+ * once the relay answered (or the readiness fallback fired); `onGone` runs
+ * when it is dropped for good (disposed or a terminal CLOSED).
+ */
+export function subscribeRoomLiveFilters(
+  host: LiveSessionHost,
+  sendReq: (
+    payload: unknown[],
+    fallbackMessage: string,
+    onDispatch?: () => void,
+  ) => Promise<void>,
+  filters: RelaySubscriptionFilter[],
+  onEvent: (event: RelayEvent) => void,
+  onReady?: (readiness: LiveSubscriptionReadiness) => void,
+  signal?: AbortSignal,
+  onGone?: () => void,
+): Promise<() => Promise<void>> {
+  assertRoomLiveFilters(filters);
+  const multi: LiveMultiFilter = {
+    filters: filters.map((filter) => ({ ...filter })),
+    sent() {},
+    settled() {},
+    lost() {},
+  };
+  return subscribeLiveSession(
+    host,
+    sendReq,
+    multi.filters[0],
+    onEvent,
+    onReady,
+    250,
+    signal,
+    onGone,
+    undefined,
+    multi,
+  );
+}

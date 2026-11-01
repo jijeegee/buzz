@@ -259,6 +259,132 @@ void main() {
     );
   });
 
+  group('room filters', () {
+    const room = '11111111-0000-4000-8000-000000000001';
+    const typing = NostrFilter(
+      kinds: [20002],
+      tags: {
+        '#h': [room],
+      },
+      limit: 0,
+    );
+    const goals = NostrFilter(
+      kinds: [40110],
+      tags: {
+        '#h': [room],
+      },
+      limit: 0,
+    );
+
+    test('are live only and name the same single room', () {
+      expect(() => assertRoomLiveFilters([]), throwsArgumentError);
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(kinds: [20002], limit: 0),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          typing,
+          const NostrFilter(kinds: [40110], limit: 0),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          typing,
+          const NostrFilter(
+            kinds: [40110],
+            tags: {
+              '#h': ['other'],
+            },
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room, 'other'],
+            },
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room],
+            },
+            limit: 10,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room],
+            },
+            since: 5,
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([for (var i = 0; i < 11; i++) typing]),
+        throwsArgumentError,
+      );
+      assertRoomLiveFilters([typing, goals]);
+    });
+
+    test('one REQ carries both, replays and retries them unchanged', () async {
+      final events = <NostrEvent>[];
+      final pending = session.subscribeRoomFilters([typing, goals], events.add);
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      await pending;
+      expect(reqs(), [
+        ['REQ', 'l-1', typing.toJson(), goals.toJson()],
+      ]);
+      session.debugMarkSocketDownForTest();
+      session.debugAttachSocketForTest(socket);
+      await session.debugReplayLiveSubscriptions();
+      expect(reqs().last, ['REQ', 'l-1', typing.toJson(), goals.toJson()]);
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      session.debugHandleMessage(['CLOSED', 'l-1', 'error: relay overloaded']);
+      timers.single.fire();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(reqs(), hasLength(3));
+      expect(reqs().last, ['REQ', 'l-1', typing.toJson(), goals.toJson()]);
+    });
+
+    test('a terminal CLOSED calls onClosed and is not retried', () async {
+      final closed = <String>[];
+      final pending = session.subscribeRoomFilters(
+        [typing, goals],
+        (_) {},
+        onClosed: closed.add,
+      );
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      await pending;
+      session.debugHandleMessage(['CLOSED', 'l-1', 'restricted: not a member']);
+      expect(closed, ['restricted: not a member']);
+      expect(timers, isEmpty);
+      expect(reqs(), hasLength(1));
+    });
+  });
+
   test('community presence: an author added after ready is no second ready '
       '(presence would blank)', () async {
     final heard = <RelaySubscriptionStatus>[];

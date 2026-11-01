@@ -40,7 +40,10 @@ import {
   sendRawWithReconnectRetry,
   subscribeLiveSession,
 } from "@/shared/api/relayLiveSubscribe";
-import { subscribeLiveFilters } from "@/shared/api/relayLiveFilters";
+import {
+  subscribeLiveFilters,
+  subscribeRoomLiveFilters,
+} from "@/shared/api/relayLiveFilters";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
@@ -454,6 +457,25 @@ export class RelayClient {
     gone?: () => void,
   ) {
     return subscribeLiveFilters(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
+      filters,
+      onEvent,
+      onReady,
+      signal,
+      gone,
+    );
+  }
+  /** One live REQ with several `limit: 0` filters for one room. */
+  async subscribeRoomLiveFilters(
+    filters: RelaySubscriptionFilter[],
+    onEvent: (event: RelayEvent) => void,
+    onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    signal?: AbortSignal,
+    gone?: () => void,
+  ) {
+    return subscribeRoomLiveFilters(
       this.liveHost,
       (payload, fallback, onDispatch) =>
         this.sendRawWithReconnectRetry(payload, fallback, onDispatch),

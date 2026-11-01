@@ -20,6 +20,32 @@ void assertBundleLiveFilters(List<NostrFilter> filters) {
   }
 }
 
+/// Open-room filters are live only: `limit: 0`, no `since`/`until`, no
+/// search, at most ten, and every filter names the same single room in `#h`
+/// (the relay scopes a REQ to a room only when every filter has `#h`).
+void assertRoomLiveFilters(List<NostrFilter> filters) {
+  if (filters.isEmpty || filters.length > maxLiveFilters) {
+    throw ArgumentError('A live room REQ needs 1-$maxLiveFilters filters.');
+  }
+  final rooms = filters.first.tags['#h'];
+  final roomId = rooms != null && rooms.length == 1 ? rooms.single : null;
+  for (final filter in filters) {
+    final each = filter.tags['#h'];
+    if (roomId == null ||
+        each == null ||
+        each.length != 1 ||
+        each.single != roomId ||
+        filter.limit != 0 ||
+        filter.since != null ||
+        filter.until != null ||
+        filter.search != null) {
+      throw ArgumentError(
+        'A live room filter must be limit 0 for one room, no history.',
+      );
+    }
+  }
+}
+
 /// A bundle's multi-filter REQ (see [RelaySessionLiveFilters]).
 class _LiveMulti {
   _LiveMulti(this.filters);
@@ -132,6 +158,25 @@ extension RelaySessionLiveFilters on RelaySessionNotifier {
         _sendFiltersUpdate(id, subscription);
         return waiter.future;
       },
+    );
+  }
+
+  /// One live REQ with several `limit: 0` filters for one room. Its filter
+  /// set never changes, so the reconnect replay and a CLOSED retry re-send it
+  /// unchanged. Completes once the relay answered (or the ready fallback
+  /// fired) with the function that closes it; [onClosed] runs on a terminal
+  /// CLOSED, after which the REQ is gone.
+  Future<void Function()> subscribeRoomFilters(
+    List<NostrFilter> filters,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+  }) {
+    assertRoomLiveFilters(filters);
+    return _subscribe(
+      filters.first,
+      onEvent,
+      onClosed: onClosed,
+      multi: _LiveMulti(List.unmodifiable(filters)),
     );
   }
 
