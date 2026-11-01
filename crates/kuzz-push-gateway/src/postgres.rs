@@ -73,6 +73,7 @@ fn ts(v: DateTime<Utc>) -> i64 {
 fn profile(v: &str) -> Result<AppProfile, AuthorityError> {
     match v {
         "kuzz-ios-dogfood" => Ok(AppProfile::KuzzIosDogfood),
+        "kuzz-android" => Ok(AppProfile::KuzzAndroid),
         _ => Err(AuthorityError::Unavailable),
     }
 }
@@ -1272,6 +1273,119 @@ mod postgres_tests {
         assert!(
             admit(&store, &"44".repeat(32), request_id).await.is_err(),
             "terminal outcome keeps the request-id fence burned"
+        );
+
+        pool.close().await;
+        drop_schema(&schema).await;
+    }
+
+    #[tokio::test]
+    #[ignore = "requires PostgreSQL"]
+    async fn android_profile_migration_keeps_ios_rows_and_admits_only_known_profiles() {
+        let database_url = std::env::var("KUZZ_TEST_DATABASE_URL")
+            .or_else(|_| std::env::var("DATABASE_URL"))
+            .unwrap_or_else(|_| TEST_DB_URL.to_owned());
+        let schema = format!("push_android_{}", Uuid::new_v4().simple());
+        let set_path = format!("SET search_path TO {schema}");
+        let pool = PgPoolOptions::new()
+            .max_connections(1)
+            .after_connect(move |conn, _| {
+                let set_path = set_path.clone();
+                Box::pin(async move {
+                    sqlx::query(AssertSqlSafe(set_path)).execute(conn).await?;
+                    Ok(())
+                })
+            })
+            .connect_lazy(&database_url)
+            .expect("lazy pool");
+        sqlx::query(AssertSqlSafe(format!("CREATE SCHEMA {schema}")))
+            .execute(&pool)
+            .await
+            .expect("create isolated test schema");
+        let android = GATEWAY_MIGRATOR
+            .iter()
+            .find(|m| m.version == 7)
+            .expect("0007 migration embedded");
+        for migration in GATEWAY_MIGRATOR.iter().filter(|m| m.version < 7) {
+            sqlx::raw_sql(migration.sql.as_ref())
+                .execute(&pool)
+                .await
+                .expect("pre-android schema");
+        }
+        let now = Utc::now();
+        let insert = |id: Uuid, key_id: Vec<u8>, key: Vec<u8>, app_profile: &'static str| {
+            sqlx::query(
+                "INSERT INTO push_gateway_installations(id,app_attest_key_id,app_attest_public_key,assertion_counter,app_profile,token_ciphertext,token_fingerprint,endpoint_epoch,expires_at)
+                 VALUES ($1,$2,$3,7,$4,$5,$6,1,$7)",
+            )
+            .bind(id)
+            .bind(key_id)
+            .bind(key)
+            .bind(app_profile)
+            .bind(vec![3u8])
+            .bind(vec![id.as_bytes()[15]; 32])
+            .bind(now + chrono::Duration::days(30))
+        };
+        let ios = Uuid::from_u128(1);
+        insert(ios, vec![1], vec![2; 65], "kuzz-ios-dogfood")
+            .execute(&pool)
+            .await
+            .expect("pre-migration iOS installation");
+        assert!(
+            insert(Uuid::from_u128(9), vec![9], vec![9; 91], "kuzz-android")
+                .execute(&pool)
+                .await
+                .is_err(),
+            "0006 refuses the Android profile"
+        );
+
+        sqlx::raw_sql(android.sql.as_ref())
+            .execute(&pool)
+            .await
+            .expect("apply 0007");
+        sqlx::raw_sql(android.sql.as_ref())
+            .execute(&pool)
+            .await
+            .expect("0007 is idempotent");
+
+        let store = PostgresAuthorityStore::new(pool.clone());
+        let unix_now = now.timestamp();
+        let kept = store
+            .installation(ios, unix_now)
+            .await
+            .expect("iOS row kept");
+        assert_eq!(kept.profile, AppProfile::KuzzIosDogfood);
+        assert_eq!(kept.app_attest_public_key, vec![2; 65]);
+        assert_eq!(kept.assertion_counter, 7);
+
+        let droid = Uuid::from_u128(2);
+        insert(droid, vec![5; 32], vec![6; 91], "kuzz-android")
+            .execute(&pool)
+            .await
+            .expect("Android installation admitted");
+        let loaded = store
+            .installation(droid, unix_now)
+            .await
+            .expect("Android row loads");
+        assert_eq!(loaded.profile, AppProfile::KuzzAndroid);
+        assert_eq!(loaded.app_attest_key_id, vec![5; 32]);
+
+        let refused = insert(
+            Uuid::from_u128(3),
+            vec![7],
+            vec![8; 91],
+            "kuzz-android-sandbox",
+        )
+        .execute(&pool)
+        .await
+        .expect_err("unknown profile refused");
+        assert_eq!(
+            refused
+                .as_database_error()
+                .and_then(|e| e.constraint())
+                .map(str::to_owned)
+                .as_deref(),
+            Some("push_gateway_installations_app_profile_check")
         );
 
         pool.close().await;

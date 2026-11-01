@@ -42,6 +42,14 @@ pub struct ProfileRuntime {
     pub transport: Arc<dyn PushTransport>,
 }
 
+/// Android profile runtime. Absent when the deployment has no FCM service
+/// account configured; Android deliveries then fail closed as a retryable
+/// configuration fault and the iOS profile is unaffected.
+#[derive(Clone)]
+pub struct AndroidProfileRuntime {
+    pub transport: Arc<dyn PushTransport>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub grant_keyring: Arc<GrantKeyring>,
@@ -50,6 +58,8 @@ pub struct AppState {
     /// Server-owned dogfood application identity and APNs transport. The wire
     /// profile selector is fixed and App Attest verifies the configured app ID.
     pub profile: Arc<ProfileRuntime>,
+    /// Optional `kuzz-android` runtime (FCM transport).
+    pub android: Option<Arc<AndroidProfileRuntime>>,
     pub max_grant_lifetime_seconds: i64,
     pub max_installation_lifetime_seconds: i64,
     pub endpoint_quota_window_seconds: i64,
@@ -743,15 +753,21 @@ async fn deliver(
             .await;
         return error(StatusCode::NOT_FOUND, "invalid_grant");
     }
-    if permit.authority.profile != AppProfile::KuzzIosDogfood {
-        crate::metrics::record_delivery_error("profile_disabled");
-        let _ = s
-            .authority
-            .finish_delivery(permit, DeliveryDisposition::Retryable)
-            .await;
-        return error(StatusCode::SERVICE_UNAVAILABLE, "configuration_fault");
-    }
-    let transport = Arc::clone(&s.profile.transport);
+    let profile = permit.authority.profile;
+    let transport = match profile {
+        AppProfile::KuzzIosDogfood => Arc::clone(&s.profile.transport),
+        AppProfile::KuzzAndroid => match &s.android {
+            Some(android) => Arc::clone(&android.transport),
+            None => {
+                crate::metrics::record_delivery_error("profile_disabled");
+                let _ = s
+                    .authority
+                    .finish_delivery(permit, DeliveryDisposition::Retryable)
+                    .await;
+                return error(StatusCode::SERVICE_UNAVAILABLE, "configuration_fault");
+            }
+        },
+    };
     let endpoint = match s.token_keyring.open(&permit.authority.token_ciphertext) {
         Ok(token) => hex::encode(token),
         Err(_) => {
@@ -773,7 +789,7 @@ async fn deliver(
     let delivery = tokio::spawn(async move {
         let started = std::time::Instant::now();
         let outcome = transport.send(attempt, &endpoint).await;
-        crate::metrics::record_apns_delivery(outcome, started.elapsed().as_secs_f64());
+        crate::metrics::record_delivery(profile, outcome, started.elapsed().as_secs_f64());
         let disposition = match outcome {
             DeliveryOutcome::Retry { .. } | DeliveryOutcome::ConfigurationFault => {
                 DeliveryDisposition::Retryable
@@ -937,6 +953,7 @@ mod request_limit_tests {
                 app_attest: Arc::new(app_attest),
                 transport: Arc::new(NeverTransport),
             }),
+            android: None,
             max_grant_lifetime_seconds: 86_400,
             max_installation_lifetime_seconds: 86_400,
             endpoint_quota_window_seconds: 60,

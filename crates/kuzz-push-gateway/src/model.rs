@@ -21,11 +21,16 @@ pub const WIRE_VERSION: u8 = 1;
 pub enum AppProfile {
     #[serde(rename = "kuzz-ios-dogfood")]
     KuzzIosDogfood,
+    /// Android app `app.kuzz.mobile`: Android Key Attestation for enrollment,
+    /// FCM HTTP v1 for delivery.
+    #[serde(rename = "kuzz-android")]
+    KuzzAndroid,
 }
 impl AppProfile {
     pub const fn as_str(self) -> &'static str {
         match self {
             Self::KuzzIosDogfood => "kuzz-ios-dogfood",
+            Self::KuzzAndroid => "kuzz-android",
         }
     }
 }
