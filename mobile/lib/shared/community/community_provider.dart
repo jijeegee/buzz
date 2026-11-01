@@ -12,6 +12,7 @@ import '../l10n/l10n.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
+import '../push/push_inbox.dart';
 import '../push/push_lease_revocation_outbox.dart';
 import '../push/push_snapshot.dart';
 import '../push/push_subscription.dart';
@@ -425,6 +426,12 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
             ref.read(messageStoreProvider).forget(removed.relayUrl, account),
           );
         }
+        // The NSE snapshot no longer has it (above): its inbox goes too.
+        unawaited(
+          deletePushInboxFolders(ref.read(pushInboxRootProvider), [
+            removed.pushInboxToken,
+          ]),
+        );
         unawaited(
           ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
             Object error,

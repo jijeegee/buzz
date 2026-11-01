@@ -40,6 +40,7 @@ import 'shared/l10n/locale_preference.dart';
 import 'shared/push/push_subscription_provider.dart';
 import 'shared/push/push_relay_capability_provider.dart';
 import 'shared/push/push_inbox.dart';
+import 'shared/push/push_inbox_drain.dart';
 import 'shared/relay/relay.dart';
 import 'shared/read_state/read_state_provider.dart';
 import 'shared/theme/theme.dart';
@@ -180,6 +181,7 @@ class App extends HookConsumerWidget {
       ref.listen(observerRelayProvider, (_, _) {});
       ref.watch(appLifecycleProvider);
       ref.listen(pushInboxPauseCursorProvider, (_, _) {});
+      ref.listen(pushInboxDrainProvider, (_, _) {});
       ref.watch(userStatusCacheProvider);
       ref.listen(deviceRobotAutoAssignProvider, (_, _) {});
       if (ref.watch(activeCommunityProvider).value?.pushNotificationsEnabled ==

@@ -10,6 +10,7 @@ import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/push_bridge.dart';
+import '../push/push_inbox.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import 'default_community.dart';
@@ -292,6 +293,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         if (account != null) {
           unawaited(store.forget(community.relayUrl, account));
         }
+      }
+      // So does the push inbox, once the notification extension no longer
+      // writes for it (the launch sweep removes what is left).
+      final inboxTokens = [
+        for (final community in targets) ?community.pushInboxToken,
+      ];
+      if (inboxTokens.isNotEmpty) {
+        await syncCommunitySnapshot(ref, signedOut);
+        unawaited(
+          deletePushInboxFolders(ref.read(pushInboxRootProvider), inboxTokens),
+        );
       }
       // Cached message heads are derived data; signing out leaves none behind.
       unawaited(
