@@ -41,7 +41,13 @@ final class DeviceKeyPlugin {
   private func handle(_ call: FlutterMethodCall, result: @escaping FlutterResult) {
     switch call.method {
     case "getOrCreate":
-      runOffMain(result) { try Self.publicKeyPayload() }
+      runOffMain(result) {
+        let payload = try Self.publicKeyPayload()
+        Self.logAccessGroupOnce()
+        return payload
+      }
+    case "accessGroup":
+      runOffMain(result) { try Self.accessGroup() }
     case "sign":
       guard
         let args = call.arguments as? [String: Any],
@@ -112,6 +118,46 @@ final class DeviceKeyPlugin {
       throw DeviceKeyError.signature(code)
     }
     return FlutterStandardTypedData(bytes: der)
+  }
+
+  /// Read-only diagnostic: the keychain access group the existing key lives
+  /// in (nil when there is no key yet). The notification extension can read
+  /// the key only from the group both targets share
+  /// (`KuzzKeychainAccessGroup`). Never creates or moves the key.
+  private static func accessGroup() throws -> String? {
+    let query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: tag,
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+      kSecReturnAttributes as String: true,
+    ]
+    var item: CFTypeRef?
+    let status = SecItemCopyMatching(query as CFDictionary, &item)
+    switch status {
+    case errSecSuccess:
+      return (item as? [String: Any])?[kSecAttrAccessGroup as String] as? String
+    case errSecItemNotFound:
+      return nil
+    default:
+      throw DeviceKeyError.status(status)
+    }
+  }
+
+  private static var loggedAccessGroup = false
+
+  /// Logs once per launch whether the key sits in the group the
+  /// notification extension reads. Only the group name, never key material.
+  private static func logAccessGroupOnce() {
+    guard !loggedAccessGroup else { return }
+    loggedAccessGroup = true
+    let expected = Bundle.main.object(forInfoDictionaryKey: "KuzzKeychainAccessGroup") as? String
+    let actual = (try? accessGroup()) ?? nil
+    NSLog(
+      "Device key access group: %@ (shared with notifications: %@)",
+      actual ?? "none",
+      actual != nil && actual == expected ? "yes" : "no"
+    )
   }
 
   /// The key pair's private half, creating the pair on first use.
