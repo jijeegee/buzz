@@ -18,7 +18,8 @@ final class NostrHTTPAuthTests: XCTestCase {
             body: body,
             privateKeyHex: privateKey,
             createdAt: 1_700_000_000,
-            auxiliaryRandomness: [UInt8](repeating: 0, count: 32)
+            auxiliaryRandomness: [UInt8](repeating: 0, count: 32),
+            nonce: "nonce-1"
         )
 
         XCTAssertTrue(header.hasPrefix("Nostr "))
@@ -32,6 +33,7 @@ final class NostrHTTPAuthTests: XCTestCase {
             ["u", "https://relay.example/query"],
             ["method", "POST"],
             ["payload", SHA256.hash(data: body).map { String(format: "%02x", $0) }.joined()],
+            ["nonce", "nonce-1"],
         ])
         XCTAssertTrue(event.hasValidIDAndSignature())
     }
