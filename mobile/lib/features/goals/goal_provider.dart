@@ -52,6 +52,26 @@ final goalTreeProvider = FutureProvider.family<GoalTreeHead, String>((
   return _headFrom(await session.queryRelay([goalTreeFilter(channelId)]));
 });
 
+/// Keeps [goalTreeProvider] of [channelId] live while a room or thread screen
+/// shows it: a new head or a reconnect re-reads it. Rides the open-room REQ
+/// ([RoomLiveRegistry]), so it adds no REQ of its own, and closes with the
+/// last screen.
+final goalTreeLiveProvider = Provider.autoDispose.family<void, String>((
+  ref,
+  channelId,
+) {
+  void refresh() => ref.invalidate(goalTreeProvider(channelId));
+  final stop = ref
+      .watch(roomLiveRegistryProvider)
+      .listen(
+        channelId,
+        roomLiveGoalTreeKind,
+        (_) => refresh(),
+        onResync: refresh,
+      );
+  ref.onDispose(stop);
+});
+
 /// Tags for a goal tree write: channel scope plus the revision it builds on.
 List<List<String>> buildGoalTreeTags({
   required String channelId,

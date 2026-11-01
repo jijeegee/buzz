@@ -67,6 +67,10 @@ void main() {
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
           chatsRowsProvider.overrideWithValue(chatRows ?? rows),
+          // An opened room's typing REQ; there is no relay socket here.
+          roomLiveRegistryProvider.overrideWithValue(
+            RoomLiveRegistry((filters, onEvent, onGone) async => () {}),
+          ),
         ],
         child: MaterialApp(
           theme: AppTheme.light(),

@@ -182,6 +182,7 @@ class _GoalsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(goalTreeLiveProvider(channel.id));
     final root = ref
         .watch(goalTreeProvider(channel.id))
         .asData

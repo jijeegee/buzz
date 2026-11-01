@@ -446,6 +446,8 @@ Widget _buildTestable({
         ),
       // Compose bar drafts persist through SharedPreferences.
       savedPrefsProvider.overrideWithValue(_testPrefs),
+      // Goal chips keep the open-room REQ; these pages have no relay socket.
+      roomLiveRegistryProvider.overrideWithValue(_idleRoomLiveRegistry()),
       ...overrides,
     ],
     child: MaterialApp(
@@ -471,6 +473,9 @@ Widget _buildTestable({
   );
 }
 
+RoomLiveRegistry _idleRoomLiveRegistry() =>
+    RoomLiveRegistry((filters, onEvent, onGone) async => () {});
+
 Widget _buildNavigationTestable({
   required Channel channelA,
   required Channel channelB,
@@ -479,6 +484,7 @@ Widget _buildNavigationTestable({
   return ProviderScope(
     overrides: [
       relaySessionProvider.overrideWith(() => relaySession),
+      roomLiveRegistryProvider.overrideWithValue(_idleRoomLiveRegistry()),
       channelMessagesProvider(
         channelA.id,
       ).overrideWith(() => _FakeMessagesNotifier([], channelId: channelA.id)),
@@ -10886,6 +10892,7 @@ void main() {
           RelayClient(baseUrl: 'http://localhost:3000'),
         ),
         savedPrefsProvider.overrideWithValue(_testPrefs),
+        roomLiveRegistryProvider.overrideWithValue(_idleRoomLiveRegistry()),
       ],
       child: MaterialApp(
         theme: AppTheme.light(),
@@ -10946,6 +10953,7 @@ void main() {
               RelayClient(baseUrl: 'http://localhost:3000'),
             ),
             savedPrefsProvider.overrideWithValue(_testPrefs),
+            roomLiveRegistryProvider.overrideWithValue(_idleRoomLiveRegistry()),
           ],
           child: MaterialApp(
             theme: AppTheme.light(),
