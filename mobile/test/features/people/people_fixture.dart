@@ -53,6 +53,16 @@ class PeopleSession extends RelaySessionNotifier {
     return () => live.remove(filter);
   }
 
+  /// Presence and status listen through here; keep them off the real
+  /// community bundle (and its timers).
+  @override
+  Future<void Function()> subscribeWithStatus(
+    NostrFilter filter,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+  }) => subscribe(filter, onEvent, onClosed: onClosed);
+
   /// Delivers [event] to every open subscription for its kind.
   void deliver(NostrEvent event) {
     for (final entry in [...live.entries]) {

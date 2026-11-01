@@ -19,6 +19,7 @@ import '../device_key/device_proof.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
 import 'community_live_bundle.dart';
+import 'lane_head_batch.dart';
 import 'me_live_bundle.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
@@ -368,7 +369,23 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   Future<List<NostrEvent>> fetchHistory(
     NostrFilter filter, {
     Duration timeout = const Duration(seconds: 8),
-  }) async {
+  }) => debugBatchLaneHeads && laneHeadDTagOf(filter) != null
+      ? _laneHeads.fetch(filter, timeout)
+      : _fetchHistoryNow(filter, timeout);
+
+  /// Own lane head reads (mutes, stars, theme, ...) that start within 50 ms
+  /// share one one-shot REQ.
+  late final _laneHeads = LaneHeadBatcher(fetch: _fetchHistoryNow);
+
+  /// Lane recovery tests drive reads microtask by microtask; they read each
+  /// head on its own (batching has its own tests).
+  @visibleForTesting
+  bool debugBatchLaneHeads = true;
+
+  Future<List<NostrEvent>> _fetchHistoryNow(
+    NostrFilter filter,
+    Duration timeout,
+  ) async {
     if (_rateLimitGate.isActive) await _rateLimitGate.wait();
     if (_disposed) throw StateError('Relay session is disposed');
     final subId = _nextSubId('h');
@@ -1049,6 +1066,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   }
 
   void _cancelAllHistory(Object? error) {
+    _laneHeads.reset(error ?? Exception('Connection lost'));
     for (final entry in _historySubscriptions.values) {
       entry.timeout.cancel();
       if (!entry.completer.isCompleted) {

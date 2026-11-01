@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SidebarRelay {
   SidebarRelay() {
     session.debugAttachSocketForTest(_ScriptedSocket(_onSend));
+    session.debugBatchLaneHeads = false;
   }
 
   final keys = nostr.Keys.generate();

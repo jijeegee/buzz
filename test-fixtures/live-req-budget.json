@@ -136,10 +136,10 @@
         "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
         "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0"
       ],
-      "launchOneShot": 10,
       "launchLiveSends": 6,
       "launchHttpQueries": 7,
-      "launchCeilingRuns": 5
+      "launchCeilingRuns": 5,
+      "launchOneShot": 9
     },
     "roomOpen": {
       "live": 7,
