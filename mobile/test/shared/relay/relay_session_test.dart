@@ -11,6 +11,7 @@ import 'package:kuzz/features/age_gate/age_signal_provider.dart';
 import 'package:kuzz/features/channels/agent_activity/observer_subscription.dart';
 import 'package:kuzz/features/channels/agent_activity/observer_models.dart';
 import 'package:kuzz/shared/auth/auth_provider.dart';
+import 'package:kuzz/shared/relay/me_live_bundle.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
@@ -1724,6 +1725,67 @@ void main() {
       session.debugDispose();
     });
   });
+
+  test(
+    'observer frames join the live addressed REQ with none of their own',
+    () async {
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier();
+      session.debugAttachSocketForTest(socket);
+      final me = 'a' * 64;
+      final mentions = <String>[];
+      final frames = <String>[];
+      final mentioning = session.subscribe(
+        NostrFilter(
+          kinds: const [9],
+          tags: {
+            '#p': [me],
+          },
+          limit: 0,
+        ),
+        (event) => mentions.add(event.id),
+      );
+      await Future<void>.delayed(Duration.zero);
+      final req = _reqs(socket).single;
+      expect((req[2] as Map<String, dynamic>)['kinds'], meAddressedKinds);
+      session.debugHandleMessage(['EOSE', req[1]]);
+      final stopMentions = await mentioning;
+
+      final stopObserver = await session.subscribe(
+        observerLiveFilter(me),
+        (event) => frames.add(event.id),
+      );
+      expect(_reqs(socket), hasLength(1), reason: 'no REQ for the observer');
+      NostrEvent addressed(String id, int kind) => NostrEvent(
+        id: id,
+        pubkey: 'b' * 64,
+        createdAt: 100,
+        kind: kind,
+        tags: [
+          ['p', me],
+        ],
+        content: '',
+        sig: 'sig',
+      );
+      session.debugHandleMessage([
+        'EVENT',
+        req[1],
+        addressed('frame', EventKind.agentObserverFrame).toJson(),
+      ]);
+      session.debugHandleMessage(['EVENT', req[1], addressed('m', 9).toJson()]);
+      session.debugFlushEventBuffer();
+      expect(frames, ['frame']);
+      expect(mentions, ['m']);
+
+      stopObserver();
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        socket.messages.where((message) => message[0] == 'CLOSE'),
+        isEmpty,
+      );
+      stopMentions();
+    },
+  );
 
   test('live onClosed callback runs only for a terminal CLOSED', () async {
     final session = RelaySessionNotifier();

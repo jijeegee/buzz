@@ -478,15 +478,16 @@ function processLiveObserverEvents(
   // in the raw/transcript stores; batching must preserve that visibility while
   // deferring only the global external-store publication.
   //
-  // Dispatch iterates the ACCEPTED events, not the raw envelope: the observer
-  // relay requests a five-minute replay on reconnect, so an already-seen frame
-  // can re-arrive. `appendAgentEvents` drops those as duplicates and returns
-  // only the newly-accepted set; dispatching that set keeps a replayed
-  // `control_result` from re-settling a live model switch, and likewise
-  // prevents any other side-effect listener (latest-live tracking, management
-  // requests, session-config capture, lifecycle) from firing twice for one
-  // frame. Every such listener is a command or idempotent cache write — none
-  // depends on duplicate re-delivery — so deduping is strictly correct.
+  // Dispatch iterates the ACCEPTED events, not the raw envelope: an
+  // already-seen frame can re-arrive (the local archive holds the same frames,
+  // and a frame can be delivered more than once). `appendAgentEvents` drops
+  // those as duplicates and returns only the newly-accepted set; dispatching
+  // that set keeps a repeated `control_result` from re-settling a live model
+  // switch, and likewise prevents any other side-effect listener (latest-live
+  // tracking, management requests, session-config capture, lifecycle) from
+  // firing twice for one frame. Every such listener is a command or idempotent
+  // cache write — none depends on duplicate re-delivery — so deduping is
+  // strictly correct.
   const accepted = appendAgentEvents(agentPubkey, events);
 
   for (const parsed of accepted ?? []) {
@@ -808,8 +809,10 @@ export function useManagedAgentObserverBridge(
     };
   }, [subscriptionId, agentPubkeys]);
 
-  // The indicator replay waits for the launch's channel list and first room
-  // window (docs/message-sync.md#launch-order).
+  // The observer listener waits for the launch's channel list and first room
+  // window (docs/message-sync.md#launch-order). It rides the addressed account
+  // bundle, so this only delays attaching it; frames are never stored, and
+  // none sent before it attached can be fetched.
   const queryClient = useQueryClient();
   React.useEffect(() => {
     if (!hasManagedAgent) {

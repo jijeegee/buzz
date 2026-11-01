@@ -16,6 +16,7 @@
   "addressedKinds": [
     1,
     9,
+    24200,
     24210,
     24211,
     40002,
@@ -64,6 +65,22 @@
         ],
         "#p": [
           "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "agent work frames ride the addressed bundle",
+      "filter": {
+        "kinds": [
+          24200
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
         ],
         "limit": 0
       },
@@ -348,6 +365,31 @@
         "kind": 3,
         "created_at": 2000,
         "tags": []
+      },
+      "matches": false
+    },
+    {
+      "name": "an agent work frame does not reach a mentions listener",
+      "filter": {
+        "kinds": [
+          9
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "limit": 0
+      },
+      "event": {
+        "id": "e8",
+        "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "kind": 24200,
+        "created_at": 2000,
+        "tags": [
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        ]
       },
       "matches": false
     }

@@ -21,11 +21,13 @@ const meAuthoredKinds = <int>[
   30300,
 ];
 
-/// Kinds addressed to the account: mentions, approvals, reminders, chat-list
-/// pings, sign-in and membership notices.
+/// Kinds addressed to the account: mentions, approvals, reminders, agent work
+/// frames (24200, never stored, so catch-up returns none), chat-list pings,
+/// sign-in and membership notices.
 const meAddressedKinds = <int>[
   1,
   9,
+  24200,
   24210,
   24211,
   40002,

@@ -14,10 +14,14 @@ export const ME_AUTHORED_KINDS: readonly number[] = [
   3, 5, 30078, 30175, 30176, 30177, 30178, 30180, 30181, 30182, 30300,
 ];
 
-/** Kinds addressed to the account: mentions, approvals, reminders, chat-list pings, sign-in and membership notices. */
+/**
+ * Kinds addressed to the account: mentions, approvals, reminders, agent work
+ * frames (24200, never stored, so catch-up returns none), chat-list pings,
+ * sign-in and membership notices.
+ */
 export const ME_ADDRESSED_KINDS: readonly number[] = [
-  1, 9, 24210, 24211, 40002, 40007, 43001, 43002, 43003, 43004, 43005, 43006,
-  44100, 44101, 45001, 45003, 46010, 46011, 46012,
+  1, 9, 24200, 24210, 24211, 40002, 40007, 43001, 43002, 43003, 43004, 43005,
+  43006, 44100, 44101, 45001, 45003, 46010, 46011, 46012,
 ];
 
 /** Filter keys a bundle listener may use; anything else needs its own REQ. */

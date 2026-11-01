@@ -1,6 +1,6 @@
 import { readFileSync, writeFileSync } from "node:fs";
 import { expect, type Page, type TestInfo, test } from "@playwright/test";
-import { installMockBridge } from "../helpers/bridge";
+import { installMockBridge, TEST_IDENTITIES } from "../helpers/bridge";
 
 // Live REQ budget (stage A0 of the subscription consolidation plan).
 //
@@ -31,7 +31,13 @@ const DM = "alice-tyler";
 const SUMMARY_IN_TIMELINE =
   '[data-testid="message-timeline"] [data-testid="message-thread-summary"]';
 
-type CheckpointName = "idle" | "roomA" | "roomB" | "threadOpen" | "dmOpen";
+type CheckpointName =
+  | "idle"
+  | "idleWithAgent"
+  | "roomA"
+  | "roomB"
+  | "threadOpen"
+  | "dmOpen";
 type Checkpoint = { live: number; signatures: string[] };
 type RowsCheckpoint = Checkpoint & { mountedRows: number };
 type DesktopBudget = {
@@ -250,8 +256,22 @@ async function checkpoint(
 // its count includes the landing room's room-level subscriptions.
 const LANDING_ROOM = "agents";
 
-async function openHome(page: Page) {
-  await installMockBridge(page);
+// The agent observer only listens when the account has managed agents.
+const MANAGED_AGENT = {
+  pubkey: TEST_IDENTITIES.charlie.pubkey,
+  name: "Budget Agent",
+  status: "running" as const,
+  channelNames: ["agents"],
+};
+// The observer starts after the launch windows, at most 10 s after launch
+// (docs/message-sync.md#launch-order); measure after that.
+const OBSERVER_START_MAX_MS = 11_000;
+
+async function openHome(page: Page, withAgent = false) {
+  await installMockBridge(
+    page,
+    withAgent ? { managedAgents: [MANAGED_AGENT] } : undefined,
+  );
   await page.goto("/");
   await expect(page.getByTestId("channel-general")).toBeVisible();
 }
@@ -261,10 +281,11 @@ async function idleCheckpoint(
   page: Page,
   testInfo: TestInfo,
   measured: Partial<Record<CheckpointName, Checkpoint>>,
+  name: "idle" | "idleWithAgent" = "idle",
 ) {
   const title = page.getByTestId("chat-title");
   await expect(title).toHaveText(LANDING_ROOM);
-  const snap = await checkpoint(page, "idle", testInfo, measured);
+  const snap = await checkpoint(page, name, testInfo, measured);
   await expect(title).toHaveText(LANDING_ROOM);
   await expect(page.getByTestId("message-thread-panel")).toHaveCount(0);
   return snap;
@@ -365,7 +386,31 @@ test.describe("live REQ budget", () => {
           oneShot: Math.max(previous.oneShot, launch.oneShot),
           liveSends: Math.max(previous.liveSends, launch.liveSends),
         };
-        desktop.checkpoints = measured as Record<CheckpointName, Checkpoint>;
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
+      });
+    }
+  });
+
+  test("idle with a managed agent holds its live subscription budget", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
+    const launchedAt = Date.now();
+    await openHome(page, true);
+    await page.waitForTimeout(
+      Math.max(0, launchedAt + OBSERVER_START_MAX_MS - Date.now()),
+    );
+    await idleCheckpoint(page, testInfo, measured, "idleWithAgent");
+    if (UPDATE) {
+      writeDesktop((desktop) => {
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
       });
     }
   });

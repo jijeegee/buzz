@@ -20,7 +20,7 @@ that both clients' tests read.
 | Head span fixture tests | `head_coverage_follows_shared_fixture` and the other tests in `message_store/head_tests.rs`; `relayStoreHeads.test.mjs` | `message_store_head_test.dart`; `store_heads_test.dart` |
 | Store-first preload | `desktop/src/features/messages/channelPreload.ts` (`roomsNeedingRelay`; plan: `lib/storePreloadPlan.ts`; wait: `waitStoreLive` in `relayStoreCoverage.ts`; command `message_store_certain_rooms`); waves: `desktop/src/features/home/lib/inboxPreloadRun.ts`, run by `useInboxPreload.ts` | `ChannelPreloader._roomsNeedingRelay` (`mobile/lib/features/channels/channel_preload.dart`; plan: `store_preload_plan.dart`; wait: `waitStoreLiveRooms` in `relay_session_store.dart`); waves: `runInboxPreload` (`mobile/lib/features/activity/inbox_preload.dart`) |
 | Store-first preload tests | `storePreloadPlan.test.mjs`, `channelPreload.test.mjs`, `inboxPreloadRun.test.mjs`, `relayStoreCoverage.test.mjs` | `store_preload_plan_test.dart`, `channel_preload_test.dart`, `inbox_preload_test.dart`, `coverage_test.dart` |
-| Agent observer filter | `desktop/src/shared/api/observerLiveFilter.ts` | `observer_subscription.dart` (`observerLive*`) |
+| Agent observer filter (rides the addressed account bundle) | `desktop/src/shared/api/observerLiveFilter.ts`, used by `observerRelay.ts` through `meLive.subscribe` | `observerLiveFilter` in `observer_subscription.dart`, routed to the bundle by `RelaySessionNotifier.subscribe` |
 
 The account bundle's cases live in
 [`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json),
@@ -150,11 +150,13 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 Live-only subscriptions about the account itself (settings documents,
 contact list, agent personas, teams and devices, chat-list pings, sign-in
-notices)
+notices, agent work frames)
 share two REQs instead of one per feature:
 
 - **Authored:** `{kinds: authoredKinds, authors: [me], limit: 0}`.
-- **Addressed:** `{kinds: addressedKinds, "#p": [me], limit: 0}`.
+- **Addressed:** `{kinds: addressedKinds, "#p": [me], limit: 0}`. It also
+  carries agent work frames (24200, [Agent activity](#agent-activity)); the
+  relay never stores them, so a catch-up returns none.
 
 Features keep their own filters and listen through the bundle:
 
@@ -195,21 +197,31 @@ Kept out on purpose:
 
 ## Agent activity
 
-Work frames from the account's agents (24200, `#p: [me]`) arrive on one REQ
-per client:
+Work frames from the account's agents (24200, `#p: [me]`) have no REQ of
+their own: they ride the addressed [account bundle](#account-bundle).
 
-- **Filter.** `limit: 1000`, `since` five minutes before the subscription
-  starts ([`test-fixtures/agent-observer.json`](../test-fixtures/agent-observer.json)).
-  A turn already running sent its first frames earlier; on reconnect the
-  session replays from the last frame seen, up to the limit.
+- **Filter.** `{kinds: [24200], "#p": [me], limit: 0}`
+  ([`test-fixtures/agent-observer.json`](../test-fixtures/agent-observer.json)),
+  a listener on the addressed REQ. Only the observer's listener takes 24200
+  frames; the other listeners check the kind first.
+- **No history.** The relay never stores frames (it fans them out live
+  within ±300 s of its clock), so there is nothing to fetch: not at start,
+  not on reconnect, not in the bundle's catch-up. Frames sent while the
+  listener was not attached are gone; desktop's local archive keeps what it
+  saw on its own socket.
 - **Duplicates.** Frames are deduplicated by sequence number and timestamp,
-  so the overlap with what a reader already holds is harmless.
+  so a frame the archive already holds is harmless.
 - **Agent online status** comes with everyone else's presence on the
   presence subscription; it needs no REQ of its own.
-- **Start.** The REQ opened for the account's agents at launch waits until
-  the channel list and the first room window have loaded
-  ([Launch order](#launch-order)). Opening an agent's session or sending it
-  a control starts it at once.
+- **Start.** The listener for the account's agents attaches at launch only
+  after the channel list and the first room window have loaded
+  ([Launch order](#launch-order)), so it never opens the addressed REQ
+  ahead of the first screen. Opening an agent's session or sending it a
+  control attaches it at once. When the addressed REQ is already live,
+  attaching sends nothing.
+- **Closed by the relay.** A terminal CLOSED on the addressed REQ also stops
+  the observer, as it stopped its own REQ before: desktop re-attaches after
+  a community reset, mobile on its next rebuild while connected.
 
 ## Launch order
 
@@ -255,11 +267,11 @@ answers follow in the background, in this order, and never block the screen.
 5. **First preload wave** right after the socket connects, once the room on
    screen has its window (at most 3 s), with 20 rows per room and no store
    check ([Store-first preload](#store-first-preload)).
-6. **Agent indicator replay** ([Agent activity](#agent-activity)) after the
-   channel list and the first room window (with no room open, 2 s after the
-   channel list; at most 10 s after launch). Mobile starts it once the
-   channel list has resolved, and publishes the replayed frames as one
-   update per 16 ms.
+6. **Agent indicator listener** ([Agent activity](#agent-activity)) attaches
+   after the channel list and the first room window (with no room open, 2 s
+   after the channel list; at most 10 s after launch). There is no replay:
+   frames are never stored. Mobile attaches it once the channel list has
+   resolved, and publishes live frames as one update per 16 ms.
 7. **Background preload wave** and cleanup, when the user is idle. Mobile
    queues forgetting left rooms ([Forgetting a room](#forgetting-a-room))
    until after the first frame and the first window of the room on screen

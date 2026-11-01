@@ -308,3 +308,41 @@ test("reset drops every scope", async () => {
   opened[0].onEvent(event("c1", 3, []));
   assert.deepEqual(seen, []);
 });
+
+test("agent work frames reach only the observer, which shares the addressed REQ", async () => {
+  const { bundle, opened, fetches } = harness();
+  const mentions = [];
+  const frames = [];
+  const mentioning = bundle.subscribe(
+    { kinds: [9], "#p": [ME], limit: 0 },
+    (e) => mentions.push(e.id),
+  );
+  await flush();
+  opened[0].release();
+  await mentioning;
+  const stopObserver = await bundle.subscribe(
+    { kinds: [24200], "#p": [ME], limit: 0 },
+    (e) => frames.push(e.id),
+  );
+  assert.equal(opened.length, 1, "the observer sends no REQ of its own");
+
+  opened[0].onEvent(event("frame", 24200, [["p", ME]], { pubkey: "b" }));
+  opened[0].onEvent(event("mention", 9, [["p", ME]], { pubkey: "b" }));
+  assert.deepEqual(frames, ["frame"]);
+  assert.deepEqual(mentions, ["mention"]);
+
+  // Catch-up asks from the passed time, with 24200 in the filter; the relay
+  // never stores frames, so none come back.
+  await bundle.catchUp(5_000);
+  assert.deepEqual(fetches.at(-1), {
+    kinds: fixtures.addressedKinds,
+    "#p": [ME],
+    limit: fixtures.catchUpLimit,
+    since: 5_000,
+  });
+  assert.ok(fetches.at(-1).kinds.includes(24200));
+
+  await stopObserver();
+  await flush();
+  assert.equal(opened[0].closed, false, "the observer leaving keeps the REQ");
+});

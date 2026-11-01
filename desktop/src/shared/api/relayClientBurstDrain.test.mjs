@@ -149,9 +149,10 @@ test("cold setup drains at most one live REQ per 250ms, prioritizes visible chan
   await Promise.all(entries.map((e) => e.promise));
 });
 
-test("observer control-result subscription takes the next paced slot ahead of cold channels", async () => {
+test("observer frames open the addressed REQ in the live-only tier, ahead of cold channels", async () => {
   const { relayClient: client } = await import("./relayClient.ts");
   const { subscribeToAgentObserverFrames } = await import("./observerRelay.ts");
+  const { ME_ADDRESSED_KINDS } = await import("./relayMeBundle.ts");
   client.wsId = 7;
   clients.push(client);
   start(client, 296);
@@ -166,10 +167,9 @@ test("observer control-result subscription takes the next paced slot ahead of co
   await tickTo(250);
   const request = frames("REQ")[1].frame;
   assert.deepEqual(request[2], {
-    kinds: [24200],
+    kinds: [...ME_ADDRESSED_KINDS],
     "#p": ["owner"],
-    limit: 1000,
-    since: -300,
+    limit: 0,
   });
   const result = { id: "result", kind: 24200, tags: [["p", "owner"]] };
   await deliver(client, ["EVENT", request[1], result]);
@@ -182,6 +182,41 @@ test("observer control-result subscription takes the next paced slot ahead of co
   );
   await dispose();
   await tickTo(266); // Flush the session's existing event batch timer.
+});
+
+test("observer frames join an addressed REQ already live with no REQ of their own", async () => {
+  const { relayClient: client } = await import("./relayClient.ts");
+  const { subscribeToAgentObserverFrames } = await import("./observerRelay.ts");
+  const { meLive } = await import("./relayMeLive.ts");
+  client.wsId = 7;
+  clients.push(client);
+  const notices = [];
+  const opening = meLive.subscribe(
+    { kinds: [40007], "#p": ["owner"], limit: 0 },
+    (event) => notices.push(event.id),
+  );
+  await flush();
+  const [request] = frames("REQ");
+  await deliver(client, ["EOSE", request.frame[1]]);
+  const stopNotices = await opening;
+
+  const received = [];
+  const dispose = await subscribeToAgentObserverFrames("owner", (event) =>
+    received.push(event.id),
+  );
+  assert.equal(frames("REQ").length, 1, "no new REQ for the observer");
+  const frame = { id: "frame", kind: 24200, tags: [["p", "owner"]] };
+  await deliver(client, ["EVENT", request.frame[1], frame]);
+  await tickTo(16);
+  assert.deepEqual(received, ["frame"]);
+  assert.deepEqual(notices, []);
+
+  await dispose();
+  await flush();
+  assert.equal(frames("CLOSE").length, 0, "the observer leaving keeps the REQ");
+  await stopNotices();
+  await flush();
+  await tickTo(100);
 });
 
 test("read-state initialization takes the next paced slot ahead of cold channels", async () => {

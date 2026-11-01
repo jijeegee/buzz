@@ -15,22 +15,28 @@ import 'transcript_builder.dart';
 const _maxObserverEvents = 800;
 const _observerBatchKind = 'batch';
 
-/// How far back the live subscription looks, and how many frames it takes:
-/// a turn already running when the subscription starts sent its first frames
-/// earlier, and a reconnect replays from the last frame seen up to [limit].
+/// Observer frames addressed to [ownerPubkey], live only: frames are never
+/// stored on the relay, so there is no history to ask for, and the filter
+/// rides the addressed account bundle (`meScopeOf`) instead of its own REQ.
 /// Same as desktop (test-fixtures/agent-observer.json).
-const observerLiveLookbackSeconds = 300;
-const observerLiveLimit = 1000;
+NostrFilter observerLiveFilter(String ownerPubkey) => NostrFilter(
+  kinds: [EventKind.agentObserverFrame],
+  tags: {
+    '#p': [ownerPubkey],
+  },
+  limit: 0,
+);
 
-/// Frames that arrive within this long are published as one state update,
-/// so a replay of up to [observerLiveLimit] frames rebuilds readers about
-/// once per drawn frame rather than once per frame received.
+/// Frames that arrive within this long are published as one state update:
+/// agents burst up to 100 frames a second live, and this rebuilds readers
+/// about once per drawn frame rather than once per frame received.
 const observerPublishInterval = Duration(milliseconds: 16);
 
-/// Whether the agent-activity replay may start: once the relay's channel
-/// list has resolved (not the saved one drawn before it), so its lookback
-/// replay never competes with the first screen (it starts with up to five
-/// minutes of frames). Override in tests.
+/// Whether the agent-activity listener may attach: once the relay's channel
+/// list has resolved (not the saved one drawn before it). There is no replay;
+/// this keeps the launch REQ order, so the observer never becomes the first
+/// addressed listener and pulls the addressed REQ ahead of the first screen.
+/// Override in tests.
 final observerReplayReadyProvider = Provider<bool>((ref) {
   final channels = ref.watch(channelsProvider);
   return channels.hasError ||
@@ -160,18 +166,7 @@ class ObserverRelayNotifier extends Notifier<ObserverRelayState> {
 
       final session = ref.read(relaySessionProvider.notifier);
       final unsubscribe = await session.subscribe(
-        NostrFilter(
-          kinds: [EventKind.agentObserverFrame],
-          tags: {
-            '#p': [ownerPubkey],
-          },
-          // Frames are deduplicated by seq and timestamp, so the overlap with
-          // what this reader already holds is harmless.
-          limit: observerLiveLimit,
-          since:
-              DateTime.now().millisecondsSinceEpoch ~/ 1000 -
-              observerLiveLookbackSeconds,
-        ),
+        observerLiveFilter(ownerPubkey),
         _handleEvent,
         onClosed: (message) {
           _unsubscribe = null;
