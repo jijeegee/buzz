@@ -33,6 +33,7 @@ import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/chat_bubble_row.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/channel_window.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_provider.dart';
@@ -248,6 +249,7 @@ Widget _buildTestable({
   Set<String>? knownAgentPubkeys,
   Future<Set<String>> Function()? loadChannelBotPubkeys,
   bool watchChannelMembershipUpdates = false,
+  bool roomCovered = true,
   Future<List<AgentDirectoryEntry>> Function()? loadAgentDirectory,
   Future<Map<String, String>> Function()? loadAgentOwners,
   UserCacheNotifier? userCacheNotifier,
@@ -410,6 +412,23 @@ Widget _buildTestable({
       relayClientProvider.overrideWithValue(
         RelayClient(baseUrl: 'http://localhost:3000'),
       ),
+      // An open member room rides a covered bundle chunk. Real-message tests
+      // keep the room's own subscription.
+      if (!realMessages)
+        roomLiveRouterProvider.overrideWith((ref) {
+          final router =
+              RoomLiveRouter(
+                  (filter, onEvent) => ref
+                      .read(relaySessionProvider.notifier)
+                      .subscribe(filter, onEvent),
+                )
+                ..setBundleRooms({_channelId})
+                ..setCoveredRooms(
+                  roomCovered ? {_channelId} : const <String>{},
+                );
+          ref.onDispose(router.dispose);
+          return router;
+        }),
       if (mediaClient != null) ...[
         mediaGetAuthServiceProvider.overrideWithValue(
           MediaGetAuthService(baseUrl: 'https://relay.example', nsec: null),
@@ -1524,9 +1543,8 @@ void main() {
       expect(find.byTooltip('Start Huddle'), findsNothing);
     });
 
-    testWidgets('keeps Huddle hidden until bot-role replay reaches EOSE', (
-      tester,
-    ) async {
+    testWidgets('keeps Huddle hidden until the room is covered, and hides it '
+        'when a membership notice makes the counterpart a bot', (tester) async {
       final relaySession = _IdentityUpdateRelaySession();
       final dmChannel = Channel(
         id: _channelId,
@@ -1548,6 +1566,7 @@ void main() {
           channel: dmChannel,
           relaySessionNotifier: relaySession,
           watchChannelMembershipUpdates: true,
+          roomCovered: false,
           members: [
             ChannelMember(
               pubkey: 'self',
@@ -1563,48 +1582,47 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
+      expect(find.byTooltip('Start Huddle'), findsNothing);
+
+      final router = ProviderScope.containerOf(
+        tester.element(find.byType(ChannelDetailPage)),
+      ).read(roomLiveRouterProvider);
+      router.setCoveredRooms({_channelId});
+      await tester.pumpAndSettle();
       expect(find.byTooltip('Start Huddle'), findsOneWidget);
 
-      relaySession.beginMembershipReplay();
-      await tester.pump();
-      expect(find.byTooltip('Start Huddle'), findsNothing);
-
-      relaySession.emitReplayedMembership(
+      relaySession.membershipSnapshot = NostrEvent(
+        id: 'membership-bot',
+        pubkey: 'relay',
+        createdAt: 2,
+        kind: 39002,
+        tags: const [
+          ['d', _channelId],
+          ['p', 'self'],
+          ['p', 'alice', '', 'bot'],
+        ],
+        content: '',
+        sig: 'sig',
+      );
+      router.routeBundleEvent(
         NostrEvent(
-          id: 'membership-self',
+          id: 'notice-joined',
           pubkey: 'relay',
-          createdAt: 1,
-          kind: 39002,
+          createdAt: 3,
+          kind: EventKind.systemMessage,
           tags: const [
-            ['d', _channelId],
-            ['p', 'self'],
+            ['h', _channelId],
           ],
-          content: '',
+          content: '{"type":"member_joined"}',
           sig: 'sig',
         ),
+        {_channelId},
       );
       await tester.pumpAndSettle();
       expect(find.byTooltip('Start Huddle'), findsNothing);
 
-      relaySession.emitReplayedMembership(
-        NostrEvent(
-          id: 'membership-bot',
-          pubkey: 'relay',
-          createdAt: 2,
-          kind: 39002,
-          tags: const [
-            ['d', _channelId],
-            ['p', 'self'],
-            ['p', 'alice', '', 'bot'],
-          ],
-          content: '',
-          sig: 'sig',
-        ),
-      );
-      await tester.pumpAndSettle();
-      expect(find.byTooltip('Start Huddle'), findsNothing);
-
-      relaySession.finishMembershipReplay();
+      // Let the settle rereads (1 s, 4 s) run.
+      await tester.pump(const Duration(seconds: 5));
       await tester.pumpAndSettle();
       expect(find.byTooltip('Start Huddle'), findsNothing);
     });
@@ -15764,8 +15782,6 @@ class _IdentityUpdateRelaySession extends RelaySessionNotifier {
   void Function(NostrEvent)? _identityListener;
   void Function(String message)? _identityClosedListener;
   void Function(RelaySubscriptionStatus status)? _identityStatusListener;
-  void Function(NostrEvent)? _membershipListener;
-  void Function(RelaySubscriptionStatus status)? _membershipStatusListener;
   NostrEvent? membershipSnapshot;
 
   @override
@@ -15807,19 +15823,8 @@ class _IdentityUpdateRelaySession extends RelaySessionNotifier {
         }
       };
     }
-    if (!filter.kinds.contains(39002)) {
-      onStatusChanged(RelaySubscriptionStatus.ready);
-      return () {};
-    }
-    _membershipListener = onEvent;
-    _membershipStatusListener = onStatusChanged;
     onStatusChanged(RelaySubscriptionStatus.ready);
-    return () {
-      if (identical(_membershipListener, onEvent)) {
-        _membershipListener = null;
-        _membershipStatusListener = null;
-      }
-    };
+    return () {};
   }
 
   @override
@@ -15870,20 +15875,6 @@ class _IdentityUpdateRelaySession extends RelaySessionNotifier {
 
   void readyIdentitySubscription() {
     _identityStatusListener?.call(RelaySubscriptionStatus.ready);
-  }
-
-  void beginMembershipReplay() {
-    _membershipStatusListener?.call(RelaySubscriptionStatus.retrying);
-  }
-
-  void emitReplayedMembership(NostrEvent event) {
-    membershipSnapshot = event;
-    _membershipListener?.call(event);
-    _membershipStatusListener?.call(RelaySubscriptionStatus.retrying);
-  }
-
-  void finishMembershipReplay() {
-    _membershipStatusListener?.call(RelaySubscriptionStatus.ready);
   }
 
   void disconnect() {

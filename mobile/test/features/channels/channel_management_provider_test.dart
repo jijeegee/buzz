@@ -4,6 +4,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/mobile_huddle_controller.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 /// Tests for [channelDetailsFromEvent].
@@ -814,7 +815,7 @@ void main() {
     );
 
     test(
-      'refetches members when the live member list changes (join/accept)',
+      'refetches members on a membership notice (join/accept), with no REQ',
       () async {
         final session = _LiveMembershipRelaySession();
         final container = ProviderContainer(
@@ -834,11 +835,24 @@ void main() {
           channelMembersProvider(_channelId).future,
         );
         expect(before.map((m) => m.pubkey), [_memberPubkey]);
-        expect(session.membershipFilter?.kinds, const [39002]);
+        expect(session.membershipFilter, isNull);
 
         // Someone accepts an invitation: the relay publishes a new list.
         session.memberPubkeys = [_memberPubkey, 'cc' * 32];
-        session.emitMembership();
+        container.read(roomLiveRouterProvider).routeBundleEvent(
+          NostrEvent(
+            id: 'notice-joined',
+            pubkey: 'relay',
+            createdAt: 3,
+            kind: EventKind.systemMessage,
+            tags: const [
+              ['h', _channelId],
+            ],
+            content: '{"type":"member_joined"}',
+            sig: 'sig',
+          ),
+          {_channelId},
+        );
         await container.pump();
         final after = await container.read(
           channelMembersProvider(_channelId).future,
@@ -1088,12 +1102,11 @@ class _ConnectionAwareRelaySession extends RelaySessionNotifier {
   }) async => () {};
 }
 
-/// Serves a mutable kind:39002 member list and lets a test push a live
-/// membership update, as the relay does after a join or invitation accept.
+/// Serves a mutable kind:39002 member list and records any live 39002 REQ
+/// (there should be none: membership notices ride the room bundle).
 class _LiveMembershipRelaySession extends _ConnectionAwareRelaySession {
   List<String> memberPubkeys = [_memberPubkey];
   NostrFilter? membershipFilter;
-  void Function(NostrEvent)? _membershipListener;
 
   NostrEvent _membersEvent() => NostrEvent(
     id: 'members-${memberPubkeys.length}',
@@ -1124,15 +1137,10 @@ class _LiveMembershipRelaySession extends _ConnectionAwareRelaySession {
     void Function(String message)? onClosed,
     required void Function(RelaySubscriptionStatus status) onStatusChanged,
   }) async {
-    if (filter.kinds.contains(39002)) {
-      membershipFilter = filter;
-      _membershipListener = onEvent;
-    }
+    if (filter.kinds.contains(39002)) membershipFilter = filter;
     onStatusChanged(RelaySubscriptionStatus.ready);
     return () {};
   }
-
-  void emitMembership() => _membershipListener?.call(_membersEvent());
 }
 
 /// Fake [RelaySessionNotifier] that serves canned kind:0 profile events from

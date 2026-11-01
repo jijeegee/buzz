@@ -1,9 +1,10 @@
+import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../features/channels/room_live_router.dart';
 import '../../shared/crypto/nip_oa.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
@@ -161,7 +162,7 @@ Map<String, String> mentionNamesWithDirectoryLabels({
 
 String _agentFallbackLabel(String pubkey) => shortPubkey(pubkey);
 
-/// Readiness and refresh state for a channel's live membership subscription.
+/// Readiness and refresh state for a channel's membership updates.
 class ChannelMembershipUpdateState {
   final int version;
   final bool isReady;
@@ -174,103 +175,111 @@ class ChannelMembershipUpdateState {
   });
 }
 
-/// Keeps the role feed alive for consumers that render mentions outside the
-/// channel timeline, such as search results. A membership change refreshes the
-/// shared bot-role lookup below, regardless of which surface owns the channel.
+/// Relay notices (kind 40099) that change a room's member list. Mirrors
+/// desktop's `MEMBERSHIP_SYSTEM_TYPES`.
+const membershipNoticeTypes = {
+  'member_joined',
+  'member_left',
+  'member_removed',
+  'admin_kick',
+  'dm_created',
+  'channel_created',
+  'channel_unarchived',
+};
+
+/// The relay publishes the notice before it rebuilds the room's kind:39002
+/// list, so a reread at once can still see the old list: the version moves
+/// again after each of these delays. Mirrors desktop's
+/// `MEMBERSHIP_SETTLE_DELAYS_MS`.
+const membershipSettleDelays = [Duration(seconds: 1), Duration(seconds: 4)];
+
+/// Moves on when the room's member list may have changed, for consumers that
+/// render mentions or rosters outside the channel timeline (search results,
+/// inbox rows). It opens no REQ: it hears the room's membership notices
+/// (40099) on the room bundle, or on the room's own subscription while a
+/// screen holds it open. Ready once the room's live events reach the router.
 class _ChannelBotRoleSubscription
     extends Notifier<ChannelMembershipUpdateState> {
   final String channelId;
-  void Function()? _unsubscribe;
-  int _subscriptionVersion = 0;
+  final List<Timer> _settleTimers = [];
+  int _generation = 0;
 
   _ChannelBotRoleSubscription(this.channelId);
 
   @override
   ChannelMembershipUpdateState build() {
-    final sessionState = ref.watch(relaySessionProvider);
-    final subscriptionVersion = ++_subscriptionVersion;
-    _clearSubscription();
+    final connected = ref.watch(
+      relaySessionProvider.select(
+        (session) => session.status == SessionStatus.connected,
+      ),
+    );
+    final router = ref.watch(roomLiveRouterProvider);
+    final generation = ++_generation;
+    _cancelSettleTimers();
     ref.onDispose(() {
-      _subscriptionVersion++;
-      _clearSubscription();
+      _generation++;
+      _cancelSettleTimers();
     });
 
-    if (sessionState.status != SessionStatus.connected) {
-      return const ChannelMembershipUpdateState();
-    }
-    Future.microtask(() => _subscribe(channelId, subscriptionVersion));
+    if (!connected) return const ChannelMembershipUpdateState();
+    ref.onDispose(
+      router.listenRoomEvents(channelId, (event) {
+        if (generation == _generation && _isMembershipNotice(event)) {
+          _bumpAndSettle(generation);
+        }
+      }),
+    );
+    unawaited(
+      router.whenRoomCovered(channelId).then((_) {
+        if (generation != _generation) return;
+        state = ChannelMembershipUpdateState(
+          version: state.version,
+          isReady: true,
+        );
+      }),
+    );
     return const ChannelMembershipUpdateState();
   }
 
-  Future<void> _subscribe(String channelId, int subscriptionVersion) async {
-    final session = ref.read(relaySessionProvider.notifier);
-    var subscriptionStatus = RelaySubscriptionStatus.retrying;
+  static bool _isMembershipNotice(NostrEvent event) {
+    if (event.kind != EventKind.systemMessage) return false;
     try {
-      final unsubscribe = await session.subscribeWithStatus(
-        NostrFilter(
-          kinds: const [39002],
-          tags: {
-            '#d': [channelId],
-          },
-        ).copyWithSince(DateTime.now().millisecondsSinceEpoch ~/ 1000),
-        (_) {
-          if (_isCurrent(subscriptionVersion)) {
-            state = ChannelMembershipUpdateState(
-              version: state.version + 1,
-              isReady: state.isReady,
-            );
-          }
-        },
-        onClosed: (message) {
-          if (_isCurrent(subscriptionVersion)) {
-            state = ChannelMembershipUpdateState(
-              version: state.version,
-              error: Exception(message),
-            );
-          }
-        },
-        onStatusChanged: (status) {
-          subscriptionStatus = status;
-          if (!_isCurrent(subscriptionVersion)) return;
-          state = ChannelMembershipUpdateState(
-            version: state.version,
-            isReady: status == RelaySubscriptionStatus.ready,
-          );
-        },
-      );
-      if (!_isCurrent(subscriptionVersion)) {
-        unsubscribe();
-        return;
-      }
-      _unsubscribe = unsubscribe;
-      state = ChannelMembershipUpdateState(
-        version: state.version,
-        isReady: subscriptionStatus == RelaySubscriptionStatus.ready,
-      );
-    } catch (error) {
-      if (_isCurrent(subscriptionVersion)) {
-        state = ChannelMembershipUpdateState(
-          version: state.version,
-          error: error,
-        );
-        debugPrint(
-          '[ChannelBotRoleSubscription] failed for $channelId: $error',
-        );
-      }
+      final content = jsonDecode(event.content);
+      return content is Map && membershipNoticeTypes.contains(content['type']);
+    } catch (_) {
+      return false;
     }
   }
 
-  bool _isCurrent(int subscriptionVersion) =>
-      subscriptionVersion == _subscriptionVersion;
+  void _bumpAndSettle(int generation) {
+    _bump();
+    for (final delay in membershipSettleDelays) {
+      late final Timer timer;
+      timer = Timer(delay, () {
+        _settleTimers.remove(timer);
+        if (generation == _generation) _bump();
+      });
+      _settleTimers.add(timer);
+    }
+  }
 
-  void _clearSubscription() {
-    _unsubscribe?.call();
-    _unsubscribe = null;
+  void _bump() {
+    state = ChannelMembershipUpdateState(
+      version: state.version + 1,
+      isReady: state.isReady,
+    );
+  }
+
+  void _cancelSettleTimers() {
+    for (final timer in _settleTimers) {
+      timer.cancel();
+    }
+    _settleTimers.clear();
   }
 }
 
 /// Monotonically increments when the channel's kind:39002 membership snapshot
-/// changes. Channel-member and agent-role views share this source so remote
+/// may have changed (a membership notice, then twice more as the list settles). Channel-member and agent-role views share this source so remote
 /// membership updates refresh both snapshots together.
 final channelMembershipUpdateProvider = NotifierProvider.autoDispose
     .family<_ChannelBotRoleSubscription, ChannelMembershipUpdateState, String>(
