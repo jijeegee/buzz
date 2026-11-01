@@ -5,11 +5,13 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/read_state/read_state_time.dart';
+import '../../shared/relay/me_live_bundle.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/relay/relay_connection_epoch.dart';
 import '../channels/channel.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../channels/room_live_router.dart';
 import '../people/blocked_users_provider.dart';
 import 'dm_resurface.dart';
 import 'feed_item.dart';
@@ -18,6 +20,11 @@ import 'inbox_summary.dart';
 import 'inbox_summary_provider.dart';
 
 typedef DmResurfaceAction = Future<String> Function(List<String> pubkeys);
+
+/// After a reconnect, how long the hidden-DM gap read waits again for the
+/// quiet rooms' chunks when the first wait ([roomCoverageWaitLimit]) timed
+/// out.
+const hiddenDmLateReadyLimit = Duration(seconds: 30);
 
 final dmResurfaceActionProvider = Provider<DmResurfaceAction>(
   (ref) => (pubkeys) async {
@@ -57,7 +64,12 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
 
   void Function()? _unsubscribeAddressed;
   final List<void Function()> _unsubscribeDms = [];
-  final List<void Function()> _unsubscribeHiddenDms = [];
+  void Function()? _unsubscribeQuiet;
+  // When the connection dropped (after the first connect) and the room
+  // router's ready tick then: the next connection reads the hidden DMs' gap.
+  int? _droppedAt;
+  int _dropReadyTick = 0;
+  bool _connectedOnce = false;
   Timer? _liveRefreshTimer;
   Future<void>? _refreshInFlight;
   int? _refreshGeneration;
@@ -103,15 +115,25 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     if (_dmResurfaceScope != currentScope) {
       _dmResurfaceScope = currentScope;
       _pendingDmResurfaceRetry.clear();
+      _droppedAt = null;
+      _connectedOnce = false;
     }
     _clearLiveSubscriptions();
     ref.onDispose(() {
       _subscriptionGeneration += 1;
       _clearLiveSubscriptions();
     });
+    _watchDrops();
+    // Hidden DMs ride the room chunks as quiet rooms (no REQ of their own):
+    // the router hands their events here, never to the all-rooms consumers.
+    _unsubscribeQuiet = ref
+        .read(roomLiveRouterProvider)
+        .listenQuiet((event, _) => _handleHiddenDmLiveEvent(event, generation));
 
     final connected =
         ref.read(relaySessionProvider).status == SessionStatus.connected;
+    final droppedAt = connected ? _droppedAt : null;
+    if (droppedAt != null) _droppedAt = null;
     _buildingGeneration = generation;
     _pendingDuringBuild = false;
     final HomeFeedResponse response;
@@ -124,12 +146,92 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     }
     if (connected && generation == _subscriptionGeneration) {
       unawaited(_subscribeLive(generation));
+      if (droppedAt != null) {
+        unawaited(_readHiddenDmGap(generation, droppedAt, _dropReadyTick));
+      }
       if (_pendingDuringBuild) {
         _pendingDuringBuild = false;
         _scheduleLiveRefresh(generation);
       }
     }
     return response;
+  }
+
+  /// Records when a usable connection drops (not before the first connect).
+  void _watchDrops() {
+    ref.listen<bool>(
+      relaySessionProvider.select(
+        (session) => session.status == SessionStatus.connected,
+      ),
+      (_, connected) {
+        if (connected) {
+          _connectedOnce = true;
+        } else if (_connectedOnce && _droppedAt == null) {
+          _droppedAt = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+          _dropReadyTick = ref.read(roomLiveRouterProvider).readyTick;
+        }
+      },
+      fireImmediately: true,
+    );
+  }
+
+  /// Hidden DMs' messages sent while the connection was down: read once their
+  /// chunks are live on the new connection (a bounded wait), then delivered
+  /// through the router's duplicate check, which also drops a room's past
+  /// from before it turned quiet. If the wait timed out, read again once
+  /// the chunks are ready.
+  Future<void> _readHiddenDmGap(
+    int generation,
+    int droppedAt,
+    int readyTick,
+  ) async {
+    final router = ref.read(roomLiveRouterProvider);
+    final hidden = [
+      for (final roomId in ref.read(channelsProvider.notifier).hiddenDmIds)
+        if (router.isQuietRoom(roomId)) roomId,
+    ]..sort();
+    if (hidden.isEmpty) return;
+    final ready = await router.whenRoomsReadySince(hidden, readyTick);
+    if (generation != _subscriptionGeneration) return;
+    await _queryHiddenDmGap(router, hidden, droppedAt);
+    if (ready) return;
+    final lateReady = await router.whenRoomsReadySince(
+      hidden,
+      readyTick,
+      limit: hiddenDmLateReadyLimit,
+    );
+    if (!lateReady || generation != _subscriptionGeneration) return;
+    await _queryHiddenDmGap(router, hidden, droppedAt);
+  }
+
+  Future<void> _queryHiddenDmGap(
+    RoomLiveRouter router,
+    List<String> hidden,
+    int droppedAt,
+  ) async {
+    try {
+      final events = await ref.read(relaySessionProvider.notifier).queryRelay([
+        for (
+          var start = 0;
+          start < hidden.length;
+          start += kMaxExplicitChannelValues
+        )
+          NostrFilter(
+            kinds: EventKind.channelMessageEventKinds,
+            tags: {
+              '#h': hidden.sublist(
+                start,
+                math.min(start + kMaxExplicitChannelValues, hidden.length),
+              ),
+            },
+            since: droppedAt - meCatchUpLookbackSeconds,
+            limit: 100,
+          ),
+      ]);
+      router.routeQuietBackfill(events);
+    } catch (error) {
+      debugPrint('[ActivityNotifier] hidden-DM gap read failed: $error');
+    }
   }
 
   /// Mentions, approvals and agent jobs addressed to me, live only on the
@@ -178,12 +280,9 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
           if (channel.isPersonChat && channel.isMember) channel.id,
       ];
       // The relay rejects a REQ whose explicit `#h` values exceed
-      // [kMaxExplicitChannelValues]. A single over-cap visible-DM REQ would be
-      // rejected and, hitting the outer catch, abort the whole live setup —
-      // including the hidden batches below — so more than that many visible DMs
-      // used to silently disable resurfacing. Batch it under the same cap so no
-      // single REQ can be rejected for size and a per-batch rejection stays
-      // isolated to that batch.
+      // [kMaxExplicitChannelValues]. Batch it under the same cap so no single
+      // REQ can be rejected for size and a per-batch rejection stays isolated
+      // to that batch.
       final visibleUnsubscribers = await _subscribeChannelBatches(
         session,
         generation,
@@ -194,28 +293,6 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
       );
       if (visibleUnsubscribers == null) return;
       _unsubscribeDms.addAll(visibleUnsubscribers);
-
-      // Resurface trigger: hidden DMs are dropped from the visible-DM sub above,
-      // so subscribe to them separately. Channel messages carry a channel_id and
-      // the relay only fans channel-scoped events to channel-scoped subs, so an
-      // `#h` filter (never `#p`, which the relay treats as global) is required.
-      // Hiding never drops membership, so `#h` authorization holds. The hidden
-      // set is batched under the same cap and owned by this generation, so an
-      // over-limit hidden set no longer silently disables resurfacing.
-      final hiddenDmIds = ref
-          .read(channelsProvider.notifier)
-          .hiddenDmIds
-          .toList();
-      final hiddenUnsubscribers = await _subscribeChannelBatches(
-        session,
-        generation,
-        channelIds: hiddenDmIds,
-        kinds: EventKind.channelMessageEventKinds,
-        since: since,
-        onEvent: (event) => _handleHiddenDmLiveEvent(event, generation),
-      );
-      if (hiddenUnsubscribers == null) return;
-      _unsubscribeHiddenDms.addAll(hiddenUnsubscribers);
     } catch (error) {
       if (generation == _subscriptionGeneration) {
         debugPrint('[ActivityNotifier] live subscription failed: $error');
@@ -477,10 +554,8 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
       unsubscribe();
     }
     _unsubscribeDms.clear();
-    for (final unsubscribe in _unsubscribeHiddenDms) {
-      unsubscribe();
-    }
-    _unsubscribeHiddenDms.clear();
+    _unsubscribeQuiet?.call();
+    _unsubscribeQuiet = null;
   }
 
   /// Stable identity for the joined DM channel set: null while channels are

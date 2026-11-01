@@ -326,6 +326,41 @@ void main() {
       expect(delivered.map((e) => e.id), ['skewed']);
     });
   });
+
+  group('chunk ready ticks', () {
+    test(
+      'a ready after the tick settles the wait; one before it does not',
+      () async {
+        final router = RoomLiveRouter(_FakeRoomRelay().open)
+          ..markRoomsReady({'a', 'b'});
+        final tick = router.readyTick;
+        final ready = router.whenRoomsReadySince({'a', 'b'}, tick);
+        var settled = false;
+        unawaited(ready.then((_) => settled = true));
+        router.markRoomsReady({'a'});
+        await Future<void>.delayed(Duration.zero);
+        expect(settled, isFalse, reason: 'b was not ready again yet');
+        router.markRoomsReady({'b'});
+        expect(await ready, isTrue);
+        expect(await router.whenRoomsReadySince({'a'}, tick), isTrue);
+      },
+    );
+
+    test('the wait is bounded and ends with the router', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open);
+      expect(
+        await router.whenRoomsReadySince(
+          {'a'},
+          router.readyTick,
+          limit: const Duration(milliseconds: 10),
+        ),
+        isFalse,
+      );
+      final pending = router.whenRoomsReadySince({'a'}, router.readyTick);
+      router.dispose();
+      expect(await pending, isFalse);
+    });
+  });
 }
 
 NostrEvent _event(

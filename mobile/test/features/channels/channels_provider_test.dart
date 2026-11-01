@@ -3152,6 +3152,26 @@ class _FakeRelaySession extends RelaySessionNotifier {
     }).toList();
   }
 
+  /// Status callbacks of the chunks opened with [subscribeWithStatus].
+  final List<void Function(RelaySubscriptionStatus)> statusListeners = [];
+
+  void reportReady() {
+    for (final listener in List.of(statusListeners)) {
+      listener(RelaySubscriptionStatus.ready);
+    }
+  }
+
+  @override
+  Future<void Function()> subscribeWithStatus(
+    NostrFilter filter,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+  }) {
+    statusListeners.add(onStatusChanged);
+    return subscribe(filter, onEvent, onClosed: onClosed);
+  }
+
   @override
   Future<void Function()> subscribe(
     NostrFilter filter,

@@ -114,37 +114,54 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       _liveSubscriptionsByChunk[chunkKey] = subscription;
       final chunkRooms = chunk.toSet();
       try {
-        final unsubscribe = await session.subscribe(
-          NostrFilter(
-            // The open rooms ride these chunks too (see RoomLiveRouter), so
-            // they carry the thread-summary recounts the rooms need.
-            kinds: roomLiveEventKinds,
-            tags: {'#h': chunk},
-            limit: 0,
-          ),
-          (event) {
-            if (!_lifecycleRef.mounted ||
-                _refreshCoordinator.currentScope() != fence.scope) {
-              return;
-            }
-            _lifecycleRef
-                .read(roomLiveRouterProvider)
-                .routeBundleEvent(event, chunkRooms);
-            // Superseded chunks can overlap during replacement or recovery.
-            // Deliver only the current scope's still-desired channels;
-            // duplicate events are already idempotent in the unread/timestamp
-            // stores. Thread summaries and room metadata (thread names) are
-            // never unread or chat rows.
-            if (!reachesAllRoomListeners(event) ||
-                !_desiredLiveChannelIds.contains(event.channelId)) {
-              return;
-            }
-            _handleLiveEvent(event);
-            _lifecycleRef.read(channelLiveEventsProvider).emit(event);
-          },
-          onClosed: (message) =>
-              _handleLiveChunkClosed(chunkKey, generation, message),
+        final filter = NostrFilter(
+          // The open rooms ride these chunks too (see RoomLiveRouter), so
+          // they carry the thread-summary recounts the rooms need.
+          kinds: roomLiveEventKinds,
+          tags: {'#h': chunk},
+          limit: 0,
         );
+        void onEvent(NostrEvent event) {
+          if (!_lifecycleRef.mounted ||
+              _refreshCoordinator.currentScope() != fence.scope) {
+            return;
+          }
+          _lifecycleRef
+              .read(roomLiveRouterProvider)
+              .routeBundleEvent(event, chunkRooms);
+          // Superseded chunks can overlap during replacement or recovery.
+          // Deliver only the current scope's still-desired channels;
+          // duplicate events are already idempotent in the unread/timestamp
+          // stores. Thread summaries and room metadata (thread names) are
+          // never unread or chat rows.
+          if (!reachesAllRoomListeners(event) ||
+              !_desiredLiveChannelIds.contains(event.channelId)) {
+            return;
+          }
+          _handleLiveEvent(event);
+          _lifecycleRef.read(channelLiveEventsProvider).emit(event);
+        }
+
+        void onClosed(String message) =>
+            _handleLiveChunkClosed(chunkKey, generation, message);
+        // A chunk carrying quiet rooms reports each ready (EOSE, also after a
+        // reconnect re-sent it): the hidden-DM backfill waits for it.
+        final unsubscribe = chunk.any(_quietLiveChannelIds.contains)
+            ? await session.subscribeWithStatus(
+                filter,
+                onEvent,
+                onClosed: onClosed,
+                onStatusChanged: (status) {
+                  if (status != RelaySubscriptionStatus.ready ||
+                      !_lifecycleRef.mounted) {
+                    return;
+                  }
+                  _lifecycleRef
+                      .read(roomLiveRouterProvider)
+                      .markRoomsReady(chunkRooms);
+                },
+              )
+            : await session.subscribe(filter, onEvent, onClosed: onClosed);
         subscription.unsubscribe = unsubscribe;
         if (!_lifecycleRef.mounted || !fence.isCurrent) {
           _liveSubscriptionsByChunk.remove(chunkKey);

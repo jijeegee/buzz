@@ -601,6 +601,18 @@ void _liveSubscriptionTests() {
       expect(allRooms, ['live-$_channelA']);
     });
 
+    test('the chunk carrying a hidden DM reports each ready to the router '
+        '(the gap read after a reconnect waits for it)', () async {
+      final (container, session) = await loaded();
+      final router = container.read(roomLiveRouterProvider);
+      expect(session.statusListeners, hasLength(1));
+      final tick = router.readyTick;
+      final ready = router.whenRoomsReadySince({_channelB}, tick);
+      session.reportReady();
+      expect(await ready, isTrue);
+      expect(router.readyTick, greaterThan(tick));
+    });
+
     test('a terminal CLOSED on a chunk with a hidden DM is not re-sent on '
         'the next refresh', () async {
       final (container, session) = await loaded();

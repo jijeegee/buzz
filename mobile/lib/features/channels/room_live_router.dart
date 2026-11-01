@@ -96,6 +96,12 @@ class RoomLiveRouter {
   final _coverWaiters = <_CoverWaiter>[];
   final _seen = <String>{};
   final _eventRooms = <String, String>{};
+
+  /// Room → [_readyTick] at its chunk's latest ready (EOSE after the REQ was
+  /// sent or re-sent).
+  final _readyTicks = <String, int>{};
+  int _readyTick = 0;
+  final _readyWaiters = <_ReadyWaiter>[];
   bool _disposed = false;
 
   /// Rooms whose bundle chunk is installed. Rooms listened to but not covered
@@ -172,6 +178,41 @@ class RoomLiveRouter {
   /// When [roomId] started riding the bundle, or null when it does not.
   int? carriedSince(String roomId) => _carriedSince[roomId];
 
+  /// Moves on at every chunk ready ([markRoomsReady]). Read it when the
+  /// connection drops, then wait with [whenRoomsReadySince].
+  int get readyTick => _readyTick;
+
+  /// The chunk carrying [roomIds] is ready: its REQ (sent or re-sent after a
+  /// reconnect) reached EOSE, so live events of these rooms arrive from here.
+  void markRoomsReady(Iterable<String> roomIds) {
+    final tick = ++_readyTick;
+    for (final roomId in roomIds) {
+      _readyTicks[roomId] = tick;
+    }
+    for (final waiter in List.of(_readyWaiters)) {
+      if (_readySince(waiter.roomIds, waiter.tick)) waiter.settle(true);
+    }
+  }
+
+  /// `true` once every room in [roomIds] had a chunk ready after [tick];
+  /// `false` when [limit] passed first or the router is disposed.
+  Future<bool> whenRoomsReadySince(
+    Iterable<String> roomIds,
+    int tick, {
+    Duration limit = roomCoverageWaitLimit,
+  }) {
+    final rooms = roomIds.toSet();
+    if (_readySince(rooms, tick)) return Future.value(true);
+    if (_disposed) return Future.value(false);
+    final waiter = _ReadyWaiter(rooms, tick, _readyWaiters.remove);
+    _readyWaiters.add(waiter);
+    waiter.timer = Timer(limit, () => waiter.settle(false));
+    return waiter.done.future;
+  }
+
+  bool _readySince(Set<String> roomIds, int tick) =>
+      roomIds.every((roomId) => (_readyTicks[roomId] ?? 0) > tick);
+
   /// Listens to room metadata ([roomMetadataKinds]) of every room this router
   /// sees: bundle chunks and the rooms' own subscriptions. Returns the
   /// function that stops listening.
@@ -242,6 +283,9 @@ class RoomLiveRouter {
     _passiveListeners.clear();
     for (final waiter in List.of(_coverWaiters)) {
       _settle(waiter);
+    }
+    for (final waiter in List.of(_readyWaiters)) {
+      waiter.settle(false);
     }
   }
 
@@ -399,6 +443,22 @@ class _CoverWaiter {
   final String roomId;
   final done = Completer<void>();
   Timer? timer;
+}
+
+class _ReadyWaiter {
+  _ReadyWaiter(this.roomIds, this.tick, this._forget);
+
+  final Set<String> roomIds;
+  final int tick;
+  final bool Function(_ReadyWaiter) _forget;
+  final done = Completer<bool>();
+  Timer? timer;
+
+  void settle(bool ready) {
+    timer?.cancel();
+    _forget(this);
+    if (!done.isCompleted) done.complete(ready);
+  }
 }
 
 class _RoomListener {
