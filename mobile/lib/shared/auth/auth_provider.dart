@@ -180,17 +180,20 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       )(existing);
     }
     final community = existing != null
-        ? existing.copyWith(
-            tokenAuth: true,
-            pubkey: principalId,
-            nsec: legacyKey == null ? existing.nsec : null,
-            pushNotificationsEnabled: legacyKey == null
-                ? existing.pushNotificationsEnabled
-                : false,
-            pushSubscriptionState: legacyKey == null
-                ? existing.pushSubscriptionState
-                : const KuzzPushLeaseSubscriptionState.desired(),
-          )
+        ? existing
+              .withCredentials(
+                pubkey: principalId,
+                nsec: legacyKey == null ? existing.nsec : null,
+              )
+              .copyWith(
+                tokenAuth: true,
+                pushNotificationsEnabled: legacyKey == null
+                    ? existing.pushNotificationsEnabled
+                    : false,
+                pushSubscriptionState: legacyKey == null
+                    ? existing.pushSubscriptionState
+                    : const KuzzPushLeaseSubscriptionState.desired(),
+              )
         : Community.create(
             name: Community.nameFromUrl(origin),
             relayUrl: origin,
@@ -385,12 +388,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 /// account); one with no backup is kept.
 Community _signedOutCopy(Community community) {
   if (community.googleBackupAccountId == null) {
-    return community.copyWith(signedOut: true);
+    return community.copyWith(signedOut: true, pushInboxToken: null);
   }
   return community.copyWith(
     signedOut: true,
     pubkey: community.pubkey ?? _pubkey(community.nsec),
     nsec: null,
+    pushInboxToken: null,
   );
 }
 

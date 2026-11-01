@@ -390,4 +390,30 @@ void main() {
       expect((await h.storage.loadAll()).every((c) => c.signedOut), isTrue);
     },
   );
+
+  test(
+    'sign-out drops the push inbox token and resume gets a new one',
+    () async {
+      final h = _Harness();
+      await h.start();
+      final inboxed = [
+        for (final c in await h.storage.loadAll())
+          c.copyWith(pushNotificationsEnabled: true).withPushInboxToken(),
+      ];
+      await h.storage.saveAll(inboxed);
+      final before = inboxed.first.pushInboxToken;
+      expect(before, isNotNull);
+
+      await h.container.read(authProvider.notifier).signOut();
+      final signedOut = await h.storage.loadAll();
+      expect(signedOut.every((c) => c.pushInboxToken == null), isTrue);
+
+      await h.container
+          .read(authProvider.notifier)
+          .signInWithPrivateKey(h.keys.nsec);
+      final resumed = (await h.storage.loadAll()).first;
+      expect(resumed.pushInboxToken, isNotNull);
+      expect(resumed.pushInboxToken, isNot(before));
+    },
+  );
 }

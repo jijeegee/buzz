@@ -1,5 +1,6 @@
 import 'dart:math';
 
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:uuid/uuid.dart';
 
 import '../push/push_subscription.dart';
@@ -15,6 +16,19 @@ String _newPushLeaseInstallationId() {
     (_) => random.nextInt(256).toRadixString(16).padLeft(2, '0'),
   ).join();
 }
+
+String? _accountOf(String? nsec) {
+  if (nsec == null || nsec.isEmpty) return null;
+  try {
+    final secret = nostr.Nip19.decode(payload: nsec).data;
+    return secret.isEmpty ? null : nostr.Keys(secret).public;
+  } catch (_) {
+    return null;
+  }
+}
+
+/// A fresh push inbox token: 16 random bytes as lowercase hex.
+String newPushInboxToken() => _newPushLeaseInstallationId();
 
 enum SensitiveActionPolicy { enabled, disabledByUser }
 
@@ -33,6 +47,12 @@ class Community {
   /// Legacy records omit this value and continue using the endpoint grant's
   /// installation id so their already-published lease remains addressable.
   final String? pushLeaseInstallationId;
+
+  /// Names this (community, account)'s push inbox folder, where the iPhone
+  /// notification extension keeps the events it fetched
+  /// (docs/message-sync.md#push-inbox). Random and persisted; created when
+  /// push turns on, replaced on sign-out, resume and account change.
+  final String? pushInboxToken;
 
   /// Whether invite-created starter channels still need to be recovered.
   final bool starterSetupIncomplete;
@@ -68,6 +88,7 @@ class Community {
     this.pushNotificationsEnabled = false,
     this.pushSubscriptionState = const KuzzPushLeaseSubscriptionState.desired(),
     this.pushLeaseInstallationId,
+    this.pushInboxToken,
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
     this.signedOut = false,
@@ -113,6 +134,7 @@ class Community {
     bool? pushNotificationsEnabled,
     KuzzPushLeaseSubscriptionState? pushSubscriptionState,
     Object? pushLeaseInstallationId = _sentinel,
+    Object? pushInboxToken = _sentinel,
     bool? starterSetupIncomplete,
     bool? tokenAuth,
     bool? signedOut,
@@ -134,6 +156,9 @@ class Community {
       pushLeaseInstallationId: pushLeaseInstallationId == _sentinel
           ? this.pushLeaseInstallationId
           : pushLeaseInstallationId as String?,
+      pushInboxToken: pushInboxToken == _sentinel
+          ? this.pushInboxToken
+          : pushInboxToken as String?,
       starterSetupIncomplete:
           starterSetupIncomplete ?? this.starterSetupIncomplete,
       tokenAuth: tokenAuth ?? this.tokenAuth,
@@ -156,6 +181,7 @@ class Community {
     'pushSubscriptionState': pushSubscriptionState.toJson(),
     if (pushLeaseInstallationId != null)
       'pushLeaseInstallationId': pushLeaseInstallationId,
+    if (pushInboxToken != null) 'pushInboxToken': pushInboxToken,
     'starterSetupIncomplete': starterSetupIncomplete,
     if (tokenAuth) 'authMode': 'token',
     if (signedOut) 'signedOut': true,
@@ -171,6 +197,13 @@ class Community {
         !_pushLeaseInstallationIdPattern.hasMatch(pushLeaseInstallationId)) {
       throw const FormatException(
         'Push lease installation id must be 16 random bytes encoded as lowercase hex',
+      );
+    }
+    final pushInboxToken = json['pushInboxToken'] as String?;
+    if (pushInboxToken != null &&
+        !_pushLeaseInstallationIdPattern.hasMatch(pushInboxToken)) {
+      throw const FormatException(
+        'Push inbox token must be 16 random bytes encoded as lowercase hex',
       );
     }
     final pushNotificationsEnabled =
@@ -198,6 +231,7 @@ class Community {
       pushNotificationsEnabled: pushNotificationsEnabled,
       pushSubscriptionState: pushSubscriptionState,
       pushLeaseInstallationId: pushLeaseInstallationId,
+      pushInboxToken: pushInboxToken,
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
       tokenAuth: json['authMode'] == 'token',
       signedOut: json['signedOut'] == true,
@@ -215,10 +249,32 @@ class Community {
   Community resumeSession() => copyWith(
     signedOut: false,
     pushLeaseInstallationId: _newPushLeaseInstallationId(),
+    pushInboxToken: newPushInboxToken(),
     pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
       desired: pushSubscriptionState.desired,
     ),
   );
+
+  /// This record with a push inbox token, if push is on, the session is
+  /// live and it has none yet. Otherwise unchanged.
+  Community withPushInboxToken() =>
+      pushNotificationsEnabled && !signedOut && pushInboxToken == null
+      ? copyWith(pushInboxToken: newPushInboxToken())
+      : this;
+
+  /// Credentials [pubkey]/[nsec] for this community. A different account
+  /// gets a new push inbox token so it never reads the old one's folder.
+  Community withCredentials({String? pubkey, String? nsec}) {
+    final before = (this.pubkey ?? _accountOf(this.nsec))?.toLowerCase();
+    final after = (pubkey ?? _accountOf(nsec))?.toLowerCase();
+    return copyWith(
+      pubkey: pubkey,
+      nsec: nsec,
+      pushInboxToken: before == after || pushInboxToken == null
+          ? pushInboxToken
+          : newPushInboxToken(),
+    );
+  }
 
   /// Derive a human-friendly community name from a relay URL.
   static String nameFromUrl(String url) {

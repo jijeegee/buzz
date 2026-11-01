@@ -13,6 +13,7 @@ import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
 import '../push/push_lease_revocation_outbox.dart';
+import '../push/push_snapshot.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
@@ -253,6 +254,7 @@ class _CommunitySnapshotSync {
             community.pubkey,
             community.nsec,
             community.pushNotificationsEnabled,
+            community.pushInboxToken,
             kuzzPushSubscriptionStateFingerprint(
               community.pushSubscriptionState,
             ),
@@ -296,9 +298,28 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   @override
   Future<List<Community>> build() async {
     final storage = ref.read(communityStorageProvider);
-    final communities = await storage.loadAll();
+    var communities = await storage.loadAll();
+    if (pushInboxEnabled) communities = await _backfillInboxTokens(communities);
     await syncCommunitySnapshot(ref, communities);
     return communities;
+  }
+
+  /// Records saved before push inbox tokens existed get one, so the
+  /// notification extension can keep fetched events for them.
+  Future<List<Community>> _backfillInboxTokens(
+    List<Community> communities,
+  ) async {
+    final filled = [for (final c in communities) c.withPushInboxToken()];
+    for (var i = 0; i < filled.length; i++) {
+      if (identical(filled[i], communities[i])) continue;
+      try {
+        await ref.read(communityStorageProvider).save(filled[i]);
+      } catch (error) {
+        developer.log('Push inbox token not saved: $error');
+        filled[i] = communities[i];
+      }
+    }
+    return filled;
   }
 
   /// Add a community. If one with the same relay URL already exists, update
@@ -319,7 +340,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           if (existing.signedOut) {
             throw StateError(appL10n.communitySignInBeforeChanging);
           }
-          final updated = existing.copyWith(
+          final updated = existing.withCredentials(
             pubkey: community.pubkey,
             nsec: community.nsec,
           );
@@ -586,10 +607,12 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
             pushState.generationCursor ?? pushState.acceptedGeneration ?? 0;
         pushState = pushState.withPendingTombstone(cursor + 1);
       }
-      final updated = community.copyWith(
-        pushNotificationsEnabled: enabled,
-        pushSubscriptionState: pushState,
-      );
+      final updated = community
+          .copyWith(
+            pushNotificationsEnabled: enabled,
+            pushSubscriptionState: pushState,
+          )
+          .withPushInboxToken();
       await storage.save(updated);
       final updatedList = [...current]..[index] = updated;
       state = AsyncData(updatedList);

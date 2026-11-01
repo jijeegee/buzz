@@ -285,6 +285,21 @@ Future<void> purgeAgeRestrictedKuzzNotifications() async {
   await _channel.invokeMethod<void>('purgeAgeRestrictedNotifications');
 }
 
+/// What the notification extension gets for a push-enabled [community].
+/// [inbox] is [pushInboxEnabled]; tests pass it.
+@visibleForTesting
+KuzzPushCommunitySnapshot kuzzPushCommunitySnapshotFor(
+  Community community, {
+  bool inbox = pushInboxEnabled,
+}) => KuzzPushCommunitySnapshot(
+  id: community.id,
+  name: community.name,
+  relayUrl: community.relayUrl,
+  pubkey: community.pubkey ?? pubkeyFromNsec(community.nsec),
+  inboxToken: inbox && !community.signedOut ? community.pushInboxToken : null,
+  subscriptions: community.pushSubscriptionState.authoritative,
+);
+
 Future<void> _registerKuzzPushCommunitySnapshot(
   List<Community> communities, {
   required bool strict,
@@ -295,13 +310,7 @@ Future<void> _registerKuzzPushCommunitySnapshot(
     final snapshots = [
       for (final community in communities)
         if (community.pushNotificationsEnabled)
-          KuzzPushCommunitySnapshot(
-            id: community.id,
-            name: community.name,
-            relayUrl: community.relayUrl,
-            pubkey: community.pubkey ?? pubkeyFromNsec(community.nsec),
-            subscriptions: community.pushSubscriptionState.authoritative,
-          ),
+          kuzzPushCommunitySnapshotFor(community),
     ];
     final signingKeys = <String, String>{};
     for (final community in communities) {
