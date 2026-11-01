@@ -188,6 +188,8 @@ Future<StoredRoomHead> readRoomHead(
         'SELECT id, pubkey, created_at, root FROM events '
         'WHERE room = ? AND kind IN (${kinds.join(', ')}) '
         'AND (root IS NULL OR broadcast = 1) '
+        // Rows only the push inbox wrote wait for the relay's copy.
+        'AND id NOT IN (SELECT id FROM pushed_rows) '
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
         [room, page, offset],
       );

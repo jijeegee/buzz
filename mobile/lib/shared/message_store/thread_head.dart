@@ -97,6 +97,8 @@ Future<StoredThreadHead> readThreadHead(
       final candidates = await db.rawQuery(
         'SELECT id, pubkey, created_at FROM events '
         'WHERE room = ? AND root = ? AND kind IN (${kinds.join(', ')}) '
+        // Rows only the push inbox wrote wait for the relay's copy.
+        'AND id NOT IN (SELECT id FROM pushed_rows) '
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
         [room, root, page, offset],
       );

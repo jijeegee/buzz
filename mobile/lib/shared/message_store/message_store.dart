@@ -24,6 +24,8 @@ import 'thread_head.dart';
 export 'clock_check.dart' show clockTrusted, noteServerDate;
 import 'stored_event.dart';
 
+part 'message_store_pushed.dart';
+
 const messageStoreSchemaVersion = 1;
 
 /// Receives waiting for the writer, as on desktop: one submit is one input,
@@ -191,6 +193,9 @@ class _Writer {
   int queuedEvents = 0;
 
   void clearQueue() {
+    for (final input in queue) {
+      if (input is _PushedOp) input.drop();
+    }
     queue.clear();
     headOffset = 0;
     queuedEvents = 0;
@@ -200,6 +205,10 @@ class _Writer {
 
   /// The file's rooms, loaded with the first write after it opens.
   purge.StoredRooms? rooms;
+
+  /// Ids in `pushed_rows` (a superset is fine), loaded with the first write
+  /// after the file opens: a relay copy of one clears its mark.
+  Set<String>? pushedIds;
 
   Future<void> drained = Future.value();
   bool scheduled = false;
@@ -320,13 +329,43 @@ class MessageStore {
 
   void _enqueueEvents(_Writer writer, Object input, int count) {
     if (count == 0) return;
-    if (writer.queue.length >= _queueInputs ||
-        writer.queuedEvents + count > _queueEvents) {
+    if (!_queueHas(writer, count)) {
       writer.noteLoss();
     } else {
       writer.enqueue(input);
       writer.queuedEvents += count;
     }
+  }
+
+  bool _queueHas(_Writer writer, int count) =>
+      writer.queue.length < _queueInputs &&
+      writer.queuedEvents + count <= _queueEvents;
+
+  /// Queues [events] from the push inbox, fetched at [fetchedAt] (unix
+  /// seconds), for [lease]'s file (docs/message-sync.md#push-inbox). The
+  /// outcome says whether they were written; only then may the inbox files
+  /// go. A full queue drops them without marking the file lossy: they claim
+  /// no coverage.
+  Future<PushedWriteOutcome> submitPushed(
+    MessageStoreLease? lease,
+    Iterable<Object?> events, {
+    required int fetchedAt,
+  }) {
+    final writer = _writerFor(lease);
+    if (writer == null) return Future.value(PushedWriteOutcome.dropped);
+    final input = events.whereType<Map<String, dynamic>>().toList();
+    if (input.isEmpty) {
+      return Future.value(const PushedWriteOutcome.written({}));
+    }
+    final op = _PushedOp(input, fetchedAt);
+    if (!_queueHas(writer, input.length)) {
+      op.drop();
+    } else {
+      writer.enqueue(op);
+      writer.queuedEvents += input.length;
+      _schedule(writer);
+    }
+    return op.done.future;
   }
 
   /// Notes the signing key (NIP-11 `self`) of [lease]'s server: relay
@@ -685,6 +724,13 @@ class MessageStore {
     try {
       while (writer.queue.isNotEmpty && !writer.stopped) {
         final head = writer.queue.first;
+        if (head is _PushedOp) {
+          writer.queue.removeAt(0);
+          writer.queuedEvents -= head.events.length;
+          await _writePushed(writer, head);
+          writer.advance(1);
+          continue;
+        }
         final coverage = head is _CoverageOp ? head : null;
         final forget = head is _ForgetOp ? head : null;
         final notice = head is _NoticeOp ? head : null;
@@ -760,6 +806,8 @@ class MessageStore {
         final db = await (writer.database ??= writer.open());
         if (writer.stopped) return;
         final known = writer.rooms ??= await purge.StoredRooms.load(db);
+        final pushed = writer.pushedIds ??= await _loadPushedIds(db);
+        final confirmed = <String>[];
         final forgotten = <String>[];
         String? historyOf;
         await db.transaction((txn) async {
@@ -785,6 +833,11 @@ class MessageStore {
             };
             if (room != null) known.note(room);
             _write(batch, row);
+            // The relay's copy of a pushed row: rooms may draw it now.
+            if (row is StoredRow && pushed.contains(row.id)) {
+              batch.rawDelete('DELETE FROM pushed_rows WHERE id = ?', [row.id]);
+              confirmed.add(row.id);
+            }
           }
           if (lossy) {
             batch.rawInsert(
@@ -793,6 +846,7 @@ class MessageStore {
             batch.rawDelete('DELETE FROM coverage');
           }
           await batch.commit(noResult: true);
+          pushed.removeAll(confirmed);
           if (coverage != null && !lossy && coverage.from > writer.lostAt) {
             // Not for a room forgotten after the span's capture began.
             final rooms = coverage.rooms
@@ -845,6 +899,7 @@ class MessageStore {
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
       writer.rooms = null;
+      writer.pushedIds = null;
       writer.clearQueue();
       writer.noteLoss();
     } finally {
