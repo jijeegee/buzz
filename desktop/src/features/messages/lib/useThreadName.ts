@@ -1,130 +1,97 @@
 import { t } from "@/shared/i18n";
-import { useEffect, useRef, useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect, useRef } from "react";
+import {
+  type QueryClient,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 import { relayClient } from "@/shared/api/relayClient";
 import { signRelayEvent } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_THREAD_NAME } from "@/shared/constants/kinds";
-import { isValidThreadName, selectThreadName } from "./threadName";
+import { isValidThreadName } from "./threadName";
+import { ThreadNameBatcher } from "./threadNameBatch";
+import { mergeThreadName, threadNameQueryKey } from "./threadNameLive";
+
+/**
+ * Every thread name read goes through one batcher: the rows on screen share
+ * a few reads instead of one each (docs/thread-names.md). Live renames come
+ * from the room bundle (`threadNameLive.ts`), not from a REQ per row.
+ */
+const threadNameBatch = new ThreadNameBatcher({
+  fetchEvents: (filter) => relayClient.fetchEvents(filter),
+  whenRoomCovered: (roomId) => relayClient.liveRooms.whenRoomCovered(roomId),
+});
+
+async function readThreadName(
+  queryClient: QueryClient,
+  channelId: string,
+  threadId: string,
+) {
+  const fetched = await threadNameBatch.load(channelId, threadId);
+  return mergeThreadName(queryClient, channelId, threadId, fetched);
+}
 
 /**
  * The read-only thread name query. Shares the `useThreadName` cache key so
  * renames made in an open thread show up immediately.
  */
-export function threadNameQueryOptions(channelId: string, threadId: string) {
+export function threadNameQueryOptions(
+  queryClient: QueryClient,
+  channelId: string,
+  threadId: string,
+) {
   return {
-    queryKey: ["thread-name", channelId, threadId],
+    queryKey: threadNameQueryKey(channelId, threadId),
     staleTime: 5 * 60_000,
-    queryFn: async () => {
-      const events = await relayClient.fetchEvents({
-        kinds: [KIND_THREAD_NAME],
-        "#h": [channelId],
-        "#e": [threadId],
-        limit: 1,
-      });
-      return events.reduce<RelayEvent | null>(
-        (head, event) => selectThreadName(head, event, channelId, threadId),
-        null,
-      );
-    },
+    queryFn: () => readThreadName(queryClient, channelId, threadId),
   };
 }
 
 /**
- * Read-only thread name for list rows, without opening a live subscription
- * per row.
+ * Read-only thread name for list rows. Kept fresh by the cache-wide live
+ * listener, so a row costs no live subscription.
  */
 export function useThreadNameLabel(
   channelId: string | null | undefined,
   threadId: string | null | undefined,
 ) {
+  const queryClient = useQueryClient();
   const query = useQuery<RelayEvent | null>({
-    ...threadNameQueryOptions(channelId ?? "", threadId ?? ""),
+    ...threadNameQueryOptions(queryClient, channelId ?? "", threadId ?? ""),
     enabled: Boolean(channelId && threadId),
   });
   return query.data?.content ?? "";
 }
 
+/** The thread name with its editor actions (open thread panel). */
 export function useThreadName(
   channelId: string | null | undefined,
   threadId: string | null | undefined,
 ) {
   const queryClient = useQueryClient();
-  const [subscriptionError, setSubscriptionError] = useState<Error | null>(
-    null,
-  );
-  const [attempt, setAttempt] = useState(0);
   const generation = useRef(0);
-  const key = ["thread-name", channelId, threadId];
+  // A save started for one thread must not finish into another.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: Bump on every thread change, not only on unmount.
+  useEffect(
+    () => () => {
+      generation.current += 1;
+    },
+    [channelId, threadId],
+  );
   const query = useQuery<RelayEvent | null>({
-    queryKey: key,
+    queryKey: threadNameQueryKey(channelId ?? "", threadId ?? ""),
     enabled: Boolean(channelId && threadId),
-    queryFn: async () => {
+    queryFn: () => {
       if (!channelId || !threadId) throw new Error("No thread selected");
-      const events = await relayClient.fetchEvents({
-        kinds: [KIND_THREAD_NAME],
-        "#h": [channelId],
-        "#e": [threadId],
-        limit: 1,
-      });
-      return events.reduce(
-        (head, event) => selectThreadName(head, event, channelId, threadId),
-        queryClient.getQueryData<RelayEvent | null>(key) ?? null,
-      );
+      return readThreadName(queryClient, channelId, threadId);
     },
   });
 
-  // biome-ignore lint/correctness/useExhaustiveDependencies: A manual retry must reopen a failed subscription.
-  useEffect(() => {
-    if (!channelId || !threadId) return;
-    generation.current += 1;
-    const controller = new AbortController();
-    let active = true;
-    let unsubscribe: (() => void) | undefined;
-    const queryKey = ["thread-name", channelId, threadId];
-    setSubscriptionError(null);
-    // History + live are a single subscription: reconnect replays the latest name.
-    void relayClient
-      .subscribeLive(
-        {
-          kinds: [KIND_THREAD_NAME],
-          "#h": [channelId],
-          "#e": [threadId],
-          limit: 1,
-        },
-        (event) => {
-          if (active)
-            queryClient.setQueryData<RelayEvent | null>(queryKey, (head) =>
-              selectThreadName(head ?? null, event, channelId, threadId),
-            );
-        },
-        undefined,
-        undefined,
-        controller.signal,
-      )
-      .then((stop) => {
-        if (active) unsubscribe = stop;
-        else stop();
-      })
-      .catch((error: unknown) => {
-        if (active)
-          setSubscriptionError(
-            error instanceof Error ? error : new Error(String(error)),
-          );
-      });
-    return () => {
-      active = false;
-      generation.current += 1;
-      controller.abort();
-      unsubscribe?.();
-    };
-  }, [channelId, threadId, queryClient, attempt]);
-
   return {
     name: query.data?.content ?? "",
-    error: query.error ?? subscriptionError,
+    error: query.error,
     retry: () => {
-      setAttempt((value) => value + 1);
       void query.refetch();
     },
     save: async (input: string) => {

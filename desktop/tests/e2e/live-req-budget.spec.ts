@@ -29,6 +29,9 @@ const ROOM_B = "engineering";
 // Same room type as A, measured in a fresh context so it starts empty.
 const ROOM_C = ROOM_A;
 const DM = "alice-tyler";
+// Owner rule (A4): thread rows cost no live subscription, and their names
+// arrive in a couple of batched reads, not one read per row.
+const OWNER_ROWS50_NAME_READS = 2;
 const SUMMARY_IN_TIMELINE =
   '[data-testid="message-timeline"] [data-testid="message-thread-summary"]';
 
@@ -575,6 +578,22 @@ test.describe("live REQ budget", () => {
       minus(sortedSignatures(rows10), sortedSignatures(rows50)),
       "rows10 live set is contained in rows50",
     ).toEqual([]);
+
+    // Owner rule, in both modes: 10 or 50 rows hold exactly the room's own
+    // live REQs, and 50 names come in at most two reads.
+    expect(extraLive, "a mounted thread row costs no live subscription").toBe(
+      0,
+    );
+    expect(
+      threadNameOneShots(rows50),
+      "rows50 thread-name reads",
+    ).toBeLessThanOrEqual(OWNER_ROWS50_NAME_READS);
+    const roomA = (readFixture().desktop as Partial<DesktopBudget>).checkpoints
+      ?.roomA;
+    if (roomA) {
+      expect(rows10.live.length, "rows10 live == roomA live").toBe(roomA.live);
+      expect(rows50.live.length, "rows50 live == roomA live").toBe(roomA.live);
+    }
 
     if (budget) {
       expect(
