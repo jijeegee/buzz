@@ -12,6 +12,9 @@ that both clients' tests read.
 | Fixture tests | `relayRoomBundle.test.mjs` | `room_live_routing_fixture_test.dart` |
 | Account bundle | `desktop/src/shared/api/relayMeBundle.ts` (`MeLiveBundle`); features call `meLive.subscribe` (`relayMeLive.ts`) | `mobile/lib/shared/relay/me_live_bundle.dart` (`MeLiveBundle`); `RelaySessionNotifier.subscribe` routes matching filters to it |
 | Account fixture tests | `relayMeBundle.test.mjs` | `me_live_bundle_fixture_test.dart` |
+| Community bundle | `desktop/src/shared/api/relayCommunityBundle.ts` (`CommunityLiveBundle`); features call `communityLive.subscribe` (`relayCommunityLive.ts`) | `mobile/lib/shared/relay/community_live_bundle.dart` (`CommunityLiveBundle`); `RelaySessionNotifier.subscribe`/`subscribeWithStatus` route matching filters to it, presence uses `communityPresence` |
+| Community fixture tests | `relayCommunityBundle.test.mjs` | `community_live_bundle_test.dart` |
+| Multi-filter live REQ | `desktop/src/shared/api/relayLiveFilters.ts` (`subscribeLiveFilters`) | `mobile/lib/shared/relay/relay_session_live_filters.dart` (`_subscribeFilters`) |
 | Message store | `desktop/src-tauri/src/message_store/` (fed by `native_websocket.rs` and `relay.rs`) | `mobile/lib/shared/message_store/` (fed by `relay_session.dart`) |
 | Message store fixture tests | `message_store/tests.rs` | `message_store_test.dart` |
 | Forgetting a room | `message_store/purge.rs`; list from `get_channels` (`commands/channels/fetch.rs`: `member_ids`, `store_scope`), applied by `desktop/src/features/channels/lib/storeRoomPurge.ts` (from `refreshChannelsQuery`) | `mobile/lib/shared/message_store/purge.dart`; list trigger `_forgetStoredRoomsMissingFrom` (`channel_directory.dart`, from the membership fetch in `channels_provider.dart`) |
@@ -24,6 +27,8 @@ that both clients' tests read.
 
 The account bundle's cases live in
 [`test-fixtures/me-live-bundle.json`](../test-fixtures/me-live-bundle.json),
+the community bundle's in
+[`test-fixtures/community-live-bundle.json`](../test-fixtures/community-live-bundle.json),
 the message store's in
 [`test-fixtures/message-store.json`](../test-fixtures/message-store.json),
 forgetting a room's in
@@ -123,8 +128,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 - Mobile re-sends each chunk unchanged; the open room refetches its newest
   page and the open thread its replies, as before.
 - **Live-only REQs go back unchanged.** Every REQ whose filter has
-  `limit: 0` (room chunks, both account bundles, presence, status, emoji,
-  catalogs, one-room REQs) is re-sent byte-identical, with no `since`. The
+  `limit: 0` (room chunks, both account bundles, the community bundle with
+  its current filter set, one-room REQs) is re-sent byte-identical, with no
+  `since`. The
   relay returns no stored rows for `limit: 0` (it runs the history query as
   `LIMIT 0`, one empty statement per filter, as before), so a `since` could
   never recover anything; but the relay also applies `since` to live
@@ -137,7 +143,7 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   the store catch-up, the account bundles from their clock-based catch-up
   ([Account bundle](#account-bundle)). Desktop (`buildReconnectReplayFilter`
   in `relayReconnectReplay.ts`) and mobile (`_replayFilter` in
-  `relay_session.dart`, also used by CLOSED retries) share the rule.
+  `relay_session_replay.dart`, also used by CLOSED retries) share the rule.
 - **Read state reads again on every reconnect.** Its listener is live-only,
   so nothing replays the marks made elsewhere while the socket was down:
   each real reconnect runs one read-state fetch (desktop through the relay
@@ -230,9 +236,56 @@ calls into one.
 Kept out on purpose:
 
 - **Community-wide streams** (user status, presence, catalogs, custom emoji)
-  are not about the account.
+  are not about the account: they ride the
+  [community bundle](#community-bundle).
 - **Room-scoped live REQs** (typing, goals, huddles, thread names, DM
   batches) are not about the account either.
+
+## Community bundle
+
+Every community-wide live stream rides one multi-filter REQ per app. The
+rows ([`test-fixtures/community-live-bundle.json`](../test-fixtures/community-live-bundle.json)),
+all `limit: 0`:
+
+| Row | Filter | Desktop | Mobile |
+|-----|--------|---------|--------|
+| emoji | `{30030, #d:[kuzz:custom-emoji]}` | yes | no |
+| status | `{30315, #d:[general]}` | yes | yes |
+| catalogs | `{30175, 30178}` | yes | no |
+| presence | `{20001, authors:[set]}`, left out while the set is empty | yes | yes |
+
+- **Routing.** A listener filter rides a row when it is live only, its
+  kinds are a subset of the row's and its `#d` is the row's. A filter with
+  `authors` never rides (it would silently get only the tracked set), nor
+  one with `since` or any other key; those get their own REQ. Each listener
+  gets the events its own filter matches, once.
+- **Presence author set.** Lowercased, sorted, grow-only for the session,
+  capped at 1000 (the relay's per-list limit). Keys past the cap are
+  refused with one warning and stay on the 60 s poll. Desktop adds the keys
+  that active presence queries ask about; mobile adds the keys the presence
+  cache tracks.
+- **Updates.** New keys go out with `setFilters`: the first 250 ms after it
+  is added (or 250 ms after the opening EOSE, if it came before), then at
+  most one re-REQ per 30 s, always with the newest set. A person shown for
+  the first time still gets their snapshot at once from the presence fetch;
+  their live updates follow within 30 s.
+- **One REQ in flight.** A same-subId REQ replaces the relay's filters, and
+  two in flight can be applied out of order, so the next set goes out only
+  after the previous REQ's EOSE or CLOSED. The opening REQ counts. While the
+  socket is down or a CLOSED retry is waiting, the update rides the replay
+  or the retry instead.
+- **No second "ready".** The EOSE that answers a `setFilters` REQ is not
+  passed on: listeners hear "ready" on open, after a reconnect and after a
+  reopen only. Mobile presence drops its snapshot on every "ready", so a
+  ready per update would blank it.
+- **Closed by the relay.** A terminal CLOSED reopens the bundle with
+  backoff (1 s doubling to 60 s); listeners stay and hear "retrying", then
+  "ready". It never calls a listener's `onClosed`.
+- **Reset.** Session teardown (desktop: the connection going idle on
+  sign-out or community switch; mobile: session dispose) clears the author
+  set and calls each listener's `onReset`; presence adds its keys again.
+- **Lifetime.** Opens 250 ms after its first listener and closes one task
+  after its last.
 
 ## Agent activity
 
@@ -251,7 +304,8 @@ their own: they ride the addressed [account bundle](#account-bundle).
 - **Duplicates.** Frames are deduplicated by sequence number and timestamp,
   so a frame the archive already holds is harmless.
 - **Agent online status** comes with everyone else's presence on the
-  presence subscription; it needs no REQ of its own.
+  [community bundle](#community-bundle)'s presence row; it needs no REQ of
+  its own.
 - **Start.** The listener for the account's agents attaches at launch only
   after the channel list and the first room window have loaded
   ([Launch order](#launch-order)), so it never opens the addressed REQ
@@ -316,6 +370,11 @@ answers follow in the background, in this order, and never block the screen.
    queues forgetting left rooms ([Forgetting a room](#forgetting-a-room))
    until after the first frame and the first window of the room on screen
    (at most 5 s), then runs each list as its own task between frames.
+
+Mobile reads the heads of the account's own 30078 lanes (mutes, stars,
+theme, ...) together when they start within 50 ms of each other: one
+one-shot `{30078, authors:[me], #d:[lanes], limit:N}`, and each lane gets
+its newest event (`lane_head_batch.dart`).
 
 ## Message store
 
