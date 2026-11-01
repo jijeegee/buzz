@@ -63,6 +63,12 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
   int? _refreshGeneration;
   bool _refreshQueued = false;
   int _subscriptionGeneration = 0;
+
+  /// The generation whose build() is still fetching. A live event meanwhile
+  /// only sets [_pendingDuringBuild]: a refresh landing first would be
+  /// overwritten by build's older result. One refresh follows the build.
+  int? _buildingGeneration;
+  bool _pendingDuringBuild = false;
   // Per-hidden-channel resurface coalescing. Presence of a key means an attempt
   // is in flight; the entry records the owning subscription generation and
   // whether a follower event arrived while it was running, so a failed reopen
@@ -104,12 +110,59 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
       _clearLiveSubscriptions();
     });
 
-    final response = await _fetch();
-    if (ref.read(relaySessionProvider).status == SessionStatus.connected &&
-        generation == _subscriptionGeneration) {
+    final connected =
+        ref.read(relaySessionProvider).status == SessionStatus.connected;
+    _buildingGeneration = generation;
+    _pendingDuringBuild = false;
+    final HomeFeedResponse response;
+    try {
+      // Listen before fetching, so nothing addressed to me in between is lost.
+      if (connected) await _subscribeAddressed(generation);
+      response = await _fetch();
+    } finally {
+      if (_buildingGeneration == generation) _buildingGeneration = null;
+    }
+    if (connected && generation == _subscriptionGeneration) {
       unawaited(_subscribeLive(generation));
+      if (_pendingDuringBuild) {
+        _pendingDuringBuild = false;
+        _scheduleLiveRefresh(generation);
+      }
     }
     return response;
+  }
+
+  /// Mentions, approvals and agent jobs addressed to me, live only on the
+  /// account bundle: the feed fetch holds the history, and a catch-up that may
+  /// have missed events (onGap) refreshes it. A failure leaves the feed
+  /// working; the next connection subscribes again.
+  Future<void> _subscribeAddressed(int generation) async {
+    final myPk = ref.read(myPubkeyProvider);
+    if (myPk == null) return;
+    try {
+      final unsubscribe = await ref
+          .read(relaySessionProvider.notifier)
+          .subscribe(
+            NostrFilter(
+              kinds: _addressedKinds,
+              tags: {
+                '#p': [myPk],
+              },
+              limit: 0,
+            ),
+            (event) => _handleAddressedLiveEvent(event, generation),
+            onGap: () => _scheduleLiveRefresh(generation),
+          );
+      if (generation != _subscriptionGeneration) {
+        unsubscribe();
+        return;
+      }
+      _unsubscribeAddressed = unsubscribe;
+    } catch (error) {
+      if (generation == _subscriptionGeneration) {
+        debugPrint('[ActivityNotifier] addressed subscription failed: $error');
+      }
+    }
   }
 
   Future<void> _subscribeLive(int generation) async {
@@ -119,23 +172,6 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     final session = ref.read(relaySessionProvider.notifier);
     final since = DateTime.now().millisecondsSinceEpoch ~/ 1000 - 5;
     try {
-      final unsubscribeAddressed = await session.subscribe(
-        NostrFilter(
-          kinds: _addressedKinds,
-          tags: {
-            '#p': [myPk],
-          },
-          since: since,
-          limit: 100,
-        ),
-        (event) => _handleAddressedLiveEvent(event, generation),
-      );
-      if (generation != _subscriptionGeneration) {
-        unsubscribeAddressed();
-        return;
-      }
-      _unsubscribeAddressed = unsubscribeAddressed;
-
       final channels = _relayChannels(ref);
       final dmChannelIds = [
         for (final channel in channels)
@@ -380,6 +416,10 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
 
   void _scheduleLiveRefresh(int generation) {
     if (generation != _subscriptionGeneration) return;
+    if (_buildingGeneration == generation) {
+      _pendingDuringBuild = true;
+      return;
+    }
     _liveRefreshTimer?.cancel();
     _liveRefreshTimer = Timer(
       const Duration(milliseconds: 50),

@@ -157,6 +157,35 @@
       }
     },
     {
+      "name": "mobile activity rides the addressed bundle",
+      "filter": {
+        "kinds": [
+          1,
+          9,
+          40002,
+          43001,
+          43002,
+          43003,
+          43004,
+          43005,
+          43006,
+          45001,
+          45003,
+          46010,
+          46011,
+          46012
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
       "name": "a filter asking for history keeps its own REQ",
       "filter": {
         "kinds": [

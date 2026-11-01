@@ -4,6 +4,7 @@ import 'package:kuzz/features/activity/activity_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/shared/relay/me_live_bundle.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -28,6 +29,13 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
   // can park an individual batch's REQ while letting earlier ones settle.
   final Map<int, Completer<void>> hiddenSubscribeGatesByCall = {};
   int hiddenSubscribeCallCount = 0;
+
+  /// Order of addressed (`#p`) subscribes and feed queries.
+  final List<String> calls = [];
+  final List<void Function()> gapListeners = [];
+
+  /// Answer a gated mention query from history as it was before the gate.
+  bool snapshotBeforeGate = false;
 
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
@@ -67,6 +75,10 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     queryFilterCounts.add(filters.length);
+    calls.add('query');
+    final snapshot = _history
+        .where((event) => filters.any((filter) => _matches(filter, event)))
+        .toList();
     if (failNextQueryRelay) {
       failNextQueryRelay = false;
       throw StateError('transient HTTP query failure');
@@ -95,6 +107,7 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
         activeMentionFetches -= 1;
       }
     }
+    if (snapshotBeforeGate) return snapshot;
     return _history
         .where((event) => filters.any((filter) => _matches(filter, event)))
         .toList();
@@ -123,6 +136,10 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
         failNextHiddenSubscribe = false;
         throw StateError('relay rejected hidden-DM subscription');
       }
+    }
+    if (filter.tags.containsKey('#p')) {
+      calls.add('subscribe#p');
+      if (onGap != null) gapListeners.add(onGap);
     }
     final subscription = (filter: filter, onEvent: onEvent);
     _subscriptions.add(subscription);
@@ -780,6 +797,80 @@ void main() {
       );
     },
   );
+
+  group('addressed listener on the account bundle', () {
+    ProviderContainer containerFor(_RecordingSessionNotifier session) {
+      final container = ProviderContainer(
+        overrides: [
+          relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
+          myPubkeyProvider.overrideWithValue('me_pk'),
+          relaySessionProvider.overrideWith(() => session),
+          channelsProvider.overrideWith(
+            () => _FixedChannelsNotifier(const <Channel>[]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('listens live only, before the feed fetch', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      await container.read(activityProvider.future);
+
+      expect(session.calls.take(2), ['subscribe#p', 'query']);
+      final addressed = session._subscriptions.singleWhere(
+        (s) => s.filter.tags.containsKey('#p'),
+      );
+      expect(addressed.filter.limit, 0);
+      expect(addressed.filter.since, isNull);
+      expect(meScopeOf(addressed.filter)?.kind, MeScopeKind.addressed);
+    });
+
+    test('a live event during build refreshes once after it, and the newer '
+        'feed wins', () async {
+      final session = _RecordingSessionNotifier()
+        ..seed(_mentionEvent('existing', 1_700_000_001))
+        ..snapshotBeforeGate = true
+        ..mentionFetchGate = Completer<void>();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      final building = container.read(activityProvider.future);
+      await _waitFor(() => session.activeMentionFetches == 1);
+
+      session.emit(_mentionEvent('live-during-build', 1_700_000_002));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(session.mentionFetchCount, 1, reason: 'no refresh during build');
+
+      session.mentionFetchGate!.complete();
+      session.mentionFetchGate = null;
+      await building;
+      await _waitFor(
+        () => container
+            .read(inboxItemsProvider)
+            .any((item) => item.id == 'live-during-build'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(session.mentionFetchCount, 2, reason: 'exactly one refresh');
+    });
+
+    test('a catch-up gap refreshes the feed', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      await container.read(activityProvider.future);
+      final before = session.mentionFetchCount;
+
+      session.seed(_mentionEvent('missed', 1_700_000_003));
+      session.gapListeners.single();
+      await _waitFor(
+        () => container.read(inboxItemsProvider).any((i) => i.id == 'missed'),
+      );
+      expect(session.mentionFetchCount, before + 1);
+    });
+  });
 
   test('serializes manual and live inbox refreshes', () async {
     final session = _RecordingSessionNotifier();
