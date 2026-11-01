@@ -3,11 +3,11 @@
   "desktop": {
     "launch": {
       "oneShot": 27,
-      "liveSends": 15
+      "liveSends": 13
     },
     "checkpoints": {
       "idle": {
-        "live": 14,
+        "live": 12,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -16,17 +16,15 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
       },
       "roomA": {
-        "live": 14,
+        "live": 12,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -35,17 +33,15 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
       },
       "roomB": {
-        "live": 15,
+        "live": 13,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -55,17 +51,15 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
       },
       "threadOpen": {
-        "live": 17,
+        "live": 15,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -77,17 +71,15 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
       },
       "dmOpen": {
-        "live": 14,
+        "live": 12,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -96,17 +88,15 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
       },
       "idleWithAgent": {
-        "live": 15,
+        "live": 13,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -116,11 +106,9 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]
@@ -128,7 +116,7 @@
     },
     "threadRows": {
       "rows10": {
-        "live": 24,
+        "live": 22,
         "mountedRows": 10,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
@@ -148,11 +136,9 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[40007,46010]|limit:50|since",
           "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
-          "authors:1|kinds:[30300]|limit:50|since",
           "authors:4|kinds:[20001]|limit:0",
           "kinds:[30175]|limit:0"
         ]

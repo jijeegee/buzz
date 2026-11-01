@@ -107,6 +107,39 @@
       }
     },
     {
+      "name": "home feed approvals and reminders ride the addressed bundle",
+      "filter": {
+        "kinds": [
+          40007,
+          46010
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "event reminders ride the authored bundle",
+      "filter": {
+        "authors": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "kinds": [
+          30300
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "authored",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
       "name": "a filter asking for history keeps its own REQ",
       "filter": {
         "kinds": [
