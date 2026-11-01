@@ -39,6 +39,7 @@ type CheckpointName =
   | "idle"
   | "idleWithAgent"
   | "idleRelaySelf"
+  | "idleHiddenDm"
   | "agentsView"
   | "roomA"
   | "roomB"
@@ -299,13 +300,22 @@ const OBSERVER_START_MAX_MS = 11_000;
 // (HuddlePresenceContext), as in production.
 const RELAY_SELF = "ab".repeat(32);
 
+// A DM the viewer has hidden (kind:30622): not in the sidebar, but a new
+// message in it still has to reach the app so the DM can come back.
+const HIDDEN_DM = "bob-tyler";
+
 async function openHome(
   page: Page,
-  options: { withAgent?: boolean; relaySelf?: boolean } = {},
+  options: {
+    withAgent?: boolean;
+    relaySelf?: boolean;
+    hiddenDm?: boolean;
+  } = {},
 ) {
   await installMockBridge(page, {
     ...(options.withAgent ? { managedAgents: [MANAGED_AGENT] } : {}),
     ...(options.relaySelf ? { relaySelf: RELAY_SELF } : {}),
+    ...(options.hiddenDm ? { hiddenDms: [HIDDEN_DM] } : {}),
   });
   await page.goto("/");
   await expect(page.getByTestId("channel-general")).toBeVisible();
@@ -316,7 +326,7 @@ async function idleCheckpoint(
   page: Page,
   testInfo: TestInfo,
   measured: Partial<Record<CheckpointName, Checkpoint>>,
-  name: "idle" | "idleWithAgent" | "idleRelaySelf" = "idle",
+  name: "idle" | "idleWithAgent" | "idleRelaySelf" | "idleHiddenDm" = "idle",
 ) {
   const title = page.getByTestId("chat-title");
   await expect(title).toHaveText(LANDING_ROOM);
@@ -486,6 +496,24 @@ test.describe("live REQ budget", () => {
     const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
     await openHome(page, { relaySelf: true });
     await idleCheckpoint(page, testInfo, measured, "idleRelaySelf");
+    if (UPDATE) {
+      writeDesktop((desktop) => {
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
+      });
+    }
+  });
+
+  test("idle with a hidden DM holds its live subscription budget", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
+    await openHome(page, { hiddenDm: true });
+    await expect(page.getByTestId(`channel-${HIDDEN_DM}`)).toHaveCount(0);
+    await idleCheckpoint(page, testInfo, measured, "idleHiddenDm");
     if (UPDATE) {
       writeDesktop((desktop) => {
         desktop.checkpoints = {

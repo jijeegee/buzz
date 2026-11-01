@@ -414,6 +414,10 @@ type E2eConfig = {
     /** Reject `clear_pending_navigation_deep_links` with this message. */
     clearPendingNavigationDeepLinksError?: string;
     openDmDelayMs?: number;
+    /** DMs (by channel name) the viewer has hidden: `get_channels` leaves
+     *  them out and the kind:30622 snapshot read returns them. Opening the DM
+     *  again shows it. Hiding a DM adds it here. */
+    hiddenDms?: string[];
     sendMessageDelayMs?: number;
     /** Delay (ms) for `start_managed_agent` so e2e tests can switch the
      *  community mid-startup and observe the fail-closed scope check.
@@ -3407,6 +3411,33 @@ const relayWebsocketConnectAttemptStarts: number[] = [];
 let mockAuthSigningAttempts = 0;
 let mockWebsocketSendMutexWedged = false;
 let mockClosedChannelLiveSubscription = false;
+/** Hidden DM ids (kind:30622); null until first read from the config. */
+let mockHiddenDmIdSet: Set<string> | null = null;
+
+function mockHiddenDmIds(): Set<string> {
+  if (mockHiddenDmIdSet === null) {
+    const names = new Set(getConfig()?.mock?.hiddenDms ?? []);
+    mockHiddenDmIdSet = new Set(
+      mockChannels
+        .filter((channel) => names.has(channel.name))
+        .map((channel) => channel.id),
+    );
+  }
+  return mockHiddenDmIdSet;
+}
+
+/** The viewer's kind:30622 DM visibility snapshot: one `h` tag per hidden DM. */
+function createMockDmVisibilityEvent(): RelayEvent {
+  return createMockEvent(
+    KIND_DM_VISIBILITY,
+    "",
+    [
+      ["p", MOCK_IDENTITY_PUBKEY],
+      ...[...mockHiddenDmIds()].sort().map((id) => ["h", id]),
+    ],
+    MOCK_IDENTITY_PUBKEY,
+  );
+}
 const realSockets = new Map<number, WebSocket>();
 let mockManagedAgents: MockManagedAgent[] = [];
 let mockManagedAgentRuntimes: MockManagedAgentRuntimeRow[] = [];
@@ -6906,8 +6937,12 @@ async function handleGetChannels(
     // The hash is constant ("mock-hash") and full lists remain the default:
     // mock channel data mutates during tests while the hash does not. Focused
     // snapshot specs can opt into the not-modified branch explicitly.
+    const hiddenDms = mockHiddenDmIds();
     const channels = scopeChannelsForMembership(
-      listMockChannels(config),
+      listMockChannels(config).filter(
+        (channel) =>
+          channel.channel_type !== "dm" || !hiddenDms.has(channel.id),
+      ),
       scope,
     );
     const hash = "mock-hash";
@@ -7588,6 +7623,7 @@ async function handleOpenDm(
   ]);
   const existingChannel = findMockDmByParticipantPubkeys(participantPubkeys);
   if (existingChannel) {
+    mockHiddenDmIds().delete(existingChannel.id);
     return toRawChannel(existingChannel, config);
   }
 
@@ -7669,14 +7705,11 @@ async function handleHideDm(
 ) {
   const identity = getIdentity(config);
   if (!identity) {
-    const index = mockChannels.findIndex(
-      (channel) => channel.id === args.channelId,
-    );
-    if (index === -1) {
+    if (!mockChannels.some((channel) => channel.id === args.channelId)) {
       throw new Error(`DM ${args.channelId} not found.`);
     }
-    // Remove from mock list (simulates hiding from sidebar).
-    mockChannels.splice(index, 1);
+    // Hidden, not deleted: membership stays, as on the relay (NIP-DV).
+    mockHiddenDmIds().add(args.channelId);
     return;
   }
 
@@ -11326,6 +11359,12 @@ function answerMockOneShot(
     } else {
       send(["EOSE", subId]);
     }
+    return;
+  }
+
+  if (filter.kinds?.includes(KIND_DM_VISIBILITY)) {
+    send(["EVENT", subId, createMockDmVisibilityEvent()]);
+    send(["EOSE", subId]);
     return;
   }
 

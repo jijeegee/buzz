@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -6,6 +7,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/app.dart';
+import 'package:kuzz/features/activity/activity_page.dart';
 import 'package:kuzz/features/age_gate/age_signal_provider.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/thread_detail_page.dart';
@@ -52,6 +54,9 @@ const _roomB = 'bbbbbbbb-0000-4000-8000-000000000002';
 const _dm = 'dddddddd-0000-4000-8000-000000000004';
 const _roomC10 = 'cccccccc-0000-4000-8000-000000000010';
 const _roomC50 = 'cccccccc-0000-4000-8000-000000000050';
+const _hiddenDm = 'dddddddd-0000-4000-8000-000000000005';
+const _third =
+    'ee00000000000000000000000000000000000000000000000000000000000005';
 const _seededRooms = [_roomA, _roomB, _dm, _roomC10, _roomC50];
 
 /// Tall enough that every seeded thread row of room C mounts.
@@ -190,6 +195,41 @@ List<NostrEvent> _seed() => [
   ..._messages(_roomC50, 10, 50),
 ];
 
+/// A second DM the viewer has hidden (kind:30622): left out of the list,
+/// but a new message in it must still reach the app so it can come back.
+List<NostrEvent> _hiddenDmSeed() => [
+  _ev('511', 39000, _relayKey, 1000, [
+    ['d', _hiddenDm],
+    ['name', 'DM'],
+    ['t', 'dm'],
+    ['hidden'],
+    ['private'],
+    ['p', _me.public],
+    ['p', _third],
+  ]),
+  _ev('512', 39002, _relayKey, 1000, [
+    ['d', _hiddenDm],
+    ['p', _me.public, '', 'member'],
+    ['p', _third, '', 'member'],
+  ]),
+  _ev('513', 0, _third, 1000, [], jsonEncode({'name': 'erin'})),
+  _ev('514', EventKind.dmVisibility, _me.public, 1500, [
+    ['d', 'dm-visibility'],
+    ['p', _me.public],
+    ['h', _hiddenDm],
+  ]),
+  ..._messages(_hiddenDm, 11, 1, replies: false),
+];
+
+/// Mentions of the viewer in three rooms, for the activity inbox.
+List<NostrEvent> _mentionSeed() => [
+  for (final (n, roomId) in [(0, _roomA), (1, _roomB), (2, _roomC10)])
+    _ev('12${n}00', 40002, _other, 3000 + n, [
+      ['h', roomId],
+      ['p', _me.public],
+    ], 'mention $n'),
+];
+
 class _AllowedAgeSignalNotifier extends AgeSignalNotifier {
   @override
   AgeSignalState build() => AgeSignalState.allowed;
@@ -220,7 +260,11 @@ final _threadSummaryRow = find.byWidgetPredicate(
 /// The real [App], connected to a [ScriptedRelay] through the real
 /// [RelaySessionNotifier] (its socket factory and `/query` client only).
 class _Harness {
-  final relay = ScriptedRelay(relayKey: _relayKey)..events.addAll(_seed());
+  _Harness({List<NostrEvent> extra = const []})
+    : relay = ScriptedRelay(relayKey: _relayKey)
+        ..events.addAll([..._seed(), ...extra]);
+
+  final ScriptedRelay relay;
   late final ProviderContainer container;
   late final Directory _dir;
 
@@ -568,6 +612,37 @@ void main() {
       'threadOpen',
       'dmOpen',
     ]);
+  });
+
+  testWidgets('idle with a hidden DM stays within the live REQ budget', (
+    tester,
+  ) async {
+    final h = _Harness(extra: _hiddenDmSeed());
+    await h.launch(tester);
+    await h.checkpoint(tester, 'idleHiddenDm');
+    expect(find.byType(HomePage), findsOneWidget);
+    expect(find.text('erin'), findsNothing, reason: 'the hidden DM is listed');
+    await h.unmount(tester);
+    _writeMeasured(const ['idleHiddenDm']);
+  });
+
+  testWidgets('the activity inbox stays within the live REQ budget', (
+    tester,
+  ) async {
+    final h = _Harness(extra: _mentionSeed());
+    await h.launch(tester);
+    await h.settle(tester, 'launch');
+    // Not a tab in the app today; pushed so its subscriptions are counted.
+    unawaited(
+      Navigator.of(
+        tester.element(find.byType(HomePage)),
+      ).push(MaterialPageRoute<void>(builder: (_) => const ActivityPage())),
+    );
+    await tester.pump();
+    await h.checkpoint(tester, 'activityInbox');
+    expect(find.byType(ActivityPage), findsOneWidget);
+    await h.unmount(tester);
+    _writeMeasured(const ['activityInbox']);
   });
 
   for (final (rows, roomName) in [(10, 'charlie-10'), (50, 'charlie-50')]) {

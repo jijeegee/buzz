@@ -25,6 +25,7 @@ export default defineConfig({
         "**/thread-head-stale-edit.spec.ts",
         "**/thread-name.spec.ts",
         "**/live-req-budget.spec.ts",
+        "**/hidden-dm-resurface.spec.ts",
         "**/thread-follow.spec.ts",
         "**/sidebar-offcanvas-rail.spec.ts",
         "**/tooltip-semantics.spec.ts",
