@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:fake_async/fake_async.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -184,6 +185,112 @@ void main() {
 
     expect(manager.getEffectiveTimestamp('channel-1'), 100);
   });
+
+  group('live-only listener on the account bundle', () {
+    late SharedPreferences prefs;
+    late nostr.Keys keys;
+    late ReadStateCrypto crypto;
+    late _FakeRelaySession relay;
+    late ReadStateManager manager;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      prefs = await SharedPreferences.getInstance();
+      keys = nostr.Keys.generate();
+      crypto = ReadStateCrypto.tryCreate(nsec: keys.nsec, pubkey: keys.public)!;
+      relay = _FakeRelaySession();
+      manager = ReadStateManager(
+        pubkey: keys.public,
+        prefs: prefs,
+        crypto: crypto,
+        relaySession: relay,
+        signedEventRelay: _FakeSignedEventRelay(),
+        remoteEnabled: true,
+        onChanged: () {},
+      );
+    });
+    tearDown(() => manager.dispose(flushPending: false));
+
+    NostrEvent otherDevice(Map<String, int> contexts) => _readStateEvent(
+      pubkey: keys.public,
+      crypto: crypto,
+      clientId: 'other-device',
+      slotId: 'other-slot',
+      contexts: contexts,
+      createdAt: 100,
+    );
+
+    test('listens live-only first; a reconnect only fetches', () async {
+      await manager.initialize();
+      expect(relay.calls, ['live', 'fetch']);
+      expect(relay.liveFilters.single.limit, 0);
+      expect(relay.liveFilters.single.since, isNull);
+      expect(relay.fetchFilters.single.limit, readStateFetchLimit);
+
+      relay.historyEvents = [
+        otherDevice({'channel-1': 300}),
+      ];
+      await manager.reinitializeRemote();
+      expect(relay.calls, ['live', 'fetch', 'fetch']);
+      expect(manager.getEffectiveTimestamp('channel-1'), 300);
+    });
+
+    test('a failed fetch with the socket up retries and merges', () {
+      fakeAsync((clock) {
+        relay
+          ..fetchFailures = 2
+          ..historyEvents = [
+            otherDevice({'channel-1': 500}),
+          ];
+        manager.initialize();
+        clock.flushMicrotasks();
+        expect(manager.getEffectiveTimestamp('channel-1'), isNull);
+        clock.elapse(const Duration(seconds: 1));
+        expect(manager.getEffectiveTimestamp('channel-1'), isNull);
+        clock.elapse(const Duration(seconds: 2));
+        expect(manager.getEffectiveTimestamp('channel-1'), 500);
+        expect(relay.fetchFilters, hasLength(3));
+        clock.elapse(const Duration(minutes: 5));
+        expect(
+          relay.fetchFilters,
+          hasLength(3),
+          reason: 'no retry after success',
+        );
+      });
+    });
+
+    test('a terminal CLOSED re-attaches one listener with backoff', () {
+      fakeAsync((clock) {
+        manager.initialize();
+        clock.flushMicrotasks();
+        relay.closeLive('error: too many subscriptions');
+        clock.flushMicrotasks();
+        expect(relay.liveFilters, hasLength(1), reason: 'no immediate loop');
+        clock.elapse(const Duration(milliseconds: 999));
+        expect(relay.liveFilters, hasLength(1));
+        clock.elapse(const Duration(milliseconds: 1));
+        expect(relay.liveFilters, hasLength(2));
+        expect(
+          relay.fetchFilters,
+          hasLength(2),
+          reason: 'reads what it missed',
+        );
+        clock.elapse(const Duration(minutes: 5));
+        expect(relay.liveFilters, hasLength(2));
+      });
+    });
+
+    test('a catch-up gap refetches', () async {
+      await manager.initialize();
+      relay.historyEvents = [
+        otherDevice({'channel-2': 700}),
+      ];
+      relay.gap();
+      await Future<void>.delayed(Duration.zero);
+      expect(relay.fetchFilters, hasLength(2));
+      expect(manager.getEffectiveTimestamp('channel-2'), 700);
+    });
+  });
 }
 
 class _SubmittedEvent {
@@ -288,12 +395,29 @@ NostrEvent _readStateEvent({
 
 class _FakeRelaySession extends RelaySessionNotifier {
   List<NostrEvent> historyEvents = [];
+  int fetchFailures = 0;
+  final calls = <String>[];
+  final fetchFilters = <NostrFilter>[];
+  final liveFilters = <NostrFilter>[];
+  void Function(String message)? _onClosed;
+  void Function()? _onGap;
+
+  void closeLive(String message) => _onClosed?.call(message);
+  void gap() => _onGap?.call();
 
   @override
   Future<List<NostrEvent>> fetchHistory(
     NostrFilter filter, {
     Duration timeout = const Duration(seconds: 8),
-  }) async => historyEvents;
+  }) async {
+    calls.add('fetch');
+    fetchFilters.add(filter);
+    if (fetchFailures > 0) {
+      fetchFailures--;
+      throw TimeoutException('read state timed out');
+    }
+    return historyEvents;
+  }
 
   @override
   Future<void Function()> subscribe(
@@ -301,5 +425,11 @@ class _FakeRelaySession extends RelaySessionNotifier {
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
     void Function()? onGap,
-  }) async => () {};
+  }) async {
+    calls.add('live');
+    liveFilters.add(filter);
+    _onClosed = onClosed;
+    _onGap = onGap;
+    return () {};
+  }
 }

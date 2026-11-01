@@ -186,6 +186,25 @@
       }
     },
     {
+      "name": "live read state rides the authored bundle",
+      "filter": {
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "#t": [
+          "read-state"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "authored",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
       "name": "a filter asking for history keeps its own REQ",
       "filter": {
         "kinds": [

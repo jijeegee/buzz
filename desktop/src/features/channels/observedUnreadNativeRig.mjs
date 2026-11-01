@@ -16,6 +16,8 @@
  * up as a suite.
  */
 
+import { readStateLive } from "./readState/readStateSync.ts";
+
 const HORIZON_SECONDS = 7 * 24 * 60 * 60;
 const PER_CHANNEL_CAP = 1_000;
 const GLOBAL_CAP = 5_000;
@@ -162,6 +164,9 @@ export function installNativeRig(options = {}) {
   const scopes = new Map();
   const calls = [];
   const previous = globalThis.window?.__TAURI_INTERNALS__;
+  // The read-state listener would ride the real account bundle.
+  const previousListen = readStateLive.listen;
+  readStateLive.listen = async () => async () => {};
 
   const ensureScope = (key) => {
     let scope = scopes.get(key);
@@ -359,6 +364,7 @@ export function installNativeRig(options = {}) {
       return rebuilt;
     },
     restore: () => {
+      readStateLive.listen = previousListen;
       if (previous === undefined) delete globalThis.window.__TAURI_INTERNALS__;
       else globalThis.window.__TAURI_INTERNALS__ = previous;
     },

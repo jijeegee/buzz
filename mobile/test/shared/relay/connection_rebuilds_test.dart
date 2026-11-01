@@ -139,9 +139,11 @@ void main() {
     expect(session.readStateSubscribes, 1);
     expect(session.liveReadStateSubscriptions, 1);
 
+    // The live-only listener survives the reconnect; the read state is
+    // fetched again because nothing replays the marks it missed.
     await reconnect(session);
     expect(session.readStateFetches, 2);
-    expect(session.readStateSubscribes, 2);
+    expect(session.readStateSubscribes, 1);
     expect(session.liveReadStateSubscriptions, 1);
   });
 

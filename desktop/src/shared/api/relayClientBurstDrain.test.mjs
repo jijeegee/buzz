@@ -219,7 +219,7 @@ test("observer frames join an addressed REQ already live with no REQ of their ow
   await tickTo(100);
 });
 
-test("read-state initialization takes the next paced slot ahead of cold channels", async () => {
+test("read-state readiness waits on one unpaced fetch, not behind cold channels", async () => {
   const { ReadStateManager } = await import(
     "../../features/channels/readState/readStateManager.ts"
   );
@@ -246,44 +246,53 @@ test("read-state initialization takes the next paced slot ahead of cold channels
     if (frame[0] === "REQ") await deliver(client, ["EOSE", frame[1]]);
   };
   const pubkey = "a".repeat(64);
-  const manager = new ReadStateManager(pubkey, client);
+  // The live listener joins the authored account bundle (limit 0); the
+  // fetch holds the history and keeps the early slot.
+  const listened = [];
+  const manager = new ReadStateManager(pubkey, client, {
+    listen: async (filter) => {
+      listened.push(filter);
+      return async () => {};
+    },
+  });
   let ready = false;
   const initialized = manager.initialize().then(() => {
     ready = true;
   });
   try {
-    await tickTo(249);
-    assert.equal(
-      ready,
-      false,
-      "initialization must retain its live readiness gate",
-    );
-    assert.equal(
-      frames("REQ").filter(({ frame }) => frame[1].startsWith("live-")).length,
-      1,
-    );
-    await tickTo(250);
+    await flush();
+    await tickTo(1);
     assert.equal(
       ready,
       true,
       "unread UI must not wait behind 295 cold channels",
     );
-    await initialized;
-    const live = frames("REQ").filter(({ frame }) =>
-      frame[1].startsWith("live-"),
+    const fetch = frames("REQ").find(
+      ({ frame }) =>
+        frame[1].startsWith("history-") &&
+        frame[2].kinds?.includes(KIND_READ_STATE),
     );
-    assert.equal(live.length, 2);
-    assert.equal(
-      live[1].at,
-      250,
-      "read-state must retain ordinary request pacing",
-    );
-    assert.deepEqual(live[1].frame[2], {
+    assert.ok(fetch, "the read-state fetch went out");
+    assert.equal(fetch.at, 0, "the fetch is not paced");
+    assert.equal(fetch.frame[2].limit, 500);
+    assert.equal(listened.length, 1);
+    assert.deepEqual(listened[0], {
       kinds: [KIND_READ_STATE],
       authors: [pubkey],
       "#t": ["read-state"],
-      limit: 500,
+      limit: 0,
     });
+    await tickTo(250);
+    await initialized;
+    assert.equal(
+      frames("REQ").some(
+        ({ frame }) =>
+          frame[1].startsWith("live-") &&
+          frame[2].kinds?.includes(KIND_READ_STATE),
+      ),
+      false,
+      "read state opens no live REQ of its own",
+    );
   } finally {
     manager.destroy();
     for (const entry of background) entry.controller.abort();

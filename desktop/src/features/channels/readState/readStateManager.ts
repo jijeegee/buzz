@@ -12,7 +12,17 @@ import {
   THREAD_PREFIX,
   type ReadStateBlob,
 } from "@/features/channels/readState/readStateFormat";
-import { parseReadStateEvent } from "@/features/channels/readState/readStateSnapshot";
+import {
+  type ParsedReadStateEvent,
+  parseReadStateEvent,
+} from "@/features/channels/readState/readStateSnapshot";
+import {
+  ParseCache,
+  ReattachingListener,
+  type ReadStateListen,
+  RetryingFetch,
+  readStateLive,
+} from "@/features/channels/readState/readStateSync";
 import {
   clientIdKey,
   generateHex,
@@ -34,6 +44,13 @@ const LOCAL_PERSIST_MAX_WAIT_MS = 1_000;
  * subscription can drop their relay echoes before the nip44 decrypt. A
  * publish cycle emits at most a handful of slot events; 64 is generous. */
 const PUBLISHED_ID_MEMORY = 64;
+/** Overlap for the fetch that covers a listener that went live late. */
+const GAP_SLACK_SECONDS = 5;
+
+export type ReadStateManagerDeps = {
+  /** Live listener; defaults to the authored account bundle (`meLive`). */
+  listen?: ReadStateListen;
+};
 
 export type ApplyRemoteContextResult = "unchanged" | "advanced";
 
@@ -287,7 +304,6 @@ export class ReadStateManager {
   private debounceTimer: number | null = null;
   private localPersistTimer: number | null = null;
   private listeners = new Set<() => void>();
-  private unsubscribeLive: (() => void) | null = null;
   private initialized = false;
   /** The initial relay fetch succeeded and was merged (not local-only). */
   private relayStateMerged = false;
@@ -299,10 +315,40 @@ export class ReadStateManager {
   private serverMirror: ReadStateServerMirror | null = null;
   /** Event ids we published ourselves; used to skip decrypting their echoes. */
   private recentlyPublishedIds = new Set<string>();
+  private live: ReattachingListener;
+  private fetcher = new RetryingFetch(
+    () => this.fetchAndMerge(),
+    () => {
+      if (this.initialized) this.schedulePublishIfDiverged();
+    },
+  );
+  private unsubscribeReconnect: (() => void) | null = null;
+  /** Saves the repeat decrypt of one event (LRU 256). */
+  private parseCache = new ParseCache<ParsedReadStateEvent>(256);
 
-  constructor(pubkey: string, relayClient: RelayClient) {
+  constructor(
+    pubkey: string,
+    relayClient: RelayClient,
+    deps: ReadStateManagerDeps = {},
+  ) {
     this.pubkey = pubkey;
     this.relayClient = relayClient;
+    // Live only (`limit: 0`): the fetch holds the history.
+    this.live = new ReattachingListener({
+      listen:
+        deps.listen ??
+        ((filter, onEvent, options) =>
+          readStateLive.listen(filter, onEvent, options)),
+      filter: {
+        kinds: [KIND_READ_STATE],
+        authors: [pubkey],
+        "#t": ["read-state"],
+        limit: 0,
+      },
+      onEvent: (event) => void this.handleIncomingEvent(event),
+      onGap: () => void this.fetcher.run(),
+      onReattached: () => void this.fetcher.run(),
+    });
     this.clientId = getOrCreatePersisted(clientIdKey(pubkey), () =>
       crypto.randomUUID(),
     );
@@ -322,17 +368,22 @@ export class ReadStateManager {
 
     this.hydrateFromLocalStorage();
 
-    await this.fetchAndMerge();
+    // A reconnect may have missed marks made elsewhere: read them again.
+    this.unsubscribeReconnect = this.relayClient.subscribeToReconnects(
+      () => void this.fetcher.run(),
+    );
+
+    // The listener rides the authored account bundle; the one-shot fetch
+    // keeps its early, unpaced slot, so unread UI readiness waits on one
+    // query, not on the bundle's paced REQ. The listener goes live after the
+    // fetch was sent, so a short fetch then covers the time between.
+    const fetchStartedAt = Math.floor(Date.now() / 1_000);
+    void this.live.attach().then((ok) => {
+      if (ok) void this.fetchGap(fetchStartedAt - GAP_SLACK_SECONDS);
+    });
+    await this.fetcher.run();
     if (this.destroyed) return;
-    await this.startLiveSubscription();
-    if (this.destroyed) return;
-    const initContexts = this.currentContexts();
-    if (initContexts === null) {
-      // Channel keys exceed single-slot budget — schedule a multi-slot publish.
-      this.schedulePublish();
-    } else if (!this.isIdenticalToLastPublished(initContexts)) {
-      this.schedulePublish();
-    }
+    this.schedulePublishIfDiverged();
 
     this.initialized = true;
     console.debug(
@@ -489,35 +540,53 @@ export class ReadStateManager {
       void this.publish();
     }
 
-    if (this.unsubscribeLive) {
-      void this.unsubscribeLive();
-      this.unsubscribeLive = null;
-    }
+    this.live.stop();
+    this.fetcher.stop();
+    this.unsubscribeReconnect?.();
+    this.unsubscribeReconnect = null;
 
     this.listeners.clear();
   }
 
-  private async fetchAndMerge(): Promise<void> {
+  private schedulePublishIfDiverged(): void {
+    const contexts = this.currentContexts();
+    // null: channel keys exceed the single-slot budget (multi-slot publish).
+    if (contexts === null || !this.isIdenticalToLastPublished(contexts)) {
+      this.schedulePublish();
+    }
+  }
+
+  /** One fetch and merge; false on failure (`fetcher` retries it). */
+  private async fetchAndMerge(since?: number): Promise<boolean> {
     let events: RelayEvent[];
     try {
       events = await this.relayClient.fetchEvents({
         kinds: [KIND_READ_STATE],
         authors: [this.pubkey],
         "#t": ["read-state"],
-        since: Math.floor(Date.now() / 1_000) - READ_STATE_HORIZON_SECONDS,
+        since:
+          since ?? Math.floor(Date.now() / 1_000) - READ_STATE_HORIZON_SECONDS,
         limit: READ_STATE_FETCH_LIMIT,
       });
     } catch (error) {
       console.debug("[ReadStateManager] fetchAndMerge failed:", error);
-      // If fetch fails, proceed with local state only
-      return;
+      return false;
     }
 
+    // The whole batch goes to the batch merge (own-slot union, squatters).
     await this.mergeEvents(events);
-    if (this.destroyed) return;
-    this.relayStateMerged = true;
+    if (this.destroyed) return false;
+    if (since === undefined) this.relayStateMerged = true;
     this.persistLocalState();
     this.notifyListeners();
+    return true;
+  }
+
+  /** Marks published since `since`: covers a listener that went live late. */
+  private async fetchGap(since: number): Promise<void> {
+    if (!this.destroyed && !(await this.fetchAndMerge(since))) {
+      void this.fetcher.run();
+    }
   }
 
   private async mergeEvents(events: RelayEvent[]): Promise<void> {
@@ -530,7 +599,7 @@ export class ReadStateManager {
     >();
 
     for (const event of events) {
-      const parsed = await this.parseEvent(event);
+      const parsed = await this.parseCached(event);
       if (this.destroyed) return;
       if (!parsed) continue;
 
@@ -568,7 +637,7 @@ export class ReadStateManager {
     // Conflict detection: check if another client_id is squatting on our
     // d-tag coordinate. If so, rotate our slotId to avoid clobbering.
     for (const event of events) {
-      const parsed = await this.parseEvent(event);
+      const parsed = await this.parseCached(event);
       if (this.destroyed) return;
       if (!parsed || parsed.dTag !== `read-state:${this.slotId}`) continue;
       if (parsed.blob.client_id !== this.clientId) {
@@ -596,32 +665,6 @@ export class ReadStateManager {
     }
   }
 
-  private async startLiveSubscription(): Promise<void> {
-    try {
-      // Unread UI readiness depends on this subscription, not the cold backlog.
-      const unsub = await this.relayClient.subscribeInteractive(
-        {
-          kinds: [KIND_READ_STATE],
-          authors: [this.pubkey],
-          "#t": ["read-state"],
-          limit: READ_STATE_FETCH_LIMIT,
-        },
-        (event: RelayEvent) => {
-          void this.handleIncomingEvent(event);
-        },
-      );
-      if (this.destroyed) {
-        unsub();
-        return;
-      }
-      this.unsubscribeLive = unsub;
-      console.debug("[ReadStateManager] live subscription established");
-    } catch (error) {
-      console.debug("[ReadStateManager] live subscription FAILED:", error);
-      // Non-fatal: we can still work with local state
-    }
-  }
-
   private async handleIncomingEvent(event: RelayEvent): Promise<void> {
     if (this.destroyed || event.pubkey !== this.pubkey) return;
 
@@ -641,7 +684,7 @@ export class ReadStateManager {
       `[ReadStateManager] incoming event=${event.id.substring(0, 8)}… created_at=${event.created_at}`,
     );
 
-    const parsed = await this.parseEvent(event);
+    const parsed = await this.parseCached(event);
     if (!parsed || this.destroyed) return;
 
     this.maxFetchedCreatedAt = Math.max(
@@ -689,6 +732,12 @@ export class ReadStateManager {
    * (see readStateManager.test.mjs echo-drop tests). */
   private parseEvent(event: RelayEvent) {
     return parseReadStateEvent(event, this.pubkey);
+  }
+
+  /** Every event still reaches merge and the squatter check; the cache only
+   * saves decrypting the same event twice. */
+  private parseCached(event: RelayEvent) {
+    return this.parseCache.get(event.id, () => this.parseEvent(event));
   }
 
   /** Record an id we just published, capped so failed publishes can't grow
@@ -867,7 +916,8 @@ export class ReadStateManager {
           `[ReadStateManager] deleteExtraSlots failed for slotId=${slotId}:`,
           error,
         );
-        // Non-fatal: stale blob will expire from relay within the horizon window.
+        // Non-fatal: the relay keeps the stale blob, but the startup fetch
+        // stops reading it once it is older than the horizon.
       }
     }
     this.extraSlotIds = [];
