@@ -9,14 +9,19 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_live_events.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
 import 'package:kuzz/features/channels/room_goals_provider.dart';
 import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/features/goals/goal_provider.dart';
+import 'package:kuzz/shared/message_store/message_store.dart';
+import 'package:kuzz/shared/message_store/message_store_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 part 'channels_provider_live_cases.dart';
+part 'channels_provider_push_cases.dart';
 part 'channels_provider_terminal_cases.dart';
 
 /// Tests for [ChannelsNotifier] in the pure-Nostr world.
@@ -1612,6 +1617,7 @@ void main() {
 
   _liveSubscriptionTests();
   _terminalSubscriptionTests();
+  _pushFoldTests();
 
   test('retains channel-list member snapshots for immediate reuse', () async {
     final joinedAt = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);

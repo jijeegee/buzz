@@ -141,6 +141,14 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         };
 
   void _showList(List<Channel> channels) => state = AsyncData(channels);
+  List<Channel>? get _shownList => state.value;
+
+  /// Folds push inbox events the store accepted (docs/message-sync.md#push-inbox).
+  Future<void> foldPushed(MessageStoreLease lease, List<NostrEvent> events) =>
+      _foldPushed(lease, events);
+
+  /// The listed rooms push inbox events may change (the Chats fold's too).
+  Set<String> get pushFoldRoomIds => _pushFoldChannels().keys.toSet();
 
   Map<String, Map<String, ObservedUnreadEvent>>
   get observedUnreadEventsByChannel =>

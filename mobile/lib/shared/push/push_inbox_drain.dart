@@ -5,6 +5,8 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
+import '../../features/channels/channels_provider.dart';
+import '../../features/chats/chat_list_provider.dart';
 import '../community/community.dart';
 import '../community/community_provider.dart';
 import '../message_store/message_store.dart';
@@ -24,8 +26,30 @@ import 'push_snapshot.dart';
 typedef PushInboxFold =
     void Function(MessageStoreLease lease, List<NostrEvent> events);
 
-/// The list folds (docs/message-sync.md#push-inbox).
-final pushInboxFoldsProvider = Provider<List<PushInboxFold>>((ref) => const []);
+/// The list folds (docs/message-sync.md#push-inbox): the channel list, and
+/// the saved Chats rows when shown. Both take only the rooms the channel
+/// list shows as listed, so a hidden DM changes neither.
+final pushInboxFoldsProvider = Provider<List<PushInboxFold>>(
+  (ref) => [
+    (lease, events) => unawaited(
+      ref.read(channelsProvider.notifier).foldPushed(lease, events),
+    ),
+    (lease, events) {
+      final owner = ref.read(chatListOwnerProvider);
+      // Only a list already shown: reading would create one to fold into.
+      if (owner == null || !ref.exists(chatListForOwnerProvider(owner))) {
+        return;
+      }
+      ref
+          .read(chatListForOwnerProvider(owner).notifier)
+          .foldPushed(
+            lease,
+            events,
+            listed: ref.read(channelsProvider.notifier).pushFoldRoomIds,
+          );
+    },
+  ],
+);
 
 /// What one drain works on.
 typedef PushInboxDrainScope = ({

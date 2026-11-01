@@ -5,6 +5,8 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/message_store/message_store.dart' show MessageStoreLease;
+import '../../shared/message_store/message_store_provider.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
@@ -265,6 +267,34 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
     final result = _foldLiveEvent(current, event);
     if (!identical(result.state, current)) state = AsyncData(result.state);
     if (result.reload) _reloadSoon(generation, immediate: true);
+  }
+
+  /// Folds push inbox events the store accepted
+  /// (docs/message-sync.md#push-inbox) into the saved rows drawn before the
+  /// first page, for [listed] rooms only, as replays: the first page
+  /// replaces them, and nothing is saved. A live list (it has these
+  /// events or will reload), another account or a lease that ended folds
+  /// nothing. A row only the relay can place waits for that page.
+  void foldPushed(
+    MessageStoreLease lease,
+    List<NostrEvent> events, {
+    required Set<String> listed,
+  }) {
+    final current = state.value;
+    if (!ref.mounted || current == null || !current.fromCache) return;
+    final config = ref.read(relayConfigProvider);
+    final pubkey = ref.read(myPubkeyProvider);
+    if (pubkey == null ||
+        _ownerOf(config, pubkey) != owner ||
+        ref.read(messageStoreProvider).lease(config.baseUrl, pubkey) != lease) {
+      return;
+    }
+    var list = current;
+    for (final event in events) {
+      if (!listed.contains(event.channelId)) continue;
+      list = _foldLiveEvent(list, event, replay: true).state;
+    }
+    if (!identical(list, current)) state = AsyncData(list);
   }
 
   ({ChatListState state, bool reload}) _foldLiveEvent(
