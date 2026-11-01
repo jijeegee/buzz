@@ -28,6 +28,14 @@ pub enum AppAttestEnvironment {
     Development,
 }
 
+/// Optional `kuzz-android` profile. Present only when an FCM service account
+/// is configured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AndroidProfileConfig {
+    /// Google service-account JSON key file used for FCM HTTP v1.
+    pub fcm_service_account_path: PathBuf,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct KeyConfig {
     pub id: String,
@@ -44,6 +52,8 @@ pub struct Config {
     pub endpoint_quota_max_deliveries: i64,
     /// Server-owned dogfood application identity and APNs transport.
     pub profile: AppProfileConfig,
+    /// Android profile; `None` keeps the gateway iOS-only.
+    pub android: Option<AndroidProfileConfig>,
     pub database_url: String,
     pub app_attest_root_cert_path: PathBuf,
     /// Ordered current key first, followed by decrypt-only predecessors.
@@ -143,6 +153,17 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
     })
 }
 
+fn parse_android(e: &HashMap<String, String>) -> Result<Option<AndroidProfileConfig>, ConfigError> {
+    let key = "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH";
+    match e.get(key).map(String::as_str) {
+        None => Ok(None),
+        Some("") => Err(ConfigError::Invalid(key)),
+        Some(path) => Ok(Some(AndroidProfileConfig {
+            fcm_service_account_path: PathBuf::from(path),
+        })),
+    }
+}
+
 impl Config {
     pub fn from_env() -> Result<Self, ConfigError> {
         Self::from_map(&std::env::vars().collect())
@@ -196,6 +217,7 @@ impl Config {
         let endpoint_quota_max_deliveries =
             bounded_positive("KUZZ_PUSH_ENDPOINT_QUOTA_MAX_DELIVERIES", 10, 10_000)?;
         let profile = parse_profile(e)?;
+        let android = parse_android(e)?;
         let bind_addr = e
             .get("KUZZ_PUSH_BIND_ADDR")
             .map(String::as_str)
@@ -216,6 +238,7 @@ impl Config {
             endpoint_quota_window_seconds,
             endpoint_quota_max_deliveries,
             profile,
+            android,
             database_url: req(e, "DATABASE_URL")?.to_owned(),
             app_attest_root_cert_path: req(e, "KUZZ_PUSH_APP_ATTEST_ROOT_CERT_PATH")?.into(),
             grant_keys,
@@ -420,6 +443,27 @@ mod tests {
             env.insert("KUZZ_PUSH_TOKEN_KEYS".into(), token_keys);
             assert!(Config::from_map(&env).is_err());
         }
+    }
+
+    #[test]
+    fn android_profile_is_opt_in_and_never_empty() {
+        assert_eq!(Config::from_map(&base()).unwrap().android, None);
+        let mut env = base();
+        env.insert(
+            "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".into(),
+            "/fcm-service-account.json".into(),
+        );
+        assert_eq!(
+            Config::from_map(&env).unwrap().android,
+            Some(AndroidProfileConfig {
+                fcm_service_account_path: PathBuf::from("/fcm-service-account.json"),
+            })
+        );
+        env.insert(
+            "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".into(),
+            String::new(),
+        );
+        assert!(Config::from_map(&env).is_err());
     }
 
     #[test]

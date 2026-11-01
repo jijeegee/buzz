@@ -29,6 +29,8 @@ byteorder = "1.5"
 minicbor = "0.25"
 chrono = { workspace = true }
 hex = { workspace = true }
+# RS256 service-account assertions for FCM HTTP v1 (already in Cargo.lock).
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
 getrandom = "0.4"
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -49,5 +51,7 @@ url = { workspace = true }
 uuid = { workspace = true }
 
 [dev-dependencies]
+# Generates the throwaway RSA key for the mock FCM tests (already in Cargo.lock).
+aws-lc-rs = "1.18"
 proptest = { workspace = true }
 reqwest = { workspace = true }

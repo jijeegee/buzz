@@ -3,7 +3,9 @@ use kuzz_push_gateway::{
     app_attest::AppAttestVerifier,
     authority::AuthorityStore,
     config::Config,
+    fcm::{FcmTransport, ServiceAccount},
     grant::{GrantKey, GrantKeyring},
+    http::AndroidProfileRuntime,
     postgres::PostgresAuthorityStore,
     router_with_metrics,
     token::{TokenKey, TokenKeyring},
@@ -54,6 +56,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             transport,
         }
     };
+    let android = match &c.android {
+        Some(android) => {
+            let account = ServiceAccount::from_json(&fs::read(&android.fcm_service_account_path)?)?;
+            tracing::info!(project = account.project_id(), "FCM transport configured");
+            Some(Arc::new(AndroidProfileRuntime {
+                transport: Arc::new(FcmTransport::new(account)?),
+            }))
+        }
+        None => None,
+    };
     let grant_keyring = GrantKeyring::new(
         c.grant_keys
             .iter()
@@ -97,7 +109,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             authority,
             token_keyring: Arc::new(token_keyring),
             profile: Arc::new(profile),
-            android: None,
+            android,
             max_grant_lifetime_seconds: c.max_grant_lifetime_seconds,
             max_installation_lifetime_seconds: c.max_installation_lifetime_seconds,
             endpoint_quota_window_seconds: c.endpoint_quota_window_seconds,
