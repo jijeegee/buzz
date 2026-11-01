@@ -2,6 +2,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import {
   CHANNEL_EVENT_KINDS,
   KIND_CHANNEL_THREAD_SUMMARY,
+  KIND_THREAD_NAME,
 } from "@/shared/constants/kinds";
 import {
   MAX_EXPLICIT_CHANNEL_VALUES,
@@ -10,14 +11,26 @@ import {
 } from "@/shared/api/relayClientShared";
 
 /**
- * Kinds every room bundle carries: the room's own events plus the relay's
- * live thread-summary recounts (39005). Summaries are delivered only to room
- * listeners, never to the all-rooms listeners (unread, sidebar, chat list).
+ * Room metadata the bundle carries for every covered room (thread names).
+ * Delivered only to metadata listeners (`listenRoomMetadata`): never to room
+ * listeners, unread, the sidebar or the chat list.
+ */
+export const ROOM_METADATA_KINDS: readonly number[] = [KIND_THREAD_NAME];
+
+/**
+ * Kinds every room bundle carries: the room's own events, the relay's live
+ * thread-summary recounts (39005) and room metadata. Summaries are delivered
+ * only to room listeners, never to the all-rooms listeners (unread, sidebar,
+ * chat list).
  */
 export const ROOM_LIVE_KINDS: readonly number[] = [
   ...CHANNEL_EVENT_KINDS,
   KIND_CHANNEL_THREAD_SUMMARY,
+  ...ROOM_METADATA_KINDS,
 ];
+
+/** The longest `whenRoomCovered` waits. */
+export const ROOM_COVERAGE_WAIT_MS = 1_500;
 
 /** Events remembered for duplicate suppression across overlapping deliveries. */
 const SEEN_EVENT_LIMIT = 20_000;
@@ -57,6 +70,8 @@ type RoomWaiter = {
   roomId: string;
   resolve: () => void;
 };
+
+type CoverWaiter = RoomWaiter & { timer: number };
 
 /** The relay accepts at most this many explicit channels per REQ. */
 export function chunkRoomIds(roomIds: Iterable<string>): string[][] {
@@ -131,7 +146,11 @@ export class RoomLiveBundle {
   private chunks = new Map<string, Chunk>();
   private roomListeners = new Map<string, Set<RoomLiveListener>>();
   private allRoomListeners = new Set<RoomLiveListener>();
+  private metadataListeners = new Set<RoomLiveListener>();
   private waiters = new Set<RoomWaiter>();
+  private coverWaiters = new Set<CoverWaiter>();
+  /** Set by the first non-empty member list since the last reset. */
+  private membershipKnown = false;
   private seen = new Map<string, true>();
   private eventRooms = new Map<string, string>();
   private generation = 0;
@@ -151,14 +170,47 @@ export class RoomLiveBundle {
   /** Rooms the account belongs to; their events also reach all-rooms listeners. */
   setMemberRooms(roomIds: Iterable<string>) {
     const next = new Set(roomIds);
+    if (next.size > 0) this.membershipKnown = true;
     if (
       next.size === this.memberRooms.size &&
       [...next].every((roomId) => this.memberRooms.has(roomId))
     ) {
+      this.settleCoverWaiters();
       return;
     }
     this.memberRooms = next;
     this.queueSync();
+    this.settleCoverWaiters();
+  }
+
+  /**
+   * Listen to room metadata (`ROOM_METADATA_KINDS`) of every room the bundle
+   * carries, member or not. Events carry their room's `h` tag.
+   */
+  listenRoomMetadata(listener: RoomLiveListener) {
+    this.metadataListeners.add(listener);
+    return () => {
+      this.metadataListeners.delete(listener);
+    };
+  }
+
+  /**
+   * Resolves once live events of `roomId` reach this bundle, so a history read
+   * started afterwards misses nothing. Resolves at the first of: a chunk
+   * carrying the room is live; membership is known and no chunk will carry
+   * the room (archived, hidden, the huddle window, not a member: its live
+   * events never come); `ROOM_COVERAGE_WAIT_MS`.
+   */
+  whenRoomCovered(roomId: string): Promise<void> {
+    if (this.isRoomCovered(roomId)) return Promise.resolve();
+    return new Promise<void>((resolve) => {
+      const waiter: CoverWaiter = { roomId, resolve, timer: 0 };
+      waiter.timer = this.timers.setTimeout(() => {
+        this.coverWaiters.delete(waiter);
+        resolve();
+      }, ROOM_COVERAGE_WAIT_MS);
+      this.coverWaiters.add(waiter);
+    });
   }
 
   /** Listen to every member room's events (thread summaries excluded). */
@@ -210,6 +262,7 @@ export class RoomLiveBundle {
       } else {
         this.extraRooms.delete(roomId);
         this.queueSync();
+        this.settleCoverWaiters();
       }
     };
 
@@ -227,6 +280,7 @@ export class RoomLiveBundle {
     for (const chunk of this.chunks.values()) this.closeChunk(chunk);
     this.chunks.clear();
     this.memberRooms.clear();
+    this.membershipKnown = false;
     this.seen.clear();
     this.eventRooms.clear();
     // Rooms still listened to are covered again on the next session.
@@ -307,6 +361,7 @@ export class RoomLiveBundle {
         chunk.failures = 0;
         this.retireReplacedChunks();
         this.settleWaiters();
+        this.settleCoverWaiters();
       },
       (error: unknown) => {
         if (!isCurrent()) return;
@@ -375,6 +430,26 @@ export class RoomLiveBundle {
     return false;
   }
 
+  private isRoomCovered(roomId: string) {
+    for (const chunk of this.chunks.values()) {
+      if (chunk.status === "live" && chunk.rooms.has(roomId)) return true;
+    }
+    return (
+      this.membershipKnown &&
+      !this.memberRooms.has(roomId) &&
+      !this.extraRooms.has(roomId)
+    );
+  }
+
+  private settleCoverWaiters() {
+    for (const waiter of [...this.coverWaiters]) {
+      if (!this.isRoomCovered(waiter.roomId)) continue;
+      this.coverWaiters.delete(waiter);
+      this.timers.clearTimeout(waiter.timer);
+      waiter.resolve();
+    }
+  }
+
   private settleWaiters() {
     for (const waiter of [...this.waiters]) {
       const stillWanted = this.extraRooms.has(waiter.roomId);
@@ -405,6 +480,11 @@ export class RoomLiveBundle {
     remember(this.seen, event.id, true, SEEN_EVENT_LIMIT);
     remember(this.eventRooms, event.id, roomId, EVENT_ROOM_LIMIT);
 
+    if (ROOM_METADATA_KINDS.includes(event.kind)) {
+      const tagged = withRoomTag(event, roomId);
+      for (const listener of [...this.metadataListeners]) listener(tagged);
+      return;
+    }
     const listeners = this.roomListeners.get(roomId);
     if (listeners) {
       for (const listener of [...listeners]) listener(event);

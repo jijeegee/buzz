@@ -132,10 +132,11 @@ void _liveSubscriptionTests() {
         _channelB,
       ]);
       // The open rooms ride these chunks too, so they carry the
-      // thread-summary recounts.
+      // thread-summary recounts, plus thread names as room metadata.
       expect(session.subscribeFilters.single.kinds, [
         ...EventKind.channelEventKinds,
         EventKind.channelThreadSummary,
+        EventKind.threadName,
       ]);
       expect(session.subscribeFilters.single.limit, 0);
 

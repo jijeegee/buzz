@@ -23,6 +23,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     };
     final relayBaseUrl = _lifecycleRef.read(relayConfigProvider).baseUrl;
     _desiredLiveChannelIds = channelIds;
+    _coverageRouter?.setBundleRooms(channelIds);
     // A changed filter may be admitted, but an unchanged terminal rejection
     // cannot recover just because a timer or manual refresh fetched it again.
     // Drop obsolete keys so this quarantine stays bounded by desired chunks.
@@ -117,9 +118,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
             // Superseded chunks can overlap during replacement or recovery.
             // Deliver only the current scope's still-desired channels;
             // duplicate events are already idempotent in the unread/timestamp
-            // stores. Thread summaries are room metadata, never unread or chat
-            // rows.
-            if (event.kind == EventKind.channelThreadSummary ||
+            // stores. Thread summaries and room metadata (thread names) are
+            // never unread or chat rows.
+            if (!reachesAllRoomListeners(event) ||
                 !_desiredLiveChannelIds.contains(event.channelId)) {
               return;
             }
@@ -264,6 +265,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   void _clearLiveSubscriptions() {
     _subscriptionVersion++;
     _desiredLiveChannelIds = const {};
+    _coverageRouter?.setBundleRooms(const {});
     _terminallyClosedLiveChunks.clear();
     _clearRetainedLiveChunks();
     _subscriptionRelayBaseUrl = null;

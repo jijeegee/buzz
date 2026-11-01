@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -136,6 +138,86 @@ void main() {
     router.routeBundleEvent(_event('row', room: 'a'), {'a'});
     expect(seen, ['row']);
     stop();
+  });
+
+  test('thread names reach metadata listeners only, once', () async {
+    final relay = _FakeRoomRelay();
+    final router = RoomLiveRouter(relay.open)..setCoveredRooms({'a'});
+    final inRoom = <String>[];
+    final names = <String>[];
+    final stopRoom = await router.listenRoom('a', (e) => inRoom.add(e.id));
+    final stopNames = router.listenMetadata((e) => names.add(e.id));
+    final rename = _event('rename', room: 'a', kind: EventKind.threadName);
+
+    expect(router.routeBundleEvent(rename, {'a'}), 'a');
+    router.routeBundleEvent(rename, {'a'});
+    expect(names, ['rename']);
+    expect(inRoom, isEmpty);
+    expect(reachesAllRoomListeners(rename), isFalse);
+    stopNames();
+    stopRoom();
+  });
+
+  test("a browsed room's own REQ carries thread names", () async {
+    final relay = _FakeRoomRelay();
+    final router = RoomLiveRouter(relay.open);
+    final names = <String>[];
+    router.listenMetadata((e) => names.add(e.id));
+    final stop = await router.listenRoom('x', (_) {});
+    expect(relay.opened.single.filter.kinds, contains(EventKind.threadName));
+    relay.opened.single.onEvent(
+      _event('rename', room: 'x', kind: EventKind.threadName),
+    );
+    expect(names, ['rename']);
+    stop();
+  });
+
+  group('whenRoomCovered', () {
+    test('completes when the bundle covers the room', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setBundleRooms({'a'});
+      var done = false;
+      unawaited(router.whenRoomCovered('a').then((_) => done = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isFalse);
+      router.setCoveredRooms({'a'});
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+    });
+
+    test('a room nothing will carry completes at once', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setBundleRooms({'a'});
+      var done = false;
+      unawaited(router.whenRoomCovered('archived').then((_) => done = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+    });
+
+    test('a listened room completes once its own REQ is up', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setBundleRooms({'a'});
+      final stop = await router.listenRoom('browsed', (_) {});
+      var done = false;
+      unawaited(router.whenRoomCovered('browsed').then((_) => done = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+      stop();
+    });
+
+    test('cold start (rooms unknown) completes at the wait limit', () async {
+      final router = RoomLiveRouter(
+        _FakeRoomRelay().open,
+        coverageWaitLimit: const Duration(milliseconds: 30),
+      );
+      final watch = Stopwatch()..start();
+      await router.whenRoomCovered('a');
+      expect(watch.elapsedMilliseconds, greaterThanOrEqualTo(25));
+    });
+
+    test('the default wait is 1.5 s', () {
+      expect(roomCoverageWaitLimit, const Duration(milliseconds: 1500));
+    });
   });
 }
 

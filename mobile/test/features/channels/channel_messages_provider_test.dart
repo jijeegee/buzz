@@ -251,6 +251,7 @@ void main() {
       expect(relaySession.liveFilters.single.kinds, [
         ...EventKind.channelEventKinds,
         EventKind.channelThreadSummary,
+        EventKind.threadName,
       ]);
       expect(relaySession.liveFilters.single.tags['#h'], [_channelId]);
       // Not yet covered by the room bundle: a live-only room subscription.

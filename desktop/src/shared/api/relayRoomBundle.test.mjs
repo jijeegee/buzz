@@ -4,12 +4,14 @@ import test from "node:test";
 
 import {
   chunkRoomIds,
+  ROOM_COVERAGE_WAIT_MS,
   ROOM_LIVE_KINDS,
   RoomLiveBundle,
 } from "./relayRoomBundle.ts";
 import {
   CHANNEL_EVENT_KINDS,
   KIND_CHANNEL_THREAD_SUMMARY,
+  KIND_THREAD_NAME,
 } from "@/shared/constants/kinds";
 
 const flush = async () => {
@@ -399,3 +401,115 @@ for (const fixture of fixtures.routing) {
     for (const stop of stops) await stop();
   });
 }
+
+for (const fixture of fixtures.delivery) {
+  test(`shared fixture: ${fixture.name}`, async () => {
+    const { bundle, live } = harness();
+    bundle.setMemberRooms(fixture.memberRooms);
+    const roomId = fixture.event.tags.find((tag) => tag[0] === "h")[1];
+    const inRoom = [];
+    const allRooms = [];
+    const metadata = [];
+    bundle.listenAllRooms((e) => allRooms.push(e.id));
+    bundle.listenRoomMetadata((e) => metadata.push(e.id));
+    const stop = await bundle.listenRoom(roomId, (e) => inRoom.push(e.id));
+    await flush();
+    const chunk = live().find((sub) => sub.filter["#h"].includes(roomId));
+    chunk.onEvent(event(fixture.event.id, null, fixture.event));
+    assert.equal(inRoom.length > 0, fixture.room, "room");
+    assert.equal(allRooms.length > 0, fixture.allRooms, "all rooms");
+    assert.equal(metadata.length > 0, fixture.metadata, "metadata");
+    await stop();
+  });
+}
+
+test("the bundle carries thread names", () => {
+  assert.ok(ROOM_LIVE_KINDS.includes(KIND_THREAD_NAME));
+});
+
+test("a thread name never reaches the all-room listeners, so it cannot refetch the channel list", async () => {
+  const { bundle, live } = harness();
+  bundle.setMemberRooms(["a"]);
+  const allRooms = [];
+  bundle.listenAllRooms((e) => allRooms.push(e));
+  const names = [];
+  bundle.listenRoomMetadata((e) => names.push(e));
+  await flush();
+  // A rename for a room outside the sidebar list arrives on the room's chunk.
+  live()[0].onEvent(
+    event("rename", null, { kind: KIND_THREAD_NAME, tags: [["e", "head"]] }),
+  );
+  assert.deepEqual(allRooms, []);
+  assert.equal(names.length, 1);
+  assert.deepEqual(names[0].tags.at(-1), ["h", "a"]);
+});
+
+test("whenRoomCovered resolves when the room's chunk is live", async () => {
+  const { bundle, opened } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a"]);
+  let done = false;
+  void bundle.whenRoomCovered("a").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, false);
+  opened[0].open();
+  await flush();
+  assert.equal(done, true);
+});
+
+test("whenRoomCovered resolves at once for a room no chunk will carry", async () => {
+  const { bundle } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a"]);
+  let done = false;
+  void bundle.whenRoomCovered("archived").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, true);
+});
+
+test("whenRoomCovered resolves at once in the huddle window (member list emptied)", async () => {
+  const { bundle } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a"]);
+  bundle.setMemberRooms([]);
+  let done = false;
+  void bundle.whenRoomCovered("a").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, true);
+});
+
+test("whenRoomCovered at cold start (no member list yet) ends at the wait limit", async () => {
+  const { bundle, timers } = harness({ autoOpen: false });
+  let done = false;
+  void bundle.whenRoomCovered("a").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, false);
+  const [id, timer] = [...timers].find(
+    ([, t]) => t.ms === ROOM_COVERAGE_WAIT_MS,
+  );
+  assert.equal(ROOM_COVERAGE_WAIT_MS, 1_500);
+  timers.delete(id);
+  timer.fn();
+  await flush();
+  assert.equal(done, true);
+});
+
+test("whenRoomCovered waits for a browsed room's own chunk", async () => {
+  const { bundle, opened } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a"]);
+  void bundle.listenRoom("browsed", () => {});
+  let done = false;
+  void bundle.whenRoomCovered("browsed").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, false);
+  opened.find((sub) => sub.filter["#h"].includes("browsed")).open();
+  await flush();
+  assert.equal(done, true);
+});

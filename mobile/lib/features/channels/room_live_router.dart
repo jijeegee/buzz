@@ -5,12 +5,29 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/relay/relay.dart';
 
-/// Kinds a room's live stream carries: the room's own events plus the relay's
-/// live thread-summary recounts. Mirrors desktop's `ROOM_LIVE_KINDS`.
+/// Room metadata the bundle carries for every covered room (thread names).
+/// Delivered only to metadata listeners ([RoomLiveRouter.listenMetadata]):
+/// never to room listeners, unread, the chats list or the store. Mirrors
+/// desktop's `ROOM_METADATA_KINDS`.
+const roomMetadataKinds = [EventKind.threadName];
+
+/// Kinds a room's live stream carries: the room's own events, the relay's
+/// live thread-summary recounts and room metadata. Mirrors desktop's
+/// `ROOM_LIVE_KINDS`.
 const roomLiveEventKinds = [
   ...EventKind.channelEventKinds,
   EventKind.channelThreadSummary,
+  ...roomMetadataKinds,
 ];
+
+/// Whether a bundle event reaches the all-rooms consumers (unread, chats
+/// list): thread summaries and room metadata never do.
+bool reachesAllRoomListeners(NostrEvent event) =>
+    event.kind != EventKind.channelThreadSummary &&
+    !roomMetadataKinds.contains(event.kind);
+
+/// The longest [RoomLiveRouter.whenRoomCovered] waits.
+const roomCoverageWaitLimit = Duration(milliseconds: 1500);
 
 /// Events remembered for duplicate suppression across overlapping deliveries.
 const _seenEventLimit = 20000;
@@ -39,16 +56,24 @@ typedef OpenRoomLiveSubscription =
 ///   here earlier or as held by an open room. An event whose room cannot be
 ///   told is dropped: it references nothing on screen.
 /// - Thread summaries (39005) reach room listeners only.
+/// - Room metadata ([roomMetadataKinds]) reaches metadata listeners only.
 ///
 /// The bundle covers member rooms once their chunk is installed. A room opened
 /// before that (cold start) or without membership (a browsed open channel)
 /// gets its own one-room subscription, closed once the bundle covers it.
 class RoomLiveRouter {
-  RoomLiveRouter(this._openRoomSubscription);
+  RoomLiveRouter(
+    this._openRoomSubscription, {
+    Duration coverageWaitLimit = roomCoverageWaitLimit,
+  }) : _coverageWaitLimit = coverageWaitLimit;
 
   final OpenRoomLiveSubscription _openRoomSubscription;
+  final Duration _coverageWaitLimit;
   final _rooms = <String, _ListenedRoom>{};
   Set<String> _coveredRooms = const {};
+  Set<String> _bundleRooms = const {};
+  final _metadataListeners = <RoomLiveListener>[];
+  final _coverWaiters = <_CoverWaiter>[];
   final _seen = <String>{};
   final _eventRooms = <String, String>{};
   bool _disposed = false;
@@ -60,6 +85,35 @@ class RoomLiveRouter {
     for (final entry in _rooms.entries) {
       _reconcile(entry.key, entry.value);
     }
+    _settleCoverWaiters();
+  }
+
+  /// Rooms the bundle is meant to carry (member rooms). Empty means not known
+  /// yet (cold start, signed out).
+  void setBundleRooms(Iterable<String> roomIds) {
+    _bundleRooms = Set.unmodifiable(roomIds);
+    _settleCoverWaiters();
+  }
+
+  /// Listens to room metadata ([roomMetadataKinds]) of every room this router
+  /// sees: bundle chunks and the rooms' own subscriptions. Returns the
+  /// function that stops listening.
+  void Function() listenMetadata(RoomLiveListener listener) {
+    _metadataListeners.add(listener);
+    return () => _metadataListeners.remove(listener);
+  }
+
+  /// Completes once live events of [roomId] reach this router, so a history
+  /// read started afterwards misses nothing. Completes at the first of:
+  /// the room is covered (its bundle chunk or its own subscription is up);
+  /// the bundle's rooms are known, this room is not one of them and nothing
+  /// else carries it (its live events never come); [roomCoverageWaitLimit].
+  Future<void> whenRoomCovered(String roomId) {
+    if (_disposed || _roomCovered(roomId)) return Future.value();
+    final waiter = _CoverWaiter(roomId);
+    _coverWaiters.add(waiter);
+    waiter.timer = Timer(_coverageWaitLimit, () => _settle(waiter));
+    return waiter.done.future;
   }
 
   /// Listens to [roomId]'s live events, thread summaries included. Completes
@@ -106,6 +160,29 @@ class RoomLiveRouter {
       _closeOwn(room);
     }
     _rooms.clear();
+    _metadataListeners.clear();
+    for (final waiter in List.of(_coverWaiters)) {
+      _settle(waiter);
+    }
+  }
+
+  bool _roomCovered(String roomId) {
+    if (_coveredRooms.contains(roomId)) return true;
+    final room = _rooms[roomId];
+    if (room != null) return room.ownUnsubscribe != null;
+    return _bundleRooms.isNotEmpty && !_bundleRooms.contains(roomId);
+  }
+
+  void _settleCoverWaiters() {
+    for (final waiter in List.of(_coverWaiters)) {
+      if (_roomCovered(waiter.roomId)) _settle(waiter);
+    }
+  }
+
+  void _settle(_CoverWaiter waiter) {
+    waiter.timer?.cancel();
+    if (!_coverWaiters.remove(waiter)) return;
+    waiter.done.complete();
   }
 
   String? _roomOf(NostrEvent event, Set<String> chunkRooms) {
@@ -132,6 +209,12 @@ class RoomLiveRouter {
     _eventRooms[event.id] = roomId;
     if (_eventRooms.length > _eventRoomLimit) {
       _eventRooms.remove(_eventRooms.keys.first);
+    }
+    if (roomMetadataKinds.contains(event.kind)) {
+      for (final listener in List.of(_metadataListeners)) {
+        listener(event);
+      }
+      return;
     }
     final room = _rooms[roomId];
     if (room == null) return;
@@ -180,6 +263,7 @@ class RoomLiveRouter {
             !_coveredRooms.contains(roomId);
         if (stillWanted) {
           room.ownUnsubscribe = unsubscribe;
+          _settleCoverWaiters();
         } else {
           unsubscribe();
         }
@@ -204,6 +288,14 @@ class RoomLiveRouter {
 void _remember(Set<String> seen, String id, int limit) {
   seen.add(id);
   if (seen.length > limit) seen.remove(seen.first);
+}
+
+class _CoverWaiter {
+  _CoverWaiter(this.roomId);
+
+  final String roomId;
+  final done = Completer<void>();
+  Timer? timer;
 }
 
 class _RoomListener {

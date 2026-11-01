@@ -75,6 +75,41 @@ void main() {
       );
     });
   }
+
+  for (final fixture in fixtures['delivery'] as List) {
+    test('shared fixture: ${fixture['name']}', () async {
+      final members = {
+        for (final room in fixture['memberRooms'] as List) room as String,
+      };
+      final browsed = fixture['browsedRoom'] as String?;
+      final own = <void Function(NostrEvent)>[];
+      final router = RoomLiveRouter((filter, onEvent) async {
+        own.add(onEvent);
+        return () {};
+      })..setCoveredRooms(members);
+      final event = _event(fixture['event'] as Map);
+      final room = event.channelId!;
+      final inRoom = <String>[];
+      final metadata = <String>[];
+      router.listenMetadata((e) => metadata.add(e.id));
+      await router.listenRoom(room, (e) => inRoom.add(e.id));
+      if (browsed != null) {
+        own.single(event);
+      } else {
+        router.routeBundleEvent(event, members);
+      }
+      final name = fixture['name'] as String;
+      expect(inRoom.isNotEmpty, fixture['room'], reason: name);
+      expect(metadata.isNotEmpty, fixture['metadata'], reason: name);
+      // The all-room consumers only see member rooms' events
+      // (channels_provider_lifecycle.dart).
+      expect(
+        members.contains(room) && reachesAllRoomListeners(event),
+        fixture['allRooms'],
+        reason: name,
+      );
+    });
+  }
 }
 
 NostrEvent _event(Map json) => NostrEvent(

@@ -78,5 +78,54 @@
       "event": { "id": "like-x", "kind": 7, "tags": [["e", "unknown"]] },
       "expectedRoom": null
     }
+  ],
+  "delivery": [
+    {
+      "name": "a chat row reaches its room and the all-room listeners",
+      "memberRooms": ["a"],
+      "event": { "id": "row", "kind": 9, "tags": [["h", "a"]] },
+      "room": true,
+      "allRooms": true,
+      "metadata": false
+    },
+    {
+      "name": "a thread summary reaches its room only",
+      "memberRooms": ["a"],
+      "event": { "id": "summary", "kind": 39005, "tags": [["h", "a"]] },
+      "room": true,
+      "allRooms": false,
+      "metadata": false
+    },
+    {
+      "name": "a thread name reaches only the metadata listeners",
+      "memberRooms": ["a"],
+      "event": {
+        "id": "rename",
+        "kind": 40009,
+        "tags": [
+          ["h", "a"],
+          ["e", "head"]
+        ]
+      },
+      "room": false,
+      "allRooms": false,
+      "metadata": true
+    },
+    {
+      "name": "a thread name in a browsed room reaches the metadata listeners",
+      "memberRooms": [],
+      "browsedRoom": "x",
+      "event": {
+        "id": "rename-x",
+        "kind": 40009,
+        "tags": [
+          ["h", "x"],
+          ["e", "head"]
+        ]
+      },
+      "room": false,
+      "allRooms": false,
+      "metadata": true
+    }
   ]
 }
