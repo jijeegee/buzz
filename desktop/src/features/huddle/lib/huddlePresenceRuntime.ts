@@ -5,10 +5,10 @@ import {
   huddleParentChannelId,
   huddleSessionId,
   HuddlePresenceTracker,
-  HUDDLE_LIFECYCLE_PAGE_LIMIT,
   compareHuddleGenerations,
 } from "@/features/huddle/lib/huddlePresence";
 import { collectWithConcurrency } from "@/shared/api/concurrency";
+import type { HuddlePresenceSource } from "@/features/huddle/lib/huddlePresenceSources";
 import type { RelaySubscriptionFilter } from "@/shared/api/relayClientShared";
 import type { RelayEvent } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
@@ -18,15 +18,8 @@ import {
   KIND_HUDDLE_LIVENESS,
   KIND_HUDDLE_PARTICIPANT_JOINED,
   KIND_HUDDLE_PARTICIPANT_LEFT,
-  KIND_HUDDLE_STARTED,
 } from "@/shared/constants/kinds";
 
-const LIFECYCLE_KINDS = [
-  KIND_HUDDLE_STARTED,
-  KIND_HUDDLE_PARTICIPANT_JOINED,
-  KIND_HUDDLE_PARTICIPANT_LEFT,
-  KIND_HUDDLE_ENDED,
-] as const;
 const MAX_PENDING_LIVE_EVENTS = 1_000;
 const LIVENESS_REQUEST_CONCURRENCY = 4;
 const INITIAL_RETRY_DELAY_MS = 1_000;
@@ -35,16 +28,17 @@ const MAX_RETRY_DELAY_MS = 30_000;
 // the same cadence bounds a stale badge to one lease lifetime plus one poll
 // when an owner disappears without publishing a lifecycle end event.
 const LIVENESS_REFRESH_INTERVAL_MS = 10_000;
+/** How many more times a late `whenLive` is waited for (then reconcile). */
+export const HUDDLE_COVERAGE_WAITS = 3;
 
 type Dispose = () => void | Promise<void>;
 
 export type HuddlePresenceRuntimeDependencies = {
   relaySelfPubkey: string;
   channelIds: readonly string[];
-  subscribeLive: (
-    filter: RelaySubscriptionFilter,
-    onEvent: (event: RelayEvent) => void,
-  ) => Promise<Dispose>;
+  /** The live lifecycle events (`huddlePresenceSources.ts`). */
+  listenLive: HuddlePresenceSource["listenLive"];
+  whenLive: HuddlePresenceSource["whenLive"];
   fetchEvents: (filter: RelaySubscriptionFilter) => Promise<RelayEvent[]>;
   subscribeToReconnects: (listener: () => void) => () => void;
   onPresence: (participants: ReadonlySet<string>) => void;
@@ -53,7 +47,6 @@ export type HuddlePresenceRuntimeDependencies = {
   clearRetryTimer?: (handle: unknown) => void;
   setLivenessTimer?: (callback: () => void, delayMs: number) => unknown;
   clearLivenessTimer?: (handle: unknown) => void;
-  nowSeconds?: () => number;
 };
 
 /**
@@ -73,8 +66,6 @@ export function startHuddlePresenceRuntime(
     ((handle: unknown) => window.clearTimeout(handle as number));
   const setLivenessTimer = dependencies.setLivenessTimer ?? setRetryTimer;
   const clearLivenessTimer = dependencies.clearLivenessTimer ?? clearRetryTimer;
-  const nowSeconds =
-    dependencies.nowSeconds ?? (() => Math.floor(Date.now() / 1_000));
 
   let disposed = false;
   let liveDispose: Dispose | null = null;
@@ -542,34 +533,27 @@ export function startHuddlePresenceRuntime(
     if (disposed || liveDispose || connecting) return;
     connecting = true;
     try {
-      const unsubscribes: Dispose[] = [];
-      try {
-        for (const channelIds of channelChunks) {
-          unsubscribes.push(
-            await dependencies.subscribeLive(
-              {
-                kinds: [...LIFECYCLE_KINDS],
-                "#h": channelIds,
-                since: nowSeconds(),
-                limit: HUDDLE_LIFECYCLE_PAGE_LIMIT,
-              },
-              applyLiveEvent,
-            ),
-          );
-        }
-      } catch (error) {
-        await Promise.all(unsubscribes.map((unsubscribe) => unsubscribe()));
-        throw error;
-      }
-      const unsubscribe = () =>
-        Promise.all(unsubscribes.map((dispose) => dispose())).then(() => {});
+      // Attach first, so nothing between the history read and live is lost.
+      const unsubscribe = await dependencies.listenLive(applyLiveEvent);
       if (disposed) {
         void unsubscribe();
         return;
       }
       liveDispose = unsubscribe;
       retryDelayMs = INITIAL_RETRY_DELAY_MS;
+      let live = await dependencies.whenLive();
+      if (disposed) return;
       await reconcile();
+      // A room that went live after the wait's bound may have missed events
+      // the first history read did not see yet: read again once it is live.
+      for (
+        let wait = 0;
+        !live && wait < HUDDLE_COVERAGE_WAITS && !disposed;
+        wait += 1
+      ) {
+        live = await dependencies.whenLive();
+        if (live && !disposed) await reconcile();
+      }
     } catch (error) {
       if (disposed) return;
       dependencies.onPresence(new Set());

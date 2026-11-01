@@ -2,7 +2,12 @@ import * as React from "react";
 
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
 import { useChannelsQuery } from "@/features/channels/hooks";
+import {
+  huddleWindowPresenceSource,
+  roomBundlePresenceSource,
+} from "@/features/huddle/lib/huddlePresenceSources";
 import { startHuddlePresenceRuntime } from "@/features/huddle/lib/huddlePresenceRuntime";
+import { huddleWindowChannelId } from "@/features/huddle/lib/huddleWindow";
 import { relayClient } from "@/shared/api/relayClient";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
@@ -21,7 +26,7 @@ export function memberChannelIdsKey(
     .join("\u0000");
 }
 
-/** Keeps one community-wide lifecycle subscription for name indicators. */
+/** Keeps community-wide huddle presence for name indicators. */
 export function HuddlePresenceProvider({
   children,
 }: {
@@ -51,8 +56,21 @@ export function HuddlePresenceProvider({
     const dispose = startHuddlePresenceRuntime({
       relaySelfPubkey,
       channelIds,
-      subscribeLive: (filter, onEvent) =>
-        relayClient.subscribeLive(filter, onEvent),
+      // The main window hears lifecycle events on its room bundle; the
+      // huddle window carries no rooms and keeps a `limit: 0` REQ.
+      ...(huddleWindowChannelId() === null
+        ? roomBundlePresenceSource({
+            channelIds,
+            listenAllRooms: (listener) =>
+              relayClient.liveRooms.listenAllRooms(listener),
+            whenRoomsCovered: (roomIds) =>
+              relayClient.liveRooms.whenRoomsCovered(roomIds),
+          })
+        : huddleWindowPresenceSource({
+            channelIds,
+            subscribeLive: (filter, onEvent) =>
+              relayClient.subscribeLive(filter, onEvent),
+          })),
       fetchEvents: (filter) => relayClient.fetchEvents(filter),
       subscribeToReconnects: (listener) =>
         relayClient.subscribeToReconnects(listener),

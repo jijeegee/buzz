@@ -1,7 +1,18 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { startHuddlePresenceRuntime } from "./huddlePresenceRuntime.ts";
+import { startHuddlePresenceRuntime as startRuntime } from "./huddlePresenceRuntime.ts";
+import { huddleWindowPresenceSource } from "./huddlePresenceSources.ts";
+
+/** The runtime over the huddle window's source and a fake `subscribeLive`
+ *  (the main window's bundle source: huddlePresenceSources.test.mjs). */
+function startHuddlePresenceRuntime({ subscribeLive, channelIds, ...rest }) {
+  return startRuntime({
+    ...rest,
+    channelIds,
+    ...huddleWindowPresenceSource({ channelIds, subscribeLive }),
+  });
+}
 
 const ALICE = "a".repeat(64);
 const BOB = "b".repeat(64);
@@ -137,8 +148,9 @@ test("hydrates lifecycle history in global phase and revision order", async () =
 
   assert.equal(harness.snapshots.at(-1).has(ALICE), false);
   assert.equal(harness.snapshots.at(-1).has(BOB), true);
-  assert.equal(harness.filters[0].limit > 0, true);
-  assert.equal(harness.filters[0].since, 1_000);
+  // The huddle window's REQ: history comes from the reconcile only.
+  assert.equal(harness.filters[0].limit, 0);
+  assert.equal("since" in harness.filters[0], false);
   assert.deepEqual(harness.filters[0]["#h"], ["design", "general"]);
   harness.dispose();
 });
