@@ -144,10 +144,8 @@
   },
   "mobile": {
     "idle": {
-      "live": 8,
+      "live": 6,
       "signatures": [
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#h:1|kinds:[9]|limit:100|since:*",
         "#h:5|kinds:[5,7,9005,9,40002,45001,45003,40001,40003,40008,40099,48100,48101,48102,48103,39005]|limit:0",
@@ -156,16 +154,14 @@
         "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0"
       ],
       "launchOneShot": 10,
-      "launchLiveSends": 8,
+      "launchLiveSends": 6,
       "launchHttpQueries": 7,
       "launchCeilingRuns": 5
     },
     "roomOpen": {
-      "live": 10,
+      "live": 8,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#h:1|kinds:[20002]|limit:10",
         "#h:1|kinds:[9]|limit:100|since:*",
@@ -176,11 +172,9 @@
       ]
     },
     "roomOpenWithThreadRow": {
-      "live": 11,
+      "live": 9,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:10",
@@ -192,11 +186,9 @@
       ]
     },
     "threadOpen": {
-      "live": 11,
+      "live": 9,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#e:1|#h:1|kinds:[40009]|limit:1",
         "#h:1|kinds:[20002]|limit:10",
@@ -208,11 +200,9 @@
       ]
     },
     "dmOpen": {
-      "live": 12,
+      "live": 10,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#h:1|kinds:[20002]|limit:10",
         "#h:1|kinds:[9]|limit:100|since:*",
@@ -225,11 +215,9 @@
       ]
     },
     "rows10": {
-      "live": 20,
+      "live": 18,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#e:1|#h:1|kinds:[40009]|limit:1",
         "#e:1|#h:1|kinds:[40009]|limit:1",
@@ -252,11 +240,9 @@
       "mountedRows": 10
     },
     "rows50": {
-      "live": 60,
+      "live": 58,
       "signatures": [
         "#d:1|kinds:[39002]|limit:100|since:*",
-        "#d:[channel-mutes]|authors:1|kinds:[30078]|limit:1",
-        "#d:[channel-stars]|authors:1|kinds:[30078]|limit:1",
         "#d:[general]|kinds:[30315]|limit:0",
         "#e:1|#h:1|kinds:[40009]|limit:1",
         "#e:1|#h:1|kinds:[40009]|limit:1",

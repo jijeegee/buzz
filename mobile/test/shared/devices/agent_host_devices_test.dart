@@ -190,6 +190,11 @@ void main() {
         kindDeviceRobot,
       ]);
       expect(session.filters.single.authors, [_owner]);
+      // Live-only on the account bundle, then one read of stored events.
+      expect(session.filters.single.limit, 0);
+      expect(session.calls, ['live', 'read']);
+      expect(session.reads.single.limit, 200);
+      expect(container.read(ownDeviceEventsLoadedProvider), _owner);
 
       session.emit(_hostEvent('device-1', [_agentA]));
       session.emit(
@@ -228,6 +233,32 @@ void main() {
         });
       },
     );
+
+    test('stored events are read after listening', () async {
+      session.stored.add(
+        _robotEvent('device-1', {'v': 2, 'shape': 'tall', 'color': 5}),
+      );
+      container.listen(deviceRobotOverridesProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(
+        container.read(deviceRobotOverridesProvider)['device-1']!.shape,
+        'tall',
+      );
+    });
+
+    test('a failed read is not "loaded" until a retry succeeds', () async {
+      final base = ownDeviceEventsRetryBase;
+      ownDeviceEventsRetryBase = const Duration(milliseconds: 5);
+      addTearDown(() => ownDeviceEventsRetryBase = base);
+      session.readFailures = 2;
+      container.listen(ownDeviceEventsProvider, (_, _) {});
+      await Future<void>.delayed(Duration.zero);
+      expect(container.read(ownDeviceEventsLoadedProvider), isNull);
+
+      await Future<void>.delayed(const Duration(milliseconds: 60));
+      expect(session.calls, ['live', 'read', 'read', 'read']);
+      expect(container.read(ownDeviceEventsLoadedProvider), _owner);
+    });
 
     test('a rejected automatic robot is not retried in the same run', () async {
       container.listen(deviceRobotOverridesProvider, (_, _) {});

@@ -1,10 +1,12 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../auth/account/account_api.dart';
+import '../relay/history_then_live.dart';
 import '../relay/relay.dart';
 import 'device_robot.dart';
 import '../l10n/l10n.dart';
@@ -150,9 +152,15 @@ Map<String, String> agentHostDevicesFromEvents(
   return {for (final entry in winners.entries) entry.key: entry.value.deviceId};
 }
 
+/// First wait before retrying a failed read of my device events; it doubles
+/// up to 60 seconds.
+@visibleForTesting
+Duration ownDeviceEventsRetryBase = const Duration(seconds: 1);
+
 /// The current user's own device events (kind:30180 agent host devices and
-/// kind:30181 device robots), by event id. Live: one subscription while
-/// connected; known events survive reconnects. [publishDeviceRobot] adds its
+/// kind:30181 device robots), by event id. Live: one listener on the account
+/// bundle while connected, then one read of the stored events per connection;
+/// known events survive reconnects. [publishDeviceRobot] adds its
 /// event right away, so the new robot shows without waiting for the relay.
 class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
   /// Received events by id (a resubscription replays them).
@@ -184,32 +192,82 @@ class OwnDeviceEventsNotifier extends Notifier<Map<String, NostrEvent>> {
       unsubscribe?.call();
     });
     if (connected) {
-      unawaited(() async {
-        try {
-          // Completes after the relay's stored events (EOSE).
-          final unsub = await ref.read(relaySessionProvider.notifier).subscribe(
-            NostrFilter(
-              kinds: const [kindAgentHostDevices, kindDeviceRobot],
-              authors: [owner],
-              limit: 200,
-            ),
-            (event) {
-              if (disposed) return;
-              _add(event);
-            },
-          );
-          if (disposed) {
-            unsub();
-          } else {
-            unsubscribe = unsub;
-            ref.read(ownDeviceEventsLoadedProvider.notifier).set(owner);
-          }
-        } catch (error) {
-          debugPrint('[OwnDeviceEvents] subscription failed: $error');
-        }
-      }());
+      unawaited(_sync(owner, () => disposed, (stop) => unsubscribe = stop));
     }
     return Map.unmodifiable(_events);
+  }
+
+  /// Listens first, then reads the stored events, so nothing published in
+  /// between is lost. A failed read is retried with backoff; loaded is set
+  /// only after a read succeeds, because the automatic robot assignment
+  /// would take a failed read for "no robots yet" and publish one. A failed
+  /// listen still reads; the next connection listens again.
+  Future<void> _sync(
+    String owner,
+    bool Function() isDisposed,
+    void Function(void Function() stop) keep,
+  ) async {
+    final relay = ref.read(relaySessionProvider.notifier);
+    Future<List<NostrEvent>> fetch() => relay.fetchHistory(
+      NostrFilter(
+        kinds: const [kindAgentHostDevices, kindDeviceRobot],
+        authors: [owner],
+        limit: 200,
+      ),
+    );
+    void apply(NostrEvent event) {
+      if (!isDisposed()) _add(event);
+    }
+
+    var read = () async {
+      try {
+        (await fetch()).forEach(apply);
+        return true;
+      } catch (error) {
+        debugPrint('[OwnDeviceEvents] read failed: $error');
+        return false;
+      }
+    };
+    bool loaded;
+    try {
+      HistoryThenLive? handle;
+      final live = await historyThenLive(
+        listen: (gate) => relay.subscribe(
+          NostrFilter(
+            kinds: const [kindAgentHostDevices, kindDeviceRobot],
+            authors: [owner],
+            limit: 0,
+          ),
+          gate,
+          onGap: () => unawaited(handle?.refetch()),
+        ),
+        fetch: fetch,
+        apply: apply,
+        onFetchError: (error) =>
+            debugPrint('[OwnDeviceEvents] read failed: $error'),
+      );
+      handle = live;
+      if (isDisposed()) {
+        live.stop();
+        return;
+      }
+      keep(live.stop);
+      read = live.refetch;
+      loaded = await live.firstFetch;
+    } catch (error) {
+      debugPrint('[OwnDeviceEvents] subscription failed: $error');
+      loaded = await read();
+    }
+    for (var attempt = 0; !loaded; attempt++) {
+      final delay = ownDeviceEventsRetryBase * (1 << min(attempt, 6));
+      const ceiling = Duration(seconds: 60);
+      await Future<void>.delayed(delay > ceiling ? ceiling : delay);
+      if (isDisposed()) return;
+      loaded = await read();
+    }
+    if (!isDisposed()) {
+      ref.read(ownDeviceEventsLoadedProvider.notifier).set(owner);
+    }
   }
 
   void _add(NostrEvent event) {

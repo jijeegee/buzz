@@ -24,6 +24,8 @@ class ChannelNamesManager {
     required bool remoteEnabled,
     required VoidCallback onChanged,
     @visibleForTesting Duration publishDelay = const Duration(seconds: 2),
+    @visibleForTesting
+    Duration startupRetryBaseDelay = const Duration(seconds: 2),
   }) : _storage = ChannelNamesStorage(prefs),
        _crypto = crypto,
        _relaySession = relaySession,
@@ -31,6 +33,7 @@ class ChannelNamesManager {
        _remoteEnabled = remoteEnabled && crypto != null,
        _onChanged = onChanged,
        _publishDelay = publishDelay,
+       _startupRetryBaseDelay = startupRetryBaseDelay,
        _store = ChannelNamesStorage(prefs).read(pubkey);
 
   final String pubkey;
@@ -41,6 +44,7 @@ class ChannelNamesManager {
   final bool _remoteEnabled;
   final VoidCallback _onChanged;
   final Duration _publishDelay;
+  final Duration _startupRetryBaseDelay;
 
   ChannelNameStore _store;
   Timer? _publishTimer;
@@ -48,6 +52,9 @@ class ChannelNamesManager {
   String? _lastRemoteEventId;
   void Function()? _unsubscribe;
   bool _disposed = false;
+  bool _headApplied = false;
+  Timer? _startupRetryTimer;
+  int _startupRetryAttempt = 0;
 
   ChannelNameStore get store => _store;
 
@@ -56,14 +63,43 @@ class ChannelNamesManager {
       _onChanged();
       return;
     }
-    await refreshFromRelay();
+    await _syncWithRelay();
+  }
+
+  /// Listens first, then reads the head (even when listening failed), so
+  /// nothing published in between is lost. Retries with bounded backoff (2s
+  /// base, 30s ceiling) until both are done: the live listener carries no
+  /// history of its own.
+  Future<void> _syncWithRelay() async {
+    if (_unsubscribe == null) await _subscribe();
     if (_disposed) return;
+    if (!_headApplied) _headApplied = await refreshFromRelay();
+    if (_disposed) return;
+    if (_unsubscribe != null && _headApplied) {
+      _startupRetryAttempt = 0;
+      return;
+    }
+    final delayMs = min(
+      _startupRetryBaseDelay.inMilliseconds << min(_startupRetryAttempt, 4),
+      30000,
+    );
+    _startupRetryAttempt++;
+    _startupRetryTimer?.cancel();
+    _startupRetryTimer = Timer(Duration(milliseconds: delayMs), () {
+      _startupRetryTimer = null;
+      unawaited(_syncWithRelay());
+    });
+  }
+
+  Future<void> _subscribe() async {
     try {
-      final unsubscribe = await _relaySession.subscribe(
-        _filter(),
+      final unsubscribe = await _relaySession!.subscribe(
+        _liveFilter(),
         (event) => _applyEvents([event]),
         onClosed: (message) =>
             debugPrint('[ChannelNamesManager] live closed: $message'),
+        // A catch-up may have missed the head: read it again.
+        onGap: () => unawaited(refreshFromRelay()),
       );
       if (_disposed) {
         unsubscribe();
@@ -77,12 +113,13 @@ class ChannelNamesManager {
 
   /// Re-reads my latest document, e.g. when the app returns to the
   /// foreground. Skipped while a local change waits to be published.
-  Future<void> refreshFromRelay() async {
-    if (_disposed || !_remoteEnabled || _publishTimer != null) return;
+  /// Returns whether the head was read and applied.
+  Future<bool> refreshFromRelay() async {
+    if (_disposed || !_remoteEnabled || _publishTimer != null) return false;
     final events = await _fetchHead();
-    if (events != null && !_disposed && _publishTimer == null) {
-      _applyEvents(events);
-    }
+    if (events == null || _disposed || _publishTimer != null) return false;
+    _applyEvents(events);
+    return true;
   }
 
   /// Sets my private name for [channelId]; a blank [name] restores it.
@@ -109,6 +146,8 @@ class ChannelNamesManager {
   void dispose() {
     if (_disposed) return;
     _disposed = true;
+    _startupRetryTimer?.cancel();
+    _startupRetryTimer = null;
     final pending = _publishTimer != null;
     _publishTimer?.cancel();
     _publishTimer = null;
@@ -117,13 +156,19 @@ class ChannelNamesManager {
     _unsubscribe = null;
   }
 
-  NostrFilter _filter() => NostrFilter(
+  /// The retained head (one document).
+  NostrFilter _filter() => _docFilter(limit: 1);
+
+  /// Live only, on the account bundle: the head read holds the history.
+  NostrFilter _liveFilter() => _docFilter(limit: 0);
+
+  NostrFilter _docFilter({required int limit}) => NostrFilter(
     kinds: const [EventKind.readState],
     authors: [pubkey],
     tags: const {
       '#d': [channelNamesDTag],
     },
-    limit: 1,
+    limit: limit,
   );
 
   Future<List<NostrEvent>?> _fetchHead() async {

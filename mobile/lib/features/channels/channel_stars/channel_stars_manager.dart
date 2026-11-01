@@ -113,8 +113,10 @@ class ChannelStarsManager {
     unawaited(_recoverHead());
   }
 
-  /// Applies the retained head and opens the live subscription, retrying with
-  /// bounded backoff (2s base, 30s ceiling) until both are done. Transient
+  /// Opens the live subscription, then applies the retained head (read even
+  /// when subscribing failed), retrying with bounded backoff (2s base, 30s
+  /// ceiling) until both are done. Listening first means nothing published
+  /// between the read and the subscription is lost. Transient
   /// live-subscription CLOSED recovery belongs to [RelaySessionNotifier].
   Future<void> _syncWithRelay() {
     if (_disposed) return Future.value();
@@ -134,14 +136,14 @@ class ChannelStarsManager {
   }
 
   Future<void> _runSyncWithRelay() async {
+    final subscribed = _liveSettled || await _startLiveSubscription();
+    if (_disposed) return;
+
     if (!_headApplied) {
       final applied = await _recoverHead();
       if (_disposed) return;
       _headApplied = applied;
     }
-
-    final subscribed = _liveSettled || await _startLiveSubscription();
-    if (_disposed) return;
 
     if (!_headApplied || !subscribed) {
       _scheduleStartupRetry();
@@ -256,8 +258,10 @@ class ChannelStarsManager {
   Future<bool> _startLiveSubscription() async {
     try {
       final unsubscribe = await _relaySession!.subscribe(
-        _filter(),
+        _liveFilter(),
         _handleIncomingEvent,
+        // A catch-up may have missed the head: read it again.
+        onGap: refreshFromRelay,
         // Only terminal rejections reach here; re-sending the same REQ would
         // be rejected again, so the live lane stays settled.
         onClosed: (message) {
@@ -279,13 +283,19 @@ class ChannelStarsManager {
     }
   }
 
-  NostrFilter _filter() => NostrFilter(
+  /// The retained head (one document).
+  NostrFilter _filter() => _docFilter(limit: 1);
+
+  /// Live only, on the account bundle: the head read holds the history.
+  NostrFilter _liveFilter() => _docFilter(limit: 0);
+
+  NostrFilter _docFilter({required int limit}) => NostrFilter(
     kinds: const [EventKind.readState],
     authors: [pubkey],
     tags: const {
       '#d': ['channel-stars'],
     },
-    limit: 1,
+    limit: limit,
   );
 
   /// Relay retains `ORDER BY created_at DESC, id ASC`: at equal second the

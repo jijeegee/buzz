@@ -104,19 +104,19 @@ class ChannelSortManager {
   }
 
   Future<void> _syncWithRelay() async {
-    final firstFetch = await _fetchAndApply();
     final subscribed = _unsubscribe != null || await _startLiveSubscription();
-    // Fetch again after the subscription is ready. This closes the event gap
-    // between history and live setup (and catches anything published while a
-    // rate-limited subscription was retrying).
-    final secondFetch = subscribed ? await _fetchAndApply() : null;
-    if (firstFetch == null || !subscribed || secondFetch == null) {
+    // Read the head after the listener is live (and even when subscribing
+    // failed): nothing published in between is lost, and the listener has no
+    // history of its own. Every attempt reads again, so a retry after a
+    // CLOSED also catches what was published while it was down.
+    final fetched = await _fetchAndApply();
+    if (fetched == null || !subscribed) {
       _scheduleStartupRetry();
       return;
     }
     _startupRetryAttempt = 0;
     if (_syncState.hasPendingLocalChanges ||
-        (!firstFetch && !secondFetch && _store.groups.isNotEmpty)) {
+        (!fetched && _store.groups.isNotEmpty)) {
       _schedulePublish();
     }
   }
@@ -216,8 +216,10 @@ class ChannelSortManager {
     if (_relaySession == null) return false;
     try {
       _unsubscribe = await _relaySession.subscribe(
-        _filter(),
+        _liveFilter(),
         _handleIncomingEvent,
+        // A catch-up may have missed the head: read it again.
+        onGap: refreshFromRelay,
         onClosed: (_) {
           if (_disposed) return;
           _unsubscribe?.call();
@@ -232,13 +234,19 @@ class ChannelSortManager {
     }
   }
 
-  NostrFilter _filter() => NostrFilter(
+  /// The retained head (one document).
+  NostrFilter _filter() => _docFilter(limit: 1);
+
+  /// Live only, on the account bundle: the head read holds the history.
+  NostrFilter _liveFilter() => _docFilter(limit: 0);
+
+  NostrFilter _docFilter({required int limit}) => NostrFilter(
     kinds: const [EventKind.readState],
     authors: [pubkey],
     tags: const {
       '#d': [_dTag],
     },
-    limit: 1,
+    limit: limit,
   );
 
   void _applyRemote(NostrEvent event) {

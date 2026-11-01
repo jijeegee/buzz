@@ -271,6 +271,13 @@ void main() {
         );
       }
 
+      fakeAsyncTest('listens live-only, then reads the head', (clock) {
+        relay.stored.add(relay.event(lane.dTag, blob({'a': (true, t)}), t));
+        start(clock);
+        expectListenThenHead(relay, lane.dTag);
+        expect(subject.values(), {'a': true});
+      });
+
       fakeAsyncTest('an undecodable head does not hold startup open', (clock) {
         relay.stored.add(relay.event(lane.dTag, 'garbage', t));
         start(clock);
@@ -362,6 +369,29 @@ void wholeBlobLanes(SharedPreferences Function() prefs) {
     }
 
     List<String> names() => [for (final s in m.store.sections) s.name];
+
+    fakeAsyncTest('listens live-only, then reads the head', (clock) {
+      relay.stored.add(
+        relay.event('channel-sections', blob('first'), nowSeconds()),
+      );
+      start(clock);
+      expectListenThenHead(relay, 'channel-sections');
+      expect(names(), ['first']);
+    });
+
+    fakeAsyncTest('a terminal CLOSED re-reads the head after re-listening', (
+      clock,
+    ) {
+      start(clock);
+      relay.closeLive('channel-sections', 'error: too many subscriptions');
+      relay.stored.add(
+        relay.event('channel-sections', blob('while-down'), nowSeconds()),
+      );
+      clock.elapse(const Duration(seconds: 3));
+      expect(relay.reqsFor('channel-sections', 'l-'), hasLength(2));
+      expect(relay.reqsFor('channel-sections', 'h-'), hasLength(2));
+      expect(names(), ['while-down']);
+    });
 
     fakeAsyncTest('resume adopts a head the healthy socket missed', (clock) {
       final t = nowSeconds();
@@ -579,6 +609,14 @@ void wholeBlobLanes(SharedPreferences Function() prefs) {
       'version': 1,
       'groups': {'dms': 'recent'},
     }, t);
+
+    fakeAsyncTest('listens live-only, then reads the head once', (clock) {
+      relay.stored.add(recent(nowSeconds()));
+      start(clock);
+      expectListenThenHead(relay, 'channel-sort');
+      expect(relay.reqsFor('channel-sort', 'h-'), hasLength(1));
+      expect(m.sortModeFor('dms'), ChannelSortMode.recent);
+    });
 
     fakeAsyncTest('resume adopts a head the healthy socket missed', (clock) {
       start(clock);
