@@ -48,15 +48,25 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   and deduplicated, then split in order. A room does not get a REQ of its own
   when it is opened.
 - **Filter.** Every channel event kind plus the thread-summary recount
-  (39005), `limit: 0` and no `since`. The relay applies `since` to live
-  matching, so a `since` would drop events stamped in the past within the
-  relay's skew allowance.
+  (39005) and room metadata (thread names, 40009), `limit: 0` and no
+  `since`. The relay applies `since` to live matching, so a `since` would
+  drop events stamped in the past within the relay's skew allowance. Huddle
+  lifecycle (48100–48103) is a channel kind, so huddle views ride the bundle
+  too (desktop `roomHuddleLifecycle.ts`: one listener and one history read
+  per room for the indicator, every card and the roster).
 - **Rooms outside the bundle.** A room opened before its chunk is live (cold
   start) or without membership (a browsed open channel) gets a one-room live
   REQ, closed once a live chunk covers it.
 - **Replacing a chunk.** When the room set changes, the new chunk is opened
   first and the old one is closed only after the new one is live. Overlapping
   deliveries are expected.
+- **Waiting for coverage.** `whenRoomCovered(roomId)` (desktop
+  `RoomLiveBundle`, mobile `RoomLiveRouter`) resolves once the room's live
+  events arrive, so a history read started afterwards misses nothing. It
+  resolves at the first of: a chunk (or the room's own REQ) carrying the room
+  is live; the member list is known and nothing will carry the room
+  (archived, hidden, the huddle window, not a member); 1.5 s. Before the
+  member list is first known (cold start) only the bound ends it.
 
 ## Placing an event
 
@@ -76,8 +86,51 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   badges): every event of the room once, thread summaries included.
   Duplicates from overlapping chunks or a room's own REQ are dropped.
 - **All-rooms consumers** (unread, notifications, chat list, inbox): member
-  rooms only, never thread summaries. Each keeps its existing duplicate
-  handling.
+  rooms only, never thread summaries or room metadata. Each keeps its
+  existing duplicate handling.
+- **Room metadata listeners** (thread names): every 40009 of every room the
+  bundle carries, member or browsed, once. Nothing else gets them: not the
+  timeline, not unread, not the chat list, not the store. Desktop
+  `listenRoomMetadata`, mobile `listenMetadata`; shared cases in
+  `test-fixtures/room-live-routing.json` (`delivery`).
+
+## Open room REQ
+
+Typing indicators (20002) and the goal tree (40110) of an open room ride one
+live REQ per room, shared by every screen of that room (desktop
+`relayRoomLive.ts`, mobile `room_live_request.dart`):
+
+- Always the same two filters, `{kinds:[20002], #h:[room], limit:0}` and
+  `{kinds:[40110], #h:[room], limit:0}` (`test-fixtures/room-live-request.json`),
+  so a listener coming or going never re-sends the REQ. Every filter carries
+  the room's `#h`, which keeps the REQ room-scoped on the relay.
+- The first listener opens it; it closes one microtask after the last one
+  leaves, so a remount in the same task keeps it. A terminal CLOSED tells
+  every listener and forgets the room; a later listener opens a fresh one.
+- Reconnect re-sends it unchanged (`limit: 0`); goal listeners then re-read
+  the tree, since a missed revision is not replayed. Typing has nothing to
+  lose.
+- Mobile typing does not rebuild on reconnect. Mobile goal chips stay live
+  through `goalTreeLiveProvider`, watched by the room and thread goal buttons.
+- Not in it: thread names (room metadata on the bundle, so sidebar and inbox
+  rows of unopened rooms stay live too).
+
+## Thread names
+
+- **No REQ per row.** Rows read names through one batcher per app (desktop
+  `threadNameBatch.ts`, mobile `thread_name_batch.dart`): names asked for
+  within 50 ms share reads of `{kinds:[40009], #h:[≤128 rooms], #e:[≤100
+  heads], limit:200}`, sent once the rooms are covered (`whenRoomCovered`).
+  Pages go back with an inclusive `until`, drop named heads from `#e`, and
+  stop at a short page or after 10 pages (the rest keep what they hold).
+- **Live.** Renames arrive as room metadata on the bundle. Desktop has one
+  cache-wide listener (`threadNameLive.ts`) that updates rows the app holds;
+  mobile thread-name notifiers listen to the router's metadata.
+- **Newest wins, always.** A read's answer is merged with the cached name and
+  any rename that arrived during the read (`selectThreadName`, mobile
+  `latestThreadName`); a read never replaces a newer live name.
+- **Reconnect.** Desktop re-reads the names on screen (active queries);
+  mobile notifiers rebuild on `connected` and re-read through the batcher.
 
 ## Open room and thread requests
 
