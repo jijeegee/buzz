@@ -4814,6 +4814,7 @@ dependencies = [
  "nostr 0.44.7",
  "proptest",
  "rand 0.10.1",
+ "rcgen",
  "reqwest 0.13.4",
  "serde",
  "serde_json",
@@ -4827,6 +4828,7 @@ dependencies = [
  "tracing-subscriber",
  "url",
  "uuid",
+ "x509-parser",
 ]
 
 [[package]]

@@ -1,4 +1,5 @@
 use kuzz_push_gateway::{
+    android_attest::{AndroidAttestVerifier, HttpStatusListFetcher, RevocationList},
     apns::ApnsTransport,
     app_attest::AppAttestVerifier,
     authority::AuthorityStore,
@@ -60,7 +61,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         Some(android) => {
             let account = ServiceAccount::from_json(&fs::read(&android.fcm_service_account_path)?)?;
             tracing::info!(project = account.project_id(), "FCM transport configured");
+            let revocation = Arc::new(RevocationList::new(Arc::new(
+                HttpStatusListFetcher::google()?,
+            )));
+            let attestation = AndroidAttestVerifier::new(
+                &android.package,
+                android.signing_digests.clone(),
+                &fs::read(&android.attestation_roots_path)?,
+                revocation,
+            )?;
+            tracing::info!(
+                package = %android.package,
+                signing_digests = android.signing_digests.len(),
+                "Android Key Attestation configured"
+            );
             Some(Arc::new(AndroidProfileRuntime {
+                attestation: Arc::new(attestation),
                 transport: Arc::new(FcmTransport::new(account)?),
             }))
         }

@@ -1,5 +1,6 @@
 //! Stateful installation, delegation, delivery, and health APIs.
 use crate::{
+    android_attest::AndroidAttestVerifier,
     apns::{DeliveryAttempt, DeliveryOutcome, PushTransport},
     app_attest::AppAttestVerifier,
     authority::{
@@ -42,11 +43,14 @@ pub struct ProfileRuntime {
     pub transport: Arc<dyn PushTransport>,
 }
 
-/// Android profile runtime. Absent when the deployment has no FCM service
-/// account configured; Android deliveries then fail closed as a retryable
-/// configuration fault and the iOS profile is unaffected.
+/// Android profile runtime. Absent when the deployment has no Android
+/// profile configured: Android enrollment is then refused, Android
+/// deliveries fail closed as a retryable configuration fault, and the iOS
+/// profile is unaffected.
 #[derive(Clone)]
 pub struct AndroidProfileRuntime {
+    /// Android Key Attestation verifier for enrollment.
+    pub attestation: Arc<AndroidAttestVerifier>,
     pub transport: Arc<dyn PushTransport>,
 }
 
@@ -215,11 +219,21 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         Err(_) => return error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
     let now = (s.now)();
+    let android = match r.app_profile {
+        AppProfile::KuzzIosDogfood => None,
+        AppProfile::KuzzAndroid => match &s.android {
+            Some(android) => Some(Arc::clone(android)),
+            None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        },
+    };
     let token = match endpoint_bytes(&r.endpoint) {
         Some(v) => v,
-        None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        None => {
+            log_oversized_endpoint(&r.endpoint);
+            return error(StatusCode::BAD_REQUEST, "invalid_request");
+        }
     };
-    if r.app_profile != AppProfile::KuzzIosDogfood {
+    if android.is_some() && !crate::fcm::valid_fcm_token(&token) {
         return error(StatusCode::BAD_REQUEST, "invalid_request");
     }
     if r.v != WIRE_VERSION
@@ -248,15 +262,33 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         Some(v) => v,
         None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
-    let verified =
-        match s
-            .profile
-            .app_attest
-            .verify_attestation(&r.attestation, &r.key_id, signed.as_bytes())
-        {
-            Ok(value) => value,
+    let verified = match &android {
+        None => match s.profile.app_attest.verify_attestation(
+            &r.attestation,
+            &r.key_id,
+            signed.as_bytes(),
+        ) {
+            Ok(value) => VerifiedKey {
+                key_id: value.key_id,
+                public_key: value.public_key,
+            },
             Err(_) => return error(StatusCode::UNAUTHORIZED, "invalid_attestation"),
-        };
+        },
+        Some(android) => match android
+            .attestation
+            .verify_attestation(&r.attestation, &r.key_id, signed.as_bytes(), now)
+            .await
+        {
+            Ok(value) => VerifiedKey {
+                key_id: value.key_id,
+                public_key: value.public_key,
+            },
+            Err(reason) => {
+                tracing::info!(%reason, "Android attestation refused");
+                return error(StatusCode::UNAUTHORIZED, "invalid_attestation");
+            }
+        },
+    };
     let fingerprint = endpoint_fingerprint(r.app_profile, &token);
     match s
         .authority
@@ -322,6 +354,23 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         .into_response()
 }
 
+/// Installation key admitted at enrollment, for either profile.
+struct VerifiedKey {
+    key_id: Vec<u8>,
+    public_key: Vec<u8>,
+}
+
+/// N11: an endpoint over the 512-byte token limit is logged (length only,
+/// never the token) before it is refused.
+fn log_oversized_endpoint(endpoint: &str) {
+    if endpoint.len() > MAX_ENDPOINT_HEX_BYTES * 2 {
+        tracing::warn!(
+            endpoint_hex_chars = endpoint.len(),
+            "push endpoint over 512 bytes refused"
+        );
+    }
+}
+
 struct AssertionChallenge<'a> {
     id: uuid::Uuid,
     text: &'a str,
@@ -347,23 +396,42 @@ async fn verify_installation_assertion<T: serde::Serialize>(
         s.authority.installation(installation_id, now).await
     }
     .map_err(authority_error)?;
-    if installation.profile != AppProfile::KuzzIosDogfood {
-        return Err(error(StatusCode::NOT_FOUND, "not_authorized"));
-    }
     let transcript = transcript(domain, signed)
         .ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_request"))?;
-    let verified = s
-        .profile
-        .app_attest
-        .verify_assertion(
-            assertion,
-            transcript.as_bytes(),
-            &installation.app_attest_public_key,
-            installation.assertion_counter,
-            challenge.text,
-            challenge.text,
-        )
-        .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?;
+    let next_counter = match installation.profile {
+        AppProfile::KuzzIosDogfood => {
+            s.profile
+                .app_attest
+                .verify_assertion(
+                    assertion,
+                    transcript.as_bytes(),
+                    &installation.app_attest_public_key,
+                    installation.assertion_counter,
+                    challenge.text,
+                    challenge.text,
+                )
+                .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?
+                .counter
+        }
+        AppProfile::KuzzAndroid => {
+            if s.android.is_none() {
+                return Err(error(StatusCode::NOT_FOUND, "not_authorized"));
+            }
+            crate::android_attest::verify_assertion(
+                &installation.app_attest_public_key,
+                assertion,
+                transcript.as_bytes(),
+            )
+            .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?;
+            // Android keys have no hardware counter. The single-use challenge
+            // in the transcript stops replay; the stored counter still moves
+            // forward by one under the same compare-and-swap fence.
+            installation
+                .assertion_counter
+                .checked_add(1)
+                .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_authorized"))?
+        }
+    };
     s.authority
         .consume_challenge(challenge.id, challenge_bytes, now)
         .await
@@ -372,7 +440,7 @@ async fn verify_installation_assertion<T: serde::Serialize>(
         .advance_assertion_counter(
             installation_id,
             installation.assertion_counter,
-            verified.counter,
+            next_counter,
         )
         .await
         .map_err(authority_error)
@@ -488,7 +556,10 @@ async fn rotate_endpoint(State(s): State<AppState>, body: Bytes) -> Response {
     };
     let token = match endpoint_bytes(&r.endpoint) {
         Some(v) => v,
-        None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        None => {
+            log_oversized_endpoint(&r.endpoint);
+            return error(StatusCode::BAD_REQUEST, "invalid_request");
+        }
     };
     if r.v != WIRE_VERSION
         || r.endpoint_epoch < 1
@@ -504,6 +575,9 @@ async fn rotate_endpoint(State(s): State<AppState>, body: Bytes) -> Response {
         Ok(i) => i,
         Err(e) => return authority_error(e),
     };
+    if installation.profile == AppProfile::KuzzAndroid && !crate::fcm::valid_fcm_token(&token) {
+        return error(StatusCode::BAD_REQUEST, "invalid_request");
+    }
     let t = RotateTranscript {
         v: r.v,
         audience: ROTATE_ENDPOINT_AUDIENCE,
@@ -1182,3 +1256,7 @@ mod transcript_vector_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "http_android_tests.rs"]
+mod android_tests;

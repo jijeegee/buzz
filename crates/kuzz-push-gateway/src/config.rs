@@ -29,11 +29,17 @@ pub enum AppAttestEnvironment {
 }
 
 /// Optional `kuzz-android` profile. Present only when an FCM service account
-/// is configured.
+/// is configured; the attestation settings are then required.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AndroidProfileConfig {
     /// Google service-account JSON key file used for FCM HTTP v1.
     pub fcm_service_account_path: PathBuf,
+    /// Android application id attested at enrollment (`app.kuzz.mobile`).
+    pub package: String,
+    /// SHA-256 digests of the allowed app signing certificates.
+    pub signing_digests: Vec<[u8; 32]>,
+    /// PEM bundle of Google hardware attestation roots.
+    pub attestation_roots_path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -155,13 +161,45 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
 
 fn parse_android(e: &HashMap<String, String>) -> Result<Option<AndroidProfileConfig>, ConfigError> {
     let key = "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH";
-    match e.get(key).map(String::as_str) {
-        None => Ok(None),
-        Some("") => Err(ConfigError::Invalid(key)),
-        Some(path) => Ok(Some(AndroidProfileConfig {
-            fcm_service_account_path: PathBuf::from(path),
-        })),
+    let fcm_service_account_path = match e.get(key).map(String::as_str) {
+        None => return Ok(None),
+        Some("") => return Err(ConfigError::Invalid(key)),
+        Some(path) => PathBuf::from(path),
+    };
+    let required = |key: &'static str| {
+        e.get(key)
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(ConfigError::Missing(key))
+    };
+    let package_key = "KUZZ_PUSH_ANDROID_PACKAGE";
+    let package = required(package_key)?;
+    if package.len() > 255
+        || !package
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+    {
+        return Err(ConfigError::Invalid(package_key));
     }
+    let digests_key = "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256";
+    let signing_digests = required(digests_key)?
+        .split(',')
+        .map(|entry| {
+            let hex_digest: String = entry.trim().chars().filter(|c| *c != ':').collect();
+            hex::decode(hex_digest)
+                .ok()
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                .ok_or(ConfigError::Invalid(digests_key))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(AndroidProfileConfig {
+        fcm_service_account_path,
+        package: package.to_owned(),
+        signing_digests,
+        attestation_roots_path: PathBuf::from(required(
+            "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH",
+        )?),
+    }))
 }
 
 impl Config {
@@ -446,24 +484,57 @@ mod tests {
     }
 
     #[test]
-    fn android_profile_is_opt_in_and_never_empty() {
+    fn android_profile_is_opt_in_and_fully_specified() {
         assert_eq!(Config::from_map(&base()).unwrap().android, None);
         let mut env = base();
-        env.insert(
-            "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".into(),
-            "/fcm-service-account.json".into(),
-        );
+        env.extend([
+            (
+                "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".to_owned(),
+                "/fcm-service-account.json".to_owned(),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_PACKAGE".to_owned(),
+                "app.kuzz.mobile".to_owned(),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256".to_owned(),
+                format!("{},{}", "ab".repeat(32), ["CD"; 32].join(":")),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH".to_owned(),
+                "/google-roots.pem".to_owned(),
+            ),
+        ]);
         assert_eq!(
             Config::from_map(&env).unwrap().android,
             Some(AndroidProfileConfig {
                 fcm_service_account_path: PathBuf::from("/fcm-service-account.json"),
+                package: "app.kuzz.mobile".to_owned(),
+                signing_digests: vec![[0xab; 32], [0xcd; 32]],
+                attestation_roots_path: PathBuf::from("/google-roots.pem"),
             })
         );
-        env.insert(
-            "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".into(),
-            String::new(),
-        );
-        assert!(Config::from_map(&env).is_err());
+        for (key, value) in [
+            ("KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH", ""),
+            ("KUZZ_PUSH_ANDROID_PACKAGE", ""),
+            ("KUZZ_PUSH_ANDROID_PACKAGE", "app kuzz"),
+            ("KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256", ""),
+            ("KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256", "abcd"),
+            ("KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH", ""),
+        ] {
+            let mut bad = env.clone();
+            bad.insert(key.into(), value.into());
+            assert!(Config::from_map(&bad).is_err(), "accepted {key}={value:?}");
+        }
+        for key in [
+            "KUZZ_PUSH_ANDROID_PACKAGE",
+            "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256",
+            "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH",
+        ] {
+            let mut missing = env.clone();
+            missing.remove(key);
+            assert!(matches!(Config::from_map(&missing), Err(ConfigError::Missing(k)) if k == key));
+        }
     }
 
     #[test]

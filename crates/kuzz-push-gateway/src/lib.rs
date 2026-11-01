@@ -1,4 +1,5 @@
 //! Stateful, capability-gated APNs and FCM last hop for NIP-PL.
+pub mod android_attest;
 pub mod apns;
 pub mod app_attest;
 pub mod authority;

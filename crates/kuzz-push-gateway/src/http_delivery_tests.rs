@@ -113,7 +113,13 @@ async fn profile_fixture(
     let sends = Arc::new(AtomicUsize::new(0));
     let android_sends = Arc::new(AtomicUsize::new(0));
     let android = android_enabled.then(|| {
+        let root =
+            crate::android_attest::tests::root(crate::android_attest::tests::HARDWARE_ROOT_CN);
         Arc::new(AndroidProfileRuntime {
+            attestation: Arc::new(crate::android_attest::tests::verifier_for(
+                &root.pem,
+                Default::default(),
+            )),
             transport: Arc::new(TestTransport(android_sends.clone())),
         })
     });

@@ -273,7 +273,35 @@ application identifier. The gateway MUST NOT accept an APNs topic from a client.
 registered with the gateway is called the **installation endpoint** and never
 leaves gateway custody after enrollment.
 
-The opaque string returned as `endpoint_grant` by `POST /v1/delegations` is the **delivery capability**. For this profile, the active lease plaintext's `endpoint` member MUST contain that `endpoint_grant`, not the raw APNs token. `transport` MUST be `apns`, and `app_profile` MUST equal the profile sealed into the grant. Base-protocol endpoint uniqueness, rotation, hashing, and coalescing operate on this opaque lease `endpoint` within an origin. A capability is scoped to one installation, relay signing pubkey, endpoint epoch, generation, and expiry; grants independently issued to different relays are intentionally distinct. The gateway separately enforces global installation-endpoint uniqueness using `(app_profile, SHA-256(token))`. A public-profile relay MUST treat `endpoint` as opaque and MUST NOT parse or transform it.
+### Android profile `kuzz-android`
+
+The registered `app_profile` value `kuzz-android` identifies the Kuzz Android
+application. Its lease `transport` is `fcm`; delivery uses FCM HTTP v1 with a
+data-only wake. It uses the same routes, request objects and transcripts as
+`kuzz-ios-dogfood`, with these differences:
+
+- `endpoint` is the lowercase hex of the UTF-8 FCM registration token. The
+  token MUST be printable ASCII and at most 512 bytes; longer tokens are
+  refused.
+- Enrollment `attestation` is standard base64 of the concatenated DER
+  certificates of an Android Key Attestation chain, leaf first, for a fresh
+  EC P-256 Keystore key whose attestation challenge is SHA-256 of the exact
+  enrollment transcript bytes. `key_id` is standard base64 of SHA-256 of the
+  leaf SubjectPublicKeyInfo DER.
+- The gateway MUST verify every chain signature up to a configured Google
+  hardware attestation root and MUST refuse the software attestation root.
+  Attestation and KeyMint security levels MUST be TrustedEnvironment or
+  StrongBox, the key origin MUST be GENERATED, the attested application MUST
+  include the configured package, and every attested signing certificate
+  digest MUST be configured. No certificate in the chain may be on Google's
+  revocation status list; a cached list MAY be used for at most 72 hours when
+  a refresh fails, after which enrollment is refused.
+- Every later `assertion` is standard base64 of a DER ECDSA P-256 SHA-256
+  signature by the attested key over the exact transcript bytes. Replay is
+  prevented by the single-use challenge; the gateway advances the stored
+  counter by one per accepted assertion.
+
+The opaque string returned as `endpoint_grant` by `POST /v1/delegations` is the **delivery capability**. For this profile, the active lease plaintext's `endpoint` member MUST contain that `endpoint_grant`, not the raw APNs token. `transport` MUST be `apns` for `kuzz-ios-dogfood` and `fcm` for `kuzz-android`, and `app_profile` MUST equal the profile sealed into the grant. Base-protocol endpoint uniqueness, rotation, hashing, and coalescing operate on this opaque lease `endpoint` within an origin. A capability is scoped to one installation, relay signing pubkey, endpoint epoch, generation, and expiry; grants independently issued to different relays are intentionally distinct. The gateway separately enforces global installation-endpoint uniqueness using `(app_profile, SHA-256(token))`. A public-profile relay MUST treat `endpoint` as opaque and MUST NOT parse or transform it.
 
 ### Common HTTP and value rules
 
