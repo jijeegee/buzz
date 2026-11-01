@@ -2,12 +2,12 @@
   "description": "Live REQ budget (subscription consolidation stage A0). Each app writes only its own key from a measured run: desktop via KUZZ_UPDATE_REQ_BUDGET=1 on desktop/tests/e2e/live-req-budget.spec.ts, mobile via its own update flag. 'live' counts are exact; launch counts are ceilings (max over 5 runs). 'target' is documentation only.",
   "desktop": {
     "launch": {
-      "oneShot": 27,
-      "liveSends": 13
+      "oneShot": 28,
+      "liveSends": 12
     },
     "checkpoints": {
       "idle": {
-        "live": 12,
+        "live": 11,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -16,7 +16,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -24,7 +23,7 @@
         ]
       },
       "roomA": {
-        "live": 12,
+        "live": 11,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -33,7 +32,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -41,7 +39,7 @@
         ]
       },
       "roomB": {
-        "live": 13,
+        "live": 12,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -51,7 +49,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -59,7 +56,7 @@
         ]
       },
       "threadOpen": {
-        "live": 15,
+        "live": 14,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -71,7 +68,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -79,7 +75,7 @@
         ]
       },
       "dmOpen": {
-        "live": 12,
+        "live": 11,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -88,7 +84,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -96,7 +91,7 @@
         ]
       },
       "idleWithAgent": {
-        "live": 13,
+        "live": 12,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
           "#d:1|kinds:[30315]|limit:0",
@@ -106,7 +101,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
@@ -116,7 +110,7 @@
     },
     "threadRows": {
       "rows10": {
-        "live": 22,
+        "live": 21,
         "mountedRows": 10,
         "signatures": [
           "#d:1|kinds:[30030]|limit:0",
@@ -136,7 +130,6 @@
           "#h:1|kinds:[40110]|limit:1|since",
           "#h:1|kinds:[48100,48101,48102,48103]|limit:100",
           "#p:1|kinds:[1,9,24200,24210,24211,40002,40007,43001,43002,43003,43004,43005,43006,44100,44101,45001,45003,46010,46011,46012]|limit:0",
-          "#p:1|kinds:[44100,44101]|limit:50|since",
           "#t:1|authors:1|kinds:[30078]|limit:500",
           "authors:1|kinds:[3,5,30078,30175,30176,30177,30178,30180,30181,30182,30300]|limit:0",
           "authors:4|kinds:[20001]|limit:0",
