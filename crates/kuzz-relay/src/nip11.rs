@@ -330,6 +330,18 @@ fn push_descriptor(
     } else {
         "ws"
     };
+    use crate::handlers::push_lease::{PUSH_APP_PROFILES, PUSH_SUPPORTED_CLASSES};
+    let app_profiles: Vec<serde_json::Value> = PUSH_APP_PROFILES
+        .iter()
+        .map(|profile| serde_json::json!({"id": profile.id, "transport": profile.transport}))
+        .collect();
+    let mut class_support = serde_json::Map::new();
+    for profile in PUSH_APP_PROFILES {
+        class_support.insert(
+            profile.transport.to_owned(),
+            serde_json::json!(PUSH_SUPPORTED_CLASSES),
+        );
+    }
     Some(serde_json::json!({
         "origin": format!("{scheme}://{host}"),
         "keys": [{
@@ -337,10 +349,10 @@ fn push_descriptor(
             "pubkey": relay_keypair.public_key().to_hex(),
             "current": true
         }],
-        "app_profiles": [{"id": "kuzz-ios-dogfood", "transport": "apns"}],
+        "app_profiles": app_profiles,
         "push_kinds": crate::handlers::push_lease::PUSH_KINDS,
         "h_grammar": "uuid-v4-lowercase",
-        "class_support": {"apns": ["default"]},
+        "class_support": class_support,
         "limitation": {
             "max_lease_ttl": 2592000,
             "max_leases_per_pubkey": 16,
@@ -537,6 +549,17 @@ mod tests {
         assert_eq!(
             descriptor["push_kinds"],
             serde_json::json!(crate::handlers::push_lease::PUSH_KINDS)
+        );
+        assert_eq!(
+            descriptor["app_profiles"],
+            serde_json::json!([
+                {"id": "kuzz-ios-dogfood", "transport": "apns"},
+                {"id": "kuzz-android", "transport": "fcm"}
+            ])
+        );
+        assert_eq!(
+            descriptor["class_support"],
+            serde_json::json!({"apns": ["default"], "fcm": ["default"]})
         );
     }
 

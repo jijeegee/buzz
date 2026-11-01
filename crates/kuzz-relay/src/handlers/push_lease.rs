@@ -64,6 +64,23 @@ pub struct AppProfile<'a> {
     pub transport: &'a str,
 }
 
+/// App profiles this relay accepts in kind:30350 leases and advertises in the
+/// NIP-11 `push` descriptor. Lease acceptance and the descriptor both read
+/// this one list so they cannot drift apart.
+pub const PUSH_APP_PROFILES: &[AppProfile<'static>] = &[
+    AppProfile {
+        id: "kuzz-ios-dogfood",
+        transport: "apns",
+    },
+    AppProfile {
+        id: "kuzz-android",
+        transport: "fcm",
+    },
+];
+
+/// Notification classes accepted for every advertised transport.
+pub const PUSH_SUPPORTED_CLASSES: &[&str] = &["default"];
+
 pub struct LeaseLimits<'a> {
     pub expected_origin: &'a str,
     pub author_hex: &'a str,
@@ -491,11 +508,8 @@ pub async fn accept(
     let limits = LeaseLimits {
         expected_origin: &origin,
         author_hex: &author_hex,
-        app_profiles: &[AppProfile {
-            id: "kuzz-ios-dogfood",
-            transport: "apns",
-        }],
-        supported_classes: &["default"],
+        app_profiles: PUSH_APP_PROFILES,
+        supported_classes: PUSH_SUPPORTED_CLASSES,
         push_kinds: PUSH_KINDS,
         max_subscriptions: 16,
         max_kinds: 16,
@@ -723,6 +737,30 @@ mod tests {
     }
 
     #[test]
+    fn production_profiles_accept_android_fcm_and_refuse_unknown_profiles() {
+        let mut limits = limits();
+        limits.app_profiles = PUSH_APP_PROFILES;
+        limits.supported_classes = PUSH_SUPPORTED_CLASSES;
+        let lease = |profile: &str, transport: &str| {
+            parse_plaintext(&format!(r##"{{"v":1,"origin":"o","generation":1,"active":true,"app_profile":"{profile}","transport":"{transport}","endpoint":"token","subscriptions":[{{"filter":{{"kinds":[9],"#p":["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"]}},"class":"default"}}]}}"##), 4096).unwrap()
+        };
+        assert!(validate_plaintext(&lease("kuzz-android", "fcm"), &limits).is_ok());
+        assert!(validate_plaintext(&lease("kuzz-ios-dogfood", "apns"), &limits).is_ok());
+        assert_eq!(
+            validate_plaintext(&lease("kuzz-android", "apns"), &limits).unwrap_err(),
+            "transport mismatch"
+        );
+        assert_eq!(
+            validate_plaintext(&lease("kuzz-ios-dogfood", "fcm"), &limits).unwrap_err(),
+            "transport mismatch"
+        );
+        assert_eq!(
+            validate_plaintext(&lease("kuzz-android-sandbox", "fcm"), &limits).unwrap_err(),
+            "app profile not supported"
+        );
+    }
+
+    #[test]
     fn h_uses_its_advertised_limit_not_the_generic_tag_limit() {
         let body = parse_plaintext(r##"{"v":1,"origin":"o","generation":1,"active":true,"app_profile":"p","transport":"apns","endpoint":"token","subscriptions":[{"filter":{"kinds":[9],"#h":["123e4567-e89b-42d3-a456-426614174000","123e4567-e89b-42d3-a456-426614174001"]},"class":"default"}]}"##, 4096).unwrap();
         let mut limits = limits();
@@ -743,5 +781,104 @@ mod tests {
         );
         assert!(canonical_origin("https://relay.example", "tenant.example").is_err());
         assert!(canonical_origin("wss://relay.example", "").is_err());
+    }
+}
+
+/// Live tests for [`accept`] against a migrated throwaway database. Run with
+/// `KUZZ_TEST_DATABASE_URL` and `--include-ignored`.
+#[cfg(test)]
+mod postgres_tests {
+    use super::*;
+    use nostr::{EventBuilder, Keys, Kind, Tag, Timestamp};
+
+    const EXECUTOR: &str = "test-executor";
+
+    async fn state() -> std::sync::Arc<crate::state::AppState> {
+        crate::state::tests::test_state_with_config(
+            &crate::test_support::database_url(),
+            |config| {
+                config.push_enabled = true;
+                config.push_executor_key_id = EXECUTOR.to_owned();
+            },
+        )
+        .await
+    }
+
+    async fn tenant(state: &crate::state::AppState) -> kuzz_core::TenantContext {
+        let host = format!("push-lease-{}.test", uuid::Uuid::new_v4().simple());
+        let community = state
+            .db
+            .ensure_configured_community(&host)
+            .await
+            .expect("ensure community")
+            .id;
+        kuzz_core::TenantContext::resolved(community, &host)
+    }
+
+    fn lease(
+        state: &crate::state::AppState,
+        tenant: &kuzz_core::TenantContext,
+        author: &Keys,
+        profile: &str,
+        transport: &str,
+        now: i64,
+    ) -> Event {
+        let origin = canonical_origin(&state.config.relay_url, tenant.host()).unwrap();
+        let author_hex = author.public_key().to_hex();
+        let plaintext = format!(
+            r##"{{"v":1,"origin":"{origin}","generation":1,"active":true,"app_profile":"{profile}","transport":"{transport}","endpoint":"opaque-grant-{profile}","subscriptions":[{{"filter":{{"kinds":[9],"#p":["{author_hex}"]}},"class":"default"}}]}}"##
+        );
+        let content = nostr::nips::nip44::encrypt(
+            author.secret_key(),
+            &state.relay_keypair.public_key(),
+            &plaintext,
+            nostr::nips::nip44::Version::V2,
+        )
+        .unwrap();
+        let tags = vec![
+            Tag::parse(["d", profile]).unwrap(),
+            Tag::parse(["expiration", &(now + 3_600).to_string()]).unwrap(),
+            Tag::parse(["exec", EXECUTOR]).unwrap(),
+        ];
+        EventBuilder::new(Kind::Custom(KIND_PUSH_LEASE as u16), content)
+            .tags(tags)
+            .custom_created_at(Timestamp::from(now as u64))
+            .sign_with_keys(author)
+            .unwrap()
+    }
+
+    #[tokio::test]
+    #[ignore = "requires KUZZ_TEST_DATABASE_URL pointing at a migrated throwaway database"]
+    async fn android_fcm_lease_is_accepted_and_persisted_with_its_profile() {
+        let state = state().await;
+        let tenant = tenant(&state).await;
+        let author = Keys::generate();
+        let now = chrono::Utc::now().timestamp();
+
+        let event = lease(&state, &tenant, &author, "kuzz-android", "fcm", now);
+        let outcome = accept(&tenant, &state, &event, now)
+            .await
+            .expect("accepted");
+        assert_eq!(outcome, kuzz_db::push::AcceptLeaseOutcome::Accepted);
+        let stored: Option<String> = sqlx::query_scalar(
+            "SELECT app_profile FROM push_leases WHERE community_id = $1 AND author = $2",
+        )
+        .bind(tenant.community().as_uuid())
+        .bind(author.public_key().as_bytes().as_slice())
+        .fetch_one(state.db.pool())
+        .await
+        .expect("stored lease");
+        assert_eq!(stored.as_deref(), Some("kuzz-android"));
+
+        for (profile, transport, reason) in [
+            ("kuzz-android", "apns", "transport mismatch"),
+            ("kuzz-android-sandbox", "fcm", "app profile not supported"),
+        ] {
+            let event = lease(&state, &tenant, &Keys::generate(), profile, transport, now);
+            match accept(&tenant, &state, &event, now).await {
+                Err(AcceptError::Validation(got)) => assert_eq!(got, reason),
+                other => panic!("{profile}/{transport}: expected refusal, got {other:?}"),
+            }
+        }
     }
 }
