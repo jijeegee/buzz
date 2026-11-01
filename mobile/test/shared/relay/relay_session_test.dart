@@ -1594,6 +1594,137 @@ void main() {
     },
   );
 
+  group('docs/message-sync.md#reconnect: live-only REQs go back unchanged', () {
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    const addressed = NostrFilter(
+      kinds: [9, EventKind.agentObserverFrame, 40002],
+      tags: {
+        '#p': ['me'],
+      },
+      limit: 0,
+    );
+
+    Future<String> sentAfterReplay(
+      NostrFilter filter,
+      List<NostrEvent> events,
+    ) async {
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier();
+      session.debugAttachSocketForTest(socket);
+      final subscribe = session.subscribe(filter, (_) {});
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      final unsubscribe = await subscribe;
+      final original = jsonEncode(_reqs(socket).single[2]);
+      for (final event in events) {
+        session.debugHandleMessage(['EVENT', 'l-1', event.toJson()]);
+      }
+      session.debugFlushEventBuffer();
+      socket.messages.clear();
+
+      await session.debugReplayLiveSubscriptions();
+      final replayed = jsonEncode(_reqs(socket).single[2]);
+      unsubscribe();
+      expect(replayed, original);
+      return replayed;
+    }
+
+    test('a future-stamped frame cannot change the addressed REQ', () async {
+      await sentAfterReplay(addressed, [
+        _event(createdAt: now, id: 'now'),
+        _event(createdAt: now + 290, id: 'ahead'),
+      ]);
+    });
+
+    test('a room chunk is re-sent byte-identical', () async {
+      final chunk = NostrFilter(
+        kinds: EventKind.channelEventKinds,
+        tags: {
+          '#h': [_channelId, _visibleChannelId],
+        },
+        limit: 0,
+      );
+      await sentAfterReplay(chunk, [_event(createdAt: now + 900, id: 'a')]);
+    });
+
+    test('a REQ with history still resumes from the newest seen', () async {
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier();
+      session.debugAttachSocketForTest(socket);
+      const mentions = NostrFilter(
+        kinds: [9],
+        tags: {
+          '#p': ['me'],
+        },
+        limit: 50,
+      );
+      final subscribe = session.subscribe(mentions, (_) {});
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      final unsubscribe = await subscribe;
+      session.debugHandleMessage([
+        'EVENT',
+        'l-1',
+        _event(createdAt: 100).toJson(),
+      ]);
+      session.debugFlushEventBuffer();
+      socket.messages.clear();
+
+      await session.debugReplayLiveSubscriptions();
+      final replayed = _reqs(socket).single[2] as Map<String, dynamic>;
+      unsubscribe();
+      expect(replayed['limit'], 50);
+      expect(replayed['since'], 95);
+    });
+
+    test('a rate-limited CLOSED retry re-sends it byte-identical', () async {
+      final retryTimers = <_ManualTimer>[];
+      final gateTimers = <_ManualTimer>[];
+      final gate = RelayRateLimitGate(
+        now: () => DateTime(2026),
+        timerFactory: (duration, callback) {
+          final timer = _ManualTimer(duration, callback);
+          gateTimers.add(timer);
+          return timer;
+        },
+      );
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier(
+        rateLimitGate: gate,
+        retryTimerFactory: (duration, callback) {
+          final timer = _ManualTimer(duration, callback);
+          retryTimers.add(timer);
+          return timer;
+        },
+      );
+      session.debugAttachSocketForTest(socket);
+      final subscribe = session.subscribe(addressed, (_) {});
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      final unsubscribe = await subscribe;
+      final original = jsonEncode(_reqs(socket).single[2]);
+      session.debugHandleMessage([
+        'EVENT',
+        'l-1',
+        _event(createdAt: now + 290, id: 'ahead').toJson(),
+      ]);
+      session.debugFlushEventBuffer();
+      socket.messages.clear();
+
+      session.debugHandleMessage([
+        'CLOSED',
+        'l-1',
+        'rate-limited: quota exceeded; retry in 4s',
+      ]);
+      retryTimers.single.fire();
+      await Future<void>.delayed(Duration.zero);
+      gateTimers.single.fire();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+
+      expect(_reqs(socket).map((req) => jsonEncode(req[2])), [original]);
+      unsubscribe();
+      session.debugDispose();
+    });
+  });
+
   test('live onClosed callback runs only for a terminal CLOSED', () async {
     final session = RelaySessionNotifier();
     final closedMessages = <String>[];

@@ -84,13 +84,20 @@ async function runWithConcurrency<T>(
   );
 }
 
+/**
+ * The filter a live REQ is re-sent with after a reconnect. A live-only filter
+ * (`limit: 0`) goes back unchanged: the relay returns no stored rows for it,
+ * so a `since` could never recover anything, but the relay also applies
+ * `since` to live matching, so one event stamped ahead of real time would
+ * drop every later live event until the next reconnect.
+ */
 export function buildReconnectReplayFilter(
   filter: RelaySubscriptionFilter,
   since?: number,
   until?: number,
   limit = Math.min(filter.limit, RECONNECT_REPLAY_PAGE_LIMIT),
 ) {
-  if (since === undefined) return filter;
+  if (since === undefined || filter.limit === 0) return filter;
 
   const replayFilter: RelaySubscriptionFilter = {
     ...filter,

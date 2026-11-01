@@ -802,7 +802,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   NostrFilter _replayFilter(_LiveSubscription subscription) {
     final since = subscription.lastSeenCreatedAt;
-    return since == null
+    return since == null || subscription.filter.limit == 0
         ? subscription.filter
         : subscription.filter.copyWithSince(
             max(0, since - _reconnectReplaySkewSeconds),

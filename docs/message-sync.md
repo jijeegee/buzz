@@ -120,8 +120,28 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   goes to the device store, but rows older than the chunk's start minus 5 s
   are not handed to listeners: they were never live on it and must not show
   up as new notifications or activity.
-- Mobile re-sends each chunk; the open room refetches its newest page and the
-  open thread its replies, as before.
+- Mobile re-sends each chunk unchanged; the open room refetches its newest
+  page and the open thread its replies, as before.
+- **Live-only REQs go back unchanged.** Every REQ whose filter has
+  `limit: 0` (room chunks, both account bundles, presence, status, emoji,
+  catalogs, one-room REQs) is re-sent byte-identical, with no `since`. The
+  relay returns no stored rows for `limit: 0` (it runs the history query as
+  `LIMIT 0`, one empty statement per filter, as before), so a `since` could
+  never recover anything; but the relay also applies `since` to live
+  matching, so one event stamped ahead of real time (observer frames up to
+  +300 s, stored kinds up to +900 s, presence and typing with no bound) used
+  to drop every later live event on that REQ until the next reconnect.
+  What a dropped connection missed comes from elsewhere: desktop room chunks
+  from the HTTP repair above (from the last-seen time minus 1865 s, which
+  absorbs a +900 s stamp), mobile room chunks from the open-room refetch and
+  the store catch-up, the account bundles from their clock-based catch-up
+  ([Account bundle](#account-bundle)). Desktop (`buildReconnectReplayFilter`
+  in `relayReconnectReplay.ts`) and mobile (`_replayFilter` in
+  `relay_session.dart`, also used by CLOSED retries) share the rule.
+  Live REQs that also ask for history (`limit` above 0: mobile's mention
+  window, desktop's notice windows) still resume from the newest event seen
+  minus 5 s, and so still drop live events behind a future-stamped one until
+  they move to listen-then-fetch.
 - Both apps also catch the device store up after every chunk EOSE (see
   [Coverage](#coverage)). Desktop skips this when its reconnect repair runs
   for the chunk on that connection; mobile has no repair, so it always runs.
