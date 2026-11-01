@@ -15,7 +15,8 @@ const registry = new RoomLiveRegistry((filters, onEvent, onGone) =>
   ),
 );
 
-let stopWatchingReconnects: (() => void) | null = null;
+// Watched for the app's lifetime, from the first listener on.
+let watchingReconnects = false;
 
 /**
  * The open room's own live REQ (`RoomLiveRegistry`): typing indicators and
@@ -33,9 +34,10 @@ export const roomLive = {
     onEvent: (event: RelayEvent) => void,
     options?: RoomLiveOptions,
   ): () => void {
-    stopWatchingReconnects ??= relayClient.subscribeToReconnects(() =>
-      registry.resync(),
-    );
+    if (!watchingReconnects) {
+      watchingReconnects = true;
+      relayClient.subscribeToReconnects(() => registry.resync());
+    }
     return registry.listen(roomId, kind, onEvent, options);
   },
 };
