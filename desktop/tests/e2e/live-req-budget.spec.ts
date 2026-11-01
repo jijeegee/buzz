@@ -373,12 +373,13 @@ test.describe("live REQ budget", () => {
       );
     }
 
-    // The team catalog rides the community bundle: opening Agents sends
-    // no live REQ of its own.
+    // The team catalog rides the community bundle: opening the Agents
+    // library (AgentsView mounts its listener) sends no live REQ of its own.
     await page.getByTestId("open-agents-view").click();
-    await expect(
-      page.getByRole("heading", { level: 1, name: "Agents" }),
-    ).toBeVisible();
+    await page.getByTestId("agents-list-all").click();
+    await expect(page.getByTestId("agents-my-agents")).toBeVisible({
+      timeout: 10_000,
+    });
     const agents = await checkpoint(page, "agentsView", testInfo, measured);
     expect(
       agents.reqs
