@@ -138,10 +138,11 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   ([Account bundle](#account-bundle)). Desktop (`buildReconnectReplayFilter`
   in `relayReconnectReplay.ts`) and mobile (`_replayFilter` in
   `relay_session.dart`, also used by CLOSED retries) share the rule.
-  Live REQs that also ask for history (`limit` above 0: mobile's mention
-  window, desktop's notice windows) still resume from the newest event seen
-  minus 5 s, and so still drop live events behind a future-stamped one until
-  they move to listen-then-fetch.
+- **Read state reads again on every reconnect.** Its listener is live-only,
+  so nothing replays the marks made elsewhere while the socket was down:
+  each real reconnect runs one read-state fetch (desktop through the relay
+  client's reconnect hook, mobile from `reinitializeRemote`). Status steps
+  that are not a new socket fetch nothing.
 - Both apps also catch the device store up after every chunk EOSE (see
   [Coverage](#coverage)). Desktop skips this when its reconnect repair runs
   for the chunk on that connection; mobile has no repair, so it always runs.
@@ -149,8 +150,8 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 ## Account bundle
 
 Live-only subscriptions about the account itself (settings documents,
-contact list, agent personas, teams and devices, chat-list pings, sign-in
-notices, agent work frames)
+read state, sidebar lanes, contact list, agent personas, teams and devices,
+chat-list pings, mentions and notices, sign-in notices, agent work frames)
 share two REQs instead of one per feature:
 
 - **Authored:** `{kinds: authoredKinds, authors: [me], limit: 0}`.
@@ -172,28 +173,66 @@ Features keep their own filters and listen through the bundle:
   connection dropped minus the 1865 s lookback, up to 500 events, but never
   from before its earliest listener started (minus 5 s). Each listener gets
   only events from when it started (minus 5 s), so nothing from before a
-  feature was listening shows up as new. A failed catch-up owes its window to
-  the next reconnect.
+  feature was listening shows up as new. The 500 cap is per bundle, shared
+  by every listener in that scope, so one busy feature can use it up for
+  the others. When the catch-up may have missed something (it returned 500
+  events, or its last attempt failed) the bundle calls `onGap` on every
+  listener in the scope, once per catch-up and only for the current
+  connection; features that hold history refetch it
+  ([below](#history-features-listen-first-then-fetch-once)).
 - **Closed by the relay.** When the relay ends a bundle's REQ for good, the
-  bundle is dropped and the next listener opens a fresh one. Mobile also tells
-  current listeners; desktop features never reacted to their own REQ closing
-  and still don't.
+  bundle is dropped and the next listener opens a fresh one. Both apps tell
+  current listeners (mobile `onClosed`, desktop `onRemoved`); the read state
+  re-attaches with backoff (1 s doubling to 60 s), other features as before.
 - **Lifetime.** A bundle opens with its first listener and closes once its
   last one leaves, after the current task, so a rebuild that subscribes again
   at once keeps it.
 
+### History features listen first, then fetch once
+
+A feature that needs past events rides the bundle with a live-only filter
+and reads its history with a separate one-shot fetch. It attaches the
+listener first and fetches once it is live, so nothing lands between the
+two. Features that apply events one by one use `historyThenLive`
+(`historyThenLive.ts` on desktop, `history_then_live.dart` on mobile):
+an event seen live and fetched is applied once. Features backed by a query
+(home feed, reminders, activity) treat a live event as a cue to refresh the
+query. On `onGap` each fetches again; its own single-flight folds repeat
+calls into one.
+
+| Feature | App | Scope | Fetch |
+|---|---|---|---|
+| Home feed mentions and approvals | desktop | addressed | the feed query |
+| Event reminders | desktop | addressed | the feed query |
+| Membership notices | desktop | addressed | last 30 s, 50 |
+| Activity (mentions, notices) | mobile | addressed | the activity query |
+| Sidebar lanes (sections, mutes, stars, names, sort) | mobile | authored | the lane head |
+| Own agent devices (30180/30181) | mobile | authored | last 200 |
+| Read state | both | authored | last 7 days, 500 |
+
+- **Read state takes the whole batch.** Its fetch goes to the batch merge
+  (own-slot union, slot-squatter check), not through the per-event seen
+  gate. A parse cache by event id (256) saves the second decrypt; every
+  event still reaches the merge. A failed fetch retries with backoff (1 s
+  doubling to 60 s) until one succeeds: with the listener live-only, the
+  retry is the only cover. Desktop's fetch keeps its early interactive slot,
+  so unread badges wait on one query, not on the bundle; the listener
+  drains with the bundle, and once it is live a short fetch from the first
+  fetch's start minus 5 s covers marks made in between.
+- **Lanes keep their head.** Each mobile lane keeps a `limit: 1` head fetch
+  next to its `limit: 0` listener; the head still runs when attaching the
+  listener fails, and sections read their head again after the relay
+  closes their listener.
+- **Devices load once read.** Mobile marks its own devices loaded only after
+  a fetch succeeds (it gates a publish); a failed fetch retries with
+  backoff.
+
 Kept out on purpose:
 
-- **Filters that ask for history** keep their own REQ: read state, mobile's
-  sidebar lanes that take their head on the REQ (sections, mutes, stars,
-  names, sort), and the windows of mentions, approvals and membership
-  notices. Moving one in means giving it `limit: 0` once it reads its own
-  history first.
-- **Mobile's agent devices** (30180/30181) take their last 200 on the REQ
-  and so keep it; desktop's devices are live-only and ride the authored
-  bundle.
 - **Community-wide streams** (user status, presence, catalogs, custom emoji)
   are not about the account.
+- **Room-scoped live REQs** (typing, goals, huddles, thread names, DM
+  batches) are not about the account either.
 
 ## Agent activity
 
@@ -231,7 +270,8 @@ answers follow in the background, in this order, and never block the screen.
 1. **Draw.** The active account is drawn from device storage: channel list
    snapshot, stored rooms ([Painting from the store](#painting-from-the-store)),
    and unread badges from the device's read markers (the relay's markers
-   merge in later; markers only advance). No loading text while stored data
+   merge in later: the read state listens on the authored bundle, then
+   fetches once; markers only advance). No loading text while stored data
    exists; the splash only fades (no minimum time).
    Desktop also draws the Chats rows and other people's names and pictures
    from their [launch snapshots](#launch-snapshots), read when the
