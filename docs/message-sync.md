@@ -110,7 +110,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
   room metadata. Quiet rooms never reach the all-rooms consumers: no unread,
   badge, notification or chat row until the DM is resurfaced (then it is a
   member room again, on the same chunk). Desktop `listenQuietRooms`, mobile
-  `listenQuiet`.
+  `listenQuiet`. The same holds for [push inbox](#push-inbox) events: a
+  quiet room's pushed rows are stored but never folded into unread or a
+  list.
 - **Passive room listeners** (mobile `listenRoomEvents`: roster and bot-role
   refresh on a 40099 membership notice, at 0, 1 and 4 s because the relay
   rebuilds the 39002 list after the notice): a room's events from its chunk
@@ -424,7 +426,9 @@ answers follow in the background, in this order, and never block the screen.
    Mobile draws the channel list, other people's profiles and the
    account's own profile from its [launch snapshots](#launch-snapshots)
    before the token and the socket; the channel list's server requests
-   after the memberships run in parallel.
+   after the memberships run in parallel. On iPhone it then takes the
+   [push inbox](#push-inbox) into the store and folds it into the drawn
+   lists, also without waiting for the socket.
 2. **Sign-in restore.** When the device holds a saved session whose bound
    account key is the key held here (desktop: `saved_session_ready`, local
    reads only), the app draws before the restore (relay info, token
@@ -534,7 +538,9 @@ the relay.
 - **What is captured:** events from the relay socket after its AUTH (desktop:
   the account is the author of the socket's AUTH event, or for a token AUTH
   the account the token was issued to; mobile: the session's account) and event arrays returned by `/query`. The scope is taken when the
-  socket authenticates or the query is sent.
+  socket authenticates or the query is sent. Mobile also takes the
+  [push inbox](#push-inbox): events the iPhone notification extension
+  fetched, under the scope current when the app drains it.
 - **What is kept:** room content kinds (9, 40001, 40002, 40008, 40099,
   43001–43006, 45001, 45003, 48100–48103) with an `h` tag; overlays (5, 7,
   9005, 40003), indexed by every `e` tag they reference, with an `h` tag except
@@ -951,7 +957,10 @@ older rows it should no longer see. Cases:
   it and the last one that forgot it. The numbers live in memory only: a
   capture never outlives its writer (the queue dies with the process, and a
   new writer only starts for a new scope), so nothing older has to be kept.
-  No clock is compared.
+  No clock is compared, with one exception: mobile stamps each forgotten
+  room's `room_forgot.at` with this device's clock to fence
+  [pushed rows](#push-inbox), which the notification extension timed with
+  the same device's clock.
 - **Fence:** a coverage span captured before a room was last forgotten is
   refused for that room (other rooms in the span are kept), so no span from
   before the purge can vouch for rows that are gone. A span captured after
@@ -1036,9 +1045,78 @@ older rows it should no longer see. Cases:
 ### Push inbox
 
 Stage B of push content on the device (iPhone first). The notification
-extension saves the verified events it fetched for a push; the app takes
-them into this store before the socket connects. Cases:
-`test-fixtures/push-inbox.json`. The full rules follow with the app drain.
+extension (NSE) saves the verified events it fetched for a push; the app
+takes them into this store and its lists without waiting for the socket.
+Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
+
+- **Token:** each push-enabled, signed-in community has a random inbox
+  token (32 lowercase hex), sent to the NSE in its community snapshot. A
+  new one is made when a signed-out community is resumed and when its
+  account changes; sign-out drops it.
+- **Files:** `<App Group>/push-inbox/<token>/<unixms>-<uuid>.json`,
+  `{v: 1, relayUrl, account, fetchedAt (unix seconds), events}`, written
+  to a `.tmp` file and renamed. The folder is excluded from backup and
+  readable after the first unlock. Per token the NSE keeps at most 7 days,
+  500 events and 2 MB, pruning the oldest files first.
+- **NSE fetch:** for each community with a token, one bounded `/query`
+  with a filter per push policy: `since` = max(cursor − 1865 s,
+  now − 72 h), `limit` 50, 1 MB of response for the whole run, cancelled
+  10 s into it. It keeps the events the policies match, plus the refreshed
+  kind:0 of the notified sender. If that fetch is cancelled or too large,
+  or finds nothing, today's query (no `since`, `limit` 10) runs for the
+  notification, by 17 s. The file is written before the notification is
+  shown, only for a token still in the snapshot, and never while the
+  device is age-restricted. The notification text never depends on the
+  inbox.
+- **Cursor:** `<token>/cursor`, unix seconds. It moves to the newest
+  returned row after a bounded fetch, even a truncated one (pushed rows
+  claim no completeness; catch-up fills gaps), and not after a fallback
+  or an empty answer. When the app goes to the background while connected,
+  it moves the active community's cursor to now.
+- **Reading:** the app reads the active community's folder off the UI
+  isolate, oldest file first, ignoring `.tmp` files and the cursor. A file
+  of a newer `v` stays for a newer app. A file for another server (origins
+  compared after [normalizing](#message-store); a path or user info is
+  refused), for another account, malformed or over 2 MB is deleted unread.
+  Events need a 64-hex id and pubkey, a 128-hex sig, integer fields,
+  string tags and a push kind (9, 40002, 45001, 45003) or kind 0. The NSE
+  verified the signatures; the app relies on that and does not check them
+  again.
+- **Drain:** on launch, on a community or account change and on resume,
+  one at a time, never while age-restricted. Each file is submitted with
+  its own `fetchedAt`. A file is deleted only when the store reports its
+  write committed; a full or cleared queue, a failed write or an ended
+  lease reports it dropped and the file stays for the next drain (files
+  the NSE writes during a drain are not touched). Every drain first deletes
+  token folders no community holds. Sign-out syncs the snapshot without
+  the token, then deletes the folder; removing a community deletes it
+  beside the store file.
+- **Pushed rows:** a room row is written only for a room of the last
+  membership list (none before the first list), not marked left, and not
+  forgotten since the fetch (`room_forgot.at` < `fetchedAt` − 5 s; a list
+  drop, a rejoin by list or notice and `since_join` all stamp it). Rows
+  without a room are dropped. Pushed rows set no coverage and no head
+  mark, and do not count as written for a list fetched meanwhile (it can
+  still drop their room). A full queue drops them without marking the file
+  lossy.
+- **Lists only:** rooms and threads do not draw pushed rows until the
+  relay's copy arrives (`pushed_rows` marks them; the relay copy or a purge
+  clears the mark). The store paint has no gap marker to put between
+  pushed rows and the covered head, so pushed rows show in the lists only
+  until catch-up.
+- **Folds:** only the events the store accepted, and only for rooms the
+  channel list shows as listed (member, not archived, not a hidden DM; the
+  list already leaves hidden DMs out). The channel list moves those rooms'
+  `lastMessageAt` at once and records unread once read state is loaded,
+  by the catch-up's rule. Chats folds them into the saved rows drawn
+  before the first page, as replays through the live path (blocked
+  authors, deletions; a thread marker only asks for the page). It writes
+  nothing to prefs, and the first page replaces those rows. A fold whose
+  lease is no longer current changes nothing. Kind:0 profiles are cached
+  for the active community, newer wins.
+- **Build switch:** `--dart-define=KUZZ_PUSH_INBOX=off` stops tokens,
+  reading and draining. It is set at build time, so rolling back means a
+  new build.
 
 ### Limits
 
@@ -1095,6 +1173,16 @@ them into this store before the socket connects. Cases:
   the open page's 50, so it records no head; a thread opens from the store
   only after it was opened from the relay once (or a whole history was
   recorded then). Desktop and mobile behave the same.
+- **Pushed rows after a deletion (N5):** a row deleted on the relay after
+  the NSE fetched it shows in the lists until catch-up replaces them or the
+  relay keeps a deletion record. Rooms not in the kept list get no pushed
+  rows.
+- **Pushed rows in a room:** a room or thread draws them only once the
+  relay's copy arrives (there is no gap marker to draw them above the
+  covered head).
+- **Push inbox trust (N7):** the app checks a pushed event's shape, not its
+  signature: it relies on the NSE's verification and on the App Group's
+  file protection.
 - **Build switch:** `VITE_KUZZ_STORE_OPEN=off` (desktop) or
   `--dart-define=KUZZ_STORE_OPEN=off` (mobile) opens every room and thread
   from the relay. Events are still stored and covered.
