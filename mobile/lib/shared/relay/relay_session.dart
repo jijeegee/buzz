@@ -33,6 +33,7 @@ import 'room_bundle_coverage.dart';
 export 'relay_session_types.dart';
 
 part 'relay_session_auth.dart';
+part 'relay_session_live_filters.dart';
 part 'relay_session_replay.dart';
 part 'relay_session_store.dart';
 
@@ -45,7 +46,11 @@ class _HistorySubscription {
 }
 
 class _LiveSubscription {
-  final NostrFilter filter;
+  /// The first filter of [multi] when set.
+  NostrFilter filter;
+
+  /// Set for a bundle's multi-filter REQ (relay_session_live_filters.dart).
+  final _LiveMulti? multi;
   final void Function(NostrEvent) onEvent;
   final void Function(String message)? onClosed;
   final void Function(RelaySubscriptionStatus status)? onStatusChanged;
@@ -57,6 +62,7 @@ class _LiveSubscription {
   _LiveSubscription({
     required this.filter,
     required this.onEvent,
+    this.multi,
     this.onClosed,
     this.onStatusChanged,
     this.readyCompleter,
@@ -431,20 +437,25 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
     void Function(RelaySubscriptionStatus status)? onStatusChanged,
+    _LiveMulti? multi,
+    void Function(String subId)? onSubId,
   }) async {
     if (_disposed) throw StateError('Relay session is disposed');
     final subId = _nextSubId('l');
     final readyCompleter = Completer<void>();
 
-    _liveSubscriptions[subId] = _LiveSubscription(
+    final subscription = _LiveSubscription(
       filter: filter,
       onEvent: onEvent,
+      multi: multi,
       onClosed: onClosed,
       onStatusChanged: onStatusChanged,
       readyCompleter: readyCompleter,
     );
+    _liveSubscriptions[subId] = subscription;
+    onSubId?.call(subId);
 
-    _sendReq(subId, filter);
+    _sendLiveReq(subId, subscription, filter);
 
     try {
       await readyCompleter.future.timeout(
@@ -543,6 +554,23 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   @visibleForTesting
   void debugHandleSocketMessageForTest(List<dynamic> data) =>
       _handleMessage(data);
+
+  @visibleForTesting
+  Future<LiveFiltersHandle> debugSubscribeFilters(
+    List<NostrFilter> filters,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+    void Function(RelaySubscriptionStatus status)? onStatusChanged,
+  }) => _subscribeFilters(
+    filters,
+    onEvent,
+    onClosed: onClosed,
+    onStatusChanged: onStatusChanged,
+  );
+
+  /// The socket dropped; live entries wait for the replay.
+  @visibleForTesting
+  void debugMarkSocketDownForTest() => _socketConnected = false;
 
   @visibleForTesting
   void debugAttachSocketForTest(RelaySocket socket) {
@@ -802,7 +830,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       _resetClosedRetry(liveSub);
       _flushBufferedEventsNow();
       _storeCoverage.noteEose(liveSub, liveSub.filter, _connectionGeneration);
-      liveSub.onStatusChanged?.call(RelaySubscriptionStatus.ready);
+      if (_settleLiveReq(subId, liveSub)) {
+        liveSub.onStatusChanged?.call(RelaySubscriptionStatus.ready);
+      }
     }
     if (liveSub != null &&
         liveSub.readyCompleter != null &&

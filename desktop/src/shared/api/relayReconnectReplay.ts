@@ -1,5 +1,6 @@
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
 import {
+  liveReqFrame,
   MAX_EXPLICIT_CHANNEL_VALUES,
   type RelaySubscription,
   type RelaySubscriptionFilter,
@@ -377,13 +378,15 @@ export async function replayLiveSubscriptions({
           // gate or an inter-batch delay. Never resurrect a disposed entry (or
           // overwrite its replacement) with a REQ from this stale snapshot.
           if (!isActive() || subscriptions.get(subId) !== subscription) return;
-          await sendRaw([
-            "REQ",
-            subId,
-            shouldPageReplay
-              ? subscription.filter
-              : buildReconnectReplayFilter(subscription.filter, replaySince),
-          ]);
+          await sendRaw(
+            liveReqFrame(
+              subId,
+              subscription,
+              shouldPageReplay
+                ? subscription.filter
+                : buildReconnectReplayFilter(subscription.filter, replaySince),
+            ),
+          );
           // Disposal can race the asynchronous websocket invoke after the
           // identity check. If this exact entry was deleted while REQ was in
           // flight, CLOSE again after REQ settles so wire order converges to

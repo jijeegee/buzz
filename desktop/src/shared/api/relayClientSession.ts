@@ -11,6 +11,7 @@ import {
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
+  liveReqFrame,
   parseRelayFrame,
   toRelayFrames,
   type ConnectionState,
@@ -39,6 +40,7 @@ import {
   sendRawWithReconnectRetry,
   subscribeLiveSession,
 } from "@/shared/api/relayLiveSubscribe";
+import { subscribeLiveFilters } from "@/shared/api/relayLiveFilters";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
@@ -451,6 +453,25 @@ export class RelayClient {
   ) {
     return this.subscribe(filter, onEvent, onReady, timeoutMs, signal, gone);
   }
+  /** One live REQ with several `limit: 0` filters, for a bundle. */
+  async subscribeLiveFilters(
+    filters: RelaySubscriptionFilter[],
+    onEvent: (event: RelayEvent) => void,
+    onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    signal?: AbortSignal,
+    gone?: () => void,
+  ) {
+    return subscribeLiveFilters(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
+      filters,
+      onEvent,
+      onReady,
+      signal,
+      gone,
+    );
+  }
   /** Prioritize an interactive live consumer without changing its replay filter or pacing. */
   async subscribeInteractive(
     filter: RelaySubscriptionFilter,
@@ -800,7 +821,7 @@ export class RelayClient {
         message: typeof rest[1] === "string" ? rest[1] : "",
         sendReq: (subId, filter) =>
           this.sendRawWithReconnectRetry(
-            ["REQ", subId, filter],
+            liveReqFrame(subId, this.subscriptions.get(subId), filter),
             "Failed to restore relay subscription after CLOSED.",
           ),
         closeSubscription: (subId) => this.closeSubscription(subId),
@@ -1058,6 +1079,7 @@ export class RelayClient {
       subscription.resolveReady?.("closed");
       subscription.resolveReady = undefined;
       retireLiveSubscription(subscription);
+      subscription.multi?.lost();
     }
     for (const [eventId, pendingEvent] of this.pendingEvents) {
       window.clearTimeout(pendingEvent.timeout);

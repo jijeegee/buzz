@@ -67,7 +67,7 @@ extension RelaySessionReplay on RelaySessionNotifier {
           }
           _pendingClosedRetries.remove(entry.key);
         }
-        _sendReq(entry.key, _replayFilter(entry.value));
+        _sendLiveReq(entry.key, entry.value, _replayFilter(entry.value));
       }
       if (i + RelaySessionNotifier._replayBatchSize < entries.length) {
         await _replayDelay(RelaySessionNotifier._replayInterBatchDelay);
@@ -107,6 +107,8 @@ extension RelaySessionReplay on RelaySessionNotifier {
       _removeLiveSubscription(subId, liveSub);
       return;
     }
+    // Its retry is the next REQ in flight and carries the newest filters.
+    liveSub.multi?.lost();
     if (readyCompleter != null && !readyCompleter.isCompleted) {
       readyCompleter.complete();
       liveSub.readyCompleter = null;

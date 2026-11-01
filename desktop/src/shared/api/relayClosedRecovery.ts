@@ -161,6 +161,8 @@ function recoverLiveSubscriptionFromClosed({
     subscription.onRemoved?.();
     return;
   }
+  // Its retry is the next REQ in flight and carries the newest filters.
+  subscription.multi?.lost();
 
   if (subscription.closedRetryTimeout !== undefined) return;
 
@@ -307,6 +309,7 @@ export function handleSubscriptionEose({
     subscription.resolveReady = undefined;
     subscription.closedRetryAttempt = 0;
     clearClosedRetry(subscription);
+    subscription.multi?.settled();
     return;
   }
   window.clearTimeout(subscription.timeout);

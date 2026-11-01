@@ -1,7 +1,9 @@
-import type {
-  LiveSubscriptionReadiness,
-  RelaySubscription,
-  RelaySubscriptionFilter,
+import {
+  type LiveMultiFilter,
+  type LiveSubscriptionReadiness,
+  liveReqFrame,
+  type RelaySubscription,
+  type RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
 import { retireLiveSubscription } from "@/shared/api/relayClosedRecovery";
 import { reconnectCursors } from "@/shared/api/relayReconnectReplay";
@@ -137,6 +139,7 @@ export async function subscribeLiveSession(
   signal?: AbortSignal,
   onGone?: () => void,
   priority?: "interactive",
+  multi?: LiveMultiFilter,
 ) {
   const epoch = host.sessionEpoch();
   const sessionSignal = host.sessionSignal();
@@ -154,6 +157,7 @@ export async function subscribeLiveSession(
   const subscription: Extract<RelaySubscription, { mode: "live" }> = {
     mode: "live",
     filter,
+    multi,
     priority,
     onEvent,
     onRemoved,
@@ -199,7 +203,7 @@ export async function subscribeLiveSession(
     host.subscriptions.set(subId, subscription);
     await Promise.race([
       sendReq(
-        ["REQ", subId, filter],
+        liveReqFrame(subId, subscription, filter),
         "Failed to restore relay subscription.",
         () => {
           if (readySettled) return;
