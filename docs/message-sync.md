@@ -1033,6 +1033,13 @@ older rows it should no longer see. Cases:
   the bounded queue cannot fill; mobile yields). A purge deletes through
   the `targets_id` and `summaries_room` indexes.
 
+### Push inbox
+
+Stage B of push content on the device (iPhone first). The notification
+extension saves the verified events it fetched for a push; the app takes
+them into this store before the socket connects. Cases:
+`test-fixtures/push-inbox.json`. The full rules follow with the app drain.
+
 ### Limits
 
 - **since_join rooms:** the relay hides rows from before the reader joined.
