@@ -41,6 +41,9 @@ final class NotificationService: UNNotificationServiceExtension {
     // Read once per run, off the request path. Without it requests are
     // signed as before, with no device tag.
     let deviceSigner = Self.loadDeviceSigner(keychainAccessGroup: keychainAccessGroup)
+    // Events fetched for communities with an inbox token are kept here for
+    // the app (docs/message-sync.md#push-inbox).
+    let container = ageRestrictionContainerURL
     return KuzzPushNotificationResolver(
       session: .shared,
       loadCommunitiesData: { [self] in
@@ -55,7 +58,11 @@ final class NotificationService: UNNotificationServiceExtension {
       loadPresentationCacheData: { [self] in
         Self.loadPushSnapshotData(appGroupIdentifier: self.appGroupIdentifier)
       },
-      deviceSigner: { deviceSigner }
+      deviceSigner: { deviceSigner },
+      pushInbox: container.map { PushInbox(containerURL: $0) },
+      isAgeRestricted: {
+        KuzzAgeRestrictionSession.isRestricted(containerURL: container)
+      }
     )
   }()
 

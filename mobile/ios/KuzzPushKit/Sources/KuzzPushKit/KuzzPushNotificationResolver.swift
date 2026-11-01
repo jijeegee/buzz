@@ -60,18 +60,38 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
   private let loadPresentationCacheData: () -> Data?
   private let loadPrivateKey: (String) -> String?
   private let deviceSigner: () -> DeviceEventSigning?
+  private let pushInbox: PushInbox?
+  private let isAgeRestricted: () -> Bool
+  private let inboxByteBudget: Int
+  private let inboxDeadlines: (bounded: TimeInterval, fallback: TimeInterval)
   private let now: () -> Date
   private let presentationCacheLifetime: TimeInterval
+
+  /// Rows per filter in the push inbox fetch.
+  static let inboxFetchLimit = 50
 
   /// Creates a resolver around the notification extension's App Group and Keychain I/O.
   /// `deviceSigner` returns this install's device key signer, or nil when the
   /// extension can't read it (requests are then signed without a device tag).
+  ///
+  /// With a `pushInbox`, communities that carry an `inboxToken` are fetched
+  /// from their inbox cursor (`PushInboxCursor`, 50 rows per filter) and every
+  /// verified, policy-matching event is kept for the app, plus a verified
+  /// kind:0 from the presentation refresh. Those fetches share one
+  /// `inboxByteBudget` and end at `inboxDeadlines.bounded` seconds into the
+  /// run; when one is cut off or has nothing to show, today's query
+  /// (`since` none, limit 10) decides the notification, ending by
+  /// `inboxDeadlines.fallback`. Nothing is kept while `isAgeRestricted`.
   public init(
     session: URLSession,
     loadCommunitiesData: @escaping () -> Data?,
     loadPrivateKey: @escaping (String) -> String?,
     loadPresentationCacheData: @escaping () -> Data? = { nil },
     deviceSigner: @escaping () -> DeviceEventSigning? = { nil },
+    pushInbox: PushInbox? = nil,
+    isAgeRestricted: @escaping () -> Bool = { false },
+    inboxByteBudget: Int = 1_048_576,
+    inboxDeadlines: (bounded: TimeInterval, fallback: TimeInterval) = (10, 17),
     now: @escaping () -> Date = Date.init,
     presentationCacheLifetime: TimeInterval = KuzzPushPresentationCacheStore.freshnessLifetime
   ) {
@@ -80,6 +100,10 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     self.loadPresentationCacheData = loadPresentationCacheData
     self.loadPrivateKey = loadPrivateKey
     self.deviceSigner = deviceSigner
+    self.pushInbox = pushInbox
+    self.isAgeRestricted = isAgeRestricted
+    self.inboxByteBudget = inboxByteBudget
+    self.inboxDeadlines = inboxDeadlines
     self.now = now
     self.presentationCacheLifetime = presentationCacheLifetime
   }
@@ -94,18 +118,27 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
       completion(nil)
       return
     }
+    let runStart = now()
+    let inboxOn = pushInbox != nil && !isAgeRestricted()
+    let budget = ResponseByteBudget(bytes: inboxByteBudget)
     let group = DispatchGroup()
     let lock = NSLock()
     var candidates: [(VerifiedNostrEvent, PushLeaseCommunity)] = []
+    var fetches: [InboxFetch] = []
     for community in communities {
       group.enter()
-      query(community) { candidate in
-        if let candidate {
-          lock.lock()
-          candidates.append(candidate)
-          lock.unlock()
-        }
+      let collect: (VerifiedNostrEvent?, InboxFetch?) -> Void = { candidate, fetch in
+        lock.lock()
+        if let candidate { candidates.append((candidate, community)) }
+        if let fetch { fetches.append(fetch) }
+        lock.unlock()
         group.leave()
+      }
+      if inboxOn, let token = community.inboxToken, PushInbox.isValidToken(token) {
+        inboxQuery(
+          community, token: token, runStart: runStart, budget: budget, completion: collect)
+      } else {
+        query(community) { candidate in collect(candidate?.0, nil) }
       }
     }
     group.notify(queue: .global(qos: .userInitiated)) {
@@ -113,10 +146,164 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
         $0.0.createdAt == $1.0.createdAt ? $0.0.id > $1.0.id : $0.0.createdAt < $1.0.createdAt
       }
       guard let newest else {
+        self.keep(fetches, profile: nil, profileCommunityID: nil)
         completion(nil)
         return
       }
-      self.resolvePresentation(event: newest.0, community: newest.1, completion: completion)
+      self.resolvePresentation(event: newest.0, community: newest.1) { resolution, profile in
+        // Kept before the notification is handed back.
+        self.keep(fetches, profile: profile, profileCommunityID: newest.1.id)
+        completion(resolution)
+      }
+    }
+  }
+
+  /// One community's fetch to keep in its push inbox.
+  struct InboxFetch {
+    let community: PushLeaseCommunity
+    let token: String
+    let events: [VerifiedNostrEvent]
+    let fetchedAt: Int
+    let cursor: Int?
+    let nextCursor: Int?
+  }
+
+  private func inboxQuery(
+    _ community: PushLeaseCommunity,
+    token: String,
+    runStart: Date,
+    budget: ResponseByteBudget,
+    completion: @escaping (VerifiedNostrEvent?, InboxFetch?) -> Void
+  ) {
+    guard let pushInbox,
+      let privateKey = loadPrivateKey(community.id),
+      community.pubkey?.isEmpty == false,
+      !community.policies.isEmpty,
+      let relayURL = community.relayURL,
+      let url = URL(string: "/query", relativeTo: relayURL)
+    else {
+      completion(nil, nil)
+      return
+    }
+    let fetchedAt = Int(now().timeIntervalSince1970)
+    let cursor = pushInbox.readCursor(token: token)
+    let since = PushInboxCursor.since(cursor: cursor, now: fetchedAt)
+    let bounded = community.policies.map {
+      $0.filter.queryFilter(since: since, limit: Self.inboxFetchLimit)
+    }
+    fetchMatching(
+      community, url: url, privateKey: privateKey, filters: bounded, budget: budget,
+      deadline: runStart.addingTimeInterval(inboxDeadlines.bounded)
+    ) { [self] result in
+      let nextCursor =
+        result.map {
+          PushInboxCursor.next(current: cursor, returned: $0.returned, fallback: false)
+        } ?? cursor
+      if let result, let candidate = Self.newestMessage(events: result.matching, community: community) {
+        completion(
+          candidate,
+          InboxFetch(
+            community: community, token: token, events: result.matching, fetchedAt: fetchedAt,
+            cursor: cursor, nextCursor: nextCursor))
+        return
+      }
+      // Cut off, failed or nothing to show: today's query decides the
+      // notification. Its events are kept too; it never moves the cursor.
+      let today = community.policies.map { $0.filter.queryFilter(since: nil, limit: 10) }
+      fetchMatching(
+        community, url: url, privateKey: privateKey, filters: today,
+        budget: ResponseByteBudget(bytes: inboxByteBudget),
+        deadline: runStart.addingTimeInterval(inboxDeadlines.fallback)
+      ) { fallback in
+        var seen = Set<String>()
+        let kept = ((result?.matching ?? []) + (fallback?.matching ?? [])).filter {
+          seen.insert($0.id).inserted
+        }
+        completion(
+          fallback.flatMap { Self.newestMessage(events: $0.matching, community: community) },
+          InboxFetch(
+            community: community, token: token, events: kept, fetchedAt: fetchedAt,
+            cursor: cursor, nextCursor: nextCursor))
+      }
+    }
+  }
+
+  /// Verified, policy-matching events of one bounded query, and the
+  /// `created_at` of every verified row returned.
+  private func fetchMatching(
+    _ community: PushLeaseCommunity,
+    url: URL,
+    privateKey: String,
+    filters: [[String: Any]],
+    budget: ResponseByteBudget,
+    deadline: Date,
+    completion: @escaping ((matching: [VerifiedNostrEvent], returned: [Int])?) -> Void
+  ) {
+    guard let body = try? JSONSerialization.data(withJSONObject: filters) else {
+      completion(nil)
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = body
+    request.timeoutInterval = 8
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    guard
+      let auth = try? NostrHTTPAuth.authorizationHeader(
+        url: url, method: "POST", body: body, privateKeyHex: privateKey,
+        deviceSigner: deviceSigner()
+      )
+    else {
+      completion(nil)
+      return
+    }
+    request.setValue(auth, forHTTPHeaderField: "Authorization")
+    BoundedDataTask.start(
+      request, configuration: session.configuration, budget: budget,
+      maxBytes: inboxByteBudget, deadline: deadline, now: now()
+    ) { outcome in
+      guard case let .response(response, data) = outcome,
+        (200..<300).contains(response.statusCode),
+        let events = try? JSONDecoder().decode([VerifiedNostrEvent].self, from: data)
+      else {
+        completion(nil)
+        return
+      }
+      let verified = events.filter { $0.hasValidIDAndSignature() }
+      let matching = verified.filter { event in
+        community.policies.contains { PushLeaseMatcher.matches(event: event, policy: $0) }
+      }
+      completion((matching, verified.map(\.createdAt)))
+    }
+  }
+
+  /// Writes the run's fetches to the push inbox: only for tokens still in
+  /// the snapshot (re-read now) and never while age-restricted.
+  private func keep(
+    _ fetches: [InboxFetch], profile: VerifiedNostrEvent?, profileCommunityID: String?
+  ) {
+    guard let pushInbox, !fetches.isEmpty, !isAgeRestricted() else { return }
+    let live = Set(loadCommunities().compactMap(\.inboxToken))
+    for fetch in fetches where live.contains(fetch.token) {
+      var events = fetch.events
+      if let profile, profile.kind == 0, fetch.community.id == profileCommunityID,
+        !events.contains(where: { $0.id == profile.id })
+      {
+        events.append(profile)
+      }
+      guard let account = fetch.community.pubkey?.lowercased() else { continue }
+      do {
+        try pushInbox.write(
+          token: fetch.token, relayUrl: fetch.community.relayUrl, account: account,
+          fetchedAt: fetch.fetchedAt, events: events)
+        if let next = fetch.nextCursor, next != fetch.cursor {
+          try pushInbox.writeCursor(token: fetch.token, value: next)
+        }
+      } catch {
+        // The notification never depends on the inbox; the app's catch-up
+        // fetches whatever was not kept.
+        continue
+      }
     }
   }
 
@@ -174,10 +361,12 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     }.resume()
   }
 
+  /// The notification for `event`, and the kind:0 a presentation refresh
+  /// fetched for its sender (verified), if any.
   private func resolvePresentation(
     event: VerifiedNostrEvent,
     community: PushLeaseCommunity,
-    completion: @escaping (KuzzPushResolution?) -> Void
+    completion: @escaping (KuzzPushResolution?, VerifiedNostrEvent?) -> Void
   ) {
     let snapshot = KuzzPushPresentationCacheSnapshot.decode(loadPresentationCacheData())
     let relayOrigin = KuzzPushPresentationCacheStore.canonicalRelayOrigin(community.relayUrl)
@@ -235,7 +424,7 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
       channel: cachedChannel
     )
     guard profileNeedsRefresh || channelNeedsRefresh else {
-      completion(fallback)
+      completion(fallback, nil)
       return
     }
 
@@ -303,7 +492,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
           community: community,
           profile: profile,
           channel: channel
-        ) ?? fallback
+        ) ?? fallback,
+        refreshedProfileEvent
       )
     }
   }
