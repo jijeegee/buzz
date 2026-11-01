@@ -1735,7 +1735,9 @@ void main() {
 
       expect(relaySession.identityFilter?.kinds, const [0, 10100]);
       expect(relaySession.identityFilter?.authors, contains('alice'));
-      expect(relaySession.identityFilter?.limit, 100);
+      // Live only, re-sent as is on reconnect: no since, limit 0.
+      expect(relaySession.identityFilter?.limit, 0);
+      expect(relaySession.identityFilter?.since, isNull);
       expect(find.byTooltip('Start Huddle'), findsOneWidget);
 
       relaySession.emitAgentProfile(pubkey: 'alice');

@@ -197,11 +197,8 @@ Future<void Function()> _subscribeToDmIdentityUpdates(
   }
 
   final unsubscribe = await session.subscribeWithStatus(
-    NostrFilter(
-      kinds: const [0, 10100],
-      authors: participantPubkeys,
-      limit: 100,
-    ).copyWithSince(DateTime.now().millisecondsSinceEpoch ~/ 1000 - 5),
+    // Live only (history: fetchHistory below): a reconnect re-sends it as is.
+    NostrFilter(kinds: const [0, 10100], authors: participantPubkeys, limit: 0),
     handleEvent,
     onClosed: (_) => onFailure(),
     onStatusChanged: (status) {
