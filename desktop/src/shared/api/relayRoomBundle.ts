@@ -32,6 +32,13 @@ export const ROOM_LIVE_KINDS: readonly number[] = [
 /** The longest `whenRoomCovered` waits. */
 export const ROOM_COVERAGE_WAIT_MS = 1_500;
 
+/**
+ * How long a room that leaves the member and quiet sets stays in its chunk,
+ * so a hide then unhide (or a list refetch that briefly drops a room) does
+ * not re-send the chunk REQ.
+ */
+export const ROOM_SHRINK_GRACE_MS = 1_000;
+
 /** Events remembered for duplicate suppression across overlapping deliveries. */
 const SEEN_EVENT_LIMIT = 20_000;
 /** Event id → room, so h-less reactions and deletions find their room. */
@@ -71,7 +78,11 @@ type RoomWaiter = {
   resolve: () => void;
 };
 
-type CoverWaiter = RoomWaiter & { timer: number };
+type CoverWaiter = {
+  roomIds: readonly string[];
+  resolve: (covered: boolean) => void;
+  timer: number;
+};
 
 /** The relay accepts at most this many explicit channels per REQ. */
 export function chunkRoomIds(roomIds: Iterable<string>): string[][] {
@@ -85,6 +96,10 @@ export function chunkRoomIds(roomIds: Iterable<string>): string[][] {
     chunks.push(sorted.slice(start, start + MAX_EXPLICIT_CHANNEL_VALUES));
   }
   return chunks;
+}
+
+function sameSet(a: ReadonlySet<string>, b: ReadonlySet<string>) {
+  return a.size === b.size && [...a].every((value) => b.has(value));
 }
 
 function tagValue(event: RelayEvent, name: string) {
@@ -128,6 +143,10 @@ function remember<T>(
  * membership (a browsed open channel) gets its own chunk, so losing access to
  * it still closes a subscription the client can see, as before.
  *
+ * Quiet rooms (hidden DMs) ride the same chunks. Their events reach room
+ * listeners and quiet listeners only, never the all-rooms listeners: a hidden
+ * DM counts as unread only after it is shown again (a member room).
+ *
  * Every event is delivered once: overlapping chunks (while one replaces
  * another) and reconnect repair can carry the same event, so duplicates are
  * dropped here before any listener runs. A replaced chunk is closed only
@@ -142,11 +161,16 @@ function remember<T>(
  */
 export class RoomLiveBundle {
   private memberRooms = new Set<string>();
+  private quietRooms = new Set<string>();
+  /** Rooms that just left member ∪ quiet → their grace timer. */
+  private graceRetained = new Map<string, number>();
   private extraRooms = new Map<string, number>();
   private chunks = new Map<string, Chunk>();
   private roomListeners = new Map<string, Set<RoomLiveListener>>();
   private allRoomListeners = new Set<RoomLiveListener>();
   private metadataListeners = new Set<RoomLiveListener>();
+  private quietListeners = new Set<RoomLiveListener>();
+  private resetListeners = new Set<() => void>();
   private waiters = new Set<RoomWaiter>();
   private coverWaiters = new Set<CoverWaiter>();
   /** Set by the first non-empty member list since the last reset. */
@@ -171,16 +195,45 @@ export class RoomLiveBundle {
   setMemberRooms(roomIds: Iterable<string>) {
     const next = new Set(roomIds);
     if (next.size > 0) this.membershipKnown = true;
-    if (
-      next.size === this.memberRooms.size &&
-      [...next].every((roomId) => this.memberRooms.has(roomId))
-    ) {
-      this.settleCoverWaiters();
-      return;
+    if (!sameSet(next, this.memberRooms)) {
+      const before = this.carriedRooms();
+      this.memberRooms = next;
+      this.afterCarriedChange(before);
     }
-    this.memberRooms = next;
-    this.queueSync();
     this.settleCoverWaiters();
+  }
+
+  /**
+   * Rooms carried without being listed (hidden DMs). Their events reach room
+   * and quiet listeners only. A room both member and quiet is a member.
+   */
+  setQuietRooms(roomIds: Iterable<string>) {
+    const next = new Set(roomIds);
+    if (!sameSet(next, this.quietRooms)) {
+      const before = this.carriedRooms();
+      this.quietRooms = next;
+      this.afterCarriedChange(before);
+    }
+    this.settleCoverWaiters();
+  }
+
+  /**
+   * Listen to quiet rooms' events (thread summaries and metadata excluded).
+   * Events carry their room's `h` tag.
+   */
+  listenQuietRooms(listener: RoomLiveListener) {
+    this.quietListeners.add(listener);
+    return () => {
+      this.quietListeners.delete(listener);
+    };
+  }
+
+  /** Called after every `reset()`, once the bundle is empty again. */
+  onReset(listener: () => void) {
+    this.resetListeners.add(listener);
+    return () => {
+      this.resetListeners.delete(listener);
+    };
   }
 
   /**
@@ -202,12 +255,23 @@ export class RoomLiveBundle {
    * events never come); `ROOM_COVERAGE_WAIT_MS`.
    */
   whenRoomCovered(roomId: string): Promise<void> {
-    if (this.isRoomCovered(roomId)) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      const waiter: CoverWaiter = { roomId, resolve, timer: 0 };
+    return this.whenRoomsCovered([roomId]).then(() => undefined);
+  }
+
+  /**
+   * Like `whenRoomCovered`, for every room in `roomIds`: `true` once all are
+   * covered, `false` when `ROOM_COVERAGE_WAIT_MS` passed first.
+   */
+  whenRoomsCovered(roomIds: Iterable<string>): Promise<boolean> {
+    const ids = [...new Set(roomIds)];
+    if (ids.every((roomId) => this.isRoomCovered(roomId))) {
+      return Promise.resolve(true);
+    }
+    return new Promise<boolean>((resolve) => {
+      const waiter: CoverWaiter = { roomIds: ids, resolve, timer: 0 };
       waiter.timer = this.timers.setTimeout(() => {
         this.coverWaiters.delete(waiter);
-        resolve();
+        resolve(false);
       }, ROOM_COVERAGE_WAIT_MS);
       this.coverWaiters.add(waiter);
     });
@@ -280,19 +344,72 @@ export class RoomLiveBundle {
     for (const chunk of this.chunks.values()) this.closeChunk(chunk);
     this.chunks.clear();
     this.memberRooms.clear();
+    this.quietRooms.clear();
+    for (const timer of this.graceRetained.values()) {
+      this.timers.clearTimeout(timer);
+    }
+    this.graceRetained.clear();
     this.membershipKnown = false;
     this.seen.clear();
     this.eventRooms.clear();
     // Rooms still listened to are covered again on the next session.
     this.queueSync();
+    for (const listener of [...this.resetListeners]) listener();
+  }
+
+  /** Rooms packed into shared chunks: member ∪ quiet ∪ grace. */
+  private carriedRooms() {
+    return new Set([
+      ...this.memberRooms,
+      ...this.quietRooms,
+      ...this.graceRetained.keys(),
+    ]);
+  }
+
+  /**
+   * Keeps rooms that left member ∪ quiet in their live chunk for
+   * `ROOM_SHRINK_GRACE_MS`, so the chunk REQ is not re-sent if they come back
+   * (hide then unhide, a refetch that briefly drops them). A room coming back
+   * cancels its grace. No grace when another room joins in the same change
+   * (a new REQ goes out anyway) or when the room's chunk is not live yet
+   * (nothing to keep).
+   */
+  private afterCarriedChange(before: ReadonlySet<string>) {
+    const now = new Set([...this.memberRooms, ...this.quietRooms]);
+    const joined = [...now].some((roomId) => !before.has(roomId));
+    for (const roomId of before) {
+      if (
+        joined ||
+        now.has(roomId) ||
+        this.graceRetained.has(roomId) ||
+        !this.isRoomLive(roomId)
+      ) {
+        continue;
+      }
+      const timer = this.timers.setTimeout(() => {
+        if (this.graceRetained.get(roomId) !== timer) return;
+        this.graceRetained.delete(roomId);
+        this.queueSync();
+        this.settleCoverWaiters();
+      }, ROOM_SHRINK_GRACE_MS);
+      this.graceRetained.set(roomId, timer);
+    }
+    for (const [roomId, timer] of [...this.graceRetained]) {
+      if (joined || now.has(roomId)) {
+        this.timers.clearTimeout(timer);
+        this.graceRetained.delete(roomId);
+      }
+    }
+    this.queueSync();
   }
 
   private desiredChunks() {
+    const carried = this.carriedRooms();
     const extras = [...this.extraRooms.keys()].filter(
-      (roomId) => !this.memberRooms.has(roomId),
+      (roomId) => !carried.has(roomId),
     );
     return [
-      ...chunkRoomIds(this.memberRooms),
+      ...chunkRoomIds(carried),
       ...extras.sort().map((roomId) => [roomId]),
     ];
   }
@@ -430,23 +547,31 @@ export class RoomLiveBundle {
     return false;
   }
 
-  private isRoomCovered(roomId: string) {
+  private isRoomLive(roomId: string) {
     for (const chunk of this.chunks.values()) {
       if (chunk.status === "live" && chunk.rooms.has(roomId)) return true;
     }
+    return false;
+  }
+
+  private isRoomCovered(roomId: string) {
+    if (this.isRoomLive(roomId)) return true;
     return (
       this.membershipKnown &&
       !this.memberRooms.has(roomId) &&
+      !this.quietRooms.has(roomId) &&
       !this.extraRooms.has(roomId)
     );
   }
 
   private settleCoverWaiters() {
     for (const waiter of [...this.coverWaiters]) {
-      if (!this.isRoomCovered(waiter.roomId)) continue;
+      if (!waiter.roomIds.every((roomId) => this.isRoomCovered(roomId))) {
+        continue;
+      }
       this.coverWaiters.delete(waiter);
       this.timers.clearTimeout(waiter.timer);
-      waiter.resolve();
+      waiter.resolve(true);
     }
   }
 
@@ -489,13 +614,13 @@ export class RoomLiveBundle {
     if (listeners) {
       for (const listener of [...listeners]) listener(event);
     }
-    if (
-      event.kind === KIND_CHANNEL_THREAD_SUMMARY ||
-      !this.memberRooms.has(roomId)
-    ) {
-      return;
+    if (event.kind === KIND_CHANNEL_THREAD_SUMMARY) return;
+    if (this.memberRooms.has(roomId)) {
+      const tagged = withRoomTag(event, roomId);
+      for (const listener of [...this.allRoomListeners]) listener(tagged);
+    } else if (this.quietRooms.has(roomId)) {
+      const tagged = withRoomTag(event, roomId);
+      for (const listener of [...this.quietListeners]) listener(tagged);
     }
-    const tagged = withRoomTag(event, roomId);
-    for (const listener of [...this.allRoomListeners]) listener(tagged);
   }
 }

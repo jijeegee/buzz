@@ -6,6 +6,7 @@ import {
   chunkRoomIds,
   ROOM_COVERAGE_WAIT_MS,
   ROOM_LIVE_KINDS,
+  ROOM_SHRINK_GRACE_MS,
   RoomLiveBundle,
 } from "./relayRoomBundle.ts";
 import {
@@ -17,6 +18,15 @@ import {
 const flush = async () => {
   for (let i = 0; i < 20; i++) await Promise.resolve();
 };
+
+/** Ends the grace of rooms that left member ∪ quiet. */
+function endGrace(timers) {
+  for (const [id, timer] of [...timers]) {
+    if (timer.ms !== ROOM_SHRINK_GRACE_MS) continue;
+    timers.delete(id);
+    timer.fn();
+  }
+}
 
 /** A bundle over a fake relay: each opened chunk is held until released. */
 function harness({ autoOpen = true } = {}) {
@@ -205,12 +215,14 @@ test("a replaced chunk stays open until its successor is live, and overlap deliv
 });
 
 test("removing every room retires a pending chunk without delivering its events", async () => {
-  const { bundle, opened } = harness({ autoOpen: false });
+  const { bundle, opened, timers } = harness({ autoOpen: false });
   const delivered = [];
   bundle.listenAllRooms((e) => delivered.push(e.id));
   bundle.setMemberRooms(["a"]);
   await flush();
   bundle.setMemberRooms([]);
+  await flush();
+  endGrace(timers);
   await flush();
   opened[0].open();
   await flush();
@@ -308,6 +320,8 @@ test("a failed open settles its listeners and retries with backoff while wanted"
   await stop();
   await flush();
   const retry = [...timers.values()][0];
+  endGrace(timers);
+  await flush();
   retry?.fn();
   await flush();
   assert.equal(opened.length, 2, "a room no longer wanted is not retried");
@@ -406,19 +420,26 @@ for (const fixture of fixtures.delivery) {
   test(`shared fixture: ${fixture.name}`, async () => {
     const { bundle, live } = harness();
     bundle.setMemberRooms(fixture.memberRooms);
+    bundle.setQuietRooms(fixture.quietRooms ?? []);
     const roomId = fixture.event.tags.find((tag) => tag[0] === "h")[1];
     const inRoom = [];
     const allRooms = [];
     const metadata = [];
+    const quiet = [];
     bundle.listenAllRooms((e) => allRooms.push(e.id));
     bundle.listenRoomMetadata((e) => metadata.push(e.id));
+    bundle.listenQuietRooms((e) => quiet.push(e.id));
     const stop = await bundle.listenRoom(roomId, (e) => inRoom.push(e.id));
     await flush();
     const chunk = live().find((sub) => sub.filter["#h"].includes(roomId));
-    chunk.onEvent(event(fixture.event.id, null, fixture.event));
-    assert.equal(inRoom.length > 0, fixture.room, "room");
-    assert.equal(allRooms.length > 0, fixture.allRooms, "all rooms");
-    assert.equal(metadata.length > 0, fixture.metadata, "metadata");
+    for (let i = 0; i < (fixture.repeat ?? 1); i++) {
+      chunk.onEvent(event(fixture.event.id, null, fixture.event));
+    }
+    const once = (expected) => (expected ? 1 : 0);
+    assert.equal(inRoom.length, once(fixture.room), "room");
+    assert.equal(allRooms.length, once(fixture.allRooms), "all rooms");
+    assert.equal(metadata.length, once(fixture.metadata), "metadata");
+    assert.equal(quiet.length, once(fixture.quiet ?? false), "quiet");
     await stop();
   });
 }
@@ -512,4 +533,206 @@ test("whenRoomCovered waits for a browsed room's own chunk", async () => {
   opened.find((sub) => sub.filter["#h"].includes("browsed")).open();
   await flush();
   assert.equal(done, true);
+});
+
+// Quiet rooms (hidden DMs) ride the member chunks.
+
+test("quiet rooms share the member rooms' chunks: 127 members and 1 quiet room are one REQ", async () => {
+  const { bundle, opened } = harness();
+  bundle.setMemberRooms(rooms(127));
+  bundle.setQuietRooms(["hidden"]);
+  await flush();
+  const liveNow = opened.filter((sub) => !sub.disposed);
+  assert.equal(liveNow.length, 1);
+  assert.equal(liveNow[0].filter["#h"].length, 128);
+  assert.ok(liveNow[0].filter["#h"].includes("hidden"));
+});
+
+test("129 quiet rooms and 200 member rooms take ⌈329 / 128⌉ chunks", async () => {
+  const { bundle, live } = harness();
+  bundle.setMemberRooms(rooms(200, "member"));
+  bundle.setQuietRooms(rooms(129, "quiet"));
+  await flush();
+  assert.deepEqual(
+    live().map((sub) => sub.filter["#h"].length),
+    [128, 128, 73],
+  );
+});
+
+test("a quiet room's events, 40099 and huddle lifecycle included, never reach all-room listeners", async () => {
+  const { bundle, live } = harness();
+  bundle.setMemberRooms(["a"]);
+  bundle.setQuietRooms(["q"]);
+  const all = [];
+  const quiet = [];
+  bundle.listenAllRooms((e) => all.push(e.id));
+  bundle.listenQuietRooms((e) => quiet.push(e.id));
+  await flush();
+  const [chunk] = live();
+  chunk.onEvent(event("system", "q", { kind: 40099 }));
+  chunk.onEvent(event("huddle", "q", { kind: 48100 }));
+  chunk.onEvent(event("row-q", "q"));
+  // An h-less reaction to a quiet row finds the quiet room.
+  chunk.onEvent(event("like", null, { kind: 7, tags: [["e", "row-q"]] }));
+  assert.deepEqual(all, []);
+  assert.deepEqual(quiet, ["system", "huddle", "row-q", "like"]);
+});
+
+test("whenRoomCovered of a quiet room waits for its chunk", async () => {
+  const { bundle, opened } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a"]);
+  bundle.setQuietRooms(["q"]);
+  let done = false;
+  void bundle.whenRoomCovered("q").then(() => {
+    done = true;
+  });
+  await flush();
+  assert.equal(done, false, "membership is known, but q is carried");
+  opened[0].open();
+  await flush();
+  assert.equal(done, true);
+});
+
+test("whenRoomsCovered is true once every room is live, false at the bound", async () => {
+  const { bundle, opened, timers } = harness({ autoOpen: false });
+  bundle.setMemberRooms(rooms(128, "member"));
+  bundle.setQuietRooms(["q"]);
+  await flush();
+  let both = null;
+  void bundle.whenRoomsCovered(["member-000", "q"]).then((covered) => {
+    both = covered;
+  });
+  let late = null;
+  void bundle.whenRoomsCovered(["q"]).then((covered) => {
+    late = covered;
+  });
+  await flush();
+  opened.find((sub) => sub.filter["#h"].includes("member-000")).open();
+  await flush();
+  assert.equal(both, null, "q's chunk is not live yet");
+  // The bound passes for both waiters.
+  for (const [id, timer] of [...timers]) {
+    if (timer.ms !== ROOM_COVERAGE_WAIT_MS) continue;
+    timers.delete(id);
+    timer.fn();
+  }
+  await flush();
+  assert.equal(both, false);
+  assert.equal(late, false);
+  opened.find((sub) => sub.filter["#h"].includes("q")).open();
+  await flush();
+  assert.equal(await bundle.whenRoomsCovered(["member-000", "q"]), true);
+});
+
+test("hide then unhide within the grace sends no new REQ", async () => {
+  const { bundle, opened, timers } = harness();
+  bundle.setMemberRooms(["a", "dm"]);
+  await flush();
+  assert.equal(opened.length, 1);
+  // Hidden: listed no more, quiet not yet known (refetch lag).
+  bundle.setMemberRooms(["a"]);
+  await flush();
+  assert.equal(opened.length, 1, "the room stays in its chunk for the grace");
+  bundle.setQuietRooms(["dm"]);
+  await flush();
+  assert.equal(opened.length, 1, "quiet: same chunk key");
+  // Shown again.
+  bundle.setMemberRooms(["a", "dm"]);
+  bundle.setQuietRooms([]);
+  await flush();
+  endGrace(timers);
+  await flush();
+  assert.equal(opened.length, 1);
+  assert.equal(opened[0].disposed, false);
+});
+
+test("a room gone from member and quiet sets leaves its chunk once the grace ends", async () => {
+  const { bundle, live, timers } = harness();
+  bundle.setMemberRooms(["a", "b"]);
+  await flush();
+  bundle.setMemberRooms(["a"]);
+  await flush();
+  assert.deepEqual(live()[0].filter["#h"], ["a", "b"]);
+  const grace = [...timers.values()].find((t) => t.ms === ROOM_SHRINK_GRACE_MS);
+  assert.ok(grace, "a grace timer runs");
+  endGrace(timers);
+  await flush();
+  assert.deepEqual(
+    live().map((sub) => sub.filter["#h"]),
+    [["a"]],
+  );
+});
+
+test("a resurfaced DM moving from quiet to member keeps its chunk", async () => {
+  const { bundle, opened } = harness();
+  bundle.setMemberRooms(["a"]);
+  bundle.setQuietRooms(["dm"]);
+  await flush();
+  bundle.setMemberRooms(["a", "dm"]);
+  bundle.setQuietRooms([]);
+  await flush();
+  assert.equal(opened.length, 1, "0 new REQs");
+  const all = [];
+  bundle.listenAllRooms((e) => all.push(e.id));
+  opened[0].onEvent(event("next", "dm"));
+  assert.deepEqual(all, ["next"], "now a member room");
+});
+
+test("reset clears quiet rooms and tells onReset listeners, which can re-apply them", async () => {
+  const { bundle, opened, live } = harness();
+  bundle.setMemberRooms(["a"]);
+  bundle.setQuietRooms(["q"]);
+  await flush();
+  let resets = 0;
+  const hiddenNow = ["q"];
+  const stop = bundle.onReset(() => {
+    resets += 1;
+    bundle.setQuietRooms(hiddenNow);
+  });
+  bundle.reset();
+  await flush();
+  assert.equal(resets, 1);
+  assert.equal(opened[0].disposed, true);
+  assert.deepEqual(
+    live().map((sub) => sub.filter["#h"]),
+    [["q"]],
+  );
+  stop();
+  bundle.reset();
+  await flush();
+  assert.equal(resets, 1, "stopped listeners are not called");
+  assert.deepEqual(live(), [], "reset alone drops quiet rooms");
+});
+
+test("no grace when another room joins in the same change, or before the chunk is live", async () => {
+  const { bundle, opened, live, timers } = harness({ autoOpen: false });
+  bundle.setMemberRooms(["a", "b"]);
+  await flush();
+  // Not live yet: nothing to keep.
+  bundle.setMemberRooms(["a"]);
+  await flush();
+  assert.equal(
+    [...timers.values()].filter((t) => t.ms === ROOM_SHRINK_GRACE_MS).length,
+    0,
+  );
+  for (const sub of opened) sub.open?.();
+  await flush();
+  assert.deepEqual(
+    live().map((sub) => sub.filter["#h"]),
+    [["a"]],
+  );
+  // b leaves as c joins: one replacement REQ, b not kept.
+  bundle.setMemberRooms(["a", "b"]);
+  await flush();
+  opened.at(-1).open();
+  await flush();
+  bundle.setMemberRooms([]);
+  bundle.setMemberRooms(["a", "c"]);
+  await flush();
+  opened.at(-1).open();
+  await flush();
+  assert.deepEqual(
+    live().map((sub) => sub.filter["#h"]),
+    [["a", "c"]],
+  );
 });

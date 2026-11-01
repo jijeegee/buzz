@@ -1,5 +1,5 @@
 {
-  "description": "Shared room live-bundle rules (docs/message-sync.md). Desktop relayRoomBundle and mobile RoomLiveRouter must agree on every case.",
+  "description": "Shared room live-bundle rules (docs/message-sync.md). Desktop relayRoomBundle and mobile RoomLiveRouter must agree on every case. Delivery counts are exact: true means once, false never; a missing quietRooms or quiet means none.",
   "maxRoomsPerSubscription": 128,
   "chunking": [
     { "name": "no rooms", "rooms": [], "chunkSizes": [] },
@@ -126,6 +126,64 @@
       "room": false,
       "allRooms": false,
       "metadata": true
+    },
+    {
+      "name": "a quiet room's message reaches its room and the quiet listeners, never all rooms",
+      "memberRooms": ["a"],
+      "quietRooms": ["q"],
+      "event": { "id": "quiet-row", "kind": 9, "tags": [["h", "q"]] },
+      "room": true,
+      "allRooms": false,
+      "metadata": false,
+      "quiet": true
+    },
+    {
+      "name": "a quiet room's thread summary reaches its room only",
+      "memberRooms": ["a"],
+      "quietRooms": ["q"],
+      "event": { "id": "quiet-summary", "kind": 39005, "tags": [["h", "q"]] },
+      "room": true,
+      "allRooms": false,
+      "metadata": false,
+      "quiet": false
+    },
+    {
+      "name": "a quiet room's thread name reaches only the metadata listeners",
+      "memberRooms": ["a"],
+      "quietRooms": ["q"],
+      "event": {
+        "id": "quiet-rename",
+        "kind": 40009,
+        "tags": [
+          ["h", "q"],
+          ["e", "head"]
+        ]
+      },
+      "room": false,
+      "allRooms": false,
+      "metadata": true,
+      "quiet": false
+    },
+    {
+      "name": "a room both member and quiet is a member",
+      "memberRooms": ["a"],
+      "quietRooms": ["a"],
+      "event": { "id": "both-row", "kind": 9, "tags": [["h", "a"]] },
+      "room": true,
+      "allRooms": true,
+      "metadata": false,
+      "quiet": false
+    },
+    {
+      "name": "a quiet room's message delivered twice reaches its listeners once",
+      "memberRooms": ["a"],
+      "quietRooms": ["q"],
+      "event": { "id": "quiet-twice", "kind": 9, "tags": [["h", "q"]] },
+      "repeat": 2,
+      "room": true,
+      "allRooms": false,
+      "metadata": false,
+      "quiet": true
     }
   ]
 }

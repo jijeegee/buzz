@@ -10,6 +10,19 @@ const _maxLiveChannelsPerSubscription = 128;
 /// lifecycle state while keeping `channels_provider.dart` below the mobile
 /// file-size ratchet.
 extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
+  /// Hidden DMs ride the room chunks as quiet rooms: their events reach the
+  /// room router (resurface), never the all-rooms consumers below.
+  Set<String> get _quietLiveChannelIds =>
+      _hiddenDmIds.difference(_desiredLiveChannelIds);
+
+  /// Every room the chunks carry: listed member rooms ∪ quiet rooms. Chunk
+  /// keys always come from this set; all-rooms delivery stays on
+  /// [_desiredLiveChannelIds].
+  Set<String> get _liveChunkRoomIds => {
+    ..._desiredLiveChannelIds,
+    ..._quietLiveChannelIds,
+  };
+
   /// Subscribe to live events in deterministic chunks that stay within the
   /// relay's aggregate explicit-`#h` limit. Also starts a 60s WS backstop poll
   /// to reconcile membership changes without downloading the global directory.
@@ -23,12 +36,14 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     };
     final relayBaseUrl = _lifecycleRef.read(relayConfigProvider).baseUrl;
     _desiredLiveChannelIds = channelIds;
-    _coverageRouter?.setBundleRooms(channelIds);
+    _coverageRouter
+      ?..setQuietRooms(_quietLiveChannelIds)
+      ..setBundleRooms(_liveChunkRoomIds);
     // A changed filter may be admitted, but an unchanged terminal rejection
     // cannot recover just because a timer or manual refresh fetched it again.
     // Drop obsolete keys so this quarantine stays bounded by desired chunks.
     final desiredKeys = chunkChannelIdsForLiveSubscriptions(
-      channelIds,
+      _liveChunkRoomIds,
     ).map(_liveChunkKey).toSet();
     _terminallyClosedLiveChunks.retainAll(desiredKeys);
     final subscriptionVersion = ++_subscriptionVersion;
@@ -78,7 +93,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     if (_lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl) return;
 
     final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
+      _liveChunkRoomIds,
     );
     // Keep existing coverage while replacements are installed. Cleanup runs
     // when this generation settles, and retains old coverage on failures.
@@ -142,7 +157,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 SessionStatus.connected ||
             _lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl ||
             _subscriptionRelayBaseUrl != relayBaseUrl ||
-            !chunk.every(_desiredLiveChannelIds.contains)) {
+            !chunk.every(_liveChunkRoomIds.contains)) {
           _liveSubscriptionsByChunk.remove(chunkKey);
           unsubscribe();
           return;
@@ -193,7 +208,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     // transient/rate-limit retries have their own backoff. Do not turn a
     // terminal rejection into a fresh membership/history/REQ loop here.
     if (chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
+      _liveChunkRoomIds,
     ).any((chunk) => _liveChunkKey(chunk) == chunkKey)) {
       _terminallyClosedLiveChunks.add(chunkKey);
     }
@@ -204,7 +219,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
 
   void _removeUndesiredLiveChunks() {
     final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
+      _liveChunkRoomIds,
     );
     final desiredKeys = desiredChunks.map(_liveChunkKey).toSet();
     final retainedKeys = <String>{...desiredKeys};
@@ -265,7 +280,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   void _clearLiveSubscriptions() {
     _subscriptionVersion++;
     _desiredLiveChannelIds = const {};
-    _coverageRouter?.setBundleRooms(const {});
+    _coverageRouter
+      ?..setQuietRooms(const {})
+      ..setBundleRooms(const {});
     _terminallyClosedLiveChunks.clear();
     _clearRetainedLiveChunks();
     _subscriptionRelayBaseUrl = null;

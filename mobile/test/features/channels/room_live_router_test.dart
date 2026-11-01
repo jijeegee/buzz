@@ -218,6 +218,113 @@ void main() {
     test('the default wait is 1.5 s', () {
       expect(roomCoverageWaitLimit, const Duration(milliseconds: 1500));
     });
+
+    test('a quiet room waits for its chunk', () async {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setQuietRooms({'q'})
+        ..setBundleRooms({'a', 'q'});
+      var done = false;
+      unawaited(router.whenRoomCovered('q').then((_) => done = true));
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isFalse);
+      router.setCoveredRooms({'a', 'q'});
+      await Future<void>.delayed(Duration.zero);
+      expect(done, isTrue);
+    });
+  });
+
+  group('quiet rooms', () {
+    test("a quiet room's events reach quiet listeners with their room; "
+        'summaries and thread names do not', () {
+      final router = RoomLiveRouter(_FakeRoomRelay().open)
+        ..setQuietRooms({'q'})
+        ..setBundleRooms({'a', 'q'})
+        ..setCoveredRooms({'a', 'q'});
+      final quiet = <(String, String)>[];
+      final metadata = <String>[];
+      router
+        ..listenQuiet((event, roomId) => quiet.add((event.id, roomId)))
+        ..listenMetadata((event) => metadata.add(event.id));
+      const chunk = {'a', 'q'};
+      router
+        ..routeBundleEvent(_event('row-q', room: 'q'), chunk)
+        ..routeBundleEvent(_event('row-q', room: 'q'), chunk)
+        // An h-less reaction in a quiet room reaches the quiet listener.
+        ..routeBundleEvent(_reaction('like', target: 'row-q'), chunk)
+        ..routeBundleEvent(
+          _event('sum', room: 'q', kind: EventKind.channelThreadSummary),
+          chunk,
+        )
+        ..routeBundleEvent(
+          _event('name', room: 'q', kind: EventKind.threadName),
+          chunk,
+        )
+        ..routeBundleEvent(_event('row-a', room: 'a'), chunk);
+      expect(quiet, [('row-q', 'q'), ('like', 'q')]);
+      expect(metadata, ['name']);
+      expect(router.isQuietRoom('q'), isTrue);
+      expect(router.isQuietRoom('a'), isFalse);
+    });
+
+    test('a passive room listener opens no REQ and hears the bundle', () {
+      final relay = _FakeRoomRelay();
+      final router = RoomLiveRouter(relay.open)..setBundleRooms({'a'});
+      final heard = <String>[];
+      final stop = router.listenRoomEvents('b', (e) => heard.add(e.id));
+      expect(relay.opened, isEmpty);
+      router.routeBundleEvent(
+        _event('joined', room: 'b', kind: EventKind.systemMessage),
+        {'a', 'b'},
+      );
+      stop();
+      router.routeBundleEvent(_event('later', room: 'b'), {'a', 'b'});
+      expect(heard, ['joined']);
+      expect(relay.opened, isEmpty);
+    });
+
+    test("backfill delivers a quiet room's missed events once", () {
+      var now = 1000;
+      final router =
+          RoomLiveRouter(_FakeRoomRelay().open, nowSeconds: () => now)
+            ..setQuietRooms({'q'})
+            ..setBundleRooms({'a', 'q'});
+      now = 2000;
+      final quiet = <String>[];
+      router
+        ..listenQuiet((event, _) => quiet.add(event.id))
+        ..routeBundleEvent(_event('live', room: 'q', createdAt: 1500), {
+          'a',
+          'q',
+        });
+      final delivered = router.routeQuietBackfill([
+        _event('live', room: 'q', createdAt: 1500),
+        _event('missed', room: 'q', createdAt: 1600),
+        _event('missed', room: 'q', createdAt: 1600),
+        _event('listed', room: 'a', createdAt: 1600),
+      ]);
+      expect(delivered.map((e) => e.id), ['missed']);
+      expect(quiet, ['live', 'missed']);
+    });
+
+    test("backfill never replays a room's past from before it was carried", () {
+      var now = 10000;
+      final router = RoomLiveRouter(
+        _FakeRoomRelay().open,
+        nowSeconds: () => now,
+      )..setBundleRooms({'a'});
+      now = 20000;
+      // Hidden now: the DM enters the bundle as a quiet room directly.
+      router
+        ..setQuietRooms({'q'})
+        ..setBundleRooms({'a', 'q'});
+      expect(router.carriedSince('q'), 20000);
+      expect(router.carriedSince('a'), 10000);
+      final delivered = router.routeQuietBackfill([
+        _event('ten-minutes-old', room: 'q', createdAt: 20000 - 600),
+        _event('skewed', room: 'q', createdAt: 20000 - 5),
+      ]);
+      expect(delivered.map((e) => e.id), ['skewed']);
+    });
   });
 }
 
@@ -226,10 +333,11 @@ NostrEvent _event(
   String? room,
   int kind = EventKind.streamMessage,
   List<List<String>>? tags,
+  int createdAt = 100,
 }) => NostrEvent(
   id: id,
   pubkey: 'b' * 64,
-  createdAt: 100,
+  createdAt: createdAt,
   kind: kind,
   tags:
       tags ??

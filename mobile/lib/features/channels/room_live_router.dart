@@ -35,7 +35,15 @@ const _seenEventLimit = 20000;
 /// Event id → room, so h-less reactions and removals find their room.
 const _eventRoomLimit = 50000;
 
+/// How far before a room started riding the bundle a backfilled event may
+/// be, for clock skew between the relay stamp and this device.
+const quietBackfillSkewSeconds = 5;
+
 typedef RoomLiveListener = void Function(NostrEvent event);
+
+/// Gets a quiet room's event and the room it belongs to (h-less reactions
+/// and removals carry no `h` tag).
+typedef QuietRoomListener = void Function(NostrEvent event, String roomId);
 
 /// Opens one room's own live subscription and returns its cleanup.
 typedef OpenRoomLiveSubscription =
@@ -57,6 +65,9 @@ typedef OpenRoomLiveSubscription =
 ///   told is dropped: it references nothing on screen.
 /// - Thread summaries (39005) reach room listeners only.
 /// - Room metadata ([roomMetadataKinds]) reaches metadata listeners only.
+/// - Quiet rooms (hidden DMs) ride the bundle without being listed: their
+///   events reach room listeners and quiet listeners, never the all-rooms
+///   consumers (the chunk owner keeps those to listed rooms).
 ///
 /// The bundle covers member rooms once their chunk is installed. A room opened
 /// before that (cold start) or without membership (a browsed open channel)
@@ -65,14 +76,23 @@ class RoomLiveRouter {
   RoomLiveRouter(
     this._openRoomSubscription, {
     Duration coverageWaitLimit = roomCoverageWaitLimit,
-  }) : _coverageWaitLimit = coverageWaitLimit;
+    int Function()? nowSeconds,
+  }) : _coverageWaitLimit = coverageWaitLimit,
+       _nowSeconds = nowSeconds ?? _wallSeconds;
 
   final OpenRoomLiveSubscription _openRoomSubscription;
   final Duration _coverageWaitLimit;
+  final int Function() _nowSeconds;
   final _rooms = <String, _ListenedRoom>{};
   Set<String> _coveredRooms = const {};
   Set<String> _bundleRooms = const {};
+  Set<String> _quietRooms = const {};
+
+  /// Room → when it started riding the bundle (bundle ∪ quiet), in seconds.
+  final _carriedSince = <String, int>{};
   final _metadataListeners = <RoomLiveListener>[];
+  final _quietListeners = <QuietRoomListener>[];
+  final _passiveListeners = <String, List<RoomLiveListener>>{};
   final _coverWaiters = <_CoverWaiter>[];
   final _seen = <String>{};
   final _eventRooms = <String, String>{};
@@ -88,12 +108,69 @@ class RoomLiveRouter {
     _settleCoverWaiters();
   }
 
-  /// Rooms the bundle is meant to carry (member rooms). Empty means not known
-  /// yet (cold start, signed out).
+  /// Rooms the bundle is meant to carry (member and quiet rooms). Empty means
+  /// not known yet (cold start, signed out).
   void setBundleRooms(Iterable<String> roomIds) {
     _bundleRooms = Set.unmodifiable(roomIds);
+    _trackCarried();
     _settleCoverWaiters();
   }
+
+  /// Rooms the bundle carries without listing them (hidden DMs). Their events
+  /// also reach [listenQuiet] listeners.
+  void setQuietRooms(Iterable<String> roomIds) {
+    _quietRooms = Set.unmodifiable(roomIds);
+    _trackCarried();
+    _settleCoverWaiters();
+  }
+
+  bool isQuietRoom(String roomId) => _quietRooms.contains(roomId);
+
+  /// Listens to quiet rooms' events (thread summaries and metadata
+  /// excluded). Returns the function that stops listening.
+  void Function() listenQuiet(QuietRoomListener listener) {
+    _quietListeners.add(listener);
+    return () => _quietListeners.remove(listener);
+  }
+
+  /// Hears [roomId]'s bundle events without asking for the room: opens no
+  /// subscription and does not make the room wanted. Returns the function
+  /// that stops listening.
+  void Function() listenRoomEvents(String roomId, RoomLiveListener listener) {
+    final listeners = _passiveListeners.putIfAbsent(roomId, () => []);
+    listeners.add(listener);
+    return () {
+      listeners.remove(listener);
+      if (listeners.isEmpty &&
+          identical(_passiveListeners[roomId], listeners)) {
+        _passiveListeners.remove(roomId);
+      }
+    };
+  }
+
+  /// Delivers quiet rooms' events read from history (after a reconnect) as
+  /// if they came live: once per event, through the same duplicate check.
+  /// Events older than the room's start on the bundle (less
+  /// [quietBackfillSkewSeconds]) are dropped, so a room that just turned
+  /// quiet does not replay its past. Returns the events delivered.
+  List<NostrEvent> routeQuietBackfill(Iterable<NostrEvent> events) {
+    final delivered = <NostrEvent>[];
+    for (final event in events) {
+      final roomId = event.channelId;
+      if (roomId == null || !_quietRooms.contains(roomId)) continue;
+      if (_seen.contains(event.id)) continue;
+      final since = _carriedSince[roomId];
+      if (since != null && event.createdAt < since - quietBackfillSkewSeconds) {
+        continue;
+      }
+      _deliver(event, roomId);
+      delivered.add(event);
+    }
+    return delivered;
+  }
+
+  /// When [roomId] started riding the bundle, or null when it does not.
+  int? carriedSince(String roomId) => _carriedSince[roomId];
 
   /// Listens to room metadata ([roomMetadataKinds]) of every room this router
   /// sees: bundle chunks and the rooms' own subscriptions. Returns the
@@ -161,6 +238,8 @@ class RoomLiveRouter {
     }
     _rooms.clear();
     _metadataListeners.clear();
+    _quietListeners.clear();
+    _passiveListeners.clear();
     for (final waiter in List.of(_coverWaiters)) {
       _settle(waiter);
     }
@@ -170,7 +249,18 @@ class RoomLiveRouter {
     if (_coveredRooms.contains(roomId)) return true;
     final room = _rooms[roomId];
     if (room != null) return room.ownUnsubscribe != null;
-    return _bundleRooms.isNotEmpty && !_bundleRooms.contains(roomId);
+    return _bundleRooms.isNotEmpty &&
+        !_bundleRooms.contains(roomId) &&
+        !_quietRooms.contains(roomId);
+  }
+
+  void _trackCarried() {
+    final carried = {..._bundleRooms, ..._quietRooms};
+    _carriedSince.removeWhere((roomId, _) => !carried.contains(roomId));
+    final now = _nowSeconds();
+    for (final roomId in carried) {
+      _carriedSince.putIfAbsent(roomId, () => now);
+    }
   }
 
   void _settleCoverWaiters() {
@@ -217,9 +307,20 @@ class RoomLiveRouter {
       return;
     }
     final room = _rooms[roomId];
-    if (room == null) return;
-    for (final entry in List.of(room.listeners)) {
-      entry.listener(event);
+    if (room != null) {
+      for (final entry in List.of(room.listeners)) {
+        entry.listener(event);
+      }
+    }
+    for (final listener in List.of(_passiveListeners[roomId] ?? const [])) {
+      listener(event);
+    }
+    if (event.kind == EventKind.channelThreadSummary ||
+        !_quietRooms.contains(roomId)) {
+      return;
+    }
+    for (final listener in List.of(_quietListeners)) {
+      listener(event, roomId);
     }
   }
 
@@ -284,6 +385,8 @@ class RoomLiveRouter {
     unsubscribe?.call();
   }
 }
+
+int _wallSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
 
 void _remember(Set<String> seen, String id, int limit) {
   seen.add(id);
