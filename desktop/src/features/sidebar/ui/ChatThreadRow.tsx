@@ -1,6 +1,8 @@
 import { CircleCheck, Pin } from "lucide-react";
+import { useQueryClient } from "@tanstack/react-query";
 
 import {
+  chatRowRootEvent,
   chatThreadTitle,
   formatChatCount,
   type ChatListRow,
@@ -15,6 +17,7 @@ import {
   ContextMenuTrigger,
 } from "@/shared/ui/context-menu";
 import { SidebarMenuItem } from "@/shared/ui/sidebar";
+import { rememberRouteEvents } from "@/features/messages/lib/routeEventCache";
 import { ConversationLetterAvatar } from "@/features/home/ui/ConversationLetterAvatar";
 import type { ActiveChannelTurnSummary } from "@/features/agents/activeAgentTurnsStore";
 import { ChatConversationRow } from "./ChatRowLines";
@@ -64,6 +67,7 @@ export function ChatThreadRow({
   working?: ActiveChannelTurnSummary;
 }) {
   const t = useT();
+  const queryClient = useQueryClient();
   const rootId = row.root_id ?? row.key;
   const title = chatThreadTitle(row);
   const place = isDm ? channelLabel : `${channelLabel}`;
@@ -142,7 +146,12 @@ export function ChatThreadRow({
         dimmed={dimmed}
         indent={indent}
         isActive={isActive}
-        onSelect={() => onOpenThread(row.channel_id, rootId)}
+        onSelect={() => {
+          // The thread draws its root at once instead of asking the relay.
+          const root = chatRowRootEvent(row);
+          if (root) rememberRouteEvents(queryClient, [root]);
+          onOpenThread(row.channel_id, rootId);
+        }}
         preview={preview}
         title={
           <>

@@ -21,6 +21,7 @@ import { MessageQuoteScope } from "@/features/messages/ui/messageQuoteScope";
 import { useComposerQuotes } from "@/features/channels/ui/useComposerQuotes";
 import type { SendPreview } from "@/features/messages/hooks";
 import { MessageThreadPanelSkeleton } from "@/features/messages/ui/MessageThreadPanelSkeleton";
+import { isRootStandIn } from "@/features/messages/lib/threadRootResolve";
 import { ThreadRepliesErrorCard } from "@/features/messages/ui/MessageThreadReplyState";
 import {
   MessageTimeline,
@@ -463,10 +464,14 @@ export const ChannelPane = React.memo(function ChannelPane({
       profiles,
       threadSummaries,
     });
+  // A stand-in top row (root not found yet, or deleted) has no reactions.
+  const realThreadHead = isRootStandIn(threadHeadMessage)
+    ? null
+    : threadHeadMessage;
   useRenderScopedReactionHydration({
     activeChannel,
     mainTimelineEntries,
-    threadHeadMessage,
+    threadHeadMessage: realThreadHead,
     threadMessages,
   });
   const activeVideoReviewCommentSender = activeChannel?.archivedAt
@@ -476,8 +481,8 @@ export const ChannelPane = React.memo(function ChannelPane({
     const messagesById = new Map(
       messages.map((message) => [message.id, message]),
     );
-    if (threadHeadMessage) {
-      messagesById.set(threadHeadMessage.id, threadHeadMessage);
+    if (realThreadHead) {
+      messagesById.set(realThreadHead.id, realThreadHead);
     }
     for (const message of threadAllMessages) {
       messagesById.set(message.id, message);
@@ -500,7 +505,7 @@ export const ChannelPane = React.memo(function ChannelPane({
     onToggleReaction,
     profiles,
     threadAllMessages,
-    threadHeadMessage,
+    realThreadHead,
   ]);
   const isOverlay = useIsThreadPanelOverlay();
   const useSplitAuxiliaryPane = !isSinglePanelView && !isOverlay;

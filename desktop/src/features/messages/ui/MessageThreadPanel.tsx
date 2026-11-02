@@ -21,6 +21,7 @@ import { canReplyInThread } from "@/features/messages/lib/threadDepth";
 import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { handleTimelineMentionCopy } from "@/features/messages/lib/timelineMentionCopy";
 import type { TimelineMessage } from "@/features/messages/types";
+import { isRootStandIn } from "@/features/messages/lib/threadRootResolve";
 import type { VideoReviewPresentation } from "@/features/messages/lib/videoReviewContext";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type { Channel, RelayEvent } from "@/shared/api/types";
@@ -606,10 +607,13 @@ export function MessageThreadPanel({
     "padding",
     settleAtBottomAfterLayout,
   );
+  // A root not found yet, or deleted: its top row stands in, and what needs
+  // the root itself (its actions, send to group, show in group) is hidden.
+  const rootStandIn = isRootStandIn(threadHead);
   const stableSendToChannel = useStableSendToChannel(
     channelId,
     threadHead,
-    onSendToChannel,
+    rootStandIn ? undefined : onSendToChannel,
   );
   if (!threadHead) {
     return null;
@@ -622,7 +626,8 @@ export function MessageThreadPanel({
         threadRootId={threadGoalRootId(threadHead)}
       />
     ) : null;
-  const showInChannelButton = onShowInChannel ? (
+  const showInChannelButton =
+    onShowInChannel && !rootStandIn ? (
     <Tooltip>
       <TooltipTrigger asChild>
         <Button
@@ -673,6 +678,27 @@ export function MessageThreadPanel({
         {!showThreadStart ? null : isHuddleTranscript ? (
           <div className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-2 pt-4")}>
             <HuddleTranscriptIntro />
+          </div>
+        ) : rootStandIn ? (
+          <div
+            className={cn(THREAD_PANEL_MESSAGE_GUTTER_CLASS, "pb-1 pt-2")}
+            data-testid="message-thread-head"
+          >
+            {threadHead.rootDeleted ? (
+              <p
+                className="px-3 py-1 text-sm italic text-muted-foreground"
+                data-testid="message-thread-root-deleted"
+              >
+                {t("messages.thread.rootDeleted")}
+              </p>
+            ) : (
+              <p
+                className="truncate px-3 py-1 text-sm font-medium text-foreground"
+                data-testid="message-thread-root-placeholder"
+              >
+                {threadHead.author}
+              </p>
+            )}
           </div>
         ) : (
           <div
@@ -1108,7 +1134,7 @@ export function MessageThreadPanel({
               key={`${channelId}:${threadHead.id}`}
               channelId={channelId}
               threadId={threadHead.id}
-              disabled={disabled}
+              disabled={disabled || rootStandIn}
               headerProps={{
                 headerActions: goalHeaderChip,
                 headerLeading,

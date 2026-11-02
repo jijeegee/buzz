@@ -136,3 +136,27 @@ test("a goal's main-timeline message link only jumps; its reply panel stays shut
   );
   await harness.unmount();
 });
+
+test("a link naming the reply's thread opens it at once, then expands to the reply", async () => {
+  // Notification, search, quote and goal links carry threadRootId.
+  const harness = await mount({
+    targetMessageId: REPLY_ID,
+    targetThreadRootId: ROOT_ID,
+    timelineMessages: [],
+  });
+  assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
+  assert.deepEqual(harness.calls.threadScrollTargetId, [REPLY_ID]);
+  assert.equal(harness.calls.expandedReplyIds.length, 1);
+  assert.equal(harness.calls.expandedReplyIds[0].size, 0);
+
+  await harness.render({
+    targetMessageId: REPLY_ID,
+    targetThreadRootId: ROOT_ID,
+    timelineMessages: [root, reply],
+  });
+  // Not reopened; the branch down to the reply fills in.
+  assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
+  assert.equal(harness.calls.expandedReplyIds.length, 2);
+  assert.deepEqual(harness.calls.threadScrollTargetId, [REPLY_ID, REPLY_ID]);
+  await harness.unmount();
+});

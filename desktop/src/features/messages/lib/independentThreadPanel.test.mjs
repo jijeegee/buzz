@@ -184,3 +184,90 @@ test("does not resurrect a deleted head reaction carried in the channel window",
   const result = head([root, reaction, deletion], []);
   assert.equal(result?.reactions, undefined);
 });
+
+// Opening on the root id alone (docs/message-sync.md#opening-a-thread-from-its-root-id).
+const { buildRootOpenedThreadPanel } = await import("./independentThreadPanel.ts");
+
+function rootOpened(rootState, channelEvents, replyEvents) {
+  return buildRootOpenedThreadPanel(
+    { channelId: CHANNEL, root: rootState, placeholderTitle: "Launch plan" },
+    channelEvents,
+    replyEvents,
+    ROOT_ID,
+    ROOT_ID,
+    new Set(),
+    null,
+    AUTHOR,
+    null,
+    undefined,
+    undefined,
+    new Map(),
+    new Map(),
+    null,
+    undefined,
+  );
+}
+
+const replyEvent = () =>
+  contentEvent(REPLY_ID, "a reply", [
+    ["e", ROOT_ID, "", "root"],
+    ["e", ROOT_ID, "", "reply"],
+  ]);
+
+test("a root not found yet draws a placeholder top row above the replies", () => {
+  const panel = rootOpened({ event: null, deleted: false }, [], [replyEvent()]);
+  assert.equal(panel.threadHead?.id, ROOT_ID);
+  assert.equal(panel.threadHead?.rootPlaceholder, true);
+  assert.equal(panel.threadHead?.author, "Launch plan");
+  assert.deepEqual(
+    panel.visibleReplies.map((entry) => entry.message.id),
+    [REPLY_ID],
+  );
+});
+
+test("a found root replaces the placeholder", () => {
+  const root = contentEvent(ROOT_ID, "two PRs");
+  const panel = rootOpened({ event: root, deleted: false }, [], [replyEvent()]);
+  assert.equal(panel.threadHead?.body, "two PRs");
+  assert.equal(panel.threadHead?.rootPlaceholder, undefined);
+});
+
+test("a deleted root keeps its replies under a deleted row", () => {
+  const root = contentEvent(ROOT_ID, "two PRs");
+  const panel = rootOpened(
+    { event: root, deleted: false },
+    [root, deletionEvent(DELETION_ID, ROOT_ID)],
+    [replyEvent()],
+  );
+  assert.equal(panel.threadHead?.rootDeleted, true);
+  assert.equal(panel.threadHead?.body, "");
+  assert.deepEqual(
+    panel.visibleReplies.map((entry) => entry.message.id),
+    [REPLY_ID],
+  );
+});
+
+test("another author's deletion keeps the root", () => {
+  const root = contentEvent(ROOT_ID, "two PRs");
+  const forged = { ...deletionEvent(DELETION_ID, ROOT_ID), pubkey: "c".repeat(64) };
+  const panel = rootOpened({ event: root, deleted: false }, [root, forged], []);
+  assert.equal(panel.threadHead?.body, "two PRs");
+  assert.equal(panel.threadHead?.rootDeleted, undefined);
+});
+
+test("a live removal (9005) of an unloaded root draws the deleted row", () => {
+  const removal = {
+    ...deletionEvent(DELETION_ID, ROOT_ID),
+    kind: 9005,
+    pubkey: "c".repeat(64),
+  };
+  const panel = rootOpened({ event: null, deleted: false }, [removal], [replyEvent()]);
+  assert.equal(panel.threadHead?.rootDeleted, true);
+  assert.equal(panel.visibleReplies.length, 1);
+});
+
+test("a stored deletion draws the deleted row", () => {
+  const panel = rootOpened({ event: null, deleted: true }, [], []);
+  assert.equal(panel.threadHead?.rootDeleted, true);
+  assert.equal(panel.threadHead?.author, "Launch plan");
+});

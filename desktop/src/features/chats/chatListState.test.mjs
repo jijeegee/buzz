@@ -499,3 +499,22 @@ test("a pin change keeps the same chat list account, an account switch does not"
     false,
   );
 });
+
+test("a thread row hands over its root only as a whole signed event", async () => {
+  const { chatRowRootEvent } = await import("./chatListState.ts");
+  const root = {
+    id: "r1",
+    pubkey: "p",
+    kind: 9,
+    created_at: 1,
+    content: "hi",
+    tags: [["h", "room"]],
+    sig: "f".repeat(128),
+  };
+  const thread = { type: "thread", key: "r1", root_id: "r1", at: 1, root };
+  assert.deepEqual(chatRowRootEvent(thread), root);
+  assert.equal(chatRowRootEvent({ ...thread, root: { ...root, sig: "" } }), null);
+  assert.equal(chatRowRootEvent({ ...thread, root: { ...root, id: "other" } }), null);
+  assert.equal(chatRowRootEvent({ ...thread, root: undefined }), null);
+  assert.equal(chatRowRootEvent({ ...thread, type: "room" }), null);
+});

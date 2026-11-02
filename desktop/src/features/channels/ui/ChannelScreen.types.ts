@@ -47,6 +47,11 @@ export type ChannelScreenProps = {
   /** The route's target events are still being fetched. */
   isRouteTargetResolving?: boolean;
   targetMessageId: string | null;
+  /**
+   * The thread `targetMessageId` is a reply in, when the link names it
+   * (notifications, search, quotes, goals): the thread opens on it at once.
+   */
+  targetThreadRootId?: string | null;
   /** Exact clicked result id, retained after route target cleanup. */
   targetSearchMessageId?: string;
   /** Search text to highlight within the opened result message. */

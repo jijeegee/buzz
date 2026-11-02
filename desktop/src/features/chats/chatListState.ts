@@ -35,7 +35,10 @@ const THREAD_MARKER_TAGS: ReadonlySet<string> = new Set([
 export type ChatListEvent = Pick<
   RelayEvent,
   "id" | "pubkey" | "created_at" | "kind" | "tags" | "content"
->;
+> & {
+  /** The relay sends it (a zero sentinel for server-stamped rows). */
+  sig?: string;
+};
 
 /** One relay `chat_list` row: a room main timeline or one live thread. */
 export type ChatListRow = {
@@ -482,6 +485,26 @@ export function orderChatRows(
     ...sorted.filter(isPinned),
     ...sorted.filter((row) => !isPinned(row)),
   ];
+}
+
+/**
+ * A thread row's root as a full signed event, so opening the thread draws it
+ * at once (docs/message-sync.md#opening-a-thread-from-its-root-id); null when
+ * the row has none (a deleted root) or it is not a whole event.
+ */
+export function chatRowRootEvent(row: ChatListRow): RelayEvent | null {
+  const root = row.root;
+  if (
+    row.type !== "thread" ||
+    !root ||
+    root.id !== (row.root_id ?? row.key) ||
+    typeof root.sig !== "string" ||
+    root.sig.length !== 128 ||
+    !Array.isArray(root.tags)
+  ) {
+    return null;
+  }
+  return { ...root, sig: root.sig };
 }
 
 /** A thread row's title: its name, else the root's first line, trimmed. */
