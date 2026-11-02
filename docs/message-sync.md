@@ -841,6 +841,49 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
   `hi ≥ L`. A quiet thread is certain this way without its root stored.
 - **Written first:** as for rooms (the paint read does not wait).
 
+### Opening a thread from its root id
+
+A thread row in Chats opens the thread page with only the root id (plus the
+row's thread name, root preview and archived flag). The page draws at once,
+also offline; nothing on it waits for the root, the channel timeline or the
+relay. Cases: `test-fixtures/thread-open-root.json`.
+
+- **Root, in order:** passed in, the room's loaded rows (timeline or a
+  deep-link copy), the store by id (pushed rows included; a removal (9005) or
+  the author's deletion (5) in the store marks it deleted), the relay. The
+  relay is asked over `/query` with two filters in one request: the root by
+  id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
+  replaces a stored copy. The root fills only the top bubble, agent pins and
+  the thread menu; until it is found a thin row shows the thread name there.
+- **Asked again on reconnect:** a failed, timed-out or empty answer is
+  unresolved, and the relay is asked again each time the session reconnects
+  until it answers with the root or a deletion. The open does not start the
+  room's top-level history load.
+- **Deleted only on proof:** the root counts as deleted only on an explicit
+  deletion (stored, live, or in the relay's answer). Then the deleted row
+  replaces the root and the replies stay. A failure or an empty answer never
+  means deleted, and a thread never falls back to the channel timeline.
+- **Replies:** the stored newest replies draw at once
+  ([Opening a thread from the store](#opening-a-thread-from-the-store)),
+  pushed rows included until the relay's copy replaces them. The room's
+  message provider is created before the thread query, so own replies still
+  awaiting relay proof settle (that query takes the complete scan).
+- **Composer:** replies are tagged with the root id only, so a found root is
+  not needed to send. A room built from the Chats row (channel list not yet
+  loaded) stands in for display only: the composer shows a loading line until
+  the listed room or its details arrive ([Launch snapshots](#launch-snapshots)).
+- **Other entry points** (notifications, goals, search, drafts) still open
+  through the channel route's thread placeholder; once its by-id fetch
+  settles without the root (failed, timed out, empty), it hands the thread off
+  by id instead of showing the channel. A late read state that reruns the
+  fetch does not count the replaced run. Forum rooms keep the channel route.
+- **History REQs wait for the socket:** a WebSocket history REQ made while
+  the socket is down or before AUTH is held and sent on connect (its timeout
+  still runs from when it was asked), not dropped.
+- **Desktop:** the same wait today (ChannelRouteScreen fetches the root by id
+  from the relay, `useThreadTargetSync` falls back to the channel on failure,
+  and there is no store read by id); to follow.
+
 ### Launch snapshots
 
 Desktop keeps small snapshots of what the first screen shows in the same
@@ -1099,11 +1142,13 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   mark, and do not count as written for a list fetched meanwhile (it can
   still drop their room). A full queue drops them without marking the file
   lossy.
-- **Lists only:** rooms and threads do not draw pushed rows until the
-  relay's copy arrives (`pushed_rows` marks them; the relay copy or a purge
-  clears the mark). The store paint has no gap marker to put between
-  pushed rows and the covered head, so pushed rows show in the lists only
-  until catch-up.
+- **Lists, and thread paints on mobile:** rooms do not draw pushed rows
+  until the relay's copy arrives (`pushed_rows` marks them; the relay copy
+  or a purge clears the mark). The store paint has no gap marker to put
+  between pushed rows and the covered head, so pushed rows show in the
+  lists only until catch-up. A mobile thread's store paint draws them until
+  the relay's page replaces them (a first load always asks the relay);
+  a certain thread read still leaves them out.
 - **Folds:** only the events the store accepted, and only for rooms the
   channel list shows as listed (member, not archived, not a hidden DM; the
   list already leaves hidden DMs out). The channel list moves those rooms'
@@ -1177,9 +1222,10 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   the NSE fetched it shows in the lists until catch-up replaces them or the
   relay keeps a deletion record. Rooms not in the kept list get no pushed
   rows.
-- **Pushed rows in a room:** a room or thread draws them only once the
-  relay's copy arrives (there is no gap marker to draw them above the
-  covered head).
+- **Pushed rows in a room:** a room draws them only once the relay's copy
+  arrives (there is no gap marker to draw them above the covered head). A
+  mobile thread draws them in its store paint until the relay's page
+  replaces them ([Opening a thread from its root id](#opening-a-thread-from-its-root-id)).
 - **Push inbox trust (N7):** the app checks a pushed event's shape, not its
   signature: it relies on the NSE's verification and on the App Group's
   file protection.
@@ -1262,7 +1308,11 @@ that position.
   the top), where the reader left the thread, the newest reply. The reading
   position is kept per thread under `<channel id>/<root id>`. Desktop pages
   back for a reply in an older page (the same limits as a room) before the
-  replies are drawn.
+  replies are drawn. Mobile keeps a thread's list hidden while it opens for
+  at most about 1.2 s, the 1 s read state wait included (also when the
+  target's time is not known yet); then the replies at hand show at the
+  newest, and a position found later moves the list once, only if the reader
+  has not scrolled meanwhile.
 - **Where positions are kept:** per server and account. Desktop keys them by
   the relay's `https://host[:port]` origin (the store files' server identity)
   and account; a record from before this moves once to the first server the
