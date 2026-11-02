@@ -1,4 +1,4 @@
-package app.kuzz.mobile
+package app.kuzz.mobile.devicekey
 
 import android.content.Context
 import android.content.pm.PackageManager
@@ -18,6 +18,7 @@ import java.security.PrivateKey
 import java.security.Signature
 import java.security.interfaces.ECPublicKey
 import java.security.spec.ECGenParameterSpec
+import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
@@ -27,13 +28,16 @@ import java.util.concurrent.Executors
  * is removed with the app. Flutter only receives the public key and
  * signatures (DER, SHA256withECDSA); signing runs off the main thread
  * because StrongBox is slow.
+ *
+ * One instance serves one Flutter engine (the app's, or the one that runs
+ * the background push handler). All instances share one worker thread, so
+ * two engines can never both find the key missing and both create it.
  */
 internal class DeviceKeyPlugin(
     private val context: Context,
     messenger: BinaryMessenger,
 ) {
     private val channel = MethodChannel(messenger, CHANNEL_NAME)
-    private val worker = Executors.newSingleThreadExecutor()
     private val mainHandler = Handler(Looper.getMainLooper())
 
     init {
@@ -54,8 +58,8 @@ internal class DeviceKeyPlugin(
     }
 
     fun dispose() {
+        // The shared worker stays up for the other engines.
         channel.setMethodCallHandler(null)
-        worker.shutdown()
     }
 
     /**
@@ -75,7 +79,7 @@ internal class DeviceKeyPlugin(
         try {
             worker.execute(task)
         } catch (error: Throwable) {
-            // Worker already shut down (engine detached): answer anyway.
+            // The worker refused the task: answer anyway.
             reply(result, Result.failure(error))
         }
     }
@@ -158,6 +162,9 @@ internal class DeviceKeyPlugin(
 
     companion object {
         const val CHANNEL_NAME = "kuzz/device_key"
+
+        /** Process-wide: Keystore work of every engine runs here, in order. */
+        private val worker: ExecutorService = Executors.newSingleThreadExecutor()
         private const val KEYSTORE = "AndroidKeyStore"
         private const val ALIAS = "kuzz.device-key.v1"
 

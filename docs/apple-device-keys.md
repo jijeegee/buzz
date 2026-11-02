@@ -2,7 +2,7 @@
 
 Device-bound keys keep each install's P-256 device key in hardware where the
 platform has it: the TPM on Windows (`crates/kuzz-device-key/src/tpm.rs`), the
-Android Keystore (`mobile/android/.../DeviceKeyPlugin.kt`), and the Secure
+Android Keystore (`mobile/packages/kuzz_device_key/.../DeviceKeyPlugin.kt`), and the Secure
 Enclave on Apple platforms (this note). The relay records the result as
 `device_key_kind = hardware | software`.
 

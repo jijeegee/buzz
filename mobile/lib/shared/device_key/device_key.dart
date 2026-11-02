@@ -46,7 +46,8 @@ class DeviceKeyInfo {
 }
 
 /// [DeviceKey] backed by the `kuzz/device_key` platform channel (Android
-/// `DeviceKeyPlugin.kt`, iOS `DeviceKeyPlugin.swift`). Both answer
+/// `DeviceKeyPlugin.kt` in the `kuzz_device_key` package, registered in
+/// every engine; iOS `DeviceKeyPlugin.swift`). Both answer
 /// `getOrCreate` with `publicKey` (65-byte SEC1 uncompressed) and `hardware`
 /// (bool), and `sign` with a DER ECDSA P-256/SHA-256 signature.
 class PlatformDeviceKey implements DeviceKey {

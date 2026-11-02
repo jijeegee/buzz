@@ -1,0 +1,22 @@
+name: kuzz_device_key
+description: >-
+  Android Keystore keys of the Kuzz app (this install's device key), as a
+  plugin so every Flutter engine registers it, including the engine that
+  runs the background push handler.
+publish_to: 'none'
+version: 0.0.1
+
+environment:
+  sdk: ^3.11.4
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: app.kuzz.mobile.devicekey
+        pluginClass: KuzzDeviceKeyPlugin
