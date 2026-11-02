@@ -262,6 +262,46 @@
    "expect": {"accept": false}
   },
   {
+   "name": "a room seq written as -0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":-0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as -0 in a later part is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {"kind": 24220, "content": "{\"rooms\":{\"room-b\":-0}}"}
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "-0 inside a string is not a number",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e-0\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-0\":1,\"-0\":0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e-0",
+    "rooms": {"room-0": 1, "-0": 0},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
    "name": "unknown mode",
    "events": [
     {

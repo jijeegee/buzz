@@ -19,6 +19,43 @@ export 'user_stream_counters.dart';
 
 part 'user_stream_live.dart';
 
+/// A JSON number token read as an integer: digits only.
+final _plainInteger = RegExp(r'^(0|[1-9][0-9]*)$');
+
+/// Decodes snapshot content with every number not written as plain digits
+/// (`1.0`, `1e0`, `-0`, `-1`) read as `null`, so an integer field holding
+/// one is refused, as desktop and the store's serde check refuse it
+/// (docs/message-sync.md#snapshot). `jsonDecode` alone reads `-0` as int 0.
+/// Throws [FormatException] when [text] is not JSON.
+Object? parsePlainIntegers(String text) {
+  jsonDecode(text);
+  final out = StringBuffer();
+  var index = 0;
+  while (index < text.length) {
+    final char = text[index];
+    if (char == '"') {
+      var end = index + 1;
+      while (end < text.length && text[end] != '"') {
+        end += text[end] == r'\' ? 2 : 1;
+      }
+      out.write(text.substring(index, min(end + 1, text.length)));
+      index = end + 1;
+    } else if ('-0123456789'.contains(char)) {
+      var end = index + 1;
+      while (end < text.length && '0123456789.eE+-'.contains(text[end])) {
+        end++;
+      }
+      final token = text.substring(index, end);
+      out.write(_plainInteger.hasMatch(token) ? token : 'null');
+      index = end;
+    } else {
+      out.write(char);
+      index++;
+    }
+  }
+  return jsonDecode(out.toString());
+}
+
 /// The relay-signed snapshot part kind; never stored.
 const userStreamKind = 24220;
 
@@ -169,7 +206,7 @@ class UserStreamAssembler {
     final content = event['content'];
     Object? json;
     try {
-      json = content is String ? jsonDecode(content) : null;
+      json = content is String ? parsePlainIntegers(content) : null;
     } on FormatException {
       json = null;
     }
@@ -183,7 +220,8 @@ class UserStreamAssembler {
       final kinds = json['kinds'];
       final epoch = json['epoch'];
       // Integer fields are JSON ints only: `1.0` and `1e0` decode as doubles,
-      // which compare equal to ints in Dart, so `is int` comes first
+      // which compare equal to ints in Dart, so `is int` comes first, and
+      // `-0` reaches here as null (parsePlainIntegers)
       // (docs/message-sync.md#snapshot).
       if (!_isInt(json['v'], 1) ||
           json['op'] != 'snapshot' ||
