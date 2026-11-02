@@ -21,6 +21,7 @@ Future<void> dropStaleCoverage(Database db) async {
   if (rows.isNotEmpty && rows.first['value'] == '$coverageVersion') return;
   await db.transaction((txn) async {
     await txn.rawDelete('DELETE FROM coverage');
+    await txn.rawDelete('DELETE FROM room_seq');
     await txn.rawInsert(
       'INSERT OR REPLACE INTO sync_state(key, value) '
       "VALUES ('coverage_version', ?)",
@@ -79,6 +80,28 @@ Future<void> extendCoverage(
       );
     }
   }
+}
+
+/// Each room's newest span that began before [before]: `(lo, hi)`. The
+/// walk resumes from its `hi`; its `lo` is the base of the new-row rule
+/// (docs/message-sync.md#counters).
+Future<Map<String, (int, int)>> coverageHeads(
+  DatabaseExecutor db,
+  Iterable<String> rooms,
+  int before,
+) async {
+  final heads = <String, (int, int)>{};
+  for (final room in rooms) {
+    final rows = await db.rawQuery(
+      'SELECT lo_at, hi_at FROM coverage WHERE room = ? AND stream = ? '
+      'AND lo_at < ? ORDER BY hi_at DESC LIMIT 1',
+      [room, _roomStream, before],
+    );
+    if (rows.firstOrNull case {'lo_at': final int lo, 'hi_at': final int hi}) {
+      heads[room] = (lo, hi);
+    }
+  }
+  return heads;
 }
 
 /// Forgets every span: some received event may not have been written.

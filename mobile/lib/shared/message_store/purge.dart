@@ -235,6 +235,7 @@ Future<void> _forgetRoom(DatabaseExecutor db, String room, int? before) async {
   );
   await db.rawDelete('DELETE FROM purge_ids');
   await db.rawDelete('DELETE FROM coverage WHERE room = ?', [room]);
+  await db.rawDelete('DELETE FROM room_seq WHERE room = ?', [room]);
   await db.rawInsert(
     'INSERT OR REPLACE INTO room_forgot(room, at) VALUES (?, ?)',
     [room, DateTime.now().millisecondsSinceEpoch ~/ 1000],

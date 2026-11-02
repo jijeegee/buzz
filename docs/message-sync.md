@@ -506,6 +506,7 @@ in the commit.
 | Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
 | Activity inbox (`activityInbox`) | — | 4 |
 | Idle, user stream in `shadow` (`idleStreamShadow`) | — | 5 (4 + the stream) |
+| Idle, user stream in `live` (`idleStreamLive`) | — | 4 (the stream replaces the room chunk) |
 
 The REQs behind them: the community bundle, the room bundle (one per 128
 rooms), the account bundles (authored and addressed), and per open room its

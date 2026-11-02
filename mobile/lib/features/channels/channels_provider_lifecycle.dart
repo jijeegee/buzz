@@ -28,22 +28,24 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   /// to reconcile membership changes without downloading the global directory.
   Future<void> _subscribeLive(
     List<Channel> channels,
-    _ChannelRefreshFence fence,
-  ) {
+    _ChannelRefreshFence fence, {
+    bool unreadCatchUp = true,
+  }) {
     final channelIds = {
       for (final channel in channels)
         if (channel.isMember && !channel.isArchived) channel.id,
     };
     final relayBaseUrl = _lifecycleRef.read(relayConfigProvider).baseUrl;
     _desiredLiveChannelIds = channelIds;
+    _attachUserStream(channels, fence);
     _coverageRouter
       ?..setQuietRooms(_quietLiveChannelIds)
-      ..setBundleRooms(_liveChunkRoomIds);
+      ..setBundleRooms({..._liveChunkRoomIds, ..._streamCarried});
     // A changed filter may be admitted, but an unchanged terminal rejection
     // cannot recover just because a timer or manual refresh fetched it again.
     // Drop obsolete keys so this quarantine stays bounded by desired chunks.
     final desiredKeys = chunkChannelIdsForLiveSubscriptions(
-      _liveChunkRoomIds,
+      _chunkRoomIds,
     ).map(_liveChunkKey).toSet();
     _terminallyClosedLiveChunks.retainAll(desiredKeys);
     final subscriptionVersion = ++_subscriptionVersion;
@@ -54,6 +56,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         subscriptionVersion,
         channels,
         fence,
+        unreadCatchUp,
       ),
     );
     _liveSubscriptionQueue = sync
@@ -77,6 +80,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     int subscriptionVersion,
     List<Channel> channels,
     _ChannelRefreshFence fence,
+    bool unreadCatchUp,
   ) async {
     if (!_lifecycleRef.mounted) return;
     fence.ensureCurrent();
@@ -92,9 +96,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     }
     if (_lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl) return;
 
-    final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _liveChunkRoomIds,
-    );
+    final desiredChunks = chunkChannelIdsForLiveSubscriptions(_chunkRoomIds);
     // Keep existing coverage while replacements are installed. Cleanup runs
     // when this generation settles, and retains old coverage on failures.
 
@@ -174,7 +176,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 SessionStatus.connected ||
             _lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl ||
             _subscriptionRelayBaseUrl != relayBaseUrl ||
-            !chunk.every(_liveChunkRoomIds.contains)) {
+            !chunk.every(_chunkRoomIds.contains)) {
           _liveSubscriptionsByChunk.remove(chunkKey);
           unsubscribe();
           return;
@@ -206,7 +208,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     }
 
     fence.ensureCurrent();
-    unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+    if (unreadCatchUp) {
+      unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+    }
 
     _backstopTimer?.cancel();
     _backstopTimer = Timer.periodic(
@@ -225,7 +229,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     // transient/rate-limit retries have their own backoff. Do not turn a
     // terminal rejection into a fresh membership/history/REQ loop here.
     if (chunkChannelIdsForLiveSubscriptions(
-      _liveChunkRoomIds,
+      _chunkRoomIds,
     ).any((chunk) => _liveChunkKey(chunk) == chunkKey)) {
       _terminallyClosedLiveChunks.add(chunkKey);
     }
@@ -235,9 +239,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   }
 
   void _removeUndesiredLiveChunks() {
-    final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _liveChunkRoomIds,
-    );
+    final desiredChunks = chunkChannelIdsForLiveSubscriptions(_chunkRoomIds);
     final desiredKeys = desiredChunks.map(_liveChunkKey).toSet();
     final retainedKeys = <String>{...desiredKeys};
     final uncoveredIds = <String>{};
@@ -291,10 +293,13 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     _coverageRouter?.setCoveredRooms({
       for (final MapEntry(:key, :value) in _liveSubscriptionsByChunk.entries)
         if (value.unsubscribe != null) ...key.split('\u0000'),
+      // The stream in live/gated carries its rooms like an installed chunk.
+      ..._streamCarried,
     });
   }
 
   void _clearLiveSubscriptions() {
+    _detachUserStream();
     _subscriptionVersion++;
     _desiredLiveChannelIds = const {};
     _coverageRouter

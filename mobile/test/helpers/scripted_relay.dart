@@ -161,7 +161,20 @@ class ScriptedRelay {
     });
   }
 
+  /// Ends the open stream sub with a relay CLOSED [reason].
+  void closeUserStream(String reason) {
+    final open = _userStreamSub;
+    if (open == null) return;
+    _userStreamSub = null;
+    frames.add(RelayFrame('CLOSED', open.$1));
+    openSubs.remove(open.$1);
+    open.$2(['CLOSED', open.$1, reason]);
+  }
+
+  (String, void Function(List))? _userStreamSub;
+
   void _answerUserStream(String subId, void Function(List) deliver) {
+    _userStreamSub = (subId, deliver);
     final closed = userStreamClosed;
     final snapshot = userStreamSnapshot;
     scheduleMicrotask(() {

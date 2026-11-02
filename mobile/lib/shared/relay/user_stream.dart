@@ -10,9 +10,14 @@ import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 
+import 'room_bundle_coverage.dart';
+import 'user_stream_catch_up.dart';
 import 'user_stream_counters.dart';
 
+export 'user_stream_catch_up.dart';
 export 'user_stream_counters.dart';
+
+part 'user_stream_live.dart';
 
 /// The relay-signed snapshot part kind; never stored.
 const userStreamKind = 24220;
@@ -150,6 +155,9 @@ class UserStreamAssembler {
 
   /// The mode part 1 named, once it passed its checks.
   UserStreamMode? get mode => refused ? null : _mode;
+
+  /// The epoch part 1 named, once it passed its checks.
+  String? get epoch => refused ? null : _epoch;
 
   /// Feeds a frame received before EOSE. Returns false once refused.
   bool feed(Map<String, dynamic> event) {
@@ -429,6 +437,18 @@ class _Connection {
   int? lastFrame;
   ShadowComparator? comparator;
   Timer? timer;
+
+  /// Ids received live on this connection (stream or chunk).
+  final liveIds = <String>{};
+
+  /// What a `live`/`gated` EOSE carries; null otherwise or after a fallback.
+  _Carry? carry;
+
+  /// Shadow: rooms predicted as skips, until a chunk catch-up verifies them.
+  final predicted = <String>{};
+
+  /// The stream catch-up begun at the EOSE or the fallback.
+  Future<void>? settled;
 }
 
 /// What the session gives the stream.
@@ -445,6 +465,10 @@ class UserStreamHost {
     required this.chunkRooms,
     this.nowMs = _nowMs,
     this.timer = Timer.new,
+    this.queueEpoch = _ignoreEpoch,
+    this.capture = _noCapture,
+    this.extendCoverage = _noCoverage,
+    this.catchUp = _noCatchUp,
   });
 
   final String Function() nextSubId;
@@ -468,11 +492,36 @@ class UserStreamHost {
   final int Function() nowMs;
   final Timer Function(Duration, void Function()) timer;
 
+  /// An accepted part 1's epoch (docs/message-sync.md#user-stream).
+  final void Function(String epoch) queueEpoch;
+
+  /// The store capture now (a span's `captured`), if any.
+  final int? Function() capture;
+
+  /// Records `[from, to]` for [rooms] in the store.
+  final void Function(List<String> rooms, int from, int to, int? captured)
+  extendCoverage;
+
+  /// Runs a stream catch-up; `null` with no store.
+  final Future<UserStreamCatchUpResult?> Function(
+    UserStreamCatchUpJob job,
+    bool Function(String id) receivedLive,
+  )
+  catchUp;
+
   static int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+  static void _ignoreEpoch(String _) {}
+  static int? _noCapture() => null;
+  static void _noCoverage(List<String> _, int _, int _, int? _) {}
+  static Future<UserStreamCatchUpResult?> _noCatchUp(
+    UserStreamCatchUpJob _,
+    bool Function(String) _,
+  ) async => null;
 }
 
 const _countersKey = 'user_stream_counters';
 const _backoffKey = 'user_stream_backoff';
+const _livePrevKey = 'user_stream_live_prev';
 
 /// The stream of one relay session, across its connections.
 class UserStream {
@@ -492,6 +541,17 @@ class UserStream {
   bool _connectedBefore = false;
 
   final _listeners = <void Function()>[];
+  final _frameListeners =
+      <void Function(Map<String, dynamic> event, bool render)>[];
+
+  /// The last accepted snapshot (rule W's order count).
+  UserStreamSnapshot? _lastSnapshot;
+
+  /// The previous live connection, for `liveMissed`.
+  UserStreamLivePrev? _livePrev;
+
+  /// The stream's say in chunk catch-ups.
+  late final StoreStreamHooks hooks = _UserStreamHooks(this);
 
   UserStreamPhase get phase => _connection?.phase ?? UserStreamPhase.none;
 
@@ -539,9 +599,15 @@ class UserStream {
   }
 
   Future<void> _load() async {
-    final values = await host.readState(const [_countersKey, _backoffKey]);
+    final values = await host.readState(const [
+      _countersKey,
+      _backoffKey,
+      _livePrevKey,
+    ]);
     _totals = UserStreamCounters.decode(values[_countersKey]);
     _backoff = UserStreamBackoff.decode(values[_backoffKey]);
+    _livePrev = UserStreamLivePrev.decode(values[_livePrevKey]);
+    _lastSnapshot = null;
     _reporter.loaded(_totals, host.nowMs());
   }
 
@@ -628,6 +694,7 @@ class UserStream {
     if (connection == null || subId != connection.subId) return false;
     switch (data[0]) {
       case 'EVENT' when data.length >= 3 && data[2] is Map<String, dynamic>:
+        _noteLiveId(connection, (data[2] as Map)['id']);
         _onEvent(connection, data[2] as Map<String, dynamic>);
       case 'EOSE':
         _onEose(connection);
@@ -663,6 +730,8 @@ class UserStream {
         _refuse(connection);
         return;
       }
+      final epoch = connection.assembler.epoch;
+      if (!before && epoch != null) host.queueEpoch(epoch);
       if (kind == userStreamKind || before) {
         connection.lastFrame = userStreamLastFrame(
           connection.lastFrame,
@@ -678,7 +747,13 @@ class UserStream {
       createdAt,
       now ~/ 1000,
     );
-    if (connection.verdict == _Verdict.keep) host.store(event);
+    if (connection.verdict == _Verdict.keep) {
+      host.store(event);
+      final render = _carryFrame(connection, event);
+      for (final listener in [..._frameListeners]) {
+        listener(event, render);
+      }
+    }
     connection.comparator?.observe(
       onStream: true,
       id: '${event['id']}',
@@ -708,6 +783,7 @@ class UserStream {
       );
     }
     _count((c) => c.snapshotMs = now - connection.sentAtMs);
+    _startCatchUp(connection, snapshot);
     _notify();
   }
 
@@ -751,6 +827,7 @@ class UserStream {
       ..verdict = _Verdict.skip
       ..phase = UserStreamPhase.none;
     _stopComparator(connection);
+    connection.carry?.span.stop();
     if (verdict.reconnectJitter) _jitterNext = true;
     final at = host.nowMs() ~/ 1000;
     if (verdict.countsTowardBackoff) {
@@ -769,8 +846,10 @@ class UserStream {
           (c) => c.fallbacks[verdict.key] = (c.fallbacks[verdict.key] ?? 0) + 1,
         );
         fallback = (closedAt: at, snapshot: connection.snapshot!);
+        _fallBack(connection, at);
       default:
-        break;
+        // Chunks were never closed: nothing is carried any more.
+        connection.carry = null;
     }
     _notify();
   }

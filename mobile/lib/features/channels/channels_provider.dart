@@ -15,6 +15,13 @@ import '../../shared/profile/user_profile.dart';
 import '../../shared/push/push_presentation_cache.dart';
 import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/relay/user_stream.dart'
+    show
+        UserStream,
+        UserStreamBurst,
+        UserStreamCarried,
+        UserStreamRoute,
+        userStreamRoute;
 import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
 import '../goals/goal_provider.dart';
@@ -42,6 +49,7 @@ part 'channel_push_cache.dart';
 part 'channel_unread_events.dart';
 part 'channel_member_snapshots.dart';
 part 'channels_provider_lifecycle.dart';
+part 'channels_user_stream.dart';
 
 const _channelTypeOrder = {'stream': 0, 'forum': 1, 'dm': 2};
 const _unreadCatchUpLimit = 1000;
@@ -197,6 +205,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         // A new authenticated connection can change relay admission policy.
         // Ordinary refreshes must not retry an unchanged terminal rejection.
         _terminallyClosedLiveChunks.clear();
+        _reopenStreamChunks();
         unawaited(_backstopRefresh());
       }
     });

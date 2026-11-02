@@ -638,6 +638,59 @@ void main() {
     _writeMeasured(const ['idleStreamShadow']);
   });
 
+  testWidgets('idle on a relay with the user stream in live', (tester) async {
+    // docs/message-sync.md#handoff: after the stream EOSE the member rooms
+    // leave the chunks; the stream REQ replaces them.
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'live',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {for (final room in _seededRooms) room: 1},
+      };
+    await h.launch(tester);
+    await h.checkpoint(tester, 'idleStreamLive');
+    expect(find.byType(HomePage), findsOneWidget);
+    await h.unmount(tester);
+    _writeMeasured(const ['idleStreamLive']);
+  });
+
+  testWidgets('a mid-connection stream CLOSED in live reopens the chunks', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'live',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {for (final room in _seededRooms) room: 1},
+      };
+    await h.launch(tester);
+    await h.settle(tester, 'launch');
+    bool chunked() => h.relay.liveSignatures().any((s) => s.startsWith('#h:5'));
+    expect(chunked(), isFalse);
+    h.relay.closeUserStream('error: user-stream closed');
+    await h.settle(tester, 'fallback');
+    expect(chunked(), isTrue, reason: '${h.relay.liveSignatures()}');
+    expect(
+      h.relay.liveSignatures().where((s) => s.contains(r'$joined')),
+      isEmpty,
+    );
+    await h.unmount(tester);
+  });
+
   testWidgets('idle with a hidden DM stays within the live REQ budget', (
     tester,
   ) async {

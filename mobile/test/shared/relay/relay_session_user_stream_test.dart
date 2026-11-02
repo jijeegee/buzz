@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:kuzz/shared/auth/auth_provider.dart';
 import 'package:kuzz/shared/message_store/message_store.dart';
@@ -21,6 +22,9 @@ const _other =
 const _relayKey =
     'cc00000000000000000000000000000000000000000000000000000000000003';
 const _room = '11111111-1111-4111-8111-111111111111';
+
+/// Signs the `/query` requests of the stream's catch-up.
+final _nsec = nostr.Keys.generate().nsec;
 
 Map<String, dynamic> _event(String id, {int kind = 9, String? content}) => {
   'id': id.padRight(64, '0'),
@@ -165,6 +169,29 @@ void main() {
     },
   );
 
+  test(
+    'live: the stream catches its covered rooms up and writes room_seq',
+    () async {
+      await start(_account);
+      final lease = session.storeScope!.lease;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      store.extendCoverage(lease, [_room], now - 100, now - 10);
+      await store.flushed();
+      final subId = await connect();
+      session
+        ..debugHandleMessage(['EVENT', subId, _part1('live')])
+        ..debugHandleMessage(['EOSE', subId]);
+      expect(session.userStream.carriedRooms, {_room});
+      await session.userStream.settled;
+      await store.flushed();
+      expect(await store.streamEpoch(lease), 'e1');
+      final rows = await store.roomSeqs(lease, [_room]);
+      expect(rows[_room]?.$1, 3);
+      // Carried rooms count as live for store opens.
+      expect(session.userStream.liveAtOf(_room), rows[_room]?.$2);
+    },
+  );
+
   test('shadow stores nothing from the stream', () async {
     await start(_account);
     final subId = await connect();
@@ -272,7 +299,7 @@ void main() {
 
 class _FakeRelayConfigNotifier extends RelayConfigNotifier {
   @override
-  RelayConfig build() => const RelayConfig(baseUrl: _relay, nsec: null);
+  RelayConfig build() => RelayConfig(baseUrl: _relay, nsec: _nsec);
 }
 
 class _PendingAuthNotifier extends AuthNotifier {

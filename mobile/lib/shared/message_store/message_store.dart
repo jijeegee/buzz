@@ -59,6 +59,7 @@ const _schema = [
   lo_at INTEGER NOT NULL, lo_id TEXT NOT NULL, hi_at INTEGER NOT NULL, hi_id TEXT NOT NULL)''',
   'CREATE INDEX IF NOT EXISTS coverage_stream ON coverage(room, stream)',
   'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  roomSeqSchema,
   ...purge.roomMarksSchema,
   snapshotSchema,
 ];
@@ -120,12 +121,24 @@ typedef StoreCapture = ({MessageStoreLease lease, int sequence});
 /// A coverage span, queued behind the events received before it; its
 /// capture began at [captured].
 class _CoverageOp {
-  const _CoverageOp(this.rooms, this.from, this.to, this.captured);
+  const _CoverageOp(
+    this.rooms,
+    this.from,
+    this.to,
+    this.captured, {
+    this.seqs,
+    this.epoch,
+  });
 
   final List<String> rooms;
   final int from;
   final int to;
   final int captured;
+
+  /// Rule-W rows riding the span, under the stream epoch they were vouched
+  /// in (docs/message-sync.md#watermark-room_seq).
+  final Map<String, int>? seqs;
+  final String? epoch;
 }
 
 /// Apply this membership list, fetched from capture [captured] on.
@@ -414,12 +427,16 @@ class MessageStore {
     int from,
     int to, {
     int? captured,
+    Map<String, int>? seqs,
+    String? epoch,
   }) {
     if (rooms.isEmpty || from > to) return;
     final writer = _writerFor(lease);
     if (writer == null) return;
     final at = captured ?? writer.queued;
-    writer.enqueue(_CoverageOp(List.of(rooms), from, to, at));
+    writer.enqueue(
+      _CoverageOp(List.of(rooms), from, to, at, seqs: seqs, epoch: epoch),
+    );
     _schedule(writer);
   }
 
@@ -750,6 +767,12 @@ class MessageStore {
         final forget = head is _ForgetOp ? head : null;
         final notice = head is _NoticeOp ? head : null;
         final heads = head is _HeadsOp ? head : null;
+        if (head is _StreamSeqOp) {
+          writer.queue.removeAt(0);
+          await _applyStreamSeqOp(writer, head);
+          writer.advance(1);
+          continue;
+        }
         if (head is _HeadSentOp) {
           writer.queue.removeAt(0);
           writer.marks.open(writer.passed + 1, head.rooms);
@@ -859,6 +882,7 @@ class MessageStore {
               "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('lossy', '1')",
             );
             batch.rawDelete('DELETE FROM coverage');
+            batch.rawDelete('DELETE FROM room_seq');
           }
           await batch.commit(noResult: true);
           pushed.removeAll(confirmed);
@@ -871,6 +895,7 @@ class MessageStore {
                 .toList();
             rooms.forEach(known.note);
             await spans.extendCoverage(txn, rooms, coverage.from, coverage.to);
+            await _writeRoomSeqs(txn, rooms, coverage);
           }
           if (heads != null && closed != null && !lossy) {
             for (final span in heads.heads) {
