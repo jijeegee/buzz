@@ -88,6 +88,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   Future<void> _liveSubscriptionQueue = Future.value();
   Set<String> _desiredLiveChannelIds = const {};
   int _subscriptionVersion = 0;
+
+  /// An unread catch-up was asked for and has not finished un-retired: the
+  /// next live sync runs one even when its caller did not ask (a stream
+  /// hand-off retires the reconnect catch-up in flight).
+  bool _unreadCatchUpOwed = false;
   int _nextLiveChunkGeneration = 0;
   final Set<String> _terminallyClosedLiveChunks = {};
   String? _subscriptionRelayBaseUrl;

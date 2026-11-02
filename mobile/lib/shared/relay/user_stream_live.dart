@@ -11,7 +11,7 @@ enum UserStreamRoute {
   /// An archived room: store and open room only.
   archived,
 
-  /// A room the list does not know: store, and one list refresh per burst.
+  /// A room the list does not know: store, and a throttled list refresh.
   unknown,
 }
 
@@ -27,23 +27,50 @@ UserStreamRoute userStreamRoute(
   return UserStreamRoute.unknown;
 }
 
-/// One list refresh per burst of unknown-room frames (`routingBurst`).
+/// List refreshes for unknown-room frames (`routingBurst`): one per burst
+/// (frames within [delay] share it), a room asks again only [roomInterval]
+/// after it last asked, and refreshes are at least [minGap] apart overall.
 class UserStreamBurst {
   UserStreamBurst(
     this.refresh, {
     this.delay = const Duration(seconds: 1),
+    this.roomInterval = const Duration(seconds: 10),
+    this.minGap = const Duration(seconds: 5),
     Timer Function(Duration, void Function())? timer,
-  }) : _timer = timer ?? Timer.new;
+    int Function()? nowMs,
+  }) : _timer = timer ?? Timer.new,
+       _nowMs = nowMs ?? (() => DateTime.now().millisecondsSinceEpoch);
 
   final void Function() refresh;
   final Duration delay;
+  final Duration roomInterval;
+  final Duration minGap;
   final Timer Function(Duration, void Function()) _timer;
+  final int Function() _nowMs;
   Timer? _pending;
+  int? _lastRefreshMs;
 
-  void note() {
+  /// Room -> when it last asked for a refresh (ms).
+  final _askedMs = <String, int>{};
+
+  /// A frame of [room], which the room list does not know.
+  void note([String? room]) {
+    final now = _nowMs();
+    final key = room ?? '';
+    final asked = _askedMs[key];
+    if (asked != null && now - asked < roomInterval.inMilliseconds) return;
+    _askedMs.removeWhere((_, at) => now - at >= roomInterval.inMilliseconds);
+    _askedMs[key] = now;
     if (_pending != null) return;
-    _pending = _timer(delay, () {
+    var wait = delay;
+    final last = _lastRefreshMs;
+    if (last != null) {
+      final gap = Duration(milliseconds: last + minGap.inMilliseconds - now);
+      if (gap > wait) wait = gap;
+    }
+    _pending = _timer(wait, () {
       _pending = null;
+      _lastRefreshMs = _nowMs();
       refresh();
     });
   }
@@ -129,6 +156,8 @@ extension _UserStreamLive on UserStream {
             // [L, L]) never stand for the offline gap.
             coverageBefore: min(connection.startedAt, liveAt),
             prev: prev,
+            storedMark: connection.storedMark,
+            stopped: () => connection.ended,
           ),
           ids.contains,
         ).then((result) {
@@ -140,6 +169,9 @@ extension _UserStreamLive on UserStream {
         });
   }
 
+  /// Catch-ups of successive connections never overlap: a connection's
+  /// waits for every earlier connection's, which stop at their next batch
+  /// once their connection ended.
   Future<UserStreamCatchUpResult?> _runCatchUp(
     _Connection connection,
     UserStreamCatchUpJob job,
@@ -147,7 +179,17 @@ extension _UserStreamLive on UserStream {
   ) async {
     final scope = _scope;
     connection.catchUps++;
+    final earlier = [
+      for (final (owner, running) in _catchUpsRunning)
+        if (!identical(owner, connection)) running.future,
+    ];
+    final done = Completer<void>();
+    _catchUpsRunning.add((connection, done));
     try {
+      if (earlier.isNotEmpty) {
+        await Future.wait(earlier);
+        if (connection.ended) return null;
+      }
       final result = await host.catchUp(job, receivedLive);
       // Counts of an earlier account never land in this one's totals.
       if (result != null && _scope == scope && _loaded) {
@@ -162,6 +204,8 @@ extension _UserStreamLive on UserStream {
       debugPrint('[user-stream] catch-up stopped: $error');
       return null;
     } finally {
+      done.complete();
+      _catchUpsRunning.removeWhere((entry) => identical(entry.$2, done));
       connection.catchUps--;
     }
   }
@@ -238,6 +282,8 @@ extension _UserStreamLive on UserStream {
         liveAt: closedAt,
         captured: host.capture(),
         fallback: true,
+        storedMark: connection.storedMark,
+        stopped: () => connection.ended,
       ),
       ids.contains,
     );
@@ -340,6 +386,13 @@ class _UserStreamHooks implements StoreStreamHooks {
     }
     final seqs = {for (final room in rooms) room: ?snapshot.rooms[room]};
     return seqs.isEmpty ? null : StoreSeqVouch(seqs, snapshot.epoch);
+  }
+
+  @override
+  Future<int?> storedMark(int generation) async {
+    final connection = stream._connection;
+    if (connection == null || connection.generation != generation) return null;
+    return connection.storedMark;
   }
 
   @override

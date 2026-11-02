@@ -8,6 +8,7 @@ import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/shared/auth/auth_provider.dart';
 import 'package:kuzz/shared/message_store/message_store.dart';
 import 'package:kuzz/shared/message_store/message_store_provider.dart';
@@ -68,7 +69,7 @@ void main() {
   late List<(Duration, void Function())> timers;
   late List<List<Map<String, dynamic>>> queries;
 
-  Future<void> start(String account) async {
+  Future<void> start(String account, {RelayRateLimitGate? gate}) async {
     dir = await Directory.systemTemp.createTemp('relay_session_user_stream');
     store = MessageStore(
       factory: () => databaseFactoryFfi,
@@ -90,6 +91,7 @@ void main() {
         timers.add((duration, callback));
         return Timer(const Duration(days: 1), () {});
       },
+      rateLimitGate: gate,
     );
     final container = ProviderContainer(
       overrides: [
@@ -340,6 +342,126 @@ void main() {
       'user_stream_counters',
     ]);
     expect(theirs, isEmpty);
+  });
+
+  // A room chunk as ChannelsNotifier opens it (docs/message-sync.md#reconnect):
+  // `limit: 0`, so its replay never asks for the offline gap, with or
+  // without the stream; the open room and the unread refresh fetch it.
+  for (final streamOn in [true, false]) {
+    test(
+      'a room chunk replay carries no since (stream on: $streamOn)',
+      () async {
+        if (!streamOn) debugUserStreamBuild = UserStreamBuild.off;
+        addTearDown(() => debugUserStreamBuild = null);
+        await start(_account);
+        await session.debugHandleConnected();
+        await Future<void>.delayed(const Duration(milliseconds: 20));
+        await session.subscribe(
+          NostrFilter(
+            kinds: roomLiveEventKinds,
+            tags: {
+              '#h': [_room],
+            },
+            limit: 0,
+          ),
+          (_) {},
+        );
+        final chunk = socket.messages.lastWhere(
+          (m) => m.first == 'REQ' && !isUserStreamFilter(m[2]),
+        );
+        session.debugHandleMessage(['EVENT', chunk[1], _event('c1')]);
+        session.debugFlushEventBuffer();
+        session.debugHandleDisconnected();
+        socket = _RecordingRelaySocket();
+        session.debugAttachSocketForTest(socket);
+        await session.debugHandleConnected();
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        final replays = [
+          for (final m in socket.messages)
+            if (m.first == 'REQ' && !isUserStreamFilter(m[2])) m[2] as Map,
+        ];
+        expect(replays, hasLength(1));
+        expect(replays.single['limit'], 0);
+        expect(replays.single.containsKey('since'), isFalse);
+      },
+    );
+  }
+
+  List<String> reqOrder() => [
+    for (final m in socket.messages)
+      if (m.first == 'REQ') isUserStreamFilter(m[2]) ? 'stream' : 'chunk',
+  ];
+
+  test(
+    'the first connect sends the stream REQ before the chunk replay',
+    () async {
+      await start(_account);
+      await session.subscribe(
+        NostrFilter(
+          kinds: roomLiveEventKinds,
+          tags: {
+            '#h': [_room],
+          },
+          limit: 0,
+        ),
+        (_) {},
+      );
+      socket.messages.clear();
+      // The stream state is not read yet on this first connect.
+      await session.debugHandleConnected();
+      expect(reqOrder(), ['stream', 'chunk']);
+      session.debugHandleDisconnected();
+      socket = _RecordingRelaySocket();
+      session.debugAttachSocketForTest(socket);
+      await session.debugHandleConnected();
+      expect(reqOrder(), ['stream', 'chunk']);
+    },
+  );
+
+  test('with the switch off the chunk replay does not wait', () async {
+    debugUserStreamBuild = UserStreamBuild.off;
+    addTearDown(() => debugUserStreamBuild = null);
+    await start(_account);
+    await session.subscribe(
+      NostrFilter(
+        kinds: roomLiveEventKinds,
+        tags: {
+          '#h': [_room],
+        },
+        limit: 0,
+      ),
+      (_) {},
+    );
+    socket.messages.clear();
+    final connected = session.debugHandleConnected();
+    await Future<void>.delayed(Duration.zero);
+    expect(reqOrder(), ['chunk']);
+    await connected;
+  });
+
+  test('a stream catch-up waits out the rate-limit window', () async {
+    final gateTimers = <void Function()>[];
+    final gate = RelayRateLimitGate(
+      timerFactory: (_, callback) {
+        gateTimers.add(callback);
+        return Timer(const Duration(days: 1), () {});
+      },
+    );
+    await start(_account, gate: gate);
+    final lease = session.storeScope!.lease;
+    final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+    store.extendCoverage(lease, [_room], now - 100, now - 10);
+    await store.flushed();
+    final subId = await connect();
+    gate.activate(30);
+    session
+      ..debugHandleMessage(['EVENT', subId, _part1('live')])
+      ..debugHandleMessage(['EOSE', subId]);
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(queries, isEmpty, reason: 'no page inside the window');
+    gateTimers.single();
+    await session.userStream.settled;
+    expect(queries, hasLength(1));
   });
 
   test('the switch off sends no stream REQ', () async {

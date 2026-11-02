@@ -209,6 +209,7 @@ class _Writer {
   void clearQueue() {
     for (final input in queue) {
       if (input is _PushedOp) input.drop();
+      if (input is _StoredMarkOp) input.complete(null);
     }
     queue.clear();
     headOffset = 0;
@@ -784,6 +785,12 @@ class MessageStore {
             if (head.epoch != null) writer.queue.insert(0, head);
             rethrow;
           }
+          writer.advance(1);
+          continue;
+        }
+        if (head is _StoredMarkOp) {
+          writer.queue.removeAt(0);
+          await _applyStoredMarkOp(writer, head);
           writer.advance(1);
           continue;
         }

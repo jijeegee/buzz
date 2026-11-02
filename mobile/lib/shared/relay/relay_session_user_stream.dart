@@ -2,6 +2,9 @@ part of 'relay_session.dart';
 
 final _userStreams = Expando<UserStream>();
 
+/// The longest the first chunk replay waits for the stream REQ.
+const _userStreamFirstWait = Duration(milliseconds: 300);
+
 /// The session's side of the user stream (docs/message-sync.md#user-stream):
 /// the stream sub never enters [_liveSubscriptions], so no generic path
 /// (replay, coverage, CLOSED retry) sees `$joined` as a room.
@@ -28,6 +31,8 @@ extension RelaySessionUserStream on RelaySessionNotifier {
         queueEpoch: (epoch) =>
             _messageStore?.queueStreamEpoch(_storeLease, epoch),
         capture: () => _messageStore?.capture(_storeLease)?.sequence,
+        storedMark: () =>
+            _messageStore?.storedMark(_storeLease) ?? Future.value(),
         extendCoverage: (rooms, from, to, captured) => _messageStore
             ?.extendCoverage(_storeLease, rooms, from, to, captured: captured),
         catchUp: _runUserStreamCatchUp,
@@ -48,9 +53,16 @@ extension RelaySessionUserStream on RelaySessionNotifier {
     final store = _messageStore;
     final lease = _storeLease;
     if (store == null || lease == null) return null;
+    bool stopped() => job.stopped?.call() ?? false;
     return UserStreamCatchUp(
       scope: (store: store, lease: lease),
-      query: queryRelayJson,
+      // Each page waits out the session's rate-limit window, and none goes
+      // out once the catch-up's connection ended.
+      query: (filters) async {
+        if (_rateLimitGate.isActive) await _rateLimitGate.wait();
+        if (stopped()) throw StateError('user stream catch-up stopped');
+        return queryRelayJson(filters);
+      },
       switched: () => _storeLease != lease,
       receivedLive: receivedLive,
     ).run(job);
@@ -101,6 +113,14 @@ extension RelaySessionUserStream on RelaySessionNotifier {
     } catch (error) {
       debugPrint('[user-stream] report POST failed: $error');
     }
+  }
+
+  /// The stream REQ goes ahead of the chunk replay: while the first
+  /// connect's state read is still running, the replay waits for it at most
+  /// [_userStreamFirstWait]. With the stream switched off nothing waits.
+  Future<void> _userStreamReqFirst(Future<void> connected) async {
+    if (!_userStream.loadingState) return;
+    await connected.timeout(_userStreamFirstWait, onTimeout: () {});
   }
 
   /// The stream state, for the room list and tests.

@@ -152,6 +152,116 @@
    "expect": {"accept": false}
   },
   {
+   "name": "v written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1.0,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "part written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1.0,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1.0,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a kinds entry written as 5.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5.0,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1.0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "v written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1e0,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "part written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1e0,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1e0,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a kinds entry written as 5e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5e0,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1e0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
    "name": "unknown mode",
    "events": [
     {

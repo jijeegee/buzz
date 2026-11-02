@@ -25,6 +25,19 @@ class _StreamSeqOp {
   final int retries;
 }
 
+/// A connection's stored mark (docs/message-sync.md#counters): the newest
+/// `events` rowid once every input queued before it is written. Rows stored
+/// later get a higher rowid (SQLite gives a new row one more than the
+/// largest; only deleting the largest rows, a room forgotten meanwhile,
+/// can hand one out again).
+class _StoredMarkOp {
+  final Completer<int?> done = Completer();
+
+  void complete(int? mark) {
+    if (!done.isCompleted) done.complete(mark);
+  }
+}
+
 /// A failed write keeps a queued epoch for at most this many more tries.
 const _streamSeqRetries = 3;
 
@@ -95,6 +108,30 @@ Future<Map<String, (int, int)>> _readRoomSeqs(
 /// The user stream's state in the file's `sync_state`
 /// (docs/message-sync.md#counters).
 extension MessageStoreUserStream on MessageStore {
+  /// The stored mark of everything submitted so far (queued behind it), or
+  /// `null` when it cannot be read. Pass it to [storedEventIds] as
+  /// `storedBefore`: rows stored after it then count as not stored.
+  Future<int?> storedMark(MessageStoreLease? lease) {
+    final writer = _writerFor(lease);
+    if (writer == null) return Future.value();
+    final op = _StoredMarkOp();
+    writer.enqueue(op);
+    _schedule(writer);
+    return op.done.future;
+  }
+
+  Future<void> _applyStoredMarkOp(_Writer writer, _StoredMarkOp op) async {
+    try {
+      final db = await (writer.database ??= writer.open());
+      if (writer.stopped) return op.complete(null);
+      final rows = await db.rawQuery('SELECT MAX(rowid) AS m FROM events');
+      op.complete(rows.firstOrNull?['m'] as int? ?? 0);
+    } catch (error) {
+      debugPrint('[MessageStore] stored mark failed: $error');
+      op.complete(null);
+    }
+  }
+
   Future<void> _applyStreamSeqOp(_Writer writer, _StreamSeqOp op) async {
     final db = await (writer.database ??= writer.open());
     if (writer.stopped) return;
@@ -193,11 +230,13 @@ extension MessageStoreUserStream on MessageStore {
 
   /// Of [ids], those already stored, after the writes queued so far; `null`
   /// when that cannot be told (a failed read too: a walk must not count
-  /// every row as new).
+  /// every row as new). With [storedBefore] (a [storedMark]), only rows
+  /// stored at or before that mark count as stored.
   Future<Set<String>?> storedEventIds(
     MessageStoreLease? lease,
     Iterable<String> ids, {
     Duration cap = const Duration(seconds: 10),
+    int? storedBefore,
   }) async {
     final wanted = ids.toSet().toList();
     if (!await _settled(lease, cap)) return null;
@@ -208,8 +247,9 @@ extension MessageStoreUserStream on MessageStore {
         final part = wanted.sublist(i, math.min(i + 500, wanted.length));
         final rows = await db.rawQuery(
           'SELECT id FROM events WHERE id IN '
-          '(${List.filled(part.length, '?').join(', ')})',
-          part,
+          '(${List.filled(part.length, '?').join(', ')})'
+          '${storedBefore == null ? '' : ' AND rowid <= ?'}',
+          [...part, ?storedBefore],
         );
         for (final row in rows) {
           if (row['id'] case final String id) found.add(id);

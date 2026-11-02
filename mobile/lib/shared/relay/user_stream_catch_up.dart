@@ -85,9 +85,11 @@ class UserStreamBatch {
   );
 }
 
-/// The new-row rule: inserted by the walk, not received live on this
-/// connection, created at or before [liveAt] and at or after the start of
-/// the room's newest segment begun before [liveAt] ([head]).
+/// The new-row rule: not stored before this connection's start ([inserted]:
+/// the walk found it unstored, or stored by any path at or after the start),
+/// not received live on this connection, created at or before [liveAt] and
+/// at or after the start of the room's newest segment begun before the
+/// connection start ([head]) (docs/message-sync.md#counters).
 bool userStreamNewRow({
   required bool inserted,
   required bool receivedLive,
@@ -284,6 +286,8 @@ class UserStreamCatchUpJob {
     int? coverageBefore,
     this.prev,
     this.fallback = false,
+    this.storedMark,
+    this.stopped,
   }) : coverageBefore = coverageBefore ?? liveAt;
 
   /// `live`, `gated` or `shadow` (by name).
@@ -303,6 +307,14 @@ class UserStreamCatchUpJob {
   final int coverageBefore;
   final UserStreamLivePrev? prev;
   final bool fallback;
+
+  /// The connection's stored mark: a row stored after it (by any path: chunk
+  /// catch-up, unread refresh, room reload, live frame) is not "already
+  /// stored" for the counters (docs/message-sync.md#counters).
+  final Future<int?>? storedMark;
+
+  /// True once the connection ended: no further batch starts.
+  final bool Function()? stopped;
 }
 
 /// What a catch-up found, for tests and the counters.
@@ -401,6 +413,7 @@ class UserStreamCatchUp {
       }
     }
     final heads = await store.coverageHeads(lease, walk, job.coverageBefore);
+    final mark = await job.storedMark;
     final plan = userStreamBatches({
       for (final room in walk) room: resume[room]!,
     }, job.liveAt);
@@ -408,6 +421,9 @@ class UserStreamCatchUp {
     final completed = <String, bool>{};
     final newRows = <UserStreamNewRow>[];
     for (final batch in plan.batches) {
+      // A connection that ended starts no new batch; pages already written
+      // stay, and the rooms not reached count nowhere.
+      if (job.stopped?.call() ?? false) break;
       StoreWalk done;
       try {
         done = await walkStore(
@@ -420,11 +436,13 @@ class UserStreamCatchUp {
           captured: job.captured,
           vouch: vouch,
           probe: true,
+          storedBefore: mark,
         );
       } catch (error) {
         debugPrint('[user-stream] catch-up batch failed: $error');
         done = StoreWalk.failed;
       }
+      if (!done.completed && (job.stopped?.call() ?? false)) break;
       for (final room in batch.rooms) {
         completed[room] = done.completed;
       }
@@ -449,7 +467,7 @@ class UserStreamCatchUp {
       ..add('verifiedSkips', skips.verified)
       ..add('falseSkip', skips.falseSkip);
     final verdicts = userStreamAuditVerdicts({
-      for (final room in sampled) room: completed[room] ?? false,
+      for (final room in sampled) room: ?completed[room],
     }, perRoom);
     result
       ..add('skipAudited', verdicts.audited)

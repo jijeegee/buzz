@@ -70,10 +70,11 @@ extension _ChannelsUserStream on ChannelsNotifier {
       ..fence = fence;
   }
 
-  void _onStreamChanged(_StreamGlue glue) {
+  /// [carried]: tests stand in for the stream's carried set.
+  void _onStreamChanged(_StreamGlue glue, [Set<String>? carried]) {
     if (!_lifecycleRef.mounted || !identical(_streamGlues[this], glue)) return;
     final before = glue.carried;
-    final now = glue.carried = glue.stream.carriedRooms;
+    final now = glue.carried = carried ?? glue.stream.carriedRooms;
     if (setEquals(before, now)) return;
     if (now.isNotEmpty) {
       glue.reopen = true;
@@ -138,8 +139,8 @@ extension _ChannelsUserStream on ChannelsNotifier {
 
   /// A stored stream frame (`routing`): member rooms reach everyone as on a
   /// chunk, archived and quiet rooms the open room only, an unknown room
-  /// refreshes the list once per burst. Frames hidden by a 44101 are only
-  /// stored.
+  /// refreshes the list (throttled, [UserStreamBurst]). Frames hidden by a
+  /// 44101 are only stored.
   void _onStreamFrame(Map<String, dynamic> json, bool render) {
     if (!render || !_lifecycleRef.mounted) return;
     final NostrEvent event;
@@ -159,7 +160,7 @@ extension _ChannelsUserStream on ChannelsNotifier {
     );
     final quiet = room != null && _quietLiveChannelIds.contains(room);
     if (route == UserStreamRoute.unknown && !quiet) {
-      _streamGlues[this]?.burst?.note();
+      _streamGlues[this]?.burst?.note(room);
       return;
     }
     _lifecycleRef
@@ -187,5 +188,14 @@ extension _ChannelsUserStream on ChannelsNotifier {
   void _detachUserStream() {
     _streamGlues[this]?.dispose();
     _streamGlues[this] = null;
+  }
+}
+
+extension ChannelsUserStreamTesting on ChannelsNotifier {
+  /// Tests: the stream now carries [carried] (a hand-off at its EOSE).
+  @visibleForTesting
+  void debugStreamCarried(Set<String> carried) {
+    final glue = _streamGlues[this];
+    if (glue != null) _onStreamChanged(glue, carried);
   }
 }

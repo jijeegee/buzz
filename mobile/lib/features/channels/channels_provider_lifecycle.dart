@@ -49,6 +49,9 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     ).map(_liveChunkKey).toSet();
     _terminallyClosedLiveChunks.retainAll(desiredKeys);
     final subscriptionVersion = ++_subscriptionVersion;
+    // This bump retires any unread catch-up in flight: run it again here.
+    if (_unreadCatchUpOwed) unreadCatchUp = true;
+    if (unreadCatchUp) _unreadCatchUpOwed = true;
 
     final sync = _liveSubscriptionQueue.then(
       (_) => _syncLiveSubscriptions(
@@ -209,7 +212,15 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
 
     fence.ensureCurrent();
     if (unreadCatchUp) {
-      unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+      unawaited(
+        _catchUpUnreadEvents(channels, fence, subscriptionVersion).whenComplete(
+          () {
+            if (!_isCatchUpRetired(fence, subscriptionVersion)) {
+              _unreadCatchUpOwed = false;
+            }
+          },
+        ),
+      );
     }
 
     _backstopTimer?.cancel();
@@ -301,6 +312,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   void _clearLiveSubscriptions() {
     _detachUserStream();
     _subscriptionVersion++;
+    _unreadCatchUpOwed = false;
     _desiredLiveChannelIds = const {};
     _coverageRouter
       ?..setQuietRooms(const {})

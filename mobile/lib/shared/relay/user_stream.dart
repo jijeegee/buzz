@@ -182,15 +182,19 @@ class UserStreamAssembler {
     if (_received == 1) {
       final kinds = json['kinds'];
       final epoch = json['epoch'];
-      if (json['v'] != 1 ||
+      // Integer fields are JSON ints only: `1.0` and `1e0` decode as doubles,
+      // which compare equal to ints in Dart, so `is int` comes first
+      // (docs/message-sync.md#snapshot).
+      if (!_isInt(json['v'], 1) ||
           json['op'] != 'snapshot' ||
-          json['part'] != 1 ||
+          !_isInt(json['part'], 1) ||
           json['parts'] is! int ||
           (json['parts'] as int) < 1 ||
           epoch is! String ||
           epoch.isEmpty ||
           epoch.length > userStreamMaxEpochLength ||
           kinds is! List ||
+          !kinds.every((kind) => kind is int) ||
           !setEquals(kinds.toSet(), userStreamFrozenKinds.toSet())) {
         return false;
       }
@@ -202,7 +206,9 @@ class UserStreamAssembler {
       _relayPubkey = event['pubkey'] is String ? event['pubkey'] as String : '';
     } else {
       if (_received > _parts) return false;
-      if (json.containsKey('part') && json['part'] != _received) return false;
+      if (json.containsKey('part') && !_isInt(json['part'], _received)) {
+        return false;
+      }
     }
     final rooms = json['rooms'];
     if (rooms is! Map) return false;
@@ -218,6 +224,9 @@ class UserStreamAssembler {
     }
     return true;
   }
+
+  static bool _isInt(Object? value, int expected) =>
+      value is int && value == expected;
 
   /// At EOSE: the snapshot, or `null` when it is refused (including fewer
   /// parts than announced).
@@ -427,7 +436,13 @@ enum UserStreamPhase {
 
 /// The stream state of one connection.
 class _Connection {
-  _Connection(this.generation, this.subId, this.sentAtMs, this.startedAt);
+  _Connection(
+    this.generation,
+    this.subId,
+    this.sentAtMs,
+    this.startedAt,
+    this.storedMark,
+  );
 
   final int generation;
   final String subId;
@@ -436,6 +451,10 @@ class _Connection {
   /// AUTH OK of this connection (seconds): coverage spans begun at or after
   /// it are this connection's own and never a resume point at the EOSE.
   final int startedAt;
+
+  /// The store's mark taken with [startedAt]: rows stored after it are this
+  /// connection's, never "already stored" for the counters.
+  final Future<int?> storedMark;
   _Verdict verdict = _Verdict.pending;
   bool ended = false;
   bool authRetried = false;
@@ -483,6 +502,7 @@ class UserStreamHost {
     this.queueEpoch = _ignoreEpoch,
     this.capture = _noCapture,
     this.extendCoverage = _noCoverage,
+    this.storedMark = _noMark,
     this.catchUp = _noCatchUp,
     this.reportPlatform,
     this.postReport = _noPost,
@@ -519,6 +539,9 @@ class UserStreamHost {
   final void Function(List<String> rooms, int from, int to, int? captured)
   extendCoverage;
 
+  /// The store's stored mark of everything submitted so far.
+  final Future<int?> Function() storedMark;
+
   /// Runs a stream catch-up; `null` with no store.
   final Future<UserStreamCatchUpResult?> Function(
     UserStreamCatchUpJob job,
@@ -536,6 +559,7 @@ class UserStreamHost {
   static void _noPost(UserStreamCounters _) {}
   static void _ignoreEpoch(String _) {}
   static int? _noCapture() => null;
+  static Future<int?> _noMark() async => null;
   static void _noCoverage(List<String> _, int _, int _, int? _) {}
   static Future<UserStreamCatchUpResult?> _noCatchUp(
     UserStreamCatchUpJob _,
@@ -580,6 +604,9 @@ class UserStream {
   /// The last accepted snapshot (rule W's order count).
   UserStreamSnapshot? _lastSnapshot;
 
+  /// Stream catch-ups still running, with their connection.
+  final _catchUpsRunning = <(_Connection, Completer<void>)>[];
+
   /// The previous live connection, for `liveMissed`.
   UserStreamLivePrev? _livePrev;
 
@@ -611,6 +638,20 @@ class UserStream {
     }
   }
 
+  /// Starts reading the stream state of the current scope before AUTH OK,
+  /// so a first connect can send the stream REQ ahead of the chunk replay.
+  void prepare() {
+    if (userStreamBuild == UserStreamBuild.off) return;
+    final scope = host.scope();
+    if (scope != null && (scope != _scope || _loading == null)) {
+      _startLoad(scope);
+    }
+  }
+
+  /// Whether a [connected] is waiting for the state read before its REQ.
+  bool get loadingState =>
+      userStreamBuild != UserStreamBuild.off && !_loaded && _loading != null;
+
   /// AUTH OK on connection [generation]: the stream REQ goes first, unless
   /// the build switch or the backoff says chunks.
   Future<void> connected(int generation) async {
@@ -622,6 +663,8 @@ class UserStream {
     if (userStreamBuild == UserStreamBuild.off) return _notify();
     final scope = host.scope();
     if (scope == null) return _notify();
+    // Queued behind every row submitted before this connection.
+    final storedMark = host.storedMark();
     if (scope != _scope || _loading == null) _startLoad(scope);
     // Loaded: the REQ goes out now, ahead of everything else.
     while (!_loaded) {
@@ -644,6 +687,7 @@ class UserStream {
       host.nextSubId(),
       host.nowMs(),
       startedAt,
+      storedMark,
     );
     _connection = connection;
     _sendReq(connection);

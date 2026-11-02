@@ -43,7 +43,8 @@ class StoreSeqVouch {
 }
 
 /// How a walk ended; [inserted] are the rows it stored that were not stored
-/// before (probing walks only).
+/// before (probing walks only): before the walk, or before the stored mark
+/// it was given (docs/message-sync.md#counters).
 class StoreWalk {
   const StoreWalk(this.completed, this.inserted);
 
@@ -63,6 +64,10 @@ abstract interface class StoreStreamHooks {
   /// [generation], or `null`.
   StoreSeqVouch? vouch(int generation, List<String> rooms);
 
+  /// Connection [generation]'s stored mark: rows stored after it are not
+  /// "already stored" for the counters (docs/message-sync.md#counters).
+  Future<int?> storedMark(int generation);
+
   /// A catch-up of [rooms] completed ([heads]: their newest spans begun
   /// before [liveAt], read before the walk when it was vouched).
   void walkEnded(
@@ -76,7 +81,8 @@ abstract interface class StoreStreamHooks {
 
 /// One keyset walk of [rooms] from [since] into the store only; on
 /// completion it records `[since, liveAt]` (with [vouch]'s rule-W rows).
-/// [probe]: the answers are stored here, after asking which rows are new.
+/// [probe]: the answers are stored here, after asking which rows are new;
+/// a row stored after [storedBefore] (a stored mark) counts as new too.
 Future<StoreWalk> walkStore({
   required StoreScope scope,
   required Future<Object?> Function(List<Map<String, dynamic>> filters) query,
@@ -87,6 +93,7 @@ Future<StoreWalk> walkStore({
   int? captured,
   StoreSeqVouch? vouch,
   bool probe = false,
+  int? storedBefore,
 }) async {
   final inserted = <Map<String, dynamic>>[];
   final seen = <String>{};
@@ -119,7 +126,7 @@ Future<StoreWalk> walkStore({
       final stored = await scope.store.storedEventIds(scope.lease, [
         for (final event in events)
           if (event['id'] case final String id) id,
-      ]);
+      ], storedBefore: storedBefore);
       if (stored == null || switched()) return StoreWalk.failed;
       for (final event in events) {
         final id = event['id'];
@@ -328,6 +335,7 @@ class RoomBundleCoverage {
     final heads = vouch == null
         ? const <String, (int, int)>{}
         : await scope.store.coverageHeads(scope.lease, covered, liveAt);
+    final mark = vouch == null ? null : await hooks?.storedMark(generation!);
     final walk = await walkStore(
       scope: scope,
       query: query,
@@ -338,6 +346,7 @@ class RoomBundleCoverage {
       captured: captured,
       vouch: vouch,
       probe: vouch != null,
+      storedBefore: mark,
     );
     if (walk.completed) hooks?.walkEnded(vouch, covered, liveAt, walk, heads);
     return walk.completed;

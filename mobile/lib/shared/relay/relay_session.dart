@@ -786,6 +786,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     socket.refreshRejectedToken = !_retryingRefreshedToken;
     _retryingRefreshedToken = false;
     _socket = socket;
+    _userStream.prepare(); // its state read overlaps the handshake
 
     await socket.connect();
   }
@@ -796,10 +797,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _hasConnectedOnce = true;
     _reconnectDelayMs = _baseReconnectDelayMs;
     state = const SessionState(status: SessionStatus.connected);
-    unawaited(_userStream.connected(generation)); // first after AUTH OK
+    final streamReq = _userStream.connected(generation); // first after AUTH OK
     for (final entry in [..._historySubscriptions.entries]) {
       if (!entry.value.sent) _sendHistoryReq(entry.key, entry.value);
     }
+    await _userStreamReqFirst(streamReq);
     await _replayLiveSubscriptions(generation);
     final droppedAt = _meDroppedAt;
     _meDroppedAt = null;
