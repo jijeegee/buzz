@@ -1,5 +1,5 @@
 {
- "description": "User stream (docs/message-sync.md#user-stream): one live REQ for all of the account's rooms, chosen by the relay per account. Read by desktop (relayUserStream.test.mjs and the store tests) and mobile (user_stream_fixture_test.dart and the store tests). Times are unix seconds unless a key ends in Ms. Room ids are opaque strings. Sections: `part1` (parse snapshot parts in arrival order on the stream sub; `eose` true means EOSE came after them; `accept` false means CLOSE the stream, chunks for this connection), `modes` (what each mode does), `storeSkip` (which stream frames the store keeps: `req` re-sends the REQ on the same id, `close` is the client CLOSE, `closed` a relay CLOSED), `closed` (reason -> action: chunks = stream off for this connection, chunks stay or carry everything; fallback = the mid-connection fallback; retryAfterAuth = resend after the next AUTH OK), `backoff`, `busyRetry` (history REQs ended by `error: busy`), `epoch`, `snapshot` (per-room classes at stream EOSE and what each mode does with them), `skipCoverage`, `batching`, `ruleW` (steps -> room_seq rows [seq, at]), `clearing`, `newRow`, `skipVerification`, `auditSampling`, `auditVerdicts`, `liveMissed`, `lastFrame`, `comparator` (shadow counters), `handoff`, `midConnectionClosed`, `membership` (44100/44101 in live/gated), `routing` (stream frames in live/gated).",
+ "description": "User stream (docs/message-sync.md#user-stream): one live REQ for all of the account's rooms, chosen by the relay per account. Read by desktop (relayUserStream.test.mjs and the store tests) and mobile (user_stream_fixture_test.dart and the store tests). Times are unix seconds unless a key ends in Ms. Room ids are opaque strings; room lists are sets, listed by id, unless the key is `batches` or `rooms` of a batch (ordered). Sections: `part1` (parse snapshot parts in arrival order on the stream sub; `eose` true means EOSE came after them; `accept` false means CLOSE the stream, chunks for this connection), `modes` (what each mode does), `storeSkip` (which stream frames the store keeps: `eose` is the stream EOSE, `req` re-sends the REQ on the same id, `close` is the client CLOSE, `closed` a relay CLOSED; `badKinds` marks a part 1 whose kinds differ from the frozen kinds), `closed` (reason -> action: chunks = stream off for this connection, chunks stay or carry everything; fallback = the mid-connection fallback; awaitSocketClose = no fallback, wait up to 2 s for the relay to close the socket, then close it, then reconnect normally; retryAfterAuth = resend after the next AUTH OK), `backoff` (closes that count are `full`, `closed` and `other` after the stream EOSE in live/gated; `lagged` and `shadow_full` never count), `busyRetry` (history REQs ended by `error: busy`), `epoch`, `snapshot` (per-room classes at stream EOSE and what each mode does with them), `skipCoverage`, `batching` (`stale` rooms are taken out before batching and not walked), `ruleW` (steps -> room_seq rows [seq, at]), `clearing`, `newRow`, `skipVerification`, `auditSampling`, `auditVerdicts`, `liveMissed`, `lastFrame`, `comparator` (shadow counters), `handoff`, `midConnectionClosed`, `spanStop` (the stream's own coverage span), `chunkCatchUp` (which rooms a chunk's own catch-up and repair still walk), `membership` (44100/44101 in live/gated), `routing` (stream frames in live/gated).",
  "v": 1,
  "streamKind": 24220,
  "frozenKinds": [5, 7, 9, 9005, 39005, 40001, 40002, 40003, 40008, 40009, 40099, 45001, 45003, 48100, 48101, 48102, 48103],
@@ -327,6 +327,62 @@
    "expect": {"accept": false}
   },
   {
+   "name": "a seq above 2^53 - 1",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":9007199254740992}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a seq of 2^53 - 1",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":9007199254740991}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e1",
+    "rooms": {"room-a": 9007199254740991},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "an epoch longer than 64 characters",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "an epoch of 64 characters",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "rooms": {},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
    "name": "content is not JSON",
    "events": [
     {"kind": 24220, "content": "{not json"}
@@ -381,18 +437,20 @@
  ],
  "storeSkip": [
   {
-   "name": "frames before part 1 are not stored; part 1 live keeps later frames",
+   "name": "frames before part 1 are dropped; an accepted live snapshot keeps later frames",
    "frames": [
     {"id": "x1", "kind": 9},
     {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
     {"id": "x2", "kind": 9}
    ],
    "stored": ["x2"]
   },
   {
-   "name": "part 1 gated keeps later frames",
+   "name": "an accepted gated snapshot keeps later frames",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "gated"},
+    {"eose": true},
     {"id": "x2", "kind": 7}
    ],
    "stored": ["x2"]
@@ -401,14 +459,45 @@
    "name": "shadow never stores",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "shadow"},
+    {"eose": true},
     {"id": "x2", "kind": 9}
    ],
    "stored": []
   },
   {
-   "name": "a rejected part 1 stores nothing",
+   "name": "a frame between part 1 and EOSE is dropped (still pending)",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"id": "x0", "kind": 9},
+    {"eose": true},
+    {"id": "x1", "kind": 9}
+   ],
+   "stored": ["x1"]
+  },
+  {
+   "name": "a refused part 1 stores nothing",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "active"},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "part 1 with the wrong kinds stores nothing",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live", "badKinds": true},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "parts incomplete at EOSE store nothing, the held frame included",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live", "parts": 2},
+    {"id": "x0", "kind": 9},
+    {"eose": true},
     {"id": "x2", "kind": 9}
    ],
    "stored": []
@@ -418,6 +507,7 @@
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "live", "parts": 2},
     {"id": "p2", "kind": 24220},
+    {"eose": true},
     {"id": "x2", "kind": 9}
    ],
    "stored": ["x2"]
@@ -426,6 +516,7 @@
    "name": "stragglers after a relay CLOSED are not stored",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
     {"id": "x1", "kind": 9},
     {"closed": "error: user-stream closed"},
     {"id": "x2", "kind": 9}
@@ -436,6 +527,7 @@
    "name": "stragglers after the client's CLOSE are not stored",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
     {"close": true},
     {"id": "x2", "kind": 9}
    ],
@@ -445,10 +537,12 @@
    "name": "a REQ re-sent on the same id starts over at pending",
    "frames": [
     {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
     {"id": "x1", "kind": 9},
     {"req": true},
     {"id": "x2", "kind": 9},
     {"id": "p1b", "kind": 24220, "mode": "shadow"},
+    {"eose": true},
     {"id": "x3", "kind": 9}
    ],
    "stored": ["x1"]
@@ -459,6 +553,7 @@
     {"closed": "auth-required: authenticate first"},
     {"req": true},
     {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
     {"id": "x1", "kind": 9}
    ],
    "stored": ["x1"]
@@ -599,12 +694,12 @@
    }
   },
   {
-   "name": "live overflow falls back at once",
+   "name": "live overflow waits for the socket to close",
    "reason": "error: user-stream overflow",
    "mode": "live",
    "streamLive": true,
    "expect": {
-    "action": "fallback",
+    "action": "awaitSocketClose",
     "key": "full",
     "countsTowardBackoff": true,
     "reconnectJitter": false,
@@ -612,12 +707,12 @@
    }
   },
   {
-   "name": "gated overflow falls back at once",
+   "name": "gated overflow waits for the socket to close",
    "reason": "error: user-stream overflow",
    "mode": "gated",
    "streamLive": true,
    "expect": {
-    "action": "fallback",
+    "action": "awaitSocketClose",
     "key": "full",
     "countsTowardBackoff": true,
     "reconnectJitter": false,
@@ -625,12 +720,25 @@
    }
   },
   {
-   "name": "lagged in live",
+   "name": "overflow of the pre-EOSE queue in live",
+   "reason": "error: user-stream overflow",
+   "mode": "live",
+   "streamLive": false,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "full",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "lagged in live waits, then reconnects with jitter",
    "reason": "error: user-stream lagged",
    "mode": "live",
    "streamLive": true,
    "expect": {
-    "action": "fallback",
+    "action": "awaitSocketClose",
     "key": "lagged",
     "countsTowardBackoff": false,
     "reconnectJitter": true,
@@ -638,12 +746,12 @@
    }
   },
   {
-   "name": "lagged in shadow",
+   "name": "lagged in shadow too",
    "reason": "error: user-stream lagged",
    "mode": "shadow",
    "streamLive": true,
    "expect": {
-    "action": "chunks",
+    "action": "awaitSocketClose",
     "key": "lagged",
     "countsTowardBackoff": false,
     "reconnectJitter": true,
@@ -651,14 +759,27 @@
    }
   },
   {
-   "name": "fail-closed in live",
+   "name": "lagged before part 1",
+   "reason": "error: user-stream lagged",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "lagged",
+    "countsTowardBackoff": false,
+    "reconnectJitter": true,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "fail-closed in live falls back at once and counts",
    "reason": "error: user-stream closed",
    "mode": "live",
    "streamLive": true,
    "expect": {
     "action": "fallback",
     "key": "closed",
-    "countsTowardBackoff": false,
+    "countsTowardBackoff": true,
     "reconnectJitter": false,
     "bugLog": false
    }
@@ -703,12 +824,25 @@
    }
   },
   {
-   "name": "an unknown reason after EOSE in gated",
+   "name": "an unknown reason after EOSE in gated counts",
    "reason": "error: something new",
    "mode": "gated",
    "streamLive": true,
    "expect": {
     "action": "fallback",
+    "key": "other",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an unknown reason after EOSE in shadow does not count",
+   "reason": "error: something new",
+   "mode": "shadow",
+   "streamLive": true,
+   "expect": {
+    "action": "chunks",
     "key": "other",
     "countsTowardBackoff": false,
     "reconnectJitter": false,
@@ -723,7 +857,7 @@
    "expect": {
     "action": "fallback",
     "key": "other",
-    "countsTowardBackoff": false,
+    "countsTowardBackoff": true,
     "reconnectJitter": false,
     "bugLog": false
    }
@@ -736,7 +870,7 @@
    "expect": {
     "action": "fallback",
     "key": "other",
-    "countsTowardBackoff": false,
+    "countsTowardBackoff": true,
     "reconnectJitter": false,
     "bugLog": false
    }
@@ -786,14 +920,35 @@
    ]
   },
   {
-   "name": "lagged and closed never count",
+   "name": "lagged never counts",
    "events": [
     {"at": 0, "op": "closed", "key": "lagged"},
-    {"at": 1, "op": "closed", "key": "closed"},
+    {"at": 1, "op": "closed", "key": "lagged"},
     {"at": 2, "op": "closed", "key": "full"}
    ],
    "checks": [
     {"at": 3, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "a fail-closed and an overflow count together",
+   "events": [
+    {"at": 0, "op": "closed", "key": "closed"},
+    {"at": 5, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 6, "streamAllowed": false},
+    {"at": 3605, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "two unknown reasons after EOSE count",
+   "events": [
+    {"at": 0, "op": "closed", "key": "other"},
+    {"at": 5, "op": "closed", "key": "other"}
+   ],
+   "checks": [
+    {"at": 6, "streamAllowed": false}
    ]
   },
   {
@@ -1019,9 +1174,12 @@
    "name": "sorted by resume point, ties by id",
    "L": 2000000,
    "resume": {"room-c": 1999990, "room-a": 1999970, "room-b": 1999970},
-   "expect": [
-    {"rooms": ["room-a", "room-b", "room-c"], "since": 1998105, "walk": true}
-   ]
+   "expect": {
+    "stale": [],
+    "batches": [
+     {"rooms": ["room-a", "room-b", "room-c"], "since": 1998105}
+    ]
+   }
   },
   {
    "name": "130 rooms make batches of 128 and 2",
@@ -1158,17 +1316,19 @@
     "r128": 1999128,
     "r129": 1999129
    },
-   "expect": [
-    {
-     "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
-     "since": 1997135,
-     "walk": true
-    },
-    {"rooms": ["r128", "r129"], "since": 1997263, "walk": true}
-   ]
+   "expect": {
+    "stale": [],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     },
+     {"rooms": ["r128", "r129"], "since": 1997263}
+    ]
+   }
   },
   {
-   "name": "a stale room poisons only its own batch",
+   "name": "a stale room is taken out first; the fresh rooms are all walked",
    "L": 2000000,
    "resume": {
     "r000": 1999000,
@@ -1301,22 +1461,171 @@
     "r127": 1999127,
     "old": 1395200
    },
-   "expect": [
-    {
-     "rooms": ["old", "r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126"],
-     "since": 1393335,
-     "walk": false
-    },
-    {"rooms": ["r127"], "since": 1997262, "walk": true}
-   ]
+   "expect": {
+    "stale": ["old"],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     }
+    ]
+   }
+  },
+  {
+   "name": "two stale rooms and 128 fresh ones",
+   "L": 2000000,
+   "resume": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127,
+    "old1": 1395200,
+    "old2": 790400
+   },
+   "expect": {
+    "stale": ["old1", "old2"],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     }
+    ]
+   }
   },
   {
    "name": "the 7-day limit is inclusive",
    "L": 2000000,
-   "resume": {"room-a": 1397065},
-   "expect": [
-    {"rooms": ["room-a"], "since": 1395200, "walk": true}
-   ]
+   "resume": {"room-a": 1397065, "room-b": 1397064},
+   "expect": {
+    "stale": ["room-b"],
+    "batches": [
+     {"rooms": ["room-a"], "since": 1395200}
+    ]
+   }
   }
  ],
  "ruleW": [
@@ -1486,6 +1795,81 @@
    }
   },
   {
+   "name": "an epoch change while a walk runs refuses its write",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e2",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a walk from an earlier connection still writes when the epoch is unchanged",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e1",
+     "rooms": {"room-a": 8}
+    },
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [7, 1000]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a write never lowers a stored seq (walks ending out of order)",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e1",
+     "rooms": {"room-a": 9}
+    },
+    {"op": "streamEose", "gen": 2},
+    {"op": "catchUpStart", "id": "c2", "gen": 2, "rooms": ["room-a"], "liveAt": 1300},
+    {"op": "catchUpEnd", "id": "c2", "completed": true},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [9, 1300]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
    "name": "a stream CLOSED after EOSE does not undo the vouching",
    "steps": [
     {
@@ -1571,6 +1955,27 @@
    "L": 5000,
    "segments": [],
    "row": {"inserted": true, "created_at": 4500},
+   "counts": false
+  },
+  {
+   "name": "the stream's own [L, L] is never the base",
+   "L": 5000,
+   "segments": [[3000, 4000], [5000, 5000]],
+   "row": {"inserted": true, "created_at": 3500},
+   "counts": true
+  },
+  {
+   "name": "a row also received live on this connection is not new",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 4500, "receivedLive": true},
+   "counts": false
+  },
+  {
+   "name": "a row received before the stream EOSE (on a chunk) is not new",
+   "L": 5000,
+   "segments": [[3000, 4000], [5000, 5000]],
+   "row": {"inserted": true, "created_at": 4990, "receivedLive": true},
    "counts": false
   }
  ],
@@ -2447,9 +2852,12 @@
    },
    "expect": {
     "chunkRooms": ["a", "b", "x"],
-    "catchUp": [
-     {"rooms": ["a", "b"], "since": 48035, "walk": true}
-    ],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a", "b"], "since": 48035}
+     ]
+    },
     "desktopRepair": {
      "rooms": ["a", "b"],
      "since": 48105,
@@ -2472,9 +2880,12 @@
    },
    "expect": {
     "chunkRooms": ["a"],
-    "catchUp": [
-     {"rooms": ["a"], "since": 48035, "walk": true}
-    ],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a"], "since": 48035}
+     ]
+    },
     "desktopRepair": {
      "rooms": ["a"],
      "since": 48105,
@@ -2497,9 +2908,12 @@
    },
    "expect": {
     "chunkRooms": ["a", "n"],
-    "catchUp": [
-     {"rooms": ["a"], "since": 48035, "walk": true}
-    ],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a"], "since": 48035}
+     ]
+    },
     "desktopRepair": {
      "rooms": ["a", "n"],
      "since": 48105,
@@ -2522,10 +2936,98 @@
    },
    "expect": {
     "chunkRooms": ["a"],
-    "catchUp": [],
+    "catchUp": null,
     "desktopRepair": null,
     "streamAgainThisConnection": false
    }
+  },
+  {
+   "name": "overflow in live: no fallback on the dying socket",
+   "mode": "live",
+   "reason": "error: user-stream overflow",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a"],
+   "chunkExtras": [],
+   "resume": {"a": 49900},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {"a": 41000}
+   },
+   "expect": {
+    "chunkRooms": [],
+    "catchUp": null,
+    "desktopRepair": null,
+    "awaitSocketCloseSecs": 2,
+    "streamAgainThisConnection": false
+   }
+  }
+ ],
+ "spanStop": [
+  {
+   "name": "the stream's spans stop at its CLOSED; chunk frames do not extend them",
+   "streamEoseAt": 1000,
+   "events": [
+    {"at": 1070, "on": "stream"},
+    {"at": 1100, "closed": true},
+    {"at": 1200, "on": "chunk"},
+    {"at": 1300, "on": "chunk"}
+   ],
+   "expect": {"streamSpan": [1000, 1070]}
+  },
+  {
+   "name": "spans extend at most once every 60 s while live",
+   "streamEoseAt": 1000,
+   "events": [
+    {"at": 1030, "on": "stream"},
+    {"at": 1059, "on": "stream"},
+    {"at": 1061, "on": "stream"}
+   ],
+   "expect": {"streamSpan": [1000, 1061]}
+  }
+ ],
+ "chunkCatchUp": [
+  {
+   "name": "mode unknown: chunk catch-up and repair run as today",
+   "stream": "pending",
+   "chunkRooms": ["a", "b", "x"],
+   "snapshotRooms": [],
+   "expect": {"chunkCatchUpRooms": ["a", "b", "x"]}
+  },
+  {
+   "name": "no stream (CLOSED, off or backoff): as today",
+   "stream": "none",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": [],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
+  },
+  {
+   "name": "shadow: as today",
+   "stream": "shadow",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
+  },
+  {
+   "name": "live after its accepted EOSE: only rooms outside the snapshot",
+   "stream": "liveEose",
+   "chunkRooms": ["a", "b", "x"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["x"]}
+  },
+  {
+   "name": "gated after its accepted EOSE: the same",
+   "stream": "gatedEose",
+   "chunkRooms": ["a", "x"],
+   "snapshotRooms": ["a"],
+   "expect": {"chunkCatchUpRooms": ["x"]}
+  },
+  {
+   "name": "after a mid-connection CLOSED the reopened chunks follow the chunk rules",
+   "stream": "closedAfterEose",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
   }
  ],
  "membershipCarriedBefore": ["a"],
@@ -2593,6 +3095,14 @@
      "n": [[205, 205]]
     }
    }
+  },
+  {
+   "name": "a 44100 before the stream EOSE changes nothing carried",
+   "beforeEose": true,
+   "steps": [
+    {"op": "44100", "room": "n", "created_at": 200, "receivedAt": 205}
+   ],
+   "expect": {"stored": [], "rendered": [], "carried": ["a"]}
   }
  ],
  "routingLists": {"memberRooms": ["a"], "archivedRooms": ["arch"], "openRooms": ["a", "arch"]},

@@ -32,6 +32,8 @@ const NAMED_SECTIONS = [
   "comparator",
   "handoff",
   "midConnectionClosed",
+  "spanStop",
+  "chunkCatchUp",
   "membership",
   "routing",
 ];
@@ -83,7 +85,12 @@ function closedKey(reason, mode) {
 }
 
 test("every CLOSED case's key follows the reason table", () => {
-  const actions = new Set(["chunks", "fallback", "retryAfterAuth"]);
+  const actions = new Set([
+    "chunks",
+    "fallback",
+    "awaitSocketClose",
+    "retryAfterAuth",
+  ]);
   for (const testCase of fixture.closed) {
     assert.equal(
       testCase.expect.key,
@@ -95,19 +102,49 @@ test("every CLOSED case's key follows the reason table", () => {
       assert.ok(["live", "gated"].includes(testCase.mode), testCase.name);
       assert.equal(testCase.streamLive, true, testCase.name);
     }
+    const counts =
+      ["full", "closed", "other"].includes(testCase.expect.key) &&
+      ["live", "gated"].includes(testCase.mode) &&
+      (testCase.streamLive || testCase.expect.key === "full");
+    assert.equal(testCase.expect.countsTowardBackoff, counts, testCase.name);
   }
 });
 
-test("batches hold at most the batch size and are sorted by resume point", () => {
-  const size = fixture.limits.catchUpBatchRooms;
+// A room whose walk would start more than 7 days before L is stale.
+function isStale(resume, liveAt) {
+  const { lookbackSecs, catchUpMaxAgeSecs } = fixture.limits;
+  return resume - lookbackSecs < liveAt - catchUpMaxAgeSecs;
+}
+
+test("batches leave out stale rooms, then sort and split the rest", () => {
+  const { catchUpBatchRooms: size, lookbackSecs } = fixture.limits;
   for (const testCase of fixture.batching) {
-    const rooms = testCase.expect.flatMap((batch) => batch.rooms);
+    const { resume, L } = testCase;
     const byResume = (a, b) =>
-      testCase.resume[a] - testCase.resume[b] || (a < b ? -1 : a > b ? 1 : 0);
-    assert.deepEqual([...rooms].sort(byResume), rooms, testCase.name);
-    assert.equal(rooms.length, Object.keys(testCase.resume).length, testCase.name);
-    for (const batch of testCase.expect) {
-      assert.ok(batch.rooms.length <= size, testCase.name);
+      resume[a] - resume[b] || (a < b ? -1 : a > b ? 1 : 0);
+    const rooms = Object.keys(resume).sort(byResume);
+    const stale = rooms.filter((room) => isStale(resume[room], L));
+    const fresh = rooms.filter((room) => !isStale(resume[room], L));
+    assert.deepEqual(testCase.expect.stale, [...stale].sort(), testCase.name);
+    const batches = [];
+    for (let i = 0; i < fresh.length; i += size) {
+      const batch = fresh.slice(i, i + size);
+      batches.push({ rooms: batch, since: resume[batch[0]] - lookbackSecs });
     }
+    assert.deepEqual(testCase.expect.batches, batches, testCase.name);
+  }
+});
+
+test("audit eligibility follows the age limit", () => {
+  for (const testCase of fixture.auditSampling) {
+    const eligible = Object.keys(testCase.skipped)
+      .filter((room) => !isStale(testCase.skipped[room], testCase.L))
+      .sort();
+    assert.deepEqual(testCase.expect.eligible, eligible, testCase.name);
+    assert.equal(
+      testCase.expect.sampleSize,
+      Math.min(eligible.length, fixture.limits.auditSampleMax),
+      testCase.name,
+    );
   }
 });

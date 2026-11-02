@@ -1359,7 +1359,8 @@ sub.
 - **Part 1:** content `{"v":1, "op":"snapshot", "part":1, "parts":n,
   "mode":"shadow|live|gated", "epoch":"…", "kinds":[…], "rooms":{"<room>":
   <seq>, …}}`, at most 500 rooms per part. `seq` is the room's accepted
-  sequence: a non-negative integer.
+  sequence: an integer from 0 to 2^53 − 1. `epoch` is a non-empty string of
+  at most 64 characters.
 - **Later parts** need only `rooms`. A later part that carries `part` must
   carry its arrival position (2, 3, …); `v`, `op` and other fields there are
   ignored.
@@ -1368,15 +1369,19 @@ sub.
   or missing `epoch`; `kinds` ≠ the frozen kinds (compared as sets); a seq
   that is not a non-negative integer; a room in two parts; more parts than
   announced, or a part out of order; fewer parts than announced at EOSE. A
-  refused snapshot CLOSEs the stream: chunks for this connection.
+  refused snapshot CLOSEs the stream: chunks for this connection. The store
+  layer runs the same checks ([Store skip](#store-skip)).
 - Any other kind arriving before part 1 is ignored (not stored, routed or
   compared). 24220 events after EOSE are ignored.
 - **Epoch (`epoch`):** the file keeps the last epoch in `sync_state`. An
   accepted part 1 whose epoch differs (or the first one) clears every
   `room_seq` row and stores the new epoch, in one writer transaction queued
-  before anything that connection writes. A refused part 1 changes nothing.
-  The relay bumps the epoch on a DB restore and when an account leaves
-  `gated`.
+  before any rule-W write of that connection. Every rule-W write carries the
+  epoch its catch-up started under, and the writer refuses it when the
+  stored epoch differs at apply time, so a walk still running from before
+  the change writes nothing ([rule W](#watermark-room_seq)). A refused part
+  1 changes nothing. The relay bumps the epoch on a DB restore and when an
+  account leaves `gated`.
 
 ### Store skip
 
@@ -1387,20 +1392,26 @@ The store layer decides for itself whether a stream frame is stored
   filter carries `$joined`) and sets that sub's verdict to `pending`. Mobile
   keeps the same state in `user_stream.dart`, checked in `_handleEvent`
   before `submit`.
-- `pending` skips every frame. Part 1 sets `keep` (`live`, `gated`) or
-  `skip` (`shadow`, or a refused part 1).
-- A new REQ on the same id (the `auth-required` retry) resets it to
-  `pending`. A client CLOSE or a relay CLOSED for that id sets `skip` until
-  the socket ends, so frames still queued behind a CLOSED are never stored.
-- Nothing is lost: the relay sends no live frame before EOSE, and rule W's
-  walk covers what was committed before it.
+- The verdict stays `pending` until the stream EOSE has validated the whole
+  snapshot: the store layer runs the `part1` checks itself, including the
+  part count at EOSE. Then it becomes `keep` (`live`, `gated`) or `skip`
+  (`shadow`, or any refusal).
+- **While `pending`, frames on the stream sub are dropped:** not stored, not
+  held, not routed. The relay sends no live frame before EOSE (it queues
+  them and flushes them after EOSE, when the verdict is already `keep`), so
+  a frame seen while pending breaks that rule. Its event comes on the chunks
+  anyway (they stay until the stream EOSE), and rule W's walk covers what
+  was committed before EOSE. Kind 24220 is never stored in any state.
+- A client CLOSE or a relay CLOSED for that id sets `skip` until the socket
+  ends, so frames still queued behind a CLOSED are never stored. A new REQ
+  on the same id overrides that and resets the verdict to `pending`; only
+  the `auth-required` retry reuses the id. A new socket starts with no
+  entries.
 
 ### Relay answers
 
 `closed` and `closedReasons`. `auth-required:` and `invalid: user-stream`
-match as prefixes, the rest exactly. The client never waits for the socket
-to close after a CLOSED: it acts at once, and the normal reconnect follows
-if the socket goes.
+match as prefixes, the rest exactly.
 
 | Reason | Client |
 |---|---|
@@ -1411,21 +1422,33 @@ if the socket goes.
 | `unsupported: user-stream too many rooms` | chunks for this connection |
 | `restricted: not a channel member` (old relay) | chunks for this connection |
 | `auth-required: …` | send the REQ again after the next AUTH OK, once per connection; a second one → chunks |
-| `error: user-stream overflow` | `shadow`: stream off, chunks untouched (`closed{shadow_full}`). `live`/`gated`: the mid-connection fallback (`closed{full}`, counts toward the backoff) |
-| `error: user-stream lagged` | as any CLOSED for the mode; the next reconnect first waits a random 0–10 s |
-| `error: user-stream closed` | as any CLOSED for the mode |
-| anything else | as any CLOSED for the mode |
+| `error: user-stream overflow` | `shadow`: stream off, chunks untouched (`closed{shadow_full}`). `live`/`gated`: wait for the socket to close (`closed{full}`, counts toward the backoff) |
+| `error: user-stream lagged` | any mode: wait for the socket to close; the reconnect first waits a random 0–10 s |
+| `error: user-stream closed` | as any CLOSED for the mode (counts toward the backoff after the EOSE in `live`/`gated`) |
+| anything else | as any CLOSED for the mode (counts as `closed` does) |
 
 "As any CLOSED for the mode": before the stream EOSE, or in `shadow`,
 chunks for this connection (they were never closed); after the EOSE in
-`live`/`gated`, the mid-connection fallback. The stream is not requested
-again on that connection.
+`live`/`gated`, the [mid-connection fallback](#mid-connection-fallback), at
+once. The stream is not requested again on that connection.
 
-- **Overflow backoff (`backoff`):** two `closed{full}` within 10 min (per
-  account and server) stop the stream REQ for 1 h from the second close. A
-  network change or a resume after at least 1 h in the background ends it
-  early and forgets earlier closes. `shadow_full`, `lagged` and `closed` do
-  not count.
+"Wait for the socket to close": the relay cancels the connection right
+after these CLOSEDs, so the client starts no fallback, chunk or walk on the
+dying socket. If the socket is still open 2 s later the client closes it
+itself. Then it reconnects normally (with the lagged jitter when the reason
+was `lagged`), and the next connection takes the stream or chunks by the
+usual rules. This keeps a relay-wide lag from turning into one synchronized
+catch-up burst.
+
+- **Overflow backoff (`backoff`):** two counting closes within 10 min (per
+  account and server) stop the stream REQ for 1 h from the second close.
+  Counting closes are `full` and, after the stream EOSE in `live`/`gated`,
+  `closed` and unknown reasons, so a fail-closed that fires on every
+  connection cannot loop reconnect and catch-up. `lagged` (relay-wide,
+  jittered) and `shadow_full` never count. A network change or a resume
+  after at least 1 h in the background ends it early and forgets earlier
+  closes. The backoff is kept in `sync_state`, so an app restart does not
+  end it; the `auth-required` retry count is per connection.
 - **`error: busy` on a history REQ (`busyRetry`).** The relay refuses a
   history frame that would fill a live/gated stream connection's send
   buffer past 80% and ends that REQ with `CLOSED "error: busy"`. History
@@ -1452,11 +1475,21 @@ again on that connection.
   carry over from the chunk that carried the room.
 - **`shadow`, or a CLOSED before the EOSE:** chunks stay.
 - **Carried rooms:** the snapshot rooms, plus a room whose 44100 arrives
-  (below), minus a room whose 44101 arrives.
+  after the stream EOSE (below), minus a room whose 44101 arrives.
+- **Chunk catch-up and repair (`chunkCatchUp`):** while the mode is unknown
+  (no accepted EOSE yet), and with no stream or in `shadow`, the chunks'
+  own catch-up and desktop's chunk repair run as today; walks already
+  running when the stream EOSE is accepted finish as today. After an
+  accepted EOSE in `live`/`gated`, chunk catch-ups and repairs skip the
+  snapshot rooms, whose catch-up is the stream's; only rooms outside the
+  snapshot keep chunk catch-up. After a mid-connection CLOSED the reopened
+  chunks follow the chunk rules again.
 
 ### Mid-connection fallback
 
-A CLOSED after the stream EOSE in `live`/`gated` (`midConnectionClosed`):
+A CLOSED after the stream EOSE in `live`/`gated`, other than an overflow
+or `lagged` (those wait for the socket to close, above)
+(`midConnectionClosed`):
 
 1. Reopen chunks for every carried room at once (plus the extras already on
    chunks).
@@ -1469,16 +1502,20 @@ A CLOSED after the stream EOSE in `live`/`gated` (`midConnectionClosed`):
    floor at its live start minus 5 s ([Reconnect](#reconnect)).
 
 New chunks would not repair a gap before their own EOSE, so these steps are
-not optional.
+not optional. The stream's coverage spans stop growing at its CLOSED
+(`spanStop`): chunk frames never extend them, and the reopened chunks
+record their own spans from their EOSE.
 
 ### Membership notices in `live`/`gated`
 
 44100/44101 ride the addressed account bundle as before; the stream hooks
 into that listener (`membership`, `routing`).
 
-- **44100** for a room the stream does not carry: the relay has already
-  added it, so the room becomes carried, with a coverage span at the
-  notice's receive time.
+- **44100** after the stream EOSE for a room the stream does not carry: the
+  relay has already added it, so the room becomes carried, with a coverage
+  span at the notice's receive time. A 44100 before the stream EOSE, or in
+  `shadow`, changes nothing carried: the snapshot or the chunks cover the
+  room.
 - **44101:** the room stops being carried. A later stream frame for it whose
   `created_at` is after the 44101's is stored but not shown, until a 44100
   for the room that is not older than the 44101. Same-second frames are
@@ -1506,17 +1543,23 @@ completeness proof.
 2. The walk completed (at most 4 pages, at most 7 days); L is its live time.
 3. The write rides that catch-up's own span record in the write queue, under
    its capture and scope, and is refused exactly when the span is refused.
-4. Every path that clears coverage clears `room_seq` in the same writer
-   transaction (`clearing`):
+4. The write carries the epoch its catch-up started under; the writer
+   refuses it when `sync_state` holds another epoch at apply time. A walk
+   from an earlier connection still writes when the epoch is unchanged.
+5. The writer never lowers a stored seq: a write with S below the stored
+   seq is dropped (walks can end out of order). An equal S moves `at`.
+6. Every path that clears coverage clears `room_seq` in the same writer
+   transaction, and refuses the rule-W writes in flight across it
+   (`clearing`):
 
-| Event | Desktop | Mobile | Rows cleared |
+| Event | Desktop | Mobile | Rows cleared; writes refused |
 |---|---|---|---|
-| Full write queue | writer loss note → file `lossy` | `writer.lossy` | all; later writes at or before the loss refused |
-| Failed write transaction | `note_lossy` | `lossy` persisted | all |
-| Memory guard (50000 waiting events) | — | as a full queue | all |
-| Forgetting a room (incl. a rejoin forget) | `purge.rs` | `purge.dart` | that room |
-| Coverage version change, sign-out, scope end | as coverage | as coverage | all |
-| Epoch change | `sync_state` epoch | same | all |
+| Full write queue | writer loss note → file `lossy` | `writer.lossy` | all; writes whose walk started at or before the loss |
+| Failed write transaction | `note_lossy` | `lossy` persisted | all; as a full queue |
+| Memory guard (50000 waiting events) | — | as a full queue | all; as a full queue |
+| Forgetting a room (incl. a rejoin forget) | `purge.rs` | `purge.dart` | that room; its writes whose walk started before the forget |
+| Coverage version change, sign-out, scope end | as coverage | as coverage | all; every write of the old version or scope |
+| Epoch change | `sync_state` epoch | same | all; every write tagged with the old epoch |
 
 A row for a room missing from the snapshot is left alone: only room lists
 forget rooms.
@@ -1535,13 +1578,14 @@ At the stream EOSE (time L), each snapshot room with seq S is classed
 `live` walks equal, behind and ahead rooms and counts equal ones as
 `predictedSkips`; `gated` skips equal rooms and walks the rest; `shadow`
 walks nothing itself (chunk catch-ups run as today) and counts
-`predictedSkips`.
+`predictedSkips`. The fixture lists these room sets by id.
 
-- **Batches (`batching`):** rooms sorted by resume point, then id; 128 per
-  batch. A batch walks from its oldest resume point minus 1865 s and is left
-  for opening its rooms when that is more than 7 days before L. Sorting
-  keeps one stale room from failing 127 fresh ones. Live-mode and audit
-  batches follow the same rule.
+- **Batches (`batching`):** first take out every stale room, one whose own
+  resume point minus 1865 s is more than 7 days before L: it is not walked
+  and records nothing, left for opening the room, as today. Sort the rest
+  by resume point, then id, and split them 128 per batch; each batch walks
+  from its oldest resume point minus 1865 s. One stale room never holds
+  back fresh ones. Stream, audit and fallback catch-ups all batch this way.
 - **A skip records nothing (`skipCoverage`):** no span beyond the stream's
   own `[L, L]`, and `room_seq.at` does not move. The gap from the room's last
   `hi` to L stays uncovered, so opening or preloading the room fetches it,
@@ -1551,7 +1595,8 @@ walks nothing itself (chunk catch-ups run as today) and counts
   non-skipped plus audited) also get the repair walk from the stream's
   last-seen event time minus 1865 s, batched and sorted; rows newer than
   each room's live start minus 5 s go to listeners, quiet rooms to the quiet
-  listeners.
+  listeners. Like a chunk's, the stream's last-seen time lives in memory:
+  the first connect after launch has none and runs no listener repair.
 - **Mobile:** store catch-up batched and sorted, plus the open-room refetch.
   The quiet-room backfill after a drop waits for the stream EOSE instead of
   the chunks'.
@@ -1565,8 +1610,12 @@ since the last line (any change from 0), or 10 min after the last line if
 anything changed.
 
 - **New-row rule (`newRow`):** a row counts as new only if the walk inserted
-  it (it was not stored), its `created_at` is at or after the start of the
-  room's newest coverage segment, and at or before L.
+  it (it was not stored), it was not also received live on this connection
+  (on the stream or a chunk, before or after the stream EOSE, including the
+  frames the relay held until EOSE), and its `created_at` is at or before L
+  and at or after the start of the room's newest coverage segment that
+  starts before L (the one the walk resumes from; the stream's own
+  `[L, L]` never counts).
 - **Shadow comparison (`comparator`):** starts at the stream EOSE. A room is
   compared when a live chunk carries it and the stream carries it (snapshot
   or 44100). Each event id is classified once, 5 s (inclusive) after it was
