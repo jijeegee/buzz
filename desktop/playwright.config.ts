@@ -33,6 +33,7 @@ export default defineConfig({
         "**/search-scope-screenshots.spec.ts",
         "**/search-thread-reply.spec.ts",
         "**/search-thread-names.spec.ts",
+        "**/thread-open-root-id.spec.ts",
         "**/onboarding-docked-cta-screenshots.spec.ts",
         "**/default-community-onboarding.spec.ts",
         "**/identity-key-help.spec.ts",

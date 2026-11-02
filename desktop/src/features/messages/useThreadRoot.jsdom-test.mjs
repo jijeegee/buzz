@@ -11,7 +11,10 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import React, { act } from "react";
 import { createRoot } from "react-dom/client";
 
-import { getRememberedRouteEvent } from "./lib/routeEventCache.ts";
+import {
+  getRememberedRouteEvent,
+  rememberRouteEvents,
+} from "./lib/routeEventCache.ts";
 import {
   setThreadRootDeps,
   THREAD_ROOT_RETRY_DELAYS_MS,
@@ -71,11 +74,21 @@ async function flush() {
   });
 }
 
-async function mount({ stored = async () => null, relay, state = "connected", loadedEvents = [] }) {
+async function mount({
+  stored = async () => null,
+  relay,
+  state = "connected",
+  loadedEvents = [],
+  remembered = [],
+}) {
   const link = connection(state);
   const relayCalls = [];
+  const storeCalls = [];
   restore = setThreadRootDeps({
-    stored,
+    stored: (...args) => {
+      storeCalls.push(args);
+      return stored(...args);
+    },
     relay: async (...args) => {
       relayCalls.push(args);
       return relay(relayCalls.length);
@@ -83,12 +96,16 @@ async function mount({ stored = async () => null, relay, state = "connected", lo
     ...link.deps,
   });
   const queryClient = new QueryClient();
+  rememberRouteEvents(queryClient, remembered);
   const result = { current: null };
+  const setLoaded = { current: null };
   function Harness() {
+    const [loaded, setLoadedEvents] = React.useState(loadedEvents);
+    setLoaded.current = setLoadedEvents;
     result.current = useThreadRoot({
       channelId: CHANNEL,
       enabled: true,
-      loadedEvents,
+      loadedEvents: loaded,
       rootId: ROOT,
     });
     return null;
@@ -106,7 +123,11 @@ async function mount({ stored = async () => null, relay, state = "connected", lo
   );
   mounted = { root };
   await flush();
-  return { link, queryClient, relayCalls, result };
+  const load = async (events) => {
+    await act(async () => setLoaded.current(events));
+    await flush();
+  };
+  return { link, load, queryClient, relayCalls, result, storeCalls };
 }
 
 test("the stored root draws before the relay answers", async () => {
@@ -202,12 +223,72 @@ test("another author's deletion leaves the root found", async () => {
   assert.equal(result.current.event?.id, ROOT);
 });
 
-test("the loaded root's author makes a lone deletion count", async () => {
-  const { result } = await mount({
+test("a loaded root asks neither the store nor the relay", async () => {
+  const { relayCalls, result, storeCalls } = await mount({
     loadedEvents: [rootEvent],
+    relay: () => [rootEvent],
+  });
+  assert.equal(result.current.event?.id, ROOT);
+  assert.equal(relayCalls.length, 0, "no strong-consistency query");
+  assert.equal(storeCalls.length, 0);
+});
+
+test("a root that leaves the loaded events is asked for", async () => {
+  const { load, relayCalls, result } = await mount({
+    loadedEvents: [rootEvent],
+    relay: () => [rootEvent],
+  });
+  await load([]);
+  assert.equal(relayCalls.length, 1);
+  assert.equal(result.current.event?.id, ROOT);
+});
+
+test("a lone author's deletion answered before the stored root counts once the store answers", async () => {
+  let storedAnswer;
+  const stored = new Promise((resolve) => {
+    storedAnswer = resolve;
+  });
+  const { result } = await mount({
+    stored: () => stored,
     relay: () => [event("d".repeat(64), 5, ALICE, ROOT)],
   });
+  assert.equal(result.current.deleted, false, "author not known yet");
+  // The store never saw the deletion (it happened while offline).
+  storedAnswer({ event: rootEvent, deleted: false });
+  await flush();
+  assert.equal(result.current.event?.id, ROOT);
   assert.equal(result.current.deleted, true);
+});
+
+test("a lone author's deletion counts once the root loads", async () => {
+  const { load, relayCalls, result } = await mount({
+    relay: () => [event("d".repeat(64), 5, ALICE, ROOT)],
+  });
+  assert.equal(relayCalls.length, 1);
+  assert.equal(result.current.deleted, false);
+  await load([rootEvent]);
+  assert.equal(result.current.deleted, true);
+});
+
+test("a lone deletion by another author stays unresolved once the author is known", async () => {
+  let storedAnswer;
+  const stored = new Promise((resolve) => {
+    storedAnswer = resolve;
+  });
+  const { result } = await mount({
+    stored: () => stored,
+    relay: () => [event("d".repeat(64), 5, MALLORY, ROOT)],
+  });
+  storedAnswer({ event: rootEvent, deleted: false });
+  await flush();
+  assert.equal(result.current.event?.id, ROOT);
+  assert.equal(result.current.deleted, false);
+});
+
+test("a remembered root from another room is not used", async () => {
+  const elsewhere = { ...rootEvent, tags: [["h", "other-room"]] };
+  const { result } = await mount({ remembered: [elsewhere], relay: () => [] });
+  assert.equal(result.current.event, null);
 });
 
 test("a stored deletion stays when the relay still returns the root", async () => {

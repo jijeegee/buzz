@@ -939,9 +939,14 @@ fn deletion(id: &str, kind: u64, pubkey: &str, target: &str) -> Value {
            "tags": [["e", target], ["h", "room1"]], "content": "", "sig": ""})
 }
 
+fn elsewhere(mut event: Value) -> Value {
+    event["tags"] = json!([["e", event["tags"][0][1].clone()], ["h", "room2"]]);
+    event
+}
+
 /// The stored root by id (docs/message-sync.md#opening-a-thread-from-its-root-id):
-/// deleted only by a removal or its author's deletion; a stored removal
-/// counts even when the root itself is not stored.
+/// deleted only by a removal or its author's deletion filed in the same room;
+/// a stored removal counts even when the root itself is not stored.
 #[test]
 fn thread_root_by_id_is_deleted_only_on_proof() {
     let cases: Vec<(&str, Vec<Value>, Option<(bool, bool)>)> = vec![
@@ -979,6 +984,27 @@ fn thread_root_by_id_is_deleted_only_on_proof() {
             "not stored but removed",
             vec![deletion("d1", 9005, "admin", "r1")],
             Some((false, true)),
+        ),
+        (
+            "removal filed in another room",
+            vec![
+                event("r1", 10, json!([["h", "room1"]])),
+                elsewhere(deletion("d1", 9005, "admin", "r1")),
+            ],
+            Some((true, false)),
+        ),
+        (
+            "author's 5 filed in another room",
+            vec![
+                event("r1", 10, json!([["h", "room1"]])),
+                elsewhere(deletion("d1", 5, "p1", "r1")),
+            ],
+            Some((true, false)),
+        ),
+        (
+            "not stored, removal filed in another room",
+            vec![elsewhere(deletion("d1", 9005, "admin", "r1"))],
+            None,
         ),
     ];
     for (name, events, expect) in cases {

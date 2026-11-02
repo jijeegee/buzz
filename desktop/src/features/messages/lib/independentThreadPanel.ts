@@ -12,6 +12,7 @@ import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_DELETION,
   KIND_NIP29_DELETE_EVENT,
+  KIND_STREAM_MESSAGE,
 } from "@/shared/constants/kinds";
 
 /**
@@ -140,6 +141,21 @@ function rootStandIn(
   };
 }
 
+/** A real head for a found root that formats to no row: no body. */
+function headlessHead(
+  head: RelayEvent,
+  rootId: string,
+  formatArgs: Tail<Parameters<typeof formatTimelineMessages>>,
+): TimelineMessage | null {
+  const row = formatTimelineMessages(
+    [{ ...head, kind: KIND_STREAM_MESSAGE, content: "" }],
+    ...formatArgs,
+  ).find((message) => message.id === rootId);
+  return row
+    ? { ...row, kind: head.kind, rootId: null, parentId: null, depth: 0 }
+    : null;
+}
+
 function buildPanel(
   channelEvents: RelayEvent[],
   replyEvents: RelayEvent[],
@@ -190,8 +206,12 @@ function buildPanel(
   const events = head ? [head, ...headAux, ...replies] : replies;
   let messages = formatTimelineMessages(events, ...formatArgs);
   if (rootOpen && (deleted || !messages.some((m) => m.id === rootId))) {
+    // A found root of a kind the timeline does not draw still becomes a real
+    // head (author and time, no body) instead of a placeholder forever.
+    const headless =
+      head && !deleted ? headlessHead(head, rootId, formatArgs) : null;
     messages = [
-      rootStandIn(rootId, rootOpen.placeholderTitle, deleted),
+      headless ?? rootStandIn(rootId, rootOpen.placeholderTitle, deleted),
       ...messages.filter((message) => message.id !== rootId),
     ];
   }

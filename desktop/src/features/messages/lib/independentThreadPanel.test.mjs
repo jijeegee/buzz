@@ -271,3 +271,14 @@ test("a stored deletion draws the deleted row", () => {
   assert.equal(panel.threadHead?.rootDeleted, true);
   assert.equal(panel.threadHead?.author, "Launch plan");
 });
+
+test("a found root the timeline does not draw becomes a real head, not a placeholder", () => {
+  const root = { ...contentEvent(ROOT_ID, "{\"opaque\":1}"), kind: 30_023 };
+  const panel = rootOpened({ event: root, deleted: false }, [], [replyEvent()]);
+  assert.equal(panel.threadHead?.id, ROOT_ID);
+  assert.equal(panel.threadHead?.rootPlaceholder, undefined);
+  assert.equal(panel.threadHead?.rootDeleted, undefined);
+  assert.equal(panel.threadHead?.body, "");
+  assert.equal(panel.threadHead?.kind, 30_023);
+  assert.equal(panel.visibleReplies.length, 1);
+});

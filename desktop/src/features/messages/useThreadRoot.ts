@@ -21,6 +21,7 @@ import { relayClient } from "@/shared/api/relayClient";
 import type { ConnectionState } from "@/shared/api/relayClientShared";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
+import { KIND_DELETION } from "@/shared/constants/kinds";
 
 export type { ThreadRootState };
 
@@ -97,14 +98,28 @@ export function setThreadRootDeps(next: Partial<ThreadRootDeps>) {
 type Resolved = ThreadRootState & { key: string | null };
 const EMPTY: Resolved = { key: null, event: null, deleted: false };
 
+/** Whether `event` is `rootId` and filed in `channelId`. */
+function isRootIn(event: RelayEvent, channelId: string, rootId: string) {
+  return (
+    event.id === rootId &&
+    event.tags.some((tag) => tag[0] === "h" && tag[1] === channelId)
+  );
+}
+
 /**
- * Resolves `rootId` in `channelId`: the room's loaded events or the
- * remembered copy seed it at once; the store by id and the relay are asked
- * together, and the relay's answer replaces a stored copy. A failed request
- * while connected is retried after 2, 5 and 15 s; after that, and for an
- * empty answer, the relay is asked again whenever the connection becomes
- * connected, until it answers with the root or a deletion. A stored deletion
- * stays even when the relay still returns the root.
+ * Resolves `rootId` in `channelId`, stopping at the first source that has it
+ * (mobile: `thread_root_provider.dart`). A root among the room's loaded
+ * events is used as is: neither the store nor the relay is asked, and a live
+ * deletion reaches it through the room's subscription. Otherwise the
+ * remembered copy (same room only) seeds it at once, and the store by id and
+ * the relay are asked together; the relay's answer replaces a stored copy.
+ * A failed request while connected is retried after 2, 5 and 15 s; after
+ * that, and for an empty answer, the relay is asked again whenever the
+ * connection becomes connected, until it answers with the root or a
+ * deletion. An answer holding only an author's deletion (5) waits until the
+ * root's author is known (stored or loaded root) and is judged again then.
+ * A stored deletion read before the relay answers stays even when the relay
+ * returns the root; a stored answer arriving after the relay's is ignored.
  */
 export function useThreadRoot({
   channelId,
@@ -121,24 +136,45 @@ export function useThreadRoot({
   const key = enabled && channelId && rootId ? `${channelId}/${rootId}` : null;
   const [resolved, setResolved] = React.useState<Resolved>(EMPTY);
   const current = resolved.key === key ? resolved : EMPTY;
+  const loadedRoot = React.useMemo(
+    () =>
+      key && rootId
+        ? (loadedEvents.find((event) => event.id === rootId) ?? null)
+        : null,
+    [key, loadedEvents, rootId],
+  );
+  const rootLoaded = loadedRoot !== null;
   const seed = React.useMemo(() => {
-    if (!key || !rootId) return null;
-    return (
-      loadedEvents.find((event) => event.id === rootId) ??
-      getRememberedRouteEvent(queryClient, rootId)
-    );
-  }, [key, loadedEvents, queryClient, rootId]);
+    if (loadedRoot) return loadedRoot;
+    if (!key || !channelId || !rootId) return null;
+    const remembered = getRememberedRouteEvent(queryClient, rootId);
+    return remembered && isRootIn(remembered, channelId, rootId)
+      ? remembered
+      : null;
+  }, [channelId, key, loadedRoot, queryClient, rootId]);
   const event = current.event ?? seed;
+  const knownAuthor = event?.pubkey ?? null;
   const knownAuthorRef = React.useRef<string | null>(null);
-  knownAuthorRef.current = event?.pubkey ?? null;
+  knownAuthorRef.current = knownAuthor;
+  // The last answer holding an author's deletion (5) that could not be
+  // judged because the root's author was unknown; kept across effect runs.
+  const pendingRef = React.useRef<{ key: string; answer: RelayEvent[] } | null>(
+    null,
+  );
+  // Judges the kept answer again inside the running effect (set by it).
+  const rejudgeRef = React.useRef<(() => void) | null>(null);
 
   React.useEffect(() => {
-    if (!key || !channelId || !rootId) return;
+    if (!key || !channelId || !rootId || rootLoaded) return;
     let cancelled = false;
     let answered = false;
     let asking = false;
     let failures = 0;
     let retry: ReturnType<typeof setTimeout> | undefined;
+    // The stored root's author, known here before the render that shows it.
+    let storedAuthor: string | null = null;
+    const pending = () =>
+      pendingRef.current?.key === key ? pendingRef.current.answer : null;
     const update = (apply: (previous: Resolved) => Resolved) =>
       setResolved((previous) =>
         apply(previous.key === key ? previous : { ...EMPTY, key }),
@@ -155,15 +191,45 @@ export function useThreadRoot({
       // The relay's answer wins over a late stored one.
       if (!stored || cancelled || answered) return;
       const storedEvent =
-        stored.event?.id === rootId &&
-        stored.event.tags.some((tag) => tag[0] === "h" && tag[1] === channelId)
+        stored.event && isRootIn(stored.event, channelId, rootId)
           ? stored.event
           : null;
+      storedAuthor = storedEvent?.pubkey ?? null;
       update((previous) => ({
         key,
         event: previous.event ?? storedEvent,
         deleted: previous.deleted || stored.deleted,
       }));
+      const kept = pending();
+      if (kept) judge(kept);
+    };
+
+    const judge = (answer: RelayEvent[]) => {
+      const result = threadRootVerdict(answer, {
+        channelId,
+        rootId,
+        knownRootAuthor: knownAuthorRef.current ?? storedAuthor,
+      });
+      if (result.verdict === "unresolved") {
+        pendingRef.current = answer.some(
+          (event) => event.kind === KIND_DELETION,
+        )
+          ? { key, answer }
+          : null;
+        return;
+      }
+      pendingRef.current = null;
+      answered = true;
+      if (result.root) rememberRouteEvents(queryClient, [result.root]);
+      update((previous) => ({
+        key,
+        event: result.root ?? previous.event,
+        deleted: result.verdict === "deleted" || previous.deleted,
+      }));
+    };
+    rejudgeRef.current = () => {
+      const kept = pending();
+      if (kept && !answered && !cancelled) judge(kept);
     };
 
     const scheduleRetry = () => {
@@ -193,19 +259,7 @@ export function useThreadRoot({
         scheduleRetry();
         return;
       }
-      const result = threadRootVerdict(answer, {
-        channelId,
-        rootId,
-        knownRootAuthor: knownAuthorRef.current,
-      });
-      if (result.verdict === "unresolved") return;
-      answered = true;
-      if (result.root) rememberRouteEvents(queryClient, [result.root]);
-      update((previous) => ({
-        key,
-        event: result.root ?? previous.event,
-        deleted: result.verdict === "deleted" || previous.deleted,
-      }));
+      judge(answer);
     };
 
     let lastState: ConnectionState | null = null;
@@ -222,10 +276,36 @@ export function useThreadRoot({
     void askRelay();
     return () => {
       cancelled = true;
+      rejudgeRef.current = null;
       clearTimeout(retry);
       unsubscribe();
     };
-  }, [channelId, key, queryClient, rootId]);
+  }, [channelId, key, queryClient, rootId, rootLoaded]);
+
+  // An author learned after the relay answered (the stored root drawn, or the
+  // root newly loaded) lets a kept author's deletion count.
+  React.useEffect(() => {
+    const kept = pendingRef.current;
+    if (!knownAuthor || !key || !channelId || !rootId || kept?.key !== key) {
+      return;
+    }
+    if (rejudgeRef.current) {
+      rejudgeRef.current();
+      return;
+    }
+    // The root is loaded now, so the asking effect has stopped: judge here.
+    const result = threadRootVerdict(kept.answer, {
+      channelId,
+      rootId,
+      knownRootAuthor: knownAuthor,
+    });
+    if (result.verdict !== "deleted") return;
+    pendingRef.current = null;
+    setResolved((previous) => ({
+      ...(previous.key === key ? previous : { ...EMPTY, key }),
+      deleted: true,
+    }));
+  }, [channelId, key, knownAuthor, rootId]);
 
   return React.useMemo(
     () => ({ event, deleted: current.deleted }),

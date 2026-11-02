@@ -37,6 +37,16 @@ const reply = message(REPLY_ID, {
     ["e", ROOT_ID, "", "reply"],
   ],
 });
+const broadcastReply = message(REPLY_ID, {
+  depth: 1,
+  parentId: ROOT_ID,
+  rootId: ROOT_ID,
+  tags: [
+    ["h", CHANNEL_ID],
+    ["e", ROOT_ID, "", "reply"],
+    ["broadcast", "1"],
+  ],
+});
 const replyPlaceholder = message(REPLY_ID, {
   tags: [["h", CHANNEL_ID], [SEARCH_HIT_PLACEHOLDER_TAG]],
 });
@@ -158,5 +168,41 @@ test("a link naming the reply's thread opens it at once, then expands to the rep
   assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
   assert.equal(harness.calls.expandedReplyIds.length, 2);
   assert.deepEqual(harness.calls.threadScrollTargetId, [REPLY_ID, REPLY_ID]);
+  await harness.unmount();
+});
+
+// A reply also sent to the group, linked with its thread: the panel opens on
+// the root and scrolls to the reply whether or not the reply is cached, and
+// the main timeline scrolls to the reply too.
+for (const [name, first] of [
+  ["cached", [root, broadcastReply]],
+  ["not cached", []],
+]) {
+  test(`a linked reply also sent to the group opens its thread (${name})`, async () => {
+    const harness = await mount({
+      targetMessageId: REPLY_ID,
+      targetThreadRootId: ROOT_ID,
+      timelineMessages: first,
+    });
+    await harness.render({
+      targetMessageId: REPLY_ID,
+      targetThreadRootId: ROOT_ID,
+      timelineMessages: [root, broadcastReply],
+    });
+    assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
+    assert.equal(harness.calls.threadScrollTargetId.at(-1), REPLY_ID);
+    assert.equal(harness.calls.expandedReplyIds.at(-1).size, 0);
+    assert.equal(harness.mainTimelineTargetId(), REPLY_ID);
+    await harness.unmount();
+  });
+}
+
+test("a reply also sent to the group, linked without its thread, stays in the main timeline", async () => {
+  const harness = await mount({
+    targetMessageId: REPLY_ID,
+    timelineMessages: [root, broadcastReply],
+  });
+  assert.deepEqual(harness.calls.openThreadHeadId, []);
+  assert.equal(harness.mainTimelineTargetId(), REPLY_ID);
   await harness.unmount();
 });

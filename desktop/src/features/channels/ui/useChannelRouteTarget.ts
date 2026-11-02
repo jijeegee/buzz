@@ -137,16 +137,12 @@ export function useChannelRouteTarget({
     // A link that names the reply's thread opens it by its root id at once,
     // never waiting for the reply or its ancestors
     // (docs/message-sync.md#opening-a-thread-from-its-root-id). A reply also
-    // sent to the group stays in the main timeline.
+    // sent to the group is no exception, so the result never depends on
+    // whether the reply is cached; the main timeline scrolls to it as well.
     if (
       targetThreadRootId &&
       targetThreadRootId !== targetMessageId &&
-      openedByRootRef.current === null &&
-      !(
-        targetMessage &&
-        !isPlaceholder &&
-        isBroadcastReply(targetMessage.tags ?? [])
-      )
+      openedByRootRef.current === null
     ) {
       if (!requireThreadEditResolution()) {
         return;
@@ -189,7 +185,12 @@ export function useChannelRouteTarget({
       return;
     }
 
-    if (isBroadcastReply(targetMessage.tags ?? [])) {
+    // Without a thread in the link, a reply also sent to the group stays in
+    // the main timeline. With one, its panel is already open on the root.
+    if (
+      isBroadcastReply(targetMessage.tags ?? []) &&
+      openedByRootRef.current !== targetKey
+    ) {
       return;
     }
 

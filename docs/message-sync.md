@@ -852,7 +852,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   deep-link copy), the store by id (pushed rows included; a removal (9005) or
   the author's deletion (5) in the store marks it deleted), the relay. An
   author's deletion counts only when signed by the root's author, so it needs
-  the root in the same answer or already known. The
+  the root in the same answer or already known; an answer holding only such
+  a deletion is kept and judged again once the author is known. The
   relay is asked over `/query` with two filters in one request: the root by
   id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
   replaces a stored copy. The root fills only the top bubble, agent pins and
@@ -888,15 +889,19 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
 - **Desktop:** the channel screen's thread panel opens on the root id alone
   (`useThreadRootOpen.ts`, `useThreadRoot.ts`, `threadRootResolve.ts`): a thin
   top row shows the thread name (its stored name, else the Chats row's title)
-  until the root is found, and the replies draw at once. The root is looked up
-  in the loaded room events or the remembered route copy (a Chats row hands
-  over its root), then the store by id (`message_store_thread_root`) and the
-  relay (`get_thread_root`) together. The relay request asks both filters with
+  until the root is found, and the replies draw at once. A root among the
+  loaded room events is used as is, with no store or relay ask (a live
+  deletion reaches it through the room's subscription). Otherwise the
+  remembered route copy (a Chats row hands over its root; same room only)
+  seeds it, and the store by id (`message_store_thread_root`) and the relay
+  (`get_thread_root`) are asked together. The relay request asks both filters with
   `"consistency":"strong"` so a just-written root or deletion is not missed
   (mobile could adopt this). The panel never closes for a missing root; only
   forum rooms and huddle transcripts keep the old close. Links that carry
   `threadRootId` (notifications, search, quotes, goals) open the thread on the
-  root at once and expand the branch to the reply once it loads. A root from
+  root at once and expand the branch to the reply once it loads.
+  A reply also sent to the group opens the same way, cached or not; the main
+  timeline scrolls to it too. A root from
   before the reader joined, which the relay does not return, stays a
   placeholder row.
 
