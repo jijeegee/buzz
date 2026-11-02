@@ -162,19 +162,33 @@ class UserStreamLivePrev {
     'last': lastFrameAt,
   });
 
-  static UserStreamLivePrev? decode(String? text) {
+  /// The bounds alone: what a span extension saves when the set is the same.
+  String encodeLast() => jsonEncode({'eose': eoseAt, 'last': lastFrameAt});
+
+  /// [last]: the newer bounds from [encodeLast], used when they belong to
+  /// the same connection (same `eose`).
+  static UserStreamLivePrev? decode(String? text, {String? last}) {
     if (text == null) return null;
     try {
       final json = jsonDecode(text);
       if (json case {
         'rooms': final List rooms,
         'eose': final int eose,
-        'last': final int last,
+        'last': final int lastFrame,
       }) {
+        var newest = lastFrame;
+        if (last != null) {
+          if (jsonDecode(last) case {
+            'eose': final int lastEose,
+            'last': final int at,
+          } when lastEose == eose && at > newest) {
+            newest = at;
+          }
+        }
         return UserStreamLivePrev(
           rooms.whereType<String>().toSet(),
           eose,
-          last,
+          newest,
         );
       }
     } on FormatException {
@@ -267,9 +281,10 @@ class UserStreamCatchUpJob {
     required this.relayPubkey,
     required this.liveAt,
     required this.captured,
+    int? coverageBefore,
     this.prev,
     this.fallback = false,
-  });
+  }) : coverageBefore = coverageBefore ?? liveAt;
 
   /// `live`, `gated` or `shadow` (by name).
   final String mode;
@@ -279,6 +294,13 @@ class UserStreamCatchUpJob {
   final String relayPubkey;
   final int liveAt;
   final int? captured;
+
+  /// Only coverage spans begun before this count for the resume points and
+  /// the new-row base: at the stream EOSE, the connection's start (AUTH OK),
+  /// so spans that chunks or the stream opened on this connection never
+  /// hide the offline gap (docs/message-sync.md#catch-up-at-the-stream-eose).
+  /// The fallback keeps [liveAt]: the stream's own span is its resume point.
+  final int coverageBefore;
   final UserStreamLivePrev? prev;
   final bool fallback;
 }
@@ -322,7 +344,11 @@ class UserStreamCatchUp {
     final result = UserStreamCatchUpResult();
     final store = scope.store;
     final lease = scope.lease;
-    final resume = await store.resumePoints(lease, job.rooms, job.liveAt);
+    final resume = await store.resumePoints(
+      lease,
+      job.rooms,
+      job.coverageBefore,
+    );
     final covered = job.rooms.where(resume.containsKey).toList();
     final vouch = StoreSeqVouch({
       for (final room in covered) room: ?job.seqs[room],
@@ -331,7 +357,7 @@ class UserStreamCatchUp {
     var predicted = const <String>[];
     var sampled = const <String>[];
     if (!job.fallback) {
-      final stored = await store.roomSeqs(lease, covered);
+      final stored = await store.roomSeqs(lease, covered, epoch: job.epoch);
       final ahead = <String, int>{};
       for (final room in job.rooms) {
         final seq = job.seqs[room] ?? 0;
@@ -374,7 +400,7 @@ class UserStreamCatchUp {
           result.add('predictedSkips', equal.length);
       }
     }
-    final heads = await store.coverageHeads(lease, walk, job.liveAt);
+    final heads = await store.coverageHeads(lease, walk, job.coverageBefore);
     final plan = userStreamBatches({
       for (final room in walk) room: resume[room]!,
     }, job.liveAt);

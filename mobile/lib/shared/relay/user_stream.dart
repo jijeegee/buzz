@@ -293,8 +293,12 @@ UserStreamClosedVerdict userStreamClosedVerdict(
   final afterEose = streamLive && liveMode;
   switch (key) {
     case 'auth_required':
+      // After the EOSE in live/gated the relay already dropped frames: the
+      // fallback repairs the gap, where a retry would lose it.
       return UserStreamClosedVerdict(
-        action: afterRetry
+        action: afterEose
+            ? UserStreamClosedAction.fallback
+            : afterRetry
             ? UserStreamClosedAction.chunks
             : UserStreamClosedAction.retryAfterAuth,
         key: key,
@@ -423,14 +427,25 @@ enum UserStreamPhase {
 
 /// The stream state of one connection.
 class _Connection {
-  _Connection(this.generation, this.subId, this.sentAtMs);
+  _Connection(this.generation, this.subId, this.sentAtMs, this.startedAt);
 
   final int generation;
   final String subId;
   int sentAtMs;
+
+  /// AUTH OK of this connection (seconds): coverage spans begun at or after
+  /// it are this connection's own and never a resume point at the EOSE.
+  final int startedAt;
   _Verdict verdict = _Verdict.pending;
   bool ended = false;
   bool authRetried = false;
+
+  /// An overflow or `lagged` CLOSED: the socket is about to close, and no
+  /// chunk may open on it.
+  bool closing = false;
+
+  /// Stream catch-ups still running: chunk ids are remembered for them.
+  int catchUps = 0;
   UserStreamAssembler assembler = UserStreamAssembler();
   UserStreamSnapshot? snapshot;
   UserStreamPhase phase = UserStreamPhase.pending;
@@ -469,6 +484,8 @@ class UserStreamHost {
     this.capture = _noCapture,
     this.extendCoverage = _noCoverage,
     this.catchUp = _noCatchUp,
+    this.reportPlatform,
+    this.postReport = _noPost,
   });
 
   final String Function() nextSubId;
@@ -509,7 +526,14 @@ class UserStreamHost {
   )
   catchUp;
 
+  /// `ios` where reports go to the relay (plan U1d); `null` elsewhere.
+  final String? reportPlatform;
+
+  /// POSTs a report line's counters to the relay.
+  final void Function(UserStreamCounters counters) postReport;
+
   static int _nowMs() => DateTime.now().millisecondsSinceEpoch;
+  static void _noPost(UserStreamCounters _) {}
   static void _ignoreEpoch(String _) {}
   static int? _noCapture() => null;
   static void _noCoverage(List<String> _, int _, int _, int? _) {}
@@ -522,6 +546,7 @@ class UserStreamHost {
 const _countersKey = 'user_stream_counters';
 const _backoffKey = 'user_stream_backoff';
 const _livePrevKey = 'user_stream_live_prev';
+const _liveLastKey = 'user_stream_live_last';
 
 /// The stream of one relay session, across its connections.
 class UserStream {
@@ -534,10 +559,18 @@ class UserStream {
   Object? _scope;
   Future<void>? _loading;
   bool _loaded = false;
+
+  int _loadToken = 0;
+
+  /// A network change heard before the state loaded: applied once it has.
+  bool _resetOnLoad = false;
   UserStreamCounters _totals = UserStreamCounters();
   UserStreamBackoff _backoff = UserStreamBackoff();
   final _reporter = UserStreamReporter();
   bool _jitterNext = false;
+
+  /// The last report POST (iOS), one per 5 min at most.
+  int? _lastPostMs;
   bool _connectedBefore = false;
 
   final _listeners = <void Function()>[];
@@ -549,6 +582,11 @@ class UserStream {
 
   /// The previous live connection, for `liveMissed`.
   UserStreamLivePrev? _livePrev;
+
+  /// The carried set last saved: a 60 s extension saves only the bounds
+  /// unless it changed.
+  Set<String>? _livePrevRooms;
+  int? _livePrevEose;
 
   /// The stream's say in chunk catch-ups.
   late final StoreStreamHooks hooks = _UserStreamHooks(this);
@@ -577,38 +615,92 @@ class UserStream {
   /// the build switch or the backoff says chunks.
   Future<void> connected(int generation) async {
     _end();
-    if (userStreamBuild == UserStreamBuild.off) return;
+    // Taken before any chunk REQ of this connection goes out.
+    final startedAt = host.nowMs() ~/ 1000;
+    // Every early return below means chunks for every room: listeners
+    // re-read [carriedRooms] (empty now), so nothing stays handed off.
+    if (userStreamBuild == UserStreamBuild.off) return _notify();
     final scope = host.scope();
-    if (scope == null) return;
-    if (scope != _scope || _loading == null) {
-      _scope = scope;
-      _loaded = false;
-      final loading = _loading = _load();
-      unawaited(loading.then((_) => _loaded = _loading == loading));
-    }
+    if (scope == null) return _notify();
+    if (scope != _scope || _loading == null) _startLoad(scope);
     // Loaded: the REQ goes out now, ahead of everything else.
-    if (!_loaded) await _loading;
-    if (!host.isActive(generation) || _connection != null) return;
-    if (!_backoff.allowed(host.nowMs() ~/ 1000)) return;
+    while (!_loaded) {
+      final loading = _loading;
+      if (loading == null) break;
+      await loading;
+      if (identical(_loading, loading)) break;
+    }
+    if (!host.isActive(generation) ||
+        _connection != null ||
+        !_loaded ||
+        _scope != scope) {
+      return _notify();
+    }
+    if (!_backoff.allowed(host.nowMs() ~/ 1000)) return _notify();
     if (_connectedBefore) _count((c) => c.add('reconnects'));
     _connectedBefore = true;
-    final connection = _Connection(generation, host.nextSubId(), host.nowMs());
+    final connection = _Connection(
+      generation,
+      host.nextSubId(),
+      host.nowMs(),
+      startedAt,
+    );
     _connection = connection;
     _sendReq(connection);
     _notify();
   }
 
-  Future<void> _load() async {
-    final values = await host.readState(const [
-      _countersKey,
-      _backoffKey,
-      _livePrevKey,
-    ]);
+  /// A new account or server: its state starts empty until its own read
+  /// lands, and nothing is written for it before that (a write now would
+  /// put the old account's numbers in the new file).
+  void _startLoad(Object scope) {
+    _scope = scope;
+    _loaded = false;
+    _resetOnLoad = false;
+    _totals = UserStreamCounters();
+    _backoff = UserStreamBackoff();
+    _livePrev = null;
+    _livePrevRooms = null;
+    _livePrevEose = null;
+    _lastSnapshot = null;
+    final token = ++_loadToken;
+    _loading = _load(scope, () => token == _loadToken);
+  }
+
+  Future<void> _load(Object scope, bool Function() current) async {
+    Map<String, String> values;
+    try {
+      values = await host.readState(const [
+        _countersKey,
+        _backoffKey,
+        _livePrevKey,
+        _liveLastKey,
+      ]);
+    } catch (error) {
+      debugPrint('[user-stream] state read failed: $error');
+      values = const {};
+    }
+    // A late read of an earlier account (or an earlier load) changes nothing.
+    if (!current()) return;
+    if (_scope != scope || host.scope() != scope) {
+      _loading = null; // The next connect of this scope reads again.
+      return;
+    }
     _totals = UserStreamCounters.decode(values[_countersKey]);
     _backoff = UserStreamBackoff.decode(values[_backoffKey]);
-    _livePrev = UserStreamLivePrev.decode(values[_livePrevKey]);
+    _livePrev = UserStreamLivePrev.decode(
+      values[_livePrevKey],
+      last: values[_liveLastKey],
+    );
+    _livePrevRooms = _livePrev?.rooms;
+    _livePrevEose = _livePrev?.eoseAt;
     _lastSnapshot = null;
     _reporter.loaded(_totals, host.nowMs());
+    _loaded = true;
+    if (_resetOnLoad) {
+      _resetOnLoad = false;
+      networkChanged();
+    }
   }
 
   void _sendReq(_Connection connection) {
@@ -652,7 +744,9 @@ class UserStream {
       ..ended = true
       ..timer?.cancel();
     _stopComparator(connection);
-    if (connection.phase != UserStreamPhase.none) {
+    final carried = connection.carry != null;
+    connection.carry = null;
+    if (connection.phase != UserStreamPhase.none || carried) {
       connection.phase = UserStreamPhase.none;
       _notify();
     }
@@ -668,6 +762,10 @@ class UserStream {
 
   /// A network change ends the backoff.
   void networkChanged() {
+    if (!_loaded) {
+      _resetOnLoad = _scope != null;
+      return;
+    }
     _backoff.reset();
     _saveBackoff();
   }
@@ -675,15 +773,19 @@ class UserStream {
   /// The app resumed after [backgroundSecs] in the background.
   void resumed(int backgroundSecs) {
     if (backgroundSecs < userStreamBackgroundResetSecs) return;
-    _backoff.resumed(backgroundSecs);
-    _saveBackoff();
+    networkChanged();
   }
 
+  /// Whether state may be written now: loaded, for the scope in use.
+  bool get _writable => _loaded && _scope != null && _scope == host.scope();
+
   void _saveBackoff() {
-    if (_scope != null && _scope == host.scope()) {
-      host.writeState({_backoffKey: _backoff.encode()});
-    }
+    if (_writable) host.writeState({_backoffKey: _backoff.encode()});
   }
+
+  /// Whether the socket is closing after an overflow or `lagged` CLOSED:
+  /// nothing is carried, and no chunk should open on the dying socket.
+  bool get closingSocket => _connection?.closing ?? false;
 
   /// A relay frame; true when it belongs to the stream sub, which nothing
   /// else may see. Other EVENTs feed the shadow comparison.
@@ -694,7 +796,7 @@ class UserStream {
     if (connection == null || subId != connection.subId) return false;
     switch (data[0]) {
       case 'EVENT' when data.length >= 3 && data[2] is Map<String, dynamic>:
-        _noteLiveId(connection, (data[2] as Map)['id']);
+        _noteReceivedId(connection, (data[2] as Map)['id']);
         _onEvent(connection, data[2] as Map<String, dynamic>);
       case 'EOSE':
         _onEose(connection);
@@ -837,6 +939,12 @@ class UserStream {
     _count((c) => c.closed[verdict.key] = (c.closed[verdict.key] ?? 0) + 1);
     switch (verdict.action) {
       case UserStreamClosedAction.awaitSocketClose:
+        // The relay dropped frames: nothing is carried or live any more, so
+        // store opens stop trusting it. Listeners hear it now; the chunks
+        // open on the next connection, not on this dying socket.
+        connection
+          ..carry = null
+          ..closing = true;
         connection.timer?.cancel();
         connection.timer = host.timer(userStreamAwaitCloseGrace, () {
           if (host.isActive(generation)) host.closeSocket(generation);
@@ -877,11 +985,18 @@ class UserStream {
   }
 
   void _report({bool force = false}) {
-    if (_scope == null || _scope != host.scope()) return;
+    if (!_writable) return;
     final due = _reporter.due(_totals, host.nowMs());
     if (due) {
       _totals.seq++;
       debugPrint('[user-stream] report #${_totals.seq} ${_totals.encode()}');
+      final now = host.nowMs();
+      if (host.reportPlatform != null &&
+          (_lastPostMs == null ||
+              now - _lastPostMs! >= userStreamReportIntervalPostMs)) {
+        _lastPostMs = now;
+        host.postReport(_totals.copy());
+      }
     }
     if (due || force) host.writeState({_countersKey: _totals.encode()});
   }

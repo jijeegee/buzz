@@ -16,11 +16,17 @@ const _maxRoomSeq = 9007199254740991;
 /// row when it differs from the stored one), or [ahead] rows to delete
 /// (stored seq above the snapshot's after a relay restore).
 class _StreamSeqOp {
-  const _StreamSeqOp({this.epoch, this.ahead});
+  const _StreamSeqOp({this.epoch, this.ahead, this.retries = 0});
 
   final String? epoch;
   final Map<String, int>? ahead;
+
+  /// Times a failed write kept this epoch for another try.
+  final int retries;
 }
+
+/// A failed write keeps a queued epoch for at most this many more tries.
+const _streamSeqRetries = 3;
 
 Future<String?> _storedEpoch(DatabaseExecutor db) async {
   final rows = await db.rawQuery('SELECT value FROM sync_state WHERE key = ?', [
@@ -41,19 +47,49 @@ Future<void> _writeRoomSeqs(
   final epoch = coverage.epoch;
   if (seqs == null || epoch == null || rooms.isEmpty) return;
   if (await _storedEpoch(txn) != epoch) return;
-  for (final room in rooms) {
-    final seq = seqs[room];
-    if (seq == null || seq < 0 || seq > _maxRoomSeq) continue;
-    final rows = await txn.rawQuery('SELECT seq FROM room_seq WHERE room = ?', [
-      room,
-    ]);
-    final stored = rows.firstOrNull?['seq'] as int?;
-    if (stored != null && seq < stored) continue;
-    await txn.rawInsert(
+  final wanted = [
+    for (final room in rooms)
+      if (seqs[room] case final seq? when seq >= 0 && seq <= _maxRoomSeq) room,
+  ];
+  if (wanted.isEmpty) return;
+  final stored = await _readRoomSeqs(txn, wanted);
+  final batch = txn.batch();
+  for (final room in wanted) {
+    final seq = seqs[room]!;
+    final was = stored[room]?.$1;
+    if (was != null && seq < was) continue;
+    batch.rawInsert(
       'INSERT OR REPLACE INTO room_seq(room, seq, at) VALUES (?, ?, ?)',
       [room, seq, coverage.to],
     );
   }
+  await batch.commit(noResult: true);
+}
+
+/// `room -> (seq, at)` of [rooms], 500 per query.
+Future<Map<String, (int, int)>> _readRoomSeqs(
+  DatabaseExecutor db,
+  List<String> rooms,
+) async {
+  final found = <String, (int, int)>{};
+  for (var i = 0; i < rooms.length; i += 500) {
+    final part = rooms.sublist(i, math.min(i + 500, rooms.length));
+    final rows = await db.rawQuery(
+      'SELECT room, seq, at FROM room_seq WHERE room IN '
+      '(${List.filled(part.length, '?').join(', ')})',
+      part,
+    );
+    for (final row in rows) {
+      if (row case {
+        'room': final String room,
+        'seq': final int seq,
+        'at': final int at,
+      }) {
+        found[room] = (seq, at);
+      }
+    }
+  }
+  return found;
 }
 
 /// The user stream's state in the file's `sync_state`
@@ -62,7 +98,17 @@ extension MessageStoreUserStream on MessageStore {
   Future<void> _applyStreamSeqOp(_Writer writer, _StreamSeqOp op) async {
     final db = await (writer.database ??= writer.open());
     if (writer.stopped) return;
+    final lossy = writer.lossy;
+    writer.lossy = false;
     await db.transaction((txn) async {
+      if (lossy) {
+        // The loss clear a failed write left for the next transaction.
+        await txn.rawInsert(
+          "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('lossy', '1')",
+        );
+        await txn.rawDelete('DELETE FROM coverage');
+        await txn.rawDelete('DELETE FROM room_seq');
+      }
       if (op.epoch case final epoch?) {
         if (await _storedEpoch(txn) != epoch) {
           await txn.rawDelete('DELETE FROM room_seq');
@@ -114,27 +160,28 @@ extension MessageStoreUserStream on MessageStore {
     return !writer.stopped;
   }
 
-  /// `room -> (seq, at)` of [rooms], after the writes queued so far.
+  /// `room -> (seq, at)` of [rooms], after the writes queued so far. With
+  /// [epoch], nothing (every room reads as having no row) unless the file
+  /// holds that epoch and no loss clear is pending: rows of an older epoch
+  /// never class a room `equal` (docs/message-sync.md#epoch).
   Future<Map<String, (int, int)>> roomSeqs(
     MessageStoreLease? lease,
     Iterable<String> rooms, {
+    String? epoch,
     Duration cap = const Duration(seconds: 10),
   }) async {
     final wanted = rooms.toList();
     if (wanted.isEmpty || !await _settled(lease, cap)) return const {};
+    final writer = _writerFor(lease);
+    if (epoch != null && (writer == null || writer.lossy)) return const {};
     final rows = await _read(lease, 'room seqs', (db) async {
-      final found = <String, (int, int)>{};
-      for (final room in wanted) {
-        final rows = await db.rawQuery(
-          'SELECT seq, at FROM room_seq WHERE room = ?',
-          [room],
-        );
-        if (rows.firstOrNull case {'seq': final int seq, 'at': final int at}) {
-          found[room] = (seq, at);
-        }
+      if (epoch != null && await _storedEpoch(db) != epoch) {
+        return const <String, (int, int)>{};
       }
-      return found;
+      return _readRoomSeqs(db, wanted);
     });
+    // A loss noted while reading clears the rows it read.
+    if (epoch != null && (writer?.lossy ?? true)) return const {};
     return rows ?? const {};
   }
 
@@ -145,7 +192,8 @@ extension MessageStoreUserStream on MessageStore {
   }
 
   /// Of [ids], those already stored, after the writes queued so far; `null`
-  /// when that cannot be told.
+  /// when that cannot be told (a failed read too: a walk must not count
+  /// every row as new).
   Future<Set<String>?> storedEventIds(
     MessageStoreLease? lease,
     Iterable<String> ids, {
@@ -168,7 +216,7 @@ extension MessageStoreUserStream on MessageStore {
         }
       }
       return found;
-    }).then((found) => found ?? <String>{});
+    });
   }
 
   /// Each room's newest span begun before [before]: `(lo, hi)`.

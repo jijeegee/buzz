@@ -396,6 +396,148 @@ void main() {
     }
   });
 
+  group('connectionSpans', () {
+    for (final c in _cases('connectionSpans')) {
+      test(c['name'], () async {
+        final connectedAt = c['connectedAt'] as int;
+        final liveAt = c['L'] as int;
+        for (final (lo, hi) in _spans(c['segments'])) {
+          await seedSegment('room-a', lo, hi);
+        }
+        if (c['storedSeq'] case final int seq) {
+          await seedEpoch('e1');
+          await seedRow('room-a', seq, connectedAt - 100000);
+        }
+        final rows = [
+          for (final row in (c['walkRows'] ?? const []) as List)
+            _roomEvent(row['id'] as String, 'room-a', row['created_at'] as int),
+        ];
+        // Read before the walk records its own span.
+        final resume = await store.resumePoints(lease, const [
+          'room-a',
+        ], connectedAt);
+        final heads = await store.coverageHeads(lease, const [
+          'room-a',
+        ], connectedAt);
+        final walks = <(List<String>, int)>[];
+        final result =
+            await runner((filters) async {
+              final filter = filters.single;
+              walks.add((_strings(filter['#h']), filter['since'] as int));
+              return rows;
+            }).run(
+              UserStreamCatchUpJob(
+                mode: (c['mode'] as String?) ?? 'live',
+                rooms: const ['room-a'],
+                seqs: {'room-a': (c['seq'] as int?) ?? 9},
+                epoch: 'e1',
+                relayPubkey: _relayKey,
+                liveAt: liveAt,
+                captured: null,
+                coverageBefore: connectedAt,
+              ),
+            );
+        final expected = c['expect'] as Map;
+        expect(result.classes['room-a']?.name, expected['class']);
+        expect(resume['room-a'], expected['resume']);
+        expect(
+          walks.isEmpty ? null : walks.single.$2,
+          expected['since'],
+          reason: '$walks',
+        );
+        final head = heads['room-a'];
+        expect(head == null ? null : [head.$1, head.$2], expected['head']);
+        for (final name in ['predictedSkips', 'falseSkip']) {
+          if (expected[name] case final int count) {
+            expect(result.counts[name] ?? 0, count, reason: name);
+          }
+        }
+      });
+    }
+
+    test(
+      'the EOSE catch-up resumes from before the connection, not a chunk EOSE',
+      () async {
+        // B1: the chunk carrying room-a reached EOSE at C, after AUTH OK and
+        // before the stream EOSE at L; the offline gap must still be walked.
+        const connectedAt = 999990;
+        const chunkEose = 999998;
+        const liveAt = 1000000;
+        await seedSegment('room-a', liveAt - 30000, liveAt - 7200);
+        await seedSegment('room-a', chunkEose, chunkEose);
+        final q = recordingQuery();
+        UserStreamCatchUpJob? seen;
+        final s = _Stream(
+          catchUp: (job, receivedLive) async {
+            seen = job;
+            return runner(q.query).run(job);
+          },
+        );
+        s.nowMs = connectedAt * 1000;
+        await s.stream.connected(1);
+        s.nowMs = liveAt * 1000;
+        s
+          ..send([
+            'EVENT',
+            'l-1',
+            _part1(rooms: const {'room-a': 5}),
+          ])
+          ..send(['EOSE', 'l-1']);
+        await s.stream.settled;
+        expect(seen?.coverageBefore, connectedAt);
+        expect(seen?.liveAt, liveAt);
+        expect(q.walks.single.$2, liveAt - 7200 - storeResumeLookbackSecs);
+      },
+    );
+  });
+
+  group('epoch read barrier', () {
+    test('rows of another epoch never read as stored', () async {
+      await seedEpoch('e0');
+      await seedRow('room-a', 5, 100);
+      expect(await store.roomSeqs(lease, const ['room-a']), {
+        'room-a': (5, 100),
+      });
+      expect(
+        await store.roomSeqs(lease, const ['room-a'], epoch: 'e1'),
+        isEmpty,
+      );
+      expect(await store.roomSeqs(lease, const ['room-a'], epoch: 'e0'), {
+        'room-a': (5, 100),
+      });
+    });
+
+    test(
+      'a failed write keeps the queued epoch; old rows never class equal',
+      () async {
+        await seedEpoch('e0');
+        await seedRow('room-a', 5, 100);
+        await seedSegment('room-a', 999000, 999900);
+        // A write fails with part 1's epoch queued behind it.
+        store.failNextWriteForTest(lease);
+        store
+          ..submit(lease, [_roomEvent('x1', 'room-b', 999950)])
+          ..queueStreamEpoch(lease, 'e1');
+        final result = await runner(recordingQuery().query).run(
+          const UserStreamCatchUpJob(
+            mode: 'gated',
+            rooms: ['room-a'],
+            seqs: {'room-a': 5},
+            epoch: 'e1',
+            relayPubkey: _relayKey,
+            liveAt: 1000000,
+            captured: null,
+          ),
+          audit: false,
+        );
+        expect(result.classes['room-a'], isNot(UserStreamRoomClass.equal));
+        await store.flushed();
+        expect(await storedEpoch(), 'e1');
+        expect(await rows(), isEmpty);
+      },
+    );
+  });
+
   group('batching', () {
     for (final c in _cases('batching')) {
       test(c['name'], () {
@@ -730,11 +872,22 @@ void main() {
         ]);
         await s.stream.settled;
         final expected = c['expect'] as Map;
-        final chunkRooms = {
-          ...carried,
-          ..._strings(c['chunkExtras']),
-        }.difference(s.stream.carriedRooms).toList()..sort();
+        // Chunks on this connection: none while its socket is closing.
+        final chunkRooms = s.stream.closingSocket
+            ? <String>[]
+            : ({
+                ...carried,
+                ..._strings(c['chunkExtras']),
+              }.difference(s.stream.carriedRooms).toList()..sort());
         expect(chunkRooms, expected['chunkRooms']);
+        if (s.stream.closingSocket) {
+          // The relay dropped frames: nothing counts as live any more, and
+          // listeners already see nothing carried (B2, S3).
+          expect(s.stream.carriedRooms, isEmpty);
+          for (final room in carried) {
+            expect(s.stream.liveAtOf(room), isNull);
+          }
+        }
         final catchUp = expected['catchUp'] as Map?;
         if (catchUp == null) {
           expect(jobs, isEmpty);

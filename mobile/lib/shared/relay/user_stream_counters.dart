@@ -282,3 +282,48 @@ class UserStreamReporter {
     _lastLineAtMs = nowMs;
   }
 }
+
+/// The relay's iOS shadow-report endpoint (plan U1d): NIP-98 POST, at most
+/// 4096 bytes, `platform` `ios` only, one per pubkey per 5 min.
+const userStreamReportPath = '/api/user-stream/shadow-report';
+const userStreamReportMaxBytes = 4096;
+const userStreamReportIntervalPostMs = 5 * 60 * 1000;
+
+/// The `closed` keys a report carries (`closedReasons`, `overflow` split).
+const userStreamReportClosedKeys = [
+  'off',
+  'not_enabled',
+  'invalid',
+  'too_many_rooms',
+  'restricted',
+  'auth_required',
+  'shadow_full',
+  'full',
+  'lagged',
+  'closed',
+  'other',
+];
+
+const _u32Max = 4294967295;
+
+int _u32(int value) => value < 0 ? 0 : (value > _u32Max ? _u32Max : value);
+
+/// The report body: fixed fields only, every number a u32, so the relay's
+/// `deny_unknown_fields` struct takes it.
+Map<String, Object> userStreamReportBody(
+  UserStreamCounters counters, {
+  required String platform,
+  required String appVersion,
+}) => {
+  'platform': platform,
+  'app_version': appVersion,
+  'seq': _u32(counters.seq),
+  'counters': {
+    for (final name in userStreamCounterNames) name: _u32(counters[name]),
+    'snapshotMs': _u32(counters.snapshotMs),
+  },
+  'closed': {
+    for (final key in userStreamReportClosedKeys)
+      key: _u32(counters.closed[key] ?? 0),
+  },
+};

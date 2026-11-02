@@ -84,6 +84,11 @@ extension _ChannelsUserStream on ChannelsNotifier {
     // The quiet-room backfill waits for the stream EOSE, not the chunks'.
     final quietReady = grown.where(_quietLiveChannelIds.contains);
     if (quietReady.isNotEmpty) router.markRoomsReady(quietReady);
+    // The router stops counting rooms the stream no longer carries at once.
+    _publishLiveCoverage();
+    // An overflow or `lagged` CLOSED: the socket closes within 2 s and the
+    // chunks open on the next connection (glue.reopen), not on this one.
+    if (glue.stream.closingSocket) return;
     final channels = glue.channels;
     final fence = glue.fence;
     if (channels == null || fence == null || !fence.isCurrent) return;

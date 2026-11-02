@@ -82,6 +82,17 @@ extension _UserStreamLive on UserStream {
     if (ids.add(id) && ids.length > _liveIdLimit) ids.remove(ids.first);
   }
 
+  /// A received EVENT (stream or chunk): remembered only while a stream catch-up may still ask
+  /// (pending, carried, shadow, or a catch-up running); a connection whose
+  /// stream is gone keeps none.
+  void _noteReceivedId(_Connection connection, Object? id) {
+    if (connection.phase == UserStreamPhase.none && connection.catchUps == 0) {
+      if (connection.liveIds.isNotEmpty) connection.liveIds.clear();
+      return;
+    }
+    _noteLiveId(connection, id);
+  }
+
   /// An accepted EOSE at [nowSecs].
   void _startCatchUp(_Connection connection, UserStreamSnapshot snapshot) {
     final liveAt = host.nowMs() ~/ 1000;
@@ -105,6 +116,7 @@ extension _UserStreamLive on UserStream {
     final ids = connection.liveIds;
     connection.settled =
         _runCatchUp(
+          connection,
           UserStreamCatchUpJob(
             mode: snapshot.mode.name,
             rooms: rooms,
@@ -113,6 +125,9 @@ extension _UserStreamLive on UserStream {
             relayPubkey: snapshot.relayPubkey,
             liveAt: liveAt,
             captured: captured,
+            // Spans this connection opened (chunk EOSEs, the stream's own
+            // [L, L]) never stand for the offline gap.
+            coverageBefore: min(connection.startedAt, liveAt),
             prev: prev,
           ),
           ids.contains,
@@ -126,12 +141,16 @@ extension _UserStreamLive on UserStream {
   }
 
   Future<UserStreamCatchUpResult?> _runCatchUp(
+    _Connection connection,
     UserStreamCatchUpJob job,
     bool Function(String id) receivedLive,
   ) async {
+    final scope = _scope;
+    connection.catchUps++;
     try {
       final result = await host.catchUp(job, receivedLive);
-      if (result != null) {
+      // Counts of an earlier account never land in this one's totals.
+      if (result != null && _scope == scope && _loaded) {
         _count((c) {
           for (final MapEntry(:key, :value) in result.counts.entries) {
             c.add(key, value);
@@ -142,23 +161,39 @@ extension _UserStreamLive on UserStream {
     } catch (error) {
       debugPrint('[user-stream] catch-up stopped: $error');
       return null;
+    } finally {
+      connection.catchUps--;
     }
   }
 
   /// The previous live connection's set and bounds, for the next one's
-  /// `liveMissed`; kept at the EOSE and with each span extension.
+  /// `liveMissed`; kept at the EOSE and with each span extension. The set
+  /// is written only when it changed; otherwise only the bounds.
   void _saveLivePrev(_Connection connection) {
     final carry = connection.carry;
     final snapshot = connection.snapshot;
     if (carry == null || snapshot == null) return;
+    final rooms = carry.rooms.keys.toSet();
     final prev = _livePrev = UserStreamLivePrev(
-      carry.rooms.keys.toSet(),
+      rooms,
       snapshot.createdAt,
       connection.lastFrame ?? snapshot.createdAt,
     );
-    if (_scope != null && _scope == host.scope()) {
-      host.writeState({_livePrevKey: prev.encode()});
+    if (!_writable) return;
+    final same =
+        _livePrevRooms != null &&
+        _livePrevEose == prev.eoseAt &&
+        setEquals(_livePrevRooms, rooms);
+    if (same) {
+      host.writeState({_liveLastKey: prev.encodeLast()});
+      return;
     }
+    _livePrevRooms = rooms;
+    _livePrevEose = prev.eoseAt;
+    host.writeState({
+      _livePrevKey: prev.encode(),
+      _liveLastKey: prev.encodeLast(),
+    });
   }
 
   /// A stream frame after a live EOSE: grows the stream's span (at most
@@ -193,6 +228,7 @@ extension _UserStreamLive on UserStream {
     final rooms = carry.rooms.keys.toList()..sort();
     final ids = connection.liveIds;
     connection.settled = _runCatchUp(
+      connection,
       UserStreamCatchUpJob(
         mode: snapshot.mode.name,
         rooms: rooms,
@@ -210,7 +246,8 @@ extension _UserStreamLive on UserStream {
 
 extension UserStreamCarried on UserStream {
   /// Rooms the stream carries now: none unless an accepted `live`/`gated`
-  /// EOSE, kept while the socket is closing after an overflow or `lagged`.
+  /// EOSE, and none from an overflow or `lagged` CLOSED on (the relay
+  /// dropped frames; see [UserStream.closingSocket]).
   Set<String> get carriedRooms {
     final connection = _connection;
     final carry = connection?.carry;
@@ -230,7 +267,7 @@ extension UserStreamCarried on UserStream {
   /// An EVENT on a live chunk of this connection.
   void noteLiveEvent(Object? id) {
     final connection = _connection;
-    if (connection != null) _noteLiveId(connection, id);
+    if (connection != null) _noteReceivedId(connection, id);
   }
 
   /// Hears each stored stream frame and whether it may be shown.

@@ -31,6 +31,10 @@ extension RelaySessionUserStream on RelaySessionNotifier {
         extendCoverage: (rooms, from, to, captured) => _messageStore
             ?.extendCoverage(_storeLease, rooms, from, to, captured: captured),
         catchUp: _runUserStreamCatchUp,
+        reportPlatform: defaultTargetPlatform == TargetPlatform.iOS
+            ? 'ios'
+            : null,
+        postReport: (counters) => unawaited(_postUserStreamReport(counters)),
       ),
     );
     _storeCoverage.hooks = stream.hooks;
@@ -50,6 +54,53 @@ extension RelaySessionUserStream on RelaySessionNotifier {
       switched: () => _storeLease != lease,
       receivedLive: receivedLive,
     ).run(job);
+  }
+
+  /// iOS has no log anyone can read: its report lines go to the relay
+  /// (plan U1d, `POST /api/user-stream/shadow-report`). Best effort: a relay
+  /// without the endpoint answers 404 and nothing is retried.
+  Future<void> _postUserStreamReport(UserStreamCounters counters) async {
+    if (_disposed || _ageRestricted) return;
+    try {
+      final (config, tokens) = _httpAuth;
+      final url = Uri.parse(
+        config.baseUrl,
+      ).resolve(userStreamReportPath).toString();
+      final bodyBytes = utf8.encode(
+        jsonEncode(
+          userStreamReportBody(
+            counters,
+            platform: 'ios',
+            appVersion: await appVersion(),
+          ),
+        ),
+      );
+      if (bodyBytes.length > userStreamReportMaxBytes || _disposed) return;
+      final response = await sendRelayAuthorized(
+        config,
+        tokens,
+        (authorization) => _httpQueryClient.post(
+          Uri.parse(url),
+          headers: {
+            'Authorization': authorization,
+            'Content-Type': 'application/json',
+          },
+          body: bodyBytes,
+          timeout: const Duration(seconds: 8),
+        ),
+        nip98: () => buildNip98AuthHeader(
+          method: 'POST',
+          url: url,
+          bodyBytes: bodyBytes,
+          nsec: config.nsec,
+        ),
+      );
+      if (response.statusCode >= 300) {
+        debugPrint('[user-stream] report POST: ${response.statusCode}');
+      }
+    } catch (error) {
+      debugPrint('[user-stream] report POST failed: $error');
+    }
   }
 
   /// The stream state, for the room list and tests.

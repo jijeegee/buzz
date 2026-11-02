@@ -87,7 +87,13 @@ class ScriptedRelay {
     required void Function() onConnected,
     required void Function(Object? error) onDisconnected,
   }) {
+    // A new socket starts with no subscriptions (the old one's are gone).
+    if (connects > 0) {
+      openSubs.clear();
+      _userStreamSub = null;
+    }
     connects++;
+    _dropSocket = onDisconnected;
     return _ScriptedRelaySocket(
       relay: this,
       wsUrl: wsUrl,
@@ -159,6 +165,18 @@ class ScriptedRelay {
       }
       deliver(['EOSE', subId]);
     });
+  }
+
+  void Function(Object? error)? _dropSocket;
+
+  /// The relay drops the current socket: the session hears it end and
+  /// reconnects on its own schedule.
+  void dropSocket() {
+    final drop = _dropSocket;
+    _dropSocket = null;
+    openSubs.clear();
+    _userStreamSub = null;
+    drop?.call(null);
   }
 
   /// Ends the open stream sub with a relay CLOSED [reason].

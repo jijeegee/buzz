@@ -229,6 +229,9 @@ class _Writer {
   bool lossy = false;
   bool stopped = false;
 
+  /// Tests: the next event transaction fails.
+  bool failNextForTest = false;
+
   /// When (unix seconds) something received was last not written: a span
   /// starting at or before then may miss it.
   int lostAt = 0;
@@ -724,6 +727,11 @@ class MessageStore {
   void noteLossForTest(MessageStoreLease lease) =>
       _writerFor(lease)?.noteLoss();
 
+  /// Makes the next event write transaction of [lease]'s file fail (tests).
+  @visibleForTesting
+  void failNextWriteForTest(MessageStoreLease lease) =>
+      _writerFor(lease)?.failNextForTest = true;
+
   @visibleForTesting
   Future<void> flushed() => Future.wait(_writers.values.map((w) => w.drained));
 
@@ -769,7 +777,13 @@ class MessageStore {
         final heads = head is _HeadsOp ? head : null;
         if (head is _StreamSeqOp) {
           writer.queue.removeAt(0);
-          await _applyStreamSeqOp(writer, head);
+          try {
+            await _applyStreamSeqOp(writer, head);
+          } catch (_) {
+            // Kept for the retry below, a few times at most.
+            if (head.epoch != null) writer.queue.insert(0, head);
+            rethrow;
+          }
           writer.advance(1);
           continue;
         }
@@ -848,6 +862,10 @@ class MessageStore {
         final confirmed = <String>[];
         final forgotten = <String>[];
         String? historyOf;
+        if (writer.failNextForTest) {
+          writer.failNextForTest = false;
+          throw StateError('write failed (test)');
+        }
         await db.transaction((txn) async {
           // A notice forgets the rows received before it, then is written.
           final row = rows.firstOrNull;
@@ -940,8 +958,24 @@ class MessageStore {
       debugPrint('[MessageStore] write failed: $error');
       writer.rooms = null;
       writer.pushedIds = null;
+      // An accepted part 1's epoch survives the failure: dropped, the old
+      // epoch and its rows would stay for this connection's whole catch-up.
+      final epochs = [
+        for (final input in writer.queue)
+          if (input is _StreamSeqOp &&
+              input.epoch != null &&
+              input.retries < _streamSeqRetries)
+            _StreamSeqOp(epoch: input.epoch, retries: input.retries + 1),
+      ];
       writer.clearQueue();
       writer.noteLoss();
+      if (epochs.isNotEmpty && !writer.stopped) {
+        // Everything queued so far is dropped; the epochs go again as new
+        // inputs, and the next drain applies them (with the loss clear).
+        writer.advance(writer.queued);
+        epochs.forEach(writer.enqueue);
+        scheduleMicrotask(() => _schedule(writer));
+      }
     } finally {
       writer.scheduled = false;
       // Dropped on failure or stop: nothing left to wait for.

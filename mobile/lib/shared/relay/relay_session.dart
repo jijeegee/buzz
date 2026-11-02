@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
+import '../app_update/app_update.dart' show appVersion;
 import '../auth/auth.dart';
 import '../auth/remote_sign_out.dart';
 import '../auth/token/relay_origin.dart';
@@ -306,6 +307,15 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// Whether relay back-pressure is currently pausing requests. Background
   /// work checks this to yield instead of queueing behind the window.
   bool get isRateLimited => _rateLimitGate.isActive;
+
+  /// The relay config and its token session, for part files' HTTP calls.
+  (RelayConfig, RelayAccessTokens?) get _httpAuth {
+    final config = ref.read(relayConfigProvider);
+    return (
+      config,
+      config.tokenAuth ? ref.read(relayAccessTokensProvider) : null,
+    );
+  }
 
   /// Execute a one-shot `/query` with raw filter objects and return the
   /// decoded JSON body. Opt-in envelopes (for example `inbox_summary`) answer

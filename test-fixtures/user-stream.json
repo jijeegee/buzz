@@ -1,5 +1,5 @@
 {
- "description": "User stream (docs/message-sync.md#user-stream): one live REQ for all of the account's rooms, chosen by the relay per account. Read by desktop (relayUserStream.test.mjs and the store tests) and mobile (user_stream_fixture_test.dart and the store tests). Times are unix seconds unless a key ends in Ms. Room ids are opaque strings; room lists are sets, listed by id, unless the key is `batches` or `rooms` of a batch (ordered). Sections: `part1` (parse snapshot parts in arrival order on the stream sub; `eose` true means EOSE came after them; `accept` false means CLOSE the stream, chunks for this connection), `modes` (what each mode does), `storeSkip` (which stream frames the store keeps: `eose` is the stream EOSE, `req` re-sends the REQ on the same id, `close` is the client CLOSE, `closed` a relay CLOSED; `badKinds` marks a part 1 whose kinds differ from the frozen kinds), `closed` (reason -> action: chunks = stream off for this connection, chunks stay or carry everything; fallback = the mid-connection fallback; awaitSocketClose = no fallback, wait up to 2 s for the relay to close the socket, then close it, then reconnect normally; retryAfterAuth = resend after the next AUTH OK), `backoff` (closes that count are `full`, `closed` and `other` after the stream EOSE in live/gated; `lagged` and `shadow_full` never count), `busyRetry` (history REQs ended by `error: busy`), `epoch`, `snapshot` (per-room classes at stream EOSE and what each mode does with them), `skipCoverage`, `batching` (`stale` rooms are taken out before batching and not walked), `ruleW` (steps -> room_seq rows [seq, at]), `clearing`, `newRow`, `skipVerification`, `auditSampling`, `auditVerdicts`, `liveMissed`, `lastFrame`, `comparator` (shadow counters), `handoff`, `midConnectionClosed`, `spanStop` (the stream's own coverage span), `chunkCatchUp` (which rooms a chunk's own catch-up and repair still walk), `membership` (44100/44101 in live/gated), `routing` (stream frames in live/gated).",
+ "description": "User stream (docs/message-sync.md#user-stream): one live REQ for all of the account's rooms, chosen by the relay per account. Read by desktop (relayUserStream.test.mjs and the store tests) and mobile (user_stream_fixture_test.dart and the store tests). Times are unix seconds unless a key ends in Ms. Room ids are opaque strings; room lists are sets, listed by id, unless the key is `batches` or `rooms` of a batch (ordered). Sections: `part1` (parse snapshot parts in arrival order on the stream sub; `eose` true means EOSE came after them; `accept` false means CLOSE the stream, chunks for this connection), `modes` (what each mode does), `storeSkip` (which stream frames the store keeps: `eose` is the stream EOSE, `req` re-sends the REQ on the same id, `close` is the client CLOSE, `closed` a relay CLOSED; `badKinds` marks a part 1 whose kinds differ from the frozen kinds), `closed` (reason -> action: chunks = stream off for this connection, chunks stay or carry everything; fallback = the mid-connection fallback; awaitSocketClose = no fallback, wait up to 2 s for the relay to close the socket, then close it, then reconnect normally; retryAfterAuth = resend after the next AUTH OK, only before the stream EOSE in live/gated), `backoff` (closes that count are `full`, `closed` and `other` after the stream EOSE in live/gated; `lagged` and `shadow_full` never count), `busyRetry` (history REQs ended by `error: busy`), `epoch`, `snapshot` (per-room classes at stream EOSE and what each mode does with them), `skipCoverage`, `connectionSpans` (`connectedAt` is the connection's start time, recorded before any chunk REQ is answered; catch-up resume points and the new-row base use only coverage that began before it, so an EOSE span [C, C] from a chunk on the same connection is ignored; `segments` are room-a's, `since` its walk start, `head` its new-row base), `batching` (`stale` rooms are taken out before batching and not walked), `ruleW` (steps -> room_seq rows [seq, at]), `clearing`, `newRow`, `skipVerification`, `auditSampling`, `auditVerdicts`, `liveMissed`, `lastFrame`, `comparator` (shadow counters), `handoff`, `midConnectionClosed`, `spanStop` (the stream's own coverage span), `chunkCatchUp` (which rooms a chunk's own catch-up and repair still walk), `membership` (44100/44101 in live/gated), `routing` (stream frames in live/gated).",
  "v": 1,
  "streamKind": 24220,
  "frozenKinds": [5, 7, 9, 9005, 39005, 40001, 40002, 40003, 40008, 40009, 40099, 45001, 45003, 48100, 48101, 48102, 48103],
@@ -681,6 +681,19 @@
    "afterRetry": true
   },
   {
+   "name": "auth-required after the stream EOSE in live falls back",
+   "reason": "auth-required: authenticate first",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "auth_required",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
    "name": "shadow overflow stops only the stream",
    "reason": "error: user-stream overflow",
    "mode": "shadow",
@@ -1133,6 +1146,54 @@
     "notFetched": ["room-a"],
     "untouchedRows": []
    }
+  }
+ ],
+ "connectionSpans": [
+  {
+   "name": "a chunk EOSE span of this connection is not the resume point",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999998, 999998]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "the stream's own [L, L] and a chunk span extended on this connection do not count either",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999991, 999999], [1000000, 1000000]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "a span begun before the connection and grown on it counts up to its end",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 999995]],
+   "expect": {"class": "behind", "resume": 999995, "since": 998130, "head": [970000, 999995]}
+  },
+  {
+   "name": "a span begun at the connection start is this connection's",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999990, 999990]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "a room covered only on this connection is uncovered",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[999992, 999999]],
+   "expect": {"class": "uncovered", "resume": null, "since": null, "head": null}
+  },
+  {
+   "name": "a row from the offline gap is new, so a predicted skip with it is a false skip",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "mode": "live",
+   "seq": 5,
+   "storedSeq": 5,
+   "segments": [[970000, 992800], [999998, 999998]],
+   "walkRows": [{"id": "gap", "created_at": 995000}],
+   "expect": {"class": "equal", "resume": 992800, "since": 990935, "head": [970000, 992800], "predictedSkips": 1, "falseSkip": 1}
   }
  ],
  "skipCoverage": [

@@ -22,6 +22,7 @@ const _other =
 const _relayKey =
     'cc00000000000000000000000000000000000000000000000000000000000003';
 const _room = '11111111-1111-4111-8111-111111111111';
+const _room2 = '22222222-2222-4222-8222-222222222222';
 
 /// Signs the `/query` requests of the stream's catch-up.
 final _nsec = nostr.Keys.generate().nsec;
@@ -38,7 +39,7 @@ Map<String, dynamic> _event(String id, {int kind = 9, String? content}) => {
   'sig': ''.padRight(128, '0'),
 };
 
-Map<String, dynamic> _part1(String mode) => _event(
+Map<String, dynamic> _part1(String mode, {Map<String, int>? rooms}) => _event(
   'p1',
   kind: userStreamKind,
   content: jsonEncode({
@@ -49,7 +50,7 @@ Map<String, dynamic> _part1(String mode) => _event(
     'mode': mode,
     'epoch': 'e1',
     'kinds': userStreamFrozenKinds,
-    'rooms': {_room: 3},
+    'rooms': rooms ?? {_room: 3},
   }),
 );
 
@@ -65,6 +66,7 @@ void main() {
   late RelaySessionNotifier session;
   late _RecordingRelaySocket socket;
   late List<(Duration, void Function())> timers;
+  late List<List<Map<String, dynamic>>> queries;
 
   Future<void> start(String account) async {
     dir = await Directory.systemTemp.createTemp('relay_session_user_stream');
@@ -73,10 +75,17 @@ void main() {
       directory: () async => dir.path,
     );
     timers = [];
+    queries = [];
     session = RelaySessionNotifier(
-      httpClient: http_testing.MockClient(
-        (_) async => http.Response('[]', 200),
-      ),
+      httpClient: http_testing.MockClient((request) async {
+        if (request.url.path == '/query') {
+          queries.add([
+            for (final filter in jsonDecode(request.body) as List)
+              (filter as Map).cast<String, dynamic>(),
+          ]);
+        }
+        return http.Response('[]', 200);
+      }),
       retryTimerFactory: (duration, callback) {
         timers.add((duration, callback));
         return Timer(const Duration(days: 1), () {});
@@ -189,6 +198,57 @@ void main() {
       expect(rows[_room]?.$1, 3);
       // Carried rooms count as live for store opens.
       expect(session.userStream.liveAtOf(_room), rows[_room]?.$2);
+    },
+  );
+
+  test(
+    'gated: an equal room is skipped, a behind room is walked and written',
+    () async {
+      await start(_account);
+      final lease = session.storeScope!.lease;
+      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      const day = 24 * 60 * 60;
+      // Both rooms covered before this connection under epoch e1. The equal
+      // room's coverage is over 7 days old, so the skip audit leaves it out.
+      store
+        ..queueStreamEpoch(lease, 'e1')
+        ..extendCoverage(
+          lease,
+          [_room],
+          now - 9 * day,
+          now - 8 * day,
+          seqs: {_room: 3},
+          epoch: 'e1',
+        )
+        ..extendCoverage(
+          lease,
+          [_room2],
+          now - 100,
+          now - 10,
+          seqs: {_room2: 2},
+          epoch: 'e1',
+        );
+      await store.flushed();
+      final subId = await connect();
+      session
+        ..debugHandleMessage([
+          'EVENT',
+          subId,
+          _part1('gated', rooms: {_room: 3, _room2: 4}),
+        ])
+        ..debugHandleMessage(['EOSE', subId]);
+      await session.userStream.settled;
+      await store.flushed();
+      final walked = {
+        for (final filters in queries)
+          for (final filter in filters) ...(filter['#h'] as List? ?? const []),
+      };
+      expect(walked, {_room2});
+      final rows = await store.roomSeqs(lease, [_room, _room2], epoch: 'e1');
+      expect(rows[_room], (3, now - 8 * day), reason: 'a skip moves nothing');
+      expect(rows[_room2]?.$1, 4);
+      expect(rows[_room2]!.$2, greaterThanOrEqualTo(now));
+      expect(session.userStream.totals['skipAudited'], 0);
     },
   );
 
