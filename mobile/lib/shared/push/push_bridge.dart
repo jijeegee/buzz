@@ -109,6 +109,14 @@ Future<bool> openKuzzPushNotificationSettings() async {
 final apnsDeviceToken = ValueNotifier<String?>(null);
 final apnsRegistrationError = ValueNotifier<String?>(null);
 
+/// Counts failed APNs registrations, so a repeat of the same failure is
+/// still seen and retried.
+final apnsRegistrationFailures = ValueNotifier<int>(0);
+
+/// The latest failure to set up push for the active account (registration,
+/// enrollment or lease). Cleared when the lease is accepted.
+final pushSetupError = ValueNotifier<String?>(null);
+
 final pushEndpointGrants = ValueNotifier<List<KuzzPushEndpointGrant>>([]);
 final pushEndpointGrantError = ValueNotifier<String?>(null);
 
@@ -163,22 +171,28 @@ Future<void> syncPendingKuzzPushNotificationResponse() async {
 /// APNs registration and enrollment remain valid while display is denied.
 ///
 /// On Android (KUZZ_ANDROID_PUSH builds) it asks for the notification
-/// permission on Android 13+, only once push is on for a community.
+/// permission on Android 13+, only once push is on for a community. Throws
+/// when no usable token was obtained, so the caller retries.
 Future<void> startKuzzPushRegistration() async {
   if (!Env.pushGatewayConfigured) return;
   if (androidPushActive) {
+    String? token;
     try {
       await requestAndroidNotificationPermission();
       // FCM keeps working while notifications are blocked; the token is
       // asked for only here, after push was turned on.
-      final token = await androidPushChannel.invokeMethod<String>('token');
-      if (token != null) _setAndroidPushToken(token);
+      token = await androidPushChannel.invokeMethod<String>('token');
     } on MissingPluginException {
       // Flutter tests do not install the native plugin.
+      return;
     } on PlatformException catch (error) {
-      apnsRegistrationError.value = 'FCM token unavailable';
       debugPrint('[AndroidPush] token failed: ${error.code}');
     }
+    if (token == null) {
+      apnsRegistrationError.value = 'FCM token unavailable';
+      throw StateError('FCM token unavailable');
+    }
+    if (!_setAndroidPushToken(token)) throw StateError('FCM token refused');
     return;
   }
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
@@ -444,6 +458,7 @@ void installKuzzPushMethodHandler() {
         apnsRegistrationError.value = message is String && message.isNotEmpty
             ? message
             : 'APNs registration failed';
+        apnsRegistrationFailures.value += 1;
         debugPrint('APNs registration failed: ${apnsRegistrationError.value}');
         return null;
       case 'notificationOpened':
@@ -470,13 +485,15 @@ AndroidPushEnrollment _androidEnrollment(
     debugAndroidPushEnrollmentFactory(client, gatewayUrl ?? Env.pushGatewayUrl);
 
 /// Takes a new FCM token unless it is refused (N11: over 512 bytes).
-void _setAndroidPushToken(String token) {
+/// Returns whether it was taken.
+bool _setAndroidPushToken(String token) {
   if (fcmEndpoint(token) == null) {
     apnsRegistrationError.value = 'FCM token refused';
-    return;
+    return false;
   }
   apnsDeviceToken.value = token;
   apnsRegistrationError.value = null;
+  return true;
 }
 
 /// Calls from the Android push plugin to the app's engine.

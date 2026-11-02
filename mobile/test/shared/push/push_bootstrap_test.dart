@@ -1,6 +1,7 @@
 import 'package:kuzz/shared/push/dev_push_lease.dart';
 import 'package:kuzz/shared/community/community.dart';
 import 'package:kuzz/shared/push/push_bootstrap.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:kuzz/shared/push/push_subscription.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/widgets.dart';
@@ -78,6 +79,112 @@ void main() {
 
     expect(retries, 1);
     expect(gate.tryBegin('attempt'), isTrue);
+  });
+
+  test('repeated failures back off up to ten minutes', () {
+    final gate = KuzzPushAttemptGate();
+    addTearDown(gate.dispose);
+    final delays = <int>[];
+    for (var i = 0; i < 10; i++) {
+      expect(gate.tryBegin('attempt'), isTrue);
+      gate.failed('attempt', retry: () {});
+      delays.add(gate.lastRetryDelay!.inSeconds);
+    }
+    expect(delays, [5, 10, 20, 40, 80, 160, 320, 600, 600, 600]);
+  });
+
+  test('success or a different attempt restarts the backoff', () {
+    final gate = KuzzPushAttemptGate();
+    addTearDown(gate.dispose);
+    for (var i = 0; i < 3; i++) {
+      gate.tryBegin('attempt');
+      gate.failed('attempt', retry: () {});
+    }
+    expect(gate.lastRetryDelay, const Duration(seconds: 20));
+
+    gate.tryBegin('attempt');
+    gate.retryAfter('attempt', delay: const Duration(hours: 1), retry: () {});
+    gate.complete('attempt');
+    gate.tryBegin('attempt');
+    gate.failed('attempt', retry: () {});
+    expect(gate.lastRetryDelay, const Duration(seconds: 5));
+
+    gate.tryBegin('attempt');
+    gate.failed('attempt', retry: () {});
+    gate.tryBegin('other');
+    gate.failed('other', retry: () {});
+    expect(gate.lastRetryDelay, const Duration(seconds: 5));
+  });
+
+  testWidgets('a failed registration retries with backoff and on resume', (
+    tester,
+  ) async {
+    var registrations = 0;
+    var fail = true;
+    Widget bootstrap(int retrySignal) => KuzzPushRegistrationBootstrap(
+      shouldRegister: true,
+      attemptKey: 'community|relay',
+      retrySignal: retrySignal,
+      startRegistration: () async {
+        registrations += 1;
+        if (fail) throw StateError('FCM token unavailable');
+      },
+      child: const SizedBox(),
+    );
+    addTearDown(() => pushSetupError.value = null);
+
+    await tester.pumpWidget(bootstrap(0));
+    await tester.pump();
+    expect(registrations, 1);
+    expect(pushSetupError.value, contains('FCM token unavailable'));
+
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(registrations, 2);
+    await tester.pump(const Duration(seconds: 9));
+    expect(registrations, 2);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(registrations, 3);
+
+    // Resume retries at once instead of waiting 20 s.
+    fail = false;
+    await tester.pumpWidget(bootstrap(1));
+    await tester.pump();
+    expect(registrations, 4);
+    // A held successful registration is not repeated on the next resume.
+    await tester.pumpWidget(bootstrap(2));
+    await tester.pump();
+    expect(registrations, 4);
+  });
+
+  testWidgets('a later APNs registration failure is retried', (tester) async {
+    var registrations = 0;
+    apnsDeviceToken.value = null;
+    await tester.pumpWidget(
+      KuzzPushRegistrationBootstrap(
+        shouldRegister: true,
+        attemptKey: 'community|relay',
+        startRegistration: () async {
+          registrations += 1;
+        },
+        child: const SizedBox(),
+      ),
+    );
+    expect(registrations, 1);
+
+    apnsRegistrationFailures.value += 1;
+    await tester.pump(const Duration(seconds: 5));
+    await tester.pump();
+    expect(registrations, 2);
+
+    // The same failure again still counts, now after 10 s.
+    apnsRegistrationFailures.value += 1;
+    await tester.pump(const Duration(seconds: 9));
+    expect(registrations, 2);
+    await tester.pump(const Duration(seconds: 1));
+    await tester.pump();
+    expect(registrations, 3);
   });
 
   test('completed bootstrap attempt can run again for later work', () {

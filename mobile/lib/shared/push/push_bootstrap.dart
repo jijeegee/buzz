@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
@@ -17,14 +18,28 @@ import 'push_relay_capability_provider.dart';
 import 'push_subscription.dart';
 
 const _pushBootstrapRetryDelay = Duration(seconds: 5);
+const _pushBootstrapMaxRetryDelay = Duration(minutes: 10);
 
+/// One push setup step at a time. A failed attempt is retried after
+/// [retryDelay], doubling while the same attempt keeps failing, up to
+/// [maxRetryDelay]. Success or a different attempt starts over.
 @visibleForTesting
 class KuzzPushAttemptGate {
-  KuzzPushAttemptGate({this.retryDelay = _pushBootstrapRetryDelay});
+  KuzzPushAttemptGate({
+    this.retryDelay = _pushBootstrapRetryDelay,
+    this.maxRetryDelay = _pushBootstrapMaxRetryDelay,
+  });
 
   final Duration retryDelay;
+  final Duration maxRetryDelay;
   String? _attempt;
   Timer? _retryTimer;
+  String? _failingAttempt;
+  int _failures = 0;
+
+  /// The delay chosen by the latest [failed].
+  @visibleForTesting
+  Duration? lastRetryDelay;
 
   bool tryBegin(String attempt) {
     if (_attempt == attempt) return false;
@@ -37,8 +52,13 @@ class KuzzPushAttemptGate {
   void failed(String attempt, {required VoidCallback retry}) {
     if (_attempt != attempt) return;
     _attempt = null;
+    _failures = _failingAttempt == attempt ? _failures + 1 : 1;
+    _failingAttempt = attempt;
+    final backoff = retryDelay * (1 << math.min(_failures - 1, 20));
+    final delay = backoff > maxRetryDelay ? maxRetryDelay : backoff;
+    lastRetryDelay = delay;
     _retryTimer?.cancel();
-    _retryTimer = Timer(retryDelay, () {
+    _retryTimer = Timer(delay, () {
       _retryTimer = null;
       if (_attempt == null) retry();
     });
@@ -50,6 +70,7 @@ class KuzzPushAttemptGate {
     required VoidCallback retry,
   }) {
     if (_attempt != attempt) return;
+    resetBackoff();
     _retryTimer?.cancel();
     _retryTimer = Timer(delay, () {
       _retryTimer = null;
@@ -61,9 +82,17 @@ class KuzzPushAttemptGate {
 
   void complete(String attempt) {
     if (_attempt != attempt) return;
+    resetBackoff();
     _retryTimer?.cancel();
     _retryTimer = null;
     _attempt = null;
+  }
+
+  /// The running attempt succeeded but stays held; the next failure waits
+  /// [retryDelay] again.
+  void resetBackoff() {
+    _failingAttempt = null;
+    _failures = 0;
   }
 
   void dispose() => _retryTimer?.cancel();
@@ -101,6 +130,7 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
     required this.shouldRegister,
     required this.attemptKey,
     required this.child,
+    this.retrySignal = 0,
     this.startRegistration = startKuzzPushRegistration,
     super.key,
   });
@@ -108,6 +138,9 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
   final bool shouldRegister;
   final String attemptKey;
   final Widget child;
+
+  /// Changes on app resume; a failed registration is retried at once.
+  final int retrySignal;
   final Future<void> Function() startRegistration;
 
   @override
@@ -115,24 +148,44 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
     final attemptGate = useMemoized(KuzzPushAttemptGate.new);
     final retry = useState(0);
     useEffect(() => attemptGate.dispose, const []);
+    void scheduleRetry() => attemptGate.failed(
+      attemptKey,
+      retry: () {
+        if (context.mounted) retry.value += 1;
+      },
+    );
+    useEffect(() {
+      // iOS reports a failed APNs registration later, outside the call.
+      void onFailure() {
+        if (apnsDeviceToken.value != null) return;
+        scheduleRetry();
+      }
+
+      void onToken() {
+        if (apnsDeviceToken.value != null) attemptGate.resetBackoff();
+      }
+
+      apnsRegistrationFailures.addListener(onFailure);
+      apnsDeviceToken.addListener(onToken);
+      return () {
+        apnsRegistrationFailures.removeListener(onFailure);
+        apnsDeviceToken.removeListener(onToken);
+      };
+    }, [attemptKey]);
     useEffect(() {
       if (!shouldRegister || !attemptGate.tryBegin(attemptKey)) return null;
       unawaited(() async {
         try {
           await startRegistration();
         } catch (error, stack) {
-          attemptGate.failed(
-            attemptKey,
-            retry: () {
-              if (context.mounted) retry.value += 1;
-            },
-          );
+          pushSetupError.value = error.toString();
+          scheduleRetry();
           debugPrint('Push registration bootstrap failed: $error');
           debugPrintStack(stackTrace: stack);
         }
       }());
       return null;
-    }, [shouldRegister, attemptKey, retry.value]);
+    }, [shouldRegister, attemptKey, retry.value, retrySignal]);
     return child;
   }
 }
@@ -165,6 +218,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
     final tombstoneAttempt = useMemoized(KuzzPushAttemptGate.new);
     final publicationRetry = useState(0);
     final tombstoneRetry = useState(0);
+    final resumes = useState(0);
     final revocationOutbox = ref.watch(kuzzPushLeaseRevocationOutboxProvider);
     final session = ref.watch(relaySessionProvider);
     final communities = ref.watch(communityListProvider).value ?? const [];
@@ -175,7 +229,15 @@ class KuzzPushBootstrap extends HookConsumerWidget {
 
     useEffect(() {
       final listener = AppLifecycleListener(
-        onResume: () => _runRevocationOutbox(revocationOutbox.trigger),
+        onResume: () {
+          _runRevocationOutbox(revocationOutbox.trigger);
+          // A failed check of the server's push support, device token or
+          // setup is retried now rather than after its backoff.
+          if (ref.read(currentRelayPushDescriptorProvider).hasError) {
+            ref.invalidate(currentRelayPushDescriptorProvider);
+          }
+          if (context.mounted) resumes.value += 1;
+        },
       );
       _runRevocationOutbox(revocationOutbox.start);
       return listener.dispose;
@@ -299,6 +361,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
                 grant.expiresAt * 1000 -
                 DateTime.now().millisecondsSinceEpoch -
                 const Duration(minutes: 5).inMilliseconds;
+            pushSetupError.value = null;
             publicationAttempt.retryAfter(
               attempt,
               delay: Duration(
@@ -311,6 +374,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
               },
             );
           } catch (error, stack) {
+            pushSetupError.value = error.toString();
             publicationAttempt.failed(
               attempt,
               retry: () {
@@ -333,6 +397,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
         descriptor,
         token,
         publicationRetry.value,
+        resumes.value,
       ],
     );
 
@@ -344,6 +409,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
             descriptor: descriptor,
           ),
       attemptKey: '${community?.id}|${config.baseUrl}',
+      retrySignal: resumes.value,
       child: child,
     );
   }

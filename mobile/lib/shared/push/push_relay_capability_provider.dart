@@ -16,9 +16,10 @@ final kuzzPushDescriptorFetcherProvider = Provider<KuzzPushDescriptorFetcher>(
 /// The fully validated push capability advertised by the current relay.
 ///
 /// An unconfigured artifact has no capability and never starts discovery.
-/// Discovery fails closed. An absent, malformed, or unreachable NIP-11 push
-/// descriptor is represented as no capability, so no notification permission,
-/// APNs registration, gateway enrollment, or relay lease can begin.
+/// Discovery fails closed. An absent or malformed NIP-11 push descriptor is
+/// no capability, so no notification permission, APNs registration, gateway
+/// enrollment, or relay lease can begin. A network or HTTP failure is an
+/// error instead, retried with backoff and again on reconnect and resume.
 final currentRelayPushDescriptorProvider =
     FutureProvider.autoDispose<KuzzPushLeaseDescriptor?>((ref) async {
       if (!Env.pushGatewayConfigured) return null;
@@ -41,13 +42,15 @@ final currentRelayPushDescriptorProvider =
       );
     });
 
+/// The relay's push descriptor, or null when it advertises none or an
+/// invalid one. Failing to reach the relay throws, so it can be retried.
 Future<KuzzPushLeaseDescriptor?> discoverKuzzPushRelayCapability(
   String relayBaseUrl, {
   required KuzzPushDescriptorFetcher fetchDescriptor,
 }) async {
   try {
     return await fetchDescriptor(relayBaseUrl);
-  } catch (error, stackTrace) {
+  } on FormatException catch (error, stackTrace) {
     debugPrint('Current relay does not advertise valid push: $error');
     debugPrintStack(stackTrace: stackTrace);
     return null;

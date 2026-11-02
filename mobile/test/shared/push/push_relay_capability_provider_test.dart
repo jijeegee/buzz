@@ -35,28 +35,34 @@ void main() {
     },
   );
 
-  for (final failure in <Object>[
-    const FormatException('malformed descriptor'),
-    StateError('relay unreachable'),
-  ]) {
-    test('$failure keeps capability inactive without registration', () async {
-      final descriptor = await discoverKuzzPushRelayCapability(
+  test('a malformed descriptor keeps capability inactive', () async {
+    final descriptor = await discoverKuzzPushRelayCapability(
+      'https://relay.example',
+      fetchDescriptor: (_) async =>
+          throw const FormatException('malformed descriptor'),
+    );
+    var requests = 0;
+
+    await startKuzzPushRegistrationIfCapable(
+      descriptor,
+      startRegistration: () async {
+        requests += 1;
+      },
+    );
+
+    expect(descriptor, isNull);
+    expect(requests, 0);
+  });
+
+  test('an unreachable relay is an error to retry, not no capability', () {
+    expect(
+      discoverKuzzPushRelayCapability(
         'https://relay.example',
-        fetchDescriptor: (_) async => throw failure,
-      );
-      var requests = 0;
-
-      await startKuzzPushRegistrationIfCapable(
-        descriptor,
-        startRegistration: () async {
-          requests += 1;
-        },
-      );
-
-      expect(descriptor, isNull);
-      expect(requests, 0);
-    });
-  }
+        fetchDescriptor: (_) async => throw StateError('relay unreachable'),
+      ),
+      throwsStateError,
+    );
+  });
 }
 
 const _descriptor = KuzzPushLeaseDescriptor(
