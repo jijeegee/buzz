@@ -17,6 +17,7 @@ import '../../shared/community/community_membership_provider.dart';
 import '../../shared/community/community_removal.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/l10n/locale_preference.dart';
+import '../../shared/push/android_push.dart';
 import '../../shared/push/push_bridge.dart';
 import '../../shared/push/push_relay_capability_provider.dart';
 import '../../shared/relay/relay.dart';

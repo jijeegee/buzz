@@ -65,12 +65,13 @@ class KuzzPushAuthorizationStatusNotifier
 }
 
 Future<KuzzPushAuthorizationStatus> readKuzzPushAuthorizationStatus() async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) {
+  final android = androidPushActive;
+  if (!android && defaultTargetPlatform != TargetPlatform.iOS) {
     return KuzzPushAuthorizationStatus.authorized;
   }
-  final raw = await _channel.invokeMethod<String>(
-    'notificationAuthorizationStatus',
-  );
+  final raw = android
+      ? await readAndroidNotificationPermission()
+      : await _channel.invokeMethod<String>('notificationAuthorizationStatus');
   return switch (raw) {
     'notDetermined' => KuzzPushAuthorizationStatus.notDetermined,
     'denied' => KuzzPushAuthorizationStatus.denied,
@@ -84,6 +85,7 @@ Future<KuzzPushAuthorizationStatus> readKuzzPushAuthorizationStatus() async {
 }
 
 Future<bool> openKuzzPushNotificationSettings() async {
+  if (androidPushActive) return openAndroidNotificationSettings();
   if (defaultTargetPlatform != TargetPlatform.iOS) return false;
   return await _channel.invokeMethod<bool>('openNotificationSettings') ?? false;
 }
@@ -145,11 +147,20 @@ Future<void> syncPendingKuzzPushNotificationResponse() async {
 /// Starts the independent iOS notification-authorization and APNs-registration
 /// requests. Display authorization is intentionally not returned or persisted:
 /// APNs registration and enrollment remain valid while display is denied.
+///
+/// On Android (KUZZ_ANDROID_PUSH builds) it asks for the notification
+/// permission on Android 13+, only once push is on for a community.
 Future<void> startKuzzPushRegistration() async {
-  if (!Env.pushGatewayConfigured ||
-      defaultTargetPlatform != TargetPlatform.iOS) {
+  if (!Env.pushGatewayConfigured) return;
+  if (androidPushActive) {
+    try {
+      await requestAndroidNotificationPermission();
+    } on MissingPluginException {
+      // Flutter tests do not install the native plugin.
+    }
     return;
   }
+  if (defaultTargetPlatform != TargetPlatform.iOS) return;
   try {
     await _channel.invokeMethod<void>('startRegistration');
   } on MissingPluginException {

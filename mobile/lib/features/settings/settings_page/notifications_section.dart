@@ -5,7 +5,8 @@ class _NotificationsSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (defaultTargetPlatform != TargetPlatform.iOS) {
+    final android = androidPushActive;
+    if (!android && defaultTargetPlatform != TargetPlatform.iOS) {
       return const SizedBox.shrink();
     }
     final community = ref.watch(activeCommunityProvider).value;
@@ -43,8 +44,13 @@ class _NotificationsSection extends ConsumerWidget {
         ? l10n.settingsPushUnsupported
         : switch (status) {
             KuzzPushAuthorizationStatus.notDetermined =>
-              l10n.settingsPushWaitingPermission,
-            KuzzPushAuthorizationStatus.denied => l10n.settingsPushDeniedInIos,
+              android
+                  ? l10n.settingsPushWaitingPermissionAndroid
+                  : l10n.settingsPushWaitingPermission,
+            KuzzPushAuthorizationStatus.denied =>
+              android
+                  ? l10n.settingsPushDeniedInAndroid
+                  : l10n.settingsPushDeniedInIos,
             KuzzPushAuthorizationStatus.authorized ||
             KuzzPushAuthorizationStatus.provisional ||
             KuzzPushAuthorizationStatus.ephemeral =>
@@ -52,8 +58,13 @@ class _NotificationsSection extends ConsumerWidget {
                   ? l10n.settingsPushOn
                   : l10n.settingsPushOnCommunity,
             null when authorization.isLoading =>
-              l10n.settingsPushCheckingPermission,
-            null => l10n.settingsPushPermissionUnknown,
+              android
+                  ? l10n.settingsPushCheckingPermissionAndroid
+                  : l10n.settingsPushCheckingPermission,
+            null =>
+              android
+                  ? l10n.settingsPushPermissionUnknownAndroid
+                  : l10n.settingsPushPermissionUnknown,
           };
 
     return AppListCard(
@@ -95,7 +106,9 @@ class _NotificationsSection extends ConsumerWidget {
           AppListRow(
             key: const ValueKey('push-notifications-open-settings'),
             icon: LucideIcons.settings,
-            title: l10n.settingsPushOpenIosSettings,
+            title: android
+                ? l10n.settingsPushOpenAndroidSettings
+                : l10n.settingsPushOpenIosSettings,
             onTap: () => unawaited(
               ref.read(kuzzPushNotificationSettingsOpenerProvider)(),
             ),

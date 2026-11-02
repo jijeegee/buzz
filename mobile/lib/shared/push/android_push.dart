@@ -23,11 +23,16 @@ const kuzzAndroidPushConfigured =
     _firebaseSenderId != '' &&
     _firebaseProjectId != '';
 
-/// Whether this run uses Android push. Tests override the platform.
+/// Lets tests take the Android push paths without the build defines.
+@visibleForTesting
+bool? debugAndroidPushActiveOverride;
+
+/// Whether this run uses Android push.
 bool get androidPushActive =>
-    kuzzAndroidPushConfigured &&
-    !kIsWeb &&
-    defaultTargetPlatform == TargetPlatform.android;
+    debugAndroidPushActiveOverride ??
+    (kuzzAndroidPushConfigured &&
+        !kIsWeb &&
+        defaultTargetPlatform == TargetPlatform.android);
 
 const androidPushChannel = MethodChannel(kuzzAndroidPushChannel);
 
@@ -79,3 +84,18 @@ Future<void> setAndroidPushAgeRestricted(bool restricted) async {
     await marker.delete();
   }
 }
+
+/// Notification permission: `authorized`, `denied` or `notDetermined`
+/// (Android 13+ before the person was asked).
+Future<String?> readAndroidNotificationPermission() =>
+    androidPushChannel.invokeMethod<String>('permissionStatus');
+
+/// Asks for POST_NOTIFICATIONS on Android 13+ when not yet decided; returns
+/// the permission afterwards. Older Android grants it at install.
+Future<String?> requestAndroidNotificationPermission() =>
+    androidPushChannel.invokeMethod<String>('requestPermission');
+
+/// Opens this app's notification settings.
+Future<bool> openAndroidNotificationSettings() async =>
+    await androidPushChannel.invokeMethod<bool>('openNotificationSettings') ??
+    false;

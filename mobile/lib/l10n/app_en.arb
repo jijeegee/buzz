@@ -1502,6 +1502,26 @@
   "@settingsPushOpenIosSettings": {
     "description": "Settings page, row that opens the iOS notification settings for the app."
   },
+  "settingsPushWaitingPermissionAndroid": "Waiting for notification permission",
+  "@settingsPushWaitingPermissionAndroid": {
+    "description": "Settings page on Android, grey text under Push notifications while the phone has not yet asked the user to allow notifications."
+  },
+  "settingsPushDeniedInAndroid": "Enabled in Kuzz, but notifications are off in Android settings",
+  "@settingsPushDeniedInAndroid": {
+    "description": "Settings page on Android, red text under Push notifications when the phone blocks notifications for the app. 'Kuzz' is the app name."
+  },
+  "settingsPushCheckingPermissionAndroid": "Checking notification permission",
+  "@settingsPushCheckingPermissionAndroid": {
+    "description": "Settings page on Android, grey text under Push notifications while checking whether notifications are allowed."
+  },
+  "settingsPushPermissionUnknownAndroid": "Enabled in Kuzz; notification permission unavailable",
+  "@settingsPushPermissionUnknownAndroid": {
+    "description": "Settings page on Android, red text under Push notifications when the phone did not say whether notifications are allowed. 'Kuzz' is the app name."
+  },
+  "settingsPushOpenAndroidSettings": "Open notification settings",
+  "@settingsPushOpenAndroidSettings": {
+    "description": "Settings page on Android, row that opens the phone's notification settings for the app. Short."
+  },
   "settingsCloseProfile": "Close profile",
   "@settingsCloseProfile": {
     "description": "Profile screen, tooltip and screen-reader label of the close (X) button in the top bar."
