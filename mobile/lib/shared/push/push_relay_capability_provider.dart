@@ -22,15 +22,24 @@ final kuzzPushDescriptorFetcherProvider = Provider<KuzzPushDescriptorFetcher>(
 /// Discovery fails closed. An absent or malformed NIP-11 push descriptor is
 /// no capability, so no notification permission, APNs registration, gateway
 /// enrollment, or relay lease can begin. A network or HTTP failure is an
-/// error instead, retried with backoff and again on reconnect and resume.
+/// [Exception] instead, which Riverpod retries a few times with backoff;
+/// reconnect and resume fetch it again.
+///
+/// It watches only what decides the answer: the connection status, the
+/// server and key, and which account is active. Push bookkeeping writes to
+/// the account do not fetch it again.
 final currentRelayPushDescriptorProvider =
     FutureProvider.autoDispose<KuzzPushLeaseDescriptor?>((ref) async {
       if (!Env.pushGatewayConfigured) return null;
-      final session = ref.watch(relaySessionProvider);
+      final status = ref.watch(
+        relaySessionProvider.select((session) => session.status),
+      );
       final config = ref.watch(relayConfigProvider);
-      final community = ref.watch(activeCommunityProvider).value;
+      final communityId = ref.watch(
+        activeCommunityProvider.select((community) => community.value?.id),
+      );
       final memberPubkey = ref.watch(myPubkeyProvider);
-      if (community == null ||
+      if (communityId == null ||
           config.nsec == null ||
           config.nsec!.isEmpty ||
           memberPubkey == null ||
@@ -39,7 +48,7 @@ final currentRelayPushDescriptorProvider =
       }
       // Not known until connected; this provider reruns when the session
       // changes, so it stays loading until then.
-      if (session.status != SessionStatus.connected) {
+      if (status != SessionStatus.connected) {
         return Completer<KuzzPushLeaseDescriptor?>().future;
       }
 

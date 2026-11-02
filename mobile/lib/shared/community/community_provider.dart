@@ -317,6 +317,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   ) async {
     if (!ref.read(kuzzPushBuildSupportedProvider)) return communities;
     final storage = ref.read(communityStorageProvider);
+    var saved = communities;
     try {
       if (await storage.loadPushDefaultOnApplied()) return communities;
       final builtInOrigin = ref.read(defaultCommunityOriginProvider);
@@ -336,13 +337,17 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         updated[i] = on.copyWith(pushChoice: KuzzPushChoice.on);
         changed = true;
       }
-      if (changed) await storage.saveAll(updated);
+      if (changed) {
+        await storage.saveAll(updated);
+        saved = updated;
+      }
       await storage.markPushDefaultOnApplied();
       return updated;
     } catch (error) {
-      // Nothing is marked, so the next start tries again.
+      // Nothing is marked, so the next start tries again. What was saved
+      // is shown, so the switch matches storage.
       developer.log('Push default-on migration failed: $error');
-      return communities;
+      return saved;
     }
   }
 
@@ -639,6 +644,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
 
   Future<void> setPushNotificationsEnabled(String id, bool enabled) async {
     var shouldDeactivate = false;
+    var changed = false;
     await _serializePushMutation(() async {
       final storage = ref.read(communityStorageProvider);
       final current = await storage.loadAll();
@@ -668,7 +674,9 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       await syncCommunitySnapshot(ref, updatedList);
       shouldDeactivate =
           !enabled && pushState.pendingTombstoneGeneration != null;
+      changed = true;
     });
+    if (changed) noteKuzzPushToggled(id, enabled: enabled);
     if (shouldDeactivate) {
       try {
         await retryPendingPushLeaseTombstone(id);

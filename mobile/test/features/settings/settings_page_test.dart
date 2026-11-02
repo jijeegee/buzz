@@ -187,6 +187,8 @@ void main() {
       WidgetTester tester, {
       required Community community,
       KuzzPushSubscriptionSync sync = KuzzPushSubscriptionSync.ok,
+      KuzzPushAuthorizationStatus status =
+          KuzzPushAuthorizationStatus.authorized,
     }) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
@@ -204,7 +206,7 @@ void main() {
             ),
             appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
             kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-              () async => KuzzPushAuthorizationStatus.authorized,
+              () async => status,
             ),
           ],
           child: MaterialApp(
@@ -237,13 +239,78 @@ void main() {
     });
 
     testWidgets('says setup failed and retries', (tester) async {
-      pushSetupError.value = 'gateway rejected attestation';
+      final community = keyCommunity(accepted: true);
+      pushSetupError.value = KuzzPushSetupError(
+        communityId: community.id,
+        message: 'gateway rejected attestation',
+      );
       addTearDown(() => pushSetupError.value = null);
-      await pumpCard(tester, community: keyCommunity(accepted: true));
+      await pumpCard(tester, community: community);
       expect(
         find.text("Couldn't set up notifications. Retrying."),
         findsOneWidget,
       );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('ignores a setup failure of another account', (tester) async {
+      pushSetupError.value = const KuzzPushSetupError(
+        communityId: 'another-account',
+        message: 'gateway rejected attestation',
+      );
+      addTearDown(() => pushSetupError.value = null);
+      await pumpCard(tester, community: keyCommunity(accepted: true));
+      expect(
+        find.text("Couldn't set up notifications. Retrying."),
+        findsNothing,
+      );
+      expect(
+        find.text('Receive message notifications from this community'),
+        findsOneWidget,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('says blocked, not retrying, when permission is denied', (
+      tester,
+    ) async {
+      final community = keyCommunity();
+      pushSetupError.value = KuzzPushSetupError(
+        communityId: community.id,
+        message: 'gateway rejected attestation',
+      );
+      addTearDown(() => pushSetupError.value = null);
+      await pumpCard(
+        tester,
+        community: community,
+        status: KuzzPushAuthorizationStatus.denied,
+      );
+      expect(
+        find.text('Notifications are blocked for Kuzz in phone settings'),
+        findsOneWidget,
+      );
+      expect(
+        find.text("Couldn't set up notifications. Retrying."),
+        findsNothing,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('says not available on a phone that cannot get push', (
+      tester,
+    ) async {
+      kuzzPushUnavailableOnThisPhone.value = true;
+      addTearDown(() => kuzzPushUnavailableOnThisPhone.value = false);
+      await pumpCard(tester, community: keyCommunity());
+      expect(find.text('Not available on this phone'), findsOneWidget);
+      final pushSwitch = tester.widget<Switch>(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+      );
+      // Turning it off and on tries again.
+      expect(pushSwitch.onChanged, isNotNull);
       debugDefaultTargetPlatformOverride = null;
     });
 

@@ -65,6 +65,10 @@ class KuzzPushAuthorizationStatusNotifier
         unawaited(refresh());
       }
     });
+    // The person just answered the permission dialog.
+    void onPrompt() => unawaited(refresh());
+    kuzzPushPermissionPrompts.addListener(onPrompt);
+    ref.onDispose(() => kuzzPushPermissionPrompts.removeListener(onPrompt));
     return ref.read(kuzzPushAuthorizationStatusReaderProvider)();
   }
 
@@ -113,9 +117,64 @@ final apnsRegistrationError = ValueNotifier<String?>(null);
 /// still seen and retried.
 final apnsRegistrationFailures = ValueNotifier<int>(0);
 
-/// The latest failure to set up push for the active account (registration,
-/// enrollment or lease). Cleared when the lease is accepted.
-final pushSetupError = ValueNotifier<String?>(null);
+/// A failure to set up push for one account.
+@immutable
+class KuzzPushSetupError {
+  const KuzzPushSetupError({required this.communityId, required this.message});
+
+  final String? communityId;
+  final String message;
+
+  @override
+  String toString() => message;
+}
+
+/// The latest failure to set up push (registration, enrollment or lease),
+/// for the account it happened to. Cleared when that account's lease is
+/// accepted, when push is turned off for it, and when another account (or
+/// none) becomes active.
+final pushSetupError = ValueNotifier<KuzzPushSetupError?>(null);
+
+/// Clears [pushSetupError] unless it belongs to [communityId].
+void clearKuzzPushSetupErrorUnlessFor(String? communityId) {
+  final error = pushSetupError.value;
+  if (error != null &&
+      (communityId == null || error.communityId != communityId)) {
+    pushSetupError.value = null;
+  }
+}
+
+/// Clears [pushSetupError] when it belongs to [communityId].
+void clearKuzzPushSetupErrorFor(String? communityId) {
+  if (pushSetupError.value?.communityId == communityId) {
+    pushSetupError.value = null;
+  }
+}
+
+/// Counts the person's own retries: turning push on or off. A retry starts
+/// setup over at once, without waiting out a backoff.
+final kuzzPushUserRetries = ValueNotifier<int>(0);
+
+/// This phone can't receive push (no Google Play services, or the token
+/// keeps failing). Setup stops until the next cold start or until the
+/// person turns push off and on.
+final kuzzPushUnavailableOnThisPhone = ValueNotifier<bool>(false);
+
+/// Counts answered notification permission dialogs, so the permission
+/// status is read again right away.
+final kuzzPushPermissionPrompts = ValueNotifier<int>(0);
+
+/// The person turned push on or off for [communityId]. Starts setup over,
+/// clears a stale failure for that account and lets the next registration
+/// ask for the notification permission again.
+void noteKuzzPushToggled(String communityId, {required bool enabled}) {
+  clearKuzzPushSetupErrorFor(communityId);
+  apnsRegistrationError.value = null;
+  kuzzPushUnavailableOnThisPhone.value = false;
+  _androidTokenFailures = 0;
+  _androidPermissionPromptRequested = enabled;
+  kuzzPushUserRetries.value += 1;
+}
 
 final pushEndpointGrants = ValueNotifier<List<KuzzPushEndpointGrant>>([]);
 final pushEndpointGrantError = ValueNotifier<String?>(null);
@@ -171,14 +230,21 @@ Future<void> syncPendingKuzzPushNotificationResponse() async {
 /// APNs registration and enrollment remain valid while display is denied.
 ///
 /// On Android (KUZZ_ANDROID_PUSH builds) it asks for the notification
-/// permission on Android 13+, only once push is on for a community. Throws
-/// when no usable token was obtained, so the caller retries.
+/// permission on Android 13+ at most once per user action: the first time
+/// push is on in this run while the person was never asked, or right after
+/// they turned push on. Retries only read the permission. Throws when no
+/// usable token was obtained, so the caller retries, or
+/// [KuzzPushUnavailableOnThisPhone] when retrying can't help.
 Future<void> startKuzzPushRegistration() async {
   if (!Env.pushGatewayConfigured) return;
   if (androidPushActive) {
+    if (kuzzPushUnavailableOnThisPhone.value) {
+      throw const KuzzPushUnavailableOnThisPhone();
+    }
     String? token;
+    var permanent = false;
     try {
-      await requestAndroidNotificationPermission();
+      await _askAndroidNotificationPermissionOnce();
       // FCM keeps working while notifications are blocked; the token is
       // asked for only here, after push was turned on.
       token = await androidPushChannel.invokeMethod<String>('token');
@@ -186,14 +252,22 @@ Future<void> startKuzzPushRegistration() async {
       // Flutter tests do not install the native plugin.
       return;
     } on PlatformException catch (error) {
-      debugPrint('[AndroidPush] token failed: ${error.code}');
+      debugPrint('[AndroidPush] token failed: ${error.code} ${error.details}');
+      permanent = _isPermanentAndroidTokenFailure(error);
     }
-    if (token == null) {
-      apnsRegistrationError.value = 'FCM token unavailable';
-      throw StateError('FCM token unavailable');
+    if (token != null && _setAndroidPushToken(token)) {
+      _androidTokenFailures = 0;
+      return;
     }
-    if (!_setAndroidPushToken(token)) throw StateError('FCM token refused');
-    return;
+    // A refused token: the next one would be refused too.
+    if (token != null) permanent = true;
+    _androidTokenFailures += 1;
+    if (permanent || _androidTokenFailures >= _androidTokenFailureLimit) {
+      kuzzPushUnavailableOnThisPhone.value = true;
+      throw const KuzzPushUnavailableOnThisPhone();
+    }
+    apnsRegistrationError.value ??= 'FCM token unavailable';
+    throw StateError('FCM token unavailable');
   }
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
   try {
@@ -201,6 +275,62 @@ Future<void> startKuzzPushRegistration() async {
   } on MissingPluginException {
     // Flutter tests and non-Runner embeddings do not install the native bridge.
   }
+}
+
+/// Push can't work on this phone; retrying won't help.
+class KuzzPushUnavailableOnThisPhone implements Exception {
+  const KuzzPushUnavailableOnThisPhone();
+
+  @override
+  String toString() => 'Push is not available on this phone';
+}
+
+/// Token failures in a row after which this phone is treated as unable to
+/// get push. Registration runs only while connected to the server, so a
+/// token that keeps failing then means Google Play services are missing or
+/// broken, not that the phone is offline.
+const _androidTokenFailureLimit = 3;
+int _androidTokenFailures = 0;
+bool _androidPermissionPromptRequested = false;
+bool _androidPermissionAskedThisRun = false;
+
+/// FCM errors that retrying can't fix: no Firebase setup in this app, or no
+/// Google Play services on the phone.
+bool _isPermanentAndroidTokenFailure(PlatformException error) {
+  if (error.code == 'not_configured') return true;
+  final reason = '${error.message} ${error.details}';
+  return reason.contains('MISSING_INSTANCEID_SERVICE') ||
+      reason.contains('INVALID_SENDER');
+}
+
+/// Shows the system dialog only when the person never answered it and it
+/// was not shown in this run yet, or right after they turned push on.
+Future<void> _askAndroidNotificationPermissionOnce() async {
+  final requested = _androidPermissionPromptRequested;
+  _androidPermissionPromptRequested = false;
+  try {
+    final status = await readAndroidNotificationPermission();
+    if (status == 'authorized') return;
+    final neverAsked = status != 'denied' && !_androidPermissionAskedThisRun;
+    if (!requested && !neverAsked) return;
+    _androidPermissionAskedThisRun = true;
+    await requestAndroidNotificationPermission();
+    kuzzPushPermissionPrompts.value += 1;
+  } on PlatformException catch (error) {
+    // The token works without the permission; ask again on the next action.
+    debugPrint('[AndroidPush] permission request failed: ${error.code}');
+  }
+}
+
+/// Puts the registration state back as at a cold start.
+@visibleForTesting
+void debugResetKuzzPushRegistrationState() {
+  _androidTokenFailures = 0;
+  _androidPermissionPromptRequested = false;
+  _androidPermissionAskedThisRun = false;
+  kuzzPushUnavailableOnThisPhone.value = false;
+  pushSetupError.value = null;
+  apnsRegistrationError.value = null;
 }
 
 class KuzzPushEndpointGrant {

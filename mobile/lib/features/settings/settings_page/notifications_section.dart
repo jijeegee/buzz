@@ -8,7 +8,13 @@ class _NotificationsSection extends HookConsumerWidget {
     final community = ref.watch(activeCommunityProvider).value;
     final setupError = useValueListenable(pushSetupError);
     final registrationError = useValueListenable(apnsRegistrationError);
+    final unavailableOnPhone = useValueListenable(
+      kuzzPushUnavailableOnThisPhone,
+    );
     if (community == null) return const SizedBox.shrink();
+    // Only this account's failure counts.
+    final setupFailed =
+        setupError?.communityId == community.id || registrationError != null;
     final android = androidPushActive;
     final availability = ref.watch(kuzzPushAvailabilityProvider);
     final enabled = community.pushNotificationsEnabled;
@@ -57,6 +63,7 @@ class _NotificationsSection extends HookConsumerWidget {
               hasBuiltInServer
                   ? l10n.settingsPushOff
                   : l10n.settingsPushOffCommunity,
+            _ when unavailableOnPhone => l10n.settingsPushUnavailablePhone,
             _ when subscriptionsUnavailable =>
               l10n.settingsPushUnavailableAccount,
             _ when permissionDenied => l10n.settingsPushBlocked,
@@ -64,8 +71,7 @@ class _NotificationsSection extends HookConsumerWidget {
               android
                   ? l10n.settingsPushPermissionUnknownAndroid
                   : l10n.settingsPushPermissionUnknown,
-            _ when setupError != null || registrationError != null =>
-              l10n.settingsPushSetupFailed,
+            _ when setupFailed => l10n.settingsPushSetupFailed,
             KuzzPushAvailability.checking => l10n.settingsPushSettingUp,
             _ => switch (status) {
               KuzzPushAuthorizationStatus.notDetermined =>

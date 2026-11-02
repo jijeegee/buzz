@@ -1478,6 +1478,10 @@
   "@settingsPushUnavailableAccount": {
     "description": "Settings page, grey text under Push notifications when this account has too many chats for notifications. Short."
   },
+  "settingsPushUnavailablePhone": "Not available on this phone",
+  "@settingsPushUnavailablePhone": {
+    "description": "Settings page, grey text under Push notifications when this phone can't receive notifications, for example because it has no Google Play services. Short."
+  },
   "settingsPushSettingUp": "Setting up…",
   "@settingsPushSettingUp": {
     "description": "Settings page, grey text under Push notifications while notifications are being set up for this phone. Short."

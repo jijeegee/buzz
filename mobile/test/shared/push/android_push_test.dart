@@ -64,25 +64,36 @@ void main() {
 
   group('Android push on', () {
     final calls = <String>[];
+    var permission = 'notDetermined';
+    PlatformException? tokenError;
     setUp(() {
       debugAndroidPushActiveOverride = true;
+      debugResetKuzzPushRegistrationState();
       apnsDeviceToken.value = null;
-      apnsRegistrationError.value = null;
+      permission = 'notDetermined';
+      tokenError = null;
       calls.clear();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(androidPushChannel, (call) async {
             calls.add(call.method);
-            return switch (call.method) {
-              'requestPermission' => 'authorized',
-              'token' => 'tok-1',
-              _ => null,
-            };
+            switch (call.method) {
+              case 'permissionStatus':
+                return permission;
+              case 'requestPermission':
+                // The person says no; Android remembers it was asked.
+                permission = 'denied';
+                return permission;
+              case 'token':
+                if (tokenError != null) throw tokenError!;
+                return 'tok-1';
+            }
+            return null;
           });
     });
     tearDown(() {
       debugAndroidPushActiveOverride = null;
+      debugResetKuzzPushRegistrationState();
       apnsDeviceToken.value = null;
-      apnsRegistrationError.value = null;
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(androidPushChannel, null);
     });
@@ -98,9 +109,93 @@ void main() {
     test(
       'turning push on asks for the permission, then the token',
       () async {
+        final prompts = kuzzPushPermissionPrompts.value;
         await startKuzzPushRegistration();
-        expect(calls, ['requestPermission', 'token']);
+        expect(calls, ['permissionStatus', 'requestPermission', 'token']);
         expect(apnsDeviceToken.value, 'tok-1');
+        // The status is read again after the dialog.
+        expect(kuzzPushPermissionPrompts.value, prompts + 1);
+      },
+      skip: !Env.pushGatewayConfigured,
+    );
+
+    test(
+      'a retry reads the permission and never asks again',
+      () async {
+        tokenError = PlatformException(
+          code: 'token',
+          message: 'IOException',
+          details: 'SERVICE_NOT_AVAILABLE',
+        );
+        await expectLater(startKuzzPushRegistration(), throwsStateError);
+        expect(calls, ['permissionStatus', 'requestPermission', 'token']);
+        calls.clear();
+        await expectLater(startKuzzPushRegistration(), throwsStateError);
+        expect(calls, ['permissionStatus', 'token']);
+
+        // Also not when it was never answered but was shown in this run.
+        permission = 'notDetermined';
+        calls.clear();
+        tokenError = null;
+        await startKuzzPushRegistration();
+        expect(calls, ['permissionStatus', 'token']);
+      },
+      skip: !Env.pushGatewayConfigured,
+    );
+
+    test('turning push on again may ask once more', () async {
+      await startKuzzPushRegistration();
+      calls.clear();
+      noteKuzzPushToggled('community', enabled: true);
+      await startKuzzPushRegistration();
+      expect(calls, ['permissionStatus', 'requestPermission', 'token']);
+      calls.clear();
+      await startKuzzPushRegistration();
+      expect(calls, ['permissionStatus', 'token']);
+    }, skip: !Env.pushGatewayConfigured);
+
+    test('a phone without Google Play services stops until push is turned on '
+        'again', () async {
+      tokenError = PlatformException(
+        code: 'token',
+        message: 'IOException',
+        details: 'java.io.IOException: MISSING_INSTANCEID_SERVICE',
+      );
+      await expectLater(
+        startKuzzPushRegistration(),
+        throwsA(isA<KuzzPushUnavailableOnThisPhone>()),
+      );
+      expect(kuzzPushUnavailableOnThisPhone.value, isTrue);
+      calls.clear();
+      await expectLater(
+        startKuzzPushRegistration(),
+        throwsA(isA<KuzzPushUnavailableOnThisPhone>()),
+      );
+      expect(calls, isEmpty);
+
+      tokenError = null;
+      noteKuzzPushToggled('community', enabled: true);
+      expect(kuzzPushUnavailableOnThisPhone.value, isFalse);
+      await startKuzzPushRegistration();
+      expect(apnsDeviceToken.value, 'tok-1');
+    }, skip: !Env.pushGatewayConfigured);
+
+    test(
+      'a token that keeps failing is not available after three tries',
+      () async {
+        tokenError = PlatformException(
+          code: 'token',
+          message: 'IOException',
+          details: 'SERVICE_NOT_AVAILABLE',
+        );
+        await expectLater(startKuzzPushRegistration(), throwsStateError);
+        await expectLater(startKuzzPushRegistration(), throwsStateError);
+        expect(kuzzPushUnavailableOnThisPhone.value, isFalse);
+        await expectLater(
+          startKuzzPushRegistration(),
+          throwsA(isA<KuzzPushUnavailableOnThisPhone>()),
+        );
+        expect(kuzzPushUnavailableOnThisPhone.value, isTrue);
       },
       skip: !Env.pushGatewayConfigured,
     );

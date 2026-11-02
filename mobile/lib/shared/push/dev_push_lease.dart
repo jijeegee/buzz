@@ -63,6 +63,34 @@ class KuzzPushLeaseDescriptor {
     required this.maxStringLength,
   });
 
+  /// Equal when every field is: a fetch that returns the same push
+  /// support is not a change, so nothing restarts for it.
+  @override
+  bool operator ==(Object other) =>
+      other is KuzzPushLeaseDescriptor &&
+      other.origin == origin &&
+      other.executorKeyId == executorKeyId &&
+      other.executorPubkey == executorPubkey &&
+      other.transport == transport &&
+      other.maxLeaseTtlSeconds == maxLeaseTtlSeconds &&
+      other.maxContentLength == maxContentLength &&
+      other.maxPlaintextLength == maxPlaintextLength &&
+      other.maxEndpointLength == maxEndpointLength &&
+      other.maxStringLength == maxStringLength;
+
+  @override
+  int get hashCode => Object.hash(
+    origin,
+    executorKeyId,
+    executorPubkey,
+    transport,
+    maxLeaseTtlSeconds,
+    maxContentLength,
+    maxPlaintextLength,
+    maxEndpointLength,
+    maxStringLength,
+  );
+
   factory KuzzPushLeaseDescriptor.fromRelayInformation(
     Map<String, dynamic> information,
   ) {
@@ -197,6 +225,18 @@ class KuzzPushLeaseDescriptor {
   }
 }
 
+/// The relay answered its NIP-11 request with an HTTP error. Like an
+/// unreachable relay, this is an [Exception], so it is retried.
+class KuzzRelayInformationHttpException implements Exception {
+  const KuzzRelayInformationHttpException(this.statusCode, this.body);
+
+  final int statusCode;
+  final String body;
+
+  @override
+  String toString() => 'NIP-11 request failed with HTTP $statusCode: $body';
+}
+
 Future<KuzzPushLeaseDescriptor> fetchKuzzPushLeaseDescriptor(
   String relayBaseUrl, {
   http.Client? client,
@@ -215,8 +255,9 @@ Future<KuzzPushLeaseDescriptor> fetchKuzzPushLeaseDescriptor(
         .get(requestUri, headers: const {'Accept': 'application/nostr+json'})
         .timeout(timeout);
     if (response.statusCode != 200) {
-      throw StateError(
-        'NIP-11 request failed with HTTP ${response.statusCode}: ${response.body}',
+      throw KuzzRelayInformationHttpException(
+        response.statusCode,
+        response.body,
       );
     }
     final decoded = jsonDecode(response.body);

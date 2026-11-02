@@ -23,6 +23,10 @@ const _pushBootstrapMaxRetryDelay = Duration(minutes: 10);
 /// One push setup step at a time. A failed attempt is retried after
 /// [retryDelay], doubling while the same attempt keeps failing, up to
 /// [maxRetryDelay]. Success or a different attempt starts over.
+///
+/// While a failed attempt waits out its backoff, [tryBegin] refuses to
+/// start it again, however often its inputs are rebuilt. Only the timer or
+/// an explicit [retryNow] (app resume, reconnect) cuts the wait short.
 @visibleForTesting
 class KuzzPushAttemptGate {
   KuzzPushAttemptGate({
@@ -43,10 +47,24 @@ class KuzzPushAttemptGate {
 
   bool tryBegin(String attempt) {
     if (_attempt == attempt) return false;
+    if (waitingOutBackoff(attempt)) return false;
     _retryTimer?.cancel();
     _retryTimer = null;
     _attempt = attempt;
     return true;
+  }
+
+  /// Whether [attempt] failed and its retry timer has not fired yet.
+  bool waitingOutBackoff(String attempt) =>
+      _attempt == null && _retryTimer != null && _failingAttempt == attempt;
+
+  /// An explicit retry: a failed attempt waiting out its backoff may start
+  /// again now. The failure count stays, so if it fails again the next wait
+  /// is longer. A running or held attempt is not affected.
+  void retryNow() {
+    if (_attempt != null || _retryTimer == null) return;
+    _retryTimer!.cancel();
+    _retryTimer = null;
   }
 
   void failed(String attempt, {required VoidCallback retry}) {
@@ -98,6 +116,9 @@ class KuzzPushAttemptGate {
   void dispose() => _retryTimer?.cancel();
 }
 
+/// What a lease publication depends on. Lease bookkeeping (reserved and
+/// accepted generations) is left out, so writing it never looks like a new
+/// attempt. [userRetry] changes when the person turns push off or on.
 @visibleForTesting
 String kuzzPushPublicationAttemptKey({
   required String communityId,
@@ -105,13 +126,22 @@ String kuzzPushPublicationAttemptKey({
   required String token,
   required KuzzPushLeaseDescriptor descriptor,
   required List<KuzzPushSubscription> subscriptions,
+  int userRetry = 0,
 }) => [
   communityId,
   relayBaseUrl,
   token,
+  descriptor.origin,
   descriptor.executorKeyId,
   descriptor.executorPubkey,
+  descriptor.transport,
+  descriptor.maxLeaseTtlSeconds,
+  descriptor.maxContentLength,
+  descriptor.maxPlaintextLength,
+  descriptor.maxEndpointLength,
+  descriptor.maxStringLength,
   kuzzPushSubscriptionsFingerprint(subscriptions),
+  userRetry,
 ].join('|');
 
 @visibleForTesting
@@ -130,6 +160,7 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
     required this.shouldRegister,
     required this.attemptKey,
     required this.child,
+    this.communityId,
     this.retrySignal = 0,
     this.startRegistration = startKuzzPushRegistration,
     super.key,
@@ -139,7 +170,11 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
   final String attemptKey;
   final Widget child;
 
-  /// Changes on app resume; a failed registration is retried at once.
+  /// The account a failure is reported for.
+  final String? communityId;
+
+  /// Changes on app resume and reconnect; a failed registration is retried
+  /// at once instead of after its backoff.
   final int retrySignal;
   final Future<void> Function() startRegistration;
 
@@ -147,6 +182,7 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
   Widget build(BuildContext context) {
     final attemptGate = useMemoized(KuzzPushAttemptGate.new);
     final retry = useState(0);
+    final seenRetrySignal = useRef(retrySignal);
     useEffect(() => attemptGate.dispose, const []);
     void scheduleRetry() => attemptGate.failed(
       attemptKey,
@@ -173,12 +209,23 @@ class KuzzPushRegistrationBootstrap extends HookWidget {
       };
     }, [attemptKey]);
     useEffect(() {
+      if (seenRetrySignal.value != retrySignal) {
+        seenRetrySignal.value = retrySignal;
+        attemptGate.retryNow();
+      }
       if (!shouldRegister || !attemptGate.tryBegin(attemptKey)) return null;
       unawaited(() async {
         try {
           await startRegistration();
+        } on KuzzPushUnavailableOnThisPhone {
+          // Retrying can't help. The attempt stays held, so only a cold
+          // start or turning push off and on tries again.
+          debugPrint('Push registration: not available on this phone');
         } catch (error, stack) {
-          pushSetupError.value = error.toString();
+          pushSetupError.value = KuzzPushSetupError(
+            communityId: communityId,
+            message: error.toString(),
+          );
           scheduleRetry();
           debugPrint('Push registration bootstrap failed: $error');
           debugPrintStack(stackTrace: stack);
@@ -206,21 +253,56 @@ Future<int> publishKuzzPushLeaseRecoverably({
 
 /// Starts the push lifecycle only after authenticated relay connectivity and a
 /// push-capable NIP-11 descriptor are both present.
+/// Publishes the push lease for [community]; returns the gateway grant.
+typedef KuzzPushLeasePublisher =
+    Future<KuzzPushEndpointGrant> Function(
+      WidgetRef ref,
+      RelayConfig config,
+      Community community,
+      String memberPubkey,
+      SignedEventRelay relay,
+    );
+
 class KuzzPushBootstrap extends HookConsumerWidget {
-  const KuzzPushBootstrap({required this.child, super.key});
+  const KuzzPushBootstrap({
+    required this.child,
+    this.publishLease = _publish,
+    this.startRegistration = startKuzzPushRegistration,
+    super.key,
+  });
 
   final Widget child;
+
+  /// Tests replace the relay and gateway calls.
+  final KuzzPushLeasePublisher publishLease;
+  final Future<void> Function() startRegistration;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     useListenable(apnsDeviceToken);
+    final userRetry = useValueListenable(kuzzPushUserRetries);
     final publicationAttempt = useMemoized(KuzzPushAttemptGate.new);
     final tombstoneAttempt = useMemoized(KuzzPushAttemptGate.new);
     final publicationRetry = useState(0);
     final tombstoneRetry = useState(0);
+    // Resumes and reconnects: explicit retries that skip a backoff.
     final resumes = useState(0);
+    final reconnects = useRef(0);
+    final previousStatus = useRef<SessionStatus?>(null);
     final revocationOutbox = ref.watch(kuzzPushLeaseRevocationOutboxProvider);
     final session = ref.watch(relaySessionProvider);
+    if (previousStatus.value != session.status) {
+      final previous = previousStatus.value;
+      previousStatus.value = session.status;
+      // Counted here rather than in an effect, so the effects below and the
+      // registration see it in this same build.
+      if (previous != null && session.status == SessionStatus.connected) {
+        reconnects.value += 1;
+        publicationAttempt.retryNow();
+        tombstoneAttempt.retryNow();
+      }
+    }
+    final retrySignal = resumes.value + reconnects.value;
     final communities = ref.watch(communityListProvider).value ?? const [];
     final config = ref.watch(relayConfigProvider);
     final community = ref.watch(activeCommunityProvider).value;
@@ -236,6 +318,8 @@ class KuzzPushBootstrap extends HookConsumerWidget {
           if (ref.read(currentRelayPushDescriptorProvider).hasError) {
             ref.invalidate(currentRelayPushDescriptorProvider);
           }
+          publicationAttempt.retryNow();
+          tombstoneAttempt.retryNow();
           if (context.mounted) resumes.value += 1;
         },
       );
@@ -249,6 +333,15 @@ class KuzzPushBootstrap extends HookConsumerWidget {
       }
       return null;
     }, [revocationOutbox, session.status]);
+
+    // A failure belongs to one account while push is on for it.
+    final errorScope = community?.pushNotificationsEnabled == true
+        ? community?.id
+        : null;
+    useEffect(() {
+      clearKuzzPushSetupErrorUnlessFor(errorScope);
+      return null;
+    }, [errorScope]);
 
     useEffect(
       () => () {
@@ -342,6 +435,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
           token: token,
           descriptor: activeDescriptor,
           subscriptions: state.desired,
+          userRetry: userRetry,
         );
         if (!publicationAttempt.tryBegin(attempt)) return null;
         final relay = SignedEventRelay(
@@ -350,7 +444,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
         );
         unawaited(() async {
           try {
-            final grant = await _publish(
+            final grant = await publishLease(
               ref,
               config,
               activeCommunity,
@@ -361,7 +455,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
                 grant.expiresAt * 1000 -
                 DateTime.now().millisecondsSinceEpoch -
                 const Duration(minutes: 5).inMilliseconds;
-            pushSetupError.value = null;
+            clearKuzzPushSetupErrorFor(activeCommunity.id);
             publicationAttempt.retryAfter(
               attempt,
               delay: Duration(
@@ -374,7 +468,10 @@ class KuzzPushBootstrap extends HookConsumerWidget {
               },
             );
           } catch (error, stack) {
-            pushSetupError.value = error.toString();
+            pushSetupError.value = KuzzPushSetupError(
+              communityId: activeCommunity.id,
+              message: error.toString(),
+            );
             publicationAttempt.failed(
               attempt,
               retry: () {
@@ -396,8 +493,9 @@ class KuzzPushBootstrap extends HookConsumerWidget {
         memberPubkey,
         descriptor,
         token,
+        userRetry,
         publicationRetry.value,
-        resumes.value,
+        retrySignal,
       ],
     );
 
@@ -408,8 +506,10 @@ class KuzzPushBootstrap extends HookConsumerWidget {
             community: community,
             descriptor: descriptor,
           ),
-      attemptKey: '${community?.id}|${config.baseUrl}',
-      retrySignal: resumes.value,
+      attemptKey: '${community?.id}|${config.baseUrl}|$userRetry',
+      communityId: community?.id,
+      retrySignal: retrySignal,
+      startRegistration: startRegistration,
       child: child,
     );
   }

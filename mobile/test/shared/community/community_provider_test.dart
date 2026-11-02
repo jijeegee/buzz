@@ -768,6 +768,43 @@ void main() {
       expect(await communityStorage.loadPushDefaultOnApplied(), isFalse);
     });
 
+    test(
+      'a failed save shows and marks nothing, so the next start retries',
+      () async {
+        final community = keyCommunity('team');
+        await communityStorage.save(community);
+        final failing = _FailingCommunityStorage(fakeSecure)
+          ..failSaveAll = true;
+        communityStorage = failing;
+        container = createContainer(pushSupported: true);
+
+        final loaded = await container.read(communityListProvider.future);
+
+        expect(loaded.single.pushNotificationsEnabled, isFalse);
+        expect(await failing.loadPushDefaultOnApplied(), isFalse);
+
+        failing.failSaveAll = false;
+        container.invalidate(communityListProvider);
+        final retried = await container.read(communityListProvider.future);
+        expect(retried.single.pushNotificationsEnabled, isTrue);
+        expect(await failing.loadPushDefaultOnApplied(), isTrue);
+      },
+    );
+
+    test('a failed marker after a save shows what was saved', () async {
+      final community = keyCommunity('team');
+      await communityStorage.save(community);
+      final failing = _FailingCommunityStorage(fakeSecure)..failMark = true;
+      communityStorage = failing;
+      container = createContainer(pushSupported: true);
+
+      final loaded = await container.read(communityListProvider.future);
+
+      expect(loaded.single.pushNotificationsEnabled, isTrue);
+      expect((await failing.loadAll()).single.pushNotificationsEnabled, isTrue);
+      expect(await failing.loadPushDefaultOnApplied(), isFalse);
+    });
+
     test('the switch records the choice', () async {
       final community = keyCommunity('team');
       container = createContainer();
@@ -848,4 +885,23 @@ void main() {
       expect(await communityStorage.loadActiveId(), 'nonexistent-id');
     });
   });
+}
+
+class _FailingCommunityStorage extends CommunityStorage {
+  _FailingCommunityStorage(FakeSecureStorage secure) : super(secure: secure);
+
+  bool failSaveAll = false;
+  bool failMark = false;
+
+  @override
+  Future<void> saveAll(List<Community> communities) async {
+    if (failSaveAll) throw StateError('storage write failed');
+    await super.saveAll(communities);
+  }
+
+  @override
+  Future<void> markPushDefaultOnApplied() async {
+    if (failMark) throw StateError('storage write failed');
+    await super.markPushDefaultOnApplied();
+  }
 }
