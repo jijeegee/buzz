@@ -801,8 +801,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     for (final entry in [..._historySubscriptions.entries]) {
       if (!entry.value.sent) _sendHistoryReq(entry.key, entry.value);
     }
+    // REQs sent while the stream REQ is awaited are not sent again.
+    final replay = _liveSubscriptions.entries.toList();
     await _userStreamReqFirst(streamReq);
-    await _replayLiveSubscriptions(generation);
+    await _replayLiveSubscriptions(generation, replay);
     final droppedAt = _meDroppedAt;
     _meDroppedAt = null;
     if (droppedAt != null && _isActiveConnection(generation)) {
