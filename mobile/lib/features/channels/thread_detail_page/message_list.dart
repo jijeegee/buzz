@@ -31,6 +31,10 @@ class _ThreadMessageList extends StatelessWidget {
   final bool showsHead;
   final bool headIsDeleted;
   final TimelineMessage head;
+
+  /// Set while the head is on the way (opened by its id): a thin row with
+  /// this label stands in for it.
+  final String? headPendingLabel;
   final ValueNotifier<int?> stickyDayTimestamp;
   final Map<String, String> channelNames;
   final String channelId;
@@ -64,6 +68,7 @@ class _ThreadMessageList extends StatelessWidget {
     required this.showsHead,
     required this.headIsDeleted,
     required this.head,
+    this.headPendingLabel,
     required this.stickyDayTimestamp,
     required this.channelNames,
     required this.channelId,
@@ -150,6 +155,9 @@ class _ThreadMessageList extends StatelessWidget {
           padding: const EdgeInsets.only(bottom: Grid.xs),
           child: Text(context.l10n.threadMessageDeleted),
         );
+      }
+      if (headPendingLabel case final label?) {
+        return _ThreadRootPendingRow(label: label);
       }
       return Padding(
         key: ValueKey('thread-message-group-${head.id}'),

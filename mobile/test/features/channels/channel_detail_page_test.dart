@@ -56,6 +56,8 @@ import 'package:kuzz/features/channels/mobile_huddle_controller.dart';
 import 'package:kuzz/features/channels/reaction_row.dart';
 import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
+import 'package:kuzz/features/channels/thread_root_provider.dart';
+import 'package:kuzz/features/channels/thread_saved_replies.dart';
 import 'package:kuzz/features/channels/thread_window.dart';
 import 'package:kuzz/features/channels/timeline_message.dart';
 import 'package:kuzz/features/channels/read_state_wait.dart';
@@ -99,6 +101,7 @@ part 'channel_detail_page_test/presence_tests.dart';
 part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
+part 'channel_detail_page_test/thread_open_root_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
@@ -276,6 +279,7 @@ Widget _buildTestable({
       InitialThreadRouteBehavior.push,
   Map<String, List<NostrEvent>> threadReplies = const {},
   Map<String, Future<List<NostrEvent>>> pendingThreadReplies = const {},
+  Future<ChannelDetails>? channelDetails,
   Map<String, Future<List<NostrEvent>> Function()> threadReplyLoaders =
       const {},
   Map<String, List<NostrEvent>> localThreadReplies = const {},
@@ -336,7 +340,8 @@ Widget _buildTestable({
       channelStarsProvider.overrideWith(_FakeChannelStarsNotifier.new),
       channelMutesProvider.overrideWith(_FakeChannelMutesNotifier.new),
       channelDetailsProvider(_channelId).overrideWith(
-        (ref) async => ChannelDetails.fromChannel(resolvedChannel),
+        (ref) async =>
+            await channelDetails ?? ChannelDetails.fromChannel(resolvedChannel),
       ),
       channelCanvasProvider(_channelId).overrideWith(
         (ref) async => ChannelCanvas(
@@ -577,6 +582,7 @@ void main() {
   quoteTests();
   openAtTests();
   threadOpenAtTests();
+  threadOpenRootTests();
   ownerViewTests();
   setUp(() async {
     SharedPreferences.setMockInitialValues({});
@@ -11935,7 +11941,7 @@ void main() {
       final threadPage = tester.widget<ThreadDetailPage>(
         find.byType(ThreadDetailPage),
       );
-      expect(threadPage.threadHead.id, 'parent');
+      expect(threadPage.headId, 'parent');
       expect(threadPage.initialMessageId, 'target');
 
       final highlighted = tester.widget<DecoratedBox>(
@@ -12120,7 +12126,7 @@ void main() {
       expect(find.byType(ChannelDetailPage), findsNothing);
     });
 
-    testWidgets('shows the channel when an initial thread head is missing', (
+    testWidgets('hands a thread whose head is missing to the thread by id', (
       tester,
     ) async {
       final chatter = _textMsg(
@@ -12146,8 +12152,12 @@ void main() {
         find.byKey(const ValueKey('direct-thread-placeholder')),
         findsNothing,
       );
-      expect(find.text('Channel chatter'), findsOneWidget);
-      expect(find.byType(ThreadDetailPage), findsNothing);
+      expect(find.text('Channel chatter'), findsNothing);
+      final threadPage = tester.widget<ThreadDetailPage>(
+        find.byType(ThreadDetailPage),
+      );
+      expect(threadPage.headId, 'deleted-root');
+      expect(threadPage.threadHead, isNull);
     });
 
     testWidgets('does not replace a newer route after delayed hydration', (
