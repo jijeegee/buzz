@@ -1462,6 +1462,42 @@
   "@settingsPushOptOutPending": {
     "description": "Settings page, grey text under Push notifications while turning off is not yet confirmed by the server."
   },
+  "settingsPushTurningOff": "Turning off. Notifications may continue for a moment.",
+  "@settingsPushTurningOff": {
+    "description": "Settings page, red text under Push notifications after the person turned them off, until the server confirms it."
+  },
+  "settingsPushUnavailableBuild": "Not available in this version",
+  "@settingsPushUnavailableBuild": {
+    "description": "Settings page, grey text under Push notifications when this version of the app has no notifications. Short."
+  },
+  "settingsPushUnavailableSignIn": "Not available with this sign-in method yet",
+  "@settingsPushUnavailableSignIn": {
+    "description": "Settings page, grey text under Push notifications when the way this account signs in can't receive notifications yet. Short."
+  },
+  "settingsPushUnavailableServer": "Not available right now",
+  "@settingsPushUnavailableServer": {
+    "description": "Settings page, grey text under Push notifications when the service can't offer notifications at the moment. Short."
+  },
+  "settingsPushUnavailableAccount": "Not available for this account yet",
+  "@settingsPushUnavailableAccount": {
+    "description": "Settings page, grey text under Push notifications when this account has too many chats for notifications. Short."
+  },
+  "settingsPushSettingUp": "Setting up…",
+  "@settingsPushSettingUp": {
+    "description": "Settings page, grey text under Push notifications while notifications are being set up for this phone. Short."
+  },
+  "settingsPushSetupFailed": "Couldn't set up notifications. Retrying.",
+  "@settingsPushSetupFailed": {
+    "description": "Settings page, grey text under Push notifications when setting up notifications failed and the app will try again by itself."
+  },
+  "settingsPushBlocked": "Notifications are blocked for Kuzz in phone settings",
+  "@settingsPushBlocked": {
+    "description": "Settings page, red text under Push notifications when the phone's settings block notifications from the app."
+  },
+  "settingsPushOpenSettings": "Open settings",
+  "@settingsPushOpenSettings": {
+    "description": "Settings page, row that opens the phone's notification settings for the app. Short."
+  },
   "settingsPushOff": "Off",
   "@settingsPushOff": {
     "description": "Settings page, grey text under Push notifications when they are off. Short."

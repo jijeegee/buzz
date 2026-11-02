@@ -8,6 +8,8 @@ import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:kuzz/shared/push/dev_push_lease.dart';
 import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
+import 'package:kuzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/push/push_subscription_provider.dart';
 import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:kuzz/shared/widgets/app_list.dart';
 import 'package:kuzz/shared/widgets/app_list_card.dart';
@@ -15,6 +17,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -85,33 +88,123 @@ void main() {
   }
 
   for (final outcome in ['absent', 'error']) {
-    testWidgets('hides notifications while capability loads and is $outcome', (
-      tester,
-    ) async {
+    testWidgets(
+      'explains notifications while capability loads and is $outcome',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+        addTearDown(() => debugDefaultTargetPlatformOverride = null);
+        SharedPreferences.setMockInitialValues({});
+        final prefs = await SharedPreferences.getInstance();
+        final capability = Completer<KuzzPushLeaseDescriptor?>();
+        var permissionReads = 0;
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              savedPrefsProvider.overrideWithValue(prefs),
+              kuzzPushBuildSupportedProvider.overrideWithValue(true),
+              activeCommunityProvider.overrideWith(
+                (ref) async => Community.create(
+                  name: 'No push',
+                  relayUrl: 'wss://relay.example',
+                  nsec: nostr.Keys.generate().nsec,
+                ).copyWith(pushNotificationsEnabled: false),
+              ),
+              currentRelayPushDescriptorProvider.overrideWith(
+                (ref) => capability.future,
+              ),
+              kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
+                () async {
+                  permissionReads += 1;
+                  return KuzzPushAuthorizationStatus.authorized;
+                },
+              ),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: SettingsPage(
+                profileHeader: const SizedBox.shrink(),
+                invitePageBuilder: (_) => const SizedBox.shrink(),
+              ),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+        Switch pushSwitch() => tester.widget<Switch>(
+          find.descendant(
+            of: find.byKey(const ValueKey('push-notifications-enabled')),
+            matching: find.byType(Switch),
+          ),
+        );
+        expect(find.text('Notifications'), findsOneWidget);
+        expect(find.text('Off for this community'), findsOneWidget);
+        expect(pushSwitch().onChanged, isNull);
+        if (outcome == 'absent') {
+          capability.complete(null);
+        } else {
+          capability.completeError(StateError('discovery failed'));
+        }
+        await tester.pumpAndSettle();
+        expect(find.text('Push notifications'), findsOneWidget);
+        expect(
+          find.text(
+            outcome == 'absent'
+                ? 'Not available right now'
+                : 'Off for this community',
+          ),
+          findsOneWidget,
+        );
+        expect(pushSwitch().value, isFalse);
+        expect(pushSwitch().onChanged, isNull);
+        expect(permissionReads, 0);
+        expect(tester.takeException(), isNull);
+        debugDefaultTargetPlatformOverride = null;
+      },
+    );
+  }
+
+  group('notification card reasons', () {
+    final subscriptions = [
+      KuzzPushSubscription(
+        filter: KuzzPushFilter(kinds: const [9], pTags: ['a' * 64]),
+        notificationClass: 'default',
+      ),
+    ];
+    Community keyCommunity({bool accepted = false}) =>
+        Community.create(
+          name: 'Team',
+          relayUrl: 'wss://relay.example',
+          nsec: nostr.Keys.generate().nsec,
+        ).copyWith(
+          pushNotificationsEnabled: true,
+          pushSubscriptionState: accepted
+              ? KuzzPushLeaseSubscriptionState.desired(
+                  desired: subscriptions,
+                ).withAccepted(subscriptions: subscriptions, generation: 1)
+              : KuzzPushLeaseSubscriptionState.desired(desired: subscriptions),
+        );
+
+    Future<void> pumpCard(
+      WidgetTester tester, {
+      required Community community,
+      KuzzPushSubscriptionSync sync = KuzzPushSubscriptionSync.ok,
+    }) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
       addTearDown(() => debugDefaultTargetPlatformOverride = null);
       SharedPreferences.setMockInitialValues({});
       final prefs = await SharedPreferences.getInstance();
-      final capability = Completer<KuzzPushLeaseDescriptor?>();
-      var permissionReads = 0;
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
             savedPrefsProvider.overrideWithValue(prefs),
-            activeCommunityProvider.overrideWith(
-              (ref) async => Community.create(
-                name: 'No push',
-                relayUrl: 'wss://relay.example',
-              ).copyWith(pushNotificationsEnabled: false),
-            ),
+            kuzzPushBuildSupportedProvider.overrideWithValue(true),
+            pushSubscriptionSyncProvider.overrideWithValue(sync),
+            activeCommunityProvider.overrideWith((ref) async => community),
             currentRelayPushDescriptorProvider.overrideWith(
-              (ref) => capability.future,
+              (ref) async => _pushDescriptor,
             ),
+            appLifecycleProvider.overrideWith(_SettingsLifecycleNotifier.new),
             kuzzPushAuthorizationStatusReaderProvider.overrideWithValue(
-              () async {
-                permissionReads += 1;
-                return KuzzPushAuthorizationStatus.authorized;
-              },
+              () async => KuzzPushAuthorizationStatus.authorized,
             ),
           ],
           child: MaterialApp(
@@ -124,34 +217,74 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Notifications'), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('push-notifications-enabled')),
-          matching: find.byType(Switch),
-        ),
-        findsNothing,
-      );
-      if (outcome == 'absent') {
-        capability.complete(null);
-      } else {
-        capability.completeError(StateError('discovery failed'));
-      }
-      await tester.pumpAndSettle();
-      expect(find.text('Notifications'), findsNothing);
-      expect(find.text('Push notifications'), findsNothing);
-      expect(
-        find.descendant(
-          of: find.byKey(const ValueKey('push-notifications-enabled')),
-          matching: find.byType(Switch),
-        ),
-        findsNothing,
-      );
-      expect(permissionReads, 0);
-      expect(tester.takeException(), isNull);
+    }
+
+    testWidgets('says setting up until the server accepts this phone', (
+      tester,
+    ) async {
+      await pumpCard(tester, community: keyCommunity());
+      expect(find.text('Setting up…'), findsOneWidget);
       debugDefaultTargetPlatformOverride = null;
     });
-  }
+
+    testWidgets('says on once the server accepted this phone', (tester) async {
+      await pumpCard(tester, community: keyCommunity(accepted: true));
+      expect(
+        find.text('Receive message notifications from this community'),
+        findsOneWidget,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('says setup failed and retries', (tester) async {
+      pushSetupError.value = 'gateway rejected attestation';
+      addTearDown(() => pushSetupError.value = null);
+      await pumpCard(tester, community: keyCommunity(accepted: true));
+      expect(
+        find.text("Couldn't set up notifications. Retrying."),
+        findsOneWidget,
+      );
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('says too many chats as not available for this account', (
+      tester,
+    ) async {
+      await pumpCard(
+        tester,
+        community: keyCommunity(),
+        sync: KuzzPushSubscriptionSync.unavailable,
+      );
+      expect(find.text('Not available for this account yet'), findsOneWidget);
+      debugDefaultTargetPlatformOverride = null;
+    });
+
+    testWidgets('says a token account cannot use notifications yet', (
+      tester,
+    ) async {
+      await pumpCard(
+        tester,
+        community: Community.create(
+          name: 'Team',
+          relayUrl: 'wss://relay.example',
+          pubkey: 'b' * 64,
+          tokenAuth: true,
+        ),
+      );
+      expect(
+        find.text('Not available with this sign-in method yet'),
+        findsOneWidget,
+      );
+      final pushSwitch = tester.widget<Switch>(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+      );
+      expect(pushSwitch.onChanged, isNull);
+      debugDefaultTargetPlatformOverride = null;
+    });
+  });
 
   testWidgets('shows the persisted per-community push opt-in on iOS', (
     tester,
@@ -217,6 +350,7 @@ void main() {
     final community = Community.create(
       name: 'Team',
       relayUrl: 'wss://relay.example',
+      nsec: nostr.Keys.generate().nsec,
     ).copyWith(pushNotificationsEnabled: true);
     var openSettingsCalls = 0;
 
@@ -224,6 +358,10 @@ void main() {
       ProviderScope(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
+          kuzzPushBuildSupportedProvider.overrideWithValue(true),
+          pushSubscriptionSyncProvider.overrideWithValue(
+            KuzzPushSubscriptionSync.ok,
+          ),
           activeCommunityProvider.overrideWith((ref) async => community),
           currentRelayPushDescriptorProvider.overrideWith(
             (ref) async => _pushDescriptor,
@@ -262,9 +400,10 @@ void main() {
       isTrue,
     );
     expect(
-      find.text('Enabled in Kuzz, but disabled in iOS Settings'),
+      find.text('Notifications are blocked for Kuzz in phone settings'),
       findsOneWidget,
     );
+    expect(find.text('Open settings'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey('push-notifications-open-settings')),
     );
@@ -283,12 +422,17 @@ void main() {
     final community = Community.create(
       name: 'Team',
       relayUrl: 'wss://relay.example',
+      nsec: nostr.Keys.generate().nsec,
     ).copyWith(pushNotificationsEnabled: true);
 
     await tester.pumpWidget(
       ProviderScope(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
+          kuzzPushBuildSupportedProvider.overrideWithValue(true),
+          pushSubscriptionSyncProvider.overrideWithValue(
+            KuzzPushSubscriptionSync.ok,
+          ),
           activeCommunityProvider.overrideWith((ref) async => community),
           currentRelayPushDescriptorProvider.overrideWith(
             (ref) async => _pushDescriptor,
