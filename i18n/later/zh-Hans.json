@@ -8706,10 +8706,6 @@
       "text": "你的名称、用户名和头像会在此服务器上的所有社区中共享。",
       "from": "3f3a931f5e34"
     },
-    "settingsPushOptOutPending": {
-      "text": "正在等待服务器确认，可能仍会收到通知",
-      "from": "08af2276938f"
-    },
     "signInExistingIdentityConflict": {
       "text": "本设备在此服务器上已有签名身份，现有令牌账号无法替换它。请使用 Google 密钥恢复。",
       "from": "5ae11689d80e"

@@ -1458,10 +1458,6 @@
   "@settingsPushNotifications": {
     "description": "Settings page, Notifications section, title of the on/off switch row. Short."
   },
-  "settingsPushOptOutPending": "Waiting for relay confirmation; notifications may continue",
-  "@settingsPushOptOutPending": {
-    "description": "Settings page, grey text under Push notifications while turning off is not yet confirmed by the server."
-  },
   "settingsPushTurningOff": "Turning off. Notifications may continue for a moment.",
   "@settingsPushTurningOff": {
     "description": "Settings page, red text under Push notifications after the person turned them off, until the server confirms it."
@@ -1506,17 +1502,9 @@
   "@settingsPushOffCommunity": {
     "description": "Settings page, grey text under Push notifications when they are off for the current community. Short."
   },
-  "settingsPushUnsupported": "Push support unavailable; you can still turn notifications off",
-  "@settingsPushUnsupported": {
-    "description": "Settings page, grey text under Push notifications when the server has no push support."
-  },
   "settingsPushWaitingPermission": "Waiting for iOS notification permission",
   "@settingsPushWaitingPermission": {
     "description": "Settings page, grey text under Push notifications while iOS has not yet asked the user."
-  },
-  "settingsPushDeniedInIos": "Enabled in Kuzz, but disabled in iOS Settings",
-  "@settingsPushDeniedInIos": {
-    "description": "Settings page, red text under Push notifications when iOS blocks them. 'Kuzz' is the app name."
   },
   "settingsPushOn": "Receive message notifications",
   "@settingsPushOn": {
@@ -1534,17 +1522,9 @@
   "@settingsPushPermissionUnknown": {
     "description": "Settings page, red text under Push notifications when the iOS permission could not be read. 'Kuzz' is the app name."
   },
-  "settingsPushOpenIosSettings": "Open iOS Notification Settings",
-  "@settingsPushOpenIosSettings": {
-    "description": "Settings page, row that opens the iOS notification settings for the app."
-  },
   "settingsPushWaitingPermissionAndroid": "Waiting for notification permission",
   "@settingsPushWaitingPermissionAndroid": {
     "description": "Settings page on Android, grey text under Push notifications while the phone has not yet asked the user to allow notifications."
-  },
-  "settingsPushDeniedInAndroid": "Enabled in Kuzz, but notifications are off in Android settings",
-  "@settingsPushDeniedInAndroid": {
-    "description": "Settings page on Android, red text under Push notifications when the phone blocks notifications for the app. 'Kuzz' is the app name."
   },
   "settingsPushCheckingPermissionAndroid": "Checking notification permission",
   "@settingsPushCheckingPermissionAndroid": {
@@ -1553,10 +1533,6 @@
   "settingsPushPermissionUnknownAndroid": "Enabled in Kuzz; notification permission unavailable",
   "@settingsPushPermissionUnknownAndroid": {
     "description": "Settings page on Android, red text under Push notifications when the phone did not say whether notifications are allowed. 'Kuzz' is the app name."
-  },
-  "settingsPushOpenAndroidSettings": "Open notification settings",
-  "@settingsPushOpenAndroidSettings": {
-    "description": "Settings page on Android, row that opens the phone's notification settings for the app. Short."
   },
   "settingsCloseProfile": "Close profile",
   "@settingsCloseProfile": {
