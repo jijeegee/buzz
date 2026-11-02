@@ -83,6 +83,9 @@ pub trait PushTransport: Send + Sync {
 /// hour and throttles refreshes more often than every 20 minutes.
 const PROVIDER_TOKEN_REFRESH_SECONDS: i64 = 50 * 60;
 
+/// Apple's minimum interval between provider-token updates.
+const PROVIDER_TOKEN_MIN_UPDATE_SECONDS: i64 = 20 * 60;
+
 #[derive(serde::Serialize)]
 struct ProviderTokenClaims<'a> {
     iss: &'a str,
@@ -124,9 +127,13 @@ impl ProviderTokenSigner {
         Ok(token)
     }
 
-    fn discard(&self, token: &str) {
+    /// Drop `token` if it is still current and at least `min_age` seconds old.
+    fn discard(&self, token: &str, now: i64, min_age: i64) {
         let mut cached = self.cached.lock().unwrap_or_else(|e| e.into_inner());
-        if cached.as_ref().is_some_and(|(_, current)| current == token) {
+        if cached
+            .as_ref()
+            .is_some_and(|(issued_at, current)| current == token && now - issued_at >= min_age)
+        {
             *cached = None;
         }
     }
@@ -315,13 +322,27 @@ impl PushTransport for ApnsTransport {
             .map(|seconds| seconds.clamp(1, 3600));
         let detail = response.json::<ApnsErrorBody>().await.ok();
         let timestamp = detail.as_ref().and_then(|d| d.timestamp);
-        // A rejected token is never reused; the next attempt signs a fresh one.
-        if let (Some(signer), Some(token), Some("ExpiredProviderToken" | "InvalidProviderToken")) = (
-            &self.provider_token,
-            bearer.as_deref(),
-            detail.as_ref().and_then(|d| d.reason.as_deref()),
-        ) {
-            signer.discard(token);
+        let reason = detail.as_ref().and_then(|d| d.reason.as_deref());
+        if let (Some(signer), Some(token)) = (&self.provider_token, bearer.as_deref()) {
+            // An expired token is replaced at once. A token Apple calls invalid
+            // stays until Apple's minimum update interval has passed, so a wrong
+            // key id or team id does not turn into TooManyProviderTokenUpdates.
+            let min_age = match reason {
+                Some("ExpiredProviderToken") => Some(0),
+                Some("InvalidProviderToken") => Some(PROVIDER_TOKEN_MIN_UPDATE_SECONDS),
+                _ => None,
+            };
+            if let Some(min_age) = min_age {
+                signer.discard(token, chrono::Utc::now().timestamp(), min_age);
+            }
+        }
+        if code == 403 || reason == Some("TooManyProviderTokenUpdates") {
+            // Apple reason strings are a closed public vocabulary, never secrets.
+            tracing::warn!(
+                status = code,
+                reason = reason.unwrap_or(""),
+                "APNs refused provider credential"
+            );
         }
         match classify(
             code,
@@ -574,9 +595,15 @@ mod tests {
         assert_ne!(signer.current(900).unwrap(), refreshed);
 
         let current = signer.current(900).unwrap();
-        signer.discard("some other token");
+        signer.discard("some other token", 900, 0);
         assert_eq!(signer.current(900).unwrap(), current);
-        signer.discard(&current);
+        // Invalid-token discards wait for Apple's 20-minute update interval.
+        signer.discard(&current, 900 + 19 * 60, PROVIDER_TOKEN_MIN_UPDATE_SECONDS);
+        assert_eq!(signer.current(900).unwrap(), current);
+        signer.discard(&current, 900 + 20 * 60, PROVIDER_TOKEN_MIN_UPDATE_SECONDS);
+        assert!(signer.cached.lock().unwrap().is_none());
+        let current = signer.current(900).unwrap();
+        signer.discard(&current, 900, 0);
         assert!(signer.cached.lock().unwrap().is_none());
     }
 
