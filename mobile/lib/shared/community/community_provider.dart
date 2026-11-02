@@ -300,9 +300,50 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   Future<List<Community>> build() async {
     final storage = ref.read(communityStorageProvider);
     var communities = await storage.loadAll();
+    communities = await _turnPushOnByDefault(communities);
     if (pushInboxEnabled) communities = await _backfillInboxTokens(communities);
     await syncCommunitySnapshot(ref, communities);
     return communities;
+  }
+
+  /// Turns push on, once per install, for saved accounts on this build's
+  /// server that never chose. Until push on by default, push started off
+  /// and the switch could not be reached, so no saved record can hold an
+  /// explicit off without [Community.pushChoice]. Flipped records are marked
+  /// [KuzzPushChoice.on], so a later run never overrides a newer choice.
+  /// Without push in this build nothing changes and nothing is marked.
+  Future<List<Community>> _turnPushOnByDefault(
+    List<Community> communities,
+  ) async {
+    if (!ref.read(kuzzPushBuildSupportedProvider)) return communities;
+    final storage = ref.read(communityStorageProvider);
+    try {
+      if (await storage.loadPushDefaultOnApplied()) return communities;
+      final builtInOrigin = ref.read(defaultCommunityOriginProvider);
+      var changed = false;
+      final updated = [...communities];
+      for (var i = 0; i < updated.length; i++) {
+        final community = updated[i];
+        if (community.pushChoice != null ||
+            !isServerAllowed(
+              community.relayUrl,
+              builtInOrigin: builtInOrigin,
+            )) {
+          continue;
+        }
+        final on = community.withPushOnByDefault();
+        if (identical(on, community)) continue;
+        updated[i] = on.copyWith(pushChoice: KuzzPushChoice.on);
+        changed = true;
+      }
+      if (changed) await storage.saveAll(updated);
+      await storage.markPushDefaultOnApplied();
+      return updated;
+    } catch (error) {
+      // Nothing is marked, so the next start tries again.
+      developer.log('Push default-on migration failed: $error');
+      return communities;
+    }
   }
 
   /// Records saved before push inbox tokens existed get one, so the
@@ -617,6 +658,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final updated = community
           .copyWith(
             pushNotificationsEnabled: enabled,
+            pushChoice: enabled ? KuzzPushChoice.on : KuzzPushChoice.off,
             pushSubscriptionState: pushState,
           )
           .withPushInboxToken();

@@ -32,6 +32,10 @@ String newPushInboxToken() => _newPushLeaseInstallationId();
 
 enum SensitiveActionPolicy { enabled, disabledByUser }
 
+/// The person's own push choice. Absent until they flip the switch, so push
+/// can start on by default without overriding an explicit off.
+enum KuzzPushChoice { on, off }
+
 class Community {
   final String id;
   final String name;
@@ -40,6 +44,10 @@ class Community {
   final String? nsec;
   final SensitiveActionPolicy sensitiveActionPolicy;
   final bool pushNotificationsEnabled;
+
+  /// Set only when the person turned push on or off themselves, or when the
+  /// one-time default-on migration turned it on. Null means never chosen.
+  final KuzzPushChoice? pushChoice;
   final KuzzPushLeaseSubscriptionState pushSubscriptionState;
 
   /// Stable random address component for this community's relay push lease.
@@ -86,6 +94,7 @@ class Community {
     this.nsec,
     this.sensitiveActionPolicy = SensitiveActionPolicy.disabledByUser,
     this.pushNotificationsEnabled = false,
+    this.pushChoice,
     this.pushSubscriptionState = const KuzzPushLeaseSubscriptionState.desired(),
     this.pushLeaseInstallationId,
     this.pushInboxToken,
@@ -132,6 +141,7 @@ class Community {
     Object? nsec = _sentinel,
     SensitiveActionPolicy? sensitiveActionPolicy,
     bool? pushNotificationsEnabled,
+    KuzzPushChoice? pushChoice,
     KuzzPushLeaseSubscriptionState? pushSubscriptionState,
     Object? pushLeaseInstallationId = _sentinel,
     Object? pushInboxToken = _sentinel,
@@ -151,6 +161,7 @@ class Community {
           sensitiveActionPolicy ?? this.sensitiveActionPolicy,
       pushNotificationsEnabled:
           pushNotificationsEnabled ?? this.pushNotificationsEnabled,
+      pushChoice: pushChoice ?? this.pushChoice,
       pushSubscriptionState:
           pushSubscriptionState ?? this.pushSubscriptionState,
       pushLeaseInstallationId: pushLeaseInstallationId == _sentinel
@@ -178,6 +189,7 @@ class Community {
     if (nsec != null) 'nsec': nsec,
     'sensitiveActionPolicy': sensitiveActionPolicy.name,
     'pushNotificationsEnabled': pushNotificationsEnabled,
+    if (pushChoice != null) 'pushChoice': pushChoice!.name,
     'pushSubscriptionState': pushSubscriptionState.toJson(),
     if (pushLeaseInstallationId != null)
       'pushLeaseInstallationId': pushLeaseInstallationId,
@@ -229,6 +241,9 @@ class Community {
         orElse: () => SensitiveActionPolicy.disabledByUser,
       ),
       pushNotificationsEnabled: pushNotificationsEnabled,
+      pushChoice: KuzzPushChoice.values
+          .where((value) => value.name == json['pushChoice'])
+          .firstOrNull,
       pushSubscriptionState: pushSubscriptionState,
       pushLeaseInstallationId: pushLeaseInstallationId,
       pushInboxToken: pushInboxToken,
@@ -261,6 +276,19 @@ class Community {
       pushNotificationsEnabled && !signedOut && pushInboxToken == null
       ? copyWith(pushInboxToken: newPushInboxToken())
       : this;
+
+  /// This record with push on, unless the person turned it off themselves
+  /// or this account can't use push (token sign-in, no key, signed out).
+  /// Gets a push inbox token the same way the switch does.
+  Community withPushOnByDefault() =>
+      pushNotificationsEnabled ||
+          pushChoice == KuzzPushChoice.off ||
+          signedOut ||
+          tokenAuth ||
+          nsec == null ||
+          nsec!.isEmpty
+      ? this
+      : copyWith(pushNotificationsEnabled: true).withPushInboxToken();
 
   /// Credentials [pubkey]/[nsec] for this community. A different account
   /// gets a new push inbox token so it never reads the old one's folder.

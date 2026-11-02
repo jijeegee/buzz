@@ -29,6 +29,16 @@ typedef KuzzPushAuthorizationStatusReader =
     Future<KuzzPushAuthorizationStatus> Function();
 typedef KuzzPushNotificationSettingsOpener = Future<bool> Function();
 
+/// Whether this build can offer push on this platform: it was made with a
+/// push gateway and runs on iOS, or on Android with Android push built in.
+/// Push starts on by default only where this holds. Tests override it.
+final kuzzPushBuildSupportedProvider = Provider<bool>(
+  (ref) =>
+      Env.pushGatewayConfigured &&
+      (androidPushActive ||
+          (!kIsWeb && defaultTargetPlatform == TargetPlatform.iOS)),
+);
+
 final kuzzPushAuthorizationStatusReaderProvider =
     Provider<KuzzPushAuthorizationStatusReader>((ref) {
       return readKuzzPushAuthorizationStatus;

@@ -8,6 +8,7 @@ import 'community.dart';
 class CommunityStorage {
   static const _keyCommunities = 'kuzz_communities';
   static const _keyActiveId = 'kuzz_active_community_id';
+  static const _keyPushDefaultOn = 'kuzz_push_default_on_v1';
 
   // Legacy keys for migration.
   static const _legacyCommunities = 'kuzz_workspaces';
@@ -114,6 +115,13 @@ class CommunityStorage {
   Future<void> saveActiveId(String id) async {
     await _secure.write(key: _keyActiveId, value: id);
   }
+
+  /// Whether the one-time "push on by default" migration has run.
+  Future<bool> loadPushDefaultOnApplied() async =>
+      await _secure.read(key: _keyPushDefaultOn) == '1';
+
+  Future<void> markPushDefaultOnApplied() =>
+      _secure.write(key: _keyPushDefaultOn, value: '1');
 
   Future<void> clearActiveId() async {
     await _secure.delete(key: _keyActiveId);
