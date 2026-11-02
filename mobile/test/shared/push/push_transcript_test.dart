@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:crypto/crypto.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:kuzz/shared/push/android_push_enrollment.dart';
 import 'package:kuzz/shared/push/push_transcript.dart';
 
 /// The gateway's own known-answer transcripts.
@@ -39,6 +40,42 @@ void main() {
         expiresAt: inputs['expires_at'] as int,
       ),
       'enroll',
+    );
+  });
+
+  test('the Android Keystore challenge matches the gateway', () {
+    // The gateway hashes the enrollment transcript with key_id "" (the
+    // challenge is fixed before the key exists); the request's real key_id
+    // is not part of it.
+    final expected = vector('android_enroll_challenge');
+    final endpoint = inputs['android_endpoint'] as String;
+    expect(
+      utf8.decode(
+        KuzzPushTranscript.enroll(
+          gatewayOrigin: 'https://push.example',
+          challengeId: inputs['challenge_id'] as String,
+          challenge: inputs['challenge'] as String,
+          keyId: '',
+          appProfile: kuzzAndroidPushAppProfile,
+          endpoint: endpoint,
+          endpointEpoch: 1,
+          expiresAt: inputs['expires_at'] as int,
+        ),
+      ),
+      expected['transcript'],
+    );
+    expect(
+      Digest(
+        androidAttestationChallenge(
+          gatewayOrigin: 'https://push.example',
+          challengeId: inputs['challenge_id'] as String,
+          challenge: inputs['challenge'] as String,
+          endpoint: endpoint,
+          endpointEpoch: 1,
+          expiresAt: inputs['expires_at'] as int,
+        ),
+      ).toString(),
+      expected['sha256'],
     );
   });
 
