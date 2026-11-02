@@ -879,8 +879,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   the listed room or its details arrive ([Launch snapshots](#launch-snapshots)).
 - **Other entry points** (notifications, goals, search, drafts) still open
   through the channel route's thread placeholder; once its by-id fetch
-  settles without the root (failed, timed out, empty), or at once while
-  offline, it hands the thread off by id instead of showing the channel. A late read state that reruns the
+  settles without the root (failed, timed out, empty), or at once while the
+  session is reconnecting after a drop, it hands the thread off by id instead of showing the channel. A late read state that reruns the
   fetch does not count the replaced run. Forum rooms keep the channel route.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
   the socket is down or before AUTH is held and sent on connect (its timeout

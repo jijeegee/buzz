@@ -876,8 +876,8 @@ class ChannelDetailPage extends HookConsumerWidget {
     // A thread opened straight from a draft, goal or notification never shows
     // the channel: this placeholder swaps itself for the thread once the head
     // is known (timeline, or fetched by id above), or once that fetch settled
-    // without it, or at once while offline: the thread then finds its head by
-    // id itself.
+    // without it, or at once while reconnecting: the thread then finds its
+    // head by id itself.
     final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
     final directThreadHead = opensThreadDirectly
         ? directThreadEvents
@@ -891,7 +891,8 @@ class ChannelDetailPage extends HookConsumerWidget {
       final rootId = initialThreadRootId;
       final head = directThreadHead;
       if (!opensThreadDirectly || didOpenDirectThread.value) return null;
-      final offline = sessionStatus != SessionStatus.connected;
+      // A dropped connection; a first connect still waits for the fetch.
+      final offline = sessionStatus == SessionStatus.reconnecting;
       if (head == null && deepLinkLoads.value == 0 && !offline) return null;
       didOpenDirectThread.value = true;
       final events = directThreadEvents;

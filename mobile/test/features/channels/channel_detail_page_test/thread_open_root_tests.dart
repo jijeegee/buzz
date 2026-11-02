@@ -349,6 +349,39 @@ void threadOpenRootTests() {
       expect(find.byType(TextField), findsNothing);
     });
 
+    testWidgets('a direct thread hands off at once while reconnecting', (
+      tester,
+    ) async {
+      final chatter = _textMsg(
+        id: 'chatter',
+        pubkey: 'bob',
+        content: 'Channel chatter',
+      );
+      final session = _SilentRelaySession();
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [chatter],
+          messagesNotifier: _PendingHeadMessagesNotifier([
+            chatter,
+          ], Completer<void>().future),
+          relaySessionNotifier: session,
+          initialThreadRootId: _openAtRootId,
+          initialThreadRouteBehavior:
+              InitialThreadRouteBehavior.replaceCurrentRoute,
+          overrides: [
+            rootSources(relay: () => Completer<List<NostrEvent>>().future),
+          ],
+        ),
+      );
+      session.drop();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 500));
+
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.text('Channel chatter'), findsNothing);
+    });
+
     testWidgets('a late read state never bounces a direct thread', (
       tester,
     ) async {
