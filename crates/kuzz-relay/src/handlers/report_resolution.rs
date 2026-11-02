@@ -643,7 +643,7 @@ async fn drive_enforcement(
 
             match (kick_target, kick_channel) {
                 (Some(target), Some(ch)) => {
-                    crate::handlers::side_effects::apply_kick_live_side_effects(
+                    let outcome = crate::handlers::side_effects::apply_kick_live_side_effects(
                         tenant, state, ch, target,
                     )
                     .await
@@ -653,6 +653,25 @@ async fn drive_enforcement(
                              (mutation_committed marker is recoverable; worker will retry): {e}"
                         ))
                     })?;
+                    // After the fence released its connection, and only when the
+                    // member was still removed under it. Stable ids make a retry
+                    // a no-op.
+                    if outcome == crate::handlers::side_effects::KickOutcome::Enforced {
+                        crate::handlers::kick_notices::send_report_kick_notices(
+                            tenant,
+                            state,
+                            ch,
+                            target,
+                            &rec.actor_pubkey,
+                            rec.created_at,
+                        )
+                        .await
+                        .map_err(|e| {
+                            ResolutionError::Internal(format!(
+                                "kick action {action_id} removal notices failed: {e}"
+                            ))
+                        })?;
+                    }
                 }
                 _ => {
                     // Both persisted columns and function parameters are absent.

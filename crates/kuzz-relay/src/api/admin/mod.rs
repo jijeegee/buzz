@@ -9746,6 +9746,273 @@ mod postgres_tests {
             final_rec.state, "succeeded",
             "action must reach succeeded even when re-add fence suppresses eviction"
         );
+
+        // 5. No removal notices for a member re-added before the fence.
+        assert_eq!(
+            kick_notice_counts(&pool, community_id, channel_id, &target).await,
+            (0, 0),
+            "a member re-added before the fence must get no member_removed / 44101"
+        );
+    }
+
+    /// `(member_removed 40099 rows, 44101 rows)` addressed to `target`.
+    async fn kick_notice_counts(
+        pool: &sqlx::PgPool,
+        community_id: uuid::Uuid,
+        channel_id: uuid::Uuid,
+        target: &[u8],
+    ) -> (i64, i64) {
+        let target_hex = hex::encode(target);
+        let system: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2 \
+             AND kind = 40099 AND content::jsonb->>'type' = 'member_removed' \
+             AND content::jsonb->>'target' = $3",
+        )
+        .bind(community_id)
+        .bind(channel_id)
+        .bind(&target_hex)
+        .fetch_one(pool)
+        .await
+        .expect("count 40099");
+        let removed: i64 = sqlx::query_scalar(
+            "SELECT count(*) FROM events WHERE community_id = $1 AND kind = 44101 \
+             AND tags @> jsonb_build_array(jsonb_build_array('p', $2::text)) \
+             AND tags @> jsonb_build_array(jsonb_build_array('h', $3::text))",
+        )
+        .bind(community_id)
+        .bind(&target_hex)
+        .bind(channel_id.to_string())
+        .fetch_one(pool)
+        .await
+        .expect("count 44101");
+        (system, removed)
+    }
+
+    /// Frames carrying a `member_removed` system message received so far.
+    fn drain_member_removed_frames(
+        rx: &mut tokio::sync::mpsc::Receiver<axum::extract::ws::Message>,
+    ) -> usize {
+        let mut n = 0;
+        while let Ok(message) = rx.try_recv() {
+            if let axum::extract::ws::Message::Text(text) = message {
+                if text.as_str().contains("member_removed") {
+                    n += 1;
+                }
+            }
+        }
+        n
+    }
+
+    /// Report kick notices (U0): an enforced kick posts one `member_removed`
+    /// line and one 44101, both stamped with the action's `created_at`, and
+    /// delivers the line to local subscribers without the Redis loopback (the
+    /// test state's Redis is unreachable). A retry after a crash that followed
+    /// the notices (the recovery worker re-driving the same action) inserts and
+    /// delivers nothing new.
+    ///
+    /// Falsifiable: notices stamped with "now" fail the `created_at` check;
+    /// fanning out a duplicate gives a second frame; Redis-only delivery gives
+    /// no frame; dropping the convergence call gives zero rows.
+    #[tokio::test]
+    #[ignore = "requires Postgres — report kick notices are posted once and fanned out locally"]
+    async fn report_kick_notices_posted_once_and_retry_is_a_no_op() {
+        let pool = e2e_pool().await;
+        let (community_id, host) = e2e_community(&pool, "kick-notices").await;
+        let cid = kuzz_core::CommunityId::from_uuid(community_id);
+        let target = vec![0x31u8; 32];
+        let actor = vec![0x32u8; 32];
+        let observer = vec![0x33u8; 32];
+
+        let channel_id = uuid::Uuid::new_v4();
+        sqlx::query(
+            r#"INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by)
+               VALUES ($1, $2, 'kick-notices-ch', 'stream', 'open', $3)"#,
+        )
+        .bind(channel_id)
+        .bind(community_id)
+        .bind(&actor)
+        .execute(&pool)
+        .await
+        .expect("create channel");
+        for member in [&target, &observer] {
+            sqlx::query(
+                "INSERT INTO channel_members (community_id, channel_id, pubkey, role) VALUES ($1, $2, $3, 'member')",
+            )
+            .bind(community_id)
+            .bind(channel_id)
+            .bind(member)
+            .execute(&pool)
+            .await
+            .expect("add member");
+        }
+
+        let report_id = e2e_report_pubkey(&pool, community_id, &target).await;
+        let action_id = match kuzz_db::relay_admin_actions::claim_report(
+            &pool,
+            cid,
+            report_id,
+            uuid::Uuid::new_v4(),
+            &actor,
+            "operator",
+            "kick",
+            None,
+            None,
+            "resolve:kick",
+            "relay_operator",
+            Some(&target),
+            None,
+            Some(channel_id),
+        )
+        .await
+        .expect("claim")
+        {
+            kuzz_db::relay_admin_actions::ClaimResult::Claimed(a) => a.id,
+            other => panic!("expected Claimed, got {other:?}"),
+        };
+        let _ = kuzz_db::relay_admin_actions::begin_enforcing(&pool, action_id)
+            .await
+            .expect("begin_enforcing");
+        let lease_token = match kuzz_db::relay_admin_actions::acquire_action_lease(
+            &pool,
+            action_id,
+            chrono::Utc::now() + chrono::Duration::seconds(60),
+        )
+        .await
+        .expect("acquire lease")
+        {
+            kuzz_db::relay_admin_actions::LeaseResult::Acquired(t) => t,
+            other => panic!("expected Acquired, got {other:?}"),
+        };
+        let kick_result = kuzz_db::relay_admin_actions::execute_kick_with_marker(
+            &pool,
+            action_id,
+            lease_token,
+            cid,
+            channel_id,
+            &target,
+            &actor,
+        )
+        .await
+        .expect("execute_kick_with_marker");
+        assert!(matches!(
+            kick_result,
+            kuzz_db::relay_admin_actions::KickWithMarkerResult::Removed
+        ));
+        // Backdate the action so "now" and the action time differ, then expire
+        // the lease so the recovery worker can re-claim it.
+        let action_created_at: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "UPDATE relay_admin_actions SET created_at = date_trunc('second', now()) - interval '120 seconds', \
+             action_lease_expires_at = now() - interval '300 seconds', action_lease_token = NULL \
+             WHERE id = $1 RETURNING created_at",
+        )
+        .bind(action_id)
+        .fetch_one(&pool)
+        .await
+        .expect("backdate action");
+
+        let state = state_from_pool(pool.clone()).await;
+        let tenant = e2e_tenant(community_id, &host);
+        let observer_conn = uuid::Uuid::new_v4();
+        let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+        state.conn_manager.register(
+            observer_conn,
+            tx,
+            tokio::sync::mpsc::channel(8).0,
+            tokio::sync::mpsc::channel(1).0,
+            None,
+            tokio_util::sync::CancellationToken::new(),
+            cid,
+            std::sync::Arc::new(std::sync::atomic::AtomicU8::new(0)),
+            std::sync::Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+            3,
+            crate::state::CommunityConnectionControl::new(
+                tokio_util::sync::CancellationToken::new(),
+            ),
+        );
+        state
+            .conn_manager
+            .set_authenticated_pubkey(observer_conn, observer.clone());
+        state.sub_registry.register_channels_scoped(
+            cid,
+            observer_conn,
+            "observer-sub".to_string(),
+            vec![nostr::Filter::new().kind(nostr::Kind::Custom(40099))],
+            vec![channel_id],
+        );
+
+        // An earlier driver ran the convergence steps (effects, then notices)
+        // and crashed before finalizing.
+        let outcome = crate::handlers::side_effects::apply_kick_live_side_effects(
+            &tenant, &state, channel_id, &target,
+        )
+        .await
+        .expect("kick effects");
+        assert_eq!(
+            outcome,
+            crate::handlers::side_effects::KickOutcome::Enforced
+        );
+        crate::handlers::kick_notices::send_report_kick_notices(
+            &tenant,
+            &state,
+            channel_id,
+            &target,
+            &actor,
+            action_created_at,
+        )
+        .await
+        .expect("notices");
+        assert_eq!(
+            kick_notice_counts(&pool, community_id, channel_id, &target).await,
+            (1, 1)
+        );
+        assert_eq!(
+            drain_member_removed_frames(&mut rx),
+            1,
+            "the line must reach a local subscriber without the Redis loopback"
+        );
+        let stamped: chrono::DateTime<chrono::Utc> = sqlx::query_scalar(
+            "SELECT created_at FROM events WHERE community_id = $1 AND channel_id = $2 AND kind = 40099",
+        )
+        .bind(community_id)
+        .bind(channel_id)
+        .fetch_one(&pool)
+        .await
+        .expect("notice created_at");
+        assert_eq!(
+            stamped, action_created_at,
+            "notices carry the action's created_at"
+        );
+
+        // The recovery worker re-drives the same action.
+        let batch = kuzz_db::relay_admin_actions::claim_stranded_action_batch(
+            &pool,
+            "e2e-kick-notices",
+            chrono::Utc::now() + chrono::Duration::seconds(120),
+            1000,
+        )
+        .await
+        .expect("claim_stranded_action_batch");
+        let claim = batch
+            .into_iter()
+            .find(|c| c.record.id == action_id)
+            .expect("stranded action must appear in batch");
+        crate::handlers::admin_action_worker::recover_one(&state, claim).await;
+
+        let final_rec = kuzz_db::relay_admin_actions::get_action(&pool, action_id)
+            .await
+            .expect("get_action")
+            .expect("exists");
+        assert_eq!(final_rec.state, "succeeded");
+        assert_eq!(
+            kick_notice_counts(&pool, community_id, channel_id, &target).await,
+            (1, 1),
+            "a retry must not post a second line or a second 44101"
+        );
+        assert_eq!(
+            drain_member_removed_frames(&mut rx),
+            0,
+            "a retry must not fan the existing line out again"
+        );
     }
 
     /// Fence ordering: the membership advisory lock is held through eviction and
@@ -9963,6 +10230,24 @@ mod postgres_tests {
         .await
         .expect("apply_kick_live_side_effects must complete without deadlock on pool-size-1")
         .expect("apply_kick_live_side_effects must succeed on pool-size-1");
+
+        // The removal notices run after the fence released its connection
+        // (KickOutcome), so on a one-connection pool they complete too. Sent
+        // from inside the fence they would wait for a second connection forever.
+        tokio::time::timeout(
+            std::time::Duration::from_secs(10),
+            crate::handlers::kick_notices::send_report_kick_notices(
+                &tenant,
+                &state,
+                channel_id,
+                &target,
+                &actor,
+                chrono::Utc::now(),
+            ),
+        )
+        .await
+        .expect("kick notices must complete on pool-size-1")
+        .expect("kick notices must succeed on pool-size-1");
 
         // Post-condition: workflow is disabled — the UPDATE committed.
         assert!(
