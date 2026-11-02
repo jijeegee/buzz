@@ -885,9 +885,20 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
   the socket is down or before AUTH is held and sent on connect (its timeout
   still runs from when it was asked), not dropped.
-- **Desktop:** the same wait today (ChannelRouteScreen fetches the root by id
-  from the relay, `useThreadTargetSync` falls back to the channel on failure,
-  and there is no store read by id); to follow.
+- **Desktop:** the channel screen's thread panel opens on the root id alone
+  (`useThreadRootOpen.ts`, `useThreadRoot.ts`, `threadRootResolve.ts`): a thin
+  top row shows the thread name (its stored name, else the Chats row's title)
+  until the root is found, and the replies draw at once. The root is looked up
+  in the loaded room events or the remembered route copy (a Chats row hands
+  over its root), then the store by id (`message_store_thread_root`) and the
+  relay (`get_thread_root`) together. The relay request asks both filters with
+  `"consistency":"strong"` so a just-written root or deletion is not missed
+  (mobile could adopt this). The panel never closes for a missing root; only
+  forum rooms and huddle transcripts keep the old close. Links that carry
+  `threadRootId` (notifications, search, quotes, goals) open the thread on the
+  root at once and expand the branch to the reply once it loads. A root from
+  before the reader joined, which the relay does not return, stays a
+  placeholder row.
 
 ### Launch snapshots
 
