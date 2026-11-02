@@ -182,6 +182,7 @@ fn forget_room(tx: &Transaction, room: &str, before: Option<i64>) -> rusqlite::R
          DELETE FROM purge_ids;",
     )?;
     tx.execute("DELETE FROM coverage WHERE room = ?1", params![room])?;
+    super::room_seq::clear_room(tx, room)?;
     Ok(())
 }
 

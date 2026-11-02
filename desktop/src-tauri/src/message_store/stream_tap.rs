@@ -83,7 +83,7 @@ impl SnapshotCheck {
             return false;
         };
         for (room, seq) in rooms {
-            if !seq.as_u64().is_some_and(|seq| seq <= MAX_SEQ) || !seq.is_u64() {
+            if seq.as_u64().is_none_or(|seq| seq > MAX_SEQ) {
                 return false;
             }
             if !self.rooms.insert(room.clone()) {
