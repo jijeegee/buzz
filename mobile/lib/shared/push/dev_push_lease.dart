@@ -7,12 +7,19 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../crypto/nip44.dart';
 import '../relay/nostr_models.dart';
 import '../relay/signed_event_relay.dart';
+import 'android_push.dart' show androidPushActive;
+import 'android_push_enrollment.dart' show kuzzAndroidPushAppProfile;
 import 'push_bridge.dart';
 import 'push_subscription.dart';
 
 const kuzzPushLeaseKind = 30350;
 const kuzzDevPushAppProfile = 'kuzz-ios-dogfood';
-const kuzzPushTransport = 'apns';
+
+/// This run's NIP-PL app profile and transport: `kuzz-android`/`fcm` in
+/// KUZZ_ANDROID_PUSH builds on Android, else the iOS dogfood APNs profile.
+String get kuzzPushAppProfile =>
+    androidPushActive ? kuzzAndroidPushAppProfile : kuzzDevPushAppProfile;
+String get kuzzPushTransport => androidPushActive ? 'fcm' : 'apns';
 const _maxSafeJsonInteger = 9007199254740991;
 const _maxLeaseLifetimeSeconds = 2592000;
 const _lowercaseHex64Pattern = r'^[0-9a-f]{64}$';
@@ -154,11 +161,11 @@ class KuzzPushLeaseDescriptor {
         profile['transport'],
         name: 'app profile transport',
       );
-      if (id == kuzzDevPushAppProfile) transport = candidate;
+      if (id == kuzzPushAppProfile) transport = candidate;
     }
     if (transport != kuzzPushTransport) {
-      throw const FormatException(
-        'NIP-11 does not advertise the dogfood APNs profile',
+      throw FormatException(
+        'NIP-11 does not advertise the $kuzzPushAppProfile profile',
       );
     }
 
@@ -179,14 +186,16 @@ class KuzzPushLeaseDescriptor {
     );
     final supportedClasses = _stringList(
       classSupport[kuzzPushTransport],
-      name: 'class_support.apns',
+      name: 'class_support.$kuzzPushTransport',
     );
     const knownClasses = {'default'};
     if (supportedClasses.any((value) => !knownClasses.contains(value))) {
       throw const FormatException('class_support contains an unknown class');
     }
     if (!supportedClasses.contains('default')) {
-      throw const FormatException('APNs does not support the default class');
+      throw FormatException(
+        '$kuzzPushTransport does not support the default class',
+      );
     }
 
     final limitation = _stringMap(push['limitation'], name: 'limitation');
@@ -528,8 +537,8 @@ void _validateGrant(
       'Stored endpoint grant is delegated to a different relay key',
     );
   }
-  if (grant.appProfile != kuzzDevPushAppProfile) {
-    throw const FormatException('Endpoint grant is not for kuzz-ios-dogfood');
+  if (grant.appProfile != kuzzPushAppProfile) {
+    throw FormatException('Endpoint grant is not for $kuzzPushAppProfile');
   }
   if (grant.endpointGrant.isEmpty ||
       utf8.encode(grant.endpointGrant).length > descriptor.maxEndpointLength) {

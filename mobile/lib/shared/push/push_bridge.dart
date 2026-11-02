@@ -5,12 +5,14 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:http/http.dart' as http;
 
 import '../community/community.dart';
 import '../deeplink/deep_link.dart';
 import '../relay/relay_provider.dart';
 import '../relay/app_lifecycle_provider.dart';
 import 'android_push.dart';
+import 'android_push_enrollment.dart';
 import 'push_snapshot.dart';
 
 const _channel = MethodChannel('kuzz/push');
@@ -91,7 +93,9 @@ Future<bool> openKuzzPushNotificationSettings() async {
 }
 
 /// Latest APNs registration state, including callbacks replayed by iOS after
-/// the Flutter method channel attaches.
+/// the Flutter method channel attaches. In Android push builds it carries
+/// the FCM token instead (only tokens [fcmEndpoint] accepts), so a token
+/// refresh re-enrolls and republishes the lease the same way.
 final apnsDeviceToken = ValueNotifier<String?>(null);
 final apnsRegistrationError = ValueNotifier<String?>(null);
 
@@ -155,8 +159,15 @@ Future<void> startKuzzPushRegistration() async {
   if (androidPushActive) {
     try {
       await requestAndroidNotificationPermission();
+      // FCM keeps working while notifications are blocked; the token is
+      // asked for only here, after push was turned on.
+      final token = await androidPushChannel.invokeMethod<String>('token');
+      if (token != null) _setAndroidPushToken(token);
     } on MissingPluginException {
       // Flutter tests do not install the native plugin.
+    } on PlatformException catch (error) {
+      apnsRegistrationError.value = 'FCM token unavailable';
+      debugPrint('[AndroidPush] token failed: ${error.code}');
     }
     return;
   }
@@ -208,10 +219,25 @@ class KuzzPushEndpointGrant {
 }
 
 Future<List<KuzzPushEndpointGrant>> readKuzzPushEndpointGrants() async {
-  if (!Env.pushGatewayConfigured ||
-      defaultTargetPlatform != TargetPlatform.iOS) {
-    return const [];
+  if (!Env.pushGatewayConfigured) return const [];
+  if (androidPushActive) {
+    final client = http.Client();
+    try {
+      final grants = [
+        for (final record in await _androidEnrollment(client).grants())
+          KuzzPushEndpointGrant.fromMap(record.toGrantMap()),
+      ];
+      pushEndpointGrants.value = grants;
+      pushEndpointGrantError.value = null;
+      return grants;
+    } catch (error) {
+      pushEndpointGrantError.value = error.toString();
+      rethrow;
+    } finally {
+      client.close();
+    }
   }
+  if (defaultTargetPlatform != TargetPlatform.iOS) return const [];
   try {
     final raw = await _channel.invokeListMethod<dynamic>('endpointGrants', {
       'gatewayUrl': Env.pushGatewayUrl,
@@ -238,6 +264,23 @@ Future<KuzzPushEndpointGrant> enrollKuzzPush(
   String gatewayUrl, {
   List<Community>? communitiesForSnapshotRefresh,
 }) async {
+  if (androidPushActive) {
+    final token = apnsDeviceToken.value;
+    if (token == null) throw StateError('No FCM token yet.');
+    final client = http.Client();
+    try {
+      final record = await _androidEnrollment(
+        client,
+        gatewayUrl: gatewayUrl,
+      ).enroll(token, relayUrl);
+      await readKuzzPushEndpointGrants();
+      // Android has no notification extension snapshot to refresh: the
+      // wake reads the saved communities directly.
+      return KuzzPushEndpointGrant.fromMap(record.toGrantMap());
+    } finally {
+      client.close();
+    }
+  }
   final raw = await _channel.invokeMapMethod<dynamic, dynamic>('enrollPush', {
     'relayUrl': relayUrl,
     'gatewayUrl': gatewayUrl,
@@ -404,10 +447,45 @@ void installKuzzPushMethodHandler() {
   });
 }
 
+/// Builds the Android gateway enrollment; tests replace it.
+@visibleForTesting
+AndroidPushEnrollment Function(http.Client client, String gatewayUrl)
+debugAndroidPushEnrollmentFactory = (client, gatewayUrl) =>
+    AndroidPushEnrollment(gatewayUrl: gatewayUrl, client: client);
+
+AndroidPushEnrollment _androidEnrollment(
+  http.Client client, {
+  String? gatewayUrl,
+}) =>
+    debugAndroidPushEnrollmentFactory(client, gatewayUrl ?? Env.pushGatewayUrl);
+
+/// Takes a new FCM token unless it is refused (N11: over 512 bytes).
+void _setAndroidPushToken(String token) {
+  if (fcmEndpoint(token) == null) {
+    apnsRegistrationError.value = 'FCM token refused';
+    return;
+  }
+  apnsDeviceToken.value = token;
+  apnsRegistrationError.value = null;
+}
+
 /// Calls from the Android push plugin to the app's engine.
 @visibleForTesting
 Future<Object?> handleAndroidPushCall(MethodCall call) async {
   switch (call.method) {
+    case 'tokenRefreshed':
+      // S9: FCM rotated the token. A known token changes nothing; a new
+      // one changes the endpoint hash, so the bootstrap enrolls it afresh
+      // and republishes the lease.
+      final args = call.arguments;
+      final token = args is Map ? args['token'] : null;
+      if (token is! String || token.isEmpty) return 'ignored';
+      if (apnsDeviceToken.value == null) {
+        // Not asked for yet: push is off, so nothing to re-enroll.
+        return 'ignored';
+      }
+      _setAndroidPushToken(token);
+      return 'handled';
     case 'notificationOpened':
       final link = _pushNotificationLink(call.arguments);
       if (link == null) return 'ignored';

@@ -14,6 +14,7 @@ import '../community/community_provider.dart';
 import '../message_store/message_store.dart' show messageStoreOrigin;
 import '../relay/app_lifecycle_provider.dart';
 import '../relay/relay_session.dart';
+import 'android_push.dart' show androidPushActive, readAndroidPushInboxRoot;
 import 'push_snapshot.dart';
 import 'push_subscription.dart' show kuzzPushEligibleKinds;
 
@@ -37,9 +38,10 @@ final pushInboxRootProvider = Provider<PushInboxRootReader>(
 );
 
 Future<String?> readPushInboxRoot() async {
-  if (!pushInboxEnabled || defaultTargetPlatform != TargetPlatform.iOS) {
-    return null;
-  }
+  if (!pushInboxEnabled) return null;
+  // Android push builds: the wake engine's inbox in no-backup files.
+  if (androidPushActive) return readAndroidPushInboxRoot();
+  if (defaultTargetPlatform != TargetPlatform.iOS) return null;
   try {
     return await _channel.invokeMethod<String>('pushInboxRoot');
   } on MissingPluginException {

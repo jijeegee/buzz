@@ -299,7 +299,7 @@ class KuzzPushLeaseRevocationOutbox {
         .where(
           (grant) =>
               grant.relayOrigin == relayOrigin &&
-              grant.appProfile == kuzzDevPushAppProfile,
+              grant.appProfile == kuzzPushAppProfile,
         )
         .toList();
     if (matching.length != 1) {

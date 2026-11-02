@@ -76,6 +76,7 @@ class KuzzAndroidPushPluginImpl :
     }
 
     override fun onMethodCall(call: MethodCall, result: MethodChannel.Result) {
+        if (KuzzEnrollmentKeys.handle(call, result)) return
         when (call.method) {
             "configure" -> {
                 val options = KuzzFirebase.Options(
