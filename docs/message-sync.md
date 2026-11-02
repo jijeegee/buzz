@@ -504,16 +504,16 @@ in the commit.
 | Idle with an agent DM (`idleWithAgent`) | 5 | — |
 | Idle as the relay's own key (`idleRelaySelf`) | 5 | — |
 | Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
-| Idle, user stream in `shadow` (`idleStreamShadow`) | 6 (idle + the stream) | — |
-| Idle, user stream in `live` (`idleStreamLive`) | 5 (idle − the member chunk + the stream) | — |
+| Idle, user stream in `shadow` (`idleStreamShadow`) | 6 (idle + the stream) | 5 (idle + the stream) |
+| Idle, user stream in `live` (`idleStreamLive`) | 5 (idle − the member chunk + the stream) | 4 (the stream replaces the room chunk) |
 | Activity inbox (`activityInbox`) | — | 4 |
 
 The REQs behind them: the community bundle, the room bundle (one per 128
 rooms), the account bundles (authored and addressed), and per open room its
 typing + goal-tree REQ. The pinned counts are for a relay without the
 [user stream](#user-stream) (the e2e mock). With it, `shadow` adds one REQ
-(the stream) next to the chunks, and `live`/`gated` replace the member
-chunks with it (desktop: `idleStreamLive`).
+(the stream) next to the chunks (`idleStreamShadow`), and `live`/`gated`
+replace the member chunks with it (`idleStreamLive`).
 
 Rules:
 - No REQ per row (thread rows, inbox rows, search hits): rows ride a bundle
@@ -1373,10 +1373,14 @@ sub.
   refused snapshot CLOSEs the stream: chunks for this connection. The store
   layer runs the same checks ([Store skip](#store-skip)).
 - **Integer fields:** every integer field (`v`, `part`, `parts`, `kinds`,
-  room seq) refuses `1.0` and `1e0` alike. This holds for a later part's
-  `part` too. The fixture lists the cases. Desktop checks the literal text
-  (digits only, no sign, fraction or exponent), as the store's serde check
-  (`as_u64`) does, so `-0` is refused too (serde reads it as a float).
+  room seq) must be written as plain digits (no sign, fraction or
+  exponent), as the store's serde check (`as_u64`) reads it: `1.0`, `1e0`
+  and `-0` are refused alike (serde reads `-0` as a float). This holds for
+  a later part's `part` and room seqs too. The fixture lists the cases.
+  Both apps check the literal number tokens of the content text
+  (`parsePlainIntegers`) and read any other token as `null`. Desktop: in
+  `userStreamRules.ts`. Mobile: in `user_stream.dart`, because `jsonDecode`
+  reads `-0` as the int 0.
 - Any other kind arriving before part 1 is ignored (not stored, routed or
   compared). 24220 events after EOSE are ignored.
 - **Epoch (`epoch`):** the file keeps the last epoch in `sync_state`. An
@@ -1494,20 +1498,29 @@ carried, so every member room is on chunks.
   the stream does not take (member ∪ quiet − handed); usually none remain.
   Deliveries in the overlap are routed once by id. Per-room listener starts
   carry over from the chunk that carried the room.
-- **Rooms handed to the stream (`handed`):** only snapshot rooms with a
-  usable resume point: covered before this connection
-  ([connectionSpans](#catch-up-at-the-stream-eose)), not stale, read from a
-  store that vouches for what it holds (nothing queued unwritten, no write
-  loss pending). Rooms with no usable resume point (uncovered, stale more
-  than 7 days, or after a write loss) are not handed to the stream for this
-  connection: they keep their chunks, so the existing chunk catch-up and
-  desktop's chunk reconnect repair still reach them, and the next connection
-  (which then has their chunk spans) hands them over. Desktop keeps the chunk
-  carrying such a room as it is, not re-partitioned, so its repair in flight
-  is not cut; that chunk may carry handed rooms too until the socket ends.
-  The stream still carries and stores their frames (routed once by id). A
-  room a 44100 adds after the EOSE is handed at once. `handoffKept` counts
-  the rooms kept.
+- **Rooms without a usable resume point:** a snapshot room has a usable
+  resume point when it was covered before this connection
+  ([connectionSpans](#catch-up-at-the-stream-eose)), is not stale, and was
+  read from a store that vouches for what it holds (nothing queued
+  unwritten, no write loss pending). The stream catch-up and listener
+  repair cannot reach a room without one (uncovered, stale more than 7
+  days, or after a write loss), yet such a room must still get its offline
+  gap delivered to listeners on this connection. The stream still carries
+  and stores its frames (routed once by id).
+  - Desktop: such rooms are not handed to the stream (`handed`) for this
+    connection: they keep their chunks, so the existing chunk catch-up and
+    chunk reconnect repair still reach them, and the next connection (which
+    then has their chunk spans) hands them over. Desktop keeps the chunk
+    carrying such a room as it is, not re-partitioned, so its repair in
+    flight is not cut; that chunk may carry handed rooms too until the
+    socket ends. A room a 44100 adds after the EOSE is handed at once.
+    `handoffKept` counts the rooms kept.
+  - Mobile: every snapshot room is handed. Mobile room chunks are `limit: 0`
+    and never re-delivered the gap, so keeping them would repair nothing.
+    The listeners reload from the relay whatever the coverage: the open
+    room refetches its newest page on reconnect, and the unread catch-up
+    runs from read markers for every member room
+    ([Catch-up at the stream EOSE](#catch-up-at-the-stream-eose)).
 - **`shadow`, or a CLOSED before the EOSE:** chunks stay.
 - **Carried rooms:** the snapshot rooms, plus a room whose 44100 arrives
   after the stream EOSE (below), minus a room whose 44101 arrives. The
@@ -1519,8 +1532,8 @@ carried, so every member room is on chunks.
   running when the stream EOSE is accepted finish as today. After an
   accepted EOSE in `live`/`gated`, chunk catch-ups and repairs skip the
   handed rooms, whose catch-up is the stream's; rooms outside the snapshot
-  and kept rooms keep chunk catch-up. After a mid-connection CLOSED the reopened
-  chunks follow the chunk rules again.
+  and desktop's kept rooms keep chunk catch-up. After a mid-connection
+  CLOSED the reopened chunks follow the chunk rules again.
 
 ### Mid-connection fallback
 
@@ -1528,8 +1541,8 @@ A CLOSED after the stream EOSE in `live`/`gated`, other than an overflow
 or `lagged` (those wait for the socket to close, above)
 (`midConnectionClosed`):
 
-1. Reopen chunks for every handed room at once (plus the extras and kept
-   rooms already on chunks).
+1. Reopen chunks for every handed room at once (plus the extras and
+   desktop's kept rooms, already on chunks).
 2. Catch the store up for the carried rooms that have coverage, from their
    resume points (the stream's coverage end), batched and sorted as below,
    with L = the time of the CLOSED. The reopened chunks then follow the
@@ -1681,17 +1694,22 @@ anything changed.
   `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
   after this connection's start time does not count as "already stored",
   whichever path stored it (chunk catch-up, unread refresh, room reload, live
-  frame). Desktop keeps `events.stored_at` (ms, this device's clock; rows
-  from before the column have none and count as stored before) and compares
-  it with the connection start taken at AUTH OK. After a walk it asks only
-  about the candidate rows (in the window, not received live), after the
-  write queue drained. "Received live" means socket frames only: a row a
-  repair or catch-up walk delivered is not. When it cannot tell (no segments
-  or stored-at answer from a drained store, or too many live ids to track),
-  the batch verifies nothing: its rooms count in none of `verifiedSkips`,
-  `falseSkip`, `liveRoomsChecked`, `skipAudited` or `skipAuditNew` (an
-  audited batch counts in `skipAuditFailed`), and `newRowUncounted` counts
-  its rooms.
+  frame).
+  - Desktop: keeps `events.stored_at` (ms, this device's clock; rows from
+    before the column have none and count as stored before) and compares it
+    with the connection start taken at AUTH OK. After a walk it asks only
+    about the candidate rows (in the window, not received live), after the
+    write queue drained. "Received live" means socket frames only: a row a
+    repair or catch-up walk delivered is not. When it cannot tell (no
+    segments or stored-at answer from a drained store, or too many live ids
+    to track), the batch verifies nothing: its rooms count in none of
+    `verifiedSkips`, `falseSkip`, `liveRoomsChecked`, `skipAudited` or
+    `skipAuditNew` (an audited batch counts in `skipAuditFailed`), and
+    `newRowUncounted` counts its rooms.
+  - Mobile: takes a stored mark at the connection start (the newest
+    `events` rowid once every earlier write is done); a row with a higher
+    rowid was stored on this connection. The mark always answers, so mobile
+    has no `newRowUncounted`.
 - **New-row rule (`newRow`):** a row counts as new only if it was not
   already stored (above), it was not also received live on this connection
   (on the stream or a chunk, before or after the stream EOSE, including the
@@ -1747,7 +1765,11 @@ anything changed.
 | `liveRoomsChecked` / `liveMissed` | live, gated | denominator / 0 |
 | `skipAudited` / `skipAuditNew` / `skipAuditFailed` | gated | — / 0 / info |
 | `seqWriteSkippedOrder`, `closed{key}`, `fallbacks{key}`, `reconnects`, `snapshotMs` | all | info |
-| `handoffKept`, `newRowUncounted` | live, gated (desktop) | info |
+| `handoffKept`, `newRowUncounted` (desktop only) | live, gated | info |
+
+`handoffKept` and `newRowUncounted` are desktop only: mobile hands every
+snapshot room to the stream and its stored mark always answers, so both
+would stay 0.
 
 `closed{key}` and `fallbacks{key}` use the keys of `closedReasons`
 (`overflow` splits into `shadow_full` and `full`; an unknown reason is
@@ -1757,8 +1779,8 @@ anything changed.
   line is also POSTed (NIP-98, the `/query` auth) to
   `/api/user-stream/shadow-report`, at most once every 5 min: `{"platform":
   "ios", "app_version": "<semver>", "seq": n, "counters": {<every counter
-  above>, "snapshotMs"}, "closed": {<every closedReasons key>}}`, every
-  number a u32, at most 4096 bytes. Best effort: an error or a 404 (relay
+  above but the desktop-only ones>, "snapshotMs"}, "closed": {<every
+  closedReasons key>}}`, every number a u32, at most 4096 bytes. Best effort: an error or a 404 (relay
   without the endpoint) is logged and not retried.
 
 ### Limits
