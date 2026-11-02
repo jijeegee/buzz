@@ -385,8 +385,9 @@ pub async fn handle_req(
     // Registration above is one uncancellable unit; the history read below is
     // read-only delivery and races gate cancellation, so expiry drops it and
     // releases the permit without sending another EVENT or EOSE. It returns
-    // whether a statement timeout ended it: retirement then runs after the
-    // race, because a dropped retirement would leak its unreleased topics.
+    // how it ended: after a statement timeout or a busy refusal, retirement
+    // runs after the race, because a dropped retirement would leak its
+    // unreleased topics.
     let history = async {
         #[cfg(test)]
         crate::nip_fi_test_hooks::before_req_history(conn.tenant.community()).await;
@@ -472,10 +473,10 @@ pub async fn handle_req(
                 Err(e) => {
                     warn!(conn_id = %conn_id, sub_id = %sub_id, "Historical query failed: {e}");
                     if e.is_statement_cancelled() {
-                        return true;
+                        return HistoryEnd::TimedOut;
                     }
                     conn.send(RelayMessage::eose(&sub_id));
-                    return false;
+                    return HistoryEnd::Done;
                 }
             };
 
@@ -533,10 +534,10 @@ pub async fn handle_req(
                 Err(e) => {
                     warn!(conn_id = %conn_id, sub_id = %sub_id, "Goals setting lookup failed: {e}");
                     if e.is_statement_cancelled() {
-                        return true;
+                        return HistoryEnd::TimedOut;
                     }
                     conn.send(RelayMessage::eose(&sub_id));
-                    return false;
+                    return HistoryEnd::Done;
                 }
             };
 
@@ -577,9 +578,12 @@ pub async fn handle_req(
                     continue;
                 }
 
+                if super::user_stream::history_busy(&state, &conn) {
+                    return HistoryEnd::Busy;
+                }
                 let msg = RelayMessage::event(&sub_id, &stored.event);
                 if !conn.send(msg) {
-                    return false;
+                    return HistoryEnd::Done;
                 }
                 total_sent += 1;
                 if total_sent.is_multiple_of(100) {
@@ -596,13 +600,20 @@ pub async fn handle_req(
             count = total_sent,
             "EOSE sent after historical delivery"
         );
-        false
+        HistoryEnd::Done
     };
     let outcome = unless_cancelled(&conn, history).await;
     drop(_req_permit);
     match outcome {
-        Some(false) => {}
-        Some(true) => close_timed_out_subscription(&sub_id, owner, &conn, &state).await,
+        Some(HistoryEnd::Done) => {}
+        Some(HistoryEnd::TimedOut) => {
+            close_timed_out_subscription(&sub_id, owner, &conn, &state).await
+        }
+        Some(HistoryEnd::Busy) => {
+            super::user_stream::note_history_busy();
+            super::close::close_if_owner_at_threshold(&sub_id, owner, BUSY_CLOSED, &conn, &state)
+                .await;
+        }
         None => {
             super::close::close_if_owner(&sub_id, owner, None, &conn, &state).await;
         }
@@ -982,6 +993,11 @@ async fn handle_search_req(
                     // must remain eligible for filter B (NIP-01 OR semantics).
                     if !seen_ids.insert(stored.event.id) {
                         continue;
+                    }
+                    if super::user_stream::history_busy(state, conn) {
+                        super::user_stream::note_history_busy();
+                        conn.send_threshold(RelayMessage::closed(sub_id, BUSY_CLOSED));
+                        return;
                     }
                     if !conn.send(RelayMessage::event(sub_id, &stored.event)) {
                         return;
@@ -1559,6 +1575,23 @@ async fn close_timed_out_subscription(
 ) {
     super::close::close_if_owner(sub_id, owner, Some(QUERY_TIMED_OUT_CLOSED), conn, state).await;
 }
+
+/// How a REQ's history delivery ended.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum HistoryEnd {
+    /// EOSE sent, or the socket stopped taking frames.
+    Done,
+    /// A server statement deadline cancelled a read.
+    TimedOut,
+    /// Refused for send-buffer headroom on a live/gated user-stream
+    /// connection ([`super::user_stream::history_busy`]).
+    Busy,
+}
+
+/// CLOSED reason for a history REQ refused for send-buffer headroom; clients
+/// retry it on a fresh sub id with backoff (`busyRetry` in
+/// docs/message-sync.md).
+pub(crate) const BUSY_CLOSED: &str = "error: busy";
 
 /// Stable CLOSED reason for a read cancelled by its server statement deadline.
 /// Clients match it to skip retrying the same expensive query.

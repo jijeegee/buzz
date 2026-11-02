@@ -35,7 +35,7 @@ use uuid::Uuid;
 
 use crate::connection::ConnectionState;
 use crate::protocol::RelayMessage;
-use crate::state::AppState;
+use crate::state::{AppState, RawSend};
 use crate::subscription::ConnId;
 use crate::subscription_stream::{Delivery, StreamHandle};
 use crate::user_stream_config::StreamMode;
@@ -59,6 +59,13 @@ pub const MAX_SEQ: i64 = (1 << 53) - 1;
 pub const REPEAT_WINDOW: Duration = Duration::from_secs(5);
 /// Upper bound of the pre-EOSE live-frame queue (also ≤ send buffer / 4).
 pub const MAX_QUEUED_FRAMES: usize = 250;
+
+/// A `shadow` stream frame is not queued while the send buffer is more than
+/// this full; the stream closes instead (`closed{shadow_full}`).
+pub const SHADOW_FILL_PERCENT: usize = 50;
+/// On a connection holding a `live`/`gated` stream, a history frame that would
+/// fill the send buffer past this is refused (`error: busy`).
+pub const HISTORY_FILL_PERCENT: usize = 80;
 
 /// CLOSED reasons (`closedReasons` in the client fixture).
 pub mod reason {
@@ -360,8 +367,23 @@ pub async fn handle_stream_req(
         close_stream(&state, conn_id, &handle, None, false).await;
         return;
     }
-    if !handle.go_live(|frame| state.conn_manager.send_to_text_bytes(conn_id, frame)) {
-        close_stream(&state, conn_id, &handle, None, false).await;
+    let mut sent = RawSend::Sent;
+    if !handle.go_live(|frame| {
+        sent = send_frame(&state, conn_id, mode, frame);
+        sent == RawSend::Sent
+    }) {
+        // Closed meanwhile or the socket is gone: nothing to say. A frame the
+        // buffer could not take: overflow by the mode's rule.
+        let full = sent == RawSend::Full;
+        let overflow = full.then_some(reason::OVERFLOW);
+        close_stream(
+            &state,
+            conn_id,
+            &handle,
+            overflow,
+            full && mode.is_relied_on(),
+        )
+        .await;
         return;
     }
     metrics::histogram!("kuzz_user_stream_snapshot_seconds", "mode" => mode.as_str())
@@ -422,25 +444,108 @@ async fn set_stream_rooms(
 }
 
 /// Route one fan-out frame to a user stream (queued until its EOSE). `false`
-/// when the frame was not handed to the socket. A full pre-EOSE queue closes
-/// the stream through its teardown task.
+/// when the frame was not handed to the socket.
+///
+/// A frame the stream cannot take closes it with `error: user-stream
+/// overflow` through its teardown task (plan V4.2 section 2.4): a full
+/// pre-EOSE queue, a `shadow` frame over [`SHADOW_FILL_PERCENT`] fill (the
+/// sub only; chunks keep the rest of the buffer), or a `live`/`gated` frame
+/// on a full buffer (CLOSED then the socket is cancelled). Stream frames
+/// never touch the slow-client grace counter.
 pub fn deliver(
     state: &AppState,
     conn_id: ConnId,
     handle: &StreamHandle,
     frame: Arc<Bytes>,
 ) -> bool {
+    let mut sent = RawSend::Sent;
     match handle.deliver(frame, |frame| {
-        state.conn_manager.send_to_text_bytes(conn_id, frame)
+        sent = send_frame(state, conn_id, handle.mode, frame);
+        sent == RawSend::Sent
     }) {
-        Delivery::Sent(sent) => sent,
-        Delivery::Queued => true,
+        Delivery::Sent(true) | Delivery::Queued => true,
+        Delivery::Sent(false) => {
+            if sent == RawSend::Full {
+                handle.request_close(reason::OVERFLOW, handle.mode.is_relied_on());
+            }
+            false
+        }
         Delivery::Dropped => false,
         Delivery::Overflow => {
             handle.request_close(reason::OVERFLOW, handle.mode.is_relied_on());
             false
         }
     }
+}
+
+/// Hand one stream frame to the socket under the mode's rule: `shadow` takes
+/// no frame over [`SHADOW_FILL_PERCENT`] fill (reported as `Full`).
+fn send_frame(state: &AppState, conn_id: ConnId, mode: StreamMode, frame: Arc<Bytes>) -> RawSend {
+    if !mode.is_relied_on()
+        && state
+            .conn_manager
+            .send_fill_exceeds(conn_id, SHADOW_FILL_PERCENT, 0)
+    {
+        return RawSend::Full;
+    }
+    state.conn_manager.try_send_raw(conn_id, frame)
+}
+
+/// Fail closed (plan V4.2 section 2.4): the access gate could not decide
+/// whether an event reaches `recipients`, so it reaches none of them. The
+/// user streams among them close with `error: user-stream closed` (a
+/// `live`/`gated` socket is cancelled after it), since a stream must never
+/// miss a frame silently. Other subscriptions are unchanged.
+pub fn fail_closed<'a>(
+    state: &AppState,
+    recipients: impl IntoIterator<Item = &'a (ConnId, crate::subscription::SubId)>,
+) {
+    if !state.sub_registry.has_streams() {
+        return;
+    }
+    for (conn_id, sub_id) in recipients {
+        if let Some(handle) = state.sub_registry.stream_for(*conn_id, sub_id) {
+            warn!(%conn_id, "user stream: fan-out access check failed; closing the stream");
+            handle.request_close(reason::CLOSED, handle.mode.is_relied_on());
+        }
+    }
+}
+
+/// History headroom (plan V4.2 section 2.4): on a connection holding an open
+/// `live`/`gated` stream, `true` when one more history frame would fill the
+/// send buffer past [`HISTORY_FILL_PERCENT`]. The caller ends the REQ with
+/// `CLOSED "error: busy"` at the threshold (no grace bump). Other
+/// connections are unchanged.
+pub fn history_busy(state: &AppState, conn: &ConnectionState) -> bool {
+    conn.send_fill_exceeds(HISTORY_FILL_PERCENT)
+        && state.sub_registry.has_streams()
+        && state
+            .sub_registry
+            .stream_of(conn.conn_id)
+            .is_some_and(|handle| handle.mode.is_relied_on() && handle.is_open())
+}
+
+/// Count one history REQ refused with `error: busy`.
+pub fn note_history_busy() {
+    metrics::counter!("kuzz_user_stream_history_busy_total").increment(1);
+}
+
+/// Multi-node fan-out lagged (live events were lost): close every user
+/// stream on this pod, in all communities, with `error: user-stream lagged`
+/// on the control channel, then cancel its socket. Clients reconnect with
+/// jitter and catch up. Returns the number of streams closed.
+pub fn close_all_lagged(state: &AppState) -> usize {
+    let streams = state.sub_registry.streams_in(None);
+    for (_, handle) in &streams {
+        handle.request_close(reason::LAGGED, true);
+    }
+    if !streams.is_empty() {
+        warn!(
+            streams = streams.len(),
+            "user stream: fan-out lagged; closed every stream on this pod"
+        );
+    }
+    streams.len()
 }
 
 /// The stream's teardown task: runs a close requested from a synchronous
@@ -456,6 +561,12 @@ fn spawn_teardown(state: Arc<AppState>, conn_id: ConnId, handle: Arc<StreamHandl
 
 /// Retire a stream if it still owns its sub id, send `reason` (if any) and
 /// cancel the connection when asked or when the CLOSED could not be queued.
+///
+/// Which queue carries the CLOSED (plan V4.2 section 2.4): with `cancel` it
+/// goes on the control channel (drained before the Close), then the socket
+/// is cancelled; without, it is a threshold CLOSED: the data channel without
+/// a grace bump (after the frames already queued for the sub), else the
+/// control channel, else the socket is cancelled.
 pub async fn close_stream(
     state: &AppState,
     conn_id: ConnId,
@@ -478,14 +589,32 @@ pub async fn close_stream(
     {
         super::close::release_scope_topics(state, &handle.tenant, &removed.scope).await;
     }
-    let mut sent = true;
-    if let Some(reason) = reason {
-        sent = state
-            .conn_manager
-            .send_to(conn_id, RelayMessage::closed(&handle.sub_id, reason));
+    let Some(reason) = reason else {
+        if cancel {
+            state.conn_manager.cancel_conn(conn_id);
+        }
+        return;
+    };
+    metrics::counter!("kuzz_user_stream_closed_total", "reason" => closed_label(reason, handle.mode))
+        .increment(1);
+    let frame = RelayMessage::closed(&handle.sub_id, reason);
+    if cancel {
+        state.conn_manager.send_closed_and_cancel(conn_id, frame);
+    } else {
+        state.conn_manager.send_threshold_closed(conn_id, frame);
     }
-    if cancel || !sent {
-        state.conn_manager.cancel_conn(conn_id);
+}
+
+/// `closed{key}` label of a stream CLOSED (the client's keys; overflow splits
+/// by mode).
+fn closed_label(reason: &str, mode: StreamMode) -> &'static str {
+    match reason {
+        reason::OVERFLOW if mode.is_relied_on() => "full",
+        reason::OVERFLOW => "shadow_full",
+        reason::LAGGED => "lagged",
+        reason::TOO_MANY_ROOMS => "too_many_rooms",
+        reason::CLOSED => "closed",
+        _ => "other",
     }
 }
 
@@ -686,7 +815,8 @@ async fn rerun_rooms(state: &AppState, community: CommunityId) {
             Ok(rooms) => rooms.into_iter().filter(|r| handle.allows(*r)).collect(),
             Err(e) => {
                 warn!(%conn_id, "user stream: member rooms re-run failed: {e}");
-                close_stream(state, conn_id, &handle, Some(reason::CLOSED), false).await;
+                let cancel = handle.mode.is_relied_on();
+                close_stream(state, conn_id, &handle, Some(reason::CLOSED), cancel).await;
                 continue;
             }
         };
@@ -774,9 +904,11 @@ pub fn after_cache_invalidation_lag(state: &Arc<AppState>) {
     }
 }
 
+/// Close streams with `reason`; a `live`/`gated` socket is cancelled after it.
 async fn close_streams(state: &AppState, streams: &[(ConnId, Arc<StreamHandle>)], reason: &str) {
     for (conn_id, handle) in streams {
-        close_stream(state, *conn_id, handle, Some(reason), false).await;
+        let cancel = handle.mode.is_relied_on();
+        close_stream(state, *conn_id, handle, Some(reason), cancel).await;
     }
 }
 

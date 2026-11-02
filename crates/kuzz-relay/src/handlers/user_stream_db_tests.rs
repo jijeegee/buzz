@@ -22,6 +22,7 @@ pub(super) struct Harness {
     pub(super) conn: Arc<ConnectionState>,
     pub(super) rx: mpsc::Receiver<WsMessage>,
     pub(super) ctrl_rx: mpsc::Receiver<WsMessage>,
+    pub(super) terminal_rx: mpsc::Receiver<WsMessage>,
     pub(super) pool: sqlx::PgPool,
     pub(super) community: CommunityId,
     pub(super) keys: Keys,
@@ -85,7 +86,7 @@ pub(super) async fn harness(
 
     let (send_tx, rx) = mpsc::channel(buffer);
     let (ctrl_tx, ctrl_rx) = mpsc::channel(8);
-    let (terminal_ctrl_tx, _terminal_rx) = mpsc::channel(1);
+    let (terminal_ctrl_tx, terminal_rx) = mpsc::channel(1);
     let cancel = CancellationToken::new();
     let subscriptions = Arc::new(tokio::sync::Mutex::new(HashMap::new()));
     let backpressure = Arc::new(AtomicU8::new(0));
@@ -128,6 +129,7 @@ pub(super) async fn harness(
         conn,
         rx,
         ctrl_rx,
+        terminal_rx,
         pool,
         community,
         keys,
@@ -202,7 +204,12 @@ impl Harness {
     }
 }
 
-async fn post(state: &AppState, community: CommunityId, room: Uuid, text: &str) -> String {
+pub(super) async fn post(
+    state: &AppState,
+    community: CommunityId,
+    room: Uuid,
+    text: &str,
+) -> String {
     let event = EventBuilder::new(Kind::Custom(9), text)
         .tags([Tag::parse(["h", &room.to_string()]).expect("h tag")])
         .sign_with_keys(&Keys::generate())
@@ -443,7 +450,7 @@ async fn more_than_5000_rooms_is_refused() {
 }
 
 /// Register a stream the way the REQ does, left in its snapshot phase.
-async fn snapshot_phase_stream(
+pub(super) async fn snapshot_phase_stream(
     h: &Harness,
     mode: StreamMode,
     rooms: Vec<Uuid>,
@@ -539,7 +546,9 @@ async fn a_full_queue_closes_a_live_stream_and_the_socket() {
     })
     .await
     .expect("socket cancelled");
-    assert_eq!(closed(&h.frames(), "s"), [reason::OVERFLOW]);
+    // Live: the CLOSED goes on the control channel, ahead of the Close.
+    assert!(closed(&h.frames(), "s").is_empty());
+    assert_eq!(closed(&drain(&mut h.ctrl_rx), "s"), [reason::OVERFLOW]);
     assert!(h.state.sub_registry.stream_of(h.conn.conn_id).is_none());
 }
 

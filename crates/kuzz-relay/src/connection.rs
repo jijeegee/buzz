@@ -276,6 +276,18 @@ impl ConnectionState {
         true
     }
 
+    /// Queue a CLOSED at a fill threshold: data channel without a grace bump,
+    /// else control channel, else cancel ([`crate::state::send_threshold_frame`]).
+    /// `false` when the connection was cancelled or is gone.
+    pub fn send_threshold(&self, msg: String) -> bool {
+        crate::state::send_threshold_frame(&self.send_tx, &self.ctrl_tx, &self.cancel, msg)
+    }
+
+    /// Whether one more frame would fill the send buffer past `percent`%.
+    pub fn send_fill_exceeds(&self, percent: usize) -> bool {
+        crate::state::fill_exceeds(&self.send_tx, percent, 1)
+    }
+
     /// Sends a data message to this connection's outbound channel.
     ///
     /// On a full buffer, increments the backpressure counter. The first

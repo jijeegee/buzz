@@ -163,3 +163,6 @@ mod db;
 
 #[path = "user_stream_membership_tests.rs"]
 mod membership;
+
+#[path = "user_stream_close_tests.rs"]
+mod close;

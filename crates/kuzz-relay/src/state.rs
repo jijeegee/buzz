@@ -266,6 +266,47 @@ const RESTART_CLOSE_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from
 type SlidingWindowCounter = (u32, Instant);
 type ScopedRateLimiter = DashMap<ScopedPubkeyKey, SlidingWindowCounter>;
 
+/// How a frame sent outside the grace counter went ([`ConnectionManager::try_send_raw`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawSend {
+    /// Queued on the data channel.
+    Sent,
+    /// The data channel is full (or over a caller's fill threshold).
+    Full,
+    /// The connection is gone.
+    Gone,
+}
+
+/// Whether `tx` would hold more than `percent`% of its capacity after
+/// `adding` more frames.
+pub(crate) fn fill_exceeds(tx: &mpsc::Sender<WsMessage>, percent: usize, adding: usize) -> bool {
+    let max = tx.max_capacity();
+    let used = max.saturating_sub(tx.capacity());
+    (used + adding) * 100 > max * percent
+}
+
+/// Queue a CLOSED at a fill threshold (user-stream plan V4.2 section 2.4):
+/// on the data channel with a raw `try_send` (no grace bump), so it follows
+/// the frames already queued for its sub; else on the control channel; else
+/// cancel the connection. `false` when the connection was cancelled.
+pub(crate) fn send_threshold_frame(
+    tx: &mpsc::Sender<WsMessage>,
+    ctrl_tx: &mpsc::Sender<WsMessage>,
+    cancel: &CancellationToken,
+    frame: String,
+) -> bool {
+    let frame = match tx.try_send(WsMessage::Text(frame.into())) {
+        Ok(()) => return true,
+        Err(mpsc::error::TrySendError::Closed(_)) => return false,
+        Err(mpsc::error::TrySendError::Full(frame)) => frame,
+    };
+    if ctrl_tx.try_send(frame).is_ok() {
+        return true;
+    }
+    cancel.cancel();
+    false
+}
+
 /// Per-connection entry in the connection manager.
 struct ConnEntry {
     tx: mpsc::Sender<WsMessage>,
@@ -1094,6 +1135,47 @@ impl ConnectionManager {
         let text = WsUtf8Bytes::try_from(Bytes::clone(msg.as_ref()))
             .expect("relay fan-out frames are serialized UTF-8 JSON");
         self.try_send_ws_message(conn_id, WsMessage::Text(text))
+    }
+
+    /// Whether the connection's send buffer would be more than `percent`%
+    /// full after `adding` more frames (`true` when it is gone).
+    pub fn send_fill_exceeds(&self, conn_id: Uuid, percent: usize, adding: usize) -> bool {
+        self.connections
+            .get(&conn_id)
+            .is_none_or(|entry| fill_exceeds(&entry.tx, percent, adding))
+    }
+
+    /// Queue an already-serialized frame without touching the grace counter
+    /// (user-stream frames: their own close rules replace the grace).
+    pub fn try_send_raw(&self, conn_id: Uuid, msg: Arc<Bytes>) -> RawSend {
+        let Some(entry) = self.connections.get(&conn_id) else {
+            return RawSend::Gone;
+        };
+        let text = WsUtf8Bytes::try_from(Bytes::clone(msg.as_ref()))
+            .expect("relay fan-out frames are serialized UTF-8 JSON");
+        match entry.tx.try_send(WsMessage::Text(text)) {
+            Ok(()) => RawSend::Sent,
+            Err(mpsc::error::TrySendError::Full(_)) => RawSend::Full,
+            Err(mpsc::error::TrySendError::Closed(_)) => RawSend::Gone,
+        }
+    }
+
+    /// Queue a threshold CLOSED ([`send_threshold_frame`]): data channel,
+    /// else control channel, else cancel. `false` when cancelled or gone.
+    pub fn send_threshold_closed(&self, conn_id: Uuid, frame: String) -> bool {
+        self.connections.get(&conn_id).is_some_and(|entry| {
+            send_threshold_frame(&entry.tx, &entry.ctrl_tx, &entry.cancel, frame)
+        })
+    }
+
+    /// Queue a CLOSED on the control channel (drained ahead of data and
+    /// before the Close), then cancel the connection. A full control channel
+    /// cancels without the frame.
+    pub fn send_closed_and_cancel(&self, conn_id: Uuid, frame: String) {
+        if let Some(entry) = self.connections.get(&conn_id) {
+            let _ = entry.ctrl_tx.try_send(WsMessage::Text(frame.into()));
+            entry.cancel.cancel();
+        }
     }
 
     fn try_send_ws_message(&self, conn_id: Uuid, msg: WsMessage) -> bool {

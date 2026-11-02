@@ -1249,6 +1249,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_multinode_fanout_lag_total").increment(n);
                         tracing::warn!("Multi-node fan-out lagged by {n} messages");
+                        // Live events were lost: user streams must not miss
+                        // them silently (CLOSED lagged, then the socket closes).
+                        kuzz_relay::handlers::user_stream::close_all_lagged(&state_for_sub);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Multi-node fan-out broadcast channel closed");
