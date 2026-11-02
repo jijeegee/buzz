@@ -1198,6 +1198,8 @@ pub struct AppState {
     /// Short TTL (10s) — membership changes are rare but must propagate.
     #[allow(clippy::type_complexity)]
     pub membership_cache: Arc<moka::sync::Cache<(CommunityId, Uuid, Vec<u8>), bool>>,
+    /// Refill fence and origin generation for `membership_cache` keys.
+    pub membership_gen: Arc<crate::membership_cache_gen::MembershipCacheGen>,
     /// Accessible channel IDs cache: (community_id, pubkey_bytes) → channel UUIDs.
     /// Short TTL (10s) — invalidated on membership or channel visibility changes.
     #[allow(clippy::type_complexity)]
@@ -1482,6 +1484,7 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            membership_gen: Arc::new(crate::membership_cache_gen::MembershipCacheGen::new()),
             accessible_channels_cache: Arc::new(
                 moka::sync::Cache::builder()
                     .max_capacity(10_000)
@@ -1642,9 +1645,34 @@ impl AppState {
             return Ok(cached);
         }
         metrics::counter!("kuzz_membership_cache_misses_total").increment(1);
+        let token = self
+            .membership_gen
+            .refill_token(community_id, channel_id, pubkey);
         let result = self.db.is_member(community_id, channel_id, pubkey).await?;
-        self.membership_cache.insert(key, result);
+        self.cache_membership_refill(community_id, channel_id, pubkey, result, token);
         Ok(result)
+    }
+
+    /// Cache a membership answer read after `token` was taken, unless a drop of
+    /// the key raced the read: then the answer may predate the change and is
+    /// discarded. Inserts first and checks second; see
+    /// [`crate::membership_cache_gen::MembershipCacheGen::refill_still_current`].
+    fn cache_membership_refill(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+        result: bool,
+        token: crate::membership_cache_gen::RefillToken,
+    ) {
+        let key = (community_id, channel_id, pubkey.to_vec());
+        self.membership_cache.insert(key.clone(), result);
+        if !self
+            .membership_gen
+            .refill_still_current(community_id, channel_id, pubkey, token)
+        {
+            self.membership_cache.invalidate(&key);
+        }
     }
 
     /// Invalidate caches after a membership change (add/remove member).
@@ -1654,6 +1682,10 @@ impl AppState {
     /// publish is spawned, not awaited: the local drop is already done, and a
     /// dropped publish is backstopped by the REQ denial-path DB confirmation.
     pub fn invalidate_membership(&self, tenant: &TenantContext, channel_id: Uuid, pubkey: &[u8]) {
+        // Origin only: the Redis loopback calls the local variant, which never
+        // bumps this, so one membership change is exactly one origin bump.
+        self.membership_gen
+            .bump_origin(tenant.community(), channel_id, pubkey);
         self.invalidate_membership_local(tenant.community(), channel_id, pubkey);
         self.spawn_cache_invalidation(
             tenant,
@@ -1672,6 +1704,8 @@ impl AppState {
         channel_id: Uuid,
         pubkey: &[u8],
     ) {
+        self.membership_gen
+            .bump_refill(community_id, channel_id, pubkey);
         self.membership_cache
             .invalidate(&(community_id, channel_id, pubkey.to_vec()));
         self.accessible_channels_cache
@@ -1733,6 +1767,7 @@ impl AppState {
 
     /// Local-only channel-deleted drop. See [`invalidate_membership_local`].
     pub(crate) fn invalidate_channel_deleted_local(&self, community_id: CommunityId) {
+        self.membership_gen.bump_refill_all();
         if let Err(error) =
             self.membership_cache
                 .invalidate_entries_if(move |(entry_community, _, _), _| {
@@ -3092,6 +3127,72 @@ pub(crate) mod tests {
             Some(channels_b),
             "A's cache drop must not evict B's accessible-channel entry"
         );
+    }
+
+    #[tokio::test]
+    async fn membership_refill_racing_a_drop_is_not_cached() {
+        let state = test_state().await;
+        let community = CommunityId::from_uuid(Uuid::new_v4());
+        let channel_id = Uuid::new_v4();
+        let pubkey = vec![9u8; 32];
+        let key = (community, channel_id, pubkey.clone());
+
+        // A refill whose read raced a local drop (here: one received from
+        // another pod) must not cache its possibly stale answer.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+            },
+        );
+        state.cache_membership_refill(community, channel_id, &pubkey, true, token);
+        assert_eq!(state.membership_cache.get(&key), None);
+
+        // A channel-deleted drop fences every key.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.invalidate_channel_deleted_local(community);
+        state.cache_membership_refill(community, channel_id, &pubkey, true, token);
+        assert_eq!(state.membership_cache.get(&key), None);
+
+        // With no drop in between the answer is cached.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.cache_membership_refill(community, channel_id, &pubkey, false, token);
+        assert_eq!(state.membership_cache.get(&key), Some(false));
+    }
+
+    #[tokio::test]
+    async fn membership_origin_generation_counts_the_origin_drop_only() {
+        let state = test_state().await;
+        let community = CommunityId::from_uuid(Uuid::new_v4());
+        let tenant = TenantContext::resolved(community, "gen.example".to_string());
+        let channel_id = Uuid::new_v4();
+        let pubkey = vec![5u8; 32];
+        let generation = || {
+            state
+                .membership_gen
+                .origin_generation(community, channel_id, &pubkey)
+        };
+
+        let before = generation();
+        state.invalidate_membership(&tenant, channel_id, &pubkey);
+        assert_eq!(generation(), before + 1);
+        // The same change coming back through the Redis loopback.
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+            },
+        );
+        assert_eq!(generation(), before + 1);
     }
 
     #[tokio::test]
