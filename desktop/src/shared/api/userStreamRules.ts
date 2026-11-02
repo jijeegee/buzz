@@ -95,6 +95,46 @@ function isSeq(value: unknown): value is number {
   return Number.isSafeInteger(value) && (value as number) >= 0;
 }
 
+/** A JSON number token the store reads as an integer: digits only. */
+const PLAIN_INTEGER = /^(0|[1-9][0-9]*)$/;
+
+/**
+ * Parses snapshot content with every number not written as plain digits
+ * (`1.0`, `1e0`, `-0`, `-1`) read as `null`, so an integer field holding
+ * one is refused exactly as the store's serde check refuses it
+ * (docs/message-sync.md#snapshot). `undefined` when it is not JSON.
+ */
+export function parsePlainIntegers(text: string): unknown {
+  try {
+    JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+  let out = "";
+  let index = 0;
+  while (index < text.length) {
+    const char = text[index];
+    if (char === '"') {
+      let end = index + 1;
+      while (end < text.length && text[end] !== '"') {
+        end += text[end] === "\\" ? 2 : 1;
+      }
+      out += text.slice(index, end + 1);
+      index = end + 1;
+    } else if (char === "-" || (char >= "0" && char <= "9")) {
+      let end = index + 1;
+      while (end < text.length && /[0-9.eE+-]/.test(text[end])) end += 1;
+      const token = text.slice(index, end);
+      out += PLAIN_INTEGER.test(token) ? token : "null";
+      index = end;
+    } else {
+      out += char;
+      index += 1;
+    }
+  }
+  return JSON.parse(out);
+}
+
 /**
  * Reads the snapshot parts in arrival order. `feed` returns false once the
  * snapshot is refused (CLOSE the stream: chunks for this connection).
@@ -118,12 +158,7 @@ export class SnapshotParser {
       if (!this.part1) this.ignoredBeforePart1 += 1;
       return true;
     }
-    let content: unknown;
-    try {
-      content = JSON.parse(event.content);
-    } catch {
-      return this.refuse();
-    }
+    const content = parsePlainIntegers(event.content);
     if (!content || typeof content !== "object" || Array.isArray(content)) {
       return this.refuse();
     }

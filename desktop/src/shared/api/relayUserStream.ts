@@ -63,6 +63,15 @@ export type UserStreamLiveHooks = {
   socketEnded: () => void;
   /** A live 44100/44101 for the account. */
   membershipNotice: (event: RelayEvent) => void;
+  /** Accepted shadow EOSE: classes and verifies skips, walks nothing. */
+  shadowEose?: (
+    stream: UserStreamConnection,
+    snapshot: UserStreamSnapshot,
+  ) => void;
+  /** An event received live on this connection (stream frame). */
+  noteLive?: (eventId: string) => void;
+  /** Another account or community: nothing in memory carries over. */
+  scopeChanged?: () => void;
 };
 
 /** One stream REQ on one connection. */
@@ -85,6 +94,8 @@ export type UserStreamConnection = {
    * spans recorded on this connection are not a catch-up's resume point.
    */
   startedAt: number;
+  /** The same start in ms on this device's clock (rows stored since). */
+  startedAtMs: number;
   comparator: ShadowComparator | null;
 };
 
@@ -172,6 +183,8 @@ export class UserStreamSession {
   private restored = false;
   /** Bumped per `connected`, so a late restore starts no stale REQ. */
   private attempt = 0;
+  /** The last `connected`'s stream REQ, sent or given up (tests). */
+  requested: Promise<void> = Promise.resolve();
   liveHooks: UserStreamLiveHooks | null = null;
   private readonly host: UserStreamHost;
 
@@ -196,30 +209,51 @@ export class UserStreamSession {
 
   /**
    * AUTH OK on `generation`: sends the stream REQ, before any chunk is
-   * replayed. Returns without one when off or backed off.
+   * replayed. Returns without one when off or backed off. The first connect
+   * of a scope reads the backoff and counters first; chunks do not wait for
+   * that read, and the REQ follows when it lands.
    */
-  async connected(generation: number) {
+  connected(generation: number): Promise<void> {
     this.current = null;
     // Whatever the last connection carried is on chunks again, also when
     // this one is backed off or off.
     this.liveHooks?.socketEnded();
-    const startedAt = Math.floor(this.host.nowMs() / 1000);
+    const startedAtMs = this.host.nowMs();
     const attempt = ++this.attempt;
-    if (!this.host.enabled()) return;
+    if (!this.host.enabled()) return Promise.resolve();
     if (!this.restored && this.host.loadState) {
       this.restored = true;
-      const { backoff, report } = this;
-      const load = this.host.loadState;
-      const [savedBackoff, counters] = await Promise.all([
-        load("stream_backoff").catch(() => null),
-        load("stream_counters").catch(() => null),
-      ]);
-      // Another account or connection since: its values are not this one's.
-      if (this.backoff !== backoff || this.report !== report) return;
-      backoff.restore(savedBackoff);
-      report.restore(counters);
+      this.requested = this.restore(this.host.loadState).then((current) => {
+        if (current) return this.request(generation, attempt, startedAtMs);
+      });
+      return Promise.resolve();
     }
+    this.requested = this.request(generation, attempt, startedAtMs);
+    return this.requested;
+  }
+
+  /** Backoff and counters from the store; `false` when the scope changed. */
+  private async restore(load: (key: string) => Promise<string | null>) {
+    const { backoff, report } = this;
+    const [savedBackoff, counters] = await Promise.all([
+      load("stream_backoff").catch(() => null),
+      load("stream_counters").catch(() => null),
+    ]);
+    // Another account or connection since: its values are not this one's.
+    if (this.backoff !== backoff || this.report !== report) return false;
+    backoff.restore(savedBackoff);
+    report.restore(counters);
+    return true;
+  }
+
+  private async request(
+    generation: number,
+    attempt: number,
+    startedAtMs: number,
+  ) {
+    // A newer connect since (a late restore): its REQ is that one's.
     if (attempt !== this.attempt) return;
+    const startedAt = Math.floor(startedAtMs / 1000);
     if (!this.backoff.allowed(Math.floor(this.host.nowMs() / 1000))) {
       this.report.add("backoffSkipped");
       return;
@@ -236,6 +270,7 @@ export class UserStreamSession {
       awaitingAuth: false,
       lastFrameAt: null,
       startedAt,
+      startedAtMs,
       comparator: null,
     };
     this.current = stream;
@@ -291,6 +326,7 @@ export class UserStreamSession {
       return;
     }
     if (event.kind === USER_STREAM_KIND) return;
+    this.liveHooks?.noteLive?.(event.id);
     if (stream.mode === "shadow") {
       const room = this.host.roomOf(event);
       if (room) {
@@ -343,6 +379,7 @@ export class UserStreamSession {
       );
       stream.comparator.streamEose(this.host.nowMs());
       this.report.add("snapshotRooms", snapshot.rooms.size);
+      this.liveHooks?.shadowEose?.(stream, snapshot);
       return;
     }
     this.liveHooks?.eose(stream, snapshot);
@@ -407,6 +444,7 @@ export class UserStreamSession {
 
   /** Another account or community: read its backoff and counters anew. */
   scopeChanged() {
+    this.liveHooks?.scopeChanged?.();
     this.restored = false;
     this.report = new UserStreamReport(this.host.log);
     this.backoff = new UserStreamBackoff();

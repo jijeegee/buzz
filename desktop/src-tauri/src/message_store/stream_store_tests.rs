@@ -43,7 +43,9 @@ fn resume_points_take_only_coverage_from_before_the_connection() {
             .into_iter()
             .filter(|&(lo, _)| lo < connected_at)
             .max_by_key(|&(lo, _)| lo);
-        let expected = case["expect"]["head"].as_array().map(|_| pair(&case["expect"]["head"]));
+        let expected = case["expect"]["head"]
+            .as_array()
+            .map(|_| pair(&case["expect"]["head"]));
         assert_eq!(head, expected, "{name}: head");
     }
 }

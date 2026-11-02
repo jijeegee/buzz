@@ -142,42 +142,32 @@ pub(crate) fn set_state(conn: &Connection, key: &str, value: &str) -> rusqlite::
     .map(|_| ())
 }
 
-/// What a catch-up's new rows are counted against: the room's own coverage
-/// segments and the ids it already stores in the window
-/// (docs/message-sync.md#user-stream, fixture `newRow`).
-#[derive(Debug, Default, serde::Serialize)]
-pub(crate) struct WalkBaseline {
-    pub(crate) segments: Vec<(i64, i64)>,
-    pub(crate) ids: Vec<String>,
-}
-
-fn walk_baseline(
-    conn: &Connection,
-    rooms: &[String],
-    from: i64,
-    to: i64,
-) -> rusqlite::Result<HashMap<String, WalkBaseline>> {
-    let mut ids = conn
-        .prepare_cached("SELECT id FROM events WHERE room = ?1 AND created_at BETWEEN ?2 AND ?3")?;
-    let mut found = HashMap::new();
-    for room in rooms {
-        let stored = ids
-            .query_map(params![room, from, to], |row| row.get(0))?
-            .collect::<rusqlite::Result<Vec<String>>>()?;
-        let baseline = WalkBaseline {
-            segments: coverage::segments(conn, room)?,
-            ids: stored,
-        };
-        found.insert(room.clone(), baseline);
+/// Which of `ids` were not stored before `since_ms` (absent, or stored at
+/// or after it): rows that count as new for the gate counters, whichever
+/// path stored them (docs/message-sync.md#counters).
+fn fresh_ids(conn: &Connection, ids: &[String], since_ms: i64) -> rusqlite::Result<Vec<String>> {
+    let mut stored = conn.prepare_cached("SELECT stored_at FROM events WHERE id = ?1")?;
+    let mut fresh = Vec::new();
+    for id in ids {
+        let at: Option<Option<i64>> = stored.query_row(params![id], |row| row.get(0)).optional()?;
+        match at {
+            Some(None) => {}
+            Some(Some(at)) if at < since_ms => {}
+            _ => fresh.push(id.clone()),
+        }
     }
-    Ok(found)
+    Ok(fresh)
 }
 
 /// The stored epoch and the rows of some rooms, read together.
 #[derive(Debug, Default, serde::Serialize)]
 pub(crate) struct StoredSeqs {
+    /// Everything queued was written and nothing was lost when read.
+    pub(crate) vouched: bool,
     pub(crate) epoch: Option<String>,
     pub(crate) rows: HashMap<String, (i64, i64)>,
+    /// Resume points from coverage that began before the asked time.
+    pub(crate) resume: HashMap<String, i64>,
 }
 
 impl MessageStore {
@@ -265,35 +255,62 @@ impl MessageStore {
         Ok(())
     }
 
-    /// The epoch and `rooms`' rows, once nothing queued is pending and no
-    /// loss is: otherwise none, so nothing is skipped on them.
-    pub(crate) fn stream_seqs(&self, lease: &Lease, rooms: &[String]) -> StoredSeqs {
+    /// The epoch, `rooms`' rows and their resume points from coverage begun
+    /// before `before`, once nothing queued is pending and no loss is:
+    /// otherwise none, so nothing is skipped on them and no room is handed
+    /// to the stream (docs/message-sync.md#handoff).
+    pub(crate) fn stream_seqs(
+        &self,
+        lease: &Lease,
+        rooms: &[String],
+        before: Option<i64>,
+    ) -> StoredSeqs {
         if !self.drained(lease) {
             return StoredSeqs::default();
         }
         self.read(lease, "stream seqs", |conn| {
             Ok(StoredSeqs {
+                vouched: true,
                 epoch: epoch(conn)?,
                 rows: rows(conn, rooms)?,
+                resume: match before {
+                    Some(before) => coverage::resume_points(conn, rooms, before)?,
+                    None => HashMap::new(),
+                },
             })
         })
         .unwrap_or_default()
     }
 
-    /// Each room's segments and stored ids in `[from, to]`, read once what
-    /// is queued is written; `None` when that cannot be vouched for.
-    pub(crate) fn walk_baseline(
+    /// Each room's coverage segments, read before a catch-up walk once
+    /// what is queued is written; `None` when that cannot be vouched for.
+    pub(crate) fn walk_segments(
         &self,
         lease: &Lease,
         rooms: &[String],
-        from: i64,
-        to: i64,
-    ) -> Option<HashMap<String, WalkBaseline>> {
+    ) -> Option<HashMap<String, Vec<(i64, i64)>>> {
         if !self.drained(lease) {
             return None;
         }
-        self.read(lease, "walk baseline", |conn| {
-            walk_baseline(conn, rooms, from, to)
+        self.read(lease, "walk segments", |conn| {
+            rooms
+                .iter()
+                .map(|room| Ok((room.clone(), coverage::segments(conn, room)?)))
+                .collect()
         })
+    }
+
+    /// Which of `ids` were not stored before `since_ms`, once what is queued
+    /// is written; `None` when that cannot be vouched for.
+    pub(crate) fn fresh_ids(
+        &self,
+        lease: &Lease,
+        ids: &[String],
+        since_ms: i64,
+    ) -> Option<Vec<String>> {
+        if !self.drained(lease) {
+            return None;
+        }
+        self.read(lease, "fresh ids", |conn| fresh_ids(conn, ids, since_ms))
     }
 }

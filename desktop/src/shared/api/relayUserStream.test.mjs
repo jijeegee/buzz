@@ -9,6 +9,7 @@ import {
   lastFrameAt,
   NetworkChangeFilter,
   namesUserStream,
+  parsePlainIntegers,
   roomIdsOf,
   ShadowComparator,
   SnapshotParser,
@@ -394,4 +395,24 @@ test("session: two accounts keep their own modes and verdicts", async () => {
   assert.equal(a.connection.streamLive, true);
   assert.equal(b.connection.mode, "live");
   assert.equal(b.connection.closed, true);
+});
+
+test("only plain digit numbers survive the integer read; strings are untouched", () => {
+  assert.deepEqual(
+    parsePlainIntegers(
+      '{"a":0,"b":12,"c":1.0,"d":1e0,"e":-0,"f":-3,"g":"1.0 \\" 2e5","h":[7,7.5]}',
+    ),
+    {
+      a: 0,
+      b: 12,
+      c: null,
+      d: null,
+      e: null,
+      f: null,
+      g: '1.0 " 2e5',
+      h: [7, null],
+    },
+  );
+  assert.equal(parsePlainIntegers("{bad"), undefined);
+  assert.equal(parsePlainIntegers('{"a":01}'), undefined);
 });

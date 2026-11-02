@@ -145,7 +145,7 @@ const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS events(
   id TEXT PRIMARY KEY, kind INTEGER NOT NULL, pubkey TEXT NOT NULL,
   created_at INTEGER NOT NULL, room TEXT, root TEXT,
-  broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL);
+  broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL, stored_at INTEGER);
 CREATE INDEX IF NOT EXISTS events_room_order ON events(room, root, created_at, id);
 CREATE INDEX IF NOT EXISTS events_job_rooms ON events(room) WHERE kind BETWEEN 43001 AND 43006;
 CREATE INDEX IF NOT EXISTS events_room_rows ON events(room, created_at DESC, id) WHERE root IS NULL OR broadcast = 1;
@@ -178,6 +178,7 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
         ));
     }
     conn.execute_batch(SCHEMA)
+        .and_then(|()| add_stored_at(&conn))
         .and_then(|()| conn.execute_batch(purge::MARKS_SCHEMA))
         .and_then(|()| conn.execute_batch(snapshot::SNAPSHOT_SCHEMA))
         .and_then(|()| conn.execute_batch(room_seq::ROOM_SEQ_SCHEMA))
@@ -186,6 +187,26 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
         .map_err(|error| error.to_string())?;
     coverage::drop_stale(&conn).map_err(|error| error.to_string())?;
     Ok(conn)
+}
+
+/// Adds `events.stored_at` (ms, this device's clock) to a file made before
+/// it. Rows stored before have none: they count as stored before any
+/// connection (docs/message-sync.md#counters). Older builds name their insert
+/// columns, so the version stays.
+fn add_stored_at(conn: &Connection) -> rusqlite::Result<()> {
+    let has = conn
+        .prepare("SELECT 1 FROM pragma_table_info('events') WHERE name = 'stored_at'")?
+        .exists([])?;
+    if !has {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN stored_at INTEGER")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// Writes `rows` in one transaction. The first copy of an event id wins; a
@@ -199,8 +220,8 @@ pub(crate) fn write(conn: &mut Connection, rows: &[Filed]) -> rusqlite::Result<(
 fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
     {
         let mut event = tx.prepare_cached(
-            "INSERT OR IGNORE INTO events(id, kind, pubkey, created_at, room, root, broadcast, raw)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT OR IGNORE INTO events(id, kind, pubkey, created_at, room, root, broadcast, raw, stored_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         let mut target =
             tx.prepare_cached("INSERT OR IGNORE INTO targets(id, target) VALUES (?1, ?2)")?;
@@ -210,6 +231,7 @@ fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
                created_at = excluded.created_at, raw = excluded.raw
              WHERE excluded.created_at >= summaries.created_at",
         )?;
+        let stored_at = now_ms();
         for row in rows {
             match row {
                 Filed::Event(row) => {
@@ -221,7 +243,8 @@ fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
                         row.room,
                         row.root,
                         row.broadcast,
-                        row.raw
+                        row.raw,
+                        stored_at
                     ])?;
                     if added > 0 {
                         for id in &row.targets {

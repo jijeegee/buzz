@@ -35,28 +35,35 @@ pub fn message_store_stream_epoch(
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct StreamSeqs {
+    /// Everything queued was written and nothing was lost when read.
+    vouched: bool,
     /// `None` until a part 1 was accepted for this file.
     epoch: Option<String>,
     /// `[seq, at]` per room that has a row.
     rows: HashMap<String, (i64, i64)>,
+    /// Resume points from coverage begun before `before` (when given).
+    resume: HashMap<String, i64>,
 }
 
-/// The stored epoch and the rows of `room_ids`; none unless everything
-/// queued is written and nothing was lost.
+/// The stored epoch, the rows of `room_ids` and (with `before`) their resume
+/// points; none unless everything queued is written and nothing was lost.
 #[tauri::command]
 pub async fn message_store_stream_seqs(
     room_ids: Vec<String>,
+    before: Option<i64>,
     state: State<'_, AppState>,
 ) -> Result<StreamSeqs, String> {
     let lease = lease(&state)?;
     off_main(move || {
         let stored = lease
             .zip(crate::message_store::global())
-            .map(|(lease, store)| store.stream_seqs(&lease, &room_ids))
+            .map(|(lease, store)| store.stream_seqs(&lease, &room_ids, before))
             .unwrap_or_default();
         StreamSeqs {
+            vouched: stored.vouched,
             epoch: stored.epoch,
             rows: stored.rows,
+            resume: stored.resume,
         }
     })
     .await
@@ -97,20 +104,34 @@ pub fn message_store_extend_stream_coverage(
     store.extend_stream_coverage(&relay, &account, scope.as_deref(), room_ids, from, to, seq)
 }
 
-/// Each room's coverage segments and the ids it stores in `[from, to]`,
-/// taken before a catch-up so its new rows can be counted; `None` when the
-/// store cannot vouch for what it holds.
+/// Each room's coverage segments, taken before a catch-up so its new rows
+/// can be counted; `None` when the store cannot vouch for what it holds.
 #[tauri::command]
 pub async fn message_store_walk_baseline(
     room_ids: Vec<String>,
-    from: i64,
-    to: i64,
     state: State<'_, AppState>,
-) -> Result<Option<HashMap<String, crate::message_store::WalkBaseline>>, String> {
+) -> Result<Option<HashMap<String, Vec<(i64, i64)>>>, String> {
     let lease = lease(&state)?;
     off_main(move || {
         let (lease, store) = lease.zip(crate::message_store::global())?;
-        store.walk_baseline(&lease, &room_ids, from, to)
+        store.walk_segments(&lease, &room_ids)
+    })
+    .await
+}
+
+/// Which of `ids` (a walk's candidate new rows) were not stored before
+/// `since_ms`, the connection's start on this device's clock; `None` when
+/// the store cannot vouch for what it holds (docs/message-sync.md#counters).
+#[tauri::command]
+pub async fn message_store_fresh_ids(
+    ids: Vec<String>,
+    since_ms: i64,
+    state: State<'_, AppState>,
+) -> Result<Option<Vec<String>>, String> {
+    let lease = lease(&state)?;
+    off_main(move || {
+        let (lease, store) = lease.zip(crate::message_store::global())?;
+        store.fresh_ids(&lease, &ids, since_ms)
     })
     .await
 }
@@ -118,14 +139,16 @@ pub async fn message_store_walk_baseline(
 /// A stream `sync_state` value: `stream_backoff`, `stream_counters` or
 /// `stream_prev_live`.
 #[tauri::command]
-pub fn message_store_stream_state(
+pub async fn message_store_stream_state(
     key: String,
     state: State<'_, AppState>,
 ) -> Result<Option<String>, String> {
-    let Some(lease) = lease(&state)? else {
-        return Ok(None);
-    };
-    Ok(crate::message_store::global().and_then(|store| store.stream_state(&lease, &key)))
+    let lease = lease(&state)?;
+    off_main(move || {
+        let (lease, store) = lease.zip(crate::message_store::global())?;
+        store.stream_state(&lease, &key)
+    })
+    .await
 }
 
 /// Queues a stream `sync_state` value; `false` for another key, a value

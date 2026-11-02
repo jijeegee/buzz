@@ -806,6 +806,7 @@ pub fn run() {
             message_store_clear_stream_rows,
             message_store_extend_stream_coverage,
             message_store_walk_baseline,
+            message_store_fresh_ids,
             message_store_stream_state,
             message_store_set_stream_state,
             message_store_snapshot_read,

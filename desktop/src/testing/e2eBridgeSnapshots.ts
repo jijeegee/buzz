@@ -26,7 +26,9 @@ export function handleSnapshotMockCommand(
 
 /**
  * The user stream's store calls (docs/message-sync.md#user-stream): the mock
- * keeps the epoch and stream state for the page's lifetime and no rows.
+ * keeps the epoch and stream state for the page's lifetime and no rows, and
+ * holds every room up to a minute before the connection, so the stream takes
+ * every snapshot room (docs/message-sync.md#handoff).
  */
 const streamState = new Map<string, string>();
 
@@ -41,7 +43,20 @@ export function handleStreamStoreMockCommand(
       return { value: true };
     case "message_store_stream_seqs":
       return {
-        value: { epoch: streamState.get("stream_epoch") ?? null, rows: {} },
+        value: {
+          vouched: true,
+          epoch: streamState.get("stream_epoch") ?? null,
+          rows: {},
+          resume:
+            typeof payload.before === "number"
+              ? Object.fromEntries(
+                  (payload.roomIds as string[]).map((room) => [
+                    room,
+                    (payload.before as number) - 60,
+                  ]),
+                )
+              : {},
+        },
       };
     case "message_store_clear_stream_rows":
     case "message_store_set_stream_state":
@@ -51,6 +66,7 @@ export function handleStreamStoreMockCommand(
       return { value: true };
     case "message_store_extend_stream_coverage":
     case "message_store_walk_baseline":
+    case "message_store_fresh_ids":
       return { value: null };
     case "message_store_stream_state":
       return { value: streamState.get(String(payload.key)) ?? null };

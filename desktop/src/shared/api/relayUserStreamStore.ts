@@ -7,21 +7,21 @@ import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRe
 import type { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
 import type { UserStreamSession } from "@/shared/api/relayUserStream";
 import {
+  type StoredSeqs,
   type StreamStore,
   UserStreamLive,
-  type WalkBaseline,
 } from "@/shared/api/relayUserStreamLive";
 import { invokeTauri } from "@/shared/api/tauri";
 
 export const tauriStreamStore: StreamStore = {
   epoch: (epoch) =>
     invokeTauri<boolean>("message_store_stream_epoch", { epoch }),
-  seqs: async (roomIds) => {
-    const stored = await invokeTauri<{
-      epoch: string | null;
-      rows: Record<string, [number, number]>;
-    } | null>("message_store_stream_seqs", { roomIds });
-    return stored ?? { epoch: null, rows: {} };
+  seqs: async (roomIds, before) => {
+    const stored = await invokeTauri<StoredSeqs | null>(
+      "message_store_stream_seqs",
+      { roomIds, before: before ?? null },
+    );
+    return stored ?? { vouched: false, epoch: null, rows: {}, resume: {} };
   },
   clearRows: async (roomIds) => {
     await invokeTauri<boolean>("message_store_clear_stream_rows", { roomIds });
@@ -33,11 +33,13 @@ export const tauriStreamStore: StreamStore = {
       "message_store_resume_points",
       { roomIds, before },
     )) ?? {},
-  baseline: (roomIds, from, to) =>
-    invokeTauri<Record<string, WalkBaseline> | null>(
+  segments: (roomIds) =>
+    invokeTauri<Record<string, [number, number][]> | null>(
       "message_store_walk_baseline",
-      { roomIds, from, to },
+      { roomIds },
     ),
+  freshIds: (ids, sinceMs) =>
+    invokeTauri<string[] | null>("message_store_fresh_ids", { ids, sinceMs }),
   extend: (roomIds, from, to, scope, seq) =>
     seq
       ? invokeTauri<void>("message_store_extend_stream_coverage", {
@@ -69,6 +71,7 @@ export function attachUserStreamLive(
   userStream: UserStreamSession,
   bundle: RoomLiveBundle,
   listRefresh: () => void,
+  visibleRoom: () => string | null,
 ) {
   const live = new UserStreamLive({
     nowSecs: () => Math.floor(Date.now() / 1000),
@@ -79,6 +82,7 @@ export function attachUserStreamLive(
     report: () => userStream.report,
     listRefresh,
     log: (line) => console.info(line),
+    visibleRoom,
   });
   userStream.liveHooks = live;
   return live;

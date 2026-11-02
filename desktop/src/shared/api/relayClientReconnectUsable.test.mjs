@@ -117,6 +117,9 @@ async function reconnectWithPendingRepair() {
   const client = new RelayClient();
   clients.push(client);
   client.hasConnectedOnce = true;
+  // An earlier connect already read the stream's backoff and counters; a
+  // first connect of a scope sends the stream REQ after that read lands.
+  client.userStream.restored = true;
   client.subscriptions.set("live-chunk", {
     mode: "live",
     filter: chunkFilter,

@@ -164,6 +164,7 @@ export class RelayClient {
     this.userStream,
     this.liveRooms,
     () => this.channelAccessRevocations.hint(),
+    () => this.visibleChannelId,
   );
   readonly stopShadowCompare = this.liveRooms.observeChunkEvents(
     (event, roomId) => this.userStream.chunkEvent(event, roomId),
@@ -897,6 +898,7 @@ export class RelayClient {
     }
 
     if (!prepareSubscriptionEvent(subscription, event)) return;
+    if (subscription.mode === "live") this.userStreamLive.noteLive(event.id);
     if (event.kind === 44100 || event.kind === 44101) {
       if (subscription.mode === "live") this.userStream.membershipNotice(event);
     }

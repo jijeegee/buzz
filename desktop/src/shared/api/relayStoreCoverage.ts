@@ -32,6 +32,28 @@ const STORE_LIVE_POLL_MS = 100;
 
 type LiveSubscription = Extract<RelaySubscription, { mode: "live" }>;
 
+/** Rule-W rows riding a span: each room's snapshot seq, under `epoch`. */
+export type StreamSeqWrite = { epoch: string; seqs: Record<string, number> };
+
+/**
+ * What the user stream adds to a chunk catch-up that starts after its
+ * shadow EOSE on the same connection (docs/message-sync.md#counters):
+ * rule-W rows for the span, and the walk's rows when it completes.
+ */
+export type StreamCatchUpVouch = {
+  seq: StreamSeqWrite | null;
+  /** The walk ended; `events` are its rows when it completed. */
+  ended: (completed: boolean, events: RelayEvent[]) => void;
+};
+let streamVouch:
+  | ((roomIds: string[], liveAt: number) => StreamCatchUpVouch | null)
+  | null = null;
+
+/** The shadow stream's hook into chunk catch-ups (`null`: none). */
+export function setStreamCatchUpVouch(next: typeof streamVouch) {
+  streamVouch = next;
+}
+
 type CoverageDeps = {
   nowSecs: () => number;
   nowMs: () => number;
@@ -42,12 +64,13 @@ type CoverageDeps = {
    * backend took when subscription `subId` reached EOSE, or one taken now.
    */
   scope: (subId?: string) => Promise<string | null>;
-  /** Refused when `scope` is no longer current. */
+  /** Refused when `scope` is no longer current; rule-W rows with `seq`. */
   extend: (
     roomIds: string[],
     from: number,
     to: number,
     scope: string,
+    seq?: StreamSeqWrite,
   ) => Promise<void>;
   resumePoints: (
     roomIds: string[],
@@ -78,13 +101,22 @@ const defaultDeps: CoverageDeps = {
   },
   scope: (subId) =>
     invokeTauri<string | null>("message_store_scope", { subId: subId ?? null }),
-  extend: (roomIds, from, to, scope) =>
-    invokeTauri<void>("message_store_extend_coverage", {
-      roomIds,
-      from,
-      to,
-      scope,
-    }),
+  extend: (roomIds, from, to, scope, seq) =>
+    seq
+      ? invokeTauri<void>("message_store_extend_stream_coverage", {
+          roomIds,
+          from,
+          to,
+          scope,
+          epoch: seq.epoch,
+          seqs: seq.seqs,
+        })
+      : invokeTauri<void>("message_store_extend_coverage", {
+          roomIds,
+          from,
+          to,
+          scope,
+        }),
   resumePoints: async (roomIds, before) => {
     const points = await invokeTauri<Record<string, number> | null>(
       "message_store_resume_points",
@@ -128,11 +160,17 @@ function record(
   from: number,
   to: number,
   scope: Promise<string | null>,
+  seq?: StreamSeqWrite,
 ) {
+  if (roomIds.length === 0) return;
   // No scope (signed out at the time): nothing is recorded.
   void scope
     .then((current) =>
-      current === null ? undefined : deps.extend(roomIds, from, to, current),
+      current === null
+        ? undefined
+        : seq
+          ? deps.extend(roomIds, from, to, current, seq)
+          : deps.extend(roomIds, from, to, current),
     )
     .catch(() => {});
 }
@@ -329,27 +367,43 @@ export async function catchUpFromStore(
   // the relay stamped after liveAt but sent before EOSE are fetched too.
   let until: number | undefined;
   let beforeId: string | undefined;
+  // Taken before the first page (rule W: it started after the stream EOSE).
+  const vouch = streamVouch?.(covered, liveAt) ?? null;
+  const walked: RelayEvent[] = [];
+  const end = (completed: boolean) => {
+    vouch?.ended(completed, walked);
+    return completed;
+  };
   for (let page = 0; page < STORE_CATCH_UP_MAX_PAGES; page++) {
     if (isRateLimited()) await waitForRateLimit();
-    if (!live()) return false;
-    const events = await deps.requestPage({
-      channelIds: covered,
-      since,
-      limit: STORE_CATCH_UP_PAGE_LIMIT,
-      until,
-      beforeId,
-    });
+    if (!live()) return end(false);
+    let events: RelayEvent[];
+    try {
+      events = await deps.requestPage({
+        channelIds: covered,
+        since,
+        limit: STORE_CATCH_UP_PAGE_LIMIT,
+        until,
+        beforeId,
+      });
+    } catch (error) {
+      end(false);
+      throw error;
+    }
+    if (vouch) walked.push(...events);
     const terminal = events.at(-1);
     if (events.length < STORE_CATCH_UP_PAGE_LIMIT || !terminal) {
-      if (!live()) return false;
-      record(covered, since, liveAt, scope);
-      return true;
+      if (!live()) return end(false);
+      record(covered, since, liveAt, scope, vouch?.seq ?? undefined);
+      return end(true);
     }
-    if (terminal.created_at === until && terminal.id === beforeId) return false;
+    if (terminal.created_at === until && terminal.id === beforeId) {
+      return end(false);
+    }
     until = terminal.created_at;
     beforeId = terminal.id;
   }
-  return false;
+  return end(false);
 }
 
 /**
@@ -379,6 +433,12 @@ export function noteStreamLiveEose({
   stream = { subscription, rooms };
   record([...rooms], liveAt, liveAt, scope);
   return {
+    /** Rooms handed to the stream once their resume points are read. */
+    hand: (roomIds: string[]) => {
+      if (subscription.storeCoverage !== coverage) return;
+      for (const roomId of roomIds) rooms.add(roomId);
+      record(roomIds, liveAt, liveAt, scope);
+    },
     /** The catch-up the preload waits for. */
     settle: (settled: Promise<unknown>) => settling.set(coverage, settled),
     /** A stream frame: extends the span at most once per minute. */

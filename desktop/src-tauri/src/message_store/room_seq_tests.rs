@@ -515,7 +515,7 @@ fn an_equal_seq_moves_at_forward_only_and_bad_values_are_refused() {
     write(&[("room-a", 7)], 1500);
     write(&[("room-b", room_seq::MAX_SEQ + 1), ("room-c", -1)], 1500);
     write(&[("room-c", room_seq::MAX_SEQ)], 1500);
-    let read = store.stream_seqs(&lease, &rooms);
+    let read = store.stream_seqs(&lease, &rooms, None);
     assert_eq!(read.rows.get("room-a"), Some(&(7, 1500)));
     assert_eq!(read.rows.get("room-b"), None);
     assert_eq!(read.rows.get("room-c"), Some(&(room_seq::MAX_SEQ, 1500)));
@@ -567,19 +567,28 @@ fn rows_written_before_an_epoch_change_read_with_their_epoch() {
         )
         .unwrap();
     store.submit(&lease, Input::events(vec![]));
-    let read = store.stream_seqs(&lease, &rooms);
+    let read = store.stream_seqs(&lease, &rooms, None);
     assert_eq!(read.epoch.as_deref(), Some("e1"));
     assert_eq!(read.rows.get("room-a"), Some(&(7, 1000)));
-    let baseline = store.walk_baseline(&lease, &rooms, 0, 1000).unwrap();
-    assert_eq!(baseline["room-a"].segments, vec![(900, 1000)]);
-    assert_eq!(baseline["room-a"].ids, vec!["seed-0".to_owned()]);
+    let segments = store.walk_segments(&lease, &rooms).unwrap();
+    assert_eq!(segments["room-a"], vec![(900, 1000)]);
+    // Resume points ride the same drained read.
+    let read = store.stream_seqs(&lease, &rooms, Some(1000));
+    assert!(read.vouched);
+    assert_eq!(read.resume.get("room-a"), Some(&1000));
+    assert!(store
+        .stream_seqs(&lease, &rooms, Some(900))
+        .resume
+        .is_empty());
     // A row ahead of the snapshot is deleted on request.
     assert!(store.clear_stream_rows(&lease, rooms.clone()));
-    assert!(store.stream_seqs(&lease, &rooms).rows.is_empty());
+    assert!(store.stream_seqs(&lease, &rooms, None).rows.is_empty());
     // A pending loss: nothing is vouched for, so nothing can be skipped.
     mark_lossy(&store, &lease);
-    assert!(store.stream_seqs(&lease, &rooms).rows.is_empty());
-    assert!(store.walk_baseline(&lease, &rooms, 0, 1000).is_none());
+    let read = store.stream_seqs(&lease, &rooms, Some(2000));
+    assert!(!read.vouched && read.rows.is_empty() && read.resume.is_empty());
+    assert!(store.walk_segments(&lease, &rooms).is_none());
+    assert!(store.fresh_ids(&lease, &["seed-0".to_owned()], 0).is_none());
     finish(&store);
 }
 
@@ -609,4 +618,84 @@ fn stream_state_persists_across_restarts_and_only_known_keys() {
     store.forget(RELAY, ACCOUNT);
     let lease = store.lease(RELAY, ACCOUNT).unwrap();
     assert_eq!(store.stream_state(&lease, "stream_backoff"), None);
+}
+
+#[test]
+fn rows_stored_at_or_after_the_connection_start_are_fresh_whatever_stored_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let lease = store.lease(RELAY, ACCOUNT).unwrap();
+    let rooms = vec!["room-a".to_owned()];
+    // Stored before the column existed: no stored_at, so stored before.
+    seed(&store, &lease, &rooms, &[], None);
+    {
+        let conn = writer::open(&store.path_of(&lease)).unwrap();
+        conn.execute("UPDATE events SET stored_at = NULL", [])
+            .unwrap();
+        conn.execute_batch(
+            "INSERT INTO events(id, kind, pubkey, created_at, room, raw, stored_at)
+             VALUES ('old', 9, 'p1', 20, 'room-a', '{}', 1000),
+                    ('edge', 9, 'p1', 21, 'room-a', '{}', 5000)",
+        )
+        .unwrap();
+    }
+    let start = 5000;
+    let ids: Vec<String> = ["seed-0", "old", "edge", "absent"]
+        .iter()
+        .map(|id| (*id).to_owned())
+        .collect();
+    let fresh = store.fresh_ids(&lease, &ids, start).unwrap();
+    assert_eq!(fresh, vec!["edge".to_owned(), "absent".to_owned()]);
+    // A row the writer stores now (any path: repair, catch-up, live frame).
+    let event = json!({"id": "now", "kind": 9, "pubkey": "p1",
+        "created_at": 30, "tags": [["h", "room-a"]], "content": "", "sig": ""});
+    let before = writer::now_ms();
+    store.submit(&lease, Input::events(vec![event]));
+    let fresh = store
+        .fresh_ids(&lease, &["now".to_owned()], before)
+        .unwrap();
+    assert_eq!(fresh, vec!["now".to_owned()]);
+    assert!(store
+        .fresh_ids(&lease, &["now".to_owned()], writer::now_ms() + 60_000)
+        .unwrap()
+        .is_empty());
+    finish(&store);
+}
+
+#[test]
+fn a_file_from_before_stored_at_gains_the_column() {
+    let dir = tempfile::tempdir().unwrap();
+    let store = MessageStore::new(dir.path().to_path_buf());
+    let lease = store.lease(RELAY, ACCOUNT).unwrap();
+    let path = store.path_of(&lease);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    {
+        let conn = rusqlite::Connection::open(&path).unwrap();
+        conn.execute_batch(
+            "CREATE TABLE events(
+               id TEXT PRIMARY KEY, kind INTEGER NOT NULL, pubkey TEXT NOT NULL,
+               created_at INTEGER NOT NULL, room TEXT, root TEXT,
+               broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL);
+             INSERT INTO events(id, kind, pubkey, created_at, room, raw)
+               VALUES ('kept', 9, 'p1', 10, 'room-a', '{}');
+             PRAGMA user_version = 1;",
+        )
+        .unwrap();
+    }
+    let conn = writer::open(&path).unwrap();
+    let at: Option<i64> = conn
+        .query_row(
+            "SELECT stored_at FROM events WHERE id = 'kept'",
+            [],
+            |row| row.get(0),
+        )
+        .unwrap();
+    assert_eq!(at, None);
+    drop(conn);
+    // Opening again leaves it as it is.
+    writer::open(&path).unwrap();
+    assert!(store
+        .fresh_ids(&lease, &["kept".to_owned()], 0)
+        .unwrap()
+        .is_empty());
 }
