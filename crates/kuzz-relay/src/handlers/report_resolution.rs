@@ -654,15 +654,15 @@ async fn drive_enforcement(
                         ))
                     })?;
                     // After the fence released its connection, and only when the
-                    // member was still removed under it. Stable ids make a retry
-                    // a no-op.
+                    // member was still removed under it. Deduped by the action id,
+                    // so a retry is a no-op.
                     if outcome == crate::handlers::side_effects::KickOutcome::Enforced {
                         crate::handlers::kick_notices::send_report_kick_notices(
                             tenant,
                             state,
                             ch,
                             target,
-                            &rec.actor_pubkey,
+                            action_id,
                             rec.created_at,
                         )
                         .await

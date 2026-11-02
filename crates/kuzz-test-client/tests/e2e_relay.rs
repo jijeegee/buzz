@@ -3670,10 +3670,13 @@ async fn test_dm_participant_switches_goals() {
     bob_ws.disconnect().await.expect("disconnect bob");
 }
 
-/// A join publishes the member-added notice (kind:44100) before the room's
-/// `member_joined` system message, on the joiner's own socket, and the notice
-/// carries a nonce so a same-second leave-and-rejoin is not a deduped repeat.
-/// The system message reaches the relay-local subscriber directly.
+/// A join stores the room's 39002 member list first, then publishes the
+/// member-added notice (kind:44100), then the room's `member_joined` system
+/// message, on the joiner's own socket. Installed desktops refresh once on the
+/// 44100 by reading `{"kinds":[39002],"#p":[me]}`, so that read, made the
+/// moment the 44100 arrives, must already list the room. The notice carries a
+/// nonce so a same-second leave-and-rejoin is not a deduped repeat. The system
+/// message reaches the relay-local subscriber directly.
 #[tokio::test]
 #[ignore]
 async fn test_join_sends_member_added_before_member_joined() {
@@ -3736,6 +3739,55 @@ async fn test_join_sends_member_added_before_member_joined() {
                     "member-added notice must carry a nonce tag"
                 );
                 order.push("member_added");
+                // What an installed desktop does on this notice, at once.
+                let lists = sub_id("discovery-read");
+                ws.subscribe(
+                    &lists,
+                    vec![Filter::new().kind(Kind::Custom(39002)).custom_tags(
+                        SingleLetterTag::lowercase(Alphabet::P),
+                        [joiner_hex.as_str()],
+                    )],
+                )
+                .await
+                .expect("read 39002 lists");
+                // Read by hand: a `member_joined` frame may arrive meanwhile.
+                let mut listed = false;
+                loop {
+                    match ws
+                        .recv_event(Duration::from_secs(5))
+                        .await
+                        .expect("recv 39002")
+                    {
+                        RelayMessage::Event {
+                            subscription_id,
+                            event,
+                        } if subscription_id == lists => {
+                            listed |= event.tags.iter().any(|t| {
+                                let t = t.as_slice();
+                                t.len() >= 2 && t[0] == "d" && t[1] == channel_id
+                            });
+                        }
+                        RelayMessage::Eose { subscription_id } if subscription_id == lists => {
+                            break;
+                        }
+                        RelayMessage::Event { event, .. }
+                            if event.kind == Kind::Custom(40099)
+                                && serde_json::from_str::<serde_json::Value>(&event.content)
+                                    .unwrap_or_default()["type"]
+                                    == "member_joined" =>
+                        {
+                            order.push("member_joined");
+                        }
+                        _ => {}
+                    }
+                }
+                assert!(
+                    listed,
+                    "the 39002 listing the joiner must exist when the 44100 arrives"
+                );
+                ws.close_subscription(&lists)
+                    .await
+                    .expect("close 39002 read");
             } else if event.kind == Kind::Custom(40099)
                 && content["type"] == "member_joined"
                 && content["target"] == joiner_hex

@@ -446,6 +446,66 @@ pub async fn insert_event(
     }
 }
 
+/// Insert a relay-signed notice once per admin action.
+///
+/// `event` must carry the tag `["action", action_id]`. Under the channel lock
+/// (when `channel_id` is set; the insert trigger takes the same key) and an
+/// action-scoped lock, an existing event of the same kind and author with that
+/// tag makes this a no-op. So retries of one action never post a second
+/// notice, whatever `created_at` they carry, and the notice can always be
+/// stamped with the current time. `not_before` is the action's creation time;
+/// a notice is never older than its action, which prunes older partitions.
+///
+/// Returns the stored event when it was inserted, `None` when one existed.
+pub async fn insert_event_once_per_action(
+    pool: &PgPool,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    action_id: &str,
+    not_before: DateTime<Utc>,
+) -> Result<Option<StoredEvent>> {
+    let connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::EventWrite,
+    )
+    .await?;
+    let mut tx = Transaction::begin(connection, None).await?;
+    let community = community_id.as_uuid();
+    if let Some(channel_id) = channel_id {
+        sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+            .bind(format!("kuzz_channel_membership:{community}:{channel_id}"))
+            .execute(&mut *tx)
+            .await?;
+    }
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("kuzz_action_notice:{community}:{action_id}"))
+        .execute(&mut *tx)
+        .await?;
+    let exists: bool = sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM events \
+         WHERE community_id = $1 AND kind = $2 AND pubkey = $3 \
+           AND channel_id IS NOT DISTINCT FROM $4 \
+           AND created_at >= $5 - interval '1 day' \
+           AND tags @> jsonb_build_array(jsonb_build_array('action', $6::text)))",
+    )
+    .bind(community)
+    .bind(i32::from(event.kind.as_u16()))
+    .bind(event.pubkey.to_bytes().as_slice())
+    .bind(channel_id)
+    .bind(not_before)
+    .bind(action_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    if exists {
+        return Ok(None);
+    }
+    let (stored, inserted) =
+        insert_event_in_transaction(&mut tx, community_id, event, channel_id).await?;
+    tx.commit().await?;
+    Ok(inserted.then_some(stored))
+}
+
 /// Insert a Nostr event in a caller-owned PostgreSQL transaction.
 ///
 /// This is the transaction-composition seam for callers that must keep the
@@ -2156,6 +2216,35 @@ pub async fn insert_channel_head_checked(
 }
 
 impl Db {
+    /// See [`insert_event_once_per_action`]. Mentions are indexed for a new row.
+    #[datastore_span(name = "insert_event_once_per_action", system = "postgresql")]
+    pub async fn insert_event_once_per_action(
+        &self,
+        community_id: CommunityId,
+        event: &nostr::Event,
+        channel_id: Option<Uuid>,
+        action_id: &str,
+        not_before: DateTime<Utc>,
+    ) -> Result<Option<StoredEvent>> {
+        let stored = crate::event::insert_event_once_per_action(
+            &self.pool,
+            community_id,
+            event,
+            channel_id,
+            action_id,
+            not_before,
+        )
+        .await?;
+        if stored.is_some() {
+            if let Err(e) =
+                crate::insert_mentions(&self.pool, community_id, event, channel_id).await
+            {
+                tracing::warn!(event_id = %event.id, "Failed to insert mentions: {e}");
+            }
+        }
+        Ok(stored)
+    }
+
     /// Inserts an event. Returns `(StoredEvent, was_inserted)` — `false` on duplicate.
     #[datastore_span(name = "insert_event", system = "postgresql")]
     pub async fn insert_event(

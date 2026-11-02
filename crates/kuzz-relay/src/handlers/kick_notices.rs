@@ -9,9 +9,15 @@
 //! before the fence gets nothing. A re-add that commits after the fence sends
 //! its own later 44100 and `member_joined`, so the room's history stays truthful.
 //!
-//! Both events use a stable `created_at` from the action row, so a driver retry
-//! (`report_resolution`, "worker will retry") produces the same event ids. The
-//! store dedupes them and a duplicate is never fanned out again.
+//! Both notices are stamped with the current time and carry the tag
+//! `["action", <action id>]`. The store inserts each one only when no notice of
+//! that kind with that tag exists ([`kuzz_db::Db::insert_event_once_per_action`]),
+//! so a driver retry (`report_resolution`, "worker will retry"), a recovery
+//! re-drive after a crash before finalize, or two drivers at once never post a
+//! second notice, however late they run. Stamping "now" also keeps a late
+//! notice inside the `since` of subscriptions opened after the action.
+//!
+//! Like the outbox `admin_kick` line, neither notice names the operator.
 //!
 //! [`apply_kick_live_side_effects`]: super::side_effects::apply_kick_live_side_effects
 //! [`KickOutcome::Enforced`]: super::side_effects::KickOutcome::Enforced
@@ -21,31 +27,24 @@ use std::sync::Arc;
 use chrono::{DateTime, Utc};
 use kuzz_core::kind::KIND_MEMBER_REMOVED_NOTIFICATION;
 use kuzz_core::tenant::TenantContext;
+use kuzz_pubsub::EventTopic;
+use nostr::{EventBuilder, Kind, Tag};
 use uuid::Uuid;
 
 use super::side_effects::{
-    emit_membership_notification_stamped, emit_system_message, NotificationStamp,
+    emit_membership_notification_stamped, publish_relay_event, NotificationStamp,
 };
 use crate::state::AppState;
 
-/// Oldest `created_at` the notices may carry, in seconds before now.
-///
-/// Channel rows must commit within the store's `created_at` floor (960 s, the
-/// replica fence). A recovery that runs later than this uses the current time:
-/// that keeps the retry able to commit, at the cost that a second recovery run
-/// after an already-committed late one could post a second line.
-const MAX_NOTICE_AGE_SECS: i64 = 900;
+/// Tag name carrying the admin action id on its notices.
+pub(crate) const ACTION_TAG: &str = "action";
 
-/// The `created_at` both notices carry for an action created at `action_created_at`.
-pub(crate) fn notice_timestamp(
-    action_created_at: DateTime<Utc>,
-    now: DateTime<Utc>,
-) -> DateTime<Utc> {
-    if now - action_created_at > chrono::Duration::seconds(MAX_NOTICE_AGE_SECS) {
-        now
-    } else {
-        action_created_at
-    }
+/// The `member_removed` line for a report kick. No `actor`, like `admin_kick`.
+fn member_removed_content(target: &[u8]) -> serde_json::Value {
+    serde_json::json!({
+        "type": "member_removed",
+        "target": hex::encode(target),
+    })
 }
 
 /// Publish the removal notices for an enforced report kick. Propagates an
@@ -55,30 +54,45 @@ pub(crate) async fn send_report_kick_notices(
     state: &Arc<AppState>,
     channel_id: Uuid,
     target: &[u8],
-    actor: &[u8],
+    action_id: Uuid,
     action_created_at: DateTime<Utc>,
 ) -> anyhow::Result<()> {
-    let at = notice_timestamp(action_created_at, Utc::now());
-    emit_system_message(
-        tenant,
-        state,
-        channel_id,
-        serde_json::json!({
-            "type": "member_removed",
-            "actor": hex::encode(actor),
-            "target": hex::encode(target),
-        }),
-        at,
+    let action = action_id.to_string();
+    let event = EventBuilder::new(
+        Kind::Custom(40099),
+        member_removed_content(target).to_string(),
     )
-    .await?;
+    .tags([
+        Tag::parse(["h", &channel_id.to_string()])?,
+        Tag::parse([ACTION_TAG, &action])?,
+    ])
+    .sign_with_keys(&state.relay_keypair)
+    .map_err(|e| anyhow::anyhow!("failed to sign member_removed line: {e}"))?;
+    let stored = state
+        .db
+        .insert_event_once_per_action(
+            tenant.community(),
+            &event,
+            Some(channel_id),
+            &action,
+            action_created_at,
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("member_removed line insert failed: {e}"))?;
+    if let Some(stored) = stored {
+        publish_relay_event(tenant, state, EventTopic::Channel(channel_id), &stored).await;
+    }
     emit_membership_notification_stamped(
         tenant,
         state,
         channel_id,
         target,
-        actor,
+        &[],
         KIND_MEMBER_REMOVED_NOTIFICATION,
-        NotificationStamp::At(at),
+        NotificationStamp::ForAction {
+            action_id: action,
+            action_created_at,
+        },
     )
     .await
 }
@@ -88,11 +102,10 @@ mod tests {
     use super::*;
 
     #[test]
-    fn notice_timestamp_is_the_action_time_inside_the_floor() {
-        let now = Utc::now();
-        let recent = now - chrono::Duration::seconds(MAX_NOTICE_AGE_SECS);
-        assert_eq!(notice_timestamp(recent, now), recent);
-        let stale = now - chrono::Duration::seconds(MAX_NOTICE_AGE_SECS + 1);
-        assert_eq!(notice_timestamp(stale, now), now);
+    fn member_removed_line_does_not_name_the_operator() {
+        let content = member_removed_content(&[0x31; 32]);
+        assert_eq!(content["type"], "member_removed");
+        assert_eq!(content["target"], "31".repeat(32));
+        assert!(content.get("actor").is_none());
     }
 }

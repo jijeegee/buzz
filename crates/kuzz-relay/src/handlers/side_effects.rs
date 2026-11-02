@@ -1314,16 +1314,22 @@ pub async fn emit_membership_notification(
 }
 
 /// How a membership notification gets its event id.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) enum NotificationStamp {
     /// `created_at` = now; a same-second repeat is a duplicate (not re-sent).
     Now,
     /// `created_at` = now plus a random `nonce` tag, so a same-second rejoin
     /// after a leave is a new event and is delivered.
     NowWithNonce,
-    /// A caller-supplied stable `created_at`: retries of one action produce the
-    /// same id, which the store dedupes, so nothing is sent twice.
-    At(chrono::DateTime<chrono::Utc>),
+    /// `created_at` = now plus an `["action", <id>]` tag; the store inserts it
+    /// only when no notice of this kind carries that tag, so retries of one
+    /// admin action never send a second one, however late they run.
+    ForAction {
+        /// The admin action id.
+        action_id: String,
+        /// When the action was created (no notice is older).
+        action_created_at: chrono::DateTime<chrono::Utc>,
+    },
 }
 
 /// [`emit_membership_notification`] with an explicit [`NotificationStamp`].
@@ -1355,41 +1361,65 @@ pub(crate) async fn emit_membership_notification_stamped(
         }
     };
 
-    let content = serde_json::json!({
+    // An empty actor (report kicks) is left out, like the `admin_kick` line.
+    let mut content = serde_json::json!({
         "type": event_type,
         "channel_id": channel_id_str,
-        "actor": actor_hex,
-    })
-    .to_string();
+    });
+    if !actor_pubkey.is_empty() {
+        content["actor"] = serde_json::Value::String(actor_hex);
+    }
+    let content = content.to_string();
 
     let mut tags = vec![p_tag, h_tag];
-    let mut builder_created_at = None;
+    let mut once_per_action = None;
     match stamp {
         NotificationStamp::Now => {}
         NotificationStamp::NowWithNonce => tags.push(
             Tag::parse(["nonce", &Uuid::new_v4().to_string()])
                 .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
         ),
-        NotificationStamp::At(at) => {
-            builder_created_at = Some(nostr::Timestamp::from(at.timestamp().max(0) as u64));
+        NotificationStamp::ForAction {
+            action_id,
+            action_created_at,
+        } => {
+            tags.push(
+                Tag::parse([super::kick_notices::ACTION_TAG, &action_id])
+                    .map_err(|e| anyhow::anyhow!("failed to build action tag: {e}"))?,
+            );
+            once_per_action = Some((action_id, action_created_at));
         }
     }
-    let mut builder = EventBuilder::new(Kind::Custom(notification_kind as u16), content).tags(tags);
-    if let Some(at) = builder_created_at {
-        builder = builder.custom_created_at(at);
-    }
-    let event = builder
+    let event = EventBuilder::new(Kind::Custom(notification_kind as u16), content)
+        .tags(tags)
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign membership notification: {e}"))?;
 
     // Store with channel_id = None → globally scoped, reachable by global subscribers.
-    let (stored, was_inserted) = state
-        .db
-        .insert_event(tenant.community(), &event, None)
-        .await?;
-    if !was_inserted {
+    let stored = match once_per_action {
+        Some((action_id, action_created_at)) => {
+            state
+                .db
+                .insert_event_once_per_action(
+                    tenant.community(),
+                    &event,
+                    None,
+                    &action_id,
+                    action_created_at,
+                )
+                .await?
+        }
+        None => {
+            let (stored, was_inserted) = state
+                .db
+                .insert_event(tenant.community(), &event, None)
+                .await?;
+            was_inserted.then_some(stored)
+        }
+    };
+    let Some(stored) = stored else {
         return Ok(());
-    }
+    };
 
     // Fan-out only — skip search indexing and workflow evaluation. Publish through
     // Redis before local fan-out so agents connected to other relay pods receive
@@ -1934,10 +1964,18 @@ async fn publish_member_added(
 ) -> anyhow::Result<()> {
     state.invalidate_membership(tenant, channel_id, target);
 
-    // The added notice goes first and does not depend on the later steps: the
-    // new member learns of the room before its first room event, and a failed
-    // system message or discovery update cannot hold it back. The nonce makes
-    // a same-second leave-and-rejoin a new event instead of a deduped repeat.
+    // Discovery first: installed desktops refresh their room list once on the
+    // 44100 and read it from the 39002 listing them, so the 39002 must already
+    // be stored when the 44100 goes out. A discovery failure is logged only and
+    // cannot hold the 44100 back.
+    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
+        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
+    }
+
+    // Then the added notice, before the room's `member_joined` line: the new
+    // member learns of the room before its first room event, and a failed
+    // system message cannot hold it back. The nonce makes a same-second
+    // leave-and-rejoin a new event instead of a deduped repeat.
     if let Err(e) = emit_membership_notification_stamped(
         tenant,
         state,
@@ -1964,10 +2002,6 @@ async fn publish_member_added(
         chrono::Utc::now(),
     )
     .await?;
-
-    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
-        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
-    }
 
     if let Err(e) = state
         .db
