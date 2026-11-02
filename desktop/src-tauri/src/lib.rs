@@ -798,6 +798,7 @@ pub fn run() {
             message_store_clock_trusted,
             message_store_thread_head,
             message_store_thread_paint,
+            message_store_thread_root,
             message_store_head_sent,
             message_store_record_heads,
             message_store_snapshot_read,
@@ -821,6 +822,7 @@ pub fn run() {
             remove_reaction,
             get_event,
             get_events,
+            get_thread_root,
             get_quote_preview,
             show_native_notification,
             #[cfg(target_os = "macos")]

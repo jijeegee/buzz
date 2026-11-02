@@ -1,5 +1,6 @@
 //! Opening a thread from the store: its newest replies by the relay's
-//! thread-window rules, and whether that window is certain.
+//! thread-window rules, and whether that window is certain; and its root by
+//! id (docs/message-sync.md#opening-a-thread-from-its-root-id).
 //! Rules: docs/message-sync.md#opening-a-thread-from-the-store; shared cases:
 //! test-fixtures/message-store-thread-head.json.
 
@@ -107,4 +108,33 @@ pub(crate) fn thread_head(
         } && super::coverage::is_current(conn)?;
     head.next_cursor = oldest.filter(|_| head.has_more);
     Ok(head)
+}
+
+/// `root` of `room` as the store holds it, and whether a stored deletion
+/// removes it: a removal (9005), or a 5 by the root's author. A removal counts
+/// even when the root row is not stored; an author's 5 cannot be judged
+/// without the root, so then it does not. `None` when neither the root nor a
+/// removal of it is stored.
+pub(crate) fn thread_root(
+    conn: &Connection,
+    room: &str,
+    root: &str,
+) -> rusqlite::Result<Option<(Option<Value>, bool)>> {
+    let row: Option<(String, String)> = conn
+        .query_row(
+            "SELECT pubkey, raw FROM events WHERE id = ?1 AND room = ?2",
+            params![root, room],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .optional()?;
+    if let Some((author, raw)) = row {
+        let deleted = is_deleted(conn, root, &author)?;
+        return Ok(Some((parse(raw), deleted)));
+    }
+    let removed = conn
+        .prepare_cached(
+            "SELECT 1 FROM targets t JOIN events e ON e.id = t.id              WHERE t.target = ?1 AND e.kind = 9005 AND e.room = ?2 LIMIT 1",
+        )?
+        .exists(params![root, room])?;
+    Ok(removed.then_some((None, true)))
 }

@@ -44,6 +44,62 @@ pub async fn get_event(event_id: String, state: State<'_, AppState>) -> Result<S
     serde_json::to_string(event).map_err(|error| format!("serialize event: {error}"))
 }
 
+/// The one `/query` for a thread's root
+/// (docs/message-sync.md#opening-a-thread-from-its-root-id): the root by id,
+/// and a deletion of it (an author's 5 or a removal 9005) in its room. Both
+/// read the writer, so a root just sent is not missed on a lagging replica.
+fn thread_root_filters(channel_id: &str, root_id: &str) -> [serde_json::Value; 2] {
+    [
+        serde_json::json!({
+            "ids": [root_id],
+            "kinds": crate::commands::channel_window::TIMELINE_KINDS,
+            "limit": 1,
+            "consistency": "strong",
+        }),
+        serde_json::json!({
+            "kinds": [5, 9005],
+            "#h": [channel_id],
+            "#e": [root_id],
+            "limit": 20,
+            "consistency": "strong",
+        }),
+    ]
+}
+
+/// The relay's answer for a thread's root: the root and any deletion of it,
+/// possibly empty. Asked as `account` on `relay_url`, the scope the thread
+/// was opened in; refused once they are no longer the active ones. An error
+/// means the request failed, never that the root is gone.
+#[tauri::command]
+pub async fn get_thread_root(
+    channel_id: String,
+    root_id: String,
+    account: String,
+    relay_url: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<serde_json::Value>, String> {
+    let credential = state.user_credential()?;
+    let relay = crate::relay::relay_api_base_url_with_override(&state);
+    let current = credential.public_key().to_hex();
+    if !crate::commands::message_store_coverage::same_scope(&account, &relay_url, &current, &relay)
+    {
+        return Err("thread root asked for another account or server".to_string());
+    }
+    let events = crate::relay::query_relay_at_as(
+        &state,
+        &relay,
+        &credential,
+        &thread_root_filters(&channel_id, &root_id),
+    )
+    .await?;
+    events
+        .into_iter()
+        .map(|event| {
+            serde_json::to_value(event).map_err(|error| format!("serialize event: {error}"))
+        })
+        .collect()
+}
+
 /// Relay-signed excerpt of a quoted message the reader joined too late to
 /// fetch (the room hides messages sent before they joined).
 const KIND_QUOTE_PREVIEW: u16 = 39008;
@@ -143,6 +199,23 @@ mod tests {
         assert_eq!(filter["#h"], serde_json::json!(["chan"]));
         assert_eq!(filter["ids"], serde_json::json!(["quoted"]));
         assert_eq!(filter["#e"], serde_json::json!(["quoting"]));
+    }
+
+    #[test]
+    fn thread_root_filters_ask_root_and_its_deletions_from_the_writer() {
+        let [root, deletions] = thread_root_filters("room", "root");
+        assert_eq!(root["ids"], serde_json::json!(["root"]));
+        assert_eq!(
+            root["kinds"],
+            serde_json::json!(crate::commands::channel_window::TIMELINE_KINDS)
+        );
+        assert!(root.get("#h").is_none());
+        assert_eq!(deletions["kinds"], serde_json::json!([5, 9005]));
+        assert_eq!(deletions["#h"], serde_json::json!(["room"]));
+        assert_eq!(deletions["#e"], serde_json::json!(["root"]));
+        for filter in [&root, &deletions] {
+            assert_eq!(filter["consistency"], serde_json::json!("strong"));
+        }
     }
 
     #[test]

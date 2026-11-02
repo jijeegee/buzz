@@ -35,7 +35,7 @@ use sha2::{Digest, Sha256};
 #[cfg(test)]
 pub(crate) use classify::{classify, Filed};
 pub(crate) use head::HeadSpan;
-pub(crate) use paint::{paint_room_head, paint_thread_head};
+pub(crate) use paint::{paint_room_head, paint_thread_head, paint_thread_root};
 pub(crate) use snapshot::{read_snapshot, write_snapshot};
 use writer::{Input, Writer};
 
