@@ -201,7 +201,7 @@ async fn challenge(State(s): State<AppState>, body: Bytes) -> Response {
         .into_response()
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone, Copy)]
 struct EnrollTranscript<'a> {
     v: u8,
     audience: &'a str,
@@ -212,6 +212,17 @@ struct EnrollTranscript<'a> {
     endpoint: &'a str,
     endpoint_epoch: i64,
     expires_at: i64,
+}
+/// The bytes whose SHA-256 is the Keystore attestation challenge for a
+/// `kuzz-android` enrollment: the enrollment transcript with `key_id` set to
+/// the empty string. A Keystore fixes the challenge when it generates the key,
+/// before the public key (and so `key_id`) exists. The request still carries
+/// the real `key_id`, which the verifier checks against the attested leaf.
+fn android_challenge_transcript(t: &EnrollTranscript<'_>) -> String {
+    let unkeyed = EnrollTranscript { key_id: "", ..*t };
+    // Serializing strings, a UUID and integers cannot fail; an empty string
+    // would only hash to a challenge no key carries (fail closed).
+    transcript("kuzz.push.enroll.v1", &unkeyed).unwrap_or_default()
 }
 async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
     let r: InstallationEnrollRequest = match crate::strict_json::from_slice(&body) {
@@ -276,7 +287,12 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         },
         Some(android) => match android
             .attestation
-            .verify_attestation(&r.attestation, &r.key_id, signed.as_bytes(), now)
+            .verify_attestation(
+                &r.attestation,
+                &r.key_id,
+                android_challenge_transcript(&t).as_bytes(),
+                now,
+            )
             .await
         {
             Ok(value) => VerifiedKey {
@@ -1182,6 +1198,28 @@ mod transcript_vector_tests {
             expires_at: 1_752_624_000,
         };
         assert_vector("enroll", &transcript("kuzz.push.enroll.v1", &t).unwrap());
+    }
+
+    /// The kuzz-android Keystore challenge input: the handler's own
+    /// `android_challenge_transcript` blanks the real request `key_id`.
+    #[test]
+    fn android_enroll_challenge_vector() {
+        let endpoint = hex::encode("dGVzdA:APA91bH-synthetic_token");
+        let t = EnrollTranscript {
+            v: 1,
+            audience: "https://push.buzz.xyz/v1/installations",
+            challenge_id: CHALLENGE_ID,
+            challenge: CHALLENGE,
+            key_id: KEY_ID,
+            app_profile: AppProfile::KuzzAndroid,
+            endpoint: &endpoint,
+            endpoint_epoch: 1,
+            expires_at: 1_752_624_000,
+        };
+        assert_vector(
+            "android_enroll_challenge",
+            &android_challenge_transcript(&t),
+        );
     }
 
     #[test]

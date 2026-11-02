@@ -1,8 +1,9 @@
 //! Android Key Attestation for `kuzz-android` installations.
 //!
 //! Enrollment carries the certificate chain of a fresh Keystore key whose
-//! attestation challenge is SHA-256 of the enrollment transcript. The gateway
-//! accepts the key only when:
+//! attestation challenge is SHA-256 of the enrollment transcript with an
+//! empty `key_id` (the challenge is fixed when the key is generated, before
+//! its public key exists). The gateway accepts the key only when:
 //! - every certificate is signed by the next and the chain ends in a
 //!   configured Google hardware attestation root (the software root is
 //!   refused);
@@ -13,7 +14,8 @@
 //! - the key was generated inside the secure hardware (origin GENERATED);
 //! - the attested application is the configured package, signed only by
 //!   configured certificate digests;
-//! - the key is EC P-256.
+//! - the key is EC P-256 and the request's `key_id` is SHA-256 of the leaf
+//!   SubjectPublicKeyInfo.
 //!
 //! Later signed mutations are ECDSA P-256 SHA-256 signatures by that key over
 //! the exact transcript bytes.
@@ -304,14 +306,16 @@ impl AndroidAttestVerifier {
         })
     }
 
-    /// Verify an enrollment attestation for `transcript`, returning the key to
-    /// store. `attestation` is standard base64 of the concatenated DER chain,
-    /// leaf first; `key_id` is standard base64 of SHA-256 of the leaf SPKI.
+    /// Verify an enrollment attestation whose challenge is SHA-256 of
+    /// `challenge_transcript`, returning the key to store. `attestation` is
+    /// standard base64 of the concatenated DER chain, leaf first; `key_id` is
+    /// standard base64 of SHA-256 of the leaf SPKI and is checked against the
+    /// leaf, since it cannot be inside the challenge.
     pub async fn verify_attestation(
         &self,
         attestation: &str,
         key_id: &str,
-        transcript: &[u8],
+        challenge_transcript: &[u8],
         now: i64,
     ) -> Result<VerifiedAndroidKey, AndroidAttestError> {
         if attestation.len() > MAX_APP_ATTESTATION_BYTES.div_ceil(3) * 4 {
@@ -335,7 +339,7 @@ impl AndroidAttestVerifier {
         {
             return Err(AndroidAttestError::SecurityLevel);
         }
-        let expected: [u8; 32] = Sha256::digest(transcript).into();
+        let expected: [u8; 32] = Sha256::digest(challenge_transcript).into();
         if key.challenge != expected {
             return Err(AndroidAttestError::Challenge);
         }

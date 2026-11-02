@@ -117,29 +117,46 @@ async fn challenge(app: &Router) -> (uuid::Uuid, String) {
     )
 }
 
-/// Build an enrollment whose attestation challenge is SHA-256 of its exact
-/// transcript, the way the Android app does.
+/// SHA-256 of the enrollment transcript for `key_id`, built independently of
+/// the handler (field order and domain spelled out here).
+fn enroll_digest(challenge: &(uuid::Uuid, String), key_id: &str, endpoint: &str) -> Vec<u8> {
+    let t = EnrollTranscript {
+        v: WIRE_VERSION,
+        audience: ENROLL_AUDIENCE,
+        challenge_id: challenge.0,
+        challenge: &challenge.1,
+        key_id,
+        app_profile: AppProfile::KuzzAndroid,
+        endpoint,
+        endpoint_epoch: 1,
+        expires_at: NOW + 3_600,
+    };
+    Sha256::digest(transcript("kuzz.push.enroll.v1", &t).unwrap().as_bytes()).to_vec()
+}
+
+/// Build an enrollment the way the Android app does: the Keystore challenge
+/// is fixed first, over the transcript with an empty `key_id`, then the key
+/// is generated and the request carries its real `key_id`.
 fn enrollment(
     root: &Root,
     leaf_key: KeyPair,
     challenge: (uuid::Uuid, String),
     endpoint: &str,
 ) -> (InstallationEnrollRequest, KeyPair) {
+    let attested_challenge = enroll_digest(&challenge, "", endpoint);
+    enrollment_with_challenge(root, leaf_key, challenge, endpoint, attested_challenge)
+}
+
+fn enrollment_with_challenge(
+    root: &Root,
+    leaf_key: KeyPair,
+    challenge: (uuid::Uuid, String),
+    endpoint: &str,
+    attested_challenge: Vec<u8>,
+) -> (InstallationEnrollRequest, KeyPair) {
     let key_id = key_id_of(&leaf_key);
-    let t = EnrollTranscript {
-        v: WIRE_VERSION,
-        audience: ENROLL_AUDIENCE,
-        challenge_id: challenge.0,
-        challenge: &challenge.1,
-        key_id: &key_id,
-        app_profile: AppProfile::KuzzAndroid,
-        endpoint,
-        endpoint_epoch: 1,
-        expires_at: NOW + 3_600,
-    };
-    let signed = transcript("kuzz.push.enroll.v1", &t).unwrap();
     let spec = Spec {
-        challenge: Sha256::digest(signed.as_bytes()).to_vec(),
+        challenge: attested_challenge,
         ..Spec::default()
     };
     let chain = chain_for_key(root, &spec, leaf_key);
@@ -314,4 +331,51 @@ async fn android_enrollment_refuses_bad_attestation_tokens_and_disabled_profile(
     );
     let (status, _) = post(&app, "/v1/installations", &request).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
+}
+
+/// A real Keystore fixes the attestation challenge when it generates the key,
+/// so the challenge cannot contain the key's own `key_id`. The gateway accepts
+/// a challenge computed before the key existed (over `key_id` = ""), refuses
+/// the full-transcript form no device can produce, and still binds the
+/// request's `key_id` to the attested leaf.
+#[tokio::test]
+async fn android_challenge_is_fixed_before_the_key_exists() {
+    let root = root(HARDWARE_ROOT_CN);
+    let (state, _) = state(&root, true);
+    let (app, _) = router(state);
+    let endpoint = hex::encode(FCM_TOKEN);
+
+    // Challenge first, with no key in existence yet; then the key.
+    let issued = challenge(&app).await;
+    let attested_challenge = enroll_digest(&issued, "", &endpoint);
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let (request, _) =
+        enrollment_with_challenge(&root, leaf_key, issued, &endpoint, attested_challenge);
+    let (status, body) = post(&app, "/v1/installations", &request).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
+
+    // The old form (challenge over the transcript with the real key_id) is
+    // refused: accepting two forms would only widen what the gateway trusts.
+    let issued = challenge(&app).await;
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let full = enroll_digest(&issued, &key_id_of(&leaf_key), &endpoint);
+    let (request, _) = enrollment_with_challenge(&root, leaf_key, issued, &endpoint, full);
+    let (status, _) = post(&app, "/v1/installations", &request).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+
+    // A key_id that is not the attested leaf's is refused, though it is not
+    // part of the challenge. (Another token: the first one is enrolled.)
+    let endpoint = hex::encode(format!("{FCM_TOKEN}-2"));
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let (mut request, _) = enrollment(&root, leaf_key, challenge(&app).await, &endpoint);
+    let other = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    request.key_id = key_id_of(&other);
+    let (status, _) = post(&app, "/v1/installations", &request).await;
+    assert_eq!(status, StatusCode::UNAUTHORIZED);
+    // The same kind of request with its own key_id enrolls: the refusal above
+    // was the key_id.
+    let leaf_key = KeyPair::generate_for(&PKCS_ECDSA_P256_SHA256).unwrap();
+    let (request, _) = enrollment(&root, leaf_key, challenge(&app).await, &endpoint);
+    let (status, body) = post(&app, "/v1/installations", &request).await;
+    assert_eq!(status, StatusCode::CREATED, "{body}");
 }

@@ -286,8 +286,14 @@ data-only wake. It uses the same routes, request objects and transcripts as
 - Enrollment `attestation` is standard base64 of the concatenated DER
   certificates of an Android Key Attestation chain, leaf first, for a fresh
   EC P-256 Keystore key whose attestation challenge is SHA-256 of the exact
-  enrollment transcript bytes. `key_id` is standard base64 of SHA-256 of the
-  leaf SubjectPublicKeyInfo DER.
+  enrollment transcript bytes built with `key_id` set to the empty string
+  (`"key_id":""`); every other member is the request's value. A Keystore
+  fixes the challenge when it generates the key, before the public key
+  exists, so the challenge cannot contain the key's own `key_id`. The request
+  still carries the real `key_id`, standard base64 of SHA-256 of the leaf
+  SubjectPublicKeyInfo DER, and the gateway MUST refuse the enrollment when
+  it does not match the attested leaf. A challenge over the transcript with
+  the real `key_id` is refused.
 - The gateway MUST verify every chain signature up to a configured Google
   hardware attestation root and MUST refuse the software attestation root.
   Attestation and KeyMint security levels MUST be TrustedEnvironment or
@@ -317,7 +323,7 @@ Every App Attest operation signs a **transcript**, not the received request byte
 <domain> + "\\n" + <compact ordered JSON object>
 ```
 
-The JSON object has no insignificant whitespace and members appear in the exact order shown below. Strings use JSON escaping for quotation mark, reverse solidus, and U+0000..U+001F; all authority-bearing strings admitted by this profile are ASCII. UUID strings are canonical lowercase-hyphenated. Integers use shortest decimal notation. The fixed `audience` value is part of the signed object and prevents cross-route use. For enrollment, these exact transcript bytes are the App Attest `clientData` supplied to attestation verification. For every assertion route, `clientDataHash = SHA-256(transcript bytes)` is verified by App Attest. The separately stored challenge must equal the request `challenge`, is single-use, expires after 300 seconds, and is consumed only after successful cryptographic verification. Assertion `signCount` MUST strictly increase atomically for the installation.
+The JSON object has no insignificant whitespace and members appear in the exact order shown below. Strings use JSON escaping for quotation mark, reverse solidus, and U+0000..U+001F; all authority-bearing strings admitted by this profile are ASCII. UUID strings are canonical lowercase-hyphenated. Integers use shortest decimal notation. The fixed `audience` value is part of the signed object and prevents cross-route use. For enrollment, these exact transcript bytes are the App Attest `clientData` supplied to attestation verification (for `kuzz-android`, the Keystore attestation challenge is SHA-256 of the enrollment transcript with an empty `key_id`; see the Android profile). For every assertion route, `clientDataHash = SHA-256(transcript bytes)` is verified by App Attest. The separately stored challenge must equal the request `challenge`, is single-use, expires after 300 seconds, and is consumed only after successful cryptographic verification. Assertion `signCount` MUST strictly increase atomically for the installation.
 
 ### Challenge
 
