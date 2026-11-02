@@ -55,6 +55,9 @@ const PREV_LIVE_KEY = "stream_prev_live";
 /** Ids received live per connection; past this nothing is counted. */
 const LIVE_IDS_MAX = 200_000;
 const REPAIR_BATCH_ROOMS = 128;
+/** Unknown-room list refresh: per room, and over all rooms. */
+const UNKNOWN_ROOM_INTERVAL_MS = 10_000;
+const UNKNOWN_ROOM_MIN_GAP_MS = 5_000;
 
 export type StoredSeqs = {
   /** Everything queued was written and nothing was lost when read. */
@@ -138,7 +141,64 @@ export type UserStreamLiveHost = {
   /** The relay's rate-limit gate (`relayRateLimitGate.ts`). */
   rateLimited?: () => boolean;
   waitForRateLimit?: () => Promise<void>;
+  /** Clock and timer of the unknown-room refresh throttle. */
+  nowMs?: () => number;
+  setTimer?: (ms: number, run: () => void) => void;
 };
+
+/**
+ * Frames of rooms the member list lacks: a list refresh at most once per
+ * 10 s per room and at most one every 5 s over all rooms (a later one
+ * waits out the gap). The listener debounces each burst.
+ */
+export class UnknownRoomRefresh {
+  private readonly asked = new Map<string, number>();
+  private last: number | null = null;
+  private pending = false;
+
+  private readonly refresh: () => void;
+  private readonly nowMs: () => number;
+  private readonly setTimer: (ms: number, run: () => void) => void;
+
+  constructor(
+    refresh: () => void,
+    nowMs: () => number = () => Date.now(),
+    setTimer: (ms: number, run: () => void) => void = (ms, run) => {
+      setTimeout(run, ms);
+    },
+  ) {
+    this.refresh = refresh;
+    this.nowMs = nowMs;
+    this.setTimer = setTimer;
+  }
+
+  note(room: string) {
+    const now = this.nowMs();
+    const asked = this.asked.get(room);
+    if (asked !== undefined && now - asked < UNKNOWN_ROOM_INTERVAL_MS) return;
+    for (const [key, at] of this.asked) {
+      if (now - at >= UNKNOWN_ROOM_INTERVAL_MS) this.asked.delete(key);
+    }
+    this.asked.set(room, now);
+    if (this.pending) return;
+    const wait =
+      this.last === null ? 0 : this.last + UNKNOWN_ROOM_MIN_GAP_MS - now;
+    if (wait <= 0) {
+      this.fire();
+      return;
+    }
+    this.pending = true;
+    this.setTimer(wait, () => {
+      this.pending = false;
+      this.fire();
+    });
+  }
+
+  private fire() {
+    this.last = this.nowMs();
+    this.refresh();
+  }
+}
 
 type Walk = { completed: boolean; events: RelayEvent[] };
 type Counted = {
@@ -188,8 +248,6 @@ type LiveConnection = {
   handed: Set<string>;
   /** Snapshot rooms with no usable resume point: they keep their chunk. */
   kept: Set<string>;
-  /** Unknown rooms that asked for a list refresh on this connection. */
-  refreshed: Set<string>;
   span: StreamSpan;
   coverage: ReturnType<typeof noteStreamLiveEose>;
   /** The stream stopped (CLOSED or socket end): its walks start no page. */
@@ -214,13 +272,31 @@ export class UserStreamLive implements UserStreamLiveHooks {
   /** Ids received live on this connection (stream or chunk frames). */
   private liveIds: Set<string> | null = new Set();
   private readonly host: UserStreamLiveHost;
+  private readonly unknownRooms: UnknownRoomRefresh;
 
   constructor(host: UserStreamLiveHost) {
     this.host = host;
+    this.unknownRooms = new UnknownRoomRefresh(
+      () => host.listRefresh(),
+      host.nowMs,
+      host.setTimer,
+    );
   }
 
   /** The catch-up started at the last EOSE (tests). */
   settled: Promise<void> = Promise.resolve();
+  /** The last walk phase queued (catch-up or fallback). */
+  private walkTail: Promise<void> = Promise.resolve();
+
+  /** Waits for every earlier walk phase; call the result when done. */
+  private takeWalks() {
+    const prior = this.walkTail;
+    let release: () => void = () => {};
+    this.walkTail = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    return prior.then(() => release);
+  }
 
   eose(stream: UserStreamConnection, snapshot: UserStreamSnapshot) {
     const { host } = this;
@@ -249,7 +325,6 @@ export class UserStreamLive implements UserStreamLiveHooks {
       membership,
       handed,
       kept: new Set(),
-      refreshed: new Set(),
       span,
       coverage,
       ended: false,
@@ -316,10 +391,8 @@ export class UserStreamLive implements UserStreamLiveHooks {
     // Always stored (by the store layer); shown unless left (44101).
     if (!live.membership.renders(room, event.created_at)) return;
     if (host.bundle.dispatchStream(event, room)) return;
-    // Archived or hidden rooms stay unknown: one refresh per connection.
-    if (live.refreshed.has(room)) return;
-    live.refreshed.add(room);
-    host.listRefresh();
+    // Archived or hidden rooms stay unknown: throttled refreshes.
+    this.unknownRooms.note(room);
   }
 
   ended(stream: UserStreamConnection, decision: ClosedDecision | null) {
@@ -451,53 +524,59 @@ export class UserStreamLive implements UserStreamLiveHooks {
     );
     const { batches } = planCatchUpBatches(walkResume, liveAt);
     const sampled = this.auditPick(live, plan.skip, resume);
-    const stop = () => live.ended;
-    // The listener repair does not wait for the catch-up (`S4`).
-    const repairing =
-      repairSince === null
-        ? Promise.resolve()
-        : this.repair(
-            live,
-            [...batches.flatMap((batch) => batch.rooms), ...sampled.keys()],
-            repairSince,
-            {},
-            stop,
-          );
-    const walked = new Map<string, boolean>();
-    const newRows: Record<string, number> = {};
-    const walkedRows: WalkedRow[] = [];
-    for (const batch of batches) {
-      if (stop()) break;
-      const result = await this.walkBatch(live, batch, true, true, stop);
-      if (result.completed && !result.counted) {
-        report.add("newRowUncounted", batch.rooms.length);
+    // Walks start after every earlier connection's walks ended (`S5`).
+    const release = await this.takeWalks();
+    try {
+      const stop = () => live.ended;
+      // The listener repair does not wait for the catch-up (`S4`).
+      const repairing =
+        repairSince === null
+          ? Promise.resolve()
+          : this.repair(
+              live,
+              [...batches.flatMap((batch) => batch.rooms), ...sampled.keys()],
+              repairSince,
+              {},
+              stop,
+            );
+      const walked = new Map<string, boolean>();
+      const newRows: Record<string, number> = {};
+      const walkedRows: WalkedRow[] = [];
+      for (const batch of batches) {
+        if (stop()) break;
+        const result = await this.walkBatch(live, batch, true, true, stop);
+        if (result.completed && !result.counted) {
+          report.add("newRowUncounted", batch.rooms.length);
+        }
+        for (const room of batch.rooms) walked.set(room, result.counted);
+        Object.assign(newRows, result.newRows);
+        walkedRows.push(...result.rows);
       }
-      for (const room of batch.rooms) walked.set(room, result.counted);
-      Object.assign(newRows, result.newRows);
-      walkedRows.push(...result.rows);
+      if (snapshot.mode === "live") {
+        const verdict = verifySkips(
+          plan.predictedSkips.map((room) => ({
+            walked: walked.get(room) === true,
+            newRows: newRows[room] ?? 0,
+          })),
+        );
+        report.add("verifiedSkips", verdict.verifiedSkips);
+        report.add("falseSkip", verdict.falseSkip);
+      }
+      await this.audit(live, sampled, stop);
+      if (prev && !stop()) {
+        const missed = liveMissed({
+          prev,
+          walked,
+          rows: walkedRows,
+          relayPubkey: snapshot.relayPubkey,
+        });
+        report.add("liveRoomsChecked", missed.liveRoomsChecked);
+        report.add("liveMissed", missed.liveMissed);
+      }
+      await repairing;
+    } finally {
+      release();
     }
-    if (snapshot.mode === "live") {
-      const verdict = verifySkips(
-        plan.predictedSkips.map((room) => ({
-          walked: walked.get(room) === true,
-          newRows: newRows[room] ?? 0,
-        })),
-      );
-      report.add("verifiedSkips", verdict.verifiedSkips);
-      report.add("falseSkip", verdict.falseSkip);
-    }
-    await this.audit(live, sampled, stop);
-    if (prev && !stop()) {
-      const missed = liveMissed({
-        prev,
-        walked,
-        rows: walkedRows,
-        relayPubkey: snapshot.relayPubkey,
-      });
-      report.add("liveRoomsChecked", missed.liveRoomsChecked);
-      report.add("liveMissed", missed.liveMissed);
-    }
-    await repairing;
   }
 
   /** Gated: the skipped rooms sampled for the audit (`auditSampling`). */
@@ -740,22 +819,27 @@ export class UserStreamLive implements UserStreamLiveHooks {
       lastSeenCreatedAt: this.lastSeenCreatedAt,
       liveSince: this.liveSince,
     });
-    const repair = plan.desktopRepair;
-    const repairing = repair
-      ? this.repair(
-          live,
-          repair.rooms,
-          repair.since,
-          repair.listenerFloor,
-          stop,
-        )
-      : Promise.resolve();
-    const fallbackLive = { ...live, liveAt: closedAt, before: closedAt };
-    for (const batch of plan.catchUp?.batches ?? []) {
-      if (stop()) break;
-      await this.walkBatch(fallbackLive, batch, false, false, stop);
+    const release = await this.takeWalks();
+    try {
+      const repair = plan.desktopRepair;
+      const repairing = repair
+        ? this.repair(
+            live,
+            repair.rooms,
+            repair.since,
+            repair.listenerFloor,
+            stop,
+          )
+        : Promise.resolve();
+      const fallbackLive = { ...live, liveAt: closedAt, before: closedAt };
+      for (const batch of plan.catchUp?.batches ?? []) {
+        if (stop()) break;
+        await this.walkBatch(fallbackLive, batch, false, false, stop);
+      }
+      await repairing;
+    } finally {
+      release();
     }
-    await repairing;
   }
 
   private async shadowCatchUp(

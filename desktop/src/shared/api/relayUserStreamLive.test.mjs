@@ -173,6 +173,7 @@ function harness({
     closedSockets: [],
     logs: [],
     refreshes: 0,
+    timers: [],
   };
   const session = new UserStreamSession({
     generation: () => 1,
@@ -206,6 +207,8 @@ function harness({
     listRefresh: () => {
       host.refreshes += 1;
     },
+    nowMs: () => host.now,
+    setTimer: (ms, run) => host.timers.push({ at: host.now + ms, run }),
     log: (line) => host.logs.push(line),
     random: () => 0,
     visibleRoom: () => visibleRoom,
@@ -448,12 +451,32 @@ test("routing: an unknown room asks for a list refresh; an open archived room re
   h.session.event(subId, roomEvent("u1", "room-unknown"));
   h.session.event(subId, roomEvent("ar1", "room-arch"));
   assert.equal(h.host.refreshes, 1);
-  // S6: once per room per connection, not per frame.
+  // S6: at most once per 10 s per room, not per frame.
+  h.host.now = L * 1000 + 2_000;
   h.session.event(subId, roomEvent("u2", "room-unknown"));
   h.session.event(subId, roomEvent("ar2", "room-arch"));
   assert.equal(h.host.refreshes, 1);
   assert.deepEqual(opened, ["ar1", "ar2"]);
   assert.deepEqual(all, []);
+  // Another unknown room within 5 s of the last refresh waits out the gap.
+  h.session.event(subId, roomEvent("v1", "room-other"));
+  h.session.event(subId, roomEvent("v2", "room-third"));
+  assert.equal(h.host.refreshes, 1);
+  assert.deepEqual(
+    h.host.timers.map((timer) => timer.at),
+    [L * 1000 + 5_000],
+  );
+  h.host.now = L * 1000 + 5_000;
+  h.host.timers.shift().run();
+  assert.equal(h.host.refreshes, 2);
+  h.host.now = (L + 9) * 1000;
+  h.session.event(subId, roomEvent("u3", "room-unknown"));
+  assert.equal(h.host.refreshes, 2);
+  // 10 s after its last ask the first room may ask again.
+  h.host.now = (L + 11) * 1000;
+  h.session.event(subId, roomEvent("u4", "room-unknown"));
+  assert.equal(h.host.refreshes, 3);
+  assert.deepEqual(h.host.timers, []);
 });
 
 test("the stream's span grows at most once a minute and stops at its CLOSED", async () => {
@@ -792,6 +815,45 @@ test("S5: walks start no page after their connection ends, and wait for the rate
   await h.live.settled;
   await flush();
   assert.deepEqual(h.calls.pages, [], "the ended connection walks nothing");
+});
+
+test("S5: a connection's walks start only after the earlier connection's walks ended", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  let hold = true;
+  const h = harness({
+    resume: { "room-a": L - 100 },
+    pages: async () => {
+      if (hold) {
+        hold = false;
+        await gate;
+      }
+      return [];
+    },
+  });
+  await h.session.connected(1);
+  await h.session.requested;
+  let subId = h.host.sent.at(-1)[1];
+  h.session.event(subId, part1("live", { "room-a": 1 }));
+  h.session.eose(subId);
+  for (let i = 0; i < 5; i += 1) await flush();
+  assert.equal(h.calls.pages.length, 1, "the first catch-up page is out");
+  h.session.socketEnded();
+  await flush();
+  h.host.now = (L + 600) * 1000;
+  await h.session.connected(1);
+  await h.session.requested;
+  subId = h.host.sent.at(-1)[1];
+  h.session.event(subId, part1("live", { "room-a": 1 }));
+  h.session.eose(subId);
+  for (let i = 0; i < 5; i += 1) await flush();
+  assert.equal(h.calls.pages.length, 1, "no page while the earlier one is out");
+  release();
+  await h.live.settled;
+  await flush();
+  assert.ok(h.calls.pages.length > 1, "the later catch-up walks after it");
 });
 
 test("S7: shadow counts predicted skips and verifies them through a later chunk catch-up", async () => {

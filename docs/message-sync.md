@@ -1372,14 +1372,11 @@ sub.
   announced, or a part out of order; fewer parts than announced at EOSE. A
   refused snapshot CLOSEs the stream: chunks for this connection. The store
   layer runs the same checks ([Store skip](#store-skip)).
-- **Integer fields:** every integer field (`v`, `part`, `parts`, each
-  `kinds` entry, each room's seq) must refuse a `1.0` / `1e0` number. An
-  integer field is a plain JSON integer literal: digits only, no sign,
-  fraction or exponent (so `-0` is refused too). The check is on the literal,
-  not on the parsed value: a parser that reads every number as a double
-  (`JSON.parse`, Dart `jsonDecode` of `1.0`) checks the text, the way the
-  store's serde check (`as_u64`) refuses anything written as a float. The
-  `part1` cases include `1.0` and `1e0` for each of these fields.
+- **Integer fields:** every integer field (`v`, `part`, `parts`, `kinds`,
+  room seq) refuses `1.0` and `1e0` alike. This holds for a later part's
+  `part` too. The fixture lists the cases. Desktop checks the literal text
+  (digits only, no sign, fraction or exponent), as the store's serde check
+  (`as_u64`) does, so `-0` is refused too (serde reads it as a float).
 - Any other kind arriving before part 1 is ignored (not stored, routed or
   compared). 24220 events after EOSE are ignored.
 - **Epoch (`epoch`):** the file keeps the last epoch in `sync_state`. An
@@ -1485,10 +1482,13 @@ carried, so every member room is on chunks.
 
 - **At connect:** chunks open at once, as without the stream, so an account
   without it waits no extra round trip. The stream REQ goes first after AUTH
-  OK. Desktop: on the first connect of an account or community the stored
-  backoff and counters are read first (off the main thread); the chunks do
-  not wait for that read, and the REQ follows when it lands (when that
-  connect is still current).
+  OK. Mobile reads the stream state when the socket starts connecting; on
+  the first connect of an account, if that read is still running at AUTH
+  OK, the chunk replay waits for the stream REQ at most 300 ms. With the
+  stream switched off in the build nothing waits. Desktop: on the first
+  connect of an account or community the stored backoff and counters are
+  read first (off the main thread); the chunks do not wait for that read,
+  and the REQ follows when it lands (when that connect is still current).
 - **`live`/`gated`:** after the stream EOSE (never at part 1) the chunks are
   replaced ([replacing a chunk](#live-room-bundle)) by chunks of the rooms
   the stream does not take (member ∪ quiet − handed); usually none remain.
@@ -1562,9 +1562,10 @@ into that listener (`membership`, `routing`).
   the store.
 - **Rooms not in the member list:** an archived room's frames are stored
   and reach an open room, never the all-rooms consumers. A room the list
-  does not know is stored and triggers one debounced list refresh per burst
-  (desktop: at most once per room per connection, so an archived room or a
-  hidden DM with traffic does not refetch the list per frame).
+  does not know is stored and triggers a debounced list refresh: one per
+  burst (1 s), at most once per 10 s per room, and at most one every 5 s
+  over all rooms. Desktop: the burst debounce is the room list's own
+  (500 ms, trailing), behind the 10 s / 5 s throttle.
 
 ### Watermark (`room_seq`)
 
@@ -1636,6 +1637,13 @@ walks nothing itself (chunk catch-ups run as today) and counts
   by resume point, then id, and split them 128 per batch; each batch walks
   from its oldest resume point minus 1865 s. One stale room never holds
   back fresh ones. Stream, audit and fallback catch-ups all batch this way.
+- **Connection end and rate limits:** a stream catch-up starts no new batch
+  or page once its connection ended (pages already written stay; rooms not
+  reached count in no counter), and each page waits out the session's
+  rate-limit window first. A connection's catch-up starts only after every
+  earlier connection's catch-up has ended, so they never overlap. Desktop:
+  the same holds for the audit, listener repair and fallback walks; the
+  fallback's walks stop only when the socket ends.
 - **A skip records nothing (`skipCoverage`):** no span beyond the stream's
   own `[L, L]`, and `room_seq.at` does not move. The gap from the room's last
   `hi` to L stays uncovered, so opening or preloading the room fetches it,
@@ -1654,11 +1662,10 @@ walks nothing itself (chunk catch-ups run as today) and counts
   memory: the first connect after launch, and the first after an account or
   community switch, has none and runs no listener repair. Rooms that were
   not handed get their chunk's repair instead ([Handoff](#handoff)).
-- **Stopping (desktop):** the stream's catch-up, audit and repair walks
-  start no page once their stream stops (CLOSED or socket end), and the
-  fallback's once the socket ends; pages already done keep their writes.
-  Each page waits for the relay rate-limit gate like a chunk catch-up.
 - **Mobile:** store catch-up batched and sorted, plus the open-room refetch.
+  The reconnect unread catch-up runs from read markers; a chunk re-sync
+  that retires it before it lands (the hand-off at the stream EOSE, a
+  44100/44101) runs it again.
   The quiet-room backfill after a drop waits for the stream EOSE instead of
   the chunks'.
 
@@ -1670,31 +1677,30 @@ Counters are kept per account and server, persisted cumulatively in
 since the last line (any change from 0), or 10 min after the last line if
 anything changed.
 
+- **Already stored (`newRow`):** when the gate counters (`falseSkip`,
+  `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
+  after this connection's start time does not count as "already stored",
+  whichever path stored it (chunk catch-up, unread refresh, room reload, live
+  frame). Desktop keeps `events.stored_at` (ms, this device's clock; rows
+  from before the column have none and count as stored before) and compares
+  it with the connection start taken at AUTH OK. After a walk it asks only
+  about the candidate rows (in the window, not received live), after the
+  write queue drained. "Received live" means socket frames only: a row a
+  repair or catch-up walk delivered is not. When it cannot tell (no segments
+  or stored-at answer from a drained store, or too many live ids to track),
+  the batch verifies nothing: its rooms count in none of `verifiedSkips`,
+  `falseSkip`, `liveRoomsChecked`, `skipAudited` or `skipAuditNew` (an
+  audited batch counts in `skipAuditFailed`), and `newRowUncounted` counts
+  its rooms.
 - **New-row rule (`newRow`):** a row counts as new only if it was not
-  already stored (below), it was not also received live on this connection
+  already stored (above), it was not also received live on this connection
   (on the stream or a chunk, before or after the stream EOSE, including the
-  frames the relay held until EOSE; a row a repair or catch-up walk
-  delivered is not received live), and its `created_at` is at or before L
+  frames the relay held until EOSE), and its `created_at` is at or before L
   and at or after the start of the room's newest coverage segment that
   began before the connection start (the one the walk resumes from; an
   EOSE span `[C, C]` from a chunk on the same connection and the stream's
   own `[L, L]` never count, so a gap row is never left out by
   construction).
-- **Already stored (`storedAt`):** when the gate counters (falseSkip,
-  liveMissed, skipAuditNew) are computed, a row stored locally at or after
-  this connection's start time does not count as "already stored",
-  whichever path stored it (chunk repair, catch-up, unread refresh, room
-  reload, live frame). The store needs a local stored-at time per row, or
-  an equivalent per-connection set. Desktop keeps `events.stored_at` (ms,
-  this device's clock; rows from before the column have none and count as
-  stored before) and compares it with the connection start taken at AUTH
-  OK. After a walk it asks only about the candidate rows (in the window, not
-  received live), after the write queue drained. When it cannot tell (no
-  segments or stored-at answer from a drained store, or too many live ids
-  to track), the batch verifies nothing: its rooms count in none of
-  `verifiedSkips`, `falseSkip`, `liveRoomsChecked`, `skipAudited` or
-  `skipAuditNew` (an audited batch counts in `skipAuditFailed`), and
-  `newRowUncounted` counts its rooms.
 - **Shadow comparison (`comparator`):** starts at the stream EOSE. A room is
   compared when a live chunk carries it and the stream carries it (snapshot
   or 44100). Each event id is classified once, 5 s (inclusive) after it was
