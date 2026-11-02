@@ -71,11 +71,11 @@ export function useThreadHeaderBar({
     };
   }
   const rootId = threadGoalRootId(threadHead);
+  // A root not found yet or deleted has no menu, like a pending one.
+  const noMenu =
+    threadHead.pending || threadHead.rootPlaceholder || threadHead.rootDeleted;
   const canToggle =
-    threadHeaderActions &&
-    !isHuddleTranscript &&
-    Boolean(channelId) &&
-    !threadHead.pending;
+    threadHeaderActions && !isHuddleTranscript && Boolean(channelId) && !noMenu;
   const toggleClosed =
     canToggle && channelId && !disabled
       ? (closed: boolean) => setThreadClosed({ channelId, rootId, closed })
@@ -100,14 +100,14 @@ export function useThreadHeaderBar({
       ) : null
     ) : (
       <ThreadHeaderActions
-        channelId={threadHead.pending ? null : channelId}
+        channelId={noMenu ? null : channelId}
         closePending={pending}
         goalChip={goalChip}
         isClosed={closeState.closed}
         isFollowing={isFollowingThread}
         onFollow={onFollowThread}
         onMarkUnread={
-          onMarkUnread
+          onMarkUnread && !noMenu
             ? () => {
                 // The same local marking as the message menu, plus the
                 // relay's thread mark while chat state is on.

@@ -34,7 +34,8 @@ export function useThreadOpenServerRead(
   const { mirrorThreadRead } = useAppShell();
   const focused = useAppFocused();
   React.useEffect(() => {
-    if (!rootId || newestAt === null || !focused) return;
+    // A placeholder root (createdAt 0) with no reply shown yet sends nothing.
+    if (!rootId || !newestAt || !focused) return;
     mirrorThreadRead(rootId, newestAt);
   }, [focused, mirrorThreadRead, newestAt, rootId]);
 }

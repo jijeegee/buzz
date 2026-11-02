@@ -122,7 +122,12 @@ pub(super) fn paint_scope(
 
 /// The paint's expected account and server are the current ones (a `wss://`
 /// socket and an `https://` query to one server count as the same).
-fn same_scope(account: &str, relay_url: &str, current: &str, current_relay: &str) -> bool {
+pub(super) fn same_scope(
+    account: &str,
+    relay_url: &str,
+    current: &str,
+    current_relay: &str,
+) -> bool {
     let origin = crate::message_store::http_origin(relay_url);
     origin.is_some()
         && origin == crate::message_store::http_origin(current_relay)
@@ -201,6 +206,36 @@ pub async fn message_store_thread_paint(
             ),
             complete_from: complete_from.map(|at| at.max(0)),
         })
+    })
+    .await
+}
+
+/// A thread's root as the store holds it (`None` when only a removal of it is
+/// stored), and whether a stored deletion removes it.
+#[derive(serde::Serialize)]
+pub struct StoredThreadRoot {
+    event: Option<serde_json::Value>,
+    deleted: bool,
+}
+
+/// `root_id` of `channel_id` from the store by id, read at once, or `None`
+/// when neither it nor a removal of it is stored. It draws a thread's top row
+/// while the relay is asked at the same time
+/// (docs/message-sync.md#opening-a-thread-from-its-root-id).
+#[tauri::command]
+pub async fn message_store_thread_root(
+    channel_id: String,
+    root_id: String,
+    account: String,
+    relay_url: String,
+    state: State<'_, AppState>,
+) -> Result<Option<StoredThreadRoot>, String> {
+    let Some((relay, account)) = paint_scope(&state, &account, &relay_url)? else {
+        return Ok(None);
+    };
+    off_main(move || {
+        crate::message_store::paint_thread_root(&relay, &account, &channel_id, &root_id)
+            .map(|(event, deleted)| StoredThreadRoot { event, deleted })
     })
     .await
 }

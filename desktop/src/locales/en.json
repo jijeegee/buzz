@@ -17415,6 +17415,10 @@
   "@messages.thread.title": {
     "description": "Default title of the thread side panel header. Short."
   },
+  "messages.thread.rootDeleted": "This message was deleted",
+  "@messages.thread.rootDeleted": {
+    "description": "Thread side panel, shown in place of the thread's first message when it was deleted; the replies stay below."
+  },
   "messages.thread.openTitle": "Open {title}",
   "@messages.thread.openTitle": {
     "description": "Accessible label and tooltip of the thread panel header title button that opens the group. {title} is the panel title."
