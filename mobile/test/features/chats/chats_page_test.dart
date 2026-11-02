@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
+import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/chats/chats_page.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -202,6 +203,32 @@ void main() {
     expect(channel.channelType, 'dm');
     expect(channel.participantPubkeys, [_them]);
     expect(channel.isMember, isTrue);
+  });
+
+  testWidgets('a thread row opens the thread itself, by its root id', (
+    tester,
+  ) async {
+    final pushed = <Route<dynamic>>[];
+    await pumpChats(tester, observer: _PushObserver(pushed));
+    pushed.clear();
+
+    await tester.tap(find.byKey(ValueKey('chat-row-tap-${'1' * 64}')));
+    await tester.pump();
+
+    expect(pushed, hasLength(1));
+    final page = (pushed.single as MaterialPageRoute<void>).builder(
+      tester.element(find.byType(ChatsPage)),
+    );
+    // Never the channel timeline: the thread needs only the root id.
+    expect(page, isA<ThreadDetailPage>());
+    final thread = page as ThreadDetailPage;
+    expect(thread.headId, '1' * 64);
+    expect(thread.threadHead, isNull);
+    expect(thread.channelId, _channel);
+    expect(thread.initialThreadName, 'Thread 1');
+    expect(thread.channelBelow, isFalse);
+    // The channel list has not loaded: the row's room stands in until it has.
+    expect(thread.standInChannel?.id, _channel);
   });
 }
 

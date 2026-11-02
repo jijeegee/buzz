@@ -107,19 +107,30 @@ class AgentConversationsList extends HookConsumerWidget {
               .read(ownerViewSeenProvider(agent).notifier)
               .markSeen(chatRowContextId(row), latest.createdAt);
         }
+        final ownerView = OwnerView(
+          agentPubkey: agent,
+          agentName: agentName,
+          dmChannelId: dmChannelId,
+        );
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => ChannelDetailPage(
-              channel: channel,
-              ownerView: OwnerView(
-                agentPubkey: agent,
-                agentName: agentName,
-                dmChannelId: dmChannelId,
+            builder: (_) => switch (row.rootId) {
+              final rootId? when row.isThread && !channel.isForum =>
+                threadPageForRow(
+                  row,
+                  rootId,
+                  channel: channel,
+                  standIn: false,
+                  ownerView: ownerView,
+                ),
+              final rootId => ChannelDetailPage(
+                channel: channel,
+                ownerView: ownerView,
+                initialThreadRootId: row.isThread ? rootId : null,
+                initialThreadRouteBehavior:
+                    InitialThreadRouteBehavior.replaceCurrentRoute,
               ),
-              initialThreadRootId: row.isThread ? row.rootId : null,
-              initialThreadRouteBehavior:
-                  InitialThreadRouteBehavior.replaceCurrentRoute,
-            ),
+            },
           ),
         );
       }
