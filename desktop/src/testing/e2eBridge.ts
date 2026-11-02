@@ -15295,6 +15295,22 @@ export function maybeInstallE2eTauriMocks() {
               ) as RelayEvent,
           ),
         );
+      // Opening a thread from its root id: the root when the mock has it.
+      case "get_thread_root":
+        try {
+          return [
+            JSON.parse(
+              await handleGetEvent(
+                { eventId: (payload as { rootId: string }).rootId },
+                activeConfig,
+              ),
+            ) as RelayEvent,
+          ];
+        } catch {
+          return [];
+        }
+      case "message_store_thread_root":
+        return null;
       // Key-mode fixtures have no bearer token; exercise the NIP-42 fallback.
       case "get_ws_auth_frame":
         return null;
