@@ -117,7 +117,9 @@ void main() {
     );
     await Future<void>.delayed(Duration.zero);
 
-    final frame = h.socket.sent.single;
+    // The user stream REQ goes out first after AUTH OK; the draft is the
+    // only EVENT.
+    final frame = h.socket.sent.where((f) => f[0] == 'EVENT').single;
     expect(frame[0], 'EVENT');
     final draft = Map<String, dynamic>.from(frame[1] as Map);
     expect(draft.containsKey('sig'), isFalse);

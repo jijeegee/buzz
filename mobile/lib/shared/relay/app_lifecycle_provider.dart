@@ -19,8 +19,11 @@ class AppLifecycleNotifier extends Notifier<AppLifecycleState> {
     // Watch connectivity changes to trigger reconnect on network restore.
     _connectivitySub = Connectivity().onConnectivityChanged.listen((results) {
       final hasNetwork = results.any((r) => r != ConnectivityResult.none);
+      final session = ref.read(relaySessionProvider.notifier);
+      // A new network ends the user stream's overflow backoff.
+      if (hasNetwork) session.noteUserStreamNetworkChange();
       if (hasNetwork && state == AppLifecycleState.resumed) {
-        ref.read(relaySessionProvider.notifier).onAppResumed();
+        session.onAppResumed();
       }
     });
 
@@ -38,7 +41,9 @@ class AppLifecycleNotifier extends Notifier<AppLifecycleState> {
     final session = ref.read(relaySessionProvider.notifier);
     switch (newState) {
       case AppLifecycleState.resumed:
-        session.onAppResumed();
+        session
+          ..noteUserStreamResume()
+          ..onAppResumed();
       case AppLifecycleState.paused:
       case AppLifecycleState.detached:
         session.onAppPaused();

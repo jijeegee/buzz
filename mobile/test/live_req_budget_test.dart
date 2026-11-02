@@ -16,6 +16,7 @@ import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/message_store/message_store.dart';
 import 'package:kuzz/shared/message_store/message_store_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/relay/user_stream.dart';
 import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -612,6 +613,29 @@ void main() {
       'threadOpen',
       'dmOpen',
     ]);
+  });
+
+  testWidgets('idle on a relay with the user stream in shadow', (tester) async {
+    // docs/message-sync.md#live-req-budget: shadow adds the stream REQ next
+    // to the chunks.
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'shadow',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {_roomA: 1, _roomB: 1},
+      };
+    await h.launch(tester);
+    await h.checkpoint(tester, 'idleStreamShadow');
+    expect(find.byType(HomePage), findsOneWidget);
+    await h.unmount(tester);
+    _writeMeasured(const ['idleStreamShadow']);
   });
 
   testWidgets('idle with a hidden DM stays within the live REQ budget', (

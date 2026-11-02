@@ -48,6 +48,12 @@ class ScriptedRelay {
   /// When set, live REQs whose subId it accepts are answered with CLOSED.
   String? Function(List<Map<String, dynamic>> filters)? closeLive;
 
+  /// The answer to a user stream REQ (`#h: [$joined]`): by default the
+  /// CLOSED of a relay without the stream. Set to `null` to answer with
+  /// [userStreamSnapshot] (part 1's content), then EOSE.
+  String? userStreamClosed = 'restricted: not a channel member';
+  Map<String, dynamic>? userStreamSnapshot;
+
   /// Live REQ frames sent so far (re-REQs included).
   int get liveReqSends =>
       frames.where((f) => f.type == 'REQ' && f.subId.startsWith('l-')).length;
@@ -134,6 +140,10 @@ class ScriptedRelay {
     frames.add(RelayFrame('REQ', subId, filters));
     openSubs.remove(subId);
     openSubs[subId] = filters;
+    if ((filters.first['#h'] as List?)?.contains(r'$joined') ?? false) {
+      _answerUserStream(subId, deliver);
+      return;
+    }
     final rejection = subId.startsWith('l-') ? closeLive?.call(filters) : null;
     scheduleMicrotask(() {
       if (rejection != null) {
@@ -147,6 +157,37 @@ class ScriptedRelay {
           deliver(['EVENT', subId, event.toJson()]);
         }
       }
+      deliver(['EOSE', subId]);
+    });
+  }
+
+  void _answerUserStream(String subId, void Function(List) deliver) {
+    final closed = userStreamClosed;
+    final snapshot = userStreamSnapshot;
+    scheduleMicrotask(() {
+      if (closed != null || snapshot == null) {
+        frames.add(RelayFrame('CLOSED', subId));
+        openSubs.remove(subId);
+        deliver([
+          'CLOSED',
+          subId,
+          closed ?? 'restricted: not a channel member',
+        ]);
+        return;
+      }
+      deliver([
+        'EVENT',
+        subId,
+        {
+          'id': 'snapshot-$subId',
+          'pubkey': relayKey,
+          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'kind': 24220,
+          'tags': const [],
+          'content': jsonEncode(snapshot),
+          'sig': '',
+        },
+      ]);
       deliver(['EOSE', subId]);
     });
   }

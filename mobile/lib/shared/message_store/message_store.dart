@@ -25,6 +25,7 @@ export 'clock_check.dart' show clockTrusted, noteServerDate;
 import 'stored_event.dart';
 
 part 'message_store_pushed.dart';
+part 'message_store_user_stream.dart';
 
 const messageStoreSchemaVersion = 1;
 
