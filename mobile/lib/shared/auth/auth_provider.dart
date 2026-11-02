@@ -123,6 +123,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       } else if (community.signedOut) {
         throw StateError('Sign in again to use this community.');
       }
+      if (ref.read(kuzzPushBuildSupportedProvider)) {
+        // Like other messengers, notifications start on at sign-in; the
+        // system prompt follows on the first Home screen.
+        community = community.withPushOnByDefault();
+      }
       await ref.read(communityTransitionProvider).run();
       guard();
       await storage.save(community);

@@ -73,7 +73,7 @@ void main() {
       expect(calls, isEmpty);
     });
 
-    testWidgets('Settings hides notifications without push capability', (
+    testWidgets('Settings says notifications are not in this version', (
       tester,
     ) async {
       debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
@@ -105,12 +105,16 @@ void main() {
         ),
       );
       await tester.pumpAndSettle();
-      expect(find.text('Notifications'), findsNothing);
-      expect(find.text('Push notifications'), findsNothing);
-      expect(
-        find.byKey(const ValueKey('push-notifications-enabled')),
-        findsNothing,
+      expect(find.text('Push notifications'), findsOneWidget);
+      expect(find.text('Not available in this version'), findsOneWidget);
+      final pushSwitch = tester.widget<Switch>(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
       );
+      expect(pushSwitch.value, isFalse);
+      expect(pushSwitch.onChanged, isNull);
       expect(tester.takeException(), isNull);
       debugDefaultTargetPlatformOverride = null;
     });

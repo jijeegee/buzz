@@ -12,8 +12,10 @@ import 'package:kuzz/shared/push/dev_push_lease.dart';
 import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
 import 'package:kuzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/push/push_subscription_provider.dart';
 import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:kuzz/shared/theme/theme.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -26,6 +28,7 @@ void main() {
   Future<void> pumpSettings(
     WidgetTester tester, {
     required KuzzPushAuthorizationStatus status,
+    bool buildSupported = true,
   }) async {
     tester.view.physicalSize = const Size(430, 1800);
     tester.view.devicePixelRatio = 1;
@@ -50,6 +53,7 @@ void main() {
         Community.create(
           name: 'Team',
           relayUrl: 'https://relay.example',
+          nsec: nostr.Keys.generate().nsec,
         ).copyWith(
           pushNotificationsEnabled: true,
           pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
@@ -62,6 +66,11 @@ void main() {
       ProviderScope(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
+          if (buildSupported)
+            kuzzPushBuildSupportedProvider.overrideWithValue(true),
+          pushSubscriptionSyncProvider.overrideWithValue(
+            KuzzPushSubscriptionSync.ok,
+          ),
           authProvider.overrideWith(_Auth.new),
           communityStorageProvider.overrideWithValue(storage),
           communitySnapshotWriterProvider.overrideWithValue((_) async {}),
@@ -86,14 +95,27 @@ void main() {
   }
 
   testWidgets(
-    'without Android push the section stays hidden',
+    'without Android push the card says it is not in this version',
     (tester) async {
       debugAndroidPushActiveOverride = false;
-      await pumpSettings(tester, status: KuzzPushAuthorizationStatus.denied);
+      await pumpSettings(
+        tester,
+        status: KuzzPushAuthorizationStatus.denied,
+        buildSupported: false,
+      );
+      expect(find.text('Not available in this version'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey('push-notifications-enabled')),
+        find.byKey(const ValueKey('push-notifications-open-settings')),
         findsNothing,
       );
+      // Push that is on can still be turned off.
+      final pushSwitch = tester.widget<Switch>(
+        find.descendant(
+          of: find.byKey(const ValueKey('push-notifications-enabled')),
+          matching: find.byType(Switch),
+        ),
+      );
+      expect(pushSwitch.onChanged, isNotNull);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),
   );
@@ -104,12 +126,10 @@ void main() {
       debugAndroidPushActiveOverride = true;
       await pumpSettings(tester, status: KuzzPushAuthorizationStatus.denied);
       expect(
-        find.text(
-          'Enabled in Kuzz, but notifications are off in Android settings',
-        ),
+        find.text('Notifications are blocked for Kuzz in phone settings'),
         findsOneWidget,
       );
-      expect(find.text('Open notification settings'), findsOneWidget);
+      expect(find.text('Open settings'), findsOneWidget);
       expect(find.textContaining('iOS'), findsNothing);
     },
     variant: TargetPlatformVariant.only(TargetPlatform.android),

@@ -8706,10 +8706,6 @@
       "text": "이름, 사용자 이름, 사진은 이 서버의 모든 커뮤니티에서 공유돼요.",
       "from": "3f3a931f5e34"
     },
-    "settingsPushOptOutPending": {
-      "text": "서버 확인을 기다리는 중이에요. 알림이 계속 올 수 있어요",
-      "from": "08af2276938f"
-    },
     "signInExistingIdentityConflict": {
       "text": "이 기기에는 이미 이 서버의 계정 정보가 있어요. 기존 토큰 계정으로 대체할 수 없어요. Google 키 복구를 사용해 주세요.",
       "from": "5ae11689d80e"

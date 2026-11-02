@@ -36,6 +36,24 @@ void main() {
     expect(token.copyWith(name: 'Renamed').tokenAuth, isTrue);
   });
 
+  test('push choice round-trips and is absent on legacy records', () {
+    final legacy = Community.fromJson({
+      'id': 'one',
+      'name': 'Kuzz',
+      'relayUrl': 'https://relay.test',
+      'pushNotificationsEnabled': false,
+      'addedAt': '2026-08-05T00:00:00.000Z',
+    });
+    final off = legacy.copyWith(pushChoice: KuzzPushChoice.off);
+
+    expect(legacy.pushChoice, isNull);
+    expect(legacy.toJson().containsKey('pushChoice'), isFalse);
+    expect(off.toJson()['pushChoice'], 'off');
+    expect(Community.fromJson(off.toJson()).pushChoice, KuzzPushChoice.off);
+    expect(off.copyWith(name: 'Renamed').pushChoice, KuzzPushChoice.off);
+    expect(off.resumeSession().pushChoice, KuzzPushChoice.off);
+  });
+
   test('new community gets a unique canonical push lease address id', () {
     final first = Community.create(name: 'One', relayUrl: 'https://relay.test');
     final second = Community.create(

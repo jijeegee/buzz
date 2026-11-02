@@ -128,7 +128,10 @@ class KuzzAndroidPushPluginImpl :
             if (task.isSuccessful) {
                 result.success(task.result)
             } else {
-                result.error("token", task.exception?.javaClass?.simpleName ?: "unknown", null)
+                // The message carries the FCM reason, e.g. SERVICE_NOT_AVAILABLE
+                // or MISSING_INSTANCEID_SERVICE (no Google Play services).
+                val error = task.exception
+                result.error("token", error?.javaClass?.simpleName ?: "unknown", error?.message)
             }
         }
     }
