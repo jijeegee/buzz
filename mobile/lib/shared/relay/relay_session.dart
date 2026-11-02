@@ -3,9 +3,6 @@ import 'dart:convert';
 import 'dart:math';
 
 import 'package:http/http.dart' as http;
-import 'package:nostr/nostr.dart' as nostr;
-import 'package:pointycastle/digests/sha256.dart';
-import 'package:uuid/uuid.dart';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -15,12 +12,12 @@ import '../auth/auth.dart';
 import '../auth/remote_sign_out.dart';
 import '../auth/token/relay_origin.dart';
 import '../auth/token/token_session.dart';
-import '../device_key/device_proof.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
 import 'community_live_bundle.dart';
 import 'lane_head_batch.dart';
 import 'me_live_bundle.dart';
+import 'nip98.dart';
 import 'nostr_models.dart';
 import 'relay_access_tokens.dart';
 import 'relay_client.dart';
@@ -32,9 +29,9 @@ import 'relay_session_types.dart';
 import 'relay_socket.dart';
 import 'room_bundle_coverage.dart';
 
+export 'nip98.dart' show buildNip98AuthHeader;
 export 'relay_session_types.dart';
 
-part 'relay_session_auth.dart';
 part 'relay_session_live_filters.dart';
 part 'relay_session_replay.dart';
 part 'relay_session_store.dart';

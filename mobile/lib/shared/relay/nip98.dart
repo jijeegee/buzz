@@ -1,8 +1,20 @@
-part of 'relay_session.dart';
+import 'dart:convert';
+import 'dart:typed_data';
+
+import 'package:nostr/nostr.dart' as nostr;
+import 'package:pointycastle/digests/sha256.dart';
+import 'package:uuid/uuid.dart';
+
+import '../device_key/device_proof.dart';
 
 /// A NIP-98 `Authorization` header for one relay HTTP request, signed by
 /// the person key and, when this phone has one, by its device key (the
-/// `device` tag, device-bound keys plan §2.1).
+/// `device` tag, device-bound keys plan §2.1). Every header carries a fresh
+/// `nonce`, so two headers for the same request in the same second differ
+/// (the relay refuses a replayed id).
+///
+/// Plain Dart with no provider state: the background push handler, which
+/// runs in its own isolate, signs its `/query` with it too.
 Future<String> buildNip98AuthHeader({
   required String method,
   required String url,
