@@ -16,6 +16,11 @@ export class RelayChannelAccessRevocations {
     this.listeners.clear();
   }
 
+  /** A user stream frame of a room the member list lacks: refresh it. */
+  hint() {
+    for (const listener of this.listeners) listener();
+  }
+
   /** Call after terminal cleanup, using the subscription captured before removal. */
   notify(subscription: RelaySubscription | undefined, reason: unknown) {
     if (

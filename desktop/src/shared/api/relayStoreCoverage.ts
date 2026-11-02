@@ -106,6 +106,13 @@ const liveSubscriptions = new Set<LiveSubscription>();
 const settling = new WeakMap<object, Promise<unknown>>();
 /** A reconnect repair in flight per REQ: resolved when it completes. */
 const repairs = new WeakMap<LiveSubscription, () => void>();
+/**
+ * The user stream's coverage while it carries rooms in live/gated
+ * (docs/message-sync.md#user-stream): a stand-in REQ whose `storeCoverage`
+ * is cleared when the stream stops, so tokens taken under it stop holding.
+ */
+let stream: { subscription: LiveSubscription; rooms: Set<string> } | null =
+  null;
 
 /** Replace the store bridge (tests). Returns the restore function. */
 export function setStoreCoverageDeps(next: Partial<CoverageDeps>) {
@@ -172,9 +179,11 @@ export function noteStoreLiveEose(
   if (subscription.reconnectReplay?.generation !== generation) {
     // Stops once this REQ's coverage is retired or replaced.
     const live = () => subscription.storeCoverage === coverage;
+    // Rooms the stream carries are caught up by the stream (`chunkCatchUp`).
+    const own = roomIds.filter((roomId) => !streamCarries(roomId));
     settling.set(
       coverage,
-      catchUpFromStore(roomIds, liveAt, scope, live).catch(() => {}),
+      catchUpFromStore(own, liveAt, scope, live).catch(() => {}),
     );
   } else if (!subscription.reconnectReplay.repairDone) {
     // A waiter on an earlier EOSE of this REQ stops waiting.
@@ -246,6 +255,10 @@ export type StoreLiveCoverage = {
  */
 export function storeLiveCoverage(roomId: string): StoreLiveCoverage[] {
   const live: StoreLiveCoverage[] = [];
+  const streamCoverage = stream?.subscription.storeCoverage;
+  if (stream && streamCoverage && stream.rooms.has(roomId)) {
+    live.push({ subscription: stream.subscription, coverage: streamCoverage });
+  }
   for (const subscription of liveSubscriptions) {
     const coverage = subscription.storeCoverage;
     if (!coverage) {
@@ -337,4 +350,62 @@ export async function catchUpFromStore(
     beforeId = terminal.id;
   }
   return false;
+}
+
+/**
+ * The stream's accepted live/gated EOSE at `liveAt`: it carries `rooms`
+ * (kept by reference: 44100/44101 change it) and records its own `[L, L]`.
+ * `settled` is its catch-up, which the preload wait waits for.
+ */
+export function noteStreamLiveEose({
+  generation,
+  liveAt,
+  rooms,
+  scope,
+}: {
+  generation: number;
+  liveAt: number;
+  rooms: Set<string>;
+  scope: Promise<string | null>;
+}) {
+  endStreamCoverage();
+  const coverage = { generation, liveAt, markedAt: liveAt, scope };
+  const subscription: LiveSubscription = {
+    mode: "live",
+    filter: { kinds: [...CHANNEL_EVENT_KINDS], limit: 0 },
+    onEvent: () => {},
+    storeCoverage: coverage,
+  };
+  stream = { subscription, rooms };
+  record([...rooms], liveAt, liveAt, scope);
+  return {
+    /** The catch-up the preload waits for. */
+    settle: (settled: Promise<unknown>) => settling.set(coverage, settled),
+    /** A stream frame: extends the span at most once per minute. */
+    extend: (to: number) => {
+      if (subscription.storeCoverage !== coverage) return;
+      if (to - coverage.markedAt < STORE_MARK_INTERVAL_SECS) return;
+      coverage.markedAt = to;
+      record([...rooms], liveAt, to, scope);
+    },
+    /** A room the stream starts carrying (44100): its span from `at`. */
+    carry: (roomId: string, at: number) => {
+      if (subscription.storeCoverage !== coverage) return;
+      rooms.add(roomId);
+      record([roomId], at, at, scope);
+    },
+  };
+}
+
+/** Whether the stream carries `roomId` now (its catch-up is the stream's). */
+export function streamCarries(roomId: string) {
+  return (
+    stream?.subscription.storeCoverage !== undefined && stream.rooms.has(roomId)
+  );
+}
+
+/** The stream stopped (CLOSED, socket end): its spans stop growing. */
+export function endStreamCoverage() {
+  if (stream) stream.subscription.storeCoverage = undefined;
+  stream = null;
 }

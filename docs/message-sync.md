@@ -505,6 +505,7 @@ in the commit.
 | Idle as the relay's own key (`idleRelaySelf`) | 5 | — |
 | Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
 | Idle, user stream in `shadow` (`idleStreamShadow`) | 6 (idle + the stream) | — |
+| Idle, user stream in `live` (`idleStreamLive`) | 5 (idle − the member chunk + the stream) | — |
 | Activity inbox (`activityInbox`) | — | 4 |
 
 The REQs behind them: the community bundle, the room bundle (one per 128
@@ -512,8 +513,7 @@ rooms), the account bundles (authored and addressed), and per open room its
 typing + goal-tree REQ. The pinned counts are for a relay without the
 [user stream](#user-stream) (the e2e mock). With it, `shadow` adds one REQ
 (the stream) next to the chunks, and `live`/`gated` replace the member
-chunks with it; those get checkpoints of their own when the clients
-implement them.
+chunks with it (desktop: `idleStreamLive`).
 
 Rules:
 - No REQ per row (thread rows, inbox rows, search hits): rows ride a bundle

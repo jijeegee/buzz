@@ -49,6 +49,10 @@ import {
   UserStreamSession,
   userStreamEnabled,
 } from "@/shared/api/relayUserStream";
+import {
+  attachUserStreamLive,
+  tauriStreamStore,
+} from "@/shared/api/relayUserStreamStore";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
@@ -152,7 +156,15 @@ export class RelayClient {
     clearTimeout: (id) => window.clearTimeout(id),
     log: (line) => console.info(line),
     enabled: userStreamEnabled,
+    loadState: tauriStreamStore.getState,
+    saveState: (key, value) =>
+      void tauriStreamStore.setState(key, value).catch(() => {}),
   });
+  readonly userStreamLive = attachUserStreamLive(
+    this.userStream,
+    this.liveRooms,
+    () => this.channelAccessRevocations.hint(),
+  );
   readonly stopShadowCompare = this.liveRooms.observeChunkEvents(
     (event, roomId) => this.userStream.chunkEvent(event, roomId),
   );
@@ -203,6 +215,7 @@ export class RelayClient {
     this.liveSessionAbort = new AbortController();
     this.liveRooms.reset();
     this.userStream.socketEnded();
+    this.userStream.scopeChanged();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     this.keepAliveRequested = false;
@@ -884,6 +897,9 @@ export class RelayClient {
     }
 
     if (!prepareSubscriptionEvent(subscription, event)) return;
+    if (event.kind === 44100 || event.kind === 44101) {
+      if (subscription.mode === "live") this.userStream.membershipNotice(event);
+    }
     this.liveReqDrain.cancel(subId);
     this.eventBuffer.push({ subId, event, generation });
     this.flushTimeout ??= window.setTimeout(

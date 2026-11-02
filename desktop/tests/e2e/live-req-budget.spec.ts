@@ -41,6 +41,7 @@ type CheckpointName =
   | "idleRelaySelf"
   | "idleHiddenDm"
   | "idleStreamShadow"
+  | "idleStreamLive"
   | "agentsView"
   | "roomA"
   | "roomB"
@@ -181,6 +182,11 @@ function minus(a: readonly string[], b: readonly string[]) {
     rest.splice(index, 1);
     return false;
   });
+}
+
+/** A room bundle chunk (`#h:<n rooms>` with the channel kinds). */
+function isMemberChunk(signature: string) {
+  return /^#h:\d+\|kinds:\[5,7,9,/.test(signature);
 }
 
 function describeDiff(
@@ -348,7 +354,8 @@ async function idleCheckpoint(
     | "idleWithAgent"
     | "idleRelaySelf"
     | "idleHiddenDm"
-    | "idleStreamShadow" = "idle",
+    | "idleStreamShadow"
+    | "idleStreamLive" = "idle",
 ) {
   const title = page.getByTestId("chat-title");
   await expect(title).toHaveText(LANDING_ROOM);
@@ -579,6 +586,84 @@ test.describe("live REQ budget", () => {
         };
       });
     }
+  });
+
+  test("idle with the user stream live replaces the member chunks with the stream", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
+    await openHome(page, { userStreamMode: "live" });
+    // The handoff closes the member chunks after the stream EOSE.
+    await expect
+      .poll(async () => {
+        const snap = await snapshot(page);
+        return snap.live.some((sub) => isMemberChunk(sub.signature));
+      })
+      .toBe(false);
+    const snap = await idleCheckpoint(
+      page,
+      testInfo,
+      measured,
+      "idleStreamLive",
+    );
+    const stream = snap.live.filter((sub) => sub.subId.startsWith("stream-"));
+    expect(stream, "one user stream REQ").toHaveLength(1);
+    const idle = (readFixture().desktop as Partial<DesktopBudget>).checkpoints
+      ?.idle;
+    if (idle) {
+      expect(
+        minus(sortedSignatures(snap), [stream[0].signature]),
+        "live keeps idle's REQs except the member chunk",
+      ).toEqual(idle.signatures.filter((sig) => !isMemberChunk(sig)));
+    }
+    if (UPDATE) {
+      writeDesktop((desktop) => {
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
+      });
+    }
+  });
+
+  test("a CLOSED on the live user stream reopens the member chunks", async ({
+    page,
+  }) => {
+    test.setTimeout(120_000);
+    await openHome(page, { userStreamMode: "live" });
+    await expect
+      .poll(async () => {
+        const snap = await snapshot(page);
+        return snap.live.some((sub) => isMemberChunk(sub.signature));
+      })
+      .toBe(false);
+    const closed = await page.evaluate(() => {
+      const close = window.__KUZZ_E2E_CLOSE_USER_STREAM__;
+      if (!close) throw new Error("mock stream close unavailable");
+      return close("error: user-stream closed");
+    });
+    expect(closed).toBe(1);
+    await expect
+      .poll(
+        async () => {
+          const snap = await snapshot(page);
+          return snap.live.some((sub) => isMemberChunk(sub.signature));
+        },
+        { message: "member chunks reopen on the same socket" },
+      )
+      .toBe(true);
+    // A message posted after the fallback reaches the open room.
+    await page.evaluate((channelName) => {
+      const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+      if (!emit) throw new Error("mock emit unavailable");
+      emit({ channelName, content: "After the stream fallback" });
+    }, LANDING_ROOM);
+    await expect(
+      page
+        .getByTestId("message-timeline")
+        .getByText("After the stream fallback"),
+    ).toBeVisible();
   });
 
   test("each mounted thread row costs a fixed number of live subscriptions", async ({

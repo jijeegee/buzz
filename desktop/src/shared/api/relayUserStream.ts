@@ -43,6 +43,9 @@ export type UserStreamHost = {
   log: (line: string) => void;
   enabled: () => boolean;
   random?: () => number;
+  /** The store's stream `sync_state` values (backoff, counters). */
+  loadState?: (key: string) => Promise<string | null>;
+  saveState?: (key: string, value: string) => void;
 };
 
 /** Hooks the live/gated handoff installs (C2d); absent in shadow. */
@@ -56,6 +59,10 @@ export type UserStreamLiveHooks = {
     stream: UserStreamConnection,
     decision: ClosedDecision | null,
   ) => void;
+  /** The socket ended: chunks carry every room from the next connect. */
+  socketEnded: () => void;
+  /** A live 44100/44101 for the account. */
+  membershipNotice: (event: RelayEvent) => void;
 };
 
 /** One stream REQ on one connection. */
@@ -73,6 +80,11 @@ export type UserStreamConnection = {
   awaitingAuth: boolean;
   /** Newest `min(created_at, receive time)` over its frames (`lastFrame`). */
   lastFrameAt: number | null;
+  /**
+   * When the socket's connection began (s, before any chunk REQ answered):
+   * spans recorded on this connection are not a catch-up's resume point.
+   */
+  startedAt: number;
   comparator: ShadowComparator | null;
 };
 
@@ -91,6 +103,28 @@ export class UserStreamReport {
 
   constructor(log: (line: string) => void) {
     this.log = log;
+  }
+
+  /** Cumulative counters and the report sequence, kept in `sync_state`. */
+  save() {
+    return JSON.stringify({ seq: this.seq, counters: this.counters });
+  }
+
+  restore(saved: string | null) {
+    if (!saved) return;
+    try {
+      const { seq, counters } = JSON.parse(saved);
+      if (!Number.isInteger(seq) || typeof counters !== "object") return;
+      for (const [key, value] of Object.entries(counters ?? {})) {
+        if (Number.isFinite(value)) {
+          this.counters[key] = (this.counters[key] ?? 0) + (value as number);
+        }
+      }
+      this.reported = { ...this.counters };
+      this.seq = Math.max(this.seq, seq);
+    } catch {
+      // A damaged value starts over.
+    }
   }
 
   add(key: string, by = 1) {
@@ -128,12 +162,16 @@ export class UserStreamReport {
 }
 
 export class UserStreamSession {
-  readonly backoff = new UserStreamBackoff();
-  readonly report: UserStreamReport;
+  backoff = new UserStreamBackoff();
+  report: UserStreamReport;
   private current: UserStreamConnection | null = null;
   private graceTimer: number | null = null;
   /** The next reconnect waits a random 0–10 s (after `lagged`). */
   private jitterNext = false;
+  /** Backoff and counters were read from the store for this scope. */
+  private restored = false;
+  /** Bumped per `connected`, so a late restore starts no stale REQ. */
+  private attempt = 0;
   liveHooks: UserStreamLiveHooks | null = null;
   private readonly host: UserStreamHost;
 
@@ -162,7 +200,26 @@ export class UserStreamSession {
    */
   async connected(generation: number) {
     this.current = null;
+    // Whatever the last connection carried is on chunks again, also when
+    // this one is backed off or off.
+    this.liveHooks?.socketEnded();
+    const startedAt = Math.floor(this.host.nowMs() / 1000);
+    const attempt = ++this.attempt;
     if (!this.host.enabled()) return;
+    if (!this.restored && this.host.loadState) {
+      this.restored = true;
+      const { backoff, report } = this;
+      const load = this.host.loadState;
+      const [savedBackoff, counters] = await Promise.all([
+        load("stream_backoff").catch(() => null),
+        load("stream_counters").catch(() => null),
+      ]);
+      // Another account or connection since: its values are not this one's.
+      if (this.backoff !== backoff || this.report !== report) return;
+      backoff.restore(savedBackoff);
+      report.restore(counters);
+    }
+    if (attempt !== this.attempt) return;
     if (!this.backoff.allowed(Math.floor(this.host.nowMs() / 1000))) {
       this.report.add("backoffSkipped");
       return;
@@ -178,6 +235,7 @@ export class UserStreamSession {
       authRetried: false,
       awaitingAuth: false,
       lastFrameAt: null,
+      startedAt,
       comparator: null,
     };
     this.current = stream;
@@ -255,6 +313,15 @@ export class UserStreamSession {
     this.current?.comparator?.noteJoined(room);
   }
 
+  /** A live 44100/44101 for the account (`membership`). */
+  membershipNotice(event: RelayEvent) {
+    const stream = this.current;
+    if (!stream || stream.closed || !stream.streamLive) return;
+    const room = event.tags.find((tag) => tag[0] === "h")?.[1];
+    if (event.kind === 44100 && room) this.joined(room);
+    if (stream.mode !== "shadow") this.liveHooks?.membershipNotice(event);
+  }
+
   eose(subId: string) {
     const stream = this.current;
     if (!stream || stream.subId !== subId || stream.closed) return;
@@ -296,6 +363,7 @@ export class UserStreamSession {
     }
     if (decision.countsTowardBackoff) {
       this.backoff.noteClose(Math.floor(this.host.nowMs() / 1000));
+      this.saveBackoff();
     }
     if (decision.reconnectJitter) this.jitterNext = true;
     stream.closed = true;
@@ -322,7 +390,10 @@ export class UserStreamSession {
       this.host.clearTimeout(this.graceTimer);
       this.graceTimer = null;
     }
-    if (!stream) return;
+    if (!stream) {
+      this.liveHooks?.socketEnded();
+      return;
+    }
     stream.comparator?.end(this.host.nowMs());
     this.stopComparator(stream);
     if (stream.streamLive && stream.mode !== "shadow" && !stream.closed) {
@@ -330,21 +401,37 @@ export class UserStreamSession {
       this.liveHooks?.ended(stream, null);
     }
     stream.closed = true;
+    this.liveHooks?.socketEnded();
     this.maybeReport();
+  }
+
+  /** Another account or community: read its backoff and counters anew. */
+  scopeChanged() {
+    this.restored = false;
+    this.report = new UserStreamReport(this.host.log);
+    this.backoff = new UserStreamBackoff();
   }
 
   /** Network change: the overflow backoff ends early. */
   networkChange() {
     this.backoff.networkChange();
+    this.saveBackoff();
   }
 
   /** Back in the foreground after `backgroundSecs`. */
   resumed(backgroundSecs: number) {
     this.backoff.resume(backgroundSecs);
+    this.saveBackoff();
   }
 
   maybeReport() {
-    this.report.maybeReport(this.host.nowMs());
+    if (this.report.maybeReport(this.host.nowMs())) {
+      this.host.saveState?.("stream_counters", this.report.save());
+    }
+  }
+
+  private saveBackoff() {
+    this.host.saveState?.("stream_backoff", this.backoff.save());
   }
 
   private stopComparator(stream: UserStreamConnection) {

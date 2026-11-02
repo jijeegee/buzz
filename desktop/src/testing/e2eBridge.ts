@@ -43,7 +43,10 @@ import {
   mockLiveFiltersMatch,
 } from "./e2eBridgeMultiFilter.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
-import { handleSnapshotMockCommand } from "./e2eBridgeSnapshots.ts";
+import {
+  handleSnapshotMockCommand,
+  handleStreamStoreMockCommand,
+} from "./e2eBridgeSnapshots.ts";
 import {
   getOpenSubscriptions,
   getReqLog,
@@ -1485,6 +1488,8 @@ declare global {
     ) => void;
     /** Inject CLOSED into every active mock live subscription. */
     __KUZZ_E2E_CLOSE_LIVE_SUBSCRIPTIONS__?: (reason: string) => number;
+    /** Inject CLOSED into the open user stream subs (`stream-`) only. */
+    __KUZZ_E2E_CLOSE_USER_STREAM__?: (reason: string) => number;
     /** Queue CLOSED responses for channel history REQs. */
     __KUZZ_E2E_QUEUE_CHANNEL_HISTORY_CLOSES__?: (reasons: string[]) => void;
     __KUZZ_E2E_SET_STALL_WEBSOCKET_SENDS__?: (stall: boolean) => void;
@@ -12511,6 +12516,19 @@ export function maybeInstallE2eTauriMocks() {
     return closed;
   };
 
+  window.__KUZZ_E2E_CLOSE_USER_STREAM__ = (reason) => {
+    let closed = 0;
+    for (const socket of mockSockets.values()) {
+      for (const subId of [...socket.subscriptions.keys()]) {
+        if (!subId.startsWith("stream-")) continue;
+        sendWsText(socket.handler, ["CLOSED", subId, reason]);
+        socket.subscriptions.delete(subId);
+        closed += 1;
+      }
+    }
+    return closed;
+  };
+
   window.__KUZZ_E2E_SEED_MOCK_REMINDERS__ = (reminders) => {
     mockReminderEvents.length = 0;
     for (const r of reminders) {
@@ -16073,6 +16091,8 @@ export function maybeInstallE2eTauriMocks() {
         if (goals) return goals.value;
         const snapshot = handleSnapshotMockCommand(command, payload);
         if (snapshot) return snapshot.value;
+        const stream = handleStreamStoreMockCommand(command, payload);
+        if (stream) return stream.value;
         throw new Error(`Unsupported mocked Tauri command: ${command}`);
       }
     }
