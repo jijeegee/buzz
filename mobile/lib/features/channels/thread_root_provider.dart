@@ -39,10 +39,13 @@ enum ThreadRootVerdict {
 
 /// The verdict of [answer] (null when the request failed) to
 /// [threadRootFilters] for [rootId] in [channelId], and the root if found.
+/// An author's deletion (5) counts only when its signer is the root's author,
+/// so the root must be in the answer or already known as [knownRoot].
 ({ThreadRootVerdict verdict, NostrEvent? root}) threadRootVerdict(
   List<NostrEvent>? answer, {
   required String channelId,
   required String rootId,
+  NostrEvent? knownRoot,
 }) {
   if (answer == null) {
     return (verdict: ThreadRootVerdict.unresolved, root: null);
@@ -50,12 +53,15 @@ enum ThreadRootVerdict {
   final root = answer
       .where((event) => event.id == rootId && event.channelId == channelId)
       .firstOrNull;
+  final author = (root ?? (knownRoot?.id == rootId ? knownRoot : null))
+      ?.pubkey;
   final deleted = answer.any(
     (event) =>
         event.channelId == channelId &&
         (event.kind == EventKind.nip29DeleteEvent ||
             (event.kind == EventKind.deletion &&
-                (root == null || event.pubkey == root.pubkey))) &&
+                author != null &&
+                event.pubkey == author)) &&
         event.tags.any(
           (tag) => tag.length > 1 && tag[0] == 'e' && tag[1] == rootId,
         ),
@@ -70,7 +76,6 @@ List<NostrFilter> threadRootFilters(String channelId, String rootId) => [
   NostrFilter(
     kinds: EventKind.channelTimelineContentKinds,
     ids: [rootId],
-    limit: 1,
   ),
   NostrFilter(
     kinds: const [EventKind.deletion, EventKind.nip29DeleteEvent],
@@ -78,7 +83,6 @@ List<NostrFilter> threadRootFilters(String channelId, String rootId) => [
       '#h': [channelId],
       '#e': [rootId],
     },
-    limit: 1,
   ),
 ];
 
@@ -109,19 +113,32 @@ final threadRootSourcesProvider = Provider<ThreadRootSources>(
 
 /// Resolves a thread's root: the channel's loaded rows, then the store by
 /// id, then the relay (over HTTP, so a dropped socket does not stop it),
-/// asked again whenever the session reconnects until it answers.
+/// asked again whenever the session reconnects until it answers. A failed
+/// request while connected is retried after [retryDelays], then waits for
+/// the next reconnect.
 class ThreadRootNotifier extends Notifier<ThreadRoot> {
   ThreadRootNotifier(this.args);
+
+  static const retryDelays = [
+    Duration(seconds: 2),
+    Duration(seconds: 5),
+    Duration(seconds: 15),
+  ];
 
   final ThreadRepliesArgs args;
   bool _asking = false;
   bool _answered = false;
+  int _failures = 0;
+  Timer? _retry;
 
   @override
   ThreadRoot build() {
+    ref.onDispose(() => _retry?.cancel());
     ref.listen(relaySessionProvider, (previous, next) {
       if (previous?.status != SessionStatus.connected &&
           next.status == SessionStatus.connected) {
+        _failures = 0;
+        _retry?.cancel();
         unawaited(_askRelay());
       }
     });
@@ -165,6 +182,7 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
   Future<void> _askRelay() async {
     if (_asking || _answered) return;
     _asking = true;
+    _retry?.cancel();
     List<NostrEvent>? answer;
     try {
       answer = await ref
@@ -179,10 +197,15 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
       _asking = false;
     }
     if (!ref.mounted) return;
+    if (answer == null) {
+      _scheduleRetry();
+      return;
+    }
     final result = threadRootVerdict(
       answer,
       channelId: args.channelId,
       rootId: args.rootId,
+      knownRoot: state.event,
     );
     switch (result.verdict) {
       case ThreadRootVerdict.found:
@@ -194,6 +217,16 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
       case ThreadRootVerdict.unresolved:
         break;
     }
+  }
+
+  void _scheduleRetry() {
+    if (_failures >= retryDelays.length) return;
+    if (ref.read(relaySessionProvider).status != SessionStatus.connected) {
+      return;
+    }
+    _retry = Timer(retryDelays[_failures++], () {
+      if (ref.mounted) unawaited(_askRelay());
+    });
   }
 }
 

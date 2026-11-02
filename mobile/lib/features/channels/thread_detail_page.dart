@@ -357,9 +357,6 @@ class ThreadDetailPage extends HookConsumerWidget {
           ? _ThreadOpenPhase.opening
           : _ThreadOpenPhase.none,
     );
-    final isOpenHidden =
-        openPhase.value == _ThreadOpenPhase.opening ||
-        openPhase.value == _ThreadOpenPhase.positioning;
     final supportsOpenAt = useState<bool?>(null);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
@@ -371,6 +368,11 @@ class ThreadDetailPage extends HookConsumerWidget {
     // reported a frame late, a growing composer) never detaches the list.
     final userDetached = useRef(false);
     final openCapped = _useOpenHiddenCap(context, openPhase);
+    // Past the cap the list stays in sight; a later move happens visibly.
+    final isOpenHidden =
+        !openCapped.value &&
+        (openPhase.value == _ThreadOpenPhase.opening ||
+            openPhase.value == _ThreadOpenPhase.positioning);
     bool stillOpening() =>
         openPhase.value == _ThreadOpenPhase.opening ||
         (openCapped.value && openPhase.value == _ThreadOpenPhase.none);

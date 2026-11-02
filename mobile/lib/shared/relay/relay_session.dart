@@ -403,7 +403,8 @@ class RelaySessionNotifier extends Notifier<SessionState> {
           TimeoutException('Relay history request timed out after $timeout'),
         );
       }
-      _sendClose(subId);
+      // A REQ still held for the socket never reached the relay.
+      if (sub == null || sub.sent) _sendClose(subId);
     });
 
     final subscription = _HistorySubscription(

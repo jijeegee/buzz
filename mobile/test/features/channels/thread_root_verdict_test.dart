@@ -34,10 +34,14 @@ void main() {
       final answer = (testCase['answer'] as List?)
           ?.map((spec) => _event(spec as List<dynamic>, channel))
           .toList();
+      final knownAuthor = testCase['known_root_author'] as String?;
       final result = threadRootVerdict(
         answer,
         channelId: channel,
         rootId: root,
+        knownRoot: knownAuthor == null
+            ? null
+            : _event([root, 9, knownAuthor, null], channel),
       );
       expect(result.verdict.name, testCase['verdict']);
       if (result.verdict == ThreadRootVerdict.found) {

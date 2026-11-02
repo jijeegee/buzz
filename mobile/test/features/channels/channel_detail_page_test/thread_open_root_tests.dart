@@ -195,6 +195,60 @@ void threadOpenRootTests() {
       },
     );
 
+    testWidgets('an empty answer keeps the name row, never deleted', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(replies),
+          overrides: [rootSources(relay: () async => const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.byType(ChannelDetailPage), findsNothing);
+      expect(find.byKey(const ValueKey('thread-root-pending')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('thread-message-deleted')),
+        findsNothing,
+      );
+      expect(findRichText('row 109'), findsOneWidget);
+    });
+
+    testWidgets('a failed lookup while connected is retried shortly', (
+      tester,
+    ) async {
+      var asked = 0;
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(replies),
+          overrides: [
+            rootSources(
+              relay: () async {
+                asked += 1;
+                if (asked < 3) throw TimeoutException('root');
+                return [_openAtRoot];
+              },
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(asked, 1);
+
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pumpAndSettle();
+      expect(asked, 2);
+      expect(find.byKey(const ValueKey('thread-root-pending')), findsOneWidget);
+
+      await tester.pump(const Duration(seconds: 5));
+      await tester.pumpAndSettle();
+      expect(asked, 3);
+      expect(find.byKey(const ValueKey('thread-root-pending')), findsNothing);
+      expect(findRichText('thread root'), findsOneWidget);
+    });
+
     testWidgets('only an explicit deletion shows the root as deleted', (
       tester,
     ) async {

@@ -560,6 +560,27 @@ void main() {
     },
   );
 
+  test('a held history REQ goes out once across repeated connects', () async {
+    final socket = _RecordingRelaySocket();
+    final session = RelaySessionNotifier();
+    final container = ProviderContainer(
+      overrides: [relaySessionProvider.overrideWith(() => session)],
+    );
+    addTearDown(container.dispose);
+    container.read(relaySessionProvider);
+    session.debugAttachSocketForTest(socket);
+    session.debugMarkSocketDownForTest();
+
+    // No awaits until it settles: the bare container rebuilds the session
+    // on the next turn.
+    final history = session.fetchHistory(_channelFilter);
+    unawaited(session.debugHandleConnected());
+    unawaited(session.debugHandleConnected());
+    final req = _reqs(socket).single;
+    session.debugHandleMessage(['EOSE', req[1]]);
+    expect(await history, isEmpty);
+  });
+
   test('retries a dropped connected session without live subscriptions', () {
     final session = RelaySessionNotifier();
     final container = ProviderContainer(

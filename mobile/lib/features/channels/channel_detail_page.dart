@@ -876,7 +876,8 @@ class ChannelDetailPage extends HookConsumerWidget {
     // A thread opened straight from a draft, goal or notification never shows
     // the channel: this placeholder swaps itself for the thread once the head
     // is known (timeline, or fetched by id above), or once that fetch settled
-    // without it: the thread then finds its head by id itself.
+    // without it, or at once while offline: the thread then finds its head by
+    // id itself.
     final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
     final directThreadHead = opensThreadDirectly
         ? directThreadEvents
@@ -890,7 +891,8 @@ class ChannelDetailPage extends HookConsumerWidget {
       final rootId = initialThreadRootId;
       final head = directThreadHead;
       if (!opensThreadDirectly || didOpenDirectThread.value) return null;
-      if (head == null && deepLinkLoads.value == 0) return null;
+      final offline = sessionStatus != SessionStatus.connected;
+      if (head == null && deepLinkLoads.value == 0 && !offline) return null;
       didOpenDirectThread.value = true;
       final events = directThreadEvents;
       final messages = formatTimeline([
@@ -922,7 +924,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         );
       });
       return null;
-    }, [directThreadHead, deepLinkLoads.value]);
+    }, [directThreadHead, deepLinkLoads.value, sessionStatus]);
 
     useEffect(() {
       // The owner view reads someone else's chat: nothing is marked read.

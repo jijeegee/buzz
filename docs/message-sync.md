@@ -850,15 +850,20 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
 
 - **Root, in order:** passed in, the room's loaded rows (timeline or a
   deep-link copy), the store by id (pushed rows included; a removal (9005) or
-  the author's deletion (5) in the store marks it deleted), the relay. The
+  the author's deletion (5) in the store marks it deleted), the relay. An
+  author's deletion counts only when signed by the root's author, so it needs
+  the root in the same answer or already known. The
   relay is asked over `/query` with two filters in one request: the root by
   id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
   replaces a stored copy. The root fills only the top bubble, agent pins and
   the thread menu; until it is found a thin row shows the thread name there.
-- **Asked again on reconnect:** a failed, timed-out or empty answer is
-  unresolved, and the relay is asked again each time the session reconnects
-  until it answers with the root or a deletion. The open does not start the
-  room's top-level history load.
+- **Asked again:** a failed, timed-out or empty answer is unresolved. A
+  failed request while connected is retried after 2, 5 and 15 s; after that,
+  and for an empty answer, the relay is asked again each time the session
+  reconnects until it answers with the root or a deletion.
+- **Room history in the background:** the room's message provider (below)
+  starts its top-level history load as on any room open; nothing on the
+  thread page waits for it.
 - **Deleted only on proof:** the root counts as deleted only on an explicit
   deletion (stored, live, or in the relay's answer). Then the deleted row
   replaces the root and the replies stay. A failure or an empty answer never
@@ -874,8 +879,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   the listed room or its details arrive ([Launch snapshots](#launch-snapshots)).
 - **Other entry points** (notifications, goals, search, drafts) still open
   through the channel route's thread placeholder; once its by-id fetch
-  settles without the root (failed, timed out, empty), it hands the thread off
-  by id instead of showing the channel. A late read state that reruns the
+  settles without the root (failed, timed out, empty), or at once while
+  offline, it hands the thread off by id instead of showing the channel. A late read state that reruns the
   fetch does not count the replaced run. Forum rooms keep the channel route.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
   the socket is down or before AUTH is held and sent on connect (its timeout

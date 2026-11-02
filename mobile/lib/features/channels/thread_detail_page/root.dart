@@ -112,21 +112,27 @@ ValueNotifier<String?> _useLandingHighlight(
 /// The longest a thread keeps its list out of sight while it opens.
 const _openHiddenCap = Duration(milliseconds: 1200);
 
-/// Keeps [openPhase] out of sight about a second at most, the read state
-/// wait included: the replies at hand then show at the newest. Returns
-/// whether that happened; a window found later then moves there once, only
-/// if the reader has not moved meanwhile (docs/message-sync.md#opening-at-a-position).
-ObjectRef<bool> _useOpenHiddenCap(
+/// Keeps the list out of sight about a second at most while it opens or
+/// positions, the read state wait included: the replies at hand then show at
+/// the newest, and the list is never hidden again. Returns whether that
+/// happened; a window found later then moves there once, only if the reader
+/// has not moved meanwhile (docs/message-sync.md#opening-at-a-position).
+ValueNotifier<bool> _useOpenHiddenCap(
   BuildContext context,
   ValueNotifier<_ThreadOpenPhase> openPhase,
 ) {
-  final capped = useRef(false);
+  final capped = useState(false);
   useEffect(() {
     if (openPhase.value != _ThreadOpenPhase.opening) return null;
     final timer = Timer(_openHiddenCap, () {
-      if (!context.mounted || openPhase.value != _ThreadOpenPhase.opening) {
+      if (!context.mounted) return;
+      final phase = openPhase.value;
+      if (phase == _ThreadOpenPhase.positioning) {
+        // Positioning finishes in sight.
+        capped.value = true;
         return;
       }
+      if (phase != _ThreadOpenPhase.opening) return;
       capped.value = true;
       openPhase.value = _ThreadOpenPhase.none;
     });
