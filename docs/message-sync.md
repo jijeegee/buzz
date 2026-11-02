@@ -1373,6 +1373,9 @@ sub.
   announced, or a part out of order; fewer parts than announced at EOSE. A
   refused snapshot CLOSEs the stream: chunks for this connection. The store
   layer runs the same checks ([Store skip](#store-skip)).
+- **Integer fields:** every integer field (`v`, `part`, `parts`, `kinds`,
+  room seq) refuses `1.0` and `1e0` alike. This holds for a later part's
+  `part` too. The fixture lists the cases.
 - Any other kind arriving before part 1 is ignored (not stored, routed or
   compared). 24220 events after EOSE are ignored.
 - **Epoch (`epoch`):** the file keeps the last epoch in `sync_state`. An
@@ -1478,7 +1481,10 @@ carried, so every member room is on chunks.
 
 - **At connect:** chunks open at once, as without the stream, so an account
   without it waits no extra round trip. The stream REQ goes first after AUTH
-  OK.
+  OK. Mobile reads the stream state when the socket starts connecting; on
+  the first connect of an account, if that read is still running at AUTH
+  OK, the chunk replay waits for the stream REQ at most 300 ms. With the
+  stream switched off in the build nothing waits.
 - **`live`/`gated`:** after the stream EOSE (never at part 1) the chunks are
   replaced ([replacing a chunk](#live-room-bundle)) by chunks of the rooms
   the snapshot lacks (member ∪ quiet − snapshot); usually none remain.
@@ -1535,7 +1541,9 @@ into that listener (`membership`, `routing`).
   the store.
 - **Rooms not in the member list:** an archived room's frames are stored
   and reach an open room, never the all-rooms consumers. A room the list
-  does not know is stored and triggers one debounced list refresh per burst.
+  does not know is stored and triggers a debounced list refresh: one per
+  burst (1 s), at most once per 10 s per room, and at most one every 5 s
+  over all rooms.
 
 ### Watermark (`room_seq`)
 
@@ -1607,6 +1615,11 @@ walks nothing itself (chunk catch-ups run as today) and counts
   by resume point, then id, and split them 128 per batch; each batch walks
   from its oldest resume point minus 1865 s. One stale room never holds
   back fresh ones. Stream, audit and fallback catch-ups all batch this way.
+- **Connection end and rate limits:** a stream catch-up starts no new batch
+  or page once its connection ended (pages already written stay; rooms not
+  reached count in no counter), and each page waits out the session's
+  rate-limit window first. A connection's catch-up starts only after every
+  earlier connection's catch-up has ended, so they never overlap.
 - **A skip records nothing (`skipCoverage`):** no span beyond the stream's
   own `[L, L]`, and `room_seq.at` does not move. The gap from the room's last
   `hi` to L stays uncovered, so opening or preloading the room fetches it,
@@ -1619,6 +1632,9 @@ walks nothing itself (chunk catch-ups run as today) and counts
   listeners. Like a chunk's, the stream's last-seen time lives in memory:
   the first connect after launch has none and runs no listener repair.
 - **Mobile:** store catch-up batched and sorted, plus the open-room refetch.
+  The reconnect unread catch-up runs from read markers; a chunk re-sync
+  that retires it before it lands (the hand-off at the stream EOSE, a
+  44100/44101) runs it again.
   The quiet-room backfill after a drop waits for the stream EOSE instead of
   the chunks'.
 
@@ -1630,8 +1646,15 @@ Counters are kept per account and server, persisted cumulatively in
 since the last line (any change from 0), or 10 min after the last line if
 anything changed.
 
-- **New-row rule (`newRow`):** a row counts as new only if the walk inserted
-  it (it was not stored), it was not also received live on this connection
+- **Already stored (`newRow`):** when the gate counters (`falseSkip`,
+  `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
+  after this connection's start time does not count as "already stored",
+  whichever path stored it (chunk catch-up, unread refresh, room reload, live
+  frame). Mobile takes a stored mark at the connection start (the newest
+  `events` rowid once every earlier write is done); a row with a higher
+  rowid was stored on this connection.
+- **New-row rule (`newRow`):** a row counts as new only if it was not
+  already stored (above), it was not also received live on this connection
   (on the stream or a chunk, before or after the stream EOSE, including the
   frames the relay held until EOSE), and its `created_at` is at or before L
   and at or after the start of the room's newest coverage segment that
