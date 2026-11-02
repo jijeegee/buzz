@@ -5,6 +5,13 @@ import Security
 import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
+  /// Shown when the message can't be loaded. Replaces the gateway's fixed
+  /// English text, which talks about relays.
+  private static let genericBody = NSLocalizedString(
+    "New message",
+    comment: "Notification text when a new message arrived but could not be loaded."
+  )
+
   private var handoff: KuzzNotificationHandoff<UNNotificationContent>?
   private var bestAttemptContent: UNMutableNotificationContent?
   private var restrictedFallbackContent: UNMutableNotificationContent?
@@ -76,6 +83,7 @@ final class NotificationService: UNNotificationServiceExtension {
       finish(request.content)
       return
     }
+    content.body = Self.genericBody
     bestAttemptContent = content
     var cleanUserInfo = content.userInfo
     cleanUserInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
