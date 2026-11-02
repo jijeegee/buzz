@@ -320,6 +320,31 @@ void main() {
     );
   });
 
+  test('descriptor ignores unknown top-level NIP-11 fields', () {
+    // Shape of the live relay document: other features add top-level
+    // fields, and the push section lists both app profiles.
+    final information = _descriptorJson(relay.public)
+      ..['read_state_snapshot'] = {'version': 1}
+      ..['artifacts'] = {'desktop': 'https://example.test/app'}
+      ..['kuzz_key_backup'] = {'enabled': true};
+    final push = information['push'] as Map<String, dynamic>;
+    push['app_profiles'] = [
+      {'id': 'kuzz-ios-dogfood', 'transport': 'apns'},
+      {'id': 'kuzz-android', 'transport': 'fcm'},
+    ];
+    push['class_support'] = {
+      'apns': ['default'],
+      'fcm': ['default'],
+    };
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.executorKeyId, 'relay-v1');
+    expect(descriptor.transport, 'apns');
+  });
+
   test('descriptor rejects unknown push fields', () {
     final information = _descriptorJson(relay.public);
     (information['push'] as Map<String, dynamic>)['future'] = true;

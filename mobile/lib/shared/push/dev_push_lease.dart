@@ -51,33 +51,9 @@ class KuzzPushLeaseDescriptor {
   factory KuzzPushLeaseDescriptor.fromRelayInformation(
     Map<String, dynamic> information,
   ) {
-    _requireExactKeys(
-      information,
-      required: const {},
-      allowed: const {
-        'name',
-        'description',
-        'pubkey',
-        'contact',
-        'supported_nips',
-        'supported_extensions',
-        'software',
-        'version',
-        'limitation',
-        'retention',
-        'relay_countries',
-        'language_tags',
-        'tags',
-        'posting_policy',
-        'payments_url',
-        'fees',
-        'icon',
-        'self',
-        'pairing_relay_url',
-        'push',
-      },
-      name: 'NIP-11 document',
-    );
+    // The NIP-11 document is shared by every relay feature, and new
+    // top-level fields are added independently of push. Only the push
+    // descriptor itself is checked strictly.
     final extensions = _stringList(
       information['supported_extensions'],
       name: 'supported_extensions',
