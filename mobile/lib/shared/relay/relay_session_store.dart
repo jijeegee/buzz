@@ -177,6 +177,31 @@ extension RelaySessionStore on RelaySessionNotifier {
     );
   }
 
+  /// The event [id] of [roomId] as the store holds it, and whether a stored
+  /// deletion targets it, to draw a thread's root before the relay answers;
+  /// `null` when it is not stored or store opens are off.
+  Future<({NostrEvent event, bool deleted})?> paintableEvent(
+    String roomId,
+    String id,
+  ) async {
+    final store = _messageStore;
+    if (store == null || !storeOpensEnabled) return null;
+    final stored = await store.paintableEvent(
+      _storeLease,
+      room: roomId,
+      id: id,
+    );
+    if (stored == null) return null;
+    try {
+      return (
+        event: NostrEvent.fromJson(stored.event),
+        deleted: stored.deleted,
+      );
+    } catch (_) {
+      return null;
+    }
+  }
+
   /// [rootId]'s newest replies in [roomId] as the store holds them, certain
   /// or not, to draw while the thread's relay page is out.
   Future<List<NostrEvent>?> paintableThreadHead(

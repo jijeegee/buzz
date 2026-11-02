@@ -111,6 +111,27 @@ Future<Map<String, Map<String, dynamic>>> storedEventsById(
   return {for (final row in rows) row['id']! as String: ?_parse(row['raw'])};
 }
 
+/// One stored event [id] of [room] for drawing, and whether a stored removal
+/// (9005) or its author's deletion (5) targets it; `null` when it is not
+/// stored. Rows only the push inbox wrote count: like a thread paint, the
+/// relay's copy replaces them
+/// (docs/message-sync.md#opening-a-thread-from-its-root-id).
+Future<({Map<String, dynamic> event, bool deleted})?> readPaintableEvent(
+  DatabaseExecutor db, {
+  required String room,
+  required String id,
+}) async {
+  final rows = await db.rawQuery(
+    'SELECT id, pubkey, raw FROM events WHERE id = ? AND room = ?',
+    [id, room],
+  );
+  if (rows.isEmpty) return null;
+  final event = _parse(rows.single['raw']);
+  if (event == null) return null;
+  final deleted = await storedDeletedIds(db, rows);
+  return (event: event, deleted: deleted.contains(id));
+}
+
 Map<String, dynamic>? _parse(Object? raw) {
   if (raw is! String) return null;
   try {

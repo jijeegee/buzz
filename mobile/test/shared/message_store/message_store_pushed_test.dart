@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:kuzz/shared/message_store/message_store.dart';
+import 'package:kuzz/shared/message_store/thread_head.dart';
 
 const _relay = 'wss://relay.example';
 const _relayKey =
@@ -224,6 +225,86 @@ void main() {
     await store.flushed();
     expect(await column('SELECT id FROM pushed_rows'), isEmpty);
     expect(await painted(), ['p1', 'a1']);
+  });
+
+  test('a thread paint draws pushed replies; a certain read leaves them '
+      'out', () async {
+    Map<String, dynamic> reply(String id, int at) => {
+      ...event(id, 'r', at),
+      'tags': [
+        ['h', 'r'],
+        ['e', 'root', '', 'reply'],
+      ],
+    };
+    await applyList({'r'});
+    store.submit(lease, [event('root', 'r', 5), reply('a1', 10)]);
+    await store.flushed();
+    await store.submitPushed(lease, [reply('p1', 20)], fetchedAt: now());
+    expect(await column('SELECT id FROM pushed_rows'), ['p1']);
+
+    final painted = await store.paintableThreadHead(
+      lease,
+      room: 'r',
+      root: 'root',
+      kinds: const [9],
+      limit: 50,
+    );
+    expect(
+      [
+        for (final message in painted!)
+          if (message['kind'] == 9) message['id'],
+      ],
+      ['p1', 'a1'],
+    );
+    final certainRows = await withDb(
+      (db) => readThreadHead(
+        db,
+        room: 'r',
+        root: 'root',
+        kinds: const [9],
+        limit: 50,
+        liveAt: null,
+      ),
+    );
+    expect([for (final row in certainRows.rows) row['id']], ['a1']);
+  });
+
+  test('a stored root reads by id, pushed or deleted', () async {
+    await applyList({'r'});
+    store.submit(lease, [
+      event('root', 'r', 5),
+      event('gone', 'r', 6),
+      {
+        'id': 'del',
+        'kind': 9005,
+        'pubkey': _relayKey,
+        'created_at': 7,
+        'tags': [
+          ['h', 'r'],
+          ['e', 'gone'],
+        ],
+        'content': '',
+      },
+    ]);
+    await store.flushed();
+    await store.submitPushed(lease, [
+      event('pushed', 'r', 8),
+    ], fetchedAt: now());
+
+    final root = await store.paintableEvent(lease, room: 'r', id: 'root');
+    expect(root?.event['content'], 'root');
+    expect(root?.deleted, isFalse);
+    final pushed = await store.paintableEvent(lease, room: 'r', id: 'pushed');
+    expect(pushed?.event['id'], 'pushed');
+    expect(
+      (await store.paintableEvent(lease, room: 'r', id: 'gone'))?.deleted,
+      isTrue,
+    );
+    expect(
+      await store.paintableEvent(lease, room: 'other', id: 'root'),
+      isNull,
+    );
+    expect(await store.paintableEvent(lease, room: 'r', id: 'missing'), isNull);
   });
 
   group('a room forgotten after the fetch gets no pushed rows', () {

@@ -575,6 +575,7 @@ class MessageStore {
           kinds: kinds,
           limit: limit,
           liveAt: null,
+          includePushed: true,
         ),
       ),
     );
@@ -582,6 +583,19 @@ class MessageStore {
         ? null
         : head.toResponse(room, root);
   }
+
+  /// The event [id] of [room] as the store holds it, to draw a thread's root
+  /// before the relay answers; `null` when it is not stored. Does not wait
+  /// for the writer (docs/message-sync.md#opening-a-thread-from-its-root-id).
+  Future<({Map<String, dynamic> event, bool deleted})?> paintableEvent(
+    MessageStoreLease? lease, {
+    required String room,
+    required String id,
+  }) => _read<({Map<String, dynamic> event, bool deleted})?>(
+    lease,
+    'event paint',
+    (db) => readPaintableEvent(db, room: room, id: id),
+  );
 
   /// The saved value [key] of [lease]'s file (docs/message-sync.md#launch-order),
   /// or `null` when none is saved, the file does not exist or the lease has
