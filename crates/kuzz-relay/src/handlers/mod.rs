@@ -50,6 +50,8 @@ pub mod req;
 pub mod side_effects;
 /// User stream REQ (`#h: ["$joined"]`): snapshot, then live frames.
 pub mod user_stream;
+/// iOS user-stream shadow report (`POST /api/user-stream/shadow-report`).
+pub mod user_stream_report;
 #[cfg(test)]
 mod thread_name_tests;
 
