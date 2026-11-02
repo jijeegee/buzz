@@ -1252,6 +1252,74 @@ pub async fn get_accessible_channel_ids(
         .collect()
 }
 
+/// Channel ids where `pubkey` is an active member (deleted channels excluded,
+/// archived ones kept). The user stream's room set (query A); unlike
+/// [`get_accessible_channel_ids`] it leaves out open channels the pubkey only
+/// visits.
+pub async fn get_member_channel_ids(
+    pool: &PgPool,
+    community_id: CommunityId,
+    pubkey: &[u8],
+) -> Result<Vec<Uuid>> {
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT cm.channel_id
+        FROM channel_members cm
+        JOIN channels c ON cm.community_id = c.community_id AND cm.channel_id = c.id AND c.deleted_at IS NULL
+        WHERE cm.community_id = $1 AND cm.pubkey = $2 AND cm.removed_at IS NULL
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(pubkey)
+    .fetch_all(&mut *connection)
+    .await?;
+    rows.into_iter()
+        .map(|r| Ok(r.try_get::<Uuid, _>("channel_id")?))
+        .collect()
+}
+
+/// `accepted_sequence` of each listed, non-deleted channel (the user stream's
+/// snapshot seq, query B). Read from the writer, so a committed seq S implies
+/// every seq <= S of that channel is committed (migration 0060).
+pub async fn get_channel_accepted_sequences(
+    pool: &PgPool,
+    community_id: CommunityId,
+    channel_ids: &[Uuid],
+) -> Result<Vec<(Uuid, i64)>> {
+    if channel_ids.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut connection = crate::observability::acquire_writer(
+        pool,
+        crate::observability::WriterOperation::Authorization,
+    )
+    .await?;
+    let rows = sqlx::query(
+        r#"
+        SELECT id, accepted_sequence
+        FROM channels
+        WHERE community_id = $1 AND id = ANY($2) AND deleted_at IS NULL
+        "#,
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_ids)
+    .fetch_all(&mut *connection)
+    .await?;
+    rows.into_iter()
+        .map(|r| {
+            Ok((
+                r.try_get::<Uuid, _>("id")?,
+                r.try_get::<i64, _>("accepted_sequence")?,
+            ))
+        })
+        .collect()
+}
+
 /// A large channel whose canonical active-member count may need its legacy
 /// discovery snapshot repaired.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1924,6 +1992,26 @@ impl Db {
         pubkey: &[u8],
     ) -> Result<Vec<Uuid>> {
         get_accessible_channel_ids(&self.pool, community_id, pubkey).await
+    }
+
+    /// Channel ids where `pubkey` is an active member; see [`get_member_channel_ids`].
+    #[datastore_span(name = "get_member_channel_ids", system = "postgresql")]
+    pub async fn get_member_channel_ids(
+        &self,
+        community_id: CommunityId,
+        pubkey: &[u8],
+    ) -> Result<Vec<Uuid>> {
+        get_member_channel_ids(&self.pool, community_id, pubkey).await
+    }
+
+    /// Accepted sequences of channels; see [`get_channel_accepted_sequences`].
+    #[datastore_span(name = "get_channel_accepted_sequences", system = "postgresql")]
+    pub async fn get_channel_accepted_sequences(
+        &self,
+        community_id: CommunityId,
+        channel_ids: &[Uuid],
+    ) -> Result<Vec<(Uuid, i64)>> {
+        get_channel_accepted_sequences(&self.pool, community_id, channel_ids).await
     }
 
     /// Returns large active-channel rosters whose relay-authored snapshots differ.

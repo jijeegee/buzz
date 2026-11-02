@@ -147,7 +147,58 @@ impl PartitionAuditSchedule {
     }
 }
 
+/// What the command line asks for. The relay takes no arguments other than
+/// `--check-config`; anything else exits 2 before any connection is made, so
+/// a deploy that passes stale arguments fails loudly instead of running.
+#[derive(Debug, PartialEq, Eq)]
+enum CliMode {
+    Run,
+    CheckConfig,
+}
+
+fn parse_cli_args(args: impl IntoIterator<Item = String>) -> Result<CliMode, String> {
+    let args: Vec<String> = args.into_iter().collect();
+    match args.as_slice() {
+        [] => Ok(CliMode::Run),
+        [only] if only == "--check-config" => Ok(CliMode::CheckConfig),
+        _ => Err(format!(
+            "unsupported arguments {args:?} (usage: kuzz-relay [--check-config])"
+        )),
+    }
+}
+
+/// `kuzz-relay --check-config`: load the configuration exactly as startup
+/// does (env only, no network), print the effective user-stream summary and
+/// return the exit code. Nothing connects to the database, Redis or S3.
+fn check_config() -> i32 {
+    let config = match Config::from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("kuzz-relay: invalid configuration: {error}");
+            return 1;
+        }
+    };
+    if let Err(error) = relay_keypair_from_config(config.relay_private_key.as_deref()) {
+        eprintln!("kuzz-relay: invalid configuration: {error}");
+        return 1;
+    }
+    for warning in &config.user_stream.warnings {
+        println!("warning: {warning}");
+    }
+    println!("{}", config.user_stream.summary());
+    println!("configuration ok");
+    0
+}
+
 fn main() -> anyhow::Result<()> {
+    match parse_cli_args(std::env::args().skip(1)) {
+        Ok(CliMode::Run) => {}
+        Ok(CliMode::CheckConfig) => std::process::exit(check_config()),
+        Err(message) => {
+            eprintln!("kuzz-relay: {message}");
+            std::process::exit(2);
+        }
+    }
     let (runtime, boot) = BootTracker::start_before_runtime(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -266,6 +317,10 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         push_enabled = config.push_enabled,
         "Config loaded"
     );
+    for warning in &config.user_stream.warnings {
+        warn!(target: "kuzz_relay::user_stream", "{warning}");
+    }
+    info!(target: "kuzz_relay::user_stream", "{}", config.user_stream.summary());
 
     let usage_interval_secs = usage_metrics_interval_secs();
     let metrics_refresh_interval_secs =
@@ -4167,5 +4222,21 @@ mod composition_tests {
              Captured (first 500 chars):\n{}",
             &captured[..captured.len().min(500)]
         );
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{parse_cli_args, CliMode};
+
+    #[test]
+    fn cli_accepts_nothing_or_check_config_only() {
+        let parse = |args: &[&str]| parse_cli_args(args.iter().map(|a| a.to_string()));
+        assert_eq!(parse(&[]), Ok(CliMode::Run));
+        assert_eq!(parse(&["--check-config"]), Ok(CliMode::CheckConfig));
+        assert!(parse(&["--check-config", "extra"]).is_err());
+        assert!(parse(&["serve"]).is_err());
+        assert!(parse(&["--check-confi"]).is_err());
+        assert!(parse(&[""]).is_err());
     }
 }

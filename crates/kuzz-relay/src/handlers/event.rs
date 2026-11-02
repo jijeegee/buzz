@@ -81,10 +81,21 @@ where
     I: IntoIterator<Item = (crate::subscription::ConnId, &'a str)>,
 {
     let mut drop_count = 0u32;
+    let streams = state.sub_registry.has_streams();
     for (conn_id, sub_id) in recipients {
         let frame = frames
             .get(sub_id)
             .expect("fan-out frame cache covers every recipient subscription id");
+        // User streams queue frames until their snapshot EOSE.
+        if let Some(stream) = streams
+            .then(|| state.sub_registry.stream_for(conn_id, sub_id))
+            .flatten()
+        {
+            if !super::user_stream::deliver(state, conn_id, &stream, Arc::clone(frame)) {
+                drop_count += 1;
+            }
+            continue;
+        }
         if !state
             .conn_manager
             .send_to_text_bytes(conn_id, Arc::clone(frame))

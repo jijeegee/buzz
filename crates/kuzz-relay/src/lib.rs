@@ -50,6 +50,8 @@ pub mod invite_token;
 pub mod lifecycle;
 /// Refill fences and origin generations for the membership cache.
 pub mod membership_cache_gen;
+/// Per-account user-stream switches (`KUZZ_USER_STREAM*`).
+pub mod user_stream_config;
 /// Inter-relay mesh startup wiring (`KUZZ_MESH` seam).
 pub mod mesh_boot;
 /// Prometheus metrics: recorder, upkeep, HTTP middleware.
@@ -77,6 +79,8 @@ pub mod state;
 pub mod storage_sweep;
 /// Subscription registry with (channel, kind) fan-out index.
 pub mod subscription;
+/// Per-connection user-stream state (snapshot queue, mode, owner).
+pub mod subscription_stream;
 /// OpenTelemetry tracing initialisation (tracer provider + OTLP exporter).
 pub mod telemetry;
 /// Row-zero host binding: resolve the request community from the connection host.

@@ -93,6 +93,19 @@ pub async fn handle_req(
         }
     };
 
+    if super::user_stream::is_stream_req(&filters) {
+        super::user_stream::handle_stream_req(
+            sub_id,
+            filters,
+            pubkey_bytes,
+            token_channel_ids,
+            conn,
+            state,
+        )
+        .await;
+        return;
+    }
+
     let channel_id = extract_channel_id_from_filters(&filters);
     let requested_channel_ids = match extract_channel_ids_from_filters_limited(&filters) {
         Ok(ids) => ids,

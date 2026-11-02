@@ -48,6 +48,8 @@ pub mod report_resolution;
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+/// User stream REQ (`#h: ["$joined"]`): snapshot, then live frames.
+pub mod user_stream;
 #[cfg(test)]
 mod thread_name_tests;
 
