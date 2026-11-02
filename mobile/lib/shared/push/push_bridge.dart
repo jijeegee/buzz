@@ -155,9 +155,10 @@ void clearKuzzPushSetupErrorFor(String? communityId) {
 /// setup over at once, without waiting out a backoff.
 final kuzzPushUserRetries = ValueNotifier<int>(0);
 
-/// This phone can't receive push (no Google Play services, or the token
-/// keeps failing). Setup stops until the next cold start or until the
-/// person turns push off and on.
+/// This phone can't receive push: FCM gave a permanent reason (no Google
+/// Play services, a wrong sender, no Firebase setup) or refused the token.
+/// Setup stops until the next cold start or until the person turns push off
+/// and on. Transient FCM errors never set this; they stay on the backoff.
 final kuzzPushUnavailableOnThisPhone = ValueNotifier<bool>(false);
 
 /// Counts answered notification permission dialogs, so the permission
@@ -171,7 +172,6 @@ void noteKuzzPushToggled(String communityId, {required bool enabled}) {
   clearKuzzPushSetupErrorFor(communityId);
   apnsRegistrationError.value = null;
   kuzzPushUnavailableOnThisPhone.value = false;
-  _androidTokenFailures = 0;
   _androidPermissionPromptRequested = enabled;
   kuzzPushUserRetries.value += 1;
 }
@@ -255,14 +255,13 @@ Future<void> startKuzzPushRegistration() async {
       debugPrint('[AndroidPush] token failed: ${error.code} ${error.details}');
       permanent = _isPermanentAndroidTokenFailure(error);
     }
-    if (token != null && _setAndroidPushToken(token)) {
-      _androidTokenFailures = 0;
-      return;
-    }
+    if (token != null && _setAndroidPushToken(token)) return;
     // A refused token: the next one would be refused too.
     if (token != null) permanent = true;
-    _androidTokenFailures += 1;
-    if (permanent || _androidTokenFailures >= _androidTokenFailureLimit) {
+    // Anything else (SERVICE_NOT_AVAILABLE, timeouts, IO) may clear up: the
+    // relay being reachable says nothing about FCM. The caller retries on
+    // its backoff, which tops out at one try every 10 minutes.
+    if (permanent) {
       kuzzPushUnavailableOnThisPhone.value = true;
       throw const KuzzPushUnavailableOnThisPhone();
     }
@@ -285,12 +284,6 @@ class KuzzPushUnavailableOnThisPhone implements Exception {
   String toString() => 'Push is not available on this phone';
 }
 
-/// Token failures in a row after which this phone is treated as unable to
-/// get push. Registration runs only while connected to the server, so a
-/// token that keeps failing then means Google Play services are missing or
-/// broken, not that the phone is offline.
-const _androidTokenFailureLimit = 3;
-int _androidTokenFailures = 0;
 bool _androidPermissionPromptRequested = false;
 bool _androidPermissionAskedThisRun = false;
 
@@ -325,7 +318,6 @@ Future<void> _askAndroidNotificationPermissionOnce() async {
 /// Puts the registration state back as at a cold start.
 @visibleForTesting
 void debugResetKuzzPushRegistrationState() {
-  _androidTokenFailures = 0;
   _androidPermissionPromptRequested = false;
   _androidPermissionAskedThisRun = false;
   kuzzPushUnavailableOnThisPhone.value = false;

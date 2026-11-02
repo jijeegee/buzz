@@ -100,6 +100,13 @@ class KuzzPushAttemptGate {
 
   void complete(String attempt) {
     if (_attempt != attempt) return;
+    reset();
+  }
+
+  /// Drops whatever attempt is running, held or waiting out a backoff, so
+  /// the next [tryBegin] starts over even with the same key. A running
+  /// attempt that finishes later finds itself dropped and changes nothing.
+  void reset() {
     resetBackoff();
     _retryTimer?.cancel();
     _retryTimer = null;
@@ -306,6 +313,25 @@ class KuzzPushBootstrap extends HookConsumerWidget {
     final communities = ref.watch(communityListProvider).value ?? const [];
     final config = ref.watch(relayConfigProvider);
     final community = ref.watch(activeCommunityProvider).value;
+    // The account push is on for. A signed-out account reads as push off.
+    final pushScope = community?.pushNotificationsEnabled == true
+        ? community?.id
+        : null;
+    final previousPushScope = useRef<String?>(null);
+    // Counts the times push stopped for an account: it signed out, push was
+    // turned off, or another account (or none) became active.
+    final pushScopeEnds = useRef(0);
+    if (previousPushScope.value != pushScope) {
+      if (previousPushScope.value != null) {
+        // The held lease and registration belong to the session that ended.
+        // Signing back in to the same account must publish again, even
+        // though nothing in the attempt keys changed. A plain disconnect
+        // keeps the scope, so it does not republish.
+        pushScopeEnds.value += 1;
+        publicationAttempt.reset();
+      }
+      previousPushScope.value = pushScope;
+    }
     final memberPubkey = ref.watch(myPubkeyProvider);
     final descriptor = ref.watch(currentRelayPushDescriptorProvider).value;
 
@@ -335,13 +361,10 @@ class KuzzPushBootstrap extends HookConsumerWidget {
     }, [revocationOutbox, session.status]);
 
     // A failure belongs to one account while push is on for it.
-    final errorScope = community?.pushNotificationsEnabled == true
-        ? community?.id
-        : null;
     useEffect(() {
-      clearKuzzPushSetupErrorUnlessFor(errorScope);
+      clearKuzzPushSetupErrorUnlessFor(pushScope);
       return null;
-    }, [errorScope]);
+    }, [pushScope]);
 
     useEffect(
       () => () {
@@ -496,6 +519,7 @@ class KuzzPushBootstrap extends HookConsumerWidget {
         userRetry,
         publicationRetry.value,
         retrySignal,
+        pushScopeEnds.value,
       ],
     );
 
@@ -506,7 +530,9 @@ class KuzzPushBootstrap extends HookConsumerWidget {
             community: community,
             descriptor: descriptor,
           ),
-      attemptKey: '${community?.id}|${config.baseUrl}|$userRetry',
+      attemptKey:
+          '${community?.id}|${config.baseUrl}|$userRetry|'
+          '${pushScopeEnds.value}',
       communityId: community?.id,
       retrySignal: retrySignal,
       startRegistration: startRegistration,

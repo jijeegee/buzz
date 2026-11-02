@@ -66,12 +66,14 @@ void main() {
     final calls = <String>[];
     var permission = 'notDetermined';
     PlatformException? tokenError;
+    var token = 'tok-1';
     setUp(() {
       debugAndroidPushActiveOverride = true;
       debugResetKuzzPushRegistrationState();
       apnsDeviceToken.value = null;
       permission = 'notDetermined';
       tokenError = null;
+      token = 'tok-1';
       calls.clear();
       TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(androidPushChannel, (call) async {
@@ -85,7 +87,7 @@ void main() {
                 return permission;
               case 'token':
                 if (tokenError != null) throw tokenError!;
-                return 'tok-1';
+                return token;
             }
             return null;
           });
@@ -181,21 +183,65 @@ void main() {
     }, skip: !Env.pushGatewayConfigured);
 
     test(
-      'a token that keeps failing is not available after three tries',
+      'a transient FCM error never makes push unavailable (R1)',
       () async {
-        tokenError = PlatformException(
+        for (final details in [
+          'java.io.IOException: SERVICE_NOT_AVAILABLE',
+          'java.util.concurrent.TimeoutException',
+          'java.io.IOException: AUTHENTICATION_FAILED',
+        ]) {
+          tokenError = PlatformException(
+            code: 'token',
+            message: 'IOException',
+            details: details,
+          );
+          for (var attempt = 0; attempt < 10; attempt++) {
+            await expectLater(startKuzzPushRegistration(), throwsStateError);
+          }
+          expect(kuzzPushUnavailableOnThisPhone.value, isFalse);
+        }
+        tokenError = null;
+        await startKuzzPushRegistration();
+        expect(apnsDeviceToken.value, 'tok-1');
+      },
+      skip: !Env.pushGatewayConfigured,
+    );
+
+    for (final (name, error) in [
+      (
+        'INVALID_SENDER',
+        PlatformException(
           code: 'token',
-          message: 'IOException',
-          details: 'SERVICE_NOT_AVAILABLE',
-        );
-        await expectLater(startKuzzPushRegistration(), throwsStateError);
-        await expectLater(startKuzzPushRegistration(), throwsStateError);
-        expect(kuzzPushUnavailableOnThisPhone.value, isFalse);
+          message: 'ExecutionException',
+          details: 'java.io.IOException: INVALID_SENDER',
+        ),
+      ),
+      ('not_configured', PlatformException(code: 'not_configured')),
+    ]) {
+      test(
+        'a permanent FCM error ($name) makes push unavailable at once (R1)',
+        () async {
+          tokenError = error;
+          await expectLater(
+            startKuzzPushRegistration(),
+            throwsA(isA<KuzzPushUnavailableOnThisPhone>()),
+          );
+          expect(kuzzPushUnavailableOnThisPhone.value, isTrue);
+        },
+        skip: !Env.pushGatewayConfigured,
+      );
+    }
+
+    test(
+      'a refused token makes push unavailable at once (R1)',
+      () async {
+        token = 'x' * 513;
         await expectLater(
           startKuzzPushRegistration(),
           throwsA(isA<KuzzPushUnavailableOnThisPhone>()),
         );
         expect(kuzzPushUnavailableOnThisPhone.value, isTrue);
+        expect(apnsDeviceToken.value, isNull);
       },
       skip: !Env.pushGatewayConfigured,
     );

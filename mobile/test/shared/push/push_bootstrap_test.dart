@@ -529,6 +529,79 @@ void main() {
       expect(publishes, 2);
     }, skip: !Env.pushGatewayConfigured);
 
+    testWidgets(
+      'signing out and back in to the same account publishes again (R2)',
+      (tester) async {
+        final community = _pushCommunity('Team');
+        var publishes = 0;
+        var registrations = 0;
+        await _pumpBootstrap(
+          tester,
+          community: community,
+          publishLease: (ref, config, community, memberPubkey, relay) async {
+            publishes += 1;
+            return _grant(
+              expiresAt:
+                  DateTime.now()
+                      .add(const Duration(hours: 1))
+                      .millisecondsSinceEpoch ~/
+                  1000,
+            );
+          },
+          startRegistration: () async => registrations += 1,
+        );
+        expect(publishes, 1);
+        expect(registrations, 1);
+        final container = ProviderScope.containerOf(
+          tester.element(find.byType(SizedBox)),
+        );
+        final session =
+            container.read(relaySessionProvider.notifier) as _Session;
+
+        // A plain reconnect keeps the held lease.
+        session.setStatus(SessionStatus.reconnecting);
+        await tester.pump();
+        session.setStatus(SessionStatus.connected);
+        await tester.pump();
+        await tester.pump();
+        expect(publishes, 1);
+        expect(registrations, 1);
+
+        // Signed out: the active account reads as push off.
+        container
+            .read(_activeCommunity.notifier)
+            .set(
+              community.copyWith(
+                signedOut: true,
+                pushNotificationsEnabled: false,
+              ),
+            );
+        await tester.pump();
+        await tester.pump();
+        expect(publishes, 1);
+
+        // Signed back in to the same account in the same run.
+        container.read(_activeCommunity.notifier).set(community);
+        await tester.pump();
+        await tester.pump();
+        expect(publishes, 2);
+        expect(registrations, 2);
+
+        // Push turned off and on again also publishes, even without the
+        // toggle's retry bump.
+        container
+            .read(_activeCommunity.notifier)
+            .set(community.copyWith(pushNotificationsEnabled: false));
+        await tester.pump();
+        await tester.pump();
+        container.read(_activeCommunity.notifier).set(community);
+        await tester.pump();
+        await tester.pump();
+        expect(publishes, 3);
+      },
+      skip: !Env.pushGatewayConfigured,
+    );
+
     testWidgets('a setup failure does not follow another account', (
       tester,
     ) async {
@@ -619,6 +692,7 @@ Future<void> _pumpBootstrap(
   WidgetTester tester, {
   required Community? community,
   required KuzzPushLeasePublisher publishLease,
+  Future<void> Function()? startRegistration,
 }) async {
   _ActiveCommunity.initial = community;
   await tester.pumpWidget(
@@ -644,7 +718,7 @@ Future<void> _pumpBootstrap(
       ],
       child: KuzzPushBootstrap(
         publishLease: publishLease,
-        startRegistration: () async {},
+        startRegistration: startRegistration ?? () async {},
         child: const SizedBox(),
       ),
     ),
@@ -688,3 +762,15 @@ KuzzPushLeaseDescriptor _descriptor({
 );
 
 String _hex(String character) => List.filled(64, character).join();
+
+KuzzPushEndpointGrant _grant({required int expiresAt}) => KuzzPushEndpointGrant(
+  relayOrigin: 'wss://relay.example',
+  relayPubkey: _hex('b'),
+  installationId: '0' * 32,
+  endpointGrant: 'grant',
+  endpointHash: _hex('f'),
+  appProfile: 'kuzz-ios-dogfood',
+  endpointEpoch: 1,
+  generation: 1,
+  expiresAt: expiresAt,
+);

@@ -644,7 +644,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
 
   Future<void> setPushNotificationsEnabled(String id, bool enabled) async {
     var shouldDeactivate = false;
-    var changed = false;
     await _serializePushMutation(() async {
       final storage = ref.read(communityStorageProvider);
       final current = await storage.loadAll();
@@ -670,13 +669,14 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           .withPushInboxToken();
       await storage.save(updated);
       final updatedList = [...current]..[index] = updated;
+      // Before the new state is seen, so setup starts once, with the new
+      // retry count, instead of once before the bump and once after it.
+      noteKuzzPushToggled(id, enabled: enabled);
       state = AsyncData(updatedList);
       await syncCommunitySnapshot(ref, updatedList);
       shouldDeactivate =
           !enabled && pushState.pendingTombstoneGeneration != null;
-      changed = true;
     });
-    if (changed) noteKuzzPushToggled(id, enabled: enabled);
     if (shouldDeactivate) {
       try {
         await retryPendingPushLeaseTombstone(id);
