@@ -1682,8 +1682,8 @@ impl AppState {
     /// publish is spawned, not awaited: the local drop is already done, and a
     /// dropped publish is backstopped by the REQ denial-path DB confirmation.
     pub fn invalidate_membership(&self, tenant: &TenantContext, channel_id: Uuid, pubkey: &[u8]) {
-        // Origin only: the Redis loopback calls the local variant, which never
-        // bumps this, so one membership change is exactly one origin bump.
+        // The drop names this pod, so its own loopback is not counted again
+        // and every other pod counts it once on receipt.
         self.membership_gen
             .bump_origin(tenant.community(), channel_id, pubkey);
         self.invalidate_membership_local(tenant.community(), channel_id, pubkey);
@@ -1692,6 +1692,7 @@ impl AppState {
             CacheInvalidation::Membership {
                 channel_id,
                 pubkey: pubkey.to_vec(),
+                origin: Some(self.membership_gen.pod_id()),
             },
         );
     }
@@ -1822,6 +1823,17 @@ impl AppState {
         });
     }
 
+    /// The cross-pod drop consumer lagged and lost drops: forget every cached
+    /// membership, accessible-channel and visibility answer, and void every
+    /// refill in flight, so nothing stale outlives the lost drops.
+    pub fn invalidate_after_cache_invalidation_lag(&self) {
+        self.membership_gen.bump_refill_all();
+        self.membership_cache.invalidate_all();
+        self.accessible_channels_cache.invalidate_all();
+        self.channel_visibility_cache.invalidate_all();
+        self.channel_history_cut_cache.invalidate_all();
+    }
+
     /// Apply a cache-key drop received from another pod. Calls the local-only
     /// drop variants so a received drop is never re-published (no fan-out loop).
     pub fn apply_cache_invalidation(
@@ -1830,7 +1842,13 @@ impl AppState {
         invalidation: CacheInvalidation,
     ) {
         match invalidation {
-            CacheInvalidation::Membership { channel_id, pubkey } => {
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey,
+                origin,
+            } => {
+                self.membership_gen
+                    .bump_origin_received(origin, community_id, channel_id, &pubkey);
                 self.invalidate_membership_local(community_id, channel_id, &pubkey);
             }
             CacheInvalidation::AccessibleAll => {
@@ -3147,6 +3165,7 @@ pub(crate) mod tests {
             CacheInvalidation::Membership {
                 channel_id,
                 pubkey: pubkey.clone(),
+                origin: Some(Uuid::new_v4()),
             },
         );
         state.cache_membership_refill(community, channel_id, &pubkey, true, token);
@@ -3169,7 +3188,7 @@ pub(crate) mod tests {
     }
 
     #[tokio::test]
-    async fn membership_origin_generation_counts_the_origin_drop_only() {
+    async fn membership_origin_generation_counts_each_change_once_per_pod() {
         let state = test_state().await;
         let community = CommunityId::from_uuid(Uuid::new_v4());
         let tenant = TenantContext::resolved(community, "gen.example".to_string());
@@ -3190,9 +3209,20 @@ pub(crate) mod tests {
             CacheInvalidation::Membership {
                 channel_id,
                 pubkey: pubkey.clone(),
+                origin: Some(state.membership_gen.pod_id()),
             },
         );
         assert_eq!(generation(), before + 1);
+        // A change made on another pod counts once here, on receipt.
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+                origin: Some(Uuid::new_v4()),
+            },
+        );
+        assert_eq!(generation(), before + 2);
     }
 
     #[tokio::test]

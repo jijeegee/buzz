@@ -10,10 +10,12 @@
 //!
 //! - the **refill fence**, bumped by every local drop of the key, including a
 //!   drop received from another pod or a community-wide channel-deleted drop;
-//! - the **origin generation**, bumped only by [`AppState::invalidate_membership`]
-//!   on the pod where the membership change happened. Its own Redis loopback
-//!   never bumps it, so one change is exactly one bump. The user stream's
-//!   membership re-checks compare it before applying a result.
+//! - the **origin generation**, bumped once per membership change on every
+//!   pod: by [`AppState::invalidate_membership`] on the pod where the change
+//!   happened, and on receipt of its Redis drop on every other pod. The drop
+//!   names its origin pod ([`MembershipCacheGen::pod_id`]), so the origin
+//!   pod's own loopback is not counted again. The user stream's membership
+//!   re-checks compare it before applying a result.
 //!
 //! [`AppState::invalidate_membership`]: crate::state::AppState::invalidate_membership
 
@@ -38,6 +40,7 @@ pub struct MembershipCacheGen {
     refill: Box<[AtomicU64]>,
     origin: Box<[AtomicU64]>,
     wide: AtomicU64,
+    pod_id: Uuid,
 }
 
 impl Default for MembershipCacheGen {
@@ -54,6 +57,26 @@ impl MembershipCacheGen {
             refill: slots(),
             origin: slots(),
             wide: AtomicU64::new(0),
+            pod_id: Uuid::new_v4(),
+        }
+    }
+
+    /// This process's id in the membership drops it publishes.
+    pub fn pod_id(&self) -> Uuid {
+        self.pod_id
+    }
+
+    /// Count a membership drop received over Redis. `origin` is the pod that
+    /// made the change: its own loopback was counted at the origin already.
+    pub fn bump_origin_received(
+        &self,
+        origin: Option<Uuid>,
+        community: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+    ) {
+        if origin != Some(self.pod_id) {
+            self.bump_origin(community, channel_id, pubkey);
         }
     }
 
@@ -159,5 +182,24 @@ mod tests {
         assert_eq!(gen.origin_generation(c, ch, &pk), 0);
         gen.bump_origin(c, ch, &pk);
         assert_eq!(gen.origin_generation(c, ch, &pk), 1);
+    }
+
+    #[test]
+    fn a_received_drop_counts_once_except_the_own_loopback() {
+        let origin_pod = MembershipCacheGen::new();
+        let other_pod = MembershipCacheGen::new();
+        let (c, ch, pk) = key();
+        origin_pod.bump_origin(c, ch, &pk);
+        let from = Some(origin_pod.pod_id());
+        origin_pod.bump_origin_received(from, c, ch, &pk);
+        other_pod.bump_origin_received(from, c, ch, &pk);
+        assert_eq!(origin_pod.origin_generation(c, ch, &pk), 1);
+        assert_eq!(other_pod.origin_generation(c, ch, &pk), 1);
+        other_pod.bump_origin_received(None, c, ch, &pk);
+        assert_eq!(
+            other_pod.origin_generation(c, ch, &pk),
+            2,
+            "a drop from an older pod without an origin still counts"
+        );
     }
 }
