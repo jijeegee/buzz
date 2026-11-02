@@ -2,6 +2,7 @@ import * as React from "react";
 
 import { relayClient } from "@/shared/api/relayClient";
 import { shouldTriggerResumeReconnect } from "@/shared/api/relayResumeTriggerPolicy";
+import { NetworkChangeFilter } from "@/shared/api/userStreamRules";
 import { scheduleAfterForegroundReady } from "@/shared/lib/foregroundReady";
 
 type ScheduleForegroundWork = (callback: () => void) => () => void;
@@ -35,6 +36,40 @@ export function installRelayResumeTriggers(
     window.removeEventListener("online", scheduleAttempt);
     window.removeEventListener("focus", scheduleAttempt);
     document.removeEventListener("visibilitychange", onVisibilityChange);
+  };
+}
+
+/** The network types the OS reports now (empty: offline). */
+export function currentNetworkTypes(nav: Navigator = navigator): string[] {
+  if (!nav.onLine) return [];
+  const connection = (nav as { connection?: { type?: string } }).connection;
+  return [connection?.type ?? "unknown"];
+}
+
+/**
+ * Calls `onChange` when the set of network types really changes (the user
+ * stream's overflow backoff ends then): the state at install is the first
+ * report and never a change, and a repeat of the same set is none either.
+ */
+export function installUserStreamNetworkWatch(
+  onChange: () => void,
+  types: () => string[] = () => currentNetworkTypes(),
+): () => void {
+  const filter = new NetworkChangeFilter();
+  filter.changed(types());
+  const report = () => {
+    if (filter.changed(types())) onChange();
+  };
+  const connection = (
+    navigator as { connection?: Partial<EventTarget> }
+  ).connection;
+  window.addEventListener("online", report);
+  window.addEventListener("offline", report);
+  connection?.addEventListener?.("change", report);
+  return () => {
+    window.removeEventListener("online", report);
+    window.removeEventListener("offline", report);
+    connection?.removeEventListener?.("change", report);
   };
 }
 
@@ -78,6 +113,13 @@ export function useRelayResumeTriggers(): void {
       void relayClient.resumeReconnect().catch(() => {});
     };
 
-    return installRelayResumeTriggers(attempt);
+    const stopTriggers = installRelayResumeTriggers(attempt);
+    const stopNetworkWatch = installUserStreamNetworkWatch(() =>
+      relayClient.userStream.networkChange(),
+    );
+    return () => {
+      stopTriggers();
+      stopNetworkWatch();
+    };
   }, []);
 }

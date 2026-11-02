@@ -344,6 +344,28 @@ test("mid-connection CLOSED: chunks for every carried room, catch-up from resume
   assert.equal(h.session.report.counters.fallback_closed, 1);
 });
 
+test("auth-required after the stream EOSE in live: the mid-connection fallback, no retry", async () => {
+  const h = harness({ resume: { "room-a": 1_999_000 } });
+  h.bundle.setMemberRooms(["room-a"]);
+  await flush();
+  const subId = await h.start("live", { "room-a": 1 });
+  const sent = h.host.sent.length;
+  h.host.now += 60_000;
+  h.calls.extend.length = 0;
+  h.session.closed(subId, "auth-required: authenticate first");
+  await flush();
+  await flush();
+  assert.ok(h.open.has("room-a"), "chunks reopen at once");
+  h.session.authOk(1);
+  assert.equal(h.host.sent.length, sent, "the REQ is not sent again");
+  assert.deepEqual(
+    h.calls.extend.map((call) => [call.from, call.to]),
+    [[1_999_000 - 1865, L + 60]],
+    "catch-up up to the CLOSED time",
+  );
+  assert.equal(h.session.report.counters.fallback_auth_required, 1);
+});
+
 test("an overflow in live waits for the socket: no chunk opens until it ends", async () => {
   const h = harness();
   h.bundle.setMemberRooms(["room-a"]);

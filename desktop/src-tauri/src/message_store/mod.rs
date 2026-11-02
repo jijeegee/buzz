@@ -20,6 +20,8 @@ mod room_seq_tests;
 mod snapshot;
 #[cfg(test)]
 mod snapshot_tests;
+#[cfg(test)]
+mod stream_store_tests;
 mod stream_tap;
 #[cfg(test)]
 mod tests;

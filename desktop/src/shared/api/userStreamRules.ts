@@ -229,7 +229,8 @@ export function closedKey(reason: string, mode: UserStreamMode | null) {
  * - `awaitSocketClose`: the relay ends this socket next; wait for it (the
  *   normal reconnect follows), falling back only if it is still open after
  *   the grace.
- * - `retryAfterAuth`: send the REQ again after AUTH OK, once.
+ * - `retryAfterAuth`: send the REQ again after AUTH OK, once (before the
+ *   stream EOSE, or in shadow).
  */
 export type ClosedAction =
   | "chunks"
@@ -268,7 +269,10 @@ export function closedDecision({
     bugLog: key === "invalid",
   };
   if (key === "auth_required") {
-    decision.action = afterRetry ? "chunks" : "retryAfterAuth";
+    // After the EOSE in live/gated the relay already dropped frames: a retry
+    // would leave that gap unrepaired, so the fallback runs at once.
+    if (reliedOn) decision.action = "fallback";
+    else decision.action = afterRetry ? "chunks" : "retryAfterAuth";
     return decision;
   }
   // The relay cancels the socket right after these: nothing starts on it.
@@ -335,6 +339,24 @@ export class UserStreamBackoff {
   private reset() {
     this.closes = [];
     this.blockedUntil = 0;
+  }
+}
+
+/**
+ * Which network reports are a real network change for the backoff
+ * (docs/message-sync.md#relay-answers): never the first report after start,
+ * never a repeat of the same set of network types, never "no network".
+ */
+export class NetworkChangeFilter {
+  private last: ReadonlySet<string> | null = null;
+
+  /** `types`: the network types the OS reports now (empty: offline). */
+  changed(types: Iterable<string>) {
+    const now = new Set(types);
+    const last = this.last;
+    this.last = now;
+    if (last === null || now.size === 0) return false;
+    return now.size !== last.size || [...now].some((type) => !last.has(type));
   }
 }
 

@@ -76,6 +76,25 @@ export function classifySnapshot(
   return plan;
 }
 
+/**
+ * A room's coverage from before this connection (`connectionSpans`): only
+ * segments that began before `connectedAt` count. `resume` is the walk's
+ * resume point, `head` the newest such segment (the new-row base).
+ */
+export function coverageBefore(
+  segments: readonly (readonly [number, number])[],
+  connectedAt: number,
+): { resume: number | null; head: [number, number] | null } {
+  let resume: number | null = null;
+  let head: [number, number] | null = null;
+  for (const [lo, hi] of segments) {
+    if (lo >= connectedAt) continue;
+    if (resume === null || hi > resume) resume = hi;
+    if (head === null || lo > head[0]) head = [lo, hi];
+  }
+  return { resume, head };
+}
+
 export type CatchUpBatch = { rooms: string[]; since: number };
 
 /** A room whose own resume point is too old for a catch-up walk. */

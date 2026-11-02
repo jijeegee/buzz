@@ -9,6 +9,7 @@ import {
   chunkCatchUpRooms,
   chunkRoomsAfterHandoff,
   classifySnapshot,
+  coverageBefore,
   isNewRow,
   liveMissed,
   midConnectionPlan,
@@ -50,6 +51,44 @@ for (const testCase of fixture.snapshot) {
     for (const room of expect.untouchedRows) {
       assert.equal(plan.classes.has(room), false, room);
     }
+  });
+}
+
+for (const testCase of fixture.connectionSpans) {
+  test(`connectionSpans: ${testCase.name}`, () => {
+    const { connectedAt, L, segments, expect } = testCase;
+    const { resume, head } = coverageBefore(segments, connectedAt);
+    const seq = testCase.seq ?? 1;
+    const stored =
+      testCase.storedSeq === undefined ? {} : { "room-a": testCase.storedSeq };
+    const plan = classifySnapshot(
+      testCase.mode ?? "live",
+      map({ "room-a": seq }),
+      map(stored),
+      resume === null ? new Map() : map({ "room-a": resume }),
+    );
+    const batch =
+      resume === null
+        ? undefined
+        : planCatchUpBatches(map({ "room-a": resume }), L).batches[0];
+    assert.equal(plan.classes.get("room-a"), expect.class);
+    assert.equal(resume, expect.resume);
+    assert.equal(batch?.since ?? null, expect.since);
+    assert.deepEqual(head, expect.head);
+    if (!testCase.walkRows) return;
+    const newRows = testCase.walkRows.filter((row) =>
+      isNewRow({
+        liveAt: L,
+        segments: head ? [head] : [],
+        inserted: true,
+        createdAt: row.created_at,
+      }),
+    ).length;
+    const verdict = verifySkips(
+      plan.predictedSkips.map(() => ({ walked: true, newRows })),
+    );
+    assert.equal(plan.predictedSkips.length, expect.predictedSkips);
+    assert.equal(verdict.falseSkip, expect.falseSkip);
   });
 }
 

@@ -7,6 +7,7 @@ import {
   busyRetryDelaySecs,
   closedDecision,
   lastFrameAt,
+  NetworkChangeFilter,
   namesUserStream,
   roomIdsOf,
   ShadowComparator,
@@ -123,6 +124,16 @@ for (const testCase of fixture.backoff) {
     runBackoff(testCase.events, testCase.checks);
   });
 }
+
+test("backoff: only a real change of network types is a network change", () => {
+  const filter = new NetworkChangeFilter();
+  assert.equal(filter.changed(["wifi"]), false, "the first report after start");
+  assert.equal(filter.changed(["wifi"]), false, "a repeat");
+  assert.equal(filter.changed(["cellular", "wifi"]), true);
+  assert.equal(filter.changed(["wifi", "cellular"]), false, "same set");
+  assert.equal(filter.changed([]), false, "no network");
+  assert.equal(filter.changed(["wifi"]), true);
+});
 
 for (const testCase of fixture.busyRetry.filter((c) => c.busyCloses)) {
   test(`busyRetry: ${testCase.name}`, () => {

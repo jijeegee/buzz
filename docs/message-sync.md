@@ -1422,7 +1422,7 @@ match as prefixes, the rest exactly.
 | `invalid: user-stream <detail>` | chunks for this connection, and a log line (a client bug) |
 | `unsupported: user-stream too many rooms` | chunks for this connection |
 | `restricted: not a channel member` (old relay) | chunks for this connection |
-| `auth-required: …` | send the REQ again after the next AUTH OK, once per connection; a second one → chunks |
+| `auth-required: …` | before the stream EOSE (or in `shadow`): send the REQ again after the next AUTH OK, once per connection; a second one → chunks. After the EOSE in `live`/`gated`: the [mid-connection fallback](#mid-connection-fallback) at once, no retry (the relay already dropped frames; a retry would leave that gap unrepaired) |
 | `error: user-stream overflow` | `shadow`: stream off, chunks untouched (`closed{shadow_full}`). `live`/`gated`: wait for the socket to close (`closed{full}`, counts toward the backoff) |
 | `error: user-stream lagged` | any mode: wait for the socket to close; the reconnect first waits a random 0–10 s |
 | `error: user-stream closed` | as any CLOSED for the mode (counts toward the backoff after the EOSE in `live`/`gated`) |
@@ -1439,7 +1439,13 @@ dying socket. If the socket is still open 2 s later the client closes it
 itself. Then it reconnects normally (with the lagged jitter when the reason
 was `lagged`), and the next connection takes the stream or chunks by the
 usual rules. This keeps a relay-wide lag from turning into one synchronized
-catch-up burst.
+catch-up burst. From the CLOSED on, carried rooms no longer count as
+live or settled for coverage or store opens (the relay dropped frames), but
+no chunk opens for them on the dying socket. Every
+connect and every socket end, including a backed-off connect, puts the
+carried rooms back on chunks: a connection with no stream for any reason
+(CLOSED, refused, the build switch, the backoff) starts with nothing
+carried, so every member room is on chunks.
 
 - **Overflow backoff (`backoff`):** two counting closes within 10 min (per
   account and server) stop the stream REQ for 1 h from the second close.
@@ -1448,8 +1454,11 @@ catch-up burst.
   connection cannot loop reconnect and catch-up. `lagged` (relay-wide,
   jittered) and `shadow_full` never count. A network change or a resume
   after at least 1 h in the background ends it early and forgets earlier
-  closes. The backoff is kept in `sync_state`, so an app restart does not
-  end it; the `auth-required` retry count is per connection.
+  closes. A network change is a change in the set of network types the OS
+  reports: the first report after the app starts and a repeat of the same
+  set (Android capability updates) are not changes. The backoff is kept in
+  `sync_state`, so an app restart does not end it; the `auth-required` retry
+  count is per connection.
 - **`error: busy` on a history REQ (`busyRetry`).** The relay refuses a
   history frame that would fill a live/gated stream connection's send
   buffer past 80% and ends that REQ with `CLOSED "error: busy"`. History
@@ -1568,9 +1577,19 @@ forget rooms.
 ### Catch-up at the stream EOSE
 
 At the stream EOSE (time L), each snapshot room with seq S is classed
-(`snapshot`):
+(`snapshot`). Its coverage here is what it had **before this connection**
+(`connectionSpans`): each connection records its start time before any
+chunk REQ is answered (mobile: at AUTH OK, before its first REQ), and
+catch-up resume points and the new-row base use only coverage that began
+before that start time. An EOSE span `[C, C]` from a chunk on the same
+connection is ignored, even when it came before the stream EOSE, and so is
+the stream's own `[L, L]`. A span begun before the start and grown on this
+connection (a chunk catch-up that finished before the stream EOSE) counts
+up to its end. The mid-connection fallback keeps L = the CLOSED time as
+its bound: there the stream's own span is the resume point.
 
-- **uncovered:** no coverage. Not fetched, as today.
+- **uncovered:** no coverage that began before the connection start. Not
+  fetched, as today.
 - **equal:** covered and stored seq = S.
 - **behind:** covered, and stored seq < S or no row.
 - **ahead:** covered and stored seq > S (the relay DB was restored): the row
@@ -1615,8 +1634,10 @@ anything changed.
   (on the stream or a chunk, before or after the stream EOSE, including the
   frames the relay held until EOSE), and its `created_at` is at or before L
   and at or after the start of the room's newest coverage segment that
-  starts before L (the one the walk resumes from; the stream's own
-  `[L, L]` never counts).
+  began before the connection start (the one the walk resumes from; an
+  EOSE span `[C, C]` from a chunk on the same connection and the stream's
+  own `[L, L]` never count, so a gap row is never left out by
+  construction).
 - **Shadow comparison (`comparator`):** starts at the stream EOSE. A room is
   compared when a live chunk carries it and the stream carries it (snapshot
   or 44100). Each event id is classified once, 5 s (inclusive) after it was
@@ -1661,6 +1682,14 @@ anything changed.
 `closed{key}` and `fallbacks{key}` use the keys of `closedReasons`
 (`overflow` splits into `shadow_full` and `full`; an unknown reason is
 `other`).
+
+- **iOS report (mobile, iOS only):** iOS has no readable log, so each report
+  line is also POSTed (NIP-98, the `/query` auth) to
+  `/api/user-stream/shadow-report`, at most once every 5 min: `{"platform":
+  "ios", "app_version": "<semver>", "seq": n, "counters": {<every counter
+  above>, "snapshotMs"}, "closed": {<every closedReasons key>}}`, every
+  number a u32, at most 4096 bytes. Best effort: an error or a 404 (relay
+  without the endpoint) is logged and not retried.
 
 ### Limits
 
