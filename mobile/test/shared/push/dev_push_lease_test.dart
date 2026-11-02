@@ -345,9 +345,118 @@ void main() {
     expect(descriptor.transport, 'apns');
   });
 
-  test('descriptor rejects unknown push fields', () {
+  test('descriptor ignores unknown push fields', () {
     final information = _descriptorJson(relay.public);
     (information['push'] as Map<String, dynamic>)['future'] = true;
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.executorKeyId, 'relay-v1');
+  });
+
+  test('descriptor ignores unknown limitation entries', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['limitation'] = <String, dynamic>{
+      ...push['limitation'] as Map<String, dynamic>,
+      'max_future': 0,
+      'future_mode': 'strict',
+    };
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.maxStringLength, 512);
+  });
+
+  test('descriptor still rejects an invalid known limitation', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    (push['limitation'] as Map<String, dynamic>)['max_kinds'] = 0;
+
+    expect(
+      () => KuzzPushLeaseDescriptor.fromRelayInformation(information),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('descriptor ignores unknown app profile fields', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['app_profiles'] = [
+      {'id': 'kuzz-ios-dogfood', 'transport': 'apns', 'min_version': 2},
+    ];
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.transport, 'apns');
+  });
+
+  test('descriptor ignores unknown classes when default is present', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['class_support'] = {
+      'apns': ['default', 'time_sensitive'],
+    };
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.transport, 'apns');
+  });
+
+  test('descriptor still requires the default class', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['class_support'] = {
+      'apns': ['time_sensitive'],
+    };
+
+    expect(
+      () => KuzzPushLeaseDescriptor.fromRelayInformation(information),
+      throwsA(isA<FormatException>()),
+    );
+  });
+
+  test('descriptor skips a push key with unknown fields', () {
+    final other = nostr.Keys.generate();
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['keys'] = [
+      {
+        'id': 'relay-v2',
+        'pubkey': other.public,
+        'current': true,
+        'revoked': true,
+      },
+      {'id': 'relay-v1', 'pubkey': relay.public, 'current': true},
+    ];
+
+    final descriptor = KuzzPushLeaseDescriptor.fromRelayInformation(
+      information,
+    );
+
+    expect(descriptor.executorKeyId, 'relay-v1');
+    expect(descriptor.executorPubkey, relay.public);
+  });
+
+  test('descriptor fails when only keys with unknown fields are current', () {
+    final information = _descriptorJson(relay.public);
+    final push = information['push'] as Map<String, dynamic>;
+    push['keys'] = [
+      {
+        'id': 'relay-v1',
+        'pubkey': relay.public,
+        'current': true,
+        'not_after': 1,
+      },
+    ];
 
     expect(
       () => KuzzPushLeaseDescriptor.fromRelayInformation(information),

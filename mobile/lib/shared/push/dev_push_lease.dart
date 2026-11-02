@@ -24,6 +24,21 @@ const _maxSafeJsonInteger = 9007199254740991;
 const _maxLeaseLifetimeSeconds = 2592000;
 const _lowercaseHex64Pattern = r'^[0-9a-f]{64}$';
 const _installationIdPattern = r'^[0-9a-f]{32}$';
+const _knownPushKeyFields = {'id', 'pubkey', 'current', 'retiring'};
+const _knownLimitationKeys = {
+  'max_lease_ttl',
+  'max_leases_per_pubkey',
+  'max_subscriptions_per_lease',
+  'max_kinds',
+  'max_authors',
+  'max_h',
+  'max_tag_values',
+  'max_ignore',
+  'max_content_len',
+  'max_plaintext_len',
+  'max_endpoint_len',
+  'max_string_len',
+};
 
 class KuzzPushLeaseDescriptor {
   final String origin;
@@ -51,9 +66,10 @@ class KuzzPushLeaseDescriptor {
   factory KuzzPushLeaseDescriptor.fromRelayInformation(
     Map<String, dynamic> information,
   ) {
-    // The NIP-11 document is shared by every relay feature, and new
-    // top-level fields are added independently of push. Only the push
-    // descriptor itself is checked strictly.
+    // The NIP-11 document is shared by every relay feature, and new fields
+    // are added independently of this client. Required fields are checked
+    // and validated; unknown fields are ignored, except on push keys, where
+    // an entry with unknown fields is skipped rather than trusted.
     final extensions = _stringList(
       information['supported_extensions'],
       name: 'supported_extensions',
@@ -63,40 +79,25 @@ class KuzzPushLeaseDescriptor {
     }
 
     final push = _stringMap(information['push'], name: 'push');
-    _requireExactKeys(
-      push,
-      required: const {
-        'origin',
-        'keys',
-        'app_profiles',
-        'push_kinds',
-        'h_grammar',
-        'class_support',
-        'limitation',
-      },
-      allowed: const {
-        'origin',
-        'keys',
-        'app_profiles',
-        'push_kinds',
-        'h_grammar',
-        'class_support',
-        'limitation',
-      },
-      name: 'push descriptor',
-    );
+    _requireKeys(push, const {
+      'origin',
+      'keys',
+      'app_profiles',
+      'push_kinds',
+      'h_grammar',
+      'class_support',
+      'limitation',
+    }, name: 'push descriptor');
 
     final origin = _canonicalOrigin(push['origin']);
     final keys = _mapList(push['keys'], name: 'push.keys');
     final keyIds = <String>{};
     final currentKeys = <Map<String, dynamic>>[];
     for (final key in keys) {
-      _requireExactKeys(
-        key,
-        required: const {'id', 'pubkey'},
-        allowed: const {'id', 'pubkey', 'current', 'retiring'},
-        name: 'push key',
-      );
+      // A key field this client does not know could restrict how the key may
+      // be used, so such an entry is never used to encrypt a lease.
+      if (!_knownPushKeyFields.containsAll(key.keys)) continue;
+      _requireKeys(key, const {'id', 'pubkey'}, name: 'push key');
       final id = _nonEmptyString(key['id'], name: 'push key id');
       if (!keyIds.add(id)) {
         throw FormatException('Duplicate push key id: $id');
@@ -123,12 +124,7 @@ class KuzzPushLeaseDescriptor {
     final profileIds = <String>{};
     String? transport;
     for (final profile in profiles) {
-      _requireExactKeys(
-        profile,
-        required: const {'id', 'transport'},
-        allowed: const {'id', 'transport'},
-        name: 'app profile',
-      );
+      _requireKeys(profile, const {'id', 'transport'}, name: 'app profile');
       final id = _nonEmptyString(profile['id'], name: 'app profile id');
       if (!profileIds.add(id)) {
         throw FormatException('Duplicate app profile id: $id');
@@ -164,10 +160,6 @@ class KuzzPushLeaseDescriptor {
       classSupport[kuzzPushTransport],
       name: 'class_support.$kuzzPushTransport',
     );
-    const knownClasses = {'default'};
-    if (supportedClasses.any((value) => !knownClasses.contains(value))) {
-      throw const FormatException('class_support contains an unknown class');
-    }
     if (!supportedClasses.contains('default')) {
       throw FormatException(
         '$kuzzPushTransport does not support the default class',
@@ -175,40 +167,9 @@ class KuzzPushLeaseDescriptor {
     }
 
     final limitation = _stringMap(push['limitation'], name: 'limitation');
-    _requireExactKeys(
-      limitation,
-      required: const {
-        'max_lease_ttl',
-        'max_leases_per_pubkey',
-        'max_subscriptions_per_lease',
-        'max_kinds',
-        'max_authors',
-        'max_h',
-        'max_tag_values',
-        'max_ignore',
-        'max_content_len',
-        'max_plaintext_len',
-        'max_endpoint_len',
-        'max_string_len',
-      },
-      allowed: const {
-        'max_lease_ttl',
-        'max_leases_per_pubkey',
-        'max_subscriptions_per_lease',
-        'max_kinds',
-        'max_authors',
-        'max_h',
-        'max_tag_values',
-        'max_ignore',
-        'max_content_len',
-        'max_plaintext_len',
-        'max_endpoint_len',
-        'max_string_len',
-      },
-      name: 'push limitation',
-    );
-    for (final entry in limitation.entries) {
-      _positiveInt(entry.value, name: 'limitation.${entry.key}');
+    _requireKeys(limitation, _knownLimitationKeys, name: 'push limitation');
+    for (final key in _knownLimitationKeys) {
+      _positiveInt(limitation[key], name: 'limitation.$key');
     }
     final maxStringLength = limitation['max_string_len'] as int;
     _checkStringLength(origin, maxStringLength, name: 'origin');
@@ -626,18 +587,13 @@ List<int> _intList(
   ];
 }
 
-void _requireExactKeys(
-  Map<String, dynamic> value, {
-  required Set<String> required,
-  required Set<String> allowed,
+void _requireKeys(
+  Map<String, dynamic> value,
+  Set<String> required, {
   required String name,
 }) {
   final missing = required.difference(value.keys.toSet());
   if (missing.isNotEmpty) {
     throw FormatException('$name is missing ${missing.join(', ')}');
-  }
-  final unexpected = value.keys.toSet().difference(allowed);
-  if (unexpected.isNotEmpty) {
-    throw FormatException('$name contains unknown field ${unexpected.first}');
   }
 }
