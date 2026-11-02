@@ -8,12 +8,25 @@ pub enum ApnsEnvironment {
     Sandbox,
 }
 
+/// Server-owned APNs provider credential. Exactly one form is configured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApnsCredential {
+    /// Combined client certificate and private key PEM (certificate-based trust).
+    Certificate { path: PathBuf },
+    /// Apple `.p8` signing key for provider authentication tokens (token-based trust).
+    Token {
+        key_path: PathBuf,
+        key_id: String,
+        team_id: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct AppProfileConfig {
     pub app_attest_app_id: String,
     /// Exact Apple attestation environment accepted for enrollment.
     pub app_attest_environment: AppAttestEnvironment,
-    pub apns_cert_path: PathBuf,
+    pub apns_credential: ApnsCredential,
     pub apns_topic: String,
     pub apns_environment: ApnsEnvironment,
 }
@@ -125,6 +138,9 @@ fn parse_keyring(
 fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, ConfigError> {
     let app_id_key = "KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID";
     let cert_key = "KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH";
+    let key_path_key = "KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH";
+    let key_id_key = "KUZZ_PUSH_DOGFOOD_APNS_KEY_ID";
+    let team_id_key = "KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID";
     let topic_key = "KUZZ_PUSH_DOGFOOD_APNS_TOPIC";
     let environment_key = "KUZZ_PUSH_DOGFOOD_APNS_ENVIRONMENT";
     let required = |key: &'static str| {
@@ -144,7 +160,34 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
         Some(_) => return Err(ConfigError::Invalid("KUZZ_PUSH_APP_ATTEST_ENVIRONMENT")),
     };
     let apns_topic = required(topic_key)?.to_owned();
-    let apns_cert_path = PathBuf::from(required(cert_key)?);
+    let present = |key: &str| e.get(key).is_some_and(|value| !value.is_empty());
+    // Apple key and team identifiers are 10-character uppercase alphanumerics.
+    let apple_id = |key: &'static str| {
+        let value = required(key)?;
+        if value.len() == 10
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        {
+            Ok(value.to_owned())
+        } else {
+            Err(ConfigError::Invalid(key))
+        }
+    };
+    let apns_credential = if present(key_path_key) {
+        if present(cert_key) {
+            return Err(ConfigError::Invalid(key_path_key));
+        }
+        ApnsCredential::Token {
+            key_path: PathBuf::from(required(key_path_key)?),
+            key_id: apple_id(key_id_key)?,
+            team_id: apple_id(team_id_key)?,
+        }
+    } else {
+        ApnsCredential::Certificate {
+            path: PathBuf::from(required(cert_key)?),
+        }
+    };
     let apns_environment = match e.get(environment_key).map(String::as_str) {
         None | Some("production") => ApnsEnvironment::Production,
         Some("sandbox") => ApnsEnvironment::Sandbox,
@@ -153,7 +196,7 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
     Ok(AppProfileConfig {
         app_attest_app_id,
         app_attest_environment,
-        apns_cert_path,
+        apns_credential,
         apns_topic,
         apns_environment,
     })
@@ -384,8 +427,10 @@ mod tests {
     fn dogfood_profile_requires_server_owned_identity_and_certificate() {
         let config = Config::from_map(&base()).unwrap();
         assert_eq!(
-            config.profile.apns_cert_path,
-            PathBuf::from("/dogfood-identity.pem")
+            config.profile.apns_credential,
+            ApnsCredential::Certificate {
+                path: PathBuf::from("/dogfood-identity.pem")
+            }
         );
         assert_eq!(config.profile.apns_topic, "app.kuzz.dogfood.mobile");
 
@@ -400,6 +445,66 @@ mod tests {
                 matches!(Config::from_map(&env), Err(ConfigError::Missing(key)) if key == variable)
             );
         }
+    }
+
+    #[test]
+    fn token_credential_replaces_certificate_and_requires_apple_ids() {
+        let token_env = || {
+            let mut env = base();
+            env.remove("KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH");
+            env.insert(
+                "KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH".into(),
+                "/AuthKey_ABCDE12345.p8".into(),
+            );
+            env.insert("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID".into(), "ABCDE12345".into());
+            env.insert("KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID".into(), "TEAM123456".into());
+            env
+        };
+        assert_eq!(
+            Config::from_map(&token_env())
+                .unwrap()
+                .profile
+                .apns_credential,
+            ApnsCredential::Token {
+                key_path: PathBuf::from("/AuthKey_ABCDE12345.p8"),
+                key_id: "ABCDE12345".into(),
+                team_id: "TEAM123456".into(),
+            }
+        );
+
+        for variable in [
+            "KUZZ_PUSH_DOGFOOD_APNS_KEY_ID",
+            "KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID",
+        ] {
+            let mut env = token_env();
+            env.remove(variable);
+            assert!(
+                matches!(Config::from_map(&env), Err(ConfigError::Missing(key)) if key == variable)
+            );
+        }
+        for (key, value) in [
+            ("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID", "abcde12345"),
+            ("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID", "ABCDE1234"),
+            ("KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID", "TEAM-12345"),
+        ] {
+            let mut env = token_env();
+            env.insert(key.into(), value.into());
+            assert!(
+                matches!(Config::from_map(&env), Err(ConfigError::Invalid(k)) if k == key),
+                "accepted {key}={value}"
+            );
+        }
+
+        // Both credential forms at once is ambiguous and fails startup.
+        let mut env = token_env();
+        env.insert(
+            "KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH".into(),
+            "/dogfood-identity.pem".into(),
+        );
+        assert!(matches!(
+            Config::from_map(&env),
+            Err(ConfigError::Invalid("KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH"))
+        ));
     }
 
     #[test]

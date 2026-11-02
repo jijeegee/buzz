@@ -3,7 +3,7 @@ use kuzz_push_gateway::{
     apns::ApnsTransport,
     app_attest::AppAttestVerifier,
     authority::AuthorityStore,
-    config::Config,
+    config::{ApnsCredential, Config},
     fcm::{FcmTransport, ServiceAccount},
     grant::{GrantKey, GrantKeyring},
     http::AndroidProfileRuntime,
@@ -47,11 +47,32 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             configured.app_attest_environment,
         )?;
         tracing::info!(environment = ?apple.environment(), "App Attest verifier configured");
-        let transport = Arc::new(ApnsTransport::certificate(
-            &fs::read(&configured.apns_cert_path)?,
-            configured.apns_topic.clone(),
-            configured.apns_environment,
-        )?);
+        let transport = Arc::new(match &configured.apns_credential {
+            ApnsCredential::Certificate { path } => ApnsTransport::certificate(
+                &fs::read(path)?,
+                configured.apns_topic.clone(),
+                configured.apns_environment,
+            )?,
+            ApnsCredential::Token {
+                key_path,
+                key_id,
+                team_id,
+            } => ApnsTransport::token(
+                &fs::read(key_path)?,
+                key_id.clone(),
+                team_id.clone(),
+                configured.apns_topic.clone(),
+                configured.apns_environment,
+            )?,
+        });
+        tracing::info!(
+            auth = match configured.apns_credential {
+                ApnsCredential::Certificate { .. } => "certificate",
+                ApnsCredential::Token { .. } => "token",
+            },
+            environment = ?configured.apns_environment,
+            "APNs transport configured"
+        );
         kuzz_push_gateway::http::ProfileRuntime {
             app_attest: Arc::new(apple),
             transport,

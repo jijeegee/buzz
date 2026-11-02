@@ -20,6 +20,9 @@
 | `KUZZ_PUSH_DOGFOOD_APNS_TOPIC` | Server-owned APNs topic. Never accepted from a client. |
 | `KUZZ_PUSH_DOGFOOD_APNS_ENVIRONMENT` | `production` or `sandbox`, selected by deployment configuration. |
 | `KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH` | Read-only certificate/private-key PEM. |
+| `KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH` | Instead of `CERT_PATH`: read-only Apple `.p8` APNs auth key (token-based). Setting both fails startup. |
+| `KUZZ_PUSH_DOGFOOD_APNS_KEY_ID` | Required with `KEY_PATH`: the 10-character Key ID of the `.p8` key. |
+| `KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID` | Required with `KEY_PATH`: the 10-character Apple Developer Team ID. |
 | `KUZZ_PUSH_GRANT_KEYS` | Capability AEAD keyring, `id:base64-32-bytes[,predecessor...]`; current key first. |
 | `KUZZ_PUSH_TOKEN_KEYS` | Independent token-custody AEAD keyring in the same format. Never reuse grant keys. |
 
