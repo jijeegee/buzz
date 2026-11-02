@@ -40,6 +40,7 @@ type CheckpointName =
   | "idleWithAgent"
   | "idleRelaySelf"
   | "idleHiddenDm"
+  | "idleStreamShadow"
   | "agentsView"
   | "roomA"
   | "roomB"
@@ -75,7 +76,12 @@ type Snapshot = {
   sockets: number;
   connects: number;
   logLength: number;
-  reqs: { subId: string; live: boolean; filters: unknown[] }[];
+  reqs: {
+    subId: string;
+    live: boolean;
+    stream: boolean;
+    filters: unknown[];
+  }[];
   quietForMs: number;
 };
 
@@ -108,15 +114,20 @@ async function snapshot(page: Page): Promise<Snapshot> {
       .reverse()
       .find((entry) => entry.type !== "CONNECT" && entry.type !== "DISCONNECT");
     return {
+      // The user stream is a live REQ of its own class.
       live: open
-        .filter((sub) => sub.subIdClass === "live")
+        .filter(
+          (sub) => sub.subIdClass === "live" || sub.subIdClass === "stream",
+        )
         .map(({ subId, signature, filters }) => ({
           subId,
           signature,
           filters,
         })),
       other: open
-        .filter((sub) => sub.subIdClass !== "live")
+        .filter(
+          (sub) => sub.subIdClass !== "live" && sub.subIdClass !== "stream",
+        )
         .map(({ subId, subIdClass, signature }) => ({
           subId,
           subIdClass,
@@ -134,6 +145,7 @@ async function snapshot(page: Page): Promise<Snapshot> {
               {
                 subId: entry.subId,
                 live: entry.subId.startsWith("live-"),
+                stream: entry.subId.startsWith("stream-"),
                 filters: entry.filters,
               },
             ]
@@ -149,6 +161,7 @@ function threadNameOneShots(snap: Snapshot) {
   return snap.reqs.filter(
     (req) =>
       !req.live &&
+      !req.stream &&
       req.filters.some((filter) =>
         ((filter as { kinds?: number[] }).kinds ?? []).includes(40009),
       ),
@@ -310,9 +323,13 @@ async function openHome(
     withAgent?: boolean;
     relaySelf?: boolean;
     hiddenDm?: boolean;
+    userStreamMode?: "shadow" | "live" | "gated";
   } = {},
 ) {
   await installMockBridge(page, {
+    ...(options.userStreamMode
+      ? { userStreamMode: options.userStreamMode }
+      : {}),
     ...(options.withAgent ? { managedAgents: [MANAGED_AGENT] } : {}),
     ...(options.relaySelf ? { relaySelf: RELAY_SELF } : {}),
     ...(options.hiddenDm ? { hiddenDms: [HIDDEN_DM] } : {}),
@@ -326,7 +343,12 @@ async function idleCheckpoint(
   page: Page,
   testInfo: TestInfo,
   measured: Partial<Record<CheckpointName, Checkpoint>>,
-  name: "idle" | "idleWithAgent" | "idleRelaySelf" | "idleHiddenDm" = "idle",
+  name:
+    | "idle"
+    | "idleWithAgent"
+    | "idleRelaySelf"
+    | "idleHiddenDm"
+    | "idleStreamShadow" = "idle",
 ) {
   const title = page.getByTestId("chat-title");
   await expect(title).toHaveText(LANDING_ROOM);
@@ -380,8 +402,10 @@ test.describe("live REQ budget", () => {
       idle.live.some((sub) => sub.signature.includes("#h:")),
       "room bundle live REQ is open at idle",
     ).toBe(true);
+    // The user stream REQ (refused by the mock, as by an old relay) is
+    // neither a one-shot nor a chunk send.
     const launch = {
-      oneShot: idle.reqs.filter((req) => !req.live).length,
+      oneShot: idle.reqs.filter((req) => !req.live && !req.stream).length,
       liveSends: idle.reqs.filter((req) => req.live).length,
     };
     await testInfo.attach("launch.json", {
@@ -392,7 +416,7 @@ test.describe("live REQ budget", () => {
     await testInfo.attach("launch-one-shots.json", {
       body: JSON.stringify(
         idle.reqs
-          .filter((req) => !req.live)
+          .filter((req) => !req.live && !req.stream)
           .map((req) => subscriptionSignature(req.filters))
           .sort(),
         null,
@@ -514,6 +538,39 @@ test.describe("live REQ budget", () => {
     await openHome(page, { hiddenDm: true });
     await expect(page.getByTestId(`channel-${HIDDEN_DM}`)).toHaveCount(0);
     await idleCheckpoint(page, testInfo, measured, "idleHiddenDm");
+    if (UPDATE) {
+      writeDesktop((desktop) => {
+        desktop.checkpoints = {
+          ...(desktop.checkpoints as Record<CheckpointName, Checkpoint>),
+          ...measured,
+        };
+      });
+    }
+  });
+
+  test("idle with the user stream in shadow adds only the stream REQ", async ({
+    page,
+  }, testInfo) => {
+    test.setTimeout(120_000);
+    const measured: Partial<Record<CheckpointName, Checkpoint>> = {};
+    await openHome(page, { userStreamMode: "shadow" });
+    const snap = await idleCheckpoint(
+      page,
+      testInfo,
+      measured,
+      "idleStreamShadow",
+    );
+    // Shadow leaves the chunks alone: idle's set plus the stream.
+    const stream = snap.live.filter((sub) => sub.subId.startsWith("stream-"));
+    expect(stream, "one user stream REQ").toHaveLength(1);
+    const idle = (readFixture().desktop as Partial<DesktopBudget>).checkpoints
+      ?.idle;
+    if (idle) {
+      expect(
+        minus(sortedSignatures(snap), [stream[0].signature]),
+        "shadow keeps idle's chunks",
+      ).toEqual(idle.signatures);
+    }
     if (UPDATE) {
       writeDesktop((desktop) => {
         desktop.checkpoints = {

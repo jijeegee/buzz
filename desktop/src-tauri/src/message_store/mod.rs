@@ -17,6 +17,7 @@ mod read_thread;
 mod snapshot;
 #[cfg(test)]
 mod snapshot_tests;
+mod stream_tap;
 #[cfg(test)]
 mod tests;
 mod writer;
@@ -237,6 +238,11 @@ impl MessageStore {
             return Ok(());
         };
         let captured = captured(scope, &lease)?;
+        // `$joined` names the user stream, never a room.
+        let rooms: Vec<String> = rooms
+            .into_iter()
+            .filter(|room| room != stream_tap::USER_STREAM_ROOM)
+            .collect();
         self.submit(
             &lease,
             Input::Coverage {
@@ -543,6 +549,7 @@ fn labelled(frame: &str, label: &str) -> bool {
 pub(crate) struct SocketTap {
     url: String,
     lease: Option<Lease>,
+    stream: stream_tap::StreamGate,
 }
 
 impl SocketTap {
@@ -550,12 +557,20 @@ impl SocketTap {
         Self {
             url: url.to_owned(),
             lease: None,
+            stream: stream_tap::StreamGate::default(),
         }
     }
 
     /// A frame the app sends. `["AUTH", event]` names the account by the
     /// event's author, `["AUTH", {"token"}]` by the token's account.
+    /// `REQ`/`CLOSE` on the user stream set its store verdict.
     pub(crate) fn sent(&mut self, frame: &str) {
+        for label in ["REQ", "CLOSE"] {
+            if labelled(frame, label) {
+                self.stream.sent(frame, label);
+                return;
+            }
+        }
         if !labelled(frame, "AUTH") {
             return;
         }
@@ -575,11 +590,24 @@ impl SocketTap {
 
     /// A frame the relay sent. `["EVENT", sub, event]` is kept;
     /// `["EOSE", sub]` takes the capture its coverage is recorded with.
-    pub(crate) fn received(&self, frame: &str) {
+    /// Frames of the user stream are kept only by its verdict.
+    pub(crate) fn received(&mut self, frame: &str) {
+        let event = labelled(frame, "EVENT");
+        if event && !self.stream.keeps_event(frame) {
+            return;
+        }
+        if labelled(frame, "CLOSED") {
+            self.stream.closed(frame);
+            return;
+        }
+        let eose = labelled(frame, "EOSE");
+        if eose {
+            self.stream.eose(frame);
+        }
         let (Some(lease), Some(store)) = (&self.lease, global()) else {
             return;
         };
-        if labelled(frame, "EOSE") {
+        if eose {
             if let Ok(Value::Array(parts)) = serde_json::from_str::<Value>(frame) {
                 if let Some(Value::String(sub)) = parts.get(1) {
                     store.note_eose(lease, sub);
@@ -587,7 +615,7 @@ impl SocketTap {
             }
             return;
         }
-        if !labelled(frame, "EVENT") {
+        if !event {
             return;
         }
         store.submit_frame(lease, frame.to_owned());

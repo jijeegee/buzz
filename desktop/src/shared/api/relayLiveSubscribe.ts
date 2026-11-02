@@ -9,6 +9,7 @@ import { retireLiveSubscription } from "@/shared/api/relayClosedRecovery";
 import { reconnectCursors } from "@/shared/api/relayReconnectReplay";
 import type { RelayLiveReqDrain } from "@/shared/api/relayLiveReqDrain";
 import type { RelayEvent } from "@/shared/api/types";
+import { namesUserStream } from "@/shared/api/userStreamRules";
 
 /**
  * What a live REQ needs from the session (`RelayClient`). Every member is
@@ -141,6 +142,10 @@ export async function subscribeLiveSession(
   priority?: "interactive",
   multi?: LiveMultiFilter,
 ) {
+  // `$joined` is the user stream's own REQ, never a room of a live REQ.
+  if (namesUserStream(filter) || multi?.filters.some(namesUserStream)) {
+    throw new Error("The user stream is not a live room subscription.");
+  }
   const epoch = host.sessionEpoch();
   const sessionSignal = host.sessionSignal();
   signal?.throwIfAborted();

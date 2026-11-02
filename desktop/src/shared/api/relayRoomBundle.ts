@@ -171,6 +171,9 @@ export class RoomLiveBundle {
   private metadataListeners = new Set<RoomLiveListener>();
   private quietListeners = new Set<RoomLiveListener>();
   private resetListeners = new Set<() => void>();
+  private chunkObservers = new Set<
+    (event: RelayEvent, roomId: string) => void
+  >();
   private waiters = new Set<RoomWaiter>();
   private coverWaiters = new Set<CoverWaiter>();
   /** Set by the first non-empty member list since the last reset. */
@@ -336,6 +339,35 @@ export class RoomLiveBundle {
       });
     }
     return stop;
+  }
+
+  /** Every chunk delivery with its room, duplicates included (shadow comparison). */
+  observeChunkEvents(observer: (event: RelayEvent, roomId: string) => void) {
+    this.chunkObservers.add(observer);
+    return () => {
+      this.chunkObservers.delete(observer);
+    };
+  }
+
+  /** Rooms a chunk carries now (live or opening). */
+  chunkRooms(): ReadonlySet<string> {
+    const rooms = new Set<string>();
+    for (const chunk of this.chunks.values()) {
+      for (const roomId of chunk.rooms) rooms.add(roomId);
+    }
+    return rooms;
+  }
+
+  /** The room of a stream frame: its `h` tag or a referenced event's room. */
+  streamRoomOf(event: RelayEvent) {
+    const tagged = tagValue(event, "h");
+    if (tagged) return tagged;
+    for (const eventId of referencedIds(event)) {
+      const roomId =
+        this.eventRooms.get(eventId) ?? this.resolveRoomOfEvent(eventId);
+      if (roomId) return roomId;
+    }
+    return null;
   }
 
   /** Drop every subscription and remembered event (community switch). */
@@ -599,9 +631,11 @@ export class RoomLiveBundle {
   }
 
   private dispatch(chunk: Chunk, event: RelayEvent) {
-    if (this.seen.has(event.id)) return;
+    if (this.seen.has(event.id) && this.chunkObservers.size === 0) return;
     const roomId = this.roomOf(chunk, event);
     if (!roomId) return;
+    for (const observer of this.chunkObservers) observer(event, roomId);
+    if (this.seen.has(event.id)) return;
     remember(this.seen, event.id, true, SEEN_EVENT_LIMIT);
     remember(this.eventRooms, event.id, roomId, EVENT_ROOM_LIMIT);
 

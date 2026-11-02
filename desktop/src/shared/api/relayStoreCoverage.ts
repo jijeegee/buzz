@@ -16,6 +16,7 @@ import {
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
+import { namesUserStream } from "@/shared/api/userStreamRules";
 
 /** Same margin as reconnect repair: relay future tolerance plus storage fence. */
 export const STORE_RESUME_LOOKBACK_SECS = 900 + 960 + 5;
@@ -138,6 +139,7 @@ function currentScope() {
 export function storeCoveredRooms(filter: RelaySubscriptionFilter) {
   const roomIds = filter["#h"];
   if (
+    namesUserStream(filter) ||
     !Array.isArray(roomIds) ||
     roomIds.length === 0 ||
     roomIds.length > MAX_EXPLICIT_CHANNEL_VALUES ||

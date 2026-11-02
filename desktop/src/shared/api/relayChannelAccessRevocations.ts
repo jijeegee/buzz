@@ -1,4 +1,5 @@
 import type { RelaySubscription } from "./relayClientShared";
+import { namesUserStream } from "./userStreamRules";
 
 /** Session-owned hints; CLOSED never establishes archive or membership state. */
 export class RelayChannelAccessRevocations {
@@ -20,6 +21,7 @@ export class RelayChannelAccessRevocations {
     if (
       subscription?.mode === "live" &&
       (subscription.filter["#h"]?.length ?? 0) > 0 &&
+      !namesUserStream(subscription.filter) &&
       reason === "restricted: channel access revoked"
     ) {
       for (const listener of this.listeners) listener();

@@ -504,6 +504,7 @@ in the commit.
 | Idle with an agent DM (`idleWithAgent`) | 5 | — |
 | Idle as the relay's own key (`idleRelaySelf`) | 5 | — |
 | Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
+| Idle, user stream in `shadow` (`idleStreamShadow`) | 6 (idle + the stream) | — |
 | Activity inbox (`activityInbox`) | — | 4 |
 
 The REQs behind them: the community bundle, the room bundle (one per 128

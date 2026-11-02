@@ -315,6 +315,8 @@ type MockBridgeOptions = {
   deferSendMessageLiveEcho?: boolean;
   /** Close the first channel-window live REQ; its retry is accepted. */
   closeChannelLiveSubscriptionOnce?: boolean;
+  /** Answer the user stream REQ in this mode (unset: as an old relay). */
+  userStreamMode?: "shadow" | "live" | "gated";
   /** Reject successive kind-9 sends with these messages, then resume. */
   sendMessageErrors?: string[];
   /** Test-only observer control results emitted after mock control publishes. */

@@ -431,6 +431,9 @@ type E2eConfig = {
     deferSendMessageLiveEcho?: boolean;
     /** Close the first channel-window live REQ; its retry is accepted. */
     closeChannelLiveSubscriptionOnce?: boolean;
+    /** Answer the user stream REQ (`#h: ["$joined"]`) in this mode. Unset:
+     *  as an old relay (`restricted: not a channel member`). */
+    userStreamMode?: "shadow" | "live" | "gated";
     /** Reject successive kind-9 sends with these messages, then resume. */
     sendMessageErrors?: string[];
     /** Test-only observer control requests captured after mock publish. */
@@ -4709,6 +4712,68 @@ function sendWsText(handler: WsHandler, payload: unknown[]) {
     type: "Text",
     data: JSON.stringify(payload),
   });
+}
+
+/**
+ * The user stream (docs/message-sync.md#user-stream): one relay-signed
+ * snapshot part with every member room, then EOSE, then later events of
+ * those rooms. Unset mode answers as an old relay.
+ */
+function answerMockUserStream(
+  socket: {
+    handler: WsHandler;
+    subscriptions: Map<string, ReturnType<typeof createMockSubscription>>;
+  },
+  subId: string,
+  filters: MockFilter[],
+) {
+  const config = getConfig();
+  const mode = config?.mock?.userStreamMode;
+  if (!mode) {
+    sendWsText(socket.handler, [
+      "CLOSED",
+      subId,
+      "restricted: not a channel member",
+    ]);
+    return;
+  }
+  const rooms = listMockChannels(config)
+    .filter((channel) => channel.is_member)
+    .map((channel) => channel.id);
+  const content = JSON.stringify({
+    v: 1,
+    op: "snapshot",
+    part: 1,
+    parts: 1,
+    mode,
+    epoch: "e2e-epoch",
+    kinds: filters[0]?.kinds ?? [],
+    rooms: Object.fromEntries(
+      rooms.map((room) => [room, getMockMessageStore(room).length]),
+    ),
+  });
+  const createdAt = Math.floor(Date.now() / 1000);
+  sendWsText(socket.handler, [
+    "EVENT",
+    subId,
+    {
+      id: createdAt.toString(16).padStart(64, "0"),
+      pubkey: "e2e0".padEnd(64, "0"),
+      created_at: createdAt,
+      kind: 24220,
+      tags: [["p", getMockIdentity().pubkey]],
+      content,
+      sig: "0".repeat(128),
+    },
+  ]);
+  sendWsText(socket.handler, ["EOSE", subId]);
+  // Later events of the member rooms ride the stream in every mode.
+  socket.subscriptions.set(
+    subId,
+    createMockSubscription(
+      filters.map((filter) => ({ ...filter, "#h": rooms })),
+    ),
+  );
 }
 
 function sendWsClose(handler: WsHandler, code?: number, reason?: string) {
@@ -11588,6 +11653,11 @@ function sendToMockSocket(args: {
       )
     ) {
       sendWsText(socket.handler, ["CLOSED", subId, P_GATED_REJECTION_MESSAGE]);
+      return;
+    }
+
+    if (filters.some((filter) => filter["#h"]?.includes("$joined"))) {
+      answerMockUserStream(socket, subId, filters);
       return;
     }
 
