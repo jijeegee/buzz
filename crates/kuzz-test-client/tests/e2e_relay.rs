@@ -3669,3 +3669,82 @@ async fn test_dm_participant_switches_goals() {
     alice_ws.disconnect().await.expect("disconnect alice");
     bob_ws.disconnect().await.expect("disconnect bob");
 }
+
+/// A join publishes the member-added notice (kind:44100) before the room's
+/// `member_joined` system message, on the joiner's own socket, and the notice
+/// carries a nonce so a same-second leave-and-rejoin is not a deduped repeat.
+/// The system message reaches the relay-local subscriber directly.
+#[tokio::test]
+#[ignore]
+async fn test_join_sends_member_added_before_member_joined() {
+    let url = relay_url();
+    let owner_keys = Keys::generate();
+    let joiner_keys = Keys::generate();
+    let joiner_hex = joiner_keys.public_key().to_hex();
+    let channel_id = create_test_channel(&owner_keys).await;
+
+    let mut ws = KuzzTestClient::connect(&url, &joiner_keys)
+        .await
+        .expect("connect as joiner");
+    let notices = sub_id("member-added");
+    ws.subscribe(
+        &notices,
+        vec![Filter::new().kind(Kind::Custom(44100)).custom_tags(
+            SingleLetterTag::lowercase(Alphabet::P),
+            [joiner_hex.as_str()],
+        )],
+    )
+    .await
+    .expect("subscribe to member-added notices");
+    ws.collect_until_eose(&notices, Duration::from_secs(5))
+        .await
+        .expect("notices EOSE");
+    let room = sub_id("room-system");
+    ws.subscribe(
+        &room,
+        vec![Filter::new().kind(Kind::Custom(40099)).custom_tags(
+            SingleLetterTag::lowercase(Alphabet::H),
+            [channel_id.as_str()],
+        )],
+    )
+    .await
+    .expect("subscribe to room system messages");
+    ws.collect_until_eose(&room, Duration::from_secs(5))
+        .await
+        .expect("room EOSE");
+
+    let join = EventBuilder::new(Kind::Custom(9021), "")
+        .tags([Tag::parse(["h", &channel_id]).unwrap()])
+        .sign_with_keys(&joiner_keys)
+        .unwrap();
+    let ok = ws.send_event(join).await.expect("send kind 9021");
+    assert!(ok.accepted, "join rejected: {}", ok.message);
+
+    let mut order = Vec::new();
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(5);
+    while order.len() < 2 {
+        let remaining = deadline
+            .checked_duration_since(tokio::time::Instant::now())
+            .filter(|d| !d.is_zero())
+            .unwrap_or_else(|| panic!("timed out; saw {order:?}"));
+        if let RelayMessage::Event { event, .. } = ws.recv_event(remaining).await.expect("recv") {
+            let content: serde_json::Value =
+                serde_json::from_str(&event.content).unwrap_or_default();
+            if event.kind == Kind::Custom(44100) && content["channel_id"] == channel_id {
+                assert!(
+                    event.tags.iter().any(|t| t.kind().to_string() == "nonce"),
+                    "member-added notice must carry a nonce tag"
+                );
+                order.push("member_added");
+            } else if event.kind == Kind::Custom(40099)
+                && content["type"] == "member_joined"
+                && content["target"] == joiner_hex
+            {
+                order.push("member_joined");
+            }
+        }
+    }
+    assert_eq!(order, ["member_added", "member_joined"]);
+
+    ws.disconnect().await.expect("disconnect");
+}
