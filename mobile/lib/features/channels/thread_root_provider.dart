@@ -53,8 +53,7 @@ enum ThreadRootVerdict {
   final root = answer
       .where((event) => event.id == rootId && event.channelId == channelId)
       .firstOrNull;
-  final author = (root ?? (knownRoot?.id == rootId ? knownRoot : null))
-      ?.pubkey;
+  final author = (root ?? (knownRoot?.id == rootId ? knownRoot : null))?.pubkey;
   final deleted = answer.any(
     (event) =>
         event.channelId == channelId &&
@@ -73,10 +72,7 @@ enum ThreadRootVerdict {
 
 /// One `/query` for a root: the root by id, and a deletion of it.
 List<NostrFilter> threadRootFilters(String channelId, String rootId) => [
-  NostrFilter(
-    kinds: EventKind.channelTimelineContentKinds,
-    ids: [rootId],
-  ),
+  NostrFilter(kinds: EventKind.channelTimelineContentKinds, ids: [rootId]),
   NostrFilter(
     kinds: const [EventKind.deletion, EventKind.nip29DeleteEvent],
     tags: {
@@ -115,7 +111,9 @@ final threadRootSourcesProvider = Provider<ThreadRootSources>(
 /// id, then the relay (over HTTP, so a dropped socket does not stop it),
 /// asked again whenever the session reconnects until it answers. A failed
 /// request while connected is retried after [retryDelays], then waits for
-/// the next reconnect.
+/// the next reconnect. An answer holding only an author's deletion (5) while
+/// the root's author is unknown is kept and judged again once the store
+/// answers with the root.
 class ThreadRootNotifier extends Notifier<ThreadRoot> {
   ThreadRootNotifier(this.args);
 
@@ -130,6 +128,10 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
   bool _answered = false;
   int _failures = 0;
   Timer? _retry;
+
+  /// The last answer holding an author's deletion that could not be judged
+  /// because the root's author was not known yet.
+  List<NostrEvent>? _pending;
 
   @override
   ThreadRoot build() {
@@ -177,6 +179,7 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
       event: state.event ?? stored.event,
       deleted: state.deleted || stored.deleted,
     );
+    if (_pending case final kept?) _judge(kept);
   }
 
   Future<void> _askRelay() async {
@@ -201,21 +204,29 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
       _scheduleRetry();
       return;
     }
+    _judge(answer);
+  }
+
+  void _judge(List<NostrEvent> answer) {
     final result = threadRootVerdict(
       answer,
       channelId: args.channelId,
       rootId: args.rootId,
-      knownRoot: state.event,
+      knownRoot: state.event ?? _fromTimeline(),
     );
     switch (result.verdict) {
       case ThreadRootVerdict.found:
         _answered = true;
+        _pending = null;
         state = ThreadRoot(event: result.root, deleted: state.deleted);
       case ThreadRootVerdict.deleted:
         _answered = true;
+        _pending = null;
         state = ThreadRoot(event: result.root ?? state.event, deleted: true);
       case ThreadRootVerdict.unresolved:
-        break;
+        _pending = answer.any((event) => event.kind == EventKind.deletion)
+            ? answer
+            : null;
     }
   }
 

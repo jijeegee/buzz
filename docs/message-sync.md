@@ -852,7 +852,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   deep-link copy), the store by id (pushed rows included; a removal (9005) or
   the author's deletion (5) in the store marks it deleted), the relay. An
   author's deletion counts only when signed by the root's author, so it needs
-  the root in the same answer or already known. The
+  the root in the same answer or already known; an answer holding only such
+  a deletion is kept and judged again once the author is known. The
   relay is asked over `/query` with two filters in one request: the root by
   id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
   replaces a stored copy. The root fills only the top bubble, agent pins and
