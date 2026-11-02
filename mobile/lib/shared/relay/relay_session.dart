@@ -40,8 +40,16 @@ class _HistorySubscription {
   final List<NostrEvent> events = [];
   final Completer<List<NostrEvent>> completer;
   final Timer timeout;
+  final NostrFilter filter;
 
-  _HistorySubscription({required this.completer, required this.timeout});
+  /// False while the REQ waits for an authenticated socket.
+  bool sent = false;
+
+  _HistorySubscription({
+    required this.completer,
+    required this.timeout,
+    required this.filter,
+  });
 }
 
 class _LiveSubscription {
@@ -398,12 +406,16 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       _sendClose(subId);
     });
 
-    _historySubscriptions[subId] = _HistorySubscription(
+    final subscription = _HistorySubscription(
       completer: completer,
       timeout: timer,
+      filter: filter,
     );
+    _historySubscriptions[subId] = subscription;
 
-    _sendReq(subId, filter);
+    // A REQ on a socket that is down or not yet authenticated would be lost
+    // (or refused with auth-required); it goes out once the socket connects.
+    if (_socketConnected) _sendHistoryReq(subId, subscription);
     return completer.future;
   }
 
@@ -770,6 +782,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _hasConnectedOnce = true;
     _reconnectDelayMs = _baseReconnectDelayMs;
     state = const SessionState(status: SessionStatus.connected);
+    for (final entry in [..._historySubscriptions.entries]) {
+      if (!entry.value.sent) _sendHistoryReq(entry.key, entry.value);
+    }
     await _replayLiveSubscriptions(generation);
     final droppedAt = _meDroppedAt;
     _meDroppedAt = null;
@@ -1039,6 +1054,12 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   void _sendReq(String subId, NostrFilter filter) {
     _socket?.send(['REQ', subId, filter.toJson()]);
+  }
+
+  void _sendHistoryReq(String subId, _HistorySubscription subscription) {
+    if (_socket == null) return;
+    subscription.sent = true;
+    _sendReq(subId, subscription.filter);
   }
 
   void _sendClose(String subId) {

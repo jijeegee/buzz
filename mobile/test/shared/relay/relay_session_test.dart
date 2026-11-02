@@ -534,6 +534,32 @@ void main() {
     await expectation;
   });
 
+  test(
+    'a history REQ made while the socket is down goes out on connect',
+    () async {
+      final socket = _RecordingRelaySocket();
+      final session = RelaySessionNotifier();
+      final container = ProviderContainer(
+        overrides: [relaySessionProvider.overrideWith(() => session)],
+      );
+      addTearDown(container.dispose);
+      container.read(relaySessionProvider);
+      session.debugAttachSocketForTest(socket);
+      session.debugMarkSocketDownForTest();
+
+      // No awaits until it settles: the bare container rebuilds the
+      // session on the next turn.
+      final history = session.fetchHistory(_channelFilter);
+      expect(_reqs(socket), isEmpty);
+
+      unawaited(session.debugHandleConnected());
+      final req = _reqs(socket).single;
+      expect(req[2], _channelFilter.toJson());
+      session.debugHandleMessage(['EOSE', req[1]]);
+      expect(await history, isEmpty);
+    },
+  );
+
   test('retries a dropped connected session without live subscriptions', () {
     final session = RelaySessionNotifier();
     final container = ProviderContainer(
