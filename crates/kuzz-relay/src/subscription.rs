@@ -108,6 +108,9 @@ pub struct SubscriptionRegistry {
     stream_count: AtomicUsize,
     /// Last stream REQ per connection (sub id, time), for the 5 s repeat rule.
     stream_reqs: DashMap<ConnId, (SubId, std::time::Instant)>,
+    /// Communities with a stream-room re-run in flight; `true` when another
+    /// was asked for meanwhile (it runs once more after).
+    stream_reruns: DashMap<CommunityId, bool>,
 }
 
 impl SubscriptionRegistry {
@@ -224,6 +227,101 @@ impl SubscriptionRegistry {
             .unwrap_or_default()
     }
 
+    /// Add (`carried`) or remove one room of the connection's user stream
+    /// `sub_id`. `true` when the room set changed. The stream stays open with
+    /// no rooms: membership never closes it.
+    pub fn stream_set_room(
+        &self,
+        conn_id: ConnId,
+        sub_id: &str,
+        room: Uuid,
+        carried: bool,
+    ) -> bool {
+        if !self.is_stream(conn_id, sub_id) {
+            return false;
+        }
+        let Some(mut conn_subs) = self.subs.get_mut(&conn_id) else {
+            return false;
+        };
+        let Some((filters, community_id, SubscriptionScope::Channels(rooms))) =
+            conn_subs.get_mut(sub_id)
+        else {
+            return false;
+        };
+        let (filters, community_id) = (filters.clone(), *community_id);
+        if carried {
+            if rooms.contains(&room) {
+                return false;
+            }
+            rooms.push(room);
+            self.index_channel(community_id, conn_id, sub_id, &filters, room);
+        } else {
+            let before = rooms.len();
+            rooms.retain(|candidate| *candidate != room);
+            if rooms.len() == before {
+                return false;
+            }
+            self.remove_from_index(
+                conn_id,
+                sub_id,
+                &filters,
+                community_id,
+                &SubscriptionScope::Channels(vec![room]),
+            );
+        }
+        true
+    }
+
+    /// Connections holding a user stream, with the stream (all communities
+    /// when `community` is `None`).
+    pub fn streams_in(&self, community: Option<CommunityId>) -> Vec<(ConnId, Arc<StreamHandle>)> {
+        if !self.has_streams() {
+            return Vec::new();
+        }
+        self.streams
+            .iter()
+            .filter(|entry| community.is_none_or(|c| entry.value().tenant.community() == c))
+            .map(|entry| (*entry.key(), Arc::clone(entry.value())))
+            .collect()
+    }
+
+    /// Start a stream-room re-run of `community`: `true` when the caller
+    /// should run it, `false` when one is in flight (it will run again).
+    pub fn begin_stream_rerun(&self, community: CommunityId) -> bool {
+        match self.stream_reruns.entry(community) {
+            dashmap::mapref::entry::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = true;
+                false
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(false);
+                true
+            }
+        }
+    }
+
+    /// A re-run of `community` finished: `true` when another was asked for
+    /// meanwhile (run again), otherwise the community is released.
+    pub fn finish_stream_rerun(&self, community: CommunityId) -> bool {
+        loop {
+            match self.stream_reruns.get_mut(&community) {
+                Some(mut again) if *again => {
+                    *again = false;
+                    return true;
+                }
+                Some(_) => {}
+                None => return false,
+            }
+            if self
+                .stream_reruns
+                .remove_if(&community, |_, again| !*again)
+                .is_some()
+            {
+                return false;
+            }
+        }
+    }
+
     /// Record a stream REQ and return the previous one (sub id, time).
     pub fn note_stream_req(
         &self,
@@ -260,35 +358,7 @@ impl SubscriptionRegistry {
 
         if let SubscriptionScope::Channels(channel_ids) = &scope {
             for ch_id in channel_ids {
-                let ch_id = *ch_id;
-                match extract_kinds_from_filters(&filters) {
-                    None => {
-                        // At least one filter has no `kinds` constraint — wildcard,
-                        // this sub wants all kinds in this channel.
-                        self.channel_wildcard_index
-                            .entry((community_id, ch_id))
-                            .or_default()
-                            .push((conn_id, sub_id.clone()));
-                    }
-                    Some(kinds) if kinds.is_empty() => {
-                        // All filters had explicit empty kinds lists (`kinds: []`).
-                        // Per NIP-01, `kinds: []` means "match no kinds" — this
-                        // subscription will never receive any events. Do not index it
-                        // anywhere; `filters_match` will reject all events at fan-out.
-                    }
-                    Some(kinds) => {
-                        for kind in kinds {
-                            let key = IndexKey {
-                                channel_id: ch_id,
-                                kind,
-                            };
-                            self.channel_kind_index
-                                .entry((community_id, key))
-                                .or_default()
-                                .push((conn_id, sub_id.clone()));
-                        }
-                    }
-                }
+                self.index_channel(community_id, conn_id, &sub_id, &filters, *ch_id);
             }
         } else {
             // Global subscription. Fully p-constrained filters can use the
@@ -318,6 +388,45 @@ impl SubscriptionRegistry {
                                 .push((conn_id, sub_id.clone()));
                         }
                     }
+                }
+            }
+        }
+    }
+
+    /// Index one channel of a channel-scoped subscription.
+    fn index_channel(
+        &self,
+        community_id: CommunityId,
+        conn_id: ConnId,
+        sub_id: &str,
+        filters: &[Filter],
+        ch_id: Uuid,
+    ) {
+        match extract_kinds_from_filters(filters) {
+            None => {
+                // At least one filter has no `kinds` constraint — wildcard,
+                // this sub wants all kinds in this channel.
+                self.channel_wildcard_index
+                    .entry((community_id, ch_id))
+                    .or_default()
+                    .push((conn_id, sub_id.to_string()));
+            }
+            Some(kinds) if kinds.is_empty() => {
+                // All filters had explicit empty kinds lists (`kinds: []`).
+                // Per NIP-01, `kinds: []` means "match no kinds" — this
+                // subscription will never receive any events. Do not index it
+                // anywhere; `filters_match` will reject all events at fan-out.
+            }
+            Some(kinds) => {
+                for kind in kinds {
+                    let key = IndexKey {
+                        channel_id: ch_id,
+                        kind,
+                    };
+                    self.channel_kind_index
+                        .entry((community_id, key))
+                        .or_default()
+                        .push((conn_id, sub_id.to_string()));
                 }
             }
         }

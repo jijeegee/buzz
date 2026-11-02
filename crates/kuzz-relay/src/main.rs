@@ -1274,13 +1274,22 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                         // and the local moka keys carry that same label. Apply
                         // only the matching tenant-local drop; a mutation in A
                         // must not flush B's derived state.
+                        let followup = scoped.invalidation.clone();
                         state_for_cache
                             .apply_cache_invalidation(scoped.community_id, scoped.invalidation);
+                        kuzz_relay::handlers::user_stream::after_cache_invalidation(
+                            &state_for_cache,
+                            scoped.community_id,
+                            &followup,
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_cache_invalidation_lag_total").increment(n);
                         tracing::warn!("Cache-invalidation consumer lagged by {n} messages");
                         state_for_cache.invalidate_after_cache_invalidation_lag();
+                        kuzz_relay::handlers::user_stream::after_cache_invalidation_lag(
+                            &state_for_cache,
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Cache-invalidation broadcast channel closed");

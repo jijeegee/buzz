@@ -96,7 +96,7 @@ pub(crate) async fn apply_kick_live_side_effects(
     target_pubkey: &[u8],
 ) -> Result<KickOutcome, anyhow::Error> {
     // Cache invalidation is unconditionally safe — drops a stale positive.
-    state.invalidate_membership(tenant, channel_id, target_pubkey);
+    let generation = state.invalidate_membership(tenant, channel_id, target_pubkey);
 
     // Acquire the membership advisory lock and check that the member is still
     // removed. The fence guard keeps the lock alive through eviction and
@@ -134,7 +134,7 @@ pub(crate) async fn apply_kick_live_side_effects(
     // Eviction first (no DB write needed), then commit the fence with the
     // workflow-disable UPDATE on the same connection so no second pool
     // connection is needed (pool-exhaustion deadlock prevention — see module doc).
-    evict_live_channel_subscriptions(tenant, state, channel_id, target_pubkey).await;
+    evict_live_channel_subscriptions(tenant, state, channel_id, target_pubkey, generation).await;
     match fence
         .commit_disabling_workflows(tenant.community(), channel_id, target_pubkey)
         .await
@@ -174,11 +174,16 @@ pub(crate) enum KickOutcome {
     ReAdded,
 }
 
+/// Close the departed member's live subscriptions on the channel, and drop
+/// the channel from their user streams (no CLOSED: the stream stays). The
+/// stream drop applies while the key's origin generation is still
+/// `generation`, the departure's own (see [`AppState::invalidate_membership`]).
 async fn evict_live_channel_subscriptions(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     channel_id: Uuid,
     target_pubkey: &[u8],
+    generation: u64,
 ) {
     let conn_ids = state
         .conn_manager
@@ -187,6 +192,14 @@ async fn evict_live_channel_subscriptions(
     for conn_id in conn_ids {
         evict_conn_channel_subscriptions(tenant, state, channel_id, conn_id).await;
     }
+    super::user_stream::remove_room(
+        state,
+        tenant.community(),
+        channel_id,
+        target_pubkey,
+        generation,
+    )
+    .await;
 }
 
 /// Durably disable a departing member's workflows in the channel (SEC-006).
@@ -1342,6 +1355,12 @@ pub(crate) async fn emit_membership_notification_stamped(
     notification_kind: u32,
     stamp: NotificationStamp,
 ) -> anyhow::Result<()> {
+    // The target's user streams on this pod carry the room before the 44100
+    // goes out, so their next room event already rides the stream.
+    if notification_kind == KIND_MEMBER_ADDED_NOTIFICATION {
+        super::user_stream::recheck_room(state, tenant.community(), channel_id, target_pubkey)
+            .await;
+    }
     let target_hex = hex::encode(target_pubkey);
     let actor_hex = hex::encode(actor_pubkey);
     let channel_id_str = channel_id.to_string();
@@ -2038,8 +2057,8 @@ async fn handle_remove_user(
         .db
         .remove_member(tenant.community(), channel_id, &target_pubkey, &actor_bytes)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &target_pubkey);
-    evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey).await;
+    let generation = state.invalidate_membership(tenant, channel_id, &target_pubkey);
+    evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey, generation).await;
     disable_departed_member_workflows(tenant, state, channel_id, &target_pubkey).await;
 
     let actor_hex = hex::encode(&actor_bytes);
@@ -2615,6 +2634,7 @@ async fn handle_create_group(
 
     // Creator becomes owner — evict any stale negative membership lookup.
     state.invalidate_membership(tenant, channel.id, &actor_bytes);
+    super::user_stream::recheck_room(state, tenant.community(), channel.id, &actor_bytes).await;
     // Open channels appear in everyone's accessible set; private channels only
     // affect the creator (the sole initial member).
     if visibility == kuzz_db::channel::ChannelVisibility::Open {
@@ -2751,6 +2771,7 @@ async fn handle_delete_group(
     // Deleted channel: clear both membership and accessible-channels caches.
     // Stale is_member=true entries would bypass the DB's deleted_at guard.
     state.invalidate_channel_deleted(tenant);
+    super::user_stream::remove_deleted_room(state, tenant.community(), channel_id).await;
 
     let actor_hex = hex::encode(&actor_bytes);
     emit_system_message(
@@ -2838,8 +2859,8 @@ async fn handle_leave_request(
         .db
         .remove_member(tenant.community(), channel_id, &actor_bytes, &actor_bytes)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &actor_bytes);
-    evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes).await;
+    let generation = state.invalidate_membership(tenant, channel_id, &actor_bytes);
+    evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes, generation).await;
     disable_departed_member_workflows(tenant, state, channel_id, &actor_bytes).await;
 
     let actor_hex = hex::encode(&actor_bytes);

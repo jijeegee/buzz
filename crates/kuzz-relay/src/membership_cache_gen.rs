@@ -76,7 +76,7 @@ impl MembershipCacheGen {
         pubkey: &[u8],
     ) {
         if origin != Some(self.pod_id) {
-            self.bump_origin(community, channel_id, pubkey);
+            let _ = self.bump_origin(community, channel_id, pubkey);
         }
     }
 
@@ -126,9 +126,11 @@ impl MembershipCacheGen {
         self.wide.fetch_add(1, Ordering::SeqCst);
     }
 
-    /// Record a membership change at its origin. Call before dropping the entry.
-    pub fn bump_origin(&self, community: CommunityId, channel_id: Uuid, pubkey: &[u8]) {
-        self.origin[Self::slot(community, channel_id, pubkey)].fetch_add(1, Ordering::SeqCst);
+    /// Record a membership change at its origin. Call before dropping the
+    /// entry. Returns the key's generation right after this change, so the
+    /// caller can apply its own result only while no later change happened.
+    pub fn bump_origin(&self, community: CommunityId, channel_id: Uuid, pubkey: &[u8]) -> u64 {
+        self.origin[Self::slot(community, channel_id, pubkey)].fetch_add(1, Ordering::SeqCst) + 1
     }
 
     /// Current origin generation of a key, for compare-and-apply re-checks.

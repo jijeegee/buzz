@@ -160,3 +160,6 @@ fn the_largest_seq_is_kept_exactly() {
 
 #[path = "user_stream_db_tests.rs"]
 mod db;
+
+#[path = "user_stream_membership_tests.rs"]
+mod membership;

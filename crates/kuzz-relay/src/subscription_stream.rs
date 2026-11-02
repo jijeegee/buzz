@@ -52,6 +52,8 @@ pub struct StreamHandle {
     pub mode: StreamMode,
     /// Tenant of the connection (topic release on teardown).
     pub tenant: TenantContext,
+    /// A token's channel scope: rooms outside it are never carried.
+    allowed_rooms: Option<Vec<uuid::Uuid>>,
     queue_cap: usize,
     phase: Mutex<Phase>,
     /// CLOSED reason and whether to cancel the socket, set by a close that
@@ -59,6 +61,11 @@ pub struct StreamHandle {
     close_request: Mutex<Option<(&'static str, bool)>>,
     /// Woken by every close; the stream's teardown task waits on it.
     closed: tokio::sync::Notify,
+    /// Membership changes that arrived before the stream's rooms were read
+    /// (query A): `(room, carried)` in arrival order, replayed on top of
+    /// query A's result. `None` once the rooms are set. Touched only under
+    /// the connection's subscription lock.
+    room_ops: Mutex<Option<Vec<(uuid::Uuid, bool)>>>,
 }
 
 impl StreamHandle {
@@ -75,11 +82,52 @@ impl StreamHandle {
             owner,
             mode,
             tenant,
+            allowed_rooms: None,
             queue_cap,
             phase: Mutex::new(Phase::Snapshot(Vec::new())),
             close_request: Mutex::new(None),
             closed: tokio::sync::Notify::new(),
+            room_ops: Mutex::new(Some(Vec::new())),
         }
+    }
+
+    /// Limit the stream to a token's channel scope.
+    pub fn limited_to(mut self, rooms: Option<Vec<uuid::Uuid>>) -> Self {
+        self.allowed_rooms = rooms;
+        self
+    }
+
+    /// Whether the stream may carry `room` (inside the token's scope, if any).
+    pub fn allows(&self, room: uuid::Uuid) -> bool {
+        self.allowed_rooms
+            .as_ref()
+            .is_none_or(|rooms| rooms.contains(&room))
+    }
+
+    /// Hold a membership change until the rooms are set; `false` when they
+    /// already are (apply it to the registry instead).
+    pub fn hold_room_op(&self, room: uuid::Uuid, carried: bool) -> bool {
+        match &mut *self
+            .room_ops
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+        {
+            Some(ops) => {
+                ops.push((room, carried));
+                true
+            }
+            None => false,
+        }
+    }
+
+    /// The changes held since registration, in order; later ones apply
+    /// directly. Empty when called twice.
+    pub fn take_room_ops(&self) -> Vec<(uuid::Uuid, bool)> {
+        self.room_ops
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner())
+            .take()
+            .unwrap_or_default()
     }
 
     fn phase(&self) -> std::sync::MutexGuard<'_, Phase> {
@@ -226,6 +274,17 @@ mod tests {
             !h.go_live(|_| unreachable!()),
             "no EOSE flush after overflow"
         );
+    }
+
+    #[test]
+    fn room_ops_are_held_until_taken() {
+        let h = handle(2);
+        let (a, b) = (uuid::Uuid::from_u128(1), uuid::Uuid::from_u128(2));
+        assert!(h.hold_room_op(a, true));
+        assert!(h.hold_room_op(b, false));
+        assert_eq!(h.take_room_ops(), [(a, true), (b, false)]);
+        assert!(!h.hold_room_op(a, false), "applied directly once taken");
+        assert!(h.take_room_ops().is_empty());
     }
 
     #[test]

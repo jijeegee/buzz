@@ -1681,10 +1681,20 @@ impl AppState {
     /// to every other pod over Redis (see [`apply_cache_invalidation`]). The
     /// publish is spawned, not awaited: the local drop is already done, and a
     /// dropped publish is backstopped by the REQ denial-path DB confirmation.
-    pub fn invalidate_membership(&self, tenant: &TenantContext, channel_id: Uuid, pubkey: &[u8]) {
+    ///
+    /// Returns the key's origin generation right after this change (see
+    /// [`crate::membership_cache_gen`]); a user-stream hook applies the change
+    /// directly only while the generation is still this value.
+    pub fn invalidate_membership(
+        &self,
+        tenant: &TenantContext,
+        channel_id: Uuid,
+        pubkey: &[u8],
+    ) -> u64 {
         // The drop names this pod, so its own loopback is not counted again
         // and every other pod counts it once on receipt.
-        self.membership_gen
+        let generation = self
+            .membership_gen
             .bump_origin(tenant.community(), channel_id, pubkey);
         self.invalidate_membership_local(tenant.community(), channel_id, pubkey);
         self.spawn_cache_invalidation(
@@ -1695,6 +1705,7 @@ impl AppState {
                 origin: Some(self.membership_gen.pod_id()),
             },
         );
+        generation
     }
 
     /// Local-only membership drop. The cross-pod consumer calls this directly so

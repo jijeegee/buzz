@@ -17,21 +17,21 @@ use super::{filter, fixture};
 use crate::connection::AuthState;
 use crate::user_stream_config::{Access, UserStreamConfig};
 
-struct Harness {
-    state: Arc<AppState>,
-    conn: Arc<ConnectionState>,
-    rx: mpsc::Receiver<WsMessage>,
-    ctrl_rx: mpsc::Receiver<WsMessage>,
-    pool: sqlx::PgPool,
-    community: CommunityId,
-    keys: Keys,
+pub(super) struct Harness {
+    pub(super) state: Arc<AppState>,
+    pub(super) conn: Arc<ConnectionState>,
+    pub(super) rx: mpsc::Receiver<WsMessage>,
+    pub(super) ctrl_rx: mpsc::Receiver<WsMessage>,
+    pub(super) pool: sqlx::PgPool,
+    pub(super) community: CommunityId,
+    pub(super) keys: Keys,
 }
 
 fn database_url() -> String {
     std::env::var("DATABASE_URL").expect("DATABASE_URL")
 }
 
-fn on() -> UserStreamConfig {
+pub(super) fn on() -> UserStreamConfig {
     UserStreamConfig {
         stream: Access::On,
         epoch: "e1".to_string(),
@@ -56,7 +56,10 @@ fn auth_context(keys: &Keys) -> AuthContext {
 
 /// A registered, authenticated connection with a `buffer`-frame send queue in
 /// a fresh community. `configure` gets the account's hex pubkey.
-async fn harness(buffer: usize, configure: impl FnOnce(&str) -> UserStreamConfig) -> Harness {
+pub(super) async fn harness(
+    buffer: usize,
+    configure: impl FnOnce(&str) -> UserStreamConfig,
+) -> Harness {
     let pool = sqlx::PgPool::connect(&database_url())
         .await
         .expect("connect to test DB");
@@ -132,12 +135,12 @@ async fn harness(buffer: usize, configure: impl FnOnce(&str) -> UserStreamConfig
 }
 
 impl Harness {
-    fn pubkey(&self) -> Vec<u8> {
+    pub(super) fn pubkey(&self) -> Vec<u8> {
         self.keys.public_key().to_bytes().to_vec()
     }
 
     /// A room in this community; the account is a member when `member`.
-    async fn room(&self, member: bool, seq: i64) -> Uuid {
+    pub(super) async fn room(&self, member: bool, seq: i64) -> Uuid {
         let id = Uuid::new_v4();
         sqlx::query(
             "INSERT INTO channels (id, community_id, name, channel_type, visibility, created_by)
@@ -171,7 +174,12 @@ impl Harness {
         id
     }
 
-    async fn req(&self, sub: &str, filters: Vec<Filter>, token_rooms: Option<Vec<Uuid>>) {
+    pub(super) async fn req(
+        &self,
+        sub: &str,
+        filters: Vec<Filter>,
+        token_rooms: Option<Vec<Uuid>>,
+    ) {
         handle_stream_req(
             sub.to_string(),
             filters,
@@ -184,12 +192,12 @@ impl Harness {
     }
 
     /// Fan one kind-9 message in `room` out to local subscribers.
-    async fn message(&self, room: Uuid, text: &str) -> String {
+    pub(super) async fn message(&self, room: Uuid, text: &str) -> String {
         post(&self.state, self.community, room, text).await
     }
 
     /// Every data frame queued so far.
-    fn frames(&mut self) -> Vec<serde_json::Value> {
+    pub(super) fn frames(&mut self) -> Vec<serde_json::Value> {
         drain(&mut self.rx)
     }
 }
@@ -209,7 +217,7 @@ async fn post(state: &AppState, community: CommunityId, room: Uuid, text: &str) 
     id
 }
 
-fn drain(rx: &mut mpsc::Receiver<WsMessage>) -> Vec<serde_json::Value> {
+pub(super) fn drain(rx: &mut mpsc::Receiver<WsMessage>) -> Vec<serde_json::Value> {
     let mut out = Vec::new();
     while let Ok(message) = rx.try_recv() {
         if let WsMessage::Text(text) = message {
@@ -219,11 +227,11 @@ fn drain(rx: &mut mpsc::Receiver<WsMessage>) -> Vec<serde_json::Value> {
     out
 }
 
-fn request() -> Filter {
+pub(super) fn request() -> Filter {
     filter(fixture()["request"].clone())
 }
 
-fn closed(frames: &[serde_json::Value], sub: &str) -> Vec<String> {
+pub(super) fn closed(frames: &[serde_json::Value], sub: &str) -> Vec<String> {
     frames
         .iter()
         .filter(|f| f[0] == "CLOSED" && f[1] == sub)
@@ -456,6 +464,8 @@ async fn snapshot_phase_stream(
         vec![stream_filter()],
         rooms,
     );
+    // The rooms are set at registration here: later changes apply directly.
+    assert!(handle.take_room_ops().is_empty());
     spawn_teardown(Arc::clone(&h.state), h.conn.conn_id, Arc::clone(&handle));
     handle
 }
