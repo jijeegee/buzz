@@ -57,6 +57,8 @@ dependencies:
   # This install's device key, registered in every Flutter engine.
   kuzz_device_key:
     path: packages/kuzz_device_key
+  kuzz_android_push:
+    path: packages/kuzz_android_push
 
 dev_dependencies:
   flutter_test:

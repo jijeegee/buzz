@@ -1,0 +1,76 @@
+group 'app.kuzz.mobile.push'
+version '1.0'
+
+buildscript {
+    ext.kotlin_version = '2.2.21'
+
+    repositories {
+        google()
+        mavenCentral()
+    }
+
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.11.2'
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:$kotlin_version"
+    }
+}
+
+rootProject.allprojects {
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+apply plugin: 'com.android.library'
+apply plugin: 'kotlin-android'
+
+// Flutter passes every --dart-define as base64 in the `dart-defines` Gradle
+// property. Only KUZZ_ANDROID_PUSH=true compiles the Firebase receiver in;
+// any other build gets the empty plugin from src/off and no Firebase code,
+// manifest entries or permission at all.
+def kuzzAndroidPushOn = (findProperty('dart-defines') ?: '').toString()
+    .split(',')
+    .findAll { !it.isEmpty() }
+    .any {
+        try {
+            new String(it.decodeBase64(), 'UTF-8') == 'KUZZ_ANDROID_PUSH=true'
+        } catch (ignored) {
+            false
+        }
+    }
+
+android {
+    namespace 'app.kuzz.mobile.push'
+    compileSdk = flutter.compileSdkVersion
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    kotlinOptions {
+        jvmTarget = '17'
+    }
+
+    defaultConfig {
+        minSdk = flutter.minSdkVersion
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += kuzzAndroidPushOn ? 'src/on/kotlin' : 'src/off/kotlin'
+            if (kuzzAndroidPushOn) {
+                manifest.srcFile 'src/on/AndroidManifest.xml'
+            }
+        }
+    }
+}
+
+dependencies {
+    if (kuzzAndroidPushOn) {
+        implementation platform('com.google.firebase:firebase-bom:35.1.0')
+        implementation 'com.google.firebase:firebase-messaging'
+        implementation 'androidx.core:core:1.13.1'
+    }
+}

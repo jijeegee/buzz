@@ -1446,6 +1446,14 @@
   "@settingsNotificationsSection": {
     "description": "Settings page, heading of the notifications section. Short."
   },
+  "pushAndroidGenericNotification": "New message",
+  "@pushAndroidGenericNotification": {
+    "description": "Android notification text shown when a new message arrived but its content could not be loaded. Short."
+  },
+  "pushAndroidChannelName": "Messages",
+  "@pushAndroidChannelName": {
+    "description": "Android system notification settings, name of the notification category for new chat messages. Short."
+  },
   "settingsPushNotifications": "Push notifications",
   "@settingsPushNotifications": {
     "description": "Settings page, Notifications section, title of the on/off switch row. Short."

@@ -10,6 +10,7 @@ import '../community/community.dart';
 import '../deeplink/deep_link.dart';
 import '../relay/relay_provider.dart';
 import '../relay/app_lifecycle_provider.dart';
+import 'android_push.dart';
 import 'push_snapshot.dart';
 
 const _channel = MethodChannel('kuzz/push');
@@ -124,11 +125,16 @@ MessageDeepLink? _pushNotificationLink(Object? arguments) {
 /// Pulls a notification response that arrived before the Flutter method
 /// handler was installed.
 Future<void> syncPendingKuzzPushNotificationResponse() async {
-  if (defaultTargetPlatform != TargetPlatform.iOS) return;
+  final android = androidPushActive;
+  if (!android && defaultTargetPlatform != TargetPlatform.iOS) return;
   try {
-    final arguments = await _channel.invokeMapMethod<dynamic, dynamic>(
-      'takePendingNotificationResponse',
-    );
+    final arguments = android
+        ? await androidPushChannel.invokeMapMethod<dynamic, dynamic>(
+            'takeLaunchPayload',
+          )
+        : await _channel.invokeMapMethod<dynamic, dynamic>(
+            'takePendingNotificationResponse',
+          );
     final link = _pushNotificationLink(arguments);
     if (link != null) pendingPushNotificationLink.value = link;
   } on MissingPluginException {
@@ -275,12 +281,14 @@ Future<void> registerKuzzPushCommunitySnapshotStrict(
 
 /// Restores notification presentation without reading community storage.
 Future<void> restoreAgeRestrictedKuzzNotifications() async {
+  if (androidPushActive) return setAndroidPushAgeRestricted(false);
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
   await _channel.invokeMethod<void>('restoreAgeRestrictedNotifications');
 }
 
 /// Removes notifications rendered before a confirmed age restriction.
 Future<void> purgeAgeRestrictedKuzzNotifications() async {
+  if (androidPushActive) return setAndroidPushAgeRestricted(true);
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
   await _channel.invokeMethod<void>('purgeAgeRestrictedNotifications');
 }
@@ -351,6 +359,9 @@ Future<void> _registerKuzzPushCommunitySnapshot(
 }
 
 void installKuzzPushMethodHandler() {
+  if (androidPushActive) {
+    androidPushChannel.setMethodCallHandler(handleAndroidPushCall);
+  }
   _channel.setMethodCallHandler((call) async {
     switch (call.method) {
       case 'apnsTokenChanged':
@@ -380,4 +391,20 @@ void installKuzzPushMethodHandler() {
         throw MissingPluginException('Unknown kuzz/push method ${call.method}');
     }
   });
+}
+
+/// Calls from the Android push plugin to the app's engine.
+@visibleForTesting
+Future<Object?> handleAndroidPushCall(MethodCall call) async {
+  switch (call.method) {
+    case 'notificationOpened':
+      final link = _pushNotificationLink(call.arguments);
+      if (link == null) return 'ignored';
+      pendingPushNotificationLink.value = link;
+      return 'handled';
+    default:
+      throw MissingPluginException(
+        'Unknown kuzz/android_push method ${call.method}',
+      );
+  }
 }

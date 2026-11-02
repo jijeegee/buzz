@@ -861,6 +861,13 @@ packages:
       url: "https://pub.dev"
     source: hosted
     version: "0.4.16"
+  kuzz_android_push:
+    dependency: "direct main"
+    description:
+      path: "packages/kuzz_android_push"
+      relative: true
+    source: path
+    version: "0.0.1"
   kuzz_device_key:
     dependency: "direct main"
     description:

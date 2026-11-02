@@ -1,0 +1,23 @@
+name: kuzz_android_push
+description: >-
+  Android push for Kuzz behind the KUZZ_ANDROID_PUSH dart-define: the
+  Firebase Cloud Messaging receiver, the background wake engine, message
+  notifications and the gateway enrollment key. With the define off the
+  plugin is an empty class and the APK carries no Firebase code.
+publish_to: 'none'
+version: 0.0.1
+
+environment:
+  sdk: ^3.11.4
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+flutter:
+  plugin:
+    platforms:
+      android:
+        package: app.kuzz.mobile.push
+        pluginClass: KuzzAndroidPushPlugin
