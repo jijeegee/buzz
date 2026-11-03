@@ -139,22 +139,43 @@ export function useChannelRouteTarget({
     // (docs/message-sync.md#opening-a-thread-from-its-root-id). A reply also
     // sent to the group is no exception, so the result never depends on
     // whether the reply is cached; the main timeline scrolls to it as well.
+    const openOnRoot = (rootId: string) => {
+      if (!requireThreadEditResolution()) {
+        return false;
+      }
+      closeAgentSession();
+      setProfilePanelPubkey(null, { replace: true });
+      setEditTargetId(null);
+      setOpenThreadHeadId(rootId, { replace: true });
+      setThreadReplyTargetId(rootId);
+      setThreadScrollTargetId(
+        rootId === targetMessageId ? null : targetMessageId,
+      );
+      setExpandedThreadReplyIds(new Set());
+      return true;
+    };
     if (
       targetThreadRootId &&
       targetThreadRootId !== targetMessageId &&
       openedByRootRef.current === null
     ) {
-      if (!requireThreadEditResolution()) {
+      if (!openOnRoot(targetThreadRootId)) {
         return;
       }
-      closeAgentSession();
-      setProfilePanelPubkey(null, { replace: true });
-      setEditTargetId(null);
-      setOpenThreadHeadId(targetThreadRootId, { replace: true });
-      setThreadReplyTargetId(targetThreadRootId);
-      setThreadScrollTargetId(targetMessageId);
-      setExpandedThreadReplyIds(new Set());
       openedByRootRef.current = targetKey;
+    }
+    // A link to a thread's root that names the thread opens it by its id,
+    // without waiting for the root row (it may never load for a member who
+    // joined after it).
+    if (
+      targetThreadRootId &&
+      targetThreadRootId === targetMessageId &&
+      !targetJumpOnly
+    ) {
+      if (openOnRoot(targetThreadRootId)) {
+        handledThreadRouteTargetRef.current = targetKey;
+      }
+      return;
     }
 
     // A search-hit placeholder has no thread tags yet; acting on it would open
@@ -199,6 +220,12 @@ export function useChannelRouteTarget({
       timelineMessageById,
     );
     if (!routeTarget) {
+      // The root or a branch row is not loaded (or never will be): open on
+      // the reply's root id now; the branch expands if its rows arrive.
+      const rootId = targetMessage.rootId ?? null;
+      if (rootId && openedByRootRef.current === null && openOnRoot(rootId)) {
+        openedByRootRef.current = targetKey;
+      }
       return;
     }
     if (openedByRootRef.current === targetKey) {

@@ -986,7 +986,8 @@ export type ThreadReply = {
 } & ForumSendState;
 
 export type ForumThreadResponse = {
-  post: ForumPost;
+  /** Null when the relay withholds the post (joined after it). */
+  post: ForumPost | null;
   replies: ThreadReply[];
   totalReplies: number;
   nextCursor: string | null;

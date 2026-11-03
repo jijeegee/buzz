@@ -456,7 +456,7 @@ export function ChannelScreen({
     ],
   );
   // The panel opens on the root id alone; the root resolves in the background.
-  const threadRootOpen = useThreadRootOpen({ activeChannel, isHuddleTranscript, loadedEvents: resolvedMessages, rootId: effectiveOpenThreadHeadId });
+  const threadRootOpen = useThreadRootOpen({ activeChannel, loadedEvents: resolvedMessages, rootId: effectiveOpenThreadHeadId });
   const threadPanelData = useIndependentThreadPanel({
     activeChannel,
     rootOpen: threadRootOpen,

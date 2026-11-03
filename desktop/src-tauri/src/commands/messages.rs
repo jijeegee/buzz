@@ -399,7 +399,7 @@ pub use event_batch::{get_event, get_events, get_quote_preview, get_thread_root}
 // ── Writes ──────────────────────────────────────────────────────────────────
 
 mod thread_ref;
-use thread_ref::{resolve_thread_ref, thread_ref};
+use thread_ref::thread_ref;
 
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
@@ -837,6 +837,7 @@ pub async fn send_managed_agent_channel_message(
     marker_scope: Option<String>,
     mention_pubkeys: Option<Vec<String>>,
     parent_event_id: Option<String>,
+    root_event_id: Option<String>,
     additional_markers: Option<Vec<String>>,
     user_fallback: Option<UserFallbackMessage>,
     app: AppHandle,
@@ -891,9 +892,11 @@ pub async fn send_managed_agent_channel_message(
         Some(parent_id) => Some(
             // Same active-relay resolution as before — this path has no
             // caller-captured tenant scope (yet), so resolve the override
-            // here and read through it with the active identity.
-            resolve_thread_ref(
+            // here and read through it with the active identity. A supplied
+            // root skips the parent lookup, as in `send_channel_message`.
+            thread_ref(
                 parent_id,
+                root_event_id.as_deref(),
                 &state,
                 &crate::relay::relay_api_base_url_with_override(&state),
                 None,

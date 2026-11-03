@@ -110,7 +110,12 @@ export function ThreadHeaderActions({
           label={t("messages.actions.copyLink")}
           onClick={() =>
             copyTextToClipboard(
-              buildMessageLink({ channelId, messageId: rootId }),
+              // Names the thread so the link opens it by its root id.
+              buildMessageLink({
+                channelId,
+                messageId: rootId,
+                threadRootId: rootId,
+              }),
               t("messages.actions.linkCopied"),
             )
           }

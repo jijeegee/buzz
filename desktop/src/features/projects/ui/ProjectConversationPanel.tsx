@@ -7,6 +7,7 @@ import {
   useChannelsQuery,
 } from "@/features/channels/hooks";
 import { RightAuxiliaryPane } from "@/features/channels/ui/RightAuxiliaryPane";
+import { useThreadRootOpen } from "@/features/channels/ui/useThreadRootOpen";
 import {
   useChannelSubscription,
   useSendMessageMutation,
@@ -142,8 +143,16 @@ export function ProjectConversationPanel({
     setExpandedReplyIds(new Set(threadReplyEvents.map((event) => event.id)));
   }
 
+  // Opens on the root id alone, like the channel screen: a root the reader
+  // cannot fetch gets a stand-in top row instead of a load failure.
+  const rootOpen = useThreadRootOpen({
+    activeChannel,
+    loadedEvents: rootEvents,
+    rootId,
+  });
   const panelData = useIndependentThreadPanel({
     activeChannel,
+    rootOpen,
     channelEvents: rootEvents,
     threadReplyEvents,
     rootId,

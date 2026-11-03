@@ -198,7 +198,8 @@ export function useForumSend(pubkey: string | undefined) {
         undefined,
         undefined,
         undefined,
-        undefined,
+        // A comment's parent is its post, which is the thread root.
+        variables.kind === KIND_FORUM_COMMENT ? variables.parentEventId : null,
         undefined,
         undefined,
         // Sign with the second the row already shows, so it never moves.

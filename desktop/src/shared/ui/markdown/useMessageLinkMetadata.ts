@@ -1,9 +1,13 @@
+import { type QueryClient, QueryClientContext } from "@tanstack/react-query";
 import * as React from "react";
 
 import type { ParsedMessageLink } from "@/features/messages/lib/messageLink";
+import { storeScope } from "@/features/messages/lib/paintCoverage";
+import { threadRootVerdict } from "@/features/messages/lib/threadRootResolve";
 import { summarizeMessageLinkContent } from "@/features/messages/lib/messageLinkMetadata";
 import { getThreadReference } from "@/features/messages/lib/threading";
-import { getEventById } from "@/shared/api/tauri";
+import { getEventById, invokeTauri } from "@/shared/api/tauri";
+import type { RelayEvent } from "@/shared/api/types";
 import { getUserProfile } from "@/shared/api/tauriProfiles";
 import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
@@ -52,7 +56,33 @@ export function resetMessageLinkMetadataCache() {
   metadataCache.clear();
 }
 
+/**
+ * A message not found is deleted only on an explicit deletion of it (a
+ * removal, or with its author unknown nothing else); otherwise it is just
+ * unavailable, e.g. from before the reader joined a since-join room.
+ */
+async function notFoundState(
+  queryClient: QueryClient | undefined,
+  link: Pick<ParsedMessageLink, "channelId" | "messageId">,
+): Promise<CachedMessageLinkMetadata> {
+  const scope = queryClient ? storeScope(queryClient) : null;
+  if (!scope) return { kind: "unavailable" };
+  const answer = await invokeTauri<RelayEvent[]>("get_thread_root", {
+    channelId: link.channelId,
+    rootId: link.messageId,
+    account: scope.pubkey,
+    relayUrl: scope.relayUrl,
+  }).catch(() => null);
+  return threadRootVerdict(answer, {
+    channelId: link.channelId,
+    rootId: link.messageId,
+  }).verdict === "deleted"
+    ? { kind: "deleted" }
+    : { kind: "unavailable" };
+}
+
 function fetchMetadata(
+  queryClient: QueryClient | undefined,
   link: Pick<ParsedMessageLink, "channelId" | "messageId">,
 ): Promise<CachedMessageLinkMetadata> {
   const key = `${link.channelId}:${link.messageId}`;
@@ -81,7 +111,7 @@ function fetchMetadata(
       })
       .catch((error) =>
         isDefinitiveEventNotFound(error)
-          ? ({ kind: "deleted" } as const)
+          ? notFoundState(queryClient, link)
           : ({ kind: "unavailable" } as const),
       );
     metadataCache.set(key, request);
@@ -102,6 +132,8 @@ export function useMessageLinkMetadata(
     key: string;
     state: CachedMessageLinkMetadata;
   } | null>(null);
+  // Read without throwing: markdown also renders outside a query provider.
+  const queryClient = React.useContext(QueryClientContext);
   const requestId = React.useRef(0);
   const key = `${link.channelId}:${link.messageId}`;
   React.useEffect(() => {
@@ -113,7 +145,7 @@ export function useMessageLinkMetadata(
       channelId: link.channelId,
       messageId: link.messageId,
     };
-    void fetchMetadata(currentLink).then((metadata) => {
+    void fetchMetadata(queryClient, currentLink).then((metadata) => {
       if (requestId.current === currentRequest) {
         setResolved({ key, state: metadata });
       }
@@ -121,7 +153,7 @@ export function useMessageLinkMetadata(
     return () => {
       requestId.current += 1;
     };
-  }, [channelReadable, key, link.channelId, link.messageId]);
+  }, [channelReadable, key, link.channelId, link.messageId, queryClient]);
   if (!channelReadable) return { state: { kind: "idle" } };
   return {
     state: resolved?.key === key ? resolved.state : { kind: "loading" },

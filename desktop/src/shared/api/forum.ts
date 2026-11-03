@@ -51,7 +51,7 @@ type RawThreadReply = {
 };
 
 type RawForumThreadResponse = {
-  root: RawForumPost;
+  root: RawForumPost | null;
   replies: RawThreadReply[];
   total_replies: number;
   next_cursor: string | null;
@@ -158,7 +158,9 @@ export async function getForumThread(
   );
 
   return {
-    post: fromRawForumPost(response.root, relaySelfPubkey),
+    post: response.root
+      ? fromRawForumPost(response.root, relaySelfPubkey)
+      : null,
     replies: response.replies.map((reply) =>
       fromRawThreadReply(reply, relaySelfPubkey),
     ),

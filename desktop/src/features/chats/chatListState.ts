@@ -527,11 +527,14 @@ export function chatRowRootEvent(row: ChatListRow): RelayEvent | null {
   return { ...root, sig: root.sig };
 }
 
-/** A thread row's title: its name, else the root's first line, trimmed. */
+/**
+ * A thread row's title: its name, else the root's first line, else (a root
+ * the reader cannot see) the latest message's first line, trimmed.
+ */
 export function chatThreadTitle(row: ChatListRow): string {
   const name = row.thread_name?.trim();
   if (name) return name;
-  return threadRootTitle(row.root?.content);
+  return threadRootTitle(row.root?.content ?? row.latest?.content);
 }
 
 /** An unnamed thread's title: its root's first line, trimmed. */

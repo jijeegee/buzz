@@ -206,3 +206,24 @@ test("a reply also sent to the group, linked without its thread, stays in the ma
   assert.equal(harness.mainTimelineTargetId(), REPLY_ID);
   await harness.unmount();
 });
+
+test("a link to a root naming its thread opens it by id without the root row", async () => {
+  const harness = await mount({
+    targetMessageId: ROOT_ID,
+    targetThreadRootId: ROOT_ID,
+    timelineMessages: [],
+  });
+  assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
+  assert.deepEqual(harness.calls.threadScrollTargetId, [null]);
+  await harness.unmount();
+});
+
+test("a reply linked without its thread opens on its root id when the root is not loaded", async () => {
+  const harness = await mount({
+    targetMessageId: REPLY_ID,
+    timelineMessages: [reply],
+  });
+  assert.deepEqual(harness.calls.openThreadHeadId, [ROOT_ID]);
+  assert.deepEqual(harness.calls.threadScrollTargetId, [REPLY_ID]);
+  await harness.unmount();
+});

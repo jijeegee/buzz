@@ -135,8 +135,10 @@ export function ForumView({
       }
     }
     if (thread) {
-      pubkeys.add(thread.post.pubkey);
-      addMentionPubkeys(thread.post.tags);
+      if (thread.post) {
+        pubkeys.add(thread.post.pubkey);
+        addMentionPubkeys(thread.post.tags);
+      }
       for (const reply of thread.replies) {
         pubkeys.add(reply.pubkey);
         addMentionPubkeys(reply.tags);
