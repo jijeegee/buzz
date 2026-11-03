@@ -264,3 +264,64 @@ async fn relay_record_cannot_be_deleted_by_channel_owner() {
         "{error}"
     );
 }
+
+/// A local subscriber gets the record from the relay directly, not from the
+/// Redis loopback (the fixture runs no loopback consumer), and exactly once:
+/// repeating the deletion finds the record stored and delivers nothing.
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn kind5_record_reaches_local_subscribers_once() {
+    let f = Fixture::new().await;
+    let community = f.tenant.community();
+    let conn = Uuid::new_v4();
+    let (tx, mut rx) = tokio::sync::mpsc::channel(64);
+    f.state.conn_manager.register(
+        conn,
+        tx,
+        tokio::sync::mpsc::channel(8).0,
+        tokio::sync::mpsc::channel(1).0,
+        None,
+        tokio_util::sync::CancellationToken::new(),
+        community,
+        Arc::new(std::sync::atomic::AtomicU8::new(0)),
+        Arc::new(tokio::sync::Mutex::new(std::collections::HashMap::new())),
+        3,
+        crate::state::CommunityConnectionControl::new(tokio_util::sync::CancellationToken::new()),
+    );
+    f.state
+        .conn_manager
+        .set_authenticated_pubkey(conn, f.owner.public_key().to_bytes().to_vec());
+    f.state.sub_registry.register_channels_scoped(
+        community,
+        conn,
+        "records".to_string(),
+        vec![nostr::Filter::new().kind(Kind::Custom(9005))],
+        vec![f.channel],
+    );
+    let mut frames = move || {
+        let mut n = 0;
+        while let Ok(message) = rx.try_recv() {
+            if let axum::extract::ws::Message::Text(text) = message {
+                if text.as_str().contains("\"kind\":9005") {
+                    n += 1;
+                }
+            }
+        }
+        n
+    };
+
+    let target = f.message().await;
+    let by_owner = f.deletion(&f.owner, 5, &target);
+    super::side_effects::handle_side_effects(&f.tenant, 5, &by_owner, &f.state)
+        .await
+        .expect("kind 5 side effects");
+    assert_eq!(f.records(&target).await, 1);
+    assert_eq!(frames(), 1, "the record reaches the local subscriber");
+
+    let again = f.deletion(&f.owner, 5, &target);
+    super::side_effects::handle_side_effects(&f.tenant, 5, &again, &f.state)
+        .await
+        .expect("repeated kind 5 side effects");
+    assert_eq!(f.records(&target).await, 1);
+    assert_eq!(frames(), 0, "an existing record is not delivered again");
+}

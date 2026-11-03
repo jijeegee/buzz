@@ -350,6 +350,12 @@ async fn handle_dm_open(
         for pk in &all_bytes {
             state.invalidate_membership(tenant, channel.id, pk);
         }
+        // Participants' user streams carry the new DM, hidden ones included
+        // (they get no 44100 below).
+        for pk in &all_bytes {
+            crate::handlers::user_stream::recheck_room(state, tenant.community(), channel.id, pk)
+                .await;
+        }
 
         let participant_hexes: Vec<String> = all_bytes.iter().map(hex::encode).collect();
         if let Err(e) = emit_system_message(

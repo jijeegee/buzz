@@ -288,6 +288,17 @@ pub fn build_router(state: Arc<AppState>) -> Router {
 
     let git_router = api::git::git_router(state.clone());
 
+    // iOS user-stream shadow report (Bearer or NIP-98, like /query).
+    // NIP-FI: protected (not in NIP_FI_EXEMPT_PREFIXES). Its own 4 KB body
+    // limit; the app never sends more.
+    let user_stream_report_router = {
+        use crate::handlers::user_stream_report as report;
+        Router::new()
+            .route(report::PATH, post(report::shadow_report))
+            .layer(RequestBodyLimitLayer::new(report::MAX_BODY_BYTES))
+            .with_state(state.clone())
+    };
+
     let git_policy_router = api::git::git_policy_router(state.clone());
 
     let admin_enabled = state.config.admin.is_some();
@@ -459,7 +470,8 @@ pub fn build_router(state: Arc<AppState>) -> Router {
     let mut merged = api_router
         .merge(media_router)
         .merge(git_router)
-        .merge(git_policy_router);
+        .merge(git_policy_router)
+        .merge(user_stream_report_router);
     if let Some(admin_router) = admin_router {
         merged = merged.merge(admin_router);
     }
@@ -3107,6 +3119,10 @@ mod tests {
         assert!(!is_exempt("/events"), "POST /events must be protected");
         assert!(!is_exempt("/query"), "POST /query must be protected");
         assert!(!is_exempt("/count"), "POST /count must be protected");
+        assert!(
+            !is_exempt("/api/user-stream/shadow-report"),
+            "POST /api/user-stream/shadow-report must be protected"
+        );
         assert!(
             !is_exempt("/gifs/search"),
             "POST /gifs/search must be protected"

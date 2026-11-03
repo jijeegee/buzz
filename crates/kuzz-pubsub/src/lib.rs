@@ -531,6 +531,7 @@ mod tests {
         let sent = CacheInvalidation::Membership {
             channel_id,
             pubkey: pubkey.clone(),
+            origin: None,
         };
 
         let ctx = ctx(0xaaaa, "a.example");

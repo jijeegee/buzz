@@ -4005,6 +4005,12 @@ async fn ingest_event_inner(
                         warn!(event_id = %event_id_hex, "channel compensation failed: {re}");
                     }
                     state.invalidate_channel_deleted(tenant);
+                    crate::handlers::user_stream::remove_deleted_room(
+                        state,
+                        tenant.community(),
+                        ch_id,
+                    )
+                    .await;
                 }
                 return Err(match e {
                     kuzz_db::DbError::AuthEventRejected => {

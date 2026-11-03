@@ -3538,6 +3538,14 @@ async fn commit_participant_join(
         MembershipAdmission::AutoAddRequired { .. }
     ) {
         state.invalidate_membership(tenant, channel_id, pubkey_bytes);
+        // The huddle's auto-added member: their user streams carry it too.
+        crate::handlers::user_stream::recheck_room(
+            state,
+            tenant.community(),
+            channel_id,
+            pubkey_bytes,
+        )
+        .await;
     }
 
     Ok(outcome)

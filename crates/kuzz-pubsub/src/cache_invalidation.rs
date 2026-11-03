@@ -63,6 +63,12 @@ pub enum CacheInvalidation {
         channel_id: Uuid,
         /// Affected member's pubkey bytes.
         pubkey: Vec<u8>,
+        /// Pod that made the change. A receiving pod other than this one
+        /// counts the change in its origin generation; the origin pod's own
+        /// loopback does not, so each pod counts one change once. Absent from
+        /// older pods (counted, which is only conservative).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        origin: Option<Uuid>,
     },
     /// Drop every user's accessible-channels entry. Mirrors
     /// `invalidate_all_accessible_channels` (e.g. a new open channel).
@@ -227,11 +233,44 @@ mod tests {
         }
     }
 
+    /// Pods of the previous release send no `origin` and must still parse; a
+    /// new drop with an `origin` round-trips, and the field is the only change.
+    #[test]
+    fn membership_origin_is_optional_on_the_wire() {
+        let old = r#"{"op":"Membership","channel_id":"00000000-0000-0000-0000-000000001234","pubkey":[1,2]}"#;
+        assert_eq!(
+            serde_json::from_str::<CacheInvalidation>(old).unwrap(),
+            CacheInvalidation::Membership {
+                channel_id: Uuid::from_u128(0x1234),
+                pubkey: vec![1, 2],
+                origin: None,
+            }
+        );
+        let msg = CacheInvalidation::Membership {
+            channel_id: Uuid::from_u128(0x1234),
+            pubkey: vec![1, 2],
+            origin: Some(Uuid::from_u128(0x99)),
+        };
+        let json = serde_json::to_string(&msg).unwrap();
+        assert!(json.contains(r#""origin":"00000000-0000-0000-0000-000000000099""#));
+        assert_eq!(
+            serde_json::from_str::<CacheInvalidation>(&json).unwrap(),
+            msg
+        );
+        let none = CacheInvalidation::Membership {
+            channel_id: Uuid::from_u128(0x1234),
+            pubkey: vec![1, 2],
+            origin: None,
+        };
+        assert!(!serde_json::to_string(&none).unwrap().contains("origin"));
+    }
+
     #[test]
     fn membership_roundtrips_through_json() {
         let msg = CacheInvalidation::Membership {
             channel_id: Uuid::from_u128(0x1234),
             pubkey: vec![1, 2, 3, 4],
+            origin: None,
         };
         let json = serde_json::to_string(&msg).unwrap();
         assert_eq!(

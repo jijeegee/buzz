@@ -27,8 +27,11 @@ pub(crate) fn ensure_not_relay_record(target: &Event, state: &AppState) -> anyho
     Ok(())
 }
 
-/// Fan a committed record out to its channel. Best effort: clients also get it
-/// from reconnect repair, since it is stored with a current `created_at`.
+/// Fan a committed record out to its channel, locally and through Redis.
+/// Callers pass only a record their transaction inserted, so a retry that
+/// found the record already stored delivers nothing again. Best effort:
+/// clients also get it from reconnect repair, since it is stored with a
+/// current `created_at`.
 pub(crate) async fn publish_deletion_record(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -37,13 +40,14 @@ pub(crate) async fn publish_deletion_record(
     let Some(channel_id) = record_channel(record) else {
         return;
     };
-    if let Err(error) = state
-        .pubsub
-        .publish_event(tenant, EventTopic::Channel(channel_id), record)
-        .await
-    {
-        warn!(%error, "deletion record fan-out failed");
-    }
+    let stored = StoredEvent::new(record.clone(), Some(channel_id));
+    crate::handlers::side_effects::publish_relay_event(
+        tenant,
+        state,
+        EventTopic::Channel(channel_id),
+        &stored,
+    )
+    .await;
 }
 
 /// After a kind:5 soft-deleted `target`, record it when the signer is not the
