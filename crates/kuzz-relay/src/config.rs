@@ -251,6 +251,10 @@ pub struct Config {
     /// streams are accepted, logged, and closed (no session consumer yet).
     pub mesh_demo_echo: bool,
 
+    /// Per-account user stream (`KUZZ_USER_STREAM`, `_LIVE`, `_GATED`,
+    /// `KUZZ_STREAM_EPOCH`). Default: off for everyone.
+    pub user_stream: crate::user_stream_config::UserStreamConfig,
+
     /// Optional hex-encoded pubkey of the relay owner.
     /// When set, this pubkey is automatically bootstrapped into `relay_members`
     /// with the `owner` role on first startup.
@@ -1419,6 +1423,15 @@ impl Config {
             ));
         }
 
+        let user_stream = crate::user_stream_config::UserStreamConfig::resolve(
+            &crate::user_stream_config::UserStreamEnv::from_process_env(),
+            crate::user_stream_config::DeploymentFacts {
+                mesh_enabled: mesh.enabled,
+                replica_routing: replica_read_max_age_ms > 0 && read_database_url.is_some(),
+            },
+        )
+        .map_err(ConfigError::InvalidValue)?;
+
         // Centralized-identity token auth (Phase 0, default off).
         let auth_token = crate::identity::AuthTokenConfig::from_env(&relay_url)?;
         check_device_admission_with_dev_bypass(require_auth_token, auth_token.device_admission)?;
@@ -1456,6 +1469,7 @@ impl Config {
             huddle_audio_available,
             mesh,
             mesh_demo_echo,
+            user_stream,
             relay_owner_pubkey,
             relay_operator_api_origin,
             relay_operator_pubkeys,

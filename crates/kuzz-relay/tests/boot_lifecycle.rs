@@ -34,10 +34,15 @@ struct CapturedStream {
 
 impl RelayProcess {
     fn spawn(environment: &[(&str, &str)]) -> Self {
+        Self::spawn_with_args(&[], environment)
+    }
+
+    fn spawn_with_args(args: &[&str], environment: &[(&str, &str)]) -> Self {
         let scratch_dir =
             std::env::temp_dir().join(format!("kuzz-boot-lifecycle-{}", uuid::Uuid::new_v4()));
         let mut command = Command::new(env!("CARGO_BIN_EXE_kuzz-relay"));
         command
+            .args(args)
             .env_clear()
             .env("RUST_BACKTRACE", "0")
             .env("RUST_LOG", "kuzz_relay=info")
@@ -510,6 +515,150 @@ fn successful_main_emits_complete_lifecycle_without_startup_metrics() {
     assert_terminal(&events, "key_load", "succeeded", None);
     assert_terminal(&events, "metrics_bind", "succeeded", None);
     assert_terminal(&events, "process_telemetry", "succeeded", None);
+}
+
+/// Fake database, Redis and S3 peers that record whether anything connected.
+struct Untouched {
+    listeners: Vec<TcpListener>,
+}
+
+impl Untouched {
+    fn new() -> Self {
+        let listeners = (0..3)
+            .map(|_| {
+                let listener = TcpListener::bind(("127.0.0.1", 0)).expect("bind fake peer");
+                listener.set_nonblocking(true).expect("nonblocking");
+                listener
+            })
+            .collect();
+        Self { listeners }
+    }
+
+    fn port(&self, index: usize) -> u16 {
+        self.listeners[index]
+            .local_addr()
+            .expect("peer address")
+            .port()
+    }
+
+    fn environment(&self) -> Vec<(&'static str, String)> {
+        vec![
+            (
+                "DATABASE_URL",
+                format!("postgres://kuzz@127.0.0.1:{}/kuzz", self.port(0)),
+            ),
+            ("REDIS_URL", format!("redis://127.0.0.1:{}", self.port(1))),
+            (
+                "KUZZ_S3_ENDPOINT",
+                format!("http://127.0.0.1:{}", self.port(2)),
+            ),
+            (
+                "KUZZ_RELAY_PRIVATE_KEY",
+                VALID_RELAY_PRIVATE_KEY.to_string(),
+            ),
+        ]
+    }
+
+    fn assert_untouched(&self) {
+        for listener in &self.listeners {
+            match listener.accept() {
+                Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {}
+                other => panic!("something connected: {other:?}"),
+            }
+        }
+    }
+}
+
+fn run_with_args(args: &[&str], peers: &Untouched, extra: &[(&str, &str)]) -> Output {
+    let base = peers.environment();
+    let mut environment: Vec<(&str, &str)> = base.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    environment.extend_from_slice(extra);
+    RelayProcess::spawn_with_args(args, &environment).wait(CHILD_TIMEOUT)
+}
+
+#[test]
+fn unknown_arguments_exit_2_without_connecting() {
+    let peers = Untouched::new();
+    for args in [
+        &["serve"][..],
+        &["--check-config", "extra"],
+        &["--check-confi"],
+        &[""],
+    ] {
+        let output = run_with_args(args, &peers, &[]);
+        assert_eq!(output.status.code(), Some(2), "{args:?}");
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("unsupported arguments"),
+            "{args:?}"
+        );
+        assert!(
+            lifecycle_events(&output).is_empty(),
+            "nothing boots for {args:?}"
+        );
+    }
+    peers.assert_untouched();
+}
+
+#[test]
+fn check_config_exit_codes_without_connecting() {
+    let peers = Untouched::new();
+
+    let output = run_with_args(&["--check-config"], &peers, &[]);
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("user stream: off"), "{stdout}");
+    assert!(stdout.contains("configuration ok"), "{stdout}");
+
+    let output = run_with_args(
+        &["--check-config"],
+        &peers,
+        &[
+            ("KUZZ_USER_STREAM", "on"),
+            ("KUZZ_USER_STREAM_LIVE", "on"),
+            ("KUZZ_STREAM_EPOCH", "e1"),
+        ],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(
+        stdout.contains("user stream: shadow=0 live=all gated=0 epoch=e1"),
+        "{stdout}"
+    );
+
+    // Off with LIVE set: a warning, still valid.
+    let output = run_with_args(
+        &["--check-config"],
+        &peers,
+        &[("KUZZ_USER_STREAM_LIVE", "on")],
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout).to_string();
+    assert_eq!(output.status.code(), Some(0), "{stdout}");
+    assert!(stdout.contains("warning: "), "{stdout}");
+
+    // Refusals exit 1.
+    for extra in [
+        &[("KUZZ_USER_STREAM", "on")][..],
+        &[
+            ("KUZZ_USER_STREAM", "on"),
+            ("KUZZ_STREAM_EPOCH", "e1"),
+            ("KUZZ_MESH", "on"),
+        ],
+        &[("KUZZ_USER_STREAM", "allowlist:abc")],
+        &[("KUZZ_RELAY_PRIVATE_KEY", "zz")],
+    ] {
+        let output = run_with_args(&["--check-config"], &peers, extra);
+        assert_eq!(
+            output.status.code(),
+            Some(1),
+            "{extra:?}: {}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stderr).contains("invalid configuration"),
+            "{extra:?}"
+        );
+    }
+    peers.assert_untouched();
 }
 
 /// Boot gates that need a live Postgres to reach the code under test. Named

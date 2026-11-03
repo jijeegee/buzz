@@ -26,6 +26,8 @@ pub mod identity_archive;
 pub mod imeta;
 /// Transport-neutral event ingestion pipeline.
 pub mod ingest;
+/// Removal notices sent after an enforced report kick.
+pub(crate) mod kick_notices;
 /// Community moderation authorization seam (capability helper).
 pub mod moderation_authz;
 /// Community moderation command handler (kinds 9040–9044).
@@ -46,6 +48,10 @@ pub mod report_resolution;
 pub mod req;
 /// NIP-29 and NIP-25 side-effect handlers.
 pub mod side_effects;
+/// User stream REQ (`#h: ["$joined"]`): snapshot, then live frames.
+pub mod user_stream;
+/// iOS user-stream shadow report (`POST /api/user-stream/shadow-report`).
+pub mod user_stream_report;
 #[cfg(test)]
 mod thread_name_tests;
 

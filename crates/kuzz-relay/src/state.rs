@@ -266,6 +266,47 @@ const RESTART_CLOSE_ACK_TIMEOUT: std::time::Duration = std::time::Duration::from
 type SlidingWindowCounter = (u32, Instant);
 type ScopedRateLimiter = DashMap<ScopedPubkeyKey, SlidingWindowCounter>;
 
+/// How a frame sent outside the grace counter went ([`ConnectionManager::try_send_raw`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RawSend {
+    /// Queued on the data channel.
+    Sent,
+    /// The data channel is full (or over a caller's fill threshold).
+    Full,
+    /// The connection is gone.
+    Gone,
+}
+
+/// Whether `tx` would hold more than `percent`% of its capacity after
+/// `adding` more frames.
+pub(crate) fn fill_exceeds(tx: &mpsc::Sender<WsMessage>, percent: usize, adding: usize) -> bool {
+    let max = tx.max_capacity();
+    let used = max.saturating_sub(tx.capacity());
+    (used + adding) * 100 > max * percent
+}
+
+/// Queue a CLOSED at a fill threshold (user-stream plan V4.2 section 2.4):
+/// on the data channel with a raw `try_send` (no grace bump), so it follows
+/// the frames already queued for its sub; else on the control channel; else
+/// cancel the connection. `false` when the connection was cancelled.
+pub(crate) fn send_threshold_frame(
+    tx: &mpsc::Sender<WsMessage>,
+    ctrl_tx: &mpsc::Sender<WsMessage>,
+    cancel: &CancellationToken,
+    frame: String,
+) -> bool {
+    let frame = match tx.try_send(WsMessage::Text(frame.into())) {
+        Ok(()) => return true,
+        Err(mpsc::error::TrySendError::Closed(_)) => return false,
+        Err(mpsc::error::TrySendError::Full(frame)) => frame,
+    };
+    if ctrl_tx.try_send(frame).is_ok() {
+        return true;
+    }
+    cancel.cancel();
+    false
+}
+
 /// Per-connection entry in the connection manager.
 struct ConnEntry {
     tx: mpsc::Sender<WsMessage>,
@@ -1096,6 +1137,47 @@ impl ConnectionManager {
         self.try_send_ws_message(conn_id, WsMessage::Text(text))
     }
 
+    /// Whether the connection's send buffer would be more than `percent`%
+    /// full after `adding` more frames (`true` when it is gone).
+    pub fn send_fill_exceeds(&self, conn_id: Uuid, percent: usize, adding: usize) -> bool {
+        self.connections
+            .get(&conn_id)
+            .is_none_or(|entry| fill_exceeds(&entry.tx, percent, adding))
+    }
+
+    /// Queue an already-serialized frame without touching the grace counter
+    /// (user-stream frames: their own close rules replace the grace).
+    pub fn try_send_raw(&self, conn_id: Uuid, msg: Arc<Bytes>) -> RawSend {
+        let Some(entry) = self.connections.get(&conn_id) else {
+            return RawSend::Gone;
+        };
+        let text = WsUtf8Bytes::try_from(Bytes::clone(msg.as_ref()))
+            .expect("relay fan-out frames are serialized UTF-8 JSON");
+        match entry.tx.try_send(WsMessage::Text(text)) {
+            Ok(()) => RawSend::Sent,
+            Err(mpsc::error::TrySendError::Full(_)) => RawSend::Full,
+            Err(mpsc::error::TrySendError::Closed(_)) => RawSend::Gone,
+        }
+    }
+
+    /// Queue a threshold CLOSED ([`send_threshold_frame`]): data channel,
+    /// else control channel, else cancel. `false` when cancelled or gone.
+    pub fn send_threshold_closed(&self, conn_id: Uuid, frame: String) -> bool {
+        self.connections.get(&conn_id).is_some_and(|entry| {
+            send_threshold_frame(&entry.tx, &entry.ctrl_tx, &entry.cancel, frame)
+        })
+    }
+
+    /// Queue a CLOSED on the control channel (drained ahead of data and
+    /// before the Close), then cancel the connection. A full control channel
+    /// cancels without the frame.
+    pub fn send_closed_and_cancel(&self, conn_id: Uuid, frame: String) {
+        if let Some(entry) = self.connections.get(&conn_id) {
+            let _ = entry.ctrl_tx.try_send(WsMessage::Text(frame.into()));
+            entry.cancel.cancel();
+        }
+    }
+
     fn try_send_ws_message(&self, conn_id: Uuid, msg: WsMessage) -> bool {
         if let Some(entry) = self.connections.get(&conn_id) {
             let conn = entry.value();
@@ -1198,6 +1280,8 @@ pub struct AppState {
     /// Short TTL (10s) — membership changes are rare but must propagate.
     #[allow(clippy::type_complexity)]
     pub membership_cache: Arc<moka::sync::Cache<(CommunityId, Uuid, Vec<u8>), bool>>,
+    /// Refill fence and origin generation for `membership_cache` keys.
+    pub membership_gen: Arc<crate::membership_cache_gen::MembershipCacheGen>,
     /// Accessible channel IDs cache: (community_id, pubkey_bytes) → channel UUIDs.
     /// Short TTL (10s) — invalidated on membership or channel visibility changes.
     #[allow(clippy::type_complexity)]
@@ -1482,6 +1566,7 @@ impl AppState {
                     .support_invalidation_closures()
                     .build(),
             ),
+            membership_gen: Arc::new(crate::membership_cache_gen::MembershipCacheGen::new()),
             accessible_channels_cache: Arc::new(
                 moka::sync::Cache::builder()
                     .max_capacity(10_000)
@@ -1642,9 +1727,34 @@ impl AppState {
             return Ok(cached);
         }
         metrics::counter!("kuzz_membership_cache_misses_total").increment(1);
+        let token = self
+            .membership_gen
+            .refill_token(community_id, channel_id, pubkey);
         let result = self.db.is_member(community_id, channel_id, pubkey).await?;
-        self.membership_cache.insert(key, result);
+        self.cache_membership_refill(community_id, channel_id, pubkey, result, token);
         Ok(result)
+    }
+
+    /// Cache a membership answer read after `token` was taken, unless a drop of
+    /// the key raced the read: then the answer may predate the change and is
+    /// discarded. Inserts first and checks second; see
+    /// [`crate::membership_cache_gen::MembershipCacheGen::refill_still_current`].
+    fn cache_membership_refill(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        pubkey: &[u8],
+        result: bool,
+        token: crate::membership_cache_gen::RefillToken,
+    ) {
+        let key = (community_id, channel_id, pubkey.to_vec());
+        self.membership_cache.insert(key.clone(), result);
+        if !self
+            .membership_gen
+            .refill_still_current(community_id, channel_id, pubkey, token)
+        {
+            self.membership_cache.invalidate(&key);
+        }
     }
 
     /// Invalidate caches after a membership change (add/remove member).
@@ -1653,15 +1763,31 @@ impl AppState {
     /// to every other pod over Redis (see [`apply_cache_invalidation`]). The
     /// publish is spawned, not awaited: the local drop is already done, and a
     /// dropped publish is backstopped by the REQ denial-path DB confirmation.
-    pub fn invalidate_membership(&self, tenant: &TenantContext, channel_id: Uuid, pubkey: &[u8]) {
+    ///
+    /// Returns the key's origin generation right after this change (see
+    /// [`crate::membership_cache_gen`]); a user-stream hook applies the change
+    /// directly only while the generation is still this value.
+    pub fn invalidate_membership(
+        &self,
+        tenant: &TenantContext,
+        channel_id: Uuid,
+        pubkey: &[u8],
+    ) -> u64 {
+        // The drop names this pod, so its own loopback is not counted again
+        // and every other pod counts it once on receipt.
+        let generation = self
+            .membership_gen
+            .bump_origin(tenant.community(), channel_id, pubkey);
         self.invalidate_membership_local(tenant.community(), channel_id, pubkey);
         self.spawn_cache_invalidation(
             tenant,
             CacheInvalidation::Membership {
                 channel_id,
                 pubkey: pubkey.to_vec(),
+                origin: Some(self.membership_gen.pod_id()),
             },
         );
+        generation
     }
 
     /// Local-only membership drop. The cross-pod consumer calls this directly so
@@ -1672,6 +1798,8 @@ impl AppState {
         channel_id: Uuid,
         pubkey: &[u8],
     ) {
+        self.membership_gen
+            .bump_refill(community_id, channel_id, pubkey);
         self.membership_cache
             .invalidate(&(community_id, channel_id, pubkey.to_vec()));
         self.accessible_channels_cache
@@ -1733,6 +1861,7 @@ impl AppState {
 
     /// Local-only channel-deleted drop. See [`invalidate_membership_local`].
     pub(crate) fn invalidate_channel_deleted_local(&self, community_id: CommunityId) {
+        self.membership_gen.bump_refill_all();
         if let Err(error) =
             self.membership_cache
                 .invalidate_entries_if(move |(entry_community, _, _), _| {
@@ -1787,6 +1916,17 @@ impl AppState {
         });
     }
 
+    /// The cross-pod drop consumer lagged and lost drops: forget every cached
+    /// membership, accessible-channel and visibility answer, and void every
+    /// refill in flight, so nothing stale outlives the lost drops.
+    pub fn invalidate_after_cache_invalidation_lag(&self) {
+        self.membership_gen.bump_refill_all();
+        self.membership_cache.invalidate_all();
+        self.accessible_channels_cache.invalidate_all();
+        self.channel_visibility_cache.invalidate_all();
+        self.channel_history_cut_cache.invalidate_all();
+    }
+
     /// Apply a cache-key drop received from another pod. Calls the local-only
     /// drop variants so a received drop is never re-published (no fan-out loop).
     pub fn apply_cache_invalidation(
@@ -1795,7 +1935,13 @@ impl AppState {
         invalidation: CacheInvalidation,
     ) {
         match invalidation {
-            CacheInvalidation::Membership { channel_id, pubkey } => {
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey,
+                origin,
+            } => {
+                self.membership_gen
+                    .bump_origin_received(origin, community_id, channel_id, &pubkey);
                 self.invalidate_membership_local(community_id, channel_id, &pubkey);
             }
             CacheInvalidation::AccessibleAll => {
@@ -3092,6 +3238,84 @@ pub(crate) mod tests {
             Some(channels_b),
             "A's cache drop must not evict B's accessible-channel entry"
         );
+    }
+
+    #[tokio::test]
+    async fn membership_refill_racing_a_drop_is_not_cached() {
+        let state = test_state().await;
+        let community = CommunityId::from_uuid(Uuid::new_v4());
+        let channel_id = Uuid::new_v4();
+        let pubkey = vec![9u8; 32];
+        let key = (community, channel_id, pubkey.clone());
+
+        // A refill whose read raced a local drop (here: one received from
+        // another pod) must not cache its possibly stale answer.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+                origin: Some(Uuid::new_v4()),
+            },
+        );
+        state.cache_membership_refill(community, channel_id, &pubkey, true, token);
+        assert_eq!(state.membership_cache.get(&key), None);
+
+        // A channel-deleted drop fences every key.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.invalidate_channel_deleted_local(community);
+        state.cache_membership_refill(community, channel_id, &pubkey, true, token);
+        assert_eq!(state.membership_cache.get(&key), None);
+
+        // With no drop in between the answer is cached.
+        let token = state
+            .membership_gen
+            .refill_token(community, channel_id, &pubkey);
+        state.cache_membership_refill(community, channel_id, &pubkey, false, token);
+        assert_eq!(state.membership_cache.get(&key), Some(false));
+    }
+
+    #[tokio::test]
+    async fn membership_origin_generation_counts_each_change_once_per_pod() {
+        let state = test_state().await;
+        let community = CommunityId::from_uuid(Uuid::new_v4());
+        let tenant = TenantContext::resolved(community, "gen.example".to_string());
+        let channel_id = Uuid::new_v4();
+        let pubkey = vec![5u8; 32];
+        let generation = || {
+            state
+                .membership_gen
+                .origin_generation(community, channel_id, &pubkey)
+        };
+
+        let before = generation();
+        state.invalidate_membership(&tenant, channel_id, &pubkey);
+        assert_eq!(generation(), before + 1);
+        // The same change coming back through the Redis loopback.
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+                origin: Some(state.membership_gen.pod_id()),
+            },
+        );
+        assert_eq!(generation(), before + 1);
+        // A change made on another pod counts once here, on receipt.
+        state.apply_cache_invalidation(
+            community,
+            CacheInvalidation::Membership {
+                channel_id,
+                pubkey: pubkey.clone(),
+                origin: Some(Uuid::new_v4()),
+            },
+        );
+        assert_eq!(generation(), before + 2);
     }
 
     #[tokio::test]

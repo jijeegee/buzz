@@ -70,14 +70,15 @@ fn internal(context: &str, e: &dyn std::fmt::Display) -> Response {
 }
 
 /// The authenticated caller and their community.
-struct Caller {
-    tenant: TenantContext,
-    pubkey: Vec<u8>,
+pub(crate) struct Caller {
+    pub(crate) tenant: TenantContext,
+    pub(crate) pubkey: Vec<u8>,
 }
 
 /// Bind the tenant, authenticate (Bearer or NIP-98), and apply the
-/// relay-membership/ban gate and the per-person API quota.
-async fn authenticate(
+/// relay-membership/ban gate and the per-person API quota. Shared with the
+/// user-stream shadow report (`handlers::user_stream_report`).
+pub(crate) async fn authenticate(
     state: &Arc<AppState>,
     headers: &HeaderMap,
     method: &'static str,

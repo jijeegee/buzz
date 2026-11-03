@@ -147,7 +147,64 @@ impl PartitionAuditSchedule {
     }
 }
 
+/// What the command line asks for. The relay takes no arguments other than
+/// `--check-config`; anything else exits 2 before any connection is made, so
+/// a deploy that passes stale arguments fails loudly instead of running.
+#[derive(Debug, PartialEq, Eq)]
+enum CliMode {
+    Run,
+    CheckConfig,
+}
+
+fn parse_cli_args(args: impl IntoIterator<Item = String>) -> Result<CliMode, String> {
+    let args: Vec<String> = args.into_iter().collect();
+    match args.as_slice() {
+        [] => Ok(CliMode::Run),
+        [only] if only == "--check-config" => Ok(CliMode::CheckConfig),
+        _ => Err(format!(
+            "unsupported arguments {args:?} (usage: kuzz-relay [--check-config])"
+        )),
+    }
+}
+
+/// `kuzz-relay --check-config`: load the configuration exactly as startup
+/// does (env only, no network), print the effective user-stream summary and
+/// return the exit code. Nothing connects to the database, Redis or S3.
+fn check_config() -> i32 {
+    let config = match Config::from_env() {
+        Ok(config) => config,
+        Err(error) => {
+            eprintln!("kuzz-relay: invalid configuration: {error}");
+            return 1;
+        }
+    };
+    if let Err(error) = relay_keypair_from_config(config.relay_private_key.as_deref()) {
+        eprintln!("kuzz-relay: invalid configuration: {error}");
+        return 1;
+    }
+    for warning in &config.user_stream.warnings {
+        println!("warning: {warning}");
+    }
+    if !config.user_stream.is_off() {
+        println!(
+            "warning: {}",
+            kuzz_relay::user_stream_config::SINGLE_POD_WARNING
+        );
+    }
+    println!("{}", config.user_stream.summary());
+    println!("configuration ok");
+    0
+}
+
 fn main() -> anyhow::Result<()> {
+    match parse_cli_args(std::env::args().skip(1)) {
+        Ok(CliMode::Run) => {}
+        Ok(CliMode::CheckConfig) => std::process::exit(check_config()),
+        Err(message) => {
+            eprintln!("kuzz-relay: {message}");
+            std::process::exit(2);
+        }
+    }
     let (runtime, boot) = BootTracker::start_before_runtime(|| {
         tokio::runtime::Builder::new_multi_thread()
             .enable_all()
@@ -266,6 +323,17 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
         push_enabled = config.push_enabled,
         "Config loaded"
     );
+    for warning in &config.user_stream.warnings {
+        warn!(target: "kuzz_relay::user_stream", "{warning}");
+    }
+    if !config.user_stream.is_off() {
+        warn!(
+            target: "kuzz_relay::user_stream",
+            "{}",
+            kuzz_relay::user_stream_config::SINGLE_POD_WARNING
+        );
+    }
+    info!(target: "kuzz_relay::user_stream", "{}", config.user_stream.summary());
 
     let usage_interval_secs = usage_metrics_interval_secs();
     let metrics_refresh_interval_secs =
@@ -1194,6 +1262,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_multinode_fanout_lag_total").increment(n);
                         tracing::warn!("Multi-node fan-out lagged by {n} messages");
+                        // Live events were lost: user streams must not miss
+                        // them silently (CLOSED lagged, then the socket closes).
+                        kuzz_relay::handlers::user_stream::close_all_lagged(&state_for_sub);
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Multi-node fan-out broadcast channel closed");
@@ -1219,12 +1290,27 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                         // and the local moka keys carry that same label. Apply
                         // only the matching tenant-local drop; a mutation in A
                         // must not flush B's derived state.
+                        let followup = scoped.invalidation.clone();
                         state_for_cache
                             .apply_cache_invalidation(scoped.community_id, scoped.invalidation);
+                        kuzz_relay::handlers::user_stream::after_cache_invalidation(
+                            &state_for_cache,
+                            scoped.community_id,
+                            &followup,
+                        );
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_cache_invalidation_lag_total").increment(n);
                         tracing::warn!("Cache-invalidation consumer lagged by {n} messages");
+                        // With the stream off this stays log-only (as before
+                        // the stream): dropping every cache at a Redis burst
+                        // would refill them all from the DB at that moment.
+                        if !state_for_cache.config.user_stream.is_off() {
+                            state_for_cache.invalidate_after_cache_invalidation_lag();
+                            kuzz_relay::handlers::user_stream::after_cache_invalidation_lag(
+                                &state_for_cache,
+                            );
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Cache-invalidation broadcast channel closed");
@@ -4166,5 +4252,21 @@ mod composition_tests {
              Captured (first 500 chars):\n{}",
             &captured[..captured.len().min(500)]
         );
+    }
+}
+
+#[cfg(test)]
+mod cli_tests {
+    use super::{parse_cli_args, CliMode};
+
+    #[test]
+    fn cli_accepts_nothing_or_check_config_only() {
+        let parse = |args: &[&str]| parse_cli_args(args.iter().map(|a| a.to_string()));
+        assert_eq!(parse(&[]), Ok(CliMode::Run));
+        assert_eq!(parse(&["--check-config"]), Ok(CliMode::CheckConfig));
+        assert!(parse(&["--check-config", "extra"]).is_err());
+        assert!(parse(&["serve"]).is_err());
+        assert!(parse(&["--check-confi"]).is_err());
+        assert!(parse(&[""]).is_err());
     }
 }

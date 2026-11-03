@@ -84,6 +84,26 @@ pub(crate) async fn close_if_owner(
     true
 }
 
+/// [`close_if_owner`] for a CLOSED sent at a fill threshold (`error: busy`):
+/// queued on the data channel without a grace bump, so it follows the frames
+/// already sent for the sub, else on the control channel, else the
+/// connection is cancelled (user-stream plan V4.2 section 2.4).
+pub(crate) async fn close_if_owner_at_threshold(
+    sub_id: &str,
+    owner: u64,
+    closed: &str,
+    conn: &ConnectionState,
+    state: &AppState,
+) -> bool {
+    let mut subs = conn.subscriptions.lock().await;
+    if subs.get(sub_id) != Some(&owner) {
+        return false;
+    }
+    retire_locked(&mut subs, sub_id, conn, state).await;
+    conn.send_threshold(RelayMessage::closed(sub_id, closed));
+    true
+}
+
 /// Final subscription cleanup for a closed connection. Its cancellation token
 /// must already be cancelled: claims check it under the lifecycle lock, so no
 /// detached REQ task can register after this runs.

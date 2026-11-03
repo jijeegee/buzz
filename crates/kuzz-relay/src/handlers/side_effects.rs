@@ -62,9 +62,12 @@ pub fn is_side_effect_kind(kind: u32) -> bool {
 ///
 /// # Return value
 ///
-/// Returns `Ok(())` on successful convergence — both after effects committed
-/// and after an intentional re-added skip (the kick is still correctly enforced;
-/// the membership was legitimately restored). Returns `Err` when fence
+/// Returns `Ok(KickOutcome::Enforced)` after the effects committed and
+/// `Ok(KickOutcome::ReAdded)` after an intentional re-added skip (the kick is
+/// still correctly enforced; the membership was legitimately restored). Both
+/// are successful convergence; only `Enforced` may be followed by the removal
+/// notices (`kick_notices`), which the caller sends after this returns, so the
+/// fence connection is released first. Returns `Err` when fence
 /// acquisition, the workflow-disable UPDATE, or the transaction commit fail —
 /// the caller must propagate the error rather than finalizing the action as
 /// succeeded, so the `mutation_committed` marker remains recoverable for a later
@@ -91,9 +94,9 @@ pub(crate) async fn apply_kick_live_side_effects(
     state: &Arc<AppState>,
     channel_id: Uuid,
     target_pubkey: &[u8],
-) -> Result<(), anyhow::Error> {
+) -> Result<KickOutcome, anyhow::Error> {
     // Cache invalidation is unconditionally safe — drops a stale positive.
-    state.invalidate_membership(tenant, channel_id, target_pubkey);
+    let generation = state.invalidate_membership(tenant, channel_id, target_pubkey);
 
     // Acquire the membership advisory lock and check that the member is still
     // removed. The fence guard keeps the lock alive through eviction and
@@ -124,14 +127,14 @@ pub(crate) async fn apply_kick_live_side_effects(
             "kick live effects: member re-added before fence acquired; \
              skipping eviction and workflow-disable"
         );
-        return Ok(());
+        return Ok(KickOutcome::ReAdded);
     }
 
     // Still removed — fire effects while the lock is held.
     // Eviction first (no DB write needed), then commit the fence with the
     // workflow-disable UPDATE on the same connection so no second pool
     // connection is needed (pool-exhaustion deadlock prevention — see module doc).
-    evict_live_channel_subscriptions(tenant, state, channel_id, target_pubkey).await;
+    evict_live_channel_subscriptions(tenant, state, channel_id, target_pubkey, generation).await;
     match fence
         .commit_disabling_workflows(tenant.community(), channel_id, target_pubkey)
         .await
@@ -159,14 +162,28 @@ pub(crate) async fn apply_kick_live_side_effects(
             return Err(e.into());
         }
     }
-    Ok(())
+    Ok(KickOutcome::Enforced)
 }
 
+/// What [`apply_kick_live_side_effects`] found under the membership fence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum KickOutcome {
+    /// The member was still removed: eviction and workflow-disable committed.
+    Enforced,
+    /// The member was re-added before the fence; nothing was undone.
+    ReAdded,
+}
+
+/// Close the departed member's live subscriptions on the channel, and drop
+/// the channel from their user streams (no CLOSED: the stream stays). The
+/// stream drop applies while the key's origin generation is still
+/// `generation`, the departure's own (see [`AppState::invalidate_membership`]).
 async fn evict_live_channel_subscriptions(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     channel_id: Uuid,
     target_pubkey: &[u8],
+    generation: u64,
 ) {
     let conn_ids = state
         .conn_manager
@@ -175,6 +192,14 @@ async fn evict_live_channel_subscriptions(
     for conn_id in conn_ids {
         evict_conn_channel_subscriptions(tenant, state, channel_id, conn_id).await;
     }
+    super::user_stream::remove_room(
+        state,
+        tenant.community(),
+        channel_id,
+        target_pubkey,
+        generation,
+    )
+    .await;
 }
 
 /// Durably disable a departing member's workflows in the channel (SEC-006).
@@ -1112,7 +1137,8 @@ pub async fn validate_admin_event(
 /// `insert_event` then provides DB-enforced delivery idempotency.
 ///
 /// Returns `Err` if the event could not be durably inserted; fanout remains
-/// best-effort.
+/// best-effort. Only a newly inserted row is fanned out (locally and through
+/// Redis): a retry that finds the row already stored delivers nothing again.
 pub async fn emit_system_message(
     tenant: &TenantContext,
     state: &Arc<AppState>,
@@ -1130,22 +1156,47 @@ pub async fn emit_system_message(
         .map_err(|e| anyhow::anyhow!("failed to sign system message: {e}"))?;
 
     // Durable insert is the completion boundary — propagate failure.
-    state
+    let (stored, was_inserted) = state
         .db
         .insert_event(tenant.community(), &event, Some(channel_id))
         .await
         .map_err(|e| anyhow::anyhow!("system message insert failed: {e}"))?;
-
-    // Fan out to subscribers: best-effort, clients can retrieve the persisted event.
-    if let Err(e) = state
-        .pubsub
-        .publish_event(tenant, EventTopic::Channel(channel_id), &event)
-        .await
-    {
-        warn!("System message fan-out failed: {e}");
+    if !was_inserted {
+        return Ok(());
     }
 
+    // Fan out to subscribers: best-effort, clients can retrieve the persisted
+    // event (a crash before this line is repaired by reconnect replay).
+    publish_relay_event(tenant, state, EventTopic::Channel(channel_id), &stored).await;
     Ok(())
+}
+
+/// Live delivery of a stored relay-signed event: Redis for other pods, then
+/// local subscribers directly, so local readers never depend on the Redis
+/// loopback (which `mark_local_event` then skips). Same order as
+/// `dispatch_persistent_event`. Best effort; clients repair from storage.
+pub(crate) async fn publish_relay_event(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    topic: EventTopic,
+    stored: &StoredEvent,
+) {
+    state.mark_local_event(tenant.community(), &stored.event.id);
+    if let Err(e) = state
+        .pubsub
+        .publish_event(tenant, topic, &stored.event)
+        .await
+    {
+        state
+            .local_event_ids
+            .invalidate(&(tenant.community(), stored.event.id.to_bytes()));
+        warn!(
+            kind = stored.event.kind.as_u16(),
+            "relay event Redis publish failed: {e}"
+        );
+    }
+    crate::handlers::event::fan_out_event_to_local_subscribers(state, tenant.community(), stored)
+        .await;
 }
 
 /// Sign and fan out a fresh relay-signed `kind:39005` thread-summary overlay
@@ -1263,6 +1314,53 @@ pub async fn emit_membership_notification(
     actor_pubkey: &[u8],
     notification_kind: u32,
 ) -> anyhow::Result<()> {
+    emit_membership_notification_stamped(
+        tenant,
+        state,
+        channel_id,
+        target_pubkey,
+        actor_pubkey,
+        notification_kind,
+        NotificationStamp::Now,
+    )
+    .await
+}
+
+/// How a membership notification gets its event id.
+#[derive(Debug, Clone)]
+pub(crate) enum NotificationStamp {
+    /// `created_at` = now; a same-second repeat is a duplicate (not re-sent).
+    Now,
+    /// `created_at` = now plus a random `nonce` tag, so a same-second rejoin
+    /// after a leave is a new event and is delivered.
+    NowWithNonce,
+    /// `created_at` = now plus an `["action", <id>]` tag; the store inserts it
+    /// only when no notice of this kind carries that tag, so retries of one
+    /// admin action never send a second one, however late they run.
+    ForAction {
+        /// The admin action id.
+        action_id: String,
+        /// When the action was created (no notice is older).
+        action_created_at: chrono::DateTime<chrono::Utc>,
+    },
+}
+
+/// [`emit_membership_notification`] with an explicit [`NotificationStamp`].
+pub(crate) async fn emit_membership_notification_stamped(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    channel_id: Uuid,
+    target_pubkey: &[u8],
+    actor_pubkey: &[u8],
+    notification_kind: u32,
+    stamp: NotificationStamp,
+) -> anyhow::Result<()> {
+    // The target's user streams on this pod carry the room before the 44100
+    // goes out, so their next room event already rides the stream.
+    if notification_kind == KIND_MEMBER_ADDED_NOTIFICATION {
+        super::user_stream::recheck_room(state, tenant.community(), channel_id, target_pubkey)
+            .await;
+    }
     let target_hex = hex::encode(target_pubkey);
     let actor_hex = hex::encode(actor_pubkey);
     let channel_id_str = channel_id.to_string();
@@ -1282,26 +1380,65 @@ pub async fn emit_membership_notification(
         }
     };
 
-    let content = serde_json::json!({
+    // An empty actor (report kicks) is left out, like the `admin_kick` line.
+    let mut content = serde_json::json!({
         "type": event_type,
         "channel_id": channel_id_str,
-        "actor": actor_hex,
-    })
-    .to_string();
+    });
+    if !actor_pubkey.is_empty() {
+        content["actor"] = serde_json::Value::String(actor_hex);
+    }
+    let content = content.to_string();
 
+    let mut tags = vec![p_tag, h_tag];
+    let mut once_per_action = None;
+    match stamp {
+        NotificationStamp::Now => {}
+        NotificationStamp::NowWithNonce => tags.push(
+            Tag::parse(["nonce", &Uuid::new_v4().to_string()])
+                .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
+        ),
+        NotificationStamp::ForAction {
+            action_id,
+            action_created_at,
+        } => {
+            tags.push(
+                Tag::parse([super::kick_notices::ACTION_TAG, &action_id])
+                    .map_err(|e| anyhow::anyhow!("failed to build action tag: {e}"))?,
+            );
+            once_per_action = Some((action_id, action_created_at));
+        }
+    }
     let event = EventBuilder::new(Kind::Custom(notification_kind as u16), content)
-        .tags([p_tag, h_tag])
+        .tags(tags)
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign membership notification: {e}"))?;
 
     // Store with channel_id = None → globally scoped, reachable by global subscribers.
-    let (stored, was_inserted) = state
-        .db
-        .insert_event(tenant.community(), &event, None)
-        .await?;
-    if !was_inserted {
+    let stored = match once_per_action {
+        Some((action_id, action_created_at)) => {
+            state
+                .db
+                .insert_event_once_per_action(
+                    tenant.community(),
+                    &event,
+                    None,
+                    &action_id,
+                    action_created_at,
+                )
+                .await?
+        }
+        None => {
+            let (stored, was_inserted) = state
+                .db
+                .insert_event(tenant.community(), &event, None)
+                .await?;
+            was_inserted.then_some(stored)
+        }
+    };
+    let Some(stored) = stored else {
         return Ok(());
-    }
+    };
 
     // Fan-out only — skip search indexing and workflow evaluation. Publish through
     // Redis before local fan-out so agents connected to other relay pods receive
@@ -1846,6 +1983,32 @@ async fn publish_member_added(
 ) -> anyhow::Result<()> {
     state.invalidate_membership(tenant, channel_id, target);
 
+    // Discovery first: installed desktops refresh their room list once on the
+    // 44100 and read it from the 39002 listing them, so the 39002 must already
+    // be stored when the 44100 goes out. A discovery failure is logged only and
+    // cannot hold the 44100 back.
+    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
+        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
+    }
+
+    // Then the added notice, before the room's `member_joined` line: the new
+    // member learns of the room before its first room event, and a failed
+    // system message cannot hold it back. The nonce makes a same-second
+    // leave-and-rejoin a new event instead of a deduped repeat.
+    if let Err(e) = emit_membership_notification_stamped(
+        tenant,
+        state,
+        channel_id,
+        target,
+        actor,
+        KIND_MEMBER_ADDED_NOTIFICATION,
+        NotificationStamp::NowWithNonce,
+    )
+    .await
+    {
+        warn!(channel = %channel_id, error = %e, "membership notification emission failed");
+    }
+
     emit_system_message(
         tenant,
         state,
@@ -1858,23 +2021,6 @@ async fn publish_member_added(
         chrono::Utc::now(),
     )
     .await?;
-
-    if let Err(e) = emit_group_discovery_events(tenant, state, channel_id).await {
-        warn!(channel = %channel_id, error = %e, "NIP-29 group discovery emission failed");
-    }
-
-    if let Err(e) = emit_membership_notification(
-        tenant,
-        state,
-        channel_id,
-        target,
-        actor,
-        KIND_MEMBER_ADDED_NOTIFICATION,
-    )
-    .await
-    {
-        warn!(channel = %channel_id, error = %e, "membership notification emission failed");
-    }
 
     if let Err(e) = state
         .db
@@ -1911,8 +2057,8 @@ async fn handle_remove_user(
         .db
         .remove_member(tenant.community(), channel_id, &target_pubkey, &actor_bytes)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &target_pubkey);
-    evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey).await;
+    let generation = state.invalidate_membership(tenant, channel_id, &target_pubkey);
+    evict_live_channel_subscriptions(tenant, state, channel_id, &target_pubkey, generation).await;
     disable_departed_member_workflows(tenant, state, channel_id, &target_pubkey).await;
 
     let actor_hex = hex::encode(&actor_bytes);
@@ -2488,6 +2634,7 @@ async fn handle_create_group(
 
     // Creator becomes owner — evict any stale negative membership lookup.
     state.invalidate_membership(tenant, channel.id, &actor_bytes);
+    super::user_stream::recheck_room(state, tenant.community(), channel.id, &actor_bytes).await;
     // Open channels appear in everyone's accessible set; private channels only
     // affect the creator (the sole initial member).
     if visibility == kuzz_db::channel::ChannelVisibility::Open {
@@ -2624,6 +2771,7 @@ async fn handle_delete_group(
     // Deleted channel: clear both membership and accessible-channels caches.
     // Stale is_member=true entries would bypass the DB's deleted_at guard.
     state.invalidate_channel_deleted(tenant);
+    super::user_stream::remove_deleted_room(state, tenant.community(), channel_id).await;
 
     let actor_hex = hex::encode(&actor_bytes);
     emit_system_message(
@@ -2711,8 +2859,8 @@ async fn handle_leave_request(
         .db
         .remove_member(tenant.community(), channel_id, &actor_bytes, &actor_bytes)
         .await?;
-    state.invalidate_membership(tenant, channel_id, &actor_bytes);
-    evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes).await;
+    let generation = state.invalidate_membership(tenant, channel_id, &actor_bytes);
+    evict_live_channel_subscriptions(tenant, state, channel_id, &actor_bytes, generation).await;
     disable_departed_member_workflows(tenant, state, channel_id, &actor_bytes).await;
 
     let actor_hex = hex::encode(&actor_bytes);

@@ -1,12 +1,16 @@
 //! Subscription registry with active WebSocket indexes for targeted fan-out.
 
 use std::collections::{HashMap, HashSet};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use nostr::{Alphabet, Filter, Kind, SingleLetterTag};
 use uuid::Uuid;
 
 use kuzz_core::{filter::filters_match, CommunityId, StoredEvent};
+
+use crate::subscription_stream::StreamHandle;
 
 /// Connection identifier — a UUID assigned to each WebSocket connection.
 pub type ConnId = Uuid;
@@ -97,6 +101,16 @@ pub struct SubscriptionRegistry {
     global_p_kind_index: DashMap<GlobalPKindIndexKey, Vec<(ConnId, SubId)>>,
     /// Global subscriptions with no kind filter — wildcard, receives all global events.
     global_wildcard_index: DashMap<CommunityId, Vec<(ConnId, SubId)>>,
+    /// The user stream each connection holds (at most one). The stream is
+    /// also an ordinary channel-scoped entry in `subs` and the indexes.
+    streams: DashMap<ConnId, Arc<StreamHandle>>,
+    /// `streams.len()`, read on every fan-out without touching the map.
+    stream_count: AtomicUsize,
+    /// Last stream REQ per connection (sub id, time), for the 5 s repeat rule.
+    stream_reqs: DashMap<ConnId, (SubId, std::time::Instant)>,
+    /// Communities with a stream-room re-run in flight; `true` when another
+    /// was asked for meanwhile (it runs once more after).
+    stream_reruns: DashMap<CommunityId, bool>,
 }
 
 impl SubscriptionRegistry {
@@ -148,7 +162,194 @@ impl SubscriptionRegistry {
         scope: SubscriptionScope,
     ) -> Option<RemovedSubscription> {
         let removed = self.remove_subscription(conn_id, &sub_id);
+        self.insert_with_scope(community_id, conn_id, sub_id, filters, scope);
+        removed
+    }
 
+    /// Register a user stream: an ordinary channel-scoped entry under
+    /// `handle.sub_id` plus its stream state. Whatever held the sub id is
+    /// replaced (returned). The stream state is in place before the entry is
+    /// indexed, so fan-out never sees the entry without its snapshot queue.
+    pub fn register_stream(
+        &self,
+        community_id: CommunityId,
+        conn_id: ConnId,
+        handle: Arc<StreamHandle>,
+        filters: Vec<Filter>,
+        rooms: Vec<Uuid>,
+    ) -> Option<RemovedSubscription> {
+        let sub_id = handle.sub_id.clone();
+        let removed = self.remove_subscription(conn_id, &sub_id);
+        if let Some(old) = self.streams.insert(conn_id, handle) {
+            old.close();
+        } else {
+            self.stream_count.fetch_add(1, Ordering::SeqCst);
+        }
+        self.insert_with_scope(
+            community_id,
+            conn_id,
+            sub_id,
+            filters,
+            SubscriptionScope::Channels(rooms),
+        );
+        removed
+    }
+
+    /// Whether any connection holds a user stream (cheap; fan-out hot path).
+    pub fn has_streams(&self) -> bool {
+        self.stream_count.load(Ordering::Relaxed) > 0
+    }
+
+    /// The connection's user stream when `sub_id` is it.
+    pub fn stream_for(&self, conn_id: ConnId, sub_id: &str) -> Option<Arc<StreamHandle>> {
+        self.streams
+            .get(&conn_id)
+            .filter(|handle| handle.sub_id == sub_id)
+            .map(|handle| Arc::clone(&handle))
+    }
+
+    /// The connection's user stream, if any.
+    pub fn stream_of(&self, conn_id: ConnId) -> Option<Arc<StreamHandle>> {
+        self.streams.get(&conn_id).map(|handle| Arc::clone(&handle))
+    }
+
+    /// Rooms the connection's user stream carries.
+    pub fn stream_rooms(&self, conn_id: ConnId) -> Vec<Uuid> {
+        let Some(handle) = self.stream_of(conn_id) else {
+            return Vec::new();
+        };
+        self.subs
+            .get(&conn_id)
+            .and_then(|subs| {
+                subs.get(&handle.sub_id)
+                    .map(|(_, _, scope)| scope.channel_ids().to_vec())
+            })
+            .unwrap_or_default()
+    }
+
+    /// Add (`carried`) or remove one room of the connection's user stream
+    /// `sub_id`. `true` when the room set changed. The stream stays open with
+    /// no rooms: membership never closes it.
+    pub fn stream_set_room(
+        &self,
+        conn_id: ConnId,
+        sub_id: &str,
+        room: Uuid,
+        carried: bool,
+    ) -> bool {
+        if !self.is_stream(conn_id, sub_id) {
+            return false;
+        }
+        let Some(mut conn_subs) = self.subs.get_mut(&conn_id) else {
+            return false;
+        };
+        let Some((filters, community_id, SubscriptionScope::Channels(rooms))) =
+            conn_subs.get_mut(sub_id)
+        else {
+            return false;
+        };
+        let (filters, community_id) = (filters.clone(), *community_id);
+        if carried {
+            if rooms.contains(&room) {
+                return false;
+            }
+            rooms.push(room);
+            self.index_channel(community_id, conn_id, sub_id, &filters, room);
+        } else {
+            let before = rooms.len();
+            rooms.retain(|candidate| *candidate != room);
+            if rooms.len() == before {
+                return false;
+            }
+            self.remove_from_index(
+                conn_id,
+                sub_id,
+                &filters,
+                community_id,
+                &SubscriptionScope::Channels(vec![room]),
+            );
+        }
+        true
+    }
+
+    /// Connections holding a user stream, with the stream (all communities
+    /// when `community` is `None`).
+    pub fn streams_in(&self, community: Option<CommunityId>) -> Vec<(ConnId, Arc<StreamHandle>)> {
+        if !self.has_streams() {
+            return Vec::new();
+        }
+        self.streams
+            .iter()
+            .filter(|entry| community.is_none_or(|c| entry.value().tenant.community() == c))
+            .map(|entry| (*entry.key(), Arc::clone(entry.value())))
+            .collect()
+    }
+
+    /// Start a stream-room re-run of `community`: `true` when the caller
+    /// should run it, `false` when one is in flight (it will run again).
+    pub fn begin_stream_rerun(&self, community: CommunityId) -> bool {
+        match self.stream_reruns.entry(community) {
+            dashmap::mapref::entry::Entry::Occupied(mut entry) => {
+                *entry.get_mut() = true;
+                false
+            }
+            dashmap::mapref::entry::Entry::Vacant(entry) => {
+                entry.insert(false);
+                true
+            }
+        }
+    }
+
+    /// A re-run of `community` finished: `true` when another was asked for
+    /// meanwhile (run again), otherwise the community is released.
+    pub fn finish_stream_rerun(&self, community: CommunityId) -> bool {
+        loop {
+            match self.stream_reruns.get_mut(&community) {
+                Some(mut again) if *again => {
+                    *again = false;
+                    return true;
+                }
+                Some(_) => {}
+                None => return false,
+            }
+            if self
+                .stream_reruns
+                .remove_if(&community, |_, again| !*again)
+                .is_some()
+            {
+                return false;
+            }
+        }
+    }
+
+    /// Record a stream REQ and return the previous one (sub id, time).
+    pub fn note_stream_req(
+        &self,
+        conn_id: ConnId,
+        sub_id: &str,
+        at: std::time::Instant,
+    ) -> Option<(SubId, std::time::Instant)> {
+        self.stream_reqs.insert(conn_id, (sub_id.to_string(), at))
+    }
+
+    fn drop_stream_marker(&self, conn_id: ConnId, sub_id: &str) {
+        if let Some((_, handle)) = self
+            .streams
+            .remove_if(&conn_id, |_, handle| handle.sub_id == sub_id)
+        {
+            handle.close();
+            self.stream_count.fetch_sub(1, Ordering::SeqCst);
+        }
+    }
+
+    fn insert_with_scope(
+        &self,
+        community_id: CommunityId,
+        conn_id: ConnId,
+        sub_id: SubId,
+        filters: Vec<Filter>,
+        scope: SubscriptionScope,
+    ) {
         self.subs.entry(conn_id).or_default().insert(
             sub_id.clone(),
             (filters.clone(), community_id, scope.clone()),
@@ -157,35 +358,7 @@ impl SubscriptionRegistry {
 
         if let SubscriptionScope::Channels(channel_ids) = &scope {
             for ch_id in channel_ids {
-                let ch_id = *ch_id;
-                match extract_kinds_from_filters(&filters) {
-                    None => {
-                        // At least one filter has no `kinds` constraint — wildcard,
-                        // this sub wants all kinds in this channel.
-                        self.channel_wildcard_index
-                            .entry((community_id, ch_id))
-                            .or_default()
-                            .push((conn_id, sub_id.clone()));
-                    }
-                    Some(kinds) if kinds.is_empty() => {
-                        // All filters had explicit empty kinds lists (`kinds: []`).
-                        // Per NIP-01, `kinds: []` means "match no kinds" — this
-                        // subscription will never receive any events. Do not index it
-                        // anywhere; `filters_match` will reject all events at fan-out.
-                    }
-                    Some(kinds) => {
-                        for kind in kinds {
-                            let key = IndexKey {
-                                channel_id: ch_id,
-                                kind,
-                            };
-                            self.channel_kind_index
-                                .entry((community_id, key))
-                                .or_default()
-                                .push((conn_id, sub_id.clone()));
-                        }
-                    }
-                }
+                self.index_channel(community_id, conn_id, &sub_id, &filters, *ch_id);
             }
         } else {
             // Global subscription. Fully p-constrained filters can use the
@@ -218,8 +391,45 @@ impl SubscriptionRegistry {
                 }
             }
         }
+    }
 
-        removed
+    /// Index one channel of a channel-scoped subscription.
+    fn index_channel(
+        &self,
+        community_id: CommunityId,
+        conn_id: ConnId,
+        sub_id: &str,
+        filters: &[Filter],
+        ch_id: Uuid,
+    ) {
+        match extract_kinds_from_filters(filters) {
+            None => {
+                // At least one filter has no `kinds` constraint — wildcard,
+                // this sub wants all kinds in this channel.
+                self.channel_wildcard_index
+                    .entry((community_id, ch_id))
+                    .or_default()
+                    .push((conn_id, sub_id.to_string()));
+            }
+            Some(kinds) if kinds.is_empty() => {
+                // All filters had explicit empty kinds lists (`kinds: []`).
+                // Per NIP-01, `kinds: []` means "match no kinds" — this
+                // subscription will never receive any events. Do not index it
+                // anywhere; `filters_match` will reject all events at fan-out.
+            }
+            Some(kinds) => {
+                for kind in kinds {
+                    let key = IndexKey {
+                        channel_id: ch_id,
+                        kind,
+                    };
+                    self.channel_kind_index
+                        .entry((community_id, key))
+                        .or_default()
+                        .push((conn_id, sub_id.to_string()));
+                }
+            }
+        }
     }
 
     /// Test-only convenience wrapper preserving the original single-tenant test API.
@@ -258,6 +468,9 @@ impl SubscriptionRegistry {
         after_remove();
         self.remove_from_index(conn_id, sub_id, &filters, community_id, &scope);
         drop(conn_subs);
+        if self.has_streams() {
+            self.drop_stream_marker(conn_id, sub_id);
+        }
 
         metrics::gauge!("kuzz_subscriptions_active").decrement(1.0);
         Some(RemovedSubscription {
@@ -268,6 +481,11 @@ impl SubscriptionRegistry {
 
     /// Remove all subscriptions for a connection and clean up index entries.
     pub fn remove_connection(&self, conn_id: ConnId) -> Vec<RemovedSubscription> {
+        if let Some((_, handle)) = self.streams.remove(&conn_id) {
+            handle.close();
+            self.stream_count.fetch_sub(1, Ordering::SeqCst);
+        }
+        self.stream_reqs.remove(&conn_id);
         let mut removed = Vec::new();
         if let Some((_, conn_subs)) = self.subs.remove(&conn_id) {
             let count = conn_subs.len();
@@ -300,7 +518,8 @@ impl SubscriptionRegistry {
                     .iter()
                     .filter_map(|(sub_id, (_, sub_community_id, scope))| {
                         (*sub_community_id == community_id
-                            && scope.channel_ids().contains(&channel_id))
+                            && scope.channel_ids().contains(&channel_id)
+                            && !self.is_stream(conn_id, sub_id))
                         .then_some(sub_id.clone())
                     })
                     .collect()
@@ -337,6 +556,14 @@ impl SubscriptionRegistry {
         updates
     }
 
+    fn is_stream(&self, conn_id: ConnId, sub_id: &str) -> bool {
+        self.has_streams()
+            && self
+                .streams
+                .get(&conn_id)
+                .is_some_and(|handle| handle.sub_id == sub_id)
+    }
+
     /// Test-only convenience wrapper preserving the original single-tenant test API.
     #[cfg(test)]
     pub fn remove_channel_subscriptions(&self, conn_id: ConnId, channel_id: Uuid) -> Vec<SubId> {
@@ -355,10 +582,18 @@ impl SubscriptionRegistry {
         community_id: CommunityId,
         channel_id: Uuid,
     ) -> Vec<ConnId> {
+        // User streams are left out: their rooms follow membership through
+        // their own hooks, never the generic channel evictions.
         let mut conns: HashSet<ConnId> = HashSet::new();
         for entry in self.channel_kind_index.iter() {
             if entry.key().0 == community_id && entry.key().1.channel_id == channel_id {
-                conns.extend(entry.value().iter().map(|(conn_id, _)| *conn_id));
+                conns.extend(
+                    entry
+                        .value()
+                        .iter()
+                        .filter(|(conn_id, sub_id)| !self.is_stream(*conn_id, sub_id))
+                        .map(|(conn_id, _)| *conn_id),
+                );
             }
         }
         if let Some(entry) = self.channel_wildcard_index.get(&(community_id, channel_id)) {
@@ -749,8 +984,8 @@ fn test_community() -> CommunityId {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use kuzz_core::StoredEvent;
     use chrono::Utc;
+    use kuzz_core::StoredEvent;
     use nostr::{EventBuilder, Keys, Kind, Tag};
     use std::sync::Arc;
     use std::time::{Duration, Instant};

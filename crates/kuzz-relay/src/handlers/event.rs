@@ -1,6 +1,9 @@
 //! EVENT handler — WS dispatcher → ingest pipeline → fan-out.
 
-use std::{collections::HashMap, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use axum::body::Bytes;
 use tracing::{debug, error, info, warn};
@@ -81,10 +84,21 @@ where
     I: IntoIterator<Item = (crate::subscription::ConnId, &'a str)>,
 {
     let mut drop_count = 0u32;
+    let streams = state.sub_registry.has_streams();
     for (conn_id, sub_id) in recipients {
         let frame = frames
             .get(sub_id)
             .expect("fan-out frame cache covers every recipient subscription id");
+        // User streams queue frames until their snapshot EOSE.
+        if let Some(stream) = streams
+            .then(|| state.sub_registry.stream_for(conn_id, sub_id))
+            .flatten()
+        {
+            if !super::user_stream::deliver(state, conn_id, &stream, Arc::clone(frame)) {
+                drop_count += 1;
+            }
+            continue;
+        }
         if !state
             .conn_manager
             .send_to_text_bytes(conn_id, Arc::clone(frame))
@@ -118,6 +132,7 @@ async fn drop_dm_blockers(
         Ok(_) => return Some(matches),
         Err(e) => {
             warn!(%channel_id, "fan-out block filter: channel type lookup failed: {e}");
+            super::user_stream::fail_closed(state, &matches);
             return None;
         }
     }
@@ -131,6 +146,7 @@ async fn drop_dm_blockers(
         Ok(blockers) => blockers,
         Err(e) => {
             warn!(%channel_id, "fan-out block filter: blockers lookup failed: {e}");
+            super::user_stream::fail_closed(state, &matches);
             return None;
         }
     };
@@ -179,6 +195,7 @@ async fn drop_summary_blockers(
         return matches;
     }
     let mut allowed: HashMap<[u8; 32], bool> = HashMap::new();
+    let mut failed: HashSet<[u8; 32]> = HashSet::new();
     let mut kept = Vec::with_capacity(matches.len());
     for (conn_id, sub_id) in matches {
         let Some(pk) = state
@@ -197,6 +214,7 @@ async fn drop_summary_blockers(
                     Ok(blocked) => !participants.iter().any(|p| blocked.contains(p)),
                     Err(e) => {
                         warn!("fan-out summary block filter: block list lookup failed: {e}");
+                        failed.insert(pk);
                         false
                     }
                 };
@@ -206,6 +224,8 @@ async fn drop_summary_blockers(
         };
         if ok {
             kept.push((conn_id, sub_id));
+        } else if failed.contains(&pk) {
+            super::user_stream::fail_closed(state, [&(conn_id, sub_id)]);
         }
     }
     kept
@@ -349,6 +369,7 @@ pub async fn filter_fanout_by_access(
             // Fail closed: if we cannot determine visibility, do not leak a
             // possibly-private channel's events.
             warn!(%channel_id, "fan-out access filter: visibility lookup failed: {e}");
+            super::user_stream::fail_closed(state, &matches);
             return Vec::new();
         }
     }
@@ -381,10 +402,12 @@ pub async fn filter_fanout_by_access(
                 Ok(false) => {}
                 Err(e) => {
                     warn!(%channel_id, "fan-out access filter: owner view lookup failed: {e}");
+                    super::user_stream::fail_closed(state, [&(conn_id, sub_id)]);
                 }
             },
             Err(e) => {
                 warn!(%channel_id, "fan-out access filter: membership lookup failed: {e}");
+                super::user_stream::fail_closed(state, [&(conn_id, sub_id)]);
             }
         }
     }
@@ -438,6 +461,7 @@ async fn drop_readers_blind_to_history(
         Ok(true) => {}
         Err(e) => {
             warn!(%channel_id, "fan-out history filter: policy lookup failed: {e}");
+            super::user_stream::fail_closed(state, &matches);
             return Vec::new();
         }
     }
@@ -504,6 +528,7 @@ async fn drop_readers_blind_to_history(
     let limit = kuzz_db::history::MAX_HISTORY_EVENT_LOOKUP;
     if targets.len() > limit {
         warn!(%channel_id, "fan-out history filter: too many targets");
+        super::user_stream::fail_closed(state, &matches);
         return Vec::new();
     }
     let mut blind = Vec::new();
@@ -516,6 +541,7 @@ async fn drop_readers_blind_to_history(
             Ok(found) => blind.extend(found),
             Err(e) => {
                 warn!(%channel_id, "fan-out history filter: lookup failed: {e}");
+                super::user_stream::fail_closed(state, &matches);
                 return Vec::new();
             }
         }
