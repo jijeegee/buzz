@@ -1515,10 +1515,12 @@ carried, so every member room is on chunks.
   - Desktop: such rooms are not handed to the stream (`handed`) for this
     connection: they keep their chunks, so the existing chunk catch-up and
     chunk reconnect repair still reach them, and the next connection (which
-    then has their chunk spans) hands them over. Desktop keeps the chunk
-    carrying such a room as it is, not re-partitioned, so its repair in
-    flight is not cut; that chunk may carry handed rooms too until the
-    socket ends. A room a 44100 adds after the EOSE is handed at once.
+    then has their chunk spans) hands them over; they get no stream span.
+    Desktop keeps every chunk carrying a room the stream does not repair
+    (such a room, or one outside the snapshot) as it is, not
+    re-partitioned, so its repair in flight is not cut; that chunk may
+    carry handed rooms too until the socket ends. A room a 44100 adds
+    after the EOSE is handed at once.
     `handoffKept` counts the rooms kept.
   - Mobile: every snapshot room is handed. Mobile room chunks are `limit: 0`
     and never re-delivered the gap, so keeping them would repair nothing.
@@ -1679,9 +1681,12 @@ A room's stream coverage span is written to the store only after that room's cat
   screen first on its own, then the rest 128 per walk. The last-seen time
   is the newest stream frame `created_at` or accepted live/gated EOSE time,
   whichever is later, as a chunk's cursor starts at its creation, so a
-  connection that saw no frame still repairs the next one. It lives in
-  memory: the first connect after launch, and the first after an account or
-  community switch, has none and runs no listener repair. Rooms that were
+  connection that saw no frame still repairs the next one. A connection
+  whose rooms rode chunks (stream off, refused, backed off, or ended before
+  its EOSE) moves it to that connection's AUTH OK time when later, which is
+  also the live start of its rooms that had none. It lives in memory: the
+  first connect after launch, and the first after an account or community
+  switch, has none and runs no listener repair. Rooms that were
   not handed get their chunk's repair instead ([Handoff](#handoff)).
 - **Mobile:** store catch-up batched and sorted, plus the open-room refetch.
   The reconnect unread catch-up runs from read markers; a chunk re-sync
