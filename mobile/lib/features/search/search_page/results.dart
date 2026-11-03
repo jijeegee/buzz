@@ -468,9 +468,30 @@ class _MessageTile extends ConsumerWidget {
     final chatTitle = channel?.isGroupChat == true
         ? watchChannelTitle(ref, channel!)
         : null;
-    final threadTitle = thread == null
+    // A thread missing from Chats (closed or quiet) is named by its own
+    // thread name, read like any thread row's.
+    final listedThreadTitle = thread == null
         ? null
         : searchHitThreadTitle(thread, chatRows);
+    final namedThreadTitle =
+        thread == null || listedThreadTitle != null || hitChannelId == null
+        ? null
+        : ref
+              .watch(
+                threadNameProvider((
+                  channelId: hitChannelId,
+                  headId: thread.rootId,
+                )),
+              )
+              .value
+              ?.content
+              .trim();
+    final threadTitle = thread == null
+        ? null
+        : listedThreadTitle ??
+              (namedThreadTitle?.isNotEmpty == true
+                  ? namedThreadTitle!
+                  : context.l10n.searchThread);
     // The chat on top, as its Chats row reads: "group › thread" in a
     // thread, the group, the chat's title, or the DM's name.
     final dmName = isDm && channel != null

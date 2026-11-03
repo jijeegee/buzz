@@ -210,7 +210,7 @@ void main() {
       );
       expect(
         searchHitThreadTitle((rootId: 'unknown', parentId: 'unknown'), rows),
-        'Thread',
+        isNull,
       );
     });
   });
