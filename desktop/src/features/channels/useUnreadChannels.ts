@@ -616,6 +616,7 @@ export function useUnreadChannels(
     authoredRootIds: authoredRootIdsRef.current,
     mutedRootIds: mutedRootIdsRef.current,
     mutedChannelIds: mutedChannelIdsRef.current,
+    getChatRowReadAt: getOwnTimestamp,
   });
 
   // Effect-key the catch-up on the *set* of channel IDs, not the array

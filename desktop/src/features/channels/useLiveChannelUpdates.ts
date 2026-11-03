@@ -10,6 +10,7 @@ import {
   inboxSummaryShowsAny,
   type InboxSummaryState,
 } from "@/features/home/lib/inboxSummary";
+import { chatRowContextId } from "@/features/chats/chatListState";
 import { ChatListLiveSync } from "@/features/chats/chatListSync";
 import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
@@ -85,6 +86,11 @@ export type UseLiveChannelUpdatesOptions = {
   authoredRootIds?: ReadonlySet<string>;
   mutedRootIds?: ReadonlySet<string>;
   mutedChannelIds?: ReadonlySet<string>;
+  /**
+   * This device's merged read marker for a context (`chatRowContextId`), so
+   * a chats-list row read past its latest message counts new ones from zero.
+   */
+  getChatRowReadAt?: (contextId: string) => number | null;
 };
 
 // get_channels is an expensive O(channels) relay fan-out. Incoming traffic for
@@ -203,9 +209,13 @@ export function useLiveChannelUpdates(
   }, []);
   // Server chats list (Chats S4): live patches, and throttled refetches for
   // rows only the relay can place. Hidden DMs and archived rooms are skipped.
+  const getChatRowReadAtRef = React.useRef(options.getChatRowReadAt);
+  getChatRowReadAtRef.current = options.getChatRowReadAt;
   const chatListSyncRef = React.useRef<ChatListLiveSync | null>(null);
   if (chatListSyncRef.current === null) {
     chatListSyncRef.current = new ChatListLiveSync(queryClient, {
+      readAtOf: (row) =>
+        getChatRowReadAtRef.current?.(chatRowContextId(row)) ?? null,
       isRoomHidden: (channelId) =>
         queryClient
           .getQueriesData<unknown>({ queryKey: dmVisibilityQueryKey })

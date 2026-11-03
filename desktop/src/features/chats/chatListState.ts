@@ -347,6 +347,11 @@ export function applyLiveEventToChatList(
    * fetched rows may already count it, so only strictly newer events apply.
    */
   replay = false,
+  /**
+   * This device's read position for a row (own and other devices' marks): a
+   * row read past its latest message counts from zero, as mobile does.
+   */
+  readAtOf?: (row: ChatListRow) => number | null,
 ): ChatListLivePatch {
   const unchanged = { state: current, refetch: false };
   if (!MESSAGE_KINDS.has(event.kind)) return unchanged;
@@ -390,16 +395,31 @@ export function applyLiveEventToChatList(
     ) {
       continue;
     }
+    const readAt = readAtOf?.(existing) ?? null;
+    const readHere =
+      readAt !== null &&
+      existing.latest !== null &&
+      readAt >= existing.latest.created_at &&
+      !existing.unread_mark;
+    const base: ChatListRow = readHere
+      ? {
+          ...existing,
+          unread: 0,
+          unread_overflow: false,
+          unread_mentions: 0,
+          unread_mentions_overflow: false,
+        }
+      : existing;
     const unread = fromMe
       ? { count: 0, overflow: false }
-      : bump(existing.unread, existing.unread_overflow);
+      : bump(base.unread, base.unread_overflow);
     const mentions = fromMe
       ? { count: 0, overflow: false }
       : mentionsMe
-        ? bump(existing.unread_mentions, existing.unread_mentions_overflow)
+        ? bump(base.unread_mentions, base.unread_mentions_overflow)
         : {
-            count: existing.unread_mentions,
-            overflow: existing.unread_mentions_overflow,
+            count: base.unread_mentions,
+            overflow: base.unread_mentions_overflow,
           };
     const next: ChatListRow = {
       ...existing,

@@ -88,7 +88,7 @@ function message(id, createdAt, channelId = ROOM) {
   };
 }
 
-function setup({ hidden = new Set() } = {}) {
+function setup({ hidden = new Set(), readAtOf } = {}) {
   const queryClient = new QueryClient();
   const timers = fakeTimers();
   const invalidations = [];
@@ -110,6 +110,7 @@ function setup({ hidden = new Set() } = {}) {
   const unsubscribe = observer.subscribe(() => {});
   const sync = new ChatListLiveSync(queryClient, {
     isRoomHidden: (channelId) => hidden.has(channelId),
+    readAtOf,
     now: timers.now,
     timers: timers.host,
   });
@@ -183,6 +184,29 @@ test("missing-row refetches are throttled; hidden or archived rooms never refetc
     h.sync.refetchForMissingRow("hidden-dm");
     h.timers.advance(CHAT_LIST_MISSING_ROW_THROTTLE_MS * 2);
     assert.equal(h.invalidations.length, 2);
+  } finally {
+    h.done();
+  }
+});
+
+test("live messages in a row this device read past count from zero", () => {
+  const contexts = [];
+  const h = setup({
+    readAtOf: (row) => {
+      contexts.push(row.channel_id);
+      return 100;
+    },
+  });
+  try {
+    h.queryClient.setQueryData(KEY, {
+      generation: 1,
+      next: null,
+      rows: [{ ...roomRow(4, 100), latest: message("old", 100) }],
+    });
+    h.sync.onMessage(message("m1", 200), ROOM, ME, false);
+    h.sync.onMessage(message("m2", 201), ROOM, ME, false);
+    assert.equal(h.rows()[0].unread, 2);
+    assert.ok(contexts.includes(ROOM));
   } finally {
     h.done();
   }
