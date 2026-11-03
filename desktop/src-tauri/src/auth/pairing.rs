@@ -244,9 +244,10 @@ fn hermes_profiles(root: &Path) -> Vec<HermesProfileView> {
         .into_iter()
         .flatten()
         .flatten()
-        .filter(|entry| entry.path().join("config.yaml").is_file())
+        .filter(|entry| is_served_profile_dir(&entry.path()))
         .filter_map(|entry| entry.file_name().into_string().ok())
         .filter(|name| is_person_profile(name))
+        .filter(|name| !root.join("profiles/.deleted").join(name).exists())
         .collect();
     names.sort();
     let default = profile_view(DEFAULT_PROFILE, root, true, None);
@@ -264,14 +265,29 @@ fn profile_view(
     is_default: bool,
     blocked_reason: Option<String>,
 ) -> HermesProfileView {
-    let env = std::fs::read_to_string(home.join(".env")).unwrap_or_default();
+    let env = std::fs::read(home.join(".env")).unwrap_or_default();
+    let env = String::from_utf8_lossy(&env);
+    let env = env.trim_start_matches('\u{feff}');
     HermesProfileView {
         name: name.to_owned(),
         is_default,
-        paired_agent: env_pubkey(&env, "KUZZ_PAIRED_AGENT"),
-        owner: env_pubkey(&env, "KUZZ_OWNER_PUBKEY"),
+        paired_agent: env_pubkey(env, "KUZZ_PAIRED_AGENT"),
+        owner: env_pubkey(env, "KUZZ_OWNER_PUBKEY"),
         blocked_reason,
     }
+}
+
+/// A profile folder the host gateway would serve: it has a config, and it
+/// hasn't opted out (`gateway.standalone`) or been stopped (`gateway.parked`).
+fn is_served_profile_dir(home: &Path) -> bool {
+    let Ok(config) = std::fs::read_to_string(home.join("config.yaml")) else {
+        return false;
+    };
+    let standalone = serde_yaml::from_str::<serde_yaml::Value>(&config)
+        .ok()
+        .and_then(|config| config.get("gateway")?.get("standalone")?.as_bool())
+        .unwrap_or(false);
+    !standalone && !home.join("gateway.parked").exists()
 }
 
 /// A profile id Hermes accepts that a person made: not one this app (or a
@@ -298,9 +314,8 @@ fn env_pubkey(env: &str, key: &str) -> Option<String> {
         .then(|| value.to_ascii_lowercase())
 }
 
-/// Why Hermes's gateway won't serve named profiles at all: one bot token in
-/// two profiles (Hermes's words, from its state file). Other standalone
-/// reasons clear on the restart after Connect, so they don't block it.
+/// Why Hermes's gateway won't serve named profiles (Hermes's words, from its
+/// state file). "Only one profile" clears on the restart after Connect.
 fn serving_blocker(root: &Path) -> Option<String> {
     let state = std::fs::read(root.join("gateway_state.json")).ok()?;
     let state: serde_json::Value = serde_json::from_slice(&state).ok()?;
@@ -308,7 +323,8 @@ fn serving_blocker(root: &Path) -> Option<String> {
 }
 
 fn blocker_reason(reason: &str) -> Option<String> {
-    reason.contains("credential").then(|| reason.to_owned())
+    (!reason.trim().is_empty() && !reason.starts_with("only one profile"))
+        .then(|| reason.to_owned())
 }
 
 /// Where to connect `profile`: `Some(None)` for the default profile,

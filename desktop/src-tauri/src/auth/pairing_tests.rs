@@ -223,6 +223,18 @@ fn profiles_are_read_each_with_its_own_pin_and_owner() {
         hermes_profile_target(root.path(), "kuzz-2911eff5fdf2613a"),
         None
     );
+    // Not served by the host: left out.
+    profile("own-gateway", None);
+    std::fs::write(
+        root.path().join("profiles/own-gateway/config.yaml"),
+        b"gateway:\n  standalone: true\n",
+    )
+    .unwrap();
+    profile("stopped", None);
+    std::fs::write(root.path().join("profiles/stopped/gateway.parked"), b"").unwrap();
+    profile("gone", None);
+    std::fs::create_dir_all(root.path().join("profiles/.deleted/gone")).unwrap();
+    assert_eq!(hermes_profiles(root.path()).len(), 3);
     assert_eq!(hermes_profile_target(root.path(), "../x"), None);
 }
 
@@ -245,7 +257,27 @@ fn a_shared_bot_token_blocks_named_profiles_only() {
     assert!(views[1].blocked_reason.is_some());
     assert_eq!(hermes_profile_target(root.path(), "work"), None);
     assert_eq!(hermes_profile_target(root.path(), "default"), Some(None));
+    // Any other reason blocks too.
+    state("Profile 'work' runs its own gateway");
+    assert_eq!(hermes_profile_target(root.path(), "work"), None);
     // Cleared by the restart after Connect.
     state("only one profile exists (nothing to multiplex)");
     assert!(hermes_profile_target(root.path(), "work").is_some());
+}
+
+#[test]
+fn a_profile_env_saved_with_a_bom_or_odd_bytes_is_still_read() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("profiles").join("work");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.yaml"), b"").unwrap();
+    let pin = "a".repeat(64);
+    let mut env = "\u{feff}KUZZ_PAIRED_AGENT=".as_bytes().to_vec();
+    env.extend_from_slice(pin.as_bytes());
+    env.extend_from_slice(b"\nNOTE=\xff\n");
+    std::fs::write(home.join(".env"), env).unwrap();
+    assert_eq!(
+        hermes_profiles(root.path())[1].paired_agent.as_deref(),
+        Some(pin.as_str())
+    );
 }

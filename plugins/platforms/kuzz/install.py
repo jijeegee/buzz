@@ -37,7 +37,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Dict, List, Optional
 
 HERE = Path(__file__).resolve().parent
 PLUGIN_NAME = "buzz-platform"  # manifest name; equal to the bundled plugin's, so ours replaces it
@@ -262,14 +262,15 @@ def set_home_channel(
     return dm_id.strip()
 
 
-def pin_default_profile(hermes_home: Path, owner: Optional[str], default_agent: str) -> None:
+def pin_default_profile(hermes_home: Path, default_agents: Dict[str, str]) -> None:
     """Pairing a named profile makes it the newest pairing. Keep the default profile on the agent
-    it acted as: pin it if that install has no pin yet and belongs to the same owner."""
+    it acted as: its owner's latest other agent, if that install has no pin yet."""
     root = hermes_root(hermes_home)
     if root == hermes_home or read_env_value(root / ".env", PAIRED_AGENT_ENV):
         return
-    if owner and normalize_pubkey(read_env_value(root / ".env", "KUZZ_OWNER_PUBKEY") or "") == owner:
-        set_env_values(root / ".env", {PAIRED_AGENT_ENV: default_agent})
+    agent = default_agents.get(normalize_pubkey(read_env_value(root / ".env", "KUZZ_OWNER_PUBKEY") or "") or "")
+    if agent:
+        set_env_values(root / ".env", {PAIRED_AGENT_ENV: agent})
 
 
 def restart_gateway(hermes_home: Path) -> bool:
@@ -295,7 +296,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Install the Kuzz buzz plugin into Hermes Agent.")
     parser.add_argument("--owner", default=None, help="owner pubkey (hex or npub); default: the owner `kuzz pair` reports")
     parser.add_argument("--agent", default=None, help="the paired agent's pubkey: this Hermes home acts as it (KUZZ_PAIRED_AGENT)")
-    parser.add_argument("--default-agent", default=None, help="the agent acted as before this pairing; pins the default profile")
+    parser.add_argument("--default-agent", action="append", default=[], metavar="OWNER=AGENT",
+                        help="each owner's agent before this pairing; pins the default profile")
     parser.add_argument("--hermes-home", type=Path, default=None)
     parser.add_argument("--cli-path", default=None, help="path to the kuzz CLI (default: kuzz on PATH, then the Kuzz app's copy)")
     parser.add_argument("--no-enable", action="store_true", help="copy files only; do not enable the plugin")
@@ -308,23 +310,39 @@ def main(argv: Optional[List[str]] = None) -> int:
     agent = normalize_pubkey(args.agent) if args.agent else None
     if args.agent and not agent:
         parser.error("--agent must be a 64-character hex pubkey or an npub")
-    default_agent = normalize_pubkey(args.default_agent) if args.default_agent else None
-    if args.default_agent and not default_agent:
-        parser.error("--default-agent must be a 64-character hex pubkey or an npub")
+    default_agents = {}
+    for pair in args.default_agent:
+        key, _, value = pair.partition("=")
+        if not normalize_pubkey(key) or not normalize_pubkey(value):
+            parser.error("--default-agent must be OWNER=AGENT, each a 64-character hex pubkey or an npub")
+        default_agents[normalize_pubkey(key)] = normalize_pubkey(value)
     cli_path = args.cli_path or find_installed_kuzz()
     if not cli_path:
         parser.error("the kuzz CLI was not found; install Kuzz or pass --cli-path")
     hermes_home = args.hermes_home or default_hermes_home()
 
-    if default_agent:
-        pin_default_profile(hermes_home, owner, default_agent)
+    pin_default_profile(hermes_home, default_agents)
+    root = hermes_root(hermes_home)
+    if root != hermes_home and (root / "plugins" / INSTALL_DIR).is_dir():
+        # The gateway restart reloads the default profile too; its copy must read scoped settings.
+        copy_plugin(root)
     target = copy_plugin(hermes_home)
+    # Before any pin: a pin the gateway won't act on would read as connected.
+    if not args.no_enable and not enable_plugin(hermes_home):
+        print(
+            f"Could not enable the plugin. Add {PLUGIN_NAME} to plugins.enabled in "
+            f"{hermes_home / 'config.yaml'}, then connect again.",
+            file=sys.stderr,
+        )
+        return 1
     env_file = hermes_home / ".env"
     # A different agent or owner than the one this home was set up for: its home DM is stale.
+    # So is one in a named profile with no pin yet, copied with a cloned profile's .env.
     previous = {name: read_env_value(env_file, name) for name in (PAIRED_AGENT_ENV, "KUZZ_OWNER_PUBKEY")}
     new_identity = bool(
         (agent and previous[PAIRED_AGENT_ENV] and normalize_pubkey(previous[PAIRED_AGENT_ENV]) != agent)
         or (owner and previous["KUZZ_OWNER_PUBKEY"] and normalize_pubkey(previous["KUZZ_OWNER_PUBKEY"]) != owner)
+        or (agent and not previous[PAIRED_AGENT_ENV] and root != hermes_home)
     )
     values = {"KUZZ_CLI_PATH": cli_path}
     if owner:
@@ -338,13 +356,6 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.no_enable:
         print(f"Next: add {PLUGIN_NAME} to plugins.enabled in config.yaml, then hermes gateway restart")
         return 0
-    if not enable_plugin(hermes_home):
-        print(
-            f"Could not enable the plugin. Add {PLUGIN_NAME} to plugins.enabled in "
-            f"{hermes_home / 'config.yaml'}, then restart the gateway.",
-            file=sys.stderr,
-        )
-        return 1
     if owner and set_home_channel(hermes_home, cli_path, owner, agent, replace=new_identity):
         print("Set the owner's DM as the Buzz home channel")
     if args.no_restart:

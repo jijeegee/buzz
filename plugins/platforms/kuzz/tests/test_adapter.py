@@ -169,7 +169,9 @@ class AdapterTest(unittest.TestCase):
                 fake.calls("messages", "edit")[0]["args"],
                 ["messages", "edit", "--event", event_id(9), "--content=new text"],
             )
-            self.assertTrue(all(call["env"] == [] for call in fake.calls()), "allow-all or a key reached a kuzz child")
+            # Past the first whoami each call names the agent; nothing else reaches a kuzz child.
+            self.assertTrue(all(call["env"] in ([], ["KUZZ_PAIRED_AGENT"]) for call in fake.calls()),
+                            "allow-all or a key reached a kuzz child")
             self.assertEqual(adapter.config.extra["allow_from"], [OWNER])
             self.assertEqual(adapter.config.extra["group_allow_from"], [OWNER])
 
@@ -268,13 +270,16 @@ class AdapterTest(unittest.TestCase):
 class SecondaryProfileTest(unittest.TestCase):
     """Inside a multiplexed secondary profile: its own .env counts, the process env never does."""
 
+    home = Path("hermes/profiles/work")
+
     def scoped(self, secrets):
         self.env = mock.patch.dict("os.environ", {
             "KUZZ_PAIRED_AGENT": "d" * 64, "KUZZ_OWNER_PUBKEY": "e" * 64, "BUZZ_HOME_CHANNEL": "default-home",
         })
         patches = [self.env, mock.patch.object(adapter_module, "_profile_scoped", return_value=True),
                    mock.patch.object(adapter_module, "_get_secret", side_effect=lambda name, default=None: secrets.get(name, default)),
-                   mock.patch.object(adapter_module, "check_requirements", return_value=True)]
+                   mock.patch.object(adapter_module, "check_requirements", return_value=True),
+                   mock.patch.object(adapter_module, "_hermes_home", side_effect=lambda: self.home)]
         for patcher in patches:
             patcher.start()
             self.addCleanup(patcher.stop)
@@ -302,6 +307,14 @@ class SecondaryProfileTest(unittest.TestCase):
         identity, calls = self.identity()
         self.assertIsNone(identity)
         self.assertEqual(calls, [])
+
+    def test_the_default_profile_in_its_own_scope_keeps_the_newest_pairing(self):
+        self.home = Path("hermes")
+        self.scoped({"KUZZ_OWNER_PUBKEY": OWNER})
+        identity, [env] = self.identity()
+        # Named from then on, so a later pairing can't take over.
+        self.assertEqual(identity.env_add, {"KUZZ_PAIRED_AGENT": identity.self_pubkey})
+        self.assertTrue(identity.self_pubkey)
 
     def test_it_is_enabled_from_its_own_env_only(self):
         self.scoped({"KUZZ_OWNER_PUBKEY": OWNER, "BUZZ_HOME_CHANNEL": "own-home"})

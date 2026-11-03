@@ -275,17 +275,44 @@ fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
     })
 }
 
-/// Bot tokens of Hermes's messaging channels. A managed agent has no gateway,
-/// and a copied token stops the Hermes gateway from serving profiles together
-/// (one token, two profiles).
-const CHANNEL_TOKEN_KEYS: [&str; 7] = [
-    "TELEGRAM_BOT_TOKEN",
+/// What makes a Hermes channel connect as a bot (Hermes's
+/// `credential_env_keys`, without Buzz's). A managed agent has no gateway,
+/// and a copied one stops the Hermes gateway from serving profiles together
+/// (one bot, two profiles).
+const CHANNEL_TOKEN_KEYS: [&str; 33] = [
+    "BLUEBUBBLES_PASSWORD",
+    "DINGTALK_CLIENT_ID",
+    "DINGTALK_CLIENT_SECRET",
     "DISCORD_BOT_TOKEN",
-    "SLACK_BOT_TOKEN",
-    "SLACK_APP_TOKEN",
-    "MATTERMOST_TOKEN",
+    "EMAIL_PASSWORD",
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+    "HASS_TOKEN",
+    "LINE_CHANNEL_ACCESS_TOKEN",
+    "LINE_CHANNEL_SECRET",
     "MATRIX_ACCESS_TOKEN",
+    "MATRIX_PASSWORD",
+    "MATTERMOST_TOKEN",
+    "PHOTON_PROJECT_ID",
+    "PHOTON_PROJECT_SECRET",
+    "QQ_APP_ID",
+    "QQ_CLIENT_SECRET",
+    "SLACK_APP_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "TEAMS_CLIENT_ID",
+    "TEAMS_CLIENT_SECRET",
+    "TELEGRAM_BOT_TOKEN",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "WECOM_BOT_ID",
+    "WECOM_CALLBACK_CORP_SECRET",
+    "WECOM_SECRET",
     "WEIXIN_TOKEN",
+    "WHATSAPP_CLOUD_ACCESS_TOKEN",
+    "YUANBAO_APP_ID",
+    "YUANBAO_APP_KEY",
+    "YUANBAO_APP_SECRET",
 ];
 
 /// Whether a `.env` key must not be copied into a managed agent's profile:

@@ -272,7 +272,8 @@ export function HermesFoundCard() {
   const queryClient = useQueryClient();
   const available = useExternalConnectAvailable();
   const hermes = useHermesStatusQuery(available);
-  const { groups, devicesLoaded, owner } = useExternalAgentGroups();
+  const { groups, devicesLoaded, hermesDeviceIds, owner, pairingsLoaded } =
+    useExternalAgentGroups();
   const [connecting, setConnecting] = React.useState<string | null>(null);
   const rows = React.useMemo(
     () =>
@@ -284,8 +285,9 @@ export function HermesFoundCard() {
             group.agents.map((agent) => agent.pubkey.toLowerCase()),
           ),
         ),
+        groups.some((group) => hermesDeviceIds.has(group.deviceId)),
       ),
-    [groups, hermes.data?.profiles, owner],
+    [groups, hermes.data?.profiles, hermesDeviceIds, owner],
   );
 
   if (
@@ -293,6 +295,8 @@ export function HermesFoundCard() {
     !hermes.data?.found ||
     !hermes.data.canConnect ||
     !devicesLoaded ||
+    !pairingsLoaded ||
+    !owner ||
     rows.every((row) => row.state === "connected")
   ) {
     return null;
@@ -305,6 +309,7 @@ export function HermesFoundCard() {
       const claim = connectedClaim(await listAgentPairings(), run.pairingId);
       if (!claim) throw new Error(t("agents.external.hermesFailed"));
       rememberConnection(owner, claim, { hermes: true });
+      if (!run.finished) throw new Error(t("agents.external.hermesFailed"));
       toast.success(
         t("agents.external.connectedToast", {
           agent: hermesLabel(profile),
@@ -318,8 +323,8 @@ export function HermesFoundCard() {
           : t("agents.external.hermesFailed"),
       );
     } finally {
+      await refreshExternalAgents(queryClient);
       setConnecting(null);
-      refreshExternalAgents(queryClient);
     }
   }
 
@@ -353,12 +358,9 @@ export function HermesFoundCard() {
               {single ? t("agents.external.hermesFound") : hermesLabel(profile)}
             </p>
             {state === "blocked" || state === "otherAccount" ? (
-              <p
-                className="truncate text-xs text-muted-foreground"
-                title={profile.blockedReason ?? undefined}
-              >
+              <p className="break-words text-xs text-muted-foreground">
                 {state === "blocked"
-                  ? profile.blockedReason
+                  ? `${profile.blockedReason} ${t("agents.external.hermesBlockedHint")}`
                   : t("agents.external.hermesOtherAccount")}
               </p>
             ) : null}
@@ -367,7 +369,7 @@ export function HermesFoundCard() {
             <span className="shrink-0 text-xs text-muted-foreground">
               {t("agents.external.hermesConnected")}
             </span>
-          ) : state === "connect" ? (
+          ) : state === "connect" || state === "otherAccount" ? (
             <Button
               data-testid={`hermes-connect-${profile.name}`}
               disabled={connecting !== null}

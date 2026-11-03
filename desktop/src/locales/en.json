@@ -24603,6 +24603,10 @@
   "@agents.external.hermesConnected": {
     "description": "Shown on a Hermes profile row that is already connected to Kuzz."
   },
+  "agents.external.hermesBlockedHint": "Fix this in Hermes, then restart it.",
+  "@agents.external.hermesBlockedHint": {
+    "description": "Follows Hermes's own reason a profile can't connect. Hermes reads that state when it starts, so a restart is needed."
+  },
   "agents.external.hermesOtherAccount": "Connected to another Kuzz account",
   "@agents.external.hermesOtherAccount": {
     "description": "Shown on a Hermes profile row connected by a different Kuzz account on this computer."

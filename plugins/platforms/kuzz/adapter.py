@@ -179,6 +179,12 @@ def _hermes_home() -> Optional[Path]:
         return None
 
 
+def _is_named_profile() -> bool:
+    """In a multiplexed secondary profile. The default profile's own scope isn't one."""
+    home = _hermes_home()
+    return _profile_scoped() and home is not None and home.parent.name == "profiles"
+
+
 def _child_env(add: Optional[Dict[str, str]] = None) -> Dict[str, str]:
     """``kuzz_cli.child_env`` with the no-login session file under this profile's Hermes home."""
     return kuzz_cli.child_env(add=add, home=_hermes_home())
@@ -210,17 +216,19 @@ async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity
     """Paired identity if the CLI reports an owner, else legacy raw-key mode if configured, else None.
 
     The agent pinned in this profile's .env is the one acted as. A secondary profile without a pin
-    has no paired identity: the CLI would pick the newest pairing, another profile's agent."""
+    has no paired identity: the CLI would pick the newest pairing, another profile's agent. Once
+    resolved, every call names the agent, so a later pairing on this computer can't take over."""
     configured_owner = normalize_pubkey(_setting(("KUZZ_OWNER_PUBKEY",), extra, "owner"))
     pin = _secret(PAIRED_AGENT_ENV)
     pinned = {PAIRED_AGENT_ENV: pin} if pin else {}
     me = None
-    if pin or not _profile_scoped():
+    if pin or not _is_named_profile():
         me = await _cli_json(cli, ["auth", "whoami"], _child_env(add=pinned))
     # A paired CLI answers {"mode": "paired", "pubkey", "owner", ...}; owner may be null until the relay says.
     if isinstance(me, dict) and me.get("mode") == "paired" and normalize_pubkey(me.get("pubkey")):
+        pubkey = normalize_pubkey(me.get("pubkey")) or ""
         return Identity(
-            "paired", pinned, normalize_pubkey(me.get("pubkey")) or "", configured_owner or normalize_pubkey(me.get("owner"))
+            "paired", {PAIRED_AGENT_ENV: pubkey}, pubkey, configured_owner or normalize_pubkey(me.get("owner"))
         )
     key, tag = _legacy_credentials(extra)
     if not key:

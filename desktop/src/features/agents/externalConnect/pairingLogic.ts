@@ -256,13 +256,16 @@ export type HermesRow = { profile: HermesProfile; state: HermesRowState };
 /**
  * What each Hermes profile can do for this account. `connectedPubkeys`: this
  * account's connected agents, lowercase. A default profile connected before
- * pins existed counts as connected (connecting another profile pins it). When
- * a copied profile shares a pin, only the first is connected.
+ * pins existed counts as connected while this card's agent is connected
+ * (`hermesDeviceConnected`; connecting another profile pins it). When a copied
+ * profile shares a pin, only the first is connected. `otherAccount` can still
+ * connect: that account may be long gone from this computer.
  */
 export function hermesRows(
   profiles: readonly HermesProfile[],
   owner: string | null | undefined,
   connectedPubkeys: ReadonlySet<string>,
+  hermesDeviceConnected: boolean,
 ): HermesRow[] {
   const account = owner?.toLowerCase();
   const seen = new Set<string>();
@@ -270,13 +273,14 @@ export function hermesRows(
     const pin = profile.pairedAgent;
     const pinned = pin !== null && connectedPubkeys.has(pin) && !seen.has(pin);
     if (pinned) seen.add(pin);
+    if (profile.blockedReason) return { profile, state: "blocked" };
     if (pinned) return { profile, state: "connected" };
     if (profile.owner && profile.owner !== account) {
       return { profile, state: "otherAccount" };
     }
-    if (profile.isDefault && profile.owner && !pin) {
+    if (profile.isDefault && profile.owner && !pin && hermesDeviceConnected) {
       return { profile, state: "connected" };
     }
-    return { profile, state: profile.blockedReason ? "blocked" : "connect" };
+    return { profile, state: "connect" };
   });
 }

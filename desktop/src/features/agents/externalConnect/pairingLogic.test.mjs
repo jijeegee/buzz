@@ -324,8 +324,10 @@ const hermesProfile = (name, fields = {}) => ({
   blockedReason: null,
   ...fields,
 });
-const hermesStates = (profiles, owner, connected = []) =>
-  hermesRows(profiles, owner, new Set(connected)).map((row) => row.state);
+const hermesStates = (profiles, owner, connected = [], device = false) =>
+  hermesRows(profiles, owner, new Set(connected), device).map(
+    (row) => row.state,
+  );
 
 test("hermes rows: a profile is connected when its pinned agent is", () => {
   const pinned = { pairedAgent: "a1", owner: "me" };
@@ -340,20 +342,31 @@ test("hermes rows: a profile is connected when its pinned agent is", () => {
 });
 
 test("hermes rows: a default profile from before pins counts as connected", () => {
-  assert.deepEqual(
-    hermesStates([hermesProfile("default", { owner: "me" })], "me"),
-    ["connected"],
-  );
+  const old = [hermesProfile("default", { owner: "me" })];
+  assert.deepEqual(hermesStates(old, "me", [], true), ["connected"]);
+  // Disconnected since: it can connect again.
+  assert.deepEqual(hermesStates(old, "me"), ["connect"]);
   assert.deepEqual(
     hermesStates([hermesProfile("work", { owner: "me" })], "me"),
     ["connect"],
   );
 });
 
-test("hermes rows: another account's profile is not offered", () => {
+test("hermes rows: another account's profile says so", () => {
   assert.deepEqual(
     hermesStates([hermesProfile("work", { owner: "other" })], "me"),
     ["otherAccount"],
+  );
+});
+
+test("hermes rows: a pinned profile Hermes won't serve is blocked", () => {
+  assert.deepEqual(
+    hermesStates(
+      [hermesProfile("work", { pairedAgent: "a", blockedReason: "no" })],
+      "me",
+      ["a"],
+    ),
+    ["blocked"],
   );
 });
 
