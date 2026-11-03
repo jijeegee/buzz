@@ -12,11 +12,18 @@ What it does (the same steps `kuzz pair --hermes` and the desktop Hermes card fo
    `hermes config get` / `hermes config set`. (`hermes plugins enable buzz-platform` resolves
    the name to the bundled plugin's listing key, ``platforms/buzz``, which the loader does not
    read for a user plugin.)
+4. with ``--agent``, pins KUZZ_PAIRED_AGENT in .env, so this home keeps acting as that agent
+   when more pairings exist on the computer;
+5. with an owner and no home channel yet, sets BUZZ_HOME_CHANNEL to the owner's DM (opened by
+   the paired agent), so cron results reach Kuzz and Hermes does not ask for /sethome;
+6. restarts the Hermes gateway (``--no-restart`` skips it) so the plugin loads now. A stopped
+   gateway is started; a busy one is left alone and a manual restart is asked for.
 
-`kuzz pair --hermes` runs ``python install.py --owner <hex> --hermes-home <dir>`` from its
+`kuzz pair --hermes` runs ``python install.py --owner <hex> --agent <hex> --hermes-home <dir>``
+(plus ``--no-restart`` when the app restarts the gateway itself) from its
 install root: the kuzz binary's folder, ``<prefix>/share/kuzz``, or ``<local data>/kuzz``,
 each holding ``plugins/platforms/kuzz/``. The kuzz binary in that root is preferred.
-Restart the Hermes gateway afterwards. To go back to the bundled plugin, delete
+To go back to the bundled plugin, delete
 <HERMES_HOME>/plugins/buzz/. Stdlib only; no keys are read or written.
 """
 
@@ -36,9 +43,17 @@ HERE = Path(__file__).resolve().parent
 PLUGIN_NAME = "buzz-platform"  # manifest name; equal to the bundled plugin's, so ours replaces it
 INSTALL_DIR = "buzz"
 PLUGIN_FILES = ("plugin.yaml", "__init__.py", "adapter.py", "kuzz_cli.py")
+HOME_ENV = "BUZZ_HOME_CHANNEL"
+PAIRED_AGENT_ENV = "KUZZ_PAIRED_AGENT"
+# Step limits. `kuzz pair --hermes` from the app gives claim + install 180 s and restarts the
+# gateway itself (--no-restart), so only a terminal run waits for RESTART_TIMEOUT; Hermes drains
+# live work for up to 180 s before it stops, and a killed restart can leave no gateway running.
+CONFIG_TIMEOUT = 30
+DM_TIMEOUT = 20
+RESTART_TIMEOUT = 300
 
 sys.path.insert(0, str(HERE))
-from kuzz_cli import find_kuzz, is_runnable, normalize_pubkey, which_program  # noqa: E402  (stdlib-only)
+from kuzz_cli import STRIPPED_ENV, child_env, find_kuzz, is_runnable, normalize_pubkey, which_program  # noqa: E402  (stdlib-only)
 
 
 def default_hermes_home() -> Path:
@@ -129,18 +144,35 @@ def find_installed_kuzz() -> str:
     return find_kuzz()
 
 
+def hermes_env(hermes_home: Path) -> dict:
+    """Env for ``hermes`` children: this one's, pointed at ``hermes_home``, without Kuzz/Buzz
+    settings, keys or tokens (a restarted gateway inherits it; Hermes reads them from .env)."""
+    env = {k: v for k, v in os.environ.items()
+           if k not in STRIPPED_ENV and not k.upper().startswith(("KUZZ_", "BUZZ_"))}
+    env["HERMES_HOME"] = str(hermes_home)
+    return env
+
+
 def _hermes_config(hermes: str, env: dict, *args: str) -> subprocess.CompletedProcess:
-    return subprocess.run(
-        [hermes, "config", *args], env=env, stdin=subprocess.DEVNULL, capture_output=True,
-        text=True, encoding="utf-8", errors="replace", check=False,
-    )
+    """``hermes config <args>``; a timeout or launch failure reads as an error (rc 1)."""
+    try:
+        return subprocess.run(
+            [hermes, "config", *args], env=env, stdin=subprocess.DEVNULL, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=CONFIG_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        return subprocess.CompletedProcess([hermes, "config", *args], 1, "", str(exc))
+
+
+def _not_set(result: subprocess.CompletedProcess) -> bool:
+    return result.returncode != 0 and "not set" in (result.stdout + result.stderr)
 
 
 def _read_list(hermes: str, env: dict, key: str) -> Optional[List[str]]:
     """``hermes config get <key>`` as a list of strings; [] when unset; None when unreadable."""
     result = _hermes_config(hermes, env, "get", key)
     if result.returncode != 0:
-        return [] if "not set" in (result.stdout + result.stderr) else None
+        return [] if _not_set(result) else None
     text = result.stdout.strip()
     if text in ("", "[]", "null", "None"):
         return []
@@ -157,7 +189,7 @@ def enable_plugin(hermes_home: Path) -> bool:
     hermes = find_hermes(hermes_home)
     if not hermes:
         return False
-    env = dict(os.environ, HERMES_HOME=str(hermes_home))
+    env = hermes_env(hermes_home)
     enabled = _read_list(hermes, env, "plugins.enabled")
     disabled = _read_list(hermes, env, "plugins.disabled")
     if enabled is None or disabled is None:
@@ -174,27 +206,110 @@ def enable_plugin(hermes_home: Path) -> bool:
     return True
 
 
+def read_env_value(env_file: Path, key: str) -> str:
+    """The last ``key=value`` in a dotenv file (quotes stripped), else ""."""
+    if not env_file.exists():
+        return ""
+    value = ""
+    with open(env_file, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            head, sep, rest = line.partition("=")
+            name = head.strip()
+            if name.startswith("export "):
+                name = name[len("export "):].strip()
+            if sep and name == key:
+                value = rest.strip().strip("'\"")
+    return value
+
+
+def set_home_channel(
+    hermes_home: Path, cli_path: str, owner: str, agent: Optional[str] = None, replace: bool = False,
+) -> Optional[str]:
+    """Make the owner's DM the Buzz home channel (cron results and notices) unless one is set.
+
+    The home is written the way ``/sethome`` mirrors it, BUZZ_HOME_CHANNEL in .env, which the
+    plugin seeds into the gateway config at start (and which wins over config.yaml). A home already
+    in .env or config.yaml is kept, and nothing is written when config.yaml cannot be read (Hermes
+    missing or failing). ``replace``: this home now acts as another agent or owner, so the old home
+    (a DM the new agent is not in) is replaced. Returns the DM id when one was set."""
+    env_file = hermes_home / ".env"
+    if not replace:
+        if read_env_value(env_file, HOME_ENV):
+            return None
+        hermes = find_hermes(hermes_home)
+        if not hermes or not _not_set(_hermes_config(hermes, hermes_env(hermes_home), "get", "platforms.buzz.home_channel")):
+            return None
+    # The paired agent opens (or finds) its DM with the owner; a stored person login is skipped.
+    try:
+        result = subprocess.run(
+            [cli_path, "dms", "open", "--pubkey", owner],
+            env=child_env(home=hermes_home, add={PAIRED_AGENT_ENV: agent} if agent else None),
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=DM_TIMEOUT, check=False,
+        )
+        dm_id = json.loads(result.stdout).get("dm_id") if result.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError, ValueError, AttributeError):
+        dm_id = None
+    if not isinstance(dm_id, str) or not dm_id.strip():
+        return None
+    set_env_values(env_file, {HOME_ENV: dm_id.strip()})
+    return dm_id.strip()
+
+
+def restart_gateway(hermes_home: Path) -> bool:
+    """``hermes gateway restart --detach``: loads the plugin now, and starts a stopped gateway.
+    Without ``--yes`` it refuses while Hermes has live work (no prompt without a terminal), so a
+    running turn or cron job is never cut off; the caller then asks for a manual restart."""
+    hermes = find_hermes(hermes_home)
+    if not hermes:
+        return False
+    try:
+        result = subprocess.run(
+            [hermes, "gateway", "restart", "--detach"], env=hermes_env(hermes_home),
+            stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
+            errors="replace", timeout=RESTART_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return result.returncode == 0
+
+
 def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Install the Kuzz buzz plugin into Hermes Agent.")
     parser.add_argument("--owner", default=None, help="owner pubkey (hex or npub); default: the owner `kuzz pair` reports")
+    parser.add_argument("--agent", default=None, help="the paired agent's pubkey: this Hermes home acts as it (KUZZ_PAIRED_AGENT)")
     parser.add_argument("--hermes-home", type=Path, default=None)
     parser.add_argument("--cli-path", default=None, help="path to the kuzz CLI (default: kuzz on PATH, then the Kuzz app's copy)")
     parser.add_argument("--no-enable", action="store_true", help="copy files only; do not enable the plugin")
+    parser.add_argument("--no-restart", action="store_true", help="do not restart the Hermes gateway")
     args = parser.parse_args(argv)
 
     owner = normalize_pubkey(args.owner) if args.owner else None
     if args.owner and not owner:
         parser.error("--owner must be a 64-character hex pubkey or an npub")
+    agent = normalize_pubkey(args.agent) if args.agent else None
+    if args.agent and not agent:
+        parser.error("--agent must be a 64-character hex pubkey or an npub")
     cli_path = args.cli_path or find_installed_kuzz()
     if not cli_path:
         parser.error("the kuzz CLI was not found; install Kuzz or pass --cli-path")
     hermes_home = args.hermes_home or default_hermes_home()
 
     target = copy_plugin(hermes_home)
+    env_file = hermes_home / ".env"
+    # A different agent or owner than the one this home was set up for: its home DM is stale.
+    previous = {name: read_env_value(env_file, name) for name in (PAIRED_AGENT_ENV, "KUZZ_OWNER_PUBKEY")}
+    new_identity = bool(
+        (agent and previous[PAIRED_AGENT_ENV] and normalize_pubkey(previous[PAIRED_AGENT_ENV]) != agent)
+        or (owner and previous["KUZZ_OWNER_PUBKEY"] and normalize_pubkey(previous["KUZZ_OWNER_PUBKEY"]) != owner)
+    )
     values = {"KUZZ_CLI_PATH": cli_path}
     if owner:
         values["KUZZ_OWNER_PUBKEY"] = owner
-    set_env_values(hermes_home / ".env", values)
+    if agent:
+        # Pin the agent: another pairing on this computer (a second profile) must not take over.
+        values[PAIRED_AGENT_ENV] = agent
+    set_env_values(env_file, values)
     print(f"Installed the Kuzz buzz plugin in {target}")
 
     if args.no_enable:
@@ -207,7 +322,14 @@ def main(argv: Optional[List[str]] = None) -> int:
             file=sys.stderr,
         )
         return 1
-    print("Next: hermes gateway restart")
+    if owner and set_home_channel(hermes_home, cli_path, owner, agent, replace=new_identity):
+        print("Set the owner's DM as the Buzz home channel")
+    if args.no_restart:
+        print("Next: hermes gateway restart")
+    elif restart_gateway(hermes_home):
+        print("Restarted the Hermes gateway")
+    else:
+        print("Could not restart the Hermes gateway (it may be busy). Next: hermes gateway restart", file=sys.stderr)
     return 0
 
 

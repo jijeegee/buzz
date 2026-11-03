@@ -120,8 +120,10 @@ class AdapterTest(unittest.TestCase):
                 for chat, reply_to in [(CHANNEL, event_id(1)), (DM, event_id(4))]:
                     result = await adapter.send(chat, "answer", reply_to=reply_to)
                     self.assertTrue(result.success, result.error)
-                # Owner replies in our thread without a mention: addressed. Replies join the root.
+                # Outside a DM only a mention counts, even in a thread we answered (as runner agents).
                 await adapter._on_message(parse_watch_line(json.dumps(watch_line(7, thread_root=event_id(1)))))
+                await adapter._on_message(
+                    parse_watch_line(json.dumps(watch_line(8, thread_root=event_id(1), mentions=[AGENT]))))
                 for kwargs in ({"reply_to": event_id(7)}, {"metadata": {"thread_id": event_id(7)}}):
                     result = await adapter.send(CHANNEL, "again", **kwargs)
                     self.assertTrue(result.success, result.error)
@@ -139,7 +141,7 @@ class AdapterTest(unittest.TestCase):
 
             asyncio.run(scenario())
 
-            self.assertEqual([e.message_id for e in events], [event_id(1), event_id(4), event_id(7)])
+            self.assertEqual([e.message_id for e in events], [event_id(1), event_id(4), event_id(8)])
             first, dm, threaded = events
             self.assertEqual(first.text, "do X")
             self.assertEqual(first.source.chat_type, "group")
@@ -160,7 +162,7 @@ class AdapterTest(unittest.TestCase):
                 ],
             )
             seen = [c["args"] for c in fake.calls("reactions", "add")]
-            self.assertEqual(seen, [["reactions", "add", "--event", event_id(n), "--emoji", EYES] for n in (1, 4, 7)])
+            self.assertEqual(seen, [["reactions", "add", "--event", event_id(n), "--emoji", EYES] for n in (1, 4, 8)])
             self.assertEqual(
                 fake.calls("messages", "edit")[0]["args"],
                 ["messages", "edit", "--event", event_id(9), "--content=new text"],

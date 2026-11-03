@@ -9,6 +9,9 @@
 //!   makes and keeps the agent key, signs with this computer's device key,
 //!   saves the pairing and installs the Hermes plugin; the app keeps no
 //!   agent key and then reads the pairing list like the connect screen.
+//!   The app then restarts the Hermes gateway itself
+//!   ([`restart_hermes_gateway`]): one started inside the pair command
+//!   would die with that command's job.
 //!   Offered only when Hermes, a `kuzz` with `--hermes` and the plugin files
 //!   are all on this computer ([`hermes_installer`]).
 //! - [`disconnect_external_device`] signs a paired computer out.
@@ -180,18 +183,92 @@ pub async fn connect_hermes(app: AppHandle) -> Result<HermesPairingRun, String> 
     .await
     .unwrap_or(false);
     eprintln!("kuzz-desktop: hermes: kuzz pair finished (ok: {finished})");
+    if finished {
+        restart_hermes_gateway();
+    }
     Ok(HermesPairingRun {
         pairing_id: started.pairing_id,
         finished,
     })
 }
 
-/// The `kuzz` argv for a Hermes pairing (no shell). Pure.
+/// The `kuzz` argv for a Hermes pairing (no shell). Pure. `--no-restart`:
+/// the app restarts the gateway after the pair command ends.
 fn hermes_pair_args(relay: &str, code: &str) -> Vec<OsString> {
-    ["pair", "--hermes", "--relay", relay, code]
+    ["pair", "--hermes", "--no-restart", "--relay", relay, code]
         .into_iter()
         .map(OsString::from)
         .collect()
+}
+
+/// Start `hermes gateway restart --detach` so the gateway loads the new
+/// plugin and home channel, and leave it running: outside any job of this
+/// app, no pipes, no window, without Kuzz settings or secrets in its env
+/// (Hermes reads them from its own `.env`). Hermes refuses while it has
+/// live work; the owner then restarts it later. Only the exit is logged.
+fn restart_hermes_gateway() {
+    let Some(home) = hermes_home() else {
+        return;
+    };
+    let Some(hermes) = hermes_launcher(&home) else {
+        eprintln!("kuzz-desktop: hermes: no hermes launcher; gateway not restarted");
+        return;
+    };
+    let mut restart = std::process::Command::new(hermes);
+    restart
+        .args(["gateway", "restart", "--detach"])
+        .env("HERMES_HOME", &home)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    for (name, _) in std::env::vars_os() {
+        if is_kuzz_setting(&name) {
+            restart.env_remove(name);
+        }
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        restart.creation_flags(CREATE_NO_WINDOW);
+    }
+    match restart.spawn() {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let status = child.wait().ok().and_then(|status| status.code());
+                eprintln!("kuzz-desktop: hermes: gateway restart exited ({status:?})");
+            });
+        }
+        Err(error) => eprintln!("kuzz-desktop: hermes: gateway restart failed to start: {error}"),
+    }
+}
+
+/// The `hermes` launcher: on `PATH`, else under the Hermes home. On Windows
+/// only `hermes.exe` (a `.cmd`/`.bat` is never run), as the plugin installer.
+fn hermes_launcher(home: &Path) -> Option<PathBuf> {
+    let name = format!("hermes{}", std::env::consts::EXE_SUFFIX);
+    let on_path = std::env::var_os("PATH")
+        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
+        .unwrap_or_default();
+    let in_home = [
+        home.join("bin"),
+        home.join("hermes-agent").join("venv").join("Scripts"),
+        home.join("hermes-agent").join("venv").join("bin"),
+    ];
+    on_path
+        .into_iter()
+        .chain(in_home)
+        .map(|dir| dir.join(&name))
+        .find(|path| path.is_file())
+}
+
+/// Whether an inherited variable is a Kuzz/Buzz setting a restarted gateway
+/// must not inherit. Pure.
+fn is_kuzz_setting(name: &std::ffi::OsStr) -> bool {
+    name.to_str().is_some_and(|name| {
+        let upper = name.to_ascii_uppercase();
+        upper.starts_with("KUZZ_") || upper.starts_with("BUZZ_")
+    })
 }
 
 /// Hermes's home on this computer, when that folder exists: `$HERMES_HOME`,
@@ -278,10 +355,15 @@ fn hermes_plugin_roots(kuzz: &Path, local_data: Option<&Path>) -> Vec<PathBuf> {
     roots
 }
 
-/// Whether `kuzz pair --help` output offers `--hermes`. Pure.
+/// Whether `kuzz pair --help` output offers `--hermes` and `--no-restart`
+/// (an older `kuzz` would refuse [`hermes_pair_args`]). Pure.
 fn lists_hermes_flag(help: &str) -> bool {
-    help.split(|c: char| c.is_whitespace() || c == ',' || c == '=' || c == '[' || c == ']')
-        .any(|word| word == "--hermes")
+    let words: Vec<&str> = help
+        .split(|c: char| c.is_whitespace() || c == ',' || c == '=' || c == '[' || c == ']')
+        .collect();
+    ["--hermes", "--no-restart"]
+        .iter()
+        .all(|flag| words.contains(flag))
 }
 
 /// Delete the Hermes agent keys older builds of this app kept, once at

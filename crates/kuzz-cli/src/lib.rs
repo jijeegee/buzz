@@ -310,6 +310,10 @@ once), key_in_use, device_limit, rate_limited.",
         /// Hermes home; otherwise prints the manual step)
         #[arg(long)]
         hermes: bool,
+        /// With --hermes: do not restart the Hermes gateway (the caller
+        /// restarts it)
+        #[arg(long, requires = "hermes")]
+        no_restart: bool,
     },
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
@@ -2761,6 +2765,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         name,
         device_name,
         hermes,
+        no_restart,
     } = cli.command
     {
         let relay = pairing::pair_relay(pair_relay.as_deref(), &cli.relay, cli.relay_from_default)?;
@@ -2770,7 +2775,9 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             name,
             device_name,
             cli.private_key,
-            hermes,
+            hermes.then_some(pairing::HermesInstall {
+                restart: !no_restart,
+            }),
         )
         .await;
     }

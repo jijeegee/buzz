@@ -538,3 +538,17 @@ fn the_relay_can_follow_the_code_in_the_apps_command() {
         assert!(cli.relay_from_default);
     }
 }
+
+#[test]
+fn no_restart_goes_with_hermes_only() {
+    let cli =
+        crate::parse_args(["kuzz", "pair", "--hermes", "--no-restart", CODE]).expect("parses");
+    let crate::Cmd::Pair {
+        hermes, no_restart, ..
+    } = cli.command
+    else {
+        panic!("pair");
+    };
+    assert!(hermes && no_restart);
+    assert!(crate::parse_args(["kuzz", "pair", "--no-restart", CODE]).is_err());
+}

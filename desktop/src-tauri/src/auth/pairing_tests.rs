@@ -37,6 +37,7 @@ fn hermes_pairing_runs_exactly_this_argv() {
     let expected: Vec<OsString> = [
         "pair",
         "--hermes",
+        "--no-restart",
         "--relay",
         "wss://gateway.kuzz.app",
         "7QKF-M2XD-9RTB",
@@ -85,9 +86,13 @@ fn no_hermes_without_folders_or_with_relative_paths() {
 #[test]
 fn hermes_flag_is_read_from_pair_help() {
     assert!(lists_hermes_flag(
-        "Usage: kuzz pair <CODE>\n      --hermes  Then install the Hermes plugin"
+        "Usage: kuzz pair <CODE>\n      --hermes  Then install the Hermes plugin\n      --no-restart  With --hermes"
     ));
-    assert!(lists_hermes_flag("Usage: kuzz pair [--hermes] <CODE>"));
+    assert!(lists_hermes_flag(
+        "Usage: kuzz pair [--hermes] [--no-restart] <CODE>"
+    ));
+    // An older kuzz without --no-restart.
+    assert!(!lists_hermes_flag("Usage: kuzz pair [--hermes] <CODE>"));
     assert!(!lists_hermes_flag(
         "Usage: kuzz pair <CODE>\n  --hermes-home <DIR>"
     ));
@@ -121,4 +126,14 @@ fn the_old_hermes_key_file_is_removed() {
     assert!(!file.exists());
     // Nothing to remove is fine.
     remove_legacy_hermes_file(dir.path());
+}
+
+#[test]
+fn a_restarted_gateway_gets_no_kuzz_settings() {
+    for name in ["KUZZ_PRIVATE_KEY", "kuzz_relay_url", "BUZZ_HOME_CHANNEL"] {
+        assert!(is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
+    }
+    for name in ["PATH", "HERMES_HOME", "XKUZZ_A"] {
+        assert!(!is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
+    }
 }
