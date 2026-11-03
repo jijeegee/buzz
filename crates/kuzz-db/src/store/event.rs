@@ -719,17 +719,22 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
             qb.push_bind(channel);
             qb.push(", ");
             qb.push_bind(reader.clone());
-            qb.push(if column == "channel_sequence" {
-                "), 0), -1)"
+            if column == "channel_sequence" {
+                qb.push("), 0), -1)");
             } else {
-                "), 0), -1))"
-            });
+                // ...unless the reader entered that thread (migration 0095).
+                qb.push(format!(
+                    "), 0), -1) OR NOT channel_event_hidden({col_prefix}community_id, \
+                     {col_prefix}channel_id, {col_prefix}channel_sequence, \
+                     {col_prefix}thread_root_sequence, "
+                ));
+                qb.push_bind(reader.clone());
+                qb.push("))");
+            }
         }
     } else {
         qb.push(format!(
-            "NOT channel_event_before_join({col_prefix}community_id, {col_prefix}channel_id, \
-             event_history_sequence({col_prefix}channel_sequence, \
-             {col_prefix}thread_root_sequence), "
+            "NOT channel_event_hidden({col_prefix}community_id, {col_prefix}channel_id, {col_prefix}channel_sequence, {col_prefix}thread_root_sequence, "
         ));
         qb.push_bind(reader.clone());
         qb.push(")");

@@ -186,8 +186,7 @@ impl Db {
               WHERE m.community_id = $1 AND m.id = $4 AND m.channel_id = $2 \
                 AND m.deleted_at IS NULL \
                 AND m.kind IN (9, 40002, 45001, 45003) \
-                AND NOT channel_event_before_join(m.community_id, m.channel_id, \
-                      event_history_sequence(m.channel_sequence, m.thread_root_sequence), $3) \
+                AND NOT channel_event_hidden(m.community_id, m.channel_id, m.channel_sequence, m.thread_root_sequence, $3) \
                 AND EXISTS (SELECT 1 FROM jsonb_array_elements(m.tags) t \
                              WHERE t->>0 = 'q' AND lower(t->>1) = encode($5, 'hex')) \
                 AND q.channel_id = m.channel_id AND q.deleted_at IS NULL \
@@ -218,6 +217,30 @@ impl Db {
         .transpose()
     }
 
+    /// Whether `reader` may open the thread whose root is `root`: the root is
+    /// visible to them, or they entered the thread by a mention after their
+    /// join (migration 0095). `false` for an unknown event or one that is not
+    /// a root anyone entered.
+    #[datastore_span(name = "thread_open_to", system = "postgresql")]
+    pub async fn thread_open_to(
+        &self,
+        community: CommunityId,
+        root: &[u8],
+        reader: &[u8],
+    ) -> Result<bool> {
+        let open: bool = sqlx::query_scalar(
+            "SELECT EXISTS (SELECT 1 FROM events e \
+              WHERE e.community_id = $1 AND e.id = $2 AND e.thread_root_sequence = 0 \
+                AND channel_thread_open_to(e.community_id, e.channel_id, e.channel_sequence, $3))",
+        )
+        .bind(community.as_uuid())
+        .bind(root)
+        .bind(reader)
+        .fetch_one(&self.pool)
+        .await?;
+        Ok(open)
+    }
+
     /// Which of `event_ids` were written before `reader` joined their room
     /// (and so are "not found" to `reader`).
     #[datastore_span(name = "history_hidden_event_ids", system = "postgresql")]
@@ -238,8 +261,7 @@ impl Db {
         let rows = sqlx::query(
             "SELECT DISTINCT e.id FROM events e \
               WHERE e.community_id = $1 AND e.id = ANY($3) \
-                AND channel_event_before_join(e.community_id, e.channel_id, \
-                    event_history_sequence(e.channel_sequence, e.thread_root_sequence), $2)",
+                AND channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, $2)",
         )
         .bind(community.as_uuid())
         .bind(reader)
@@ -275,8 +297,7 @@ impl Db {
               WHERE EXISTS (SELECT 1 FROM events e \
                      WHERE e.community_id = $1 AND e.id = p.id AND e.channel_id IS NOT NULL \
                        AND NOT channel_kind_is_room_state(e.kind) \
-                       AND (channel_event_before_join(e.community_id, e.channel_id, \
-                              event_history_sequence(e.channel_sequence, e.thread_root_sequence), \
+                       AND (channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, \
                               p.pk) \
                             OR channel_event_targets_before_join(e.community_id, e.channel_id, \
                               e.kind, e.tags, p.pk)))",
@@ -321,12 +342,18 @@ impl Db {
             )));
         }
         let rows = sqlx::query(
-            "WITH t AS (SELECT CASE WHEN $5 THEN max(s) ELSE min(s) END AS seq FROM ( \
-                         SELECT event_history_sequence(e.channel_sequence, e.thread_root_sequence) AS s \
+            "WITH t AS MATERIALIZED (SELECT e.channel_sequence AS seq, e.thread_root_sequence AS root \
                            FROM events e \
-                          WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)) x) \
-             SELECT r.pk FROM unnest($4::bytea[]) AS r(pk), t \
-              WHERE t.seq IS NOT NULL AND t.seq <= channel_history_floor($1, $2, r.pk)",
+                          WHERE e.community_id = $1 AND e.channel_id = $2 AND e.id = ANY($3)), \
+                  r AS MATERIALIZED (SELECT pk, channel_history_floor($1, $2, pk) AS floor \
+                           FROM unnest($4::bytea[]) AS u(pk)) \
+             SELECT r.pk FROM r \
+              WHERE r.floor > 0 AND EXISTS (SELECT 1 FROM t) \
+                AND CASE WHEN $5 \
+                    THEN NOT EXISTS (SELECT 1 FROM t WHERE NOT channel_event_hidden_at( \
+                         $1, $2, t.seq, t.root, r.pk, r.floor)) \
+                    ELSE EXISTS (SELECT 1 FROM t WHERE channel_event_hidden_at( \
+                         $1, $2, t.seq, t.root, r.pk, r.floor)) END",
         )
         .bind(community.as_uuid())
         .bind(channel)

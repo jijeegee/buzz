@@ -124,7 +124,20 @@ async fn resolve_thread_ref(
     parent_event_id: &str,
     allow_nested: bool,
 ) -> Result<ThreadRef, CliError> {
-    let event = fetch_event(client, parent_event_id).await?;
+    let event = match fetch_event(client, parent_event_id).await {
+        Ok(event) => event,
+        // A thread head this reader cannot read (a since_join room they
+        // joined after it; a mention let them into the thread) can still be
+        // replied to. The relay decides; reply to it as the thread head.
+        Err(CliError::NotFound(_)) if !allow_nested => {
+            let head = parse_event_id(parent_event_id)?;
+            return Ok(ThreadRef {
+                root_event_id: head,
+                parent_event_id: head,
+            });
+        }
+        Err(e) => return Err(e),
+    };
     let thread = thread_ref_from_event(parent_event_id, &event)?;
     if !allow_nested {
         ensure_reply_depth(parent_event_id, &event, &thread)?;

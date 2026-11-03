@@ -601,12 +601,20 @@ CREATE TABLE thread_follows (
     -- Stored unread counts, capped at 100 (migration 0072).
     unread_count    INTEGER NOT NULL DEFAULT 0,
     unread_mentions INTEGER NOT NULL DEFAULT 0,
+    -- since_join entry into a thread from before the reader's join
+    -- (migration 0095): sequence of the reply that first mentioned them
+    -- after their current join, and the thread root's sequence. Access,
+    -- not a setting: only reply ingest writes it.
+    entry_seq      BIGINT,
+    entry_root_seq BIGINT,
     PRIMARY KEY (community_id, root_event_id, pubkey),
     FOREIGN KEY (community_id, channel_id)
         REFERENCES channels (community_id, id) ON DELETE CASCADE
 );
 
 CREATE INDEX idx_thread_follows_pubkey ON thread_follows (community_id, pubkey);
+CREATE INDEX idx_thread_follows_entry ON thread_follows
+    (community_id, channel_id, pubkey, entry_root_seq) WHERE entry_seq IS NOT NULL;
 
 -- Separate from thread_metadata because the root's depth-0 row exists only
 -- after the first reply. last_seq/last_at ignore close and reopen markers.
@@ -2611,6 +2619,57 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
        AND p_seq <= COALESCE(NULLIF(channel_history_floor(p_cid, p_chid, p_reader), 0), -1)
 $$;
 
+-- The reader's entry into the thread whose root has channel sequence
+-- `p_root_seq`, when it is valid above `p_floor` (their join floor); NULL
+-- otherwise.
+CREATE OR REPLACE FUNCTION channel_thread_entry_seq(
+    p_cid UUID, p_chid UUID, p_root_seq BIGINT, p_reader BYTEA, p_floor BIGINT)
+RETURNS BIGINT
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT tf.entry_seq FROM thread_follows tf
+     WHERE tf.community_id = p_cid AND tf.channel_id = p_chid AND tf.pubkey = p_reader
+       AND tf.entry_root_seq = p_root_seq AND tf.entry_seq IS NOT NULL
+       AND tf.entry_seq > p_floor
+     LIMIT 1
+$$;
+
+-- True when `reader`, whose join floor in the room is `p_floor` (0: nothing
+-- cut), must not see the event with sequence `p_seq` and thread root sequence
+-- `p_root_seq` (0 for anything but a reply). A reply in a thread from before
+-- the join is visible from the reader's entry on.
+CREATE OR REPLACE FUNCTION channel_event_hidden_at(
+    p_cid UUID, p_chid UUID, p_seq BIGINT, p_root_seq BIGINT, p_reader BYTEA, p_floor BIGINT)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT p_chid IS NOT NULL AND p_floor > 0 AND (
+        p_seq <= p_floor
+        OR (p_root_seq > 0 AND p_root_seq < p_seq AND p_root_seq <= p_floor
+            AND COALESCE(p_seq < channel_thread_entry_seq(p_cid, p_chid, p_root_seq, p_reader,
+                                                          p_floor), true)))
+$$;
+
+-- channel_event_hidden_at with the reader's current floor.
+CREATE OR REPLACE FUNCTION channel_event_hidden(
+    p_cid UUID, p_chid UUID, p_seq BIGINT, p_root_seq BIGINT, p_reader BYTEA)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT p_chid IS NOT NULL
+       AND channel_event_hidden_at(p_cid, p_chid, p_seq, p_root_seq, p_reader,
+                                   channel_history_floor(p_cid, p_chid, p_reader))
+$$;
+
+-- True when `reader` may open the thread whose root has sequence
+-- `p_root_seq`: the root is visible, or they entered the thread.
+CREATE OR REPLACE FUNCTION channel_thread_open_to(
+    p_cid UUID, p_chid UUID, p_root_seq BIGINT, p_reader BYTEA)
+RETURNS BOOLEAN
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT CASE WHEN p_chid IS NULL THEN true ELSE (
+        SELECT f.v = 0 OR p_root_seq > f.v
+            OR channel_thread_entry_seq(p_cid, p_chid, p_root_seq, p_reader, f.v) IS NOT NULL
+          FROM (SELECT channel_history_floor(p_cid, p_chid, p_reader) AS v) f) END
+$$;
+
 -- Current room state (replaceable/addressable kinds, room creation, canvas,
 -- goal tree) stays visible to a new member: only the history is cut.
 CREATE OR REPLACE FUNCTION channel_kind_is_room_state(p_kind INTEGER)
@@ -2632,9 +2691,8 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
         -- A deletion is hidden only when everything it deletes is: it also
         -- removes visible messages from the reader's view.
         WHEN p_kind IN (5, 9005) THEN COALESCE((
-            SELECT bool_and(channel_event_before_join(te.community_id, te.channel_id,
-                    event_history_sequence(te.channel_sequence, te.thread_root_sequence),
-                    p_reader))
+            SELECT bool_and(channel_event_hidden(te.community_id, te.channel_id,
+                    te.channel_sequence, te.thread_root_sequence, p_reader))
               FROM jsonb_array_elements(p_tags) t
               JOIN events te ON te.community_id = p_cid
                AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
@@ -2644,9 +2702,8 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
             JOIN events te ON te.community_id = p_cid
              AND te.id = CASE WHEN t->>1 ~ '^[0-9a-fA-F]{64}$' THEN decode(t->>1, 'hex') END
             WHERE t->>0 = 'e'
-              AND channel_event_before_join(te.community_id, te.channel_id,
-                    event_history_sequence(te.channel_sequence, te.thread_root_sequence),
-                    p_reader))
+              AND channel_event_hidden(te.community_id, te.channel_id,
+                    te.channel_sequence, te.thread_root_sequence, p_reader))
     END
 $$;
 
@@ -2684,7 +2741,8 @@ BEGIN
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
            AND e.channel_sequence > v_after
-           AND (v_floor = 0 OR e.thread_root_sequence = 0 OR e.thread_root_sequence > v_floor)
+           AND NOT channel_event_hidden_at(p_cid, p_chid, e.channel_sequence,
+                                           e.thread_root_sequence, p_reader, v_floor)
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (
@@ -2701,7 +2759,8 @@ BEGIN
         SELECT 1 FROM events e
          WHERE e.community_id = p_cid AND e.channel_id = p_chid
            AND e.channel_sequence > v_after
-           AND (v_floor = 0 OR e.thread_root_sequence = 0 OR e.thread_root_sequence > v_floor)
+           AND NOT channel_event_hidden_at(p_cid, p_chid, e.channel_sequence,
+                                           e.thread_root_sequence, p_reader, v_floor)
            AND e.kind IN (9, 40002, 45001, 45003) AND e.deleted_at IS NULL
            AND e.pubkey <> p_reader
            AND NOT EXISTS (

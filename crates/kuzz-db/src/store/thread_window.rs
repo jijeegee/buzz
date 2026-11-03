@@ -91,10 +91,12 @@ async fn select_window(
     // Retain tombstones: deleting a root must not make its readable replies
     // disappear. Never follow a root belonging to another channel/community.
     // since_join: a root from before the reader's join is not found (its
-    // whole thread is cut, replies after the join included).
+    // whole thread is cut, replies after the join included), unless the
+    // reader entered the thread (migration 0095): then the root and the
+    // replies before the entry stay hidden, later replies are served.
     let root_in_channel: bool = sqlx::query_scalar(
         "SELECT EXISTS(SELECT 1 FROM events WHERE community_id = $1 AND channel_id = $2 AND id = $3 AND kind = ANY($4) \
-         AND ($5::bytea IS NULL OR NOT channel_event_before_join(community_id, channel_id, channel_sequence, $5)))")
+         AND ($5::bytea IS NULL OR channel_thread_open_to(community_id, channel_id, channel_sequence, $5)))")
         .bind(community.as_uuid()).bind(request.channel).bind(&root)
         .bind(ROW_KINDS.map(|k| k as i32).to_vec())
         .bind(history_reader)
@@ -176,11 +178,11 @@ async fn select_window(
     // since_join: replies from before the reader's current join stay hidden.
     // The root itself is only an anchor here (a later reply already names it).
     if let Some(reader) = history_reader {
-        q.push(" AND event_history_sequence(e.channel_sequence, e.thread_root_sequence) > channel_history_floor(")
+        q.push(" AND NOT channel_event_hidden(")
             .push_bind(community.as_uuid())
             .push(", ")
             .push_bind(request.channel)
-            .push(", ")
+            .push(", e.channel_sequence, e.thread_root_sequence, ")
             .push_bind(reader.to_vec())
             .push(")");
     }
@@ -428,7 +430,7 @@ async fn select_aux(
             .push_bind(query.community.as_uuid())
             .push(" AND e.id = ANY(")
             .push_bind(target_ids)
-            .push(") AND channel_event_before_join(e.community_id, e.channel_id, event_history_sequence(e.channel_sequence, e.thread_root_sequence), ")
+            .push(") AND channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, ")
             .push_bind(reader.to_vec())
             .push(")) ");
     }
@@ -446,10 +448,14 @@ async fn select_aux(
         .push(")");
     // Rows from before the join, and rows about a target from before it (the
     // thread root is only an anchor), stay hidden.
-    if query.history_reader.is_some() {
+    if let Some(reader) = query.history_reader {
         q.push(
-            " AND (channel_id IS NULL OR event_history_sequence(channel_sequence, thread_root_sequence) > COALESCE(NULLIF(\
-             (SELECT floor FROM floors WHERE ch = channel_id), 0), -1)) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(tags) ht JOIN hidden ON ht->>1 = hidden.h WHERE ht->>0 = 'e')",
+            " AND (channel_id IS NULL OR NOT channel_event_hidden_at(community_id, channel_id, channel_sequence, \
+             thread_root_sequence, ",
+        )
+        .push_bind(reader.to_vec())
+        .push(
+            ", COALESCE((SELECT floor FROM floors WHERE ch = channel_id), 0))) AND NOT EXISTS (SELECT 1 FROM jsonb_array_elements(tags) ht JOIN hidden ON ht->>1 = hidden.h WHERE ht->>0 = 'e')",
         );
     }
     q.push(" AND (");

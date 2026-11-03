@@ -727,6 +727,10 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[88].version, 95);
+        assert!(migrations[88].sql.as_str().contains("ADD COLUMN entry_seq"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("FUNCTION channel_event_hidden_at"));
         assert_eq!(migrations[86].version, 93);
         assert!(migrations[86]
             .sql
@@ -743,7 +747,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 87);
+        assert_eq!(migrations.len(), 89);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql

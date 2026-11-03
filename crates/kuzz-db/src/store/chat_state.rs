@@ -379,6 +379,41 @@ async fn apply_reply(
     // show its whole history as unread. An existing row (including
     // `unfollowed`) is left as it is.
     let mut candidates = mentioned_pubkeys(event_tag_vecs(event));
+    candidates.retain(|pubkey| pubkey.as_slice() != author);
+    // since_join: a member mentioned here who joined after the root enters
+    // the thread from this reply (migration 0095). The entry is written once
+    // and kept; only an entry from before a rejoin (at or below the current
+    // floor) is replaced. Coming back from below it, the read position moves
+    // up to the entry so nothing before it is counted unread.
+    if root_seq > 0 && !candidates.is_empty() {
+        sqlx::query(
+            "INSERT INTO thread_follows AS tf \
+                 (community_id, root_event_id, pubkey, channel_id, follow_state, follow_origin, \
+                  read_seq, updated_at, entry_seq, entry_root_seq) \
+             SELECT cm.community_id, $2, cm.pubkey, cm.channel_id, 'auto', 'live', $6 - 1, $5, \
+                    $6, $7 \
+               FROM channel_members cm \
+              WHERE cm.community_id = $1 AND cm.channel_id = $3 AND cm.pubkey = ANY($4) \
+                AND cm.removed_at IS NULL \
+                AND $7 <= channel_history_floor($1, $3, cm.pubkey) \
+             ON CONFLICT (community_id, root_event_id, pubkey) DO UPDATE \
+             SET entry_seq = EXCLUDED.entry_seq, entry_root_seq = EXCLUDED.entry_root_seq, \
+                 read_seq = GREATEST(COALESCE(tf.read_seq, 0), EXCLUDED.read_seq), \
+                 follow_state = 'auto', follow_origin = 'live', unread_mark = FALSE, \
+                 updated_at = EXCLUDED.updated_at \
+             WHERE tf.entry_seq IS NULL \
+                OR tf.entry_seq <= channel_history_floor(tf.community_id, tf.channel_id, tf.pubkey)",
+        )
+        .bind(community)
+        .bind(root)
+        .bind(channel_id)
+        .bind(&candidates)
+        .bind(received_at)
+        .bind(seq)
+        .bind(root_seq)
+        .execute(&mut **tx)
+        .await?;
+    }
     let root_author: Vec<u8> = root_row.try_get("pubkey")?;
     let root_tags: serde_json::Value = root_row.try_get("tags")?;
     let root_tags: Vec<Vec<String>> = serde_json::from_value(root_tags).unwrap_or_default();
@@ -445,7 +480,7 @@ async fn add_room_unread(
                     THEN LEAST(cm.unread_mentions + 1, $6) ELSE cm.unread_mentions END \
           WHERE cm.community_id = $1 AND cm.channel_id = $2 AND cm.removed_at IS NULL \
             AND cm.pubkey <> $4 AND COALESCE(cm.read_seq, 0) < $5 \
-            AND NOT ($7 > 0 AND $7 <= channel_history_floor($1, $2, cm.pubkey)) \
+            AND NOT ($7 > 0 AND channel_event_hidden($1, $2, $5, $7, cm.pubkey)) \
             AND NOT (EXISTS ( \
                 SELECT 1 FROM user_blocks ub \
                  WHERE ub.community_id = $1 AND ub.blocker = cm.pubkey AND ub.blocked = $4) \
@@ -485,7 +520,7 @@ async fn add_thread_unread(
                     THEN LEAST(tf.unread_mentions + 1, $6) ELSE tf.unread_mentions END \
           WHERE tf.community_id = $1 AND tf.root_event_id = $2 \
             AND tf.pubkey <> $4 AND COALESCE(tf.read_seq, 0) < $5 \
-            AND NOT ($7 > 0 AND $7 <= channel_history_floor($1, tf.channel_id, tf.pubkey)) \
+            AND NOT channel_event_hidden($1, tf.channel_id, $5, $7, tf.pubkey) \
             AND NOT (EXISTS ( \
                 SELECT 1 FROM user_blocks ub \
                  WHERE ub.community_id = $1 AND ub.blocker = tf.pubkey AND ub.blocked = $4) \

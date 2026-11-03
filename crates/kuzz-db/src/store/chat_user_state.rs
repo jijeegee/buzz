@@ -226,11 +226,36 @@ async fn before_join(
     Ok(sqlx::query_scalar(
         "SELECT EXISTS (SELECT 1 FROM events e \
          WHERE e.community_id = $1 AND e.id = $2 \
-           AND channel_event_before_join(e.community_id, e.channel_id, \
-            event_history_sequence(e.channel_sequence, e.thread_root_sequence), $3))",
+           AND channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, $3))",
     )
     .bind(community)
     .bind(event)
+    .bind(reader)
+    .fetch_one(&mut **tx)
+    .await?)
+}
+
+/// Whether the thread with `root` is closed to `reader`: its root is from
+/// before their join of a `since_join` room and they did not enter the
+/// thread by a mention (migration 0095). Such a thread is unknown to them.
+/// A hidden reply passed as a root is unknown too, not "not a root".
+async fn thread_closed_to(
+    tx: &mut Transaction<'_, Postgres>,
+    community: Uuid,
+    root: &[u8],
+    reader: &[u8],
+) -> Result<bool> {
+    Ok(sqlx::query_scalar(
+        "SELECT EXISTS (SELECT 1 FROM events e \
+         WHERE e.community_id = $1 AND e.id = $2 \
+           AND CASE WHEN e.thread_root_sequence > 0 \
+                    THEN channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, \
+                                              e.thread_root_sequence, $3) \
+                    ELSE NOT channel_thread_open_to(e.community_id, e.channel_id, \
+                                                    e.channel_sequence, $3) END)",
+    )
+    .bind(community)
+    .bind(root)
     .bind(reader)
     .fetch_one(&mut **tx)
     .await?)
@@ -390,7 +415,7 @@ impl Db {
             }
             // A thread from before the join is unknown, like a missing root.
             if let Some(root) = root {
-                if before_join(&mut tx, community_uuid, root, reader).await? {
+                if thread_closed_to(&mut tx, community_uuid, root, reader).await? {
                     return Ok(Err(ChatStateDenied::NotMember { index }));
                 }
             }
@@ -503,7 +528,7 @@ impl Db {
         };
         lock_channel(&mut tx, community_uuid, channel_id).await?;
         if !lock_membership(&mut tx, community_uuid, channel_id, reader).await?
-            || before_join(&mut tx, community_uuid, root, reader).await?
+            || thread_closed_to(&mut tx, community_uuid, root, reader).await?
         {
             // A root from before the join is unknown, like a missing one.
             return Ok(Err(ChatStateDenied::NotMember { index: 0 }));

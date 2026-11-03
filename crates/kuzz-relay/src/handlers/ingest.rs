@@ -1086,7 +1086,15 @@ pub(crate) async fn resolve_nip10_thread_meta(
     let parent_event = parent_event_result
         .map_err(|e| format!("db error looking up parent: {e}"))?
         .ok_or_else(|| "reply parent not found".to_string())?;
-    if target_before_join(&state.db, community_id, &event.pubkey, &parent_bytes).await? {
+    // A member who entered an old thread by a mention (migration 0095) may
+    // reply to its hidden root; other hidden parents stay unknown.
+    if target_before_join(&state.db, community_id, &event.pubkey, &parent_bytes).await?
+        && !state
+            .db
+            .thread_open_to(community_id, &parent_bytes, &event.pubkey.to_bytes())
+            .await
+            .map_err(|e| format!("db error checking thread entry: {e}"))?
+    {
         return Err("reply parent not found".to_string());
     }
 
