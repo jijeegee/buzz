@@ -1289,10 +1289,15 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
                     Err(tokio::sync::broadcast::error::RecvError::Lagged(n)) => {
                         metrics::counter!("kuzz_cache_invalidation_lag_total").increment(n);
                         tracing::warn!("Cache-invalidation consumer lagged by {n} messages");
-                        state_for_cache.invalidate_after_cache_invalidation_lag();
-                        kuzz_relay::handlers::user_stream::after_cache_invalidation_lag(
-                            &state_for_cache,
-                        );
+                        // With the stream off this stays log-only (as before
+                        // the stream): dropping every cache at a Redis burst
+                        // would refill them all from the DB at that moment.
+                        if !state_for_cache.config.user_stream.is_off() {
+                            state_for_cache.invalidate_after_cache_invalidation_lag();
+                            kuzz_relay::handlers::user_stream::after_cache_invalidation_lag(
+                                &state_for_cache,
+                            );
+                        }
                     }
                     Err(tokio::sync::broadcast::error::RecvError::Closed) => {
                         tracing::error!("Cache-invalidation broadcast channel closed");
