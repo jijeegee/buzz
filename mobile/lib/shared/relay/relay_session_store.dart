@@ -15,7 +15,10 @@ extension RelaySessionStore on RelaySessionNotifier {
     String? date,
   ) {
     noteServerDate(date, DateTime.now().millisecondsSinceEpoch ~/ 1000);
-    if (decoded is List) _messageStore?.submit(lease, decoded);
+    // A probing walk stores the answer itself (room_bundle_coverage.dart).
+    if (decoded is List && Zone.current[storeWalkProbeZoneKey] != true) {
+      _messageStore?.submit(lease, decoded);
+    }
   }
 
   /// A capture of the store scope (server file and sign-in) events are kept
@@ -45,7 +48,8 @@ extension RelaySessionStore on RelaySessionNotifier {
   /// When [roomId]'s live REQ reached EOSE on this connection, if it has
   /// been receiving every event of the room since.
   int? _storeLiveAt(String roomId) {
-    int? liveAt;
+    // The stream in live/gated counts as a live REQ for what it carries.
+    int? liveAt = _userStream.liveAtOf(roomId);
     for (final subscription in _liveSubscriptions.values) {
       if (!(storeCoveredRooms(subscription.filter)?.contains(roomId) ??
           false)) {
@@ -88,6 +92,7 @@ extension RelaySessionStore on RelaySessionNotifier {
         if (storeCoveredRooms(subscription.filter)?.any(rooms.contains) ??
             false)
           ?_storeCoverage.settledOf(subscription, _connectionGeneration),
+      if (rooms.any(_userStream.carriedRooms.contains)) ?_userStream.settled,
     ];
     final left = deadline.difference(DateTime.now());
     if (pending.isNotEmpty && left > Duration.zero) {

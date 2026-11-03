@@ -8,6 +8,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
+import '../app_update/app_update.dart' show appVersion;
 import '../auth/auth.dart';
 import '../auth/remote_sign_out.dart';
 import '../auth/token/relay_origin.dart';
@@ -28,13 +29,16 @@ import 'relay_rate_limit_gate.dart';
 import 'relay_session_types.dart';
 import 'relay_socket.dart';
 import 'room_bundle_coverage.dart';
+import 'user_stream.dart';
 
 export 'nip98.dart' show buildNip98AuthHeader;
 export 'relay_session_types.dart';
 
+part 'relay_session_busy_retry.dart';
 part 'relay_session_live_filters.dart';
 part 'relay_session_replay.dart';
 part 'relay_session_store.dart';
+part 'relay_session_user_stream.dart';
 
 class _HistorySubscription {
   final List<NostrEvent> events = [];
@@ -304,6 +308,15 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// work checks this to yield instead of queueing behind the window.
   bool get isRateLimited => _rateLimitGate.isActive;
 
+  /// The relay config and its token session, for part files' HTTP calls.
+  (RelayConfig, RelayAccessTokens?) get _httpAuth {
+    final config = ref.read(relayConfigProvider);
+    return (
+      config,
+      config.tokenAuth ? ref.read(relayAccessTokensProvider) : null,
+    );
+  }
+
   /// Execute a one-shot `/query` with raw filter objects and return the
   /// decoded JSON body. Opt-in envelopes (for example `inbox_summary`) answer
   /// with an object rather than an event array.
@@ -395,19 +408,19 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     if (_disposed) throw StateError('Relay session is disposed');
     final subId = _nextSubId('h');
     final completer = Completer<List<NostrEvent>>();
-
+    late final _HistorySubscription subscription;
     final timer = Timer(timeout, () {
-      final sub = _historySubscriptions.remove(subId);
+      final id = _historyIdOf(subscription, subId); // busy retries re-key it
+      final sub = _historySubscriptions.remove(id);
       if (sub != null && !sub.completer.isCompleted) {
         sub.completer.completeError(
           TimeoutException('Relay history request timed out after $timeout'),
         );
       }
       // A REQ still held for the socket never reached the relay.
-      if (sub == null || sub.sent) _sendClose(subId);
+      if (sub == null || sub.sent) _sendClose(id);
     });
-
-    final subscription = _HistorySubscription(
+    subscription = _HistorySubscription(
       completer: completer,
       timeout: timer,
       filter: filter,
@@ -773,6 +786,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     socket.refreshRejectedToken = !_retryingRefreshedToken;
     _retryingRefreshedToken = false;
     _socket = socket;
+    _userStream.prepare(); // its state read overlaps the handshake
 
     await socket.connect();
   }
@@ -783,10 +797,14 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     _hasConnectedOnce = true;
     _reconnectDelayMs = _baseReconnectDelayMs;
     state = const SessionState(status: SessionStatus.connected);
+    final streamReq = _userStream.connected(generation); // first after AUTH OK
     for (final entry in [..._historySubscriptions.entries]) {
       if (!entry.value.sent) _sendHistoryReq(entry.key, entry.value);
     }
-    await _replayLiveSubscriptions(generation);
+    // REQs sent while the stream REQ is awaited are not sent again.
+    final replay = _liveSubscriptions.entries.toList();
+    await _userStreamReqFirst(streamReq);
+    await _replayLiveSubscriptions(generation, replay);
     final droppedAt = _meDroppedAt;
     _meDroppedAt = null;
     if (droppedAt != null && _isActiveConnection(generation)) {
@@ -797,6 +815,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   void _handleDisconnected(int generation, Object? error) {
     if (_disposed || generation != _connectionGeneration) return;
     _socketConnected = false;
+    _userStream.socketEnded(generation);
     if (_hasConnectedOnce) {
       _meDroppedAt ??= DateTime.now().millisecondsSinceEpoch ~/ 1000;
     }
@@ -845,7 +864,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     );
 
     _reconnectTimer?.cancel();
-    _reconnectTimer = Timer(Duration(milliseconds: _reconnectDelayMs), () {
+    _reconnectTimer = Timer(Duration(milliseconds: _nextDelayMs), () {
       _reconnectDelayMs = min(_reconnectDelayMs * 2, _maxReconnectDelayMs);
       final config = ref.read(relayConfigProvider);
       _connect(config);
@@ -856,7 +875,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       !_disposed && generation == _connectionGeneration;
 
   void _handleMessage(List<dynamic> data) {
-    if (data.isEmpty) return;
+    if (data.isEmpty || _userStreamOwns(data)) return;
     final type = data[0] as String;
 
     switch (type) {
@@ -946,6 +965,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
     final historySub = _historySubscriptions.remove(subId);
     if (historySub != null) {
+      if (_retryBusyHistory(historySub, message)) return;
       if (closedClass == RelayClosedClass.rateLimited) {
         _rateLimitGate.activate(parseRateLimitRetrySeconds(message));
       }

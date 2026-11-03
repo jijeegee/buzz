@@ -109,7 +109,7 @@ class _ChannelListRecovery {
   }
 
   void _renameDms(Map<String, UserProfile> profiles) {
-    final current = _ref.read(channelsProvider).value;
+    final current = _notifier._shownList; // Its own state: never read itself.
     if (current == null || _notifier.showsSavedList) return;
     final me = _notifier._memberSnapshotPubkey;
     var changed = false;

@@ -4,12 +4,16 @@ part of 'relay_session.dart';
 /// (docs/message-sync.md#reconnect).
 extension RelaySessionReplay on RelaySessionNotifier {
   /// Replay all live subscriptions after a reconnect, with a time skew to
-  /// catch events that occurred during the disconnect.
-  Future<void> _replayLiveSubscriptions(int generation) async {
+  /// catch events that occurred during the disconnect. [entries]: the live
+  /// subscriptions to replay, taken earlier (default: all of them now).
+  Future<void> _replayLiveSubscriptions(
+    int generation, [
+    List<MapEntry<String, _LiveSubscription>>? entries,
+  ]) async {
     if (_rateLimitGate.isActive) await _rateLimitGate.wait();
     if (!_isActiveConnection(generation)) return;
 
-    final entries = _liveSubscriptions.entries.toList();
+    entries ??= _liveSubscriptions.entries.toList();
     final visibleChannelId = _visibleChannelsByOwner.isEmpty
         ? null
         : _visibleChannelsByOwner.values.last;

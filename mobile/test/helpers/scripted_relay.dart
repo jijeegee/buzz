@@ -48,6 +48,12 @@ class ScriptedRelay {
   /// When set, live REQs whose subId it accepts are answered with CLOSED.
   String? Function(List<Map<String, dynamic>> filters)? closeLive;
 
+  /// The answer to a user stream REQ (`#h: [$joined]`): by default the
+  /// CLOSED of a relay without the stream. Set to `null` to answer with
+  /// [userStreamSnapshot] (part 1's content), then EOSE.
+  String? userStreamClosed = 'restricted: not a channel member';
+  Map<String, dynamic>? userStreamSnapshot;
+
   /// Live REQ frames sent so far (re-REQs included).
   int get liveReqSends =>
       frames.where((f) => f.type == 'REQ' && f.subId.startsWith('l-')).length;
@@ -81,7 +87,13 @@ class ScriptedRelay {
     required void Function() onConnected,
     required void Function(Object? error) onDisconnected,
   }) {
+    // A new socket starts with no subscriptions (the old one's are gone).
+    if (connects > 0) {
+      openSubs.clear();
+      _userStreamSub = null;
+    }
     connects++;
+    _dropSocket = onDisconnected;
     return _ScriptedRelaySocket(
       relay: this,
       wsUrl: wsUrl,
@@ -134,6 +146,10 @@ class ScriptedRelay {
     frames.add(RelayFrame('REQ', subId, filters));
     openSubs.remove(subId);
     openSubs[subId] = filters;
+    if ((filters.first['#h'] as List?)?.contains(r'$joined') ?? false) {
+      _answerUserStream(subId, deliver);
+      return;
+    }
     final rejection = subId.startsWith('l-') ? closeLive?.call(filters) : null;
     scheduleMicrotask(() {
       if (rejection != null) {
@@ -147,6 +163,62 @@ class ScriptedRelay {
           deliver(['EVENT', subId, event.toJson()]);
         }
       }
+      deliver(['EOSE', subId]);
+    });
+  }
+
+  void Function(Object? error)? _dropSocket;
+
+  /// The relay drops the current socket: the session hears it end and
+  /// reconnects on its own schedule.
+  void dropSocket() {
+    final drop = _dropSocket;
+    _dropSocket = null;
+    openSubs.clear();
+    _userStreamSub = null;
+    drop?.call(null);
+  }
+
+  /// Ends the open stream sub with a relay CLOSED [reason].
+  void closeUserStream(String reason) {
+    final open = _userStreamSub;
+    if (open == null) return;
+    _userStreamSub = null;
+    frames.add(RelayFrame('CLOSED', open.$1));
+    openSubs.remove(open.$1);
+    open.$2(['CLOSED', open.$1, reason]);
+  }
+
+  (String, void Function(List))? _userStreamSub;
+
+  void _answerUserStream(String subId, void Function(List) deliver) {
+    _userStreamSub = (subId, deliver);
+    final closed = userStreamClosed;
+    final snapshot = userStreamSnapshot;
+    scheduleMicrotask(() {
+      if (closed != null || snapshot == null) {
+        frames.add(RelayFrame('CLOSED', subId));
+        openSubs.remove(subId);
+        deliver([
+          'CLOSED',
+          subId,
+          closed ?? 'restricted: not a channel member',
+        ]);
+        return;
+      }
+      deliver([
+        'EVENT',
+        subId,
+        {
+          'id': 'snapshot-$subId',
+          'pubkey': relayKey,
+          'created_at': DateTime.now().millisecondsSinceEpoch ~/ 1000,
+          'kind': 24220,
+          'tags': const [],
+          'content': jsonEncode(snapshot),
+          'sig': '',
+        },
+      ]);
       deliver(['EOSE', subId]);
     });
   }

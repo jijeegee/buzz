@@ -951,6 +951,52 @@ void main() {
     );
   });
 
+  // docs/message-sync.md#handoff: the stream EOSE's hand-off re-syncs the
+  // chunks; an unread catch-up it retires runs again with that sync.
+  for (final handoff in [false, true]) {
+    test('reconnect unread catch-up lands with a stream hand-off mid-flight: '
+        '$handoff', () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'joined-a')],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      // A message sent while the phone was offline.
+      session.recentMessages = const [
+        NostrEvent(
+          id: 'gap-in-a',
+          pubkey: 'alice',
+          createdAt: 50,
+          kind: 9,
+          tags: [
+            ['h', _channelA],
+            ['p', myPk],
+          ],
+          content: 'sent while offline',
+          sig: 'sig',
+        ),
+      ];
+      session.pauseNextUnreadCatchUpQuery();
+      session.setStatus(SessionStatus.reconnecting);
+      session.setStatus(SessionStatus.connected);
+      await session.nextUnreadCatchUpQueryStarted;
+      final notifier = container.read(channelsProvider.notifier);
+      if (handoff) {
+        // The stream EOSE lands while the backstop's catch-up is parked.
+        notifier.debugStreamCarried({_channelA});
+        await _settle();
+      }
+      session.resumePausedUnreadCatchUpQuery();
+      await _settle();
+      expect(notifier.latestObservedByChannel, {_channelA: 50});
+      expect(notifier.observedUnreadEventsByChannel[_channelA]?.keys, [
+        'gap-in-a',
+      ]);
+    });
+  }
+
   test('identity switch discards a parked unread catch-up', () async {
     final session = _FakeRelaySession(
       memberships: const [],

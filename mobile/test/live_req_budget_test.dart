@@ -16,6 +16,7 @@ import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/message_store/message_store.dart';
 import 'package:kuzz/shared/message_store/message_store_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:kuzz/shared/relay/user_stream.dart';
 import 'package:kuzz/shared/theme/theme_provider.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -613,6 +614,172 @@ void main() {
       'dmOpen',
     ]);
   });
+
+  testWidgets('idle on a relay with the user stream in shadow', (tester) async {
+    // docs/message-sync.md#live-req-budget: shadow adds the stream REQ next
+    // to the chunks.
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'shadow',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {_roomA: 1, _roomB: 1},
+      };
+    await h.launch(tester);
+    await h.checkpoint(tester, 'idleStreamShadow');
+    expect(find.byType(HomePage), findsOneWidget);
+    await h.unmount(tester);
+    _writeMeasured(const ['idleStreamShadow']);
+  });
+
+  testWidgets('idle on a relay with the user stream in live', (tester) async {
+    // docs/message-sync.md#handoff: after the stream EOSE the member rooms
+    // leave the chunks; the stream REQ replaces them.
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'live',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {for (final room in _seededRooms) room: 1},
+      };
+    await h.launch(tester);
+    await h.checkpoint(tester, 'idleStreamLive');
+    expect(find.byType(HomePage), findsOneWidget);
+    await h.unmount(tester);
+    _writeMeasured(const ['idleStreamLive']);
+  });
+
+  testWidgets('a mid-connection stream CLOSED in live reopens the chunks', (
+    tester,
+  ) async {
+    final h = _Harness();
+    h.relay
+      ..userStreamClosed = null
+      ..userStreamSnapshot = {
+        'v': 1,
+        'op': 'snapshot',
+        'part': 1,
+        'parts': 1,
+        'mode': 'live',
+        'epoch': 'e1',
+        'kinds': userStreamFrozenKinds,
+        'rooms': {for (final room in _seededRooms) room: 1},
+      };
+    await h.launch(tester);
+    await h.settle(tester, 'launch');
+    bool chunked() => h.relay.liveSignatures().any((s) => s.startsWith('#h:5'));
+    expect(chunked(), isFalse);
+    h.relay.closeUserStream('error: user-stream closed');
+    await h.settle(tester, 'fallback');
+    expect(chunked(), isTrue, reason: '${h.relay.liveSignatures()}');
+    expect(
+      h.relay.liveSignatures().where((s) => s.contains(r'$joined')),
+      isEmpty,
+    );
+    await h.unmount(tester);
+  });
+
+  testWidgets(
+    'live: two overflows, then a backed-off reconnect puts every room on chunks',
+    (tester) async {
+      // docs/message-sync.md#relay-answers (overflow backoff) and #handoff:
+      // with no stream on a connection, chunks carry every member room.
+      final h = _Harness();
+      h.relay
+        ..userStreamClosed = null
+        ..userStreamSnapshot = {
+          'v': 1,
+          'op': 'snapshot',
+          'part': 1,
+          'parts': 1,
+          'mode': 'live',
+          'epoch': 'e1',
+          'kinds': userStreamFrozenKinds,
+          'rooms': {for (final room in _seededRooms) room: 1},
+        };
+      await h.launch(tester);
+      await h.settle(tester, 'launch');
+      Set<String> chunkRooms() => {
+        for (final filters in h.relay.openLive.values)
+          for (final filter in filters)
+            for (final room in (filter['#h'] as List?) ?? const [])
+              if (room != r'$joined') room as String,
+      };
+      int streamReqs() => h.relay.frames
+          .where(
+            (f) =>
+                f.type == 'REQ' &&
+                ((f.filters.first['#h'] as List?)?.contains(r'$joined') ??
+                    false),
+          )
+          .length;
+      expect(chunkRooms().intersection(_seededRooms.toSet()), isEmpty);
+      for (var i = 0; i < 2; i++) {
+        h.relay.closeUserStream('error: user-stream overflow');
+        // The client closes the socket after 2 s and reconnects.
+        await h.settle(tester, 'overflow $i');
+      }
+      expect(h.relay.connects, 3);
+      // The third connection is backed off: no stream REQ, all on chunks.
+      expect(streamReqs(), 2);
+      expect(
+        chunkRooms(),
+        containsAll(_seededRooms),
+        reason: '${h.relay.liveSignatures()}',
+      );
+      await h.unmount(tester);
+    },
+  );
+
+  testWidgets(
+    'relay without the stream: one stream REQ per connection, no extra REQs',
+    (tester) async {
+      // docs/message-sync.md#relay-answers: an old relay's CLOSED means
+      // chunks with no backoff, no re-REQ and no membership REQ.
+      final h = _Harness();
+      await h.launch(tester);
+      await h.settle(tester, 'launch');
+      final signatures = h.relay.liveSignatures();
+      for (var i = 0; i < 3; i++) {
+        h.relay.dropSocket();
+        await h.settle(tester, 'reconnect $i');
+        expect(h.relay.liveSignatures(), signatures, reason: 'reconnect $i');
+      }
+      expect(h.relay.connects, 4);
+      final streamReqs = h.relay.frames.where(
+        (f) =>
+            f.type == 'REQ' &&
+            ((f.filters.first['#h'] as List?)?.contains(r'$joined') ?? false),
+      );
+      expect(streamReqs, hasLength(4));
+      // The stream's own 44100/44101 REQ (the account bundle already
+      // carries both kinds).
+      final membershipReqs = h.relay.frames.where(
+        (f) =>
+            f.type == 'REQ' &&
+            f.filters.any(
+              (filter) =>
+                  ((filter['kinds'] as List?) ?? const []).toSet().length ==
+                      2 &&
+                  ((filter['kinds'] as List?) ?? const []).contains(44100),
+            ),
+      );
+      expect(membershipReqs, isEmpty);
+      await h.unmount(tester);
+    },
+  );
 
   testWidgets('idle with a hidden DM stays within the live REQ budget', (
     tester,
