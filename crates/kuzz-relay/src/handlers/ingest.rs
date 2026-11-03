@@ -3371,9 +3371,20 @@ async fn ingest_event_inner(
             .await
             .map_err(|e| IngestError::Internal(format!("error: loading thread head: {e}")))?
             .ok_or_else(|| IngestError::Rejected("invalid: thread head not found".into()))?;
+        // A member who entered the thread by a mention (migration 0095) may
+        // name it like any other member of the thread.
         if target_before_join(&state.db, tenant.community(), &event.pubkey, target_id.as_bytes())
             .await
             .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+            && !state
+                .db
+                .thread_open_to(
+                    tenant.community(),
+                    target_id.as_bytes(),
+                    &event.pubkey.to_bytes(),
+                )
+                .await
+                .map_err(|e| IngestError::Internal(format!("error: {e}")))?
         {
             return Err(IngestError::Rejected("invalid: thread head not found".into()));
         }

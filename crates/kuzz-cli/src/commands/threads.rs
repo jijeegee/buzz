@@ -200,7 +200,7 @@ async fn close(
         return Err(CliError::Usage("--summary must not be empty".into()));
     }
     let root_id = thread.to_ascii_lowercase();
-    let root = load_top_level_message(client, channel, &root_id).await?;
+    let root = load_thread_head(client, channel, &root_id).await?;
     // Before anything is posted, so a failed goal write leaves the thread
     // open and the whole close can simply be retried.
     let goal = close_goal(client, channel, &root_id, goal_done).await?;
@@ -219,6 +219,11 @@ async fn close(
 
     let requester = match requester.or_else(|| task.as_ref().and_then(|t| t.requester.clone())) {
         Some(requester) => requester,
+        None if root.is_null() => {
+            return Err(CliError::Usage(
+                "the thread's first message is hidden from you; pass --requester".into(),
+            ))
+        }
         None => event_author(&root)?,
     };
     let excerpt = result_excerpt(task.as_ref(), &root);
@@ -284,7 +289,7 @@ async fn close(
 
 async fn reopen(client: &KuzzClient, channel: &str, thread: &str) -> Result<(), CliError> {
     let root_id = thread.to_ascii_lowercase();
-    load_top_level_message(client, channel, &root_id).await?;
+    load_thread_head(client, channel, &root_id).await?;
     let marker = send_message(client, reopen_marker_params(channel, &root_id)?).await?;
     println!(
         "{}",
@@ -418,6 +423,20 @@ async fn load_top_level_message(
         ));
     }
     Ok(event)
+}
+
+/// Like [`load_top_level_message`] for an existing thread, but a head this
+/// reader cannot read (a since_join room they joined after it; a mention let
+/// them into the thread) is `Null`: the relay checks the markers sent to it.
+async fn load_thread_head(
+    client: &KuzzClient,
+    channel: &str,
+    event_id: &str,
+) -> Result<serde_json::Value, CliError> {
+    match load_top_level_message(client, channel, event_id).await {
+        Err(CliError::NotFound(_)) => Ok(serde_json::Value::Null),
+        other => other,
+    }
 }
 
 fn event_author(event: &serde_json::Value) -> Result<String, CliError> {

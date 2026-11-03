@@ -493,13 +493,21 @@ pub async fn cmd_get_thread(
 ) -> Result<(), CliError> {
     let expected_channel_id = parse_uuid(channel_id)?;
     validate_hex64(event_id)?;
-    let selected_event = fetch_event(client, event_id).await?;
-    let root_event_id = resolve_thread_target(
-        expected_channel_id,
-        event_id,
-        expected_root_id,
-        &selected_event,
-    )?;
+    let root_event_id = match fetch_event(client, event_id).await {
+        Ok(selected_event) => resolve_thread_target(
+            expected_channel_id,
+            event_id,
+            expected_root_id,
+            &selected_event,
+        )?,
+        // A thread head this reader cannot read (a since_join room they
+        // joined after it; a mention let them into the thread): read the
+        // thread by its id. The relay returns only what they may see.
+        Err(CliError::NotFound(_)) if expected_root_id.is_none_or(|root| root == event_id) => {
+            event_id.to_string()
+        }
+        Err(e) => return Err(e),
+    };
     let limit = limit.unwrap_or(100).min(500);
 
     let mut reply_filter = serde_json::json!({

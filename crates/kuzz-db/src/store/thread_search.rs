@@ -121,8 +121,9 @@ ranked AS (
         ORDER BY e.created_at DESC LIMIT 1
     ) root ON TRUE
     -- since_join rooms: a thread whose root predates the reader's join is
-    -- cut whole (a missing root counts as old).
-    WHERE NOT channel_event_before_join($1, h.channel_id, COALESCE(root.channel_sequence, 0), $2)
+    -- cut whole (a missing root counts as old), unless the reader entered
+    -- it by a mention (migration 0095).
+    WHERE channel_thread_open_to($1, h.channel_id, COALESCE(root.channel_sequence, 0), $2)
     -- In a 1:1 DM with someone the reader blocked: never surface a root or a
     -- name the reader did not receive.
       AND NOT (h.dm_blocked AND (
