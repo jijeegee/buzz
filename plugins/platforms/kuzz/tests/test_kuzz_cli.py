@@ -10,6 +10,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from _support import AGENT, CHANNEL, OWNER, PLUGIN, FakeKuzz, event_id, watch_line
 
@@ -281,6 +282,76 @@ class InstallTest(unittest.TestCase):
             )
             with self.assertRaises(SystemExit):
                 install.main(["--owner", "not-a-key", "--hermes-home", str(home), "--no-enable"])
+
+
+def load_install():
+    import importlib.util
+
+    spec = importlib.util.spec_from_file_location("kuzz_install", PLUGIN / "install.py")
+    install = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(install)
+    return install
+
+
+class InstallHomeAndRestartTest(unittest.TestCase):
+    def setUp(self):
+        self.install = load_install()
+        # No real Hermes: the config.yaml check is skipped and nothing is restarted.
+        patcher = mock.patch.object(self.install, "find_hermes", return_value=None)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def test_home_is_the_owner_dm_opened_by_the_paired_agent(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz(FAKE_KUZZ_DM_ID="dm-owner") as fake:
+            home = Path(tmp)
+            (home / ".env").write_text("OTHER=1\n", encoding="utf-8")
+            self.assertEqual(self.install.set_home_channel(home, str(fake.exe), NPUB_HEX), "dm-owner")
+            [call] = fake.calls("dms", "open")
+            self.assertEqual(call["args"], ["dms", "open", "--pubkey", NPUB_HEX])
+            self.assertNotIn("KUZZ_PRIVATE_KEY", call["env"])
+            self.assertEqual(
+                (home / ".env").read_text(encoding="utf-8"),
+                "OTHER=1\nBUZZ_HOME_CHANNEL=dm-owner\nBUZZ_HOME_CHANNEL_NAME=Owner DM\n",
+            )
+
+    def test_an_existing_home_is_kept(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake:
+            home = Path(tmp)
+            (home / ".env").write_text("BUZZ_HOME_CHANNEL='chan-1'\n", encoding="utf-8")
+            self.assertIsNone(self.install.set_home_channel(home, str(fake.exe), NPUB_HEX))
+            self.assertEqual(fake.calls("dms", "open"), [])
+            self.assertEqual((home / ".env").read_text(encoding="utf-8"), "BUZZ_HOME_CHANNEL='chan-1'\n")
+
+    def test_a_failed_dm_open_leaves_no_home(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz(FAKE_KUZZ_DM_ID="") as fake:
+            home = Path(tmp)
+            self.assertIsNone(self.install.set_home_channel(home, str(fake.exe), NPUB_HEX))
+            self.assertFalse((home / ".env").exists())
+
+    def test_main_sets_home_then_restarts_the_gateway(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake, \
+                mock.patch.object(self.install, "enable_plugin", return_value=True), \
+                mock.patch.object(self.install, "restart_gateway", return_value=True) as restart:
+            home = Path(tmp)
+            rc = self.install.main(["--owner", NPUB, "--hermes-home", str(home), "--cli-path", str(fake.exe)])
+            self.assertEqual(rc, 0)
+            restart.assert_called_once_with(home)
+            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", (home / ".env").read_text(encoding="utf-8"))
+
+    def test_a_busy_gateway_still_installs_and_no_restart_skips_it(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake, \
+                mock.patch.object(self.install, "enable_plugin", return_value=True), \
+                mock.patch.object(self.install, "restart_gateway", return_value=False) as restart:
+            home = Path(tmp)
+            argv = ["--owner", NPUB, "--hermes-home", str(home), "--cli-path", str(fake.exe)]
+            self.assertEqual(self.install.main(argv), 0)
+            self.assertEqual(restart.call_count, 1)
+            self.assertEqual(self.install.main(argv + ["--no-restart"]), 0)
+            self.assertEqual(restart.call_count, 1)
+
+    def test_restart_without_hermes_reports_failure(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            self.assertFalse(self.install.restart_gateway(Path(tmp)))
 
 
 if __name__ == "__main__":

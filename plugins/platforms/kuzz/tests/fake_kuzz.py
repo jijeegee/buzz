@@ -9,6 +9,7 @@ FAKE_KUZZ_OWNER     when set, the CLI is paired: keyless `auth whoami` reports t
                     ("null": paired, owner not known yet).
                     Otherwise whoami needs KUZZ_PRIVATE_KEY in the env (legacy) or fails with not_paired.
 FAKE_KUZZ_DMS       JSON for `dms list` (default [])
+FAKE_KUZZ_DM_ID     dm_id `dms open` returns (default dm-1; "" fails the call)
 FAKE_KUZZ_CHANNEL_NAME  name returned by `channels get`
 """
 
@@ -93,6 +94,13 @@ def main():
         return 0
     if args[:2] == ["dms", "list"]:
         print(os.environ.get("FAKE_KUZZ_DMS", "[]"))
+        return 0
+    if args[:2] == ["dms", "open"]:
+        dm_id = os.environ.get("FAKE_KUZZ_DM_ID", "dm-1")
+        if not dm_id:
+            sys.stderr.write(json.dumps({"error": "network_error", "message": "offline"}) + "\n")
+            return 2
+        print(json.dumps({"accepted": True, "dm_id": dm_id}))
         return 0
     sys.stderr.write(json.dumps({"error": "usage", "message": "unknown command"}) + "\n")
     return 1
