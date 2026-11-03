@@ -302,10 +302,11 @@ class ThreadDetailPage extends HookConsumerWidget {
 
     // Index all messages by parentId so we can find direct children of any
     // message and compute thread summaries for nested threads.
-    // While the head is a stand-in (root not loaded, or hidden from this
-    // reader who joined after it), a reply whose parent is not loaded hangs
-    // off the root, like desktop's attachToRootIfParentMissing.
-    final headIsStandIn = resolvedHead.resolving || resolvedHead.missing;
+    // When the root is hidden from this reader (joined after it), a reply
+    // whose parent is not loaded hangs off the root, like desktop's
+    // attachToRootIfParentMissing. Not while it is still loading: a visible
+    // root arriving would move that reply again.
+    final headIsStandIn = resolvedHead.missing;
     final loadedIds = headIsStandIn
         ? {for (final msg in allMsgs) msg.id}
         : const <String>{};

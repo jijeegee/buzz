@@ -3,11 +3,14 @@ import * as React from "react";
 
 import type { ParsedMessageLink } from "@/features/messages/lib/messageLink";
 import { storeScope } from "@/features/messages/lib/paintCoverage";
-import { threadRootVerdict } from "@/features/messages/lib/threadRootResolve";
 import { summarizeMessageLinkContent } from "@/features/messages/lib/messageLinkMetadata";
 import { getThreadReference } from "@/features/messages/lib/threading";
 import { getEventById, invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
+import {
+  KIND_DELETION,
+  KIND_NIP29_DELETE_EVENT,
+} from "@/shared/constants/kinds";
 import { getUserProfile } from "@/shared/api/tauriProfiles";
 import { unknownUserLabel } from "@/shared/lib/pubkey";
 import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
@@ -57,9 +60,10 @@ export function resetMessageLinkMetadataCache() {
 }
 
 /**
- * A message not found is deleted only on an explicit deletion of it (a
- * removal, or with its author unknown nothing else); otherwise it is just
- * unavailable, e.g. from before the reader joined a since-join room.
+ * A message not found is deleted only on an explicit deletion of it (its
+ * author's or a removal); otherwise it is just unavailable, e.g. from before
+ * the reader joined a since-join room. Only a label: with the message gone
+ * its author is unknown, so any deletion of it in the channel counts.
  */
 async function notFoundState(
   queryClient: QueryClient | undefined,
@@ -73,12 +77,18 @@ async function notFoundState(
     account: scope.pubkey,
     relayUrl: scope.relayUrl,
   }).catch(() => null);
-  return threadRootVerdict(answer, {
-    channelId: link.channelId,
-    rootId: link.messageId,
-  }).verdict === "deleted"
-    ? { kind: "deleted" }
-    : { kind: "unavailable" };
+  const deleted = (answer ?? []).some(
+    (event) =>
+      (event.kind === KIND_DELETION ||
+        event.kind === KIND_NIP29_DELETE_EVENT) &&
+      event.tags.some(
+        (tag) => tag[0] === "h" && tag[1] === link.channelId,
+      ) &&
+      event.tags.some(
+        (tag) => tag[0] === "e" && tag[1] === link.messageId,
+      ),
+  );
+  return deleted ? { kind: "deleted" } : { kind: "unavailable" };
 }
 
 function fetchMetadata(

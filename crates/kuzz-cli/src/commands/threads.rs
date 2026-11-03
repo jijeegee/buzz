@@ -201,9 +201,6 @@ async fn close(
     }
     let root_id = thread.to_ascii_lowercase();
     let root = load_thread_head(client, channel, &root_id).await?;
-    // Before anything is posted, so a failed goal write leaves the thread
-    // open and the whole close can simply be retried.
-    let goal = close_goal(client, channel, &root_id, goal_done).await?;
 
     let replies = client
         .query(&serde_json::json!({
@@ -215,6 +212,9 @@ async fn close(
         .await?;
     let replies: Vec<serde_json::Value> = serde_json::from_str(&replies)
         .map_err(|e| CliError::Other(format!("invalid thread response: {e}")))?;
+    if root.is_null() && replies.is_empty() {
+        return Err(thread_not_found(&root_id));
+    }
     let task = find_task(&replies);
 
     let requester = match requester.or_else(|| task.as_ref().and_then(|t| t.requester.clone())) {
@@ -226,6 +226,9 @@ async fn close(
         }
         None => event_author(&root)?,
     };
+    // Before anything is posted, so a failed goal write leaves the thread
+    // open and the whole close can simply be retried.
+    let goal = close_goal(client, channel, &root_id, goal_done).await?;
     let excerpt = result_excerpt(task.as_ref(), &root);
     let mut sent_from = vec![SENT_FROM_THREAD_TAG.to_string(), root_id.clone()];
     sent_from.extend(excerpt);
@@ -289,7 +292,21 @@ async fn close(
 
 async fn reopen(client: &KuzzClient, channel: &str, thread: &str) -> Result<(), CliError> {
     let root_id = thread.to_ascii_lowercase();
-    load_thread_head(client, channel, &root_id).await?;
+    if load_thread_head(client, channel, &root_id).await?.is_null() {
+        let replies = client
+            .query(&serde_json::json!({
+                "kinds": [9],
+                "#h": [channel],
+                "#e": [&root_id],
+                "limit": 1,
+            }))
+            .await?;
+        let replies: Vec<serde_json::Value> = serde_json::from_str(&replies)
+            .map_err(|e| CliError::Other(format!("invalid thread response: {e}")))?;
+        if replies.is_empty() {
+            return Err(thread_not_found(&root_id));
+        }
+    }
     let marker = send_message(client, reopen_marker_params(channel, &root_id)?).await?;
     println!(
         "{}",
@@ -437,6 +454,11 @@ async fn load_thread_head(
         Err(CliError::NotFound(_)) => Ok(serde_json::Value::Null),
         other => other,
     }
+}
+
+/// A hidden head with no reply the reader can see is no thread of theirs.
+fn thread_not_found(root_id: &str) -> CliError {
+    CliError::NotFound(format!("thread {root_id} not found"))
 }
 
 fn event_author(event: &serde_json::Value) -> Result<String, CliError> {

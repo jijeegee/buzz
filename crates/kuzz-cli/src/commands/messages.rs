@@ -493,6 +493,7 @@ pub async fn cmd_get_thread(
 ) -> Result<(), CliError> {
     let expected_channel_id = parse_uuid(channel_id)?;
     validate_hex64(event_id)?;
+    let mut head_hidden = false;
     let root_event_id = match fetch_event(client, event_id).await {
         Ok(selected_event) => resolve_thread_target(
             expected_channel_id,
@@ -504,6 +505,7 @@ pub async fn cmd_get_thread(
         // joined after it; a mention let them into the thread): read the
         // thread by its id. The relay returns only what they may see.
         Err(CliError::NotFound(_)) if expected_root_id.is_none_or(|root| root == event_id) => {
+            head_hidden = true;
             event_id.to_string()
         }
         Err(e) => return Err(e),
@@ -526,6 +528,10 @@ pub async fn cmd_get_thread(
     });
     let resp = client.query_multi(&[reply_filter, root_filter]).await?;
     let mut events: Vec<serde_json::Value> = serde_json::from_str(&resp).unwrap_or_default();
+    // A hidden head with no visible reply is no thread of theirs: a wrong id.
+    if head_hidden && events.is_empty() {
+        return Err(CliError::NotFound(format!("event {event_id} not found")));
+    }
     events.sort_by_key(|event| {
         event
             .get("created_at")
