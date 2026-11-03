@@ -577,11 +577,12 @@ List<ChatListRow> orderChatRows(
   return [...sorted.where(isPinned), ...sorted.where((row) => !isPinned(row))];
 }
 
-/// A thread row's title: its name, else the root's first line, trimmed.
+/// A thread row's title: its name, else the root's first line (the latest
+/// message's when the root is hidden from this reader), trimmed.
 String chatThreadTitle(ChatListRow row) {
   final name = row.threadName?.trim();
   if (name != null && name.isNotEmpty) return name;
-  final firstLine = row.root?.content
+  final firstLine = (row.root ?? row.latest)?.content
       .split('\n')
       .map((line) => line.trim())
       .where((line) => line.isNotEmpty)

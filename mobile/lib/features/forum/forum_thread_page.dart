@@ -275,7 +275,7 @@ class _ThreadContent extends HookConsumerWidget {
     // Preload profiles for all participants and tagged mentions.
     final allPubkeys = useMemoized(() {
       final pks = <String>{
-        post.pubkey.toLowerCase(),
+        if (post.pubkey.isNotEmpty) post.pubkey.toLowerCase(),
         ...post.mentionPubkeys.map((pubkey) => pubkey.toLowerCase()),
       };
       for (final reply in replies) {
@@ -308,7 +308,20 @@ class _ThreadContent extends HookConsumerWidget {
                   message: context.l10n.forumLoadThreadError,
                   onRetry: retry,
                 ),
-              _OriginalPost(post: post),
+              if (thread.postUnavailable)
+                Padding(
+                  key: const ValueKey('forum-post-unavailable'),
+                  padding: const EdgeInsets.all(Grid.xs),
+                  child: Text(
+                    context.l10n.threadEarlierMessagesUnavailable,
+                    style: context.textTheme.labelMedium?.copyWith(
+                      color: context.colors.onSurfaceVariant,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                )
+              else
+                _OriginalPost(post: post),
 
               Padding(
                 padding: const EdgeInsets.symmetric(

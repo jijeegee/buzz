@@ -201,11 +201,16 @@ class ForumThreadResponse {
   final int totalReplies;
   final String? nextCursor;
 
+  /// The post itself is hidden from this reader (joined after it) or gone,
+  /// but replies came back: [post] is a stand-in carrying only its id.
+  final bool postUnavailable;
+
   const ForumThreadResponse({
     required this.post,
     required this.replies,
     required this.totalReplies,
     this.nextCursor,
+    this.postUnavailable = false,
   });
 
   factory ForumThreadResponse.fromJson(Map<String, dynamic> json) {
@@ -222,18 +227,32 @@ class ForumThreadResponse {
   }
 
   /// Build from a root event and a list of reply events. Replies are sorted
-  /// oldest-first so the UI can render them top-down.
+  /// oldest-first so the UI can render them top-down. Without [root], the
+  /// post is a stand-in for [rootId] in [channelId].
   factory ForumThreadResponse.fromEvents({
-    required NostrEvent root,
+    required NostrEvent? root,
     required List<NostrEvent> replies,
+    String rootId = '',
+    String channelId = '',
   }) {
     final sortedReplies = replies.map(ThreadReply.fromEvent).toList()
       ..sort((a, b) => a.createdAt.compareTo(b.createdAt));
     return ForumThreadResponse(
-      post: ForumPost.fromEvent(root),
+      post: root == null
+          ? ForumPost(
+              eventId: rootId,
+              pubkey: '',
+              content: '',
+              kind: EventKind.forumPost,
+              createdAt: 0,
+              channelId: channelId,
+              tags: const [],
+            )
+          : ForumPost.fromEvent(root),
       replies: sortedReplies,
       totalReplies: sortedReplies.length,
       nextCursor: null,
+      postUnavailable: root == null,
     );
   }
 }

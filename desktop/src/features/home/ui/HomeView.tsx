@@ -1041,6 +1041,17 @@ export function HomeView({
                     undefined,
                     emojiTags,
                     mentionTags,
+                    undefined,
+                    undefined,
+                    undefined,
+                    undefined,
+                    // A reply to the selected message names its root from the
+                    // message's own tags, so a root the reader cannot fetch
+                    // (joined after it) is not looked up.
+                    parentEventId === itemToReply.item.id
+                      ? (getThreadReference(itemToReply.item.tags).rootId ??
+                          parentEventId)
+                      : null,
                   );
                   const authorPubkey = currentPubkey ?? itemToReply.item.pubkey;
                   const reply: InboxReply = {

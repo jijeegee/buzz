@@ -1364,3 +1364,360 @@ async fn an_agents_owner_outside_the_chat_sees_what_the_agent_sees() {
     f.leave().await;
     assert_eq!(f.read(Some(&agent_owner)).await, (vec![], 0));
 }
+
+/// A kind:9 message through the real ingest writer with chat state: a reply
+/// to `root` when given, mentioning `mentions` with `p` tags.
+async fn post_with_chat_state(
+    db: &crate::Db,
+    f: &Fixture,
+    author: &Keys,
+    content: &str,
+    root: Option<&nostr::Event>,
+    mentions: &[&Keys],
+) -> nostr::Event {
+    use crate::event::ThreadMetadataParams;
+    let mut tags = vec![Tag::parse(["h", &f.channel.to_string()]).unwrap()];
+    if let Some(root) = root {
+        tags.push(Tag::parse(["e", &root.id.to_hex(), "", "root"]).unwrap());
+    }
+    for keys in mentions {
+        tags.push(Tag::parse(["p", &keys.public_key().to_hex()]).unwrap());
+    }
+    let event = EventBuilder::new(Kind::Custom(9), content)
+        .tags(tags)
+        .sign_with_keys(author)
+        .unwrap();
+    let at = |e: &nostr::Event| {
+        chrono::DateTime::from_timestamp(e.created_at.as_secs() as i64, 0).unwrap()
+    };
+    let meta = root.map(|root| ThreadMetadataParams {
+        event_id: event.id.as_bytes(),
+        event_created_at: at(&event),
+        channel_id: f.channel,
+        parent_event_id: Some(root.id.as_bytes()),
+        parent_event_created_at: Some(at(root)),
+        root_event_id: Some(root.id.as_bytes()),
+        root_event_created_at: Some(at(root)),
+        depth: 1,
+        broadcast: false,
+    });
+    db.insert_event_with_thread_metadata_and_chat_state(f.scope, &event, Some(f.channel), meta)
+        .await
+        .unwrap();
+    event
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_mention_lets_a_later_member_into_an_old_thread_from_that_reply() {
+    use crate::chat_list::{ChatListQuery, ChatRowKind};
+    use crate::chat_user_state::{FollowState, MarkReadItem, MarkReadTarget, ReadPosition};
+    use crate::thread_window::ScanBudget;
+    use crate::Db;
+    use kuzz_core::thread_window::Request;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone()).with_chat_state_writes(true);
+    let owner = f.owner.clone();
+    let root = post_with_chat_state(&db, &f, &owner, "root", None, &[]).await;
+    let early = post_with_chat_state(&db, &f, &owner, "before join", Some(&root), &[]).await;
+    f.join().await;
+    // A second late member who is never mentioned.
+    let bystander = Keys::generate();
+    channel_members::add_member(
+        &f.pool,
+        f.scope,
+        f.channel,
+        &bystander.public_key().to_bytes(),
+        MemberRole::Member,
+        Some(&owner.public_key().to_bytes()),
+    )
+    .await
+    .unwrap();
+    let gap = post_with_chat_state(&db, &f, &owner, "after join", Some(&root), &[]).await;
+    let member = f.member.clone();
+    let mention =
+        post_with_chat_state(&db, &f, &owner, "@member look", Some(&root), &[&member]).await;
+    let after = post_with_chat_state(&db, &f, &owner, "after entry", Some(&root), &[]).await;
+    let me = member.public_key().to_bytes().to_vec();
+    let hex_ids = |events: &[&nostr::Event]| -> Vec<String> {
+        events.iter().map(|e| e.id.to_hex()).collect()
+    };
+    let seq_of = |e: &nostr::Event| {
+        let pool = f.pool.clone();
+        let (scope, id) = (f.scope, e.id.as_bytes().to_vec());
+        async move {
+            sqlx::query_scalar::<_, i64>(
+                "SELECT channel_sequence FROM events WHERE community_id = $1 AND id = $2",
+            )
+            .bind(scope.as_uuid())
+            .bind(id)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+    let entry_of = || {
+        let pool = f.pool.clone();
+        let (scope, root, me) = (f.scope, root.id.as_bytes().to_vec(), me.clone());
+        async move {
+            sqlx::query_as::<_, (Option<i64>, Option<i64>, i32, i32)>(
+                "SELECT entry_seq, read_seq, unread_count, unread_mentions FROM thread_follows \
+                  WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3",
+            )
+            .bind(scope.as_uuid())
+            .bind(root)
+            .bind(me)
+            .fetch_one(&pool)
+            .await
+            .unwrap()
+        }
+    };
+
+    // The entry is stored on the member's follow row, read up to it.
+    let mention_seq = seq_of(&mention).await;
+    assert_eq!(
+        entry_of().await,
+        (Some(mention_seq), Some(mention_seq - 1), 2, 1),
+        "entry, read position, and the mention plus the reply after it unread"
+    );
+
+    // Reads: the root and the replies before the entry stay hidden.
+    assert_eq!(
+        f.read(Some(&member)).await,
+        (hex_ids(&[&mention, &after]), 2)
+    );
+    assert_eq!(
+        f.read(Some(&owner)).await,
+        (hex_ids(&[&root, &early, &gap, &mention, &after]), 5)
+    );
+    assert_eq!(f.read(Some(&bystander)).await, (vec![], 0));
+    let all_ids: Vec<Vec<u8>> = [&root, &early, &gap, &mention, &after]
+        .iter()
+        .map(|e| e.id.as_bytes().to_vec())
+        .collect();
+    let mut hidden = db
+        .history_hidden_event_ids(f.scope, &me, &all_ids)
+        .await
+        .unwrap();
+    hidden.sort();
+    let mut expected: Vec<Vec<u8>> = all_ids[..3].to_vec();
+    expected.sort();
+    assert_eq!(hidden, expected);
+    let root_bytes = root.id.as_bytes().to_vec();
+    assert!(db.thread_open_to(f.scope, &root_bytes, &me).await.unwrap());
+    assert!(!db
+        .thread_open_to(f.scope, &root_bytes, &bystander.public_key().to_bytes())
+        .await
+        .unwrap());
+    // A hidden reply is not a thread anyone can enter.
+    assert!(!db
+        .thread_open_to(f.scope, gap.id.as_bytes(), &me)
+        .await
+        .unwrap());
+
+    // Live delivery: reactions and edits about pre-entry rows do not reach
+    // the member; about post-entry rows they do.
+    let blind = |targets: Vec<Vec<u8>>| {
+        let db = db.clone();
+        let readers = vec![me.clone()];
+        async move {
+            db.readers_blind_to_targets(f.scope, f.channel, &targets, &readers, false)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(blind(vec![gap.id.as_bytes().to_vec()]).await, [me.clone()]);
+    assert_eq!(blind(vec![root_bytes.clone()]).await, [me.clone()]);
+    assert!(blind(vec![after.id.as_bytes().to_vec()]).await.is_empty());
+
+    // Thread window: the thread opens, rows start at the entry.
+    let req = Request::parse(&serde_json::json!({"thread_window": true,
+        "#h": [f.channel], "#e": [root.id.to_hex()], "kinds": [9], "limit": 10}))
+    .unwrap();
+    let (window, _) = db
+        .get_thread_window_for_reader_with_session(
+            f.scope,
+            &req,
+            Some(me.as_slice()),
+            &mut ScanBudget::default(),
+        )
+        .await
+        .unwrap();
+    assert!(window.root_in_channel);
+    let mut rows: Vec<String> = window
+        .rows
+        .into_iter()
+        .map(|r| r.event.id.to_hex())
+        .collect();
+    rows.sort();
+    let mut expected = hex_ids(&[&mention, &after]);
+    expected.sort();
+    assert_eq!(rows, expected);
+    let replies = db
+        .get_thread_replies_for_reader(f.scope, &root_bytes, Some(1), 10, None, Some(&me))
+        .await
+        .unwrap();
+    assert_eq!(replies.len(), 2);
+
+    // Chat list: the entered thread shows, its root does not.
+    let query = ChatListQuery {
+        limit: 30,
+        before: None,
+        pinned_threads: vec![],
+        quiet_before: chrono::Utc::now() - chrono::Duration::days(7),
+    };
+    let rows = db
+        .chat_list(f.scope, &member.public_key(), &query)
+        .await
+        .unwrap()
+        .rows;
+    let thread = rows
+        .iter()
+        .find(|r| r.kind == ChatRowKind::Thread)
+        .expect("entered thread row");
+    assert!(thread.root.is_none(), "root stays hidden");
+    assert_eq!(thread.latest.as_ref().unwrap()["content"], "after entry");
+    assert_eq!(thread.unread, 2);
+    // Inbox summary agrees.
+    let markers = crate::inbox_summary::InboxReadMarkers {
+        channels: vec![],
+        threads: vec![],
+    };
+    let page = db
+        .inbox_summary(f.scope, &member.public_key(), 30, None, &markers)
+        .await
+        .unwrap();
+    let thread = page
+        .rows
+        .iter()
+        .find(|r| r.kind == crate::inbox_summary::InboxRowKind::Thread)
+        .expect("entered thread in the inbox");
+    assert!(thread.root.is_none(), "root stays hidden");
+    // Ordered by second-resolution time: either post-entry reply may lead.
+    let latest = thread.latest.as_ref().unwrap()["content"].clone();
+    assert!(latest == "after entry" || latest == "@member look", "{latest}");
+
+    // Follow state and read position can be set.
+    let follow = |state| {
+        let db = db.clone();
+        let (pk, root) = (member.public_key(), root_bytes.clone());
+        async move {
+            db.chat_thread_follow(f.scope, &pk, &root, state)
+                .await
+                .unwrap()
+        }
+    };
+    assert_eq!(follow(FollowState::Followed).await, Ok(f.channel));
+    let item = MarkReadItem {
+        target: MarkReadTarget::Thread(root_bytes.clone()),
+        position: Some(ReadPosition::Event(after.id.as_bytes().to_vec())),
+    };
+    assert!(db
+        .chat_mark_read(f.scope, &member.public_key(), &[item], false)
+        .await
+        .unwrap()
+        .is_ok());
+
+    // Unfollowing and coming back keeps the first entry: replies posted while
+    // away stay readable.
+    assert_eq!(follow(FollowState::Unfollowed).await, Ok(f.channel));
+    let away = post_with_chat_state(&db, &f, &owner, "while unfollowed", Some(&root), &[]).await;
+    let again =
+        post_with_chat_state(&db, &f, &owner, "@member again", Some(&root), &[&member]).await;
+    assert_eq!(follow(FollowState::Followed).await, Ok(f.channel));
+    assert_eq!(entry_of().await.0, Some(mention_seq), "first entry kept");
+    assert_eq!(
+        f.read(Some(&member)).await,
+        (hex_ids(&[&mention, &after, &away, &again]), 4)
+    );
+
+    // Leaving and rejoining drops the entry; a new mention enters again,
+    // and starts the follow row over (unfollowed before leaving).
+    assert_eq!(follow(FollowState::Unfollowed).await, Ok(f.channel));
+    f.leave().await;
+    f.join().await;
+    assert!(!db.thread_open_to(f.scope, &root_bytes, &me).await.unwrap());
+    assert_eq!(f.read(Some(&member)).await, (vec![], 0));
+    let rejoined = post_with_chat_state(
+        &db,
+        &f,
+        &owner,
+        "@member welcome back",
+        Some(&root),
+        &[&member],
+    )
+    .await;
+    assert!(db.thread_open_to(f.scope, &root_bytes, &me).await.unwrap());
+    assert_eq!(f.read(Some(&member)).await, (hex_ids(&[&rejoined]), 1));
+    let rejoined_seq = seq_of(&rejoined).await;
+    let (entry, read_seq, _, _) = entry_of().await;
+    assert_eq!(
+        (entry, read_seq),
+        (Some(rejoined_seq), Some(rejoined_seq - 1))
+    );
+    let rows = db
+        .chat_list(f.scope, &member.public_key(), &query)
+        .await
+        .unwrap()
+        .rows;
+    assert!(rows
+        .iter()
+        .any(|r| r.kind == ChatRowKind::Thread && r.follow_state.as_deref() == Some("auto")));
+    // A hidden reply passed as a root is unknown, not "not a root".
+    assert_eq!(
+        db.chat_thread_follow(
+            f.scope,
+            &member.public_key(),
+            gap.id.as_bytes(),
+            FollowState::Followed
+        )
+        .await
+        .unwrap(),
+        Err(crate::chat_user_state::ChatStateDenied::NotMember { index: 0 })
+    );
+
+    // Thread replies, entered or not, never count toward the room.
+    let (room_unread, room_mentions): (i32, i32) =
+        sqlx::query_as("SELECT unread, mentions FROM chat_room_unread($1, $2, $3, 0)")
+            .bind(f.scope.as_uuid())
+            .bind(f.channel)
+            .bind(&me)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    assert_eq!((room_unread, room_mentions), (0, 0));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_mention_changes_nothing_for_members_who_were_there_first() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone()).with_chat_state_writes(true);
+    let owner = f.owner.clone();
+    f.join().await;
+    let member = f.member.clone();
+    let root = post_with_chat_state(&db, &f, &owner, "root", None, &[]).await;
+    let first = post_with_chat_state(&db, &f, &owner, "first", Some(&root), &[]).await;
+    let mention = post_with_chat_state(&db, &f, &owner, "@member", Some(&root), &[&member]).await;
+    assert_eq!(
+        f.read(Some(&member)).await,
+        (
+            vec![root.id.to_hex(), first.id.to_hex(), mention.id.to_hex()],
+            3
+        )
+    );
+    let entry: Option<i64> = sqlx::query_scalar(
+        "SELECT entry_seq FROM thread_follows \
+          WHERE community_id = $1 AND root_event_id = $2 AND pubkey = $3",
+    )
+    .bind(f.scope.as_uuid())
+    .bind(root.id.as_bytes().to_vec())
+    .bind(member.public_key().to_bytes().to_vec())
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+    assert_eq!(entry, None, "no entry for a member who saw the root");
+}

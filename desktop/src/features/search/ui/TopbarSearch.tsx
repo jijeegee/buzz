@@ -542,7 +542,14 @@ export function TopbarSearch({
         return;
       }
 
-      onOpenResult(result.hit, resultQuery);
+      // A reply's thread is named so it opens by its root id, even when the
+      // root itself cannot be fetched.
+      onOpenResult(
+        result.thread && !result.hit.threadRootId
+          ? { ...result.hit, threadRootId: result.thread.rootId }
+          : result.hit,
+        resultQuery,
+      );
     },
     [
       onBrowseChannels,

@@ -837,6 +837,46 @@ void main() {
       );
     });
 
+    testWidgets('a hidden post shows its replies under a short note', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildThreadPage(
+          threadResponse: ForumThreadResponse.fromEvents(
+            root: null,
+            rootId: 'post1',
+            channelId: _channelId,
+            replies: [
+              NostrEvent(
+                id: 'late-reply',
+                pubkey: 'alice',
+                createdAt: 2000,
+                kind: 45003,
+                tags: const [
+                  ['h', _channelId],
+                  ['e', 'post1', '', 'reply'],
+                ],
+                content: 'Visible reply',
+              ),
+            ],
+          ),
+          users: const {'alice': _aliceProfile},
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('forum-post-unavailable')),
+        findsOneWidget,
+      );
+      expect(find.text("Earlier messages aren't available"), findsOneWidget);
+      expect(find.textContaining('Visible reply'), findsWidgets);
+      expect(
+        find.byKey(const ValueKey('forum-original-avatar-post1')),
+        findsNothing,
+      );
+    });
+
     testWidgets('shows original post and replies header', (tester) async {
       await tester.pumpWidget(
         _buildThreadPage(

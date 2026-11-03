@@ -50,12 +50,16 @@ final forumThreadProvider =
 
       final rootEvents = results[0];
       final replyEvents = results[1];
-      if (rootEvents.isEmpty) {
+      // A post hidden from this reader (joined after it) still shows the
+      // replies they can see.
+      if (rootEvents.isEmpty && replyEvents.isEmpty) {
         throw Exception('Forum thread not found: ${args.eventId}');
       }
       return ForumThreadResponse.fromEvents(
-        root: rootEvents.first,
+        root: rootEvents.firstOrNull,
         replies: replyEvents,
+        rootId: args.eventId,
+        channelId: args.channelId,
       );
     });
 

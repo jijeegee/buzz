@@ -200,7 +200,12 @@ export function fetchedForumEvents(
       queryKey: ["forum-thread", channelId],
     })
     .flatMap(([, data]) =>
-      data ? [postEvent(data.post), ...data.replies.map(replyEvent)] : [],
+      data
+        ? [
+            ...(data.post ? [postEvent(data.post)] : []),
+            ...data.replies.map(replyEvent),
+          ]
+        : [],
     );
   return [...posts, ...threads];
 }

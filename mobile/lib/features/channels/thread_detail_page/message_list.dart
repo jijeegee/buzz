@@ -35,6 +35,10 @@ class _ThreadMessageList extends StatelessWidget {
   /// Set while the head is on the way (opened by its id): a thin row with
   /// this label stands in for it.
   final String? headPendingLabel;
+
+  /// Set when the relay answered without the head but replies are here: a
+  /// thin row says the earlier messages cannot be shown.
+  final bool headUnavailable;
   final ValueNotifier<int?> stickyDayTimestamp;
   final Map<String, String> channelNames;
   final String channelId;
@@ -69,6 +73,7 @@ class _ThreadMessageList extends StatelessWidget {
     required this.headIsDeleted,
     required this.head,
     this.headPendingLabel,
+    this.headUnavailable = false,
     required this.stickyDayTimestamp,
     required this.channelNames,
     required this.channelId,
@@ -98,6 +103,36 @@ class _ThreadMessageList extends StatelessWidget {
     if (!relayReplyState.hasError) return count;
     return '$count · ${relayReplyState.isLoading ? l10n.threadRepliesRetrying : l10n.threadRepliesRefreshError}';
   }
+
+  /// The reply count (or load/refresh state) under the head.
+  Widget _replySummaryRow(BuildContext context) => Padding(
+    padding: const EdgeInsets.symmetric(vertical: Grid.xxs),
+    child: Row(
+      children: [
+        Flexible(
+          child: Semantics(
+            liveRegion: true,
+            child: Text(
+              _replySummary(context.l10n),
+              style: context.textTheme.labelMedium?.copyWith(
+                color: context.colors.onSurfaceVariant,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+        ),
+        if (relayReplyState.hasError && !relayReplyState.isLoading)
+          IconButton(
+            key: const ValueKey('thread-replies-retry'),
+            onPressed: onRetryReplies,
+            tooltip: context.l10n.commonRetry,
+            icon: const Icon(LucideIcons.refreshCcw, size: 16),
+          ),
+        const SizedBox(width: Grid.xxs),
+        Expanded(child: Divider(color: context.colors.outlineVariant)),
+      ],
+    ),
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -156,8 +191,22 @@ class _ThreadMessageList extends StatelessWidget {
           child: Text(context.l10n.threadMessageDeleted),
         );
       }
-      if (headPendingLabel case final label?) {
-        return _ThreadRootPendingRow(label: label);
+      // A stand-in head keeps the reply summary (earlier replies, count,
+      // refresh error and retry) under it.
+      if (headUnavailable || headPendingLabel != null) {
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            if (headUnavailable)
+              _ThreadRootPendingRow(
+                label: context.l10n.threadEarlierMessagesUnavailable,
+                rowKey: const ValueKey('thread-root-unavailable'),
+              )
+            else
+              _ThreadRootPendingRow(label: headPendingLabel!),
+            _replySummaryRow(context),
+          ],
+        );
       }
       return Padding(
         key: ValueKey('thread-message-group-${head.id}'),
@@ -189,36 +238,7 @@ class _ThreadMessageList extends StatelessWidget {
                 quoteScope: quoteScope,
               ),
             ),
-            Padding(
-              padding: const EdgeInsets.symmetric(vertical: Grid.xxs),
-              child: Row(
-                children: [
-                  Flexible(
-                    child: Semantics(
-                      liveRegion: true,
-                      child: Text(
-                        _replySummary(context.l10n),
-                        style: context.textTheme.labelMedium?.copyWith(
-                          color: context.colors.onSurfaceVariant,
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                    ),
-                  ),
-                  if (relayReplyState.hasError && !relayReplyState.isLoading)
-                    IconButton(
-                      key: const ValueKey('thread-replies-retry'),
-                      onPressed: onRetryReplies,
-                      tooltip: context.l10n.commonRetry,
-                      icon: const Icon(LucideIcons.refreshCcw, size: 16),
-                    ),
-                  const SizedBox(width: Grid.xxs),
-                  Expanded(
-                    child: Divider(color: context.colors.outlineVariant),
-                  ),
-                ],
-              ),
-            ),
+            _replySummaryRow(context),
           ],
         ),
       );

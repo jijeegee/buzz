@@ -59,8 +59,10 @@ GoalLinkScope messageGoalLinkScope(GoalTree tree, String? threadRootId) {
 }
 
 /// Classify [ids] by reading each event: a reply names its thread root; a
-/// top-level message is a thread once it has a reply. Events that are gone
-/// or belong to another channel are missing.
+/// top-level message is a thread once it has a reply. An id that does not
+/// come back is still a thread when a reply names it as root (a root hidden
+/// from a reader who joined after it); else it is missing, like one in
+/// another channel.
 Future<Map<String, GoalLinkInfo>> classifyGoalLinks(
   String channelId,
   List<String> ids,
@@ -79,10 +81,13 @@ Future<Map<String, GoalLinkInfo>> classifyGoalLinks(
   };
   final result = <String, GoalLinkInfo>{};
   final tops = <String>[];
+  final unknown = <String>[];
   for (final id in ids) {
     final event = events[id.toLowerCase()];
     final rootId = event?.threadReference.rootId;
-    if (event == null || event.channelId != channelId) {
+    if (event == null) {
+      unknown.add(id);
+    } else if (event.channelId != channelId) {
       result[id] = (kind: GoalLinkKind.missing, threadRootId: null);
     } else if (rootId != null) {
       result[id] = (kind: GoalLinkKind.reply, threadRootId: rootId);
@@ -90,11 +95,12 @@ Future<Map<String, GoalLinkInfo>> classifyGoalLinks(
       tops.add(id);
     }
   }
-  if (tops.isNotEmpty) {
+  final probed = [...tops, ...unknown];
+  if (probed.isNotEmpty) {
     // One chat reply per top-level message is enough to call it a thread;
     // job and stream events must not take the single slot.
     final replies = await query([
-      for (final id in tops)
+      for (final id in probed)
         NostrFilter(
           kinds: const [EventKind.streamMessage, EventKind.streamMessageV2],
           tags: {
@@ -113,6 +119,14 @@ Future<Map<String, GoalLinkInfo>> classifyGoalLinks(
         kind: replied.contains(id.toLowerCase())
             ? GoalLinkKind.thread
             : GoalLinkKind.message,
+        threadRootId: null,
+      );
+    }
+    for (final id in unknown) {
+      result[id] = (
+        kind: replied.contains(id.toLowerCase())
+            ? GoalLinkKind.thread
+            : GoalLinkKind.missing,
         threadRootId: null,
       );
     }

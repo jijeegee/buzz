@@ -154,17 +154,22 @@ export function useSearchHitThreads({
   const roots = query.data;
 
   const threadByEventId = React.useMemo(() => {
+    const hitContent = new Map(hits.map((hit) => [hit.eventId, hit.content]));
     const threads = new Map<string, SearchHitThread>();
     for (const [eventId, { name, rootContent, rootId }] of Object.entries(
       roots ?? {},
     )) {
       threads.set(eventId, {
-        name: listedNames.get(rootId) ?? name ?? threadRootTitle(rootContent),
+        // A root the reader cannot fetch falls back to the hit's own text.
+        name:
+          listedNames.get(rootId) ??
+          name ??
+          threadRootTitle(rootContent ?? hitContent.get(eventId)),
         rootId,
       });
     }
     return threads;
-  }, [listedNames, roots]);
+  }, [hits, listedNames, roots]);
 
   return { isLoading: query.isLoading, threadByEventId };
 }

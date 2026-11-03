@@ -311,7 +311,20 @@ test("thread titles fall back to the root's first line", () => {
     ),
     "First line",
   );
-  assert.equal(chatThreadTitle(row({ type: "thread" })), "Thread");
+  assert.equal(
+    chatThreadTitle(row({ type: "thread", latest: null })),
+    "Thread",
+  );
+  // A root the reader cannot see: the latest message's first line.
+  assert.equal(
+    chatThreadTitle(
+      row({
+        type: "thread",
+        latest: { ...event("latest", 1), content: "@you can you check\nthis" },
+      }),
+    ),
+    "@you can you check",
+  );
   assert.deepEqual(chatListQueryKey("wss://r", "ABC", ["x", "y"]), [
     "chat-list",
     "wss://r",

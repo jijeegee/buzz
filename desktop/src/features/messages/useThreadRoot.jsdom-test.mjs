@@ -161,6 +161,7 @@ test("a failed relay request is retried after 2, 5 and 15 s while connected", as
   await flush();
   assert.equal(relayCalls.length, 4, "no more timed retries");
   assert.equal(result.current.deleted, false, "a failure never means deleted");
+  assert.equal(result.current.unavailable, undefined, "nor unavailable");
 });
 
 test("an empty answer is asked again when the connection comes back", async () => {
@@ -169,11 +170,13 @@ test("an empty answer is asked again when the connection comes back", async () =
   });
   assert.equal(relayCalls.length, 1);
   assert.equal(result.current.event, null);
+  assert.equal(result.current.unavailable, true, "answered without the root");
   await link.set("reconnecting");
   await link.set("connected");
   await flush();
   assert.equal(relayCalls.length, 2);
   assert.equal(result.current.event?.id, ROOT);
+  assert.equal(result.current.unavailable, undefined);
 });
 
 test("an offline cold start asks again on the first connect", async () => {
@@ -253,6 +256,7 @@ test("a lone author's deletion answered before the stored root counts once the s
     relay: () => [event("d".repeat(64), 5, ALICE, ROOT)],
   });
   assert.equal(result.current.deleted, false, "author not known yet");
+  assert.equal(result.current.unavailable, undefined, "may yet be deleted");
   // The store never saw the deletion (it happened while offline).
   storedAnswer({ event: rootEvent, deleted: false });
   await flush();

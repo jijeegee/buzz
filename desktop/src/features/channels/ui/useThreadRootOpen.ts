@@ -34,16 +34,15 @@ export function chatRowThreadTitle(
  * The channel screen's thread panel opens on the root id alone
  * (docs/message-sync.md#opening-a-thread-from-its-root-id): resolves the root
  * in the background and names the placeholder top row. Off for forum rooms
- * (they keep the channel route) and huddle transcripts.
+ * (they keep the channel route). Huddle transcripts use it too, so a thread
+ * whose root the reader cannot see still draws its replies.
  */
 export function useThreadRootOpen({
   activeChannel,
-  isHuddleTranscript,
   loadedEvents,
   rootId,
 }: {
   activeChannel: Channel | null;
-  isHuddleTranscript: boolean;
   loadedEvents: readonly RelayEvent[];
   rootId: string | null;
 }): ThreadRootOpen | null {
@@ -53,7 +52,6 @@ export function useThreadRootOpen({
   const enabled =
     channelId !== null &&
     rootId !== null &&
-    !isHuddleTranscript &&
     activeChannel?.channelType !== "forum";
   const root = useThreadRoot({ channelId, enabled, loadedEvents, rootId });
   const threadName = useThreadNameLabel(

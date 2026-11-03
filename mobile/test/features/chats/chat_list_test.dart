@@ -51,6 +51,7 @@ ChatListRow _thread(
   int unread = 0,
   String? name,
   NostrEvent? root,
+  NostrEvent? latest,
 }) => ChatListRow(
   isThread: true,
   key: rootId,
@@ -63,6 +64,7 @@ ChatListRow _thread(
   threadName: name,
   unread: unread,
   root: root,
+  latest: latest,
 );
 
 void main() {
@@ -236,6 +238,18 @@ void main() {
         'first',
       );
       expect(chatThreadTitle(_thread(_channel, _root, 1)), 'Thread');
+      // A root hidden from this reader: the latest message's first line.
+      expect(
+        chatThreadTitle(
+          _thread(
+            _channel,
+            _root,
+            1,
+            latest: _event(id: 'late', at: 2, content: 'latest line\nmore'),
+          ),
+        ),
+        'latest line',
+      );
     });
 
     test('an attachment-only preview reads Photo', () {

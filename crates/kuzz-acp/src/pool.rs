@@ -6497,7 +6497,10 @@ fn parse_thread_response(json: serde_json::Value) -> Option<ConversationContext>
         .get("total_replies")
         .and_then(|v| v.as_u64())
         .unwrap_or(0) as usize;
-    let total = total_replies + 1; // +1 for root
+    // A root the reader cannot see (a thread they entered by a mention in a
+    // since_join room) is not counted.
+    let root_present = json.get("root").and_then(json_to_context_message).is_some();
+    let total = total_replies + usize::from(root_present);
     let truncated = total > messages.len();
 
     if messages.is_empty() {
@@ -6507,7 +6510,7 @@ fn parse_thread_response(json: serde_json::Value) -> Option<ConversationContext>
     Some(ConversationContext::Thread {
         messages,
         total,
-        root_present: json.get("root").and_then(json_to_context_message).is_some(),
+        root_present,
         truncated,
     })
 }

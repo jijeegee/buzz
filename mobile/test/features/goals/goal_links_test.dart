@@ -108,11 +108,33 @@ void main() {
       _other: (kind: GoalLinkKind.missing, threadRootId: null),
       _gone: (kind: GoalLinkKind.missing, threadRootId: null),
     });
-    // Only top-level messages need a reply lookup, one filter each.
+    // Top-level messages and ids that did not come back get a reply lookup,
+    // one filter each.
     expect(queries, hasLength(2));
     expect(queries[1].map((filter) => filter.tags['#e']!.single), [
       _root,
       _lone,
+      _gone,
     ]);
   });
+
+  test(
+    'a root hidden from the reader is a thread once a reply names it',
+    () async {
+      final hidden = 'f7' * 32;
+      final kinds = await classifyGoalLinks(_channel, [hidden], (
+        filters,
+      ) async {
+        // The root never comes back; a nested reply names it as root.
+        if (filters.single.ids != null) return const [];
+        return [
+          _event('f8' * 32, _channel, [
+            ['e', hidden, '', 'root'],
+            ['e', 'f9' * 32, '', 'reply'],
+          ]),
+        ];
+      });
+      expect(kinds, {hidden: (kind: GoalLinkKind.thread, threadRootId: null)});
+    },
+  );
 }

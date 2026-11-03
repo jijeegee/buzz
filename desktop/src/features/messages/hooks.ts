@@ -20,6 +20,7 @@ import {
   channelWindowKey,
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
+import { isThreadRootUnavailable } from "@/features/messages/lib/threadRootResolve";
 import {
   buildReplyTags,
   getThreadReference,
@@ -145,6 +146,17 @@ export function resolveCachedReplyRootId(
   for (const messages of messageCaches) {
     if (messages.some((event) => event.id === parentEventId)) {
       return resolveReplyRootId(parentEventId, messages);
+    }
+  }
+  // A root the relay does not return to this member (a room whose history
+  // starts at their join) is still proven a root by a cached reply naming it.
+  for (const messages of messageCaches) {
+    if (
+      messages.some(
+        (event) => getThreadReference(event.tags).rootId === parentEventId,
+      )
+    ) {
+      return parentEventId;
     }
   }
   return null;
@@ -1038,10 +1050,17 @@ export function useSendMessageMutation(
           effectiveChannel.id,
         );
         const suppliedRootEventId = parentEventId
-          ? resolveCachedReplyRootId(parentEventId, [
+          ? (resolveCachedReplyRootId(parentEventId, [
               cachedMessages,
               ...threadCaches,
-            ])
+            ]) ??
+            (isThreadRootUnavailable(
+              queryClient,
+              effectiveChannel.id,
+              parentEventId,
+            )
+              ? parentEventId
+              : null))
           : null;
         const result = await sendChannelMessage(
           effectiveChannel.id,

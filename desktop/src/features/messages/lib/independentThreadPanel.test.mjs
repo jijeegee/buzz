@@ -282,3 +282,57 @@ test("a found root the timeline does not draw becomes a real head, not a placeho
   assert.equal(panel.threadHead?.kind, 30_023);
   assert.equal(panel.visibleReplies.length, 1);
 });
+
+// A member who joined after the root (history_policy since_join) gets the
+// later replies but never the root.
+test("a root the relay does not return shows the unavailable row above the replies", () => {
+  const panel = rootOpened(
+    { event: null, deleted: false, unavailable: true },
+    [],
+    [replyEvent()],
+  );
+  assert.equal(panel.threadHead?.id, ROOT_ID);
+  assert.equal(panel.threadHead?.rootPlaceholder, true);
+  assert.equal(panel.threadHead?.rootUnavailable, true);
+  assert.equal(panel.replyTargetMessage?.id, ROOT_ID);
+  assert.deepEqual(
+    panel.visibleReplies.map((entry) => entry.message.id),
+    [REPLY_ID],
+  );
+});
+
+test("with the root unavailable, a reply to an unavailable earlier reply draws under the root", () => {
+  const earlierReplyId = "c".repeat(64);
+  const nested = contentEvent(REPLY_ID, "@you see above", [
+    ["e", ROOT_ID, "", "root"],
+    ["e", earlierReplyId, "", "reply"],
+  ]);
+  const panel = rootOpened(
+    { event: null, deleted: false, unavailable: true },
+    [],
+    [nested],
+  );
+  assert.deepEqual(
+    panel.visibleReplies.map((entry) => entry.message.id),
+    [REPLY_ID],
+  );
+  assert.equal(panel.totalReplyCount, 1);
+});
+
+test("a found root ignores a stale unavailable flag", () => {
+  const root = contentEvent(ROOT_ID, "two PRs");
+  const panel = rootOpened(
+    { event: root, deleted: false, unavailable: true },
+    [],
+    [replyEvent()],
+  );
+  assert.equal(panel.threadHead?.body, "two PRs");
+  assert.equal(panel.threadHead?.rootUnavailable, undefined);
+});
+
+test("with the root unavailable and no replies, the placeholder stays the thread name", () => {
+  const panel = rootOpened({ event: null, deleted: false, unavailable: true }, [], []);
+  assert.equal(panel.threadHead?.rootPlaceholder, true);
+  assert.equal(panel.threadHead?.rootUnavailable, undefined);
+  assert.equal(panel.threadHead?.author, "Launch plan");
+});

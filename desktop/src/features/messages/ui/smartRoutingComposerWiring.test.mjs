@@ -43,5 +43,8 @@ test("typing never reaches the router", async () => {
 
 test("thread replies give the router their root text", async () => {
   const threadPanel = await source("./MessageThreadPanel.tsx");
-  assert.match(threadPanel, /rootContent: threadHead\.body,/);
+  assert.match(
+    threadPanel,
+    /rootContent: rootIdOnly \? threadHead\.author : threadHead\.body,/,
+  );
 });

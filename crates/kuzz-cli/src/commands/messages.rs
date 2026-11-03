@@ -124,7 +124,20 @@ async fn resolve_thread_ref(
     parent_event_id: &str,
     allow_nested: bool,
 ) -> Result<ThreadRef, CliError> {
-    let event = fetch_event(client, parent_event_id).await?;
+    let event = match fetch_event(client, parent_event_id).await {
+        Ok(event) => event,
+        // A thread head this reader cannot read (a since_join room they
+        // joined after it; a mention let them into the thread) can still be
+        // replied to. The relay decides; reply to it as the thread head.
+        Err(CliError::NotFound(_)) if !allow_nested => {
+            let head = parse_event_id(parent_event_id)?;
+            return Ok(ThreadRef {
+                root_event_id: head,
+                parent_event_id: head,
+            });
+        }
+        Err(e) => return Err(e),
+    };
     let thread = thread_ref_from_event(parent_event_id, &event)?;
     if !allow_nested {
         ensure_reply_depth(parent_event_id, &event, &thread)?;
@@ -480,13 +493,23 @@ pub async fn cmd_get_thread(
 ) -> Result<(), CliError> {
     let expected_channel_id = parse_uuid(channel_id)?;
     validate_hex64(event_id)?;
-    let selected_event = fetch_event(client, event_id).await?;
-    let root_event_id = resolve_thread_target(
-        expected_channel_id,
-        event_id,
-        expected_root_id,
-        &selected_event,
-    )?;
+    let mut head_hidden = false;
+    let root_event_id = match fetch_event(client, event_id).await {
+        Ok(selected_event) => resolve_thread_target(
+            expected_channel_id,
+            event_id,
+            expected_root_id,
+            &selected_event,
+        )?,
+        // A thread head this reader cannot read (a since_join room they
+        // joined after it; a mention let them into the thread): read the
+        // thread by its id. The relay returns only what they may see.
+        Err(CliError::NotFound(_)) if expected_root_id.is_none_or(|root| root == event_id) => {
+            head_hidden = true;
+            event_id.to_string()
+        }
+        Err(e) => return Err(e),
+    };
     let limit = limit.unwrap_or(100).min(500);
 
     let mut reply_filter = serde_json::json!({
@@ -505,6 +528,10 @@ pub async fn cmd_get_thread(
     });
     let resp = client.query_multi(&[reply_filter, root_filter]).await?;
     let mut events: Vec<serde_json::Value> = serde_json::from_str(&resp).unwrap_or_default();
+    // A hidden head with no visible reply is no thread of theirs: a wrong id.
+    if head_hidden && events.is_empty() {
+        return Err(CliError::NotFound(format!("event {event_id} not found")));
+    }
     events.sort_by_key(|event| {
         event
             .get("created_at")

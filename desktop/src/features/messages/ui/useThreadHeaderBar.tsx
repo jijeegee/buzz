@@ -71,9 +71,13 @@ export function useThreadHeaderBar({
     };
   }
   const rootId = threadGoalRootId(threadHead);
-  // A root not found yet or deleted has no menu, like a pending one.
+  // A root not found yet or deleted has no menu, like a pending one. A root
+  // the reader cannot see keeps it: close, copy link and mark unread need
+  // only its id.
   const noMenu =
-    threadHead.pending || threadHead.rootPlaceholder || threadHead.rootDeleted;
+    threadHead.pending ||
+    (threadHead.rootPlaceholder && !threadHead.rootUnavailable) ||
+    threadHead.rootDeleted;
   const canToggle =
     threadHeaderActions && !isHuddleTranscript && Boolean(channelId) && !noMenu;
   const toggleClosed =

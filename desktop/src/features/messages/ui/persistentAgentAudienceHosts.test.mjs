@@ -25,7 +25,12 @@ test("thread and channel main hosts opt into persistent audiences", async () => 
   assert.doesNotMatch(newMessage, /audienceContext=/);
   assert.match(
     threadPanel,
-    /audienceContext=\{\{[\s\S]*type: "thread",[\s\S]*rootTags: threadHead\.tags,[\s\S]*\}\}/,
+    /audienceContext=\{\{[\s\S]*type: "thread",[\s\S]*rootTags: threadAudienceRootTags,[\s\S]*\}\}/,
+  );
+  // The root's own tags, or the loaded replies' agents when it is unseen.
+  assert.match(
+    threadPanel,
+    /threadHead\?\.rootUnavailable\s*\?\s*replyAudienceTags\(threadMessages\)\s*:\s*\(threadHead\?\.tags \?\? \[\]\)/,
   );
   assert.match(inboxDetail, /type: "thread"/);
   assert.match(

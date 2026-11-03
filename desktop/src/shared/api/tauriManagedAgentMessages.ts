@@ -17,6 +17,8 @@ export async function sendManagedAgentChannelMessage(input: {
   markerScope?: "agent" | "channel";
   mentionPubkeys?: string[];
   parentEventId?: string;
+  /** The thread root, when known: skips looking the parent up. */
+  rootEventId?: string;
   additionalMarkers?: string[];
   /**
    * User-voiced version of the message. In a community signed in with
@@ -35,6 +37,7 @@ export async function sendManagedAgentChannelMessage(input: {
       markerScope: input.markerScope ?? null,
       mentionPubkeys: input.mentionPubkeys ?? null,
       parentEventId: input.parentEventId ?? null,
+      rootEventId: input.rootEventId ?? null,
       additionalMarkers: input.additionalMarkers ?? null,
       userFallback: input.userFallback
         ? {

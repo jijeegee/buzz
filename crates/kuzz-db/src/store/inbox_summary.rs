@@ -126,9 +126,11 @@ rooms AS (
     LEFT JOIN LATERAL (
         SELECT e.id, e.created_at FROM events e
         WHERE e.community_id = $1 AND e.channel_id = m.channel_id
-          AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.channel_sequence > m.history_floor
-          -- Copies of replies in a thread from before the join are cut too.
-          AND (e.thread_root_sequence = 0 OR e.thread_root_sequence > m.history_floor)
+          AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          -- Copies of replies in a thread from before the join are cut too,
+          -- unless the reader entered it (migration 0095).
+          AND NOT channel_event_hidden_at($1, m.channel_id, e.channel_sequence,
+                                          e.thread_root_sequence, $2, m.history_floor)
           AND NOT EXISTS (
               SELECT 1 FROM thread_metadata r
               WHERE r.community_id = $1 AND r.event_id = e.id
@@ -151,11 +153,15 @@ threads AS (
         FROM thread_metadata t
         WHERE t.community_id = $1 AND t.channel_id = m.channel_id
           AND t.depth = 0 AND t.reply_count > 0 AND t.last_reply_at IS NOT NULL
-          -- A root from before the join is not shown (its replies follow it).
+          -- A root from before the join is not shown (its replies follow it),
+          -- unless the reader entered the thread (migration 0095).
           AND (m.history_floor = 0 OR EXISTS (
               SELECT 1 FROM events re
               WHERE re.community_id = $1 AND re.created_at = t.event_created_at
-                AND re.id = t.event_id AND re.channel_sequence > m.history_floor))
+                AND re.id = t.event_id
+                AND (re.channel_sequence > m.history_floor
+                     OR channel_thread_entry_seq($1, m.channel_id, re.channel_sequence, $2,
+                                                 m.history_floor) IS NOT NULL)))
           AND ($4::timestamptz IS NULL
                OR (t.last_reply_at, encode(t.event_id, 'hex')) < ($4, $5))
         ORDER BY t.last_reply_at DESC, t.event_id DESC
@@ -188,6 +194,8 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             AND e.created_at = r.event_created_at AND e.id = r.event_id
         WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
           AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          AND NOT channel_event_hidden_at($1, p.channel_id, e.channel_sequence,
+                                          e.thread_root_sequence, $2, p.history_floor)
           AND NOT (p.dm_blocked AND "#,
     crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
     r#")
@@ -198,15 +206,16 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
     event_json!(),
     r#" FROM events e
         WHERE e.community_id = $1 AND e.created_at = p.root_created_at AND e.id = p.root_id
-          AND e.deleted_at IS NULL
+          AND e.deleted_at IS NULL AND e.channel_sequence > p.history_floor
     ) END AS root,
     CASE WHEN p.row_kind = 'room' THEN (
         SELECT count(*) FROM (
             SELECT 1 FROM events e
             WHERE e.community_id = $1 AND e.channel_id = p.channel_id
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
-              AND e.created_at > cm.read_at AND e.channel_sequence > p.history_floor
-              AND (e.thread_root_sequence = 0 OR e.thread_root_sequence > p.history_floor)
+              AND e.created_at > cm.read_at
+              AND NOT channel_event_hidden_at($1, p.channel_id, e.channel_sequence,
+                                              e.thread_root_sequence, $2, p.history_floor)
               AND NOT (p.dm_blocked AND "#,
     crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
     r#")
@@ -224,6 +233,8 @@ SELECT p.row_kind, p.channel_id, p.channel_type, p.root_id, p.at, p.row_key, p.r
             WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
               AND e.kind = ANY($3) AND e.deleted_at IS NULL AND e.pubkey <> $2
               AND e.created_at > GREATEST(tm.read_at, cm.read_at)
+              AND NOT channel_event_hidden_at($1, p.channel_id, e.channel_sequence,
+                                              e.thread_root_sequence, $2, p.history_floor)
               AND NOT (p.dm_blocked AND "#,
     crate::blocks::hidden_by_block_period!("$1", "$2", "e"),
     r#")

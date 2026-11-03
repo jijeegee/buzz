@@ -302,10 +302,23 @@ class ThreadDetailPage extends HookConsumerWidget {
 
     // Index all messages by parentId so we can find direct children of any
     // message and compute thread summaries for nested threads.
+    // When the root is hidden from this reader (joined after it), a reply
+    // whose parent is not loaded hangs off the root, like desktop's
+    // attachToRootIfParentMissing. Not while it is still loading: a visible
+    // root arriving would move that reply again.
+    final headIsStandIn = resolvedHead.missing;
+    final loadedIds = headIsStandIn
+        ? {for (final msg in allMsgs) msg.id}
+        : const <String>{};
     final childrenByParent = <String, List<TimelineMessage>>{};
     for (final msg in allMsgs) {
-      final pid = msg.parentId;
+      var pid = msg.parentId;
       if (pid == null) continue;
+      if (headIsStandIn &&
+          msg.rootId == threadHead.id &&
+          !loadedIds.contains(pid)) {
+        pid = threadHead.id;
+      }
       childrenByParent.putIfAbsent(pid, () => []).add(msg);
     }
 
@@ -1379,7 +1392,10 @@ class ThreadDetailPage extends HookConsumerWidget {
                         isMember &&
                         !isArchived &&
                         !liveDeletionHidesHead &&
-                        threadHead.rootId == null,
+                        threadHead.rootId == null &&
+                        // A stand-in head is a root only once a reply names it.
+                        (!headIsStandIn ||
+                            allReplies.any((r) => r.rootId == threadHead.id)),
                     onRename: isMember && !isArchived && !liveDeletionHidesHead
                         ? () => showThreadNameEditor(context, nameKey)
                         : null,
@@ -1442,10 +1458,16 @@ class ThreadDetailPage extends HookConsumerWidget {
                           headIsDeleted: liveDeletionHidesHead,
                           head: liveHead,
                           headPendingLabel:
-                              resolvedHead.resolving &&
+                              (resolvedHead.resolving ||
+                                      resolvedHead.missing) &&
                                   identical(liveHead, threadHead)
                               ? title
                               : null,
+                          headUnavailable:
+                              resolvedHead.missing &&
+                              identical(liveHead, threadHead) &&
+                              allReplies.isNotEmpty &&
+                              !hasOlderReplies,
                           stickyDayTimestamp: stickyDayTimestamp,
                           channelNames: channelNames.ids,
                           channelId: channelId,
@@ -1532,7 +1554,9 @@ class ThreadDetailPage extends HookConsumerWidget {
                           hintText: context.l10n.threadComposerHint,
                           threadHeadId: threadHead.id,
                           rootId: effectiveRootId,
-                          threadRootTags: threadHead.tags,
+                          threadRootTags: resolvedHead.missing
+                              ? _standInRootTags(allReplies)
+                              : threadHead.tags,
                           // Replying is about the newest replies: focusing the
                           // composer while reading further up returns there.
                           onFocusRequested: () {

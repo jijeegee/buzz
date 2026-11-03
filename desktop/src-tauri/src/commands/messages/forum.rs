@@ -258,7 +258,11 @@ pub async fn get_forum_thread(
     }
     let total_replies = replies.len() as u32;
 
-    let root = root.ok_or_else(|| "forum thread root event not found".to_string())?;
+    // A post from before the member joined (since-join history) is never
+    // returned, but its later comments are: answer with them and no post.
+    if root.is_none() && replies.is_empty() {
+        return Err("forum thread root event not found".to_string());
+    }
     Ok(ForumThreadResponse {
         root,
         replies,

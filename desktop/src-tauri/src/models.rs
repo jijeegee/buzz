@@ -347,7 +347,8 @@ pub struct ForumThreadReplyInfo {
 
 #[derive(Serialize, Deserialize)]
 pub struct ForumThreadResponse {
-    pub root: ForumMessageInfo,
+    /// `None` when the relay withholds the post but returns its comments.
+    pub root: Option<ForumMessageInfo>,
     pub replies: Vec<ForumThreadReplyInfo>,
     pub total_replies: u32,
     pub next_cursor: Option<String>,

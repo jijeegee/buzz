@@ -24,6 +24,30 @@ class _ReconnectingWindowSession extends _ThreadWindowRelaySession {
       state = const SessionState(status: SessionStatus.connected);
 }
 
+/// Records the reply tags a thread send asks for.
+class _RecordingSend implements SendMessage {
+  final calls = <({String? parentEventId, String? rootEventId})>[];
+
+  @override
+  Future<void> call({
+    required String channelId,
+    required String content,
+    String? parentEventId,
+    String? rootEventId,
+    List<String>? mentionPubkeys,
+    Channel? channel,
+    List<List<String>> mediaTags = const [],
+    dynamic quote,
+    List<List<String>> extraTags = const [],
+    bool keepFailedMessage = false,
+  }) async {
+    calls.add((parentEventId: parentEventId, rootEventId: rootEventId));
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
 /// Reports one own reply still awaiting relay proof.
 class _UnconfirmedReplyMessagesNotifier extends _FakeMessagesNotifier {
   _UnconfirmedReplyMessagesNotifier() : super(const []);
@@ -195,9 +219,10 @@ void threadOpenRootTests() {
       },
     );
 
-    testWidgets('an empty answer keeps the name row, never deleted', (
-      tester,
-    ) async {
+    // A reader who joined after the root (history since joining) gets the
+    // replies but never the root.
+    testWidgets('an empty answer says earlier messages are not available, '
+        'never deleted', (tester) async {
       await tester.pumpWidget(
         byId(
           _ThreadWindowRelaySession(replies),
@@ -208,12 +233,141 @@ void threadOpenRootTests() {
 
       expect(find.byType(ThreadDetailPage), findsOneWidget);
       expect(find.byType(ChannelDetailPage), findsNothing);
-      expect(find.byKey(const ValueKey('thread-root-pending')), findsOneWidget);
+      expect(find.byKey(const ValueKey('thread-root-pending')), findsNothing);
+      expect(
+        find.byKey(const ValueKey('thread-root-unavailable')),
+        findsOneWidget,
+      );
+      expect(find.text("Earlier messages aren't available"), findsOneWidget);
       expect(
         find.byKey(const ValueKey('thread-message-deleted')),
         findsNothing,
       );
       expect(findRichText('row 109'), findsOneWidget);
+      // The reply summary stays under the stand-in row.
+      expect(find.text('10 replies'), findsOneWidget);
+      // The replies name this id as their root, so it may be closed.
+      expect(
+        tester.widget<ThreadMoreMenu>(find.byType(ThreadMoreMenu)).canClose,
+        isTrue,
+      );
+    });
+
+    testWidgets('an empty answer without replies keeps the name row', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(const []),
+          overrides: [rootSources(relay: () async => const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(find.byKey(const ValueKey('thread-root-pending')), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey('thread-root-unavailable')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('a reply to a hidden reply hangs off an unavailable root', (
+      tester,
+    ) async {
+      final nested = fixtureRow(
+        _channelId,
+        200,
+        1200,
+        extraTags: [
+          ['e', _openAtRootId, '', 'root'],
+          ['e', fixtureId(199), '', 'reply'],
+        ],
+      );
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession([nested]),
+          overrides: [rootSources(relay: () async => const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.byKey(const ValueKey('thread-root-unavailable')),
+        findsOneWidget,
+      );
+      expect(findRichText('row 200'), findsOneWidget);
+    });
+
+    testWidgets('a link at a reply under a hidden reply opens at the root', (
+      tester,
+    ) async {
+      final target = _textMsg(
+        id: 'target',
+        pubkey: 'carol',
+        content: 'Mention under a hidden reply',
+        createdAt: 1200,
+        extraTags: [
+          ['e', _openAtRootId, '', 'root'],
+          const ['e', 'hidden-parent', '', 'reply'],
+        ],
+      );
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: [target],
+          messagesNotifier: _PendingHeadMessagesNotifier([
+            target,
+          ], Future<void>.value()),
+          initialMessageId: 'target',
+          initialThreadRootId: 'hidden-parent',
+          initialThreadRouteBehavior:
+              InitialThreadRouteBehavior.replaceCurrentRoute,
+          threadReplies: {
+            _openAtRootId: [target],
+          },
+          overrides: [rootSources(relay: () async => const [])],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final page = tester.widget<ThreadDetailPage>(
+        find.byType(ThreadDetailPage),
+      );
+      expect(page.headId, _openAtRootId);
+      expect(page.initialMessageId, 'target');
+      expect(
+        find.byKey(const ValueKey('thread-root-unavailable')),
+        findsOneWidget,
+      );
+      expect(find.byKey(const ValueKey('thread-message-target')), findsOne);
+    });
+
+    testWidgets('a reply under an unavailable root goes to the root id', (
+      tester,
+    ) async {
+      final send = _RecordingSend();
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(replies),
+          overrides: [
+            rootSources(relay: () async => const []),
+            sendMessageProvider.overrideWithValue(send),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(const ValueKey('thread-root-unavailable')),
+        findsOneWidget,
+      );
+
+      final composer = tester.widget<ComposeBar>(find.byType(ComposeBar));
+      expect(composer.threadHeadId, _openAtRootId);
+      expect(composer.rootId, _openAtRootId);
+      await composer.onSend('hello', const []);
+
+      expect(send.calls, [
+        (parentEventId: _openAtRootId, rootEventId: _openAtRootId),
+      ]);
     });
 
     testWidgets('a failed lookup while connected is retried shortly', (

@@ -451,8 +451,7 @@ pub(crate) async fn get_thread_replies_on(
 
         if history_reader.is_some() {
             sql.push_str(&format!(
-                " AND NOT channel_event_before_join(e.community_id, e.channel_id, \
-                 event_history_sequence(e.channel_sequence, e.thread_root_sequence), ${param_idx})"
+                " AND NOT channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, ${param_idx})"
             ));
             param_idx += 1;
         }
@@ -762,7 +761,9 @@ pub(crate) async fn get_channel_window_on(
         sql.push_str(&format!(
             " AND e.channel_sequence > channel_history_floor($1, $2, ${param_idx}) \
              AND (e.thread_root_sequence = 0 \
-                  OR e.thread_root_sequence > channel_history_floor($1, $2, ${param_idx}))"
+                  OR e.thread_root_sequence > channel_history_floor($1, $2, ${param_idx}) \
+                  OR NOT channel_event_hidden($1, $2, e.channel_sequence, \
+                                              e.thread_root_sequence, ${param_idx}))"
         ));
         param_idx += 1;
     }
@@ -1215,8 +1216,7 @@ impl Db {
                 SELECT t.target, tm.parent_event_id, tm.root_event_id, e.received_at,
                     e.pubkey, e.deleted_at IS NULL AS live, (($6 AND "#,
             crate::blocks::hidden_by_block_period!("$1", "$3", "e"),
-            r#") OR channel_event_before_join(e.community_id, e.channel_id,
-                        event_history_sequence(e.channel_sequence, e.thread_root_sequence), $3)) AS hidden,
+            r#") OR channel_event_hidden(e.community_id, e.channel_id, e.channel_sequence, e.thread_root_sequence, $3)) AS hidden,
                     e.deleted_at IS NULL AND NOT EXISTS (
                         SELECT 1 FROM jsonb_array_elements(e.tags) mt
                         WHERE mt->>0 IN ($4, $5) AND COALESCE(mt->>1, '') <> ''

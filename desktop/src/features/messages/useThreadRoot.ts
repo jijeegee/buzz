@@ -14,6 +14,7 @@ import {
 } from "@/features/messages/lib/routeEventCache";
 import { storeOpensEnabled } from "@/features/messages/lib/storedWindows";
 import {
+  markThreadRootUnavailable,
   type ThreadRootState,
   threadRootVerdict,
 } from "@/features/messages/lib/threadRootResolve";
@@ -216,6 +217,11 @@ export function useThreadRoot({
         )
           ? { key, answer }
           : null;
+        // An author's deletion still to be judged may yet mean deleted.
+        if (!pendingRef.current) {
+          markThreadRootUnavailable(queryClient, channelId, rootId);
+          update((previous) => ({ ...previous, key, unavailable: true }));
+        }
         return;
       }
       pendingRef.current = null;
@@ -307,8 +313,14 @@ export function useThreadRoot({
     }));
   }, [channelId, key, knownAuthor, rootId]);
 
+  // Unavailable only while no copy of the root is at hand.
+  const unavailable = Boolean(current.unavailable) && event === null;
   return React.useMemo(
-    () => ({ event, deleted: current.deleted }),
-    [current.deleted, event],
+    () => ({
+      event,
+      deleted: current.deleted,
+      ...(unavailable ? { unavailable: true } : {}),
+    }),
+    [current.deleted, event, unavailable],
   );
 }

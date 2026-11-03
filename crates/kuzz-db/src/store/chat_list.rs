@@ -233,7 +233,8 @@ my AS MATERIALIZED (
                SELECT 1 FROM events le
                WHERE le.community_id = $1 AND le.channel_id = cm.channel_id
                  AND le.channel_sequence = c.main_last_seq AND le.thread_root_sequence > 0
-                 AND le.thread_root_sequence <= channel_history_floor($1, cm.channel_id, $2)
+                 AND channel_event_hidden($1, cm.channel_id, le.channel_sequence,
+                                          le.thread_root_sequence, $2)
            ) AS last_cut
     FROM channel_members cm
     JOIN channels c ON c.community_id = cm.community_id AND c.id = cm.channel_id
@@ -255,8 +256,8 @@ rooms AS (
         SELECT e.channel_sequence, e.received_at, e.id FROM events e
         WHERE (m.dm_blocked OR m.last_cut) AND e.community_id = $1
           AND e.channel_id = m.channel_id AND e.kind = ANY($3)
-          AND e.channel_sequence > m.history_floor
-          AND (e.thread_root_sequence = 0 OR e.thread_root_sequence > m.history_floor) AND "#,
+          AND NOT channel_event_hidden_at($1, m.channel_id, e.channel_sequence,
+                                          e.thread_root_sequence, $2, m.history_floor) AND "#,
     main_timeline!(),
     r#"
           AND NOT "#,
@@ -333,9 +334,12 @@ threads AS (
                CASE WHEN m.dm_blocked THEN l.id ELSE ts.last_event_id END AS last_event_id
     ) v
     WHERE (m.history_floor = 0 OR EXISTS (
-        -- A root from before the join is not shown (its replies follow it).
+        -- A root from before the join is not shown (its replies follow it),
+        -- unless the reader entered the thread (migration 0095).
         SELECT 1 FROM events re WHERE re.community_id = $1 AND re.id = t.root_id
-          AND re.channel_sequence > m.history_floor))
+          AND (re.channel_sequence > m.history_floor
+               OR channel_thread_entry_seq($1, m.channel_id, re.channel_sequence, $2,
+                                           m.history_floor) IS NOT NULL)))
       AND (t.root_id = ANY($7)
        OR (ts.closed_at IS NULL
            AND (t.unread_mark
@@ -392,7 +396,10 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
         JOIN events e ON e.community_id = r.community_id
             AND e.created_at = r.event_created_at AND e.id = r.event_id
         WHERE r.community_id = $1 AND r.root_event_id = p.root_id AND r.depth > 0
-          AND e.kind = ANY($3) AND e.deleted_at IS NULL AND "#,
+          AND e.kind = ANY($3) AND e.deleted_at IS NULL
+          AND NOT channel_event_hidden_at($1, p.channel_id, e.channel_sequence,
+                                          e.thread_root_sequence, $2, m.history_floor)
+          AND "#,
     not_marker!(),
     " AND ",
     not_blocked_dm!(),
@@ -404,6 +411,8 @@ SELECT p.row_kind, p.channel_id, p.root_id, p.at, p.row_key, p.last_seq, p.read_
     event_json!(),
     r#" FROM events e
         WHERE e.community_id = $1 AND e.id = p.root_id AND e.deleted_at IS NULL
+          -- An entered thread (migration 0095) keeps its old root hidden.
+          AND e.channel_sequence > m.history_floor
         ORDER BY e.created_at DESC LIMIT 1
     ) END AS root,
     p.stored_name AS thread_name,

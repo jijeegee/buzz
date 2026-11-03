@@ -8,7 +8,11 @@ import {
 } from "@/features/profile/lib/identity";
 import { UserProfilePopover } from "@/features/profile/ui/UserProfilePopover";
 import { UserAvatar } from "@/shared/ui/UserAvatar";
-import type { ForumThreadResponse, ThreadReply } from "@/shared/api/types";
+import type {
+  ForumPost,
+  ForumThreadResponse,
+  ThreadReply,
+} from "@/shared/api/types";
 import { channelChrome } from "@/shared/layout/chromeLayout";
 import { useT } from "@/shared/i18n";
 import { cn } from "@/shared/lib/cn";
@@ -221,20 +225,82 @@ export function ForumThreadPanel({
   }
 
   const { post, replies } = thread;
-  const {
-    mentionNames: postMentionNames,
-    mentionPubkeysByName: postMentionPubkeysByName,
-  } = resolveMentionProps(post.tags, profiles, post.content);
-  const postAuthorLabel = resolveUserLabel({
-    pubkey: post.pubkey,
-    currentPubkey,
-    profiles,
-    preferResolvedSelfLabel: true,
-  });
-  const postAvatarUrl =
-    profiles?.[post.pubkey.toLowerCase()]?.avatarUrl ?? null;
-  const postAuthorIsAgent =
-    profiles?.[post.pubkey.toLowerCase()]?.isAgent === true;
+  const renderPostHead = (post: ForumPost) => {
+    const {
+      mentionNames: postMentionNames,
+      mentionPubkeysByName: postMentionPubkeysByName,
+    } = resolveMentionProps(post.tags, profiles, post.content);
+    const postAuthorLabel = resolveUserLabel({
+      pubkey: post.pubkey,
+      currentPubkey,
+      profiles,
+      preferResolvedSelfLabel: true,
+    });
+    const postAvatarUrl =
+      profiles?.[post.pubkey.toLowerCase()]?.avatarUrl ?? null;
+    const postAuthorIsAgent =
+      profiles?.[post.pubkey.toLowerCase()]?.isAgent === true;
+
+    return (
+      <div
+        className={cn(
+          "group border-b border-border/60 p-4",
+          isDeletingPost && "pointer-events-none opacity-50",
+        )}
+        data-forum-event-id={post.eventId}
+      >
+        <div className="flex items-center gap-2">
+          <UserProfilePopover
+            pubkey={post.pubkey}
+            role={postAuthorIsAgent ? "bot" : undefined}
+          >
+            <button
+              className="flex items-center gap-2 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
+              type="button"
+            >
+              <UserAvatar
+                accent={postAuthorIsAgent}
+                avatarUrl={postAvatarUrl}
+                displayName={postAuthorLabel}
+                shape={postAuthorIsAgent ? "squircle" : "circle"}
+              />
+              <span className="text-sm font-semibold text-foreground hover:underline">
+                {postAuthorLabel}
+              </span>
+            </button>
+          </UserProfilePopover>
+          <span className="text-xs text-muted-foreground">
+            {formatRelativeTime(post.createdAt)}
+          </span>
+
+          {canDeletePost && onDeletePost ? (
+            <DeleteActionMenu
+              label="post"
+              onConfirm={() => onDeletePost(post.eventId)}
+            />
+          ) : null}
+        </div>
+        <div className="mt-3">
+          <Markdown
+            channelNames={channelNames}
+            className="text-sm"
+            content={post.content}
+            messageId={post.eventId}
+            linkPreviewsSuppressed={hasLinkPreviewSuppression(post.tags)}
+            linkPreviewTags={post.tags}
+            imetaByUrl={parseImetaTags(post.tags)}
+            mentionNames={postMentionNames}
+            mentionPubkeysByName={postMentionPubkeysByName}
+            searchQuery={
+              targetSearchMessageId === post.eventId
+                ? targetSearchQuery
+                : undefined
+            }
+          />
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className={cn("flex h-full flex-col", channelChrome.contentPadding)}>
@@ -256,63 +322,18 @@ export function ForumThreadPanel({
         onCopy={handleTimelineMentionCopy}
         ref={scrollRef}
       >
-        <div
-          className={cn(
-            "group border-b border-border/60 p-4",
-            isDeletingPost && "pointer-events-none opacity-50",
-          )}
-          data-forum-event-id={post.eventId}
-        >
-          <div className="flex items-center gap-2">
-            <UserProfilePopover
-              pubkey={post.pubkey}
-              role={postAuthorIsAgent ? "bot" : undefined}
+        {post ? (
+          renderPostHead(post)
+        ) : (
+          <div className="border-b border-border/60 p-4">
+            <p
+              className="text-sm italic text-muted-foreground"
+              data-testid="forum-thread-post-unavailable"
             >
-              <button
-                className="flex items-center gap-2 rounded-xl focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-ring"
-                type="button"
-              >
-                <UserAvatar
-                  accent={postAuthorIsAgent}
-                  avatarUrl={postAvatarUrl}
-                  displayName={postAuthorLabel}
-                  shape={postAuthorIsAgent ? "squircle" : "circle"}
-                />
-                <span className="text-sm font-semibold text-foreground hover:underline">
-                  {postAuthorLabel}
-                </span>
-              </button>
-            </UserProfilePopover>
-            <span className="text-xs text-muted-foreground">
-              {formatRelativeTime(post.createdAt)}
-            </span>
-
-            {canDeletePost && onDeletePost ? (
-              <DeleteActionMenu
-                label="post"
-                onConfirm={() => onDeletePost(post.eventId)}
-              />
-            ) : null}
+              {t("messages.thread.rootUnavailable")}
+            </p>
           </div>
-          <div className="mt-3">
-            <Markdown
-              channelNames={channelNames}
-              className="text-sm"
-              content={post.content}
-              messageId={post.eventId}
-              linkPreviewsSuppressed={hasLinkPreviewSuppression(post.tags)}
-              linkPreviewTags={post.tags}
-              imetaByUrl={parseImetaTags(post.tags)}
-              mentionNames={postMentionNames}
-              mentionPubkeysByName={postMentionPubkeysByName}
-              searchQuery={
-                targetSearchMessageId === post.eventId
-                  ? targetSearchQuery
-                  : undefined
-              }
-            />
-          </div>
-        </div>
+        )}
 
         <div className="flex items-center gap-1.5 border-b border-border/60 px-4 py-2.5 text-sm font-medium text-muted-foreground">
           <MessageSquare className="h-4 w-4" />

@@ -186,6 +186,21 @@ export const THREAD_LAYER_CLASS =
   "bg-[var(--kuzz-thread-canvas)] shadow-[var(--kuzz-thread-layer-shadow)]";
 const THREAD_PANEL_SUMMARY_INDENT_OFFSET_REM = 0;
 
+/**
+ * For a root the reader cannot see: `p` tags of the loaded replies' authors
+ * and mentions, so the thread's agents are still pinned and routed.
+ */
+function replyAudienceTags(replies: readonly TimelineMessage[]): string[][] {
+  const pubkeys = new Set<string>();
+  for (const reply of replies) {
+    if (reply.pubkey) pubkeys.add(reply.pubkey);
+    for (const tag of reply.tags ?? []) {
+      if (tag[0] === "p" && tag[1]) pubkeys.add(tag[1]);
+    }
+  }
+  return [...pubkeys].map((pubkey) => ["p", pubkey]);
+}
+
 export function MessageThreadPanel({
   channel,
   channelId,
@@ -428,6 +443,13 @@ export function MessageThreadPanel({
     () => deferredThreadReplies.map((entry) => entry.message),
     [deferredThreadReplies],
   );
+  const threadAudienceRootTags = React.useMemo(
+    () =>
+      threadHead?.rootUnavailable
+        ? replyAudienceTags(threadMessages)
+        : (threadHead?.tags ?? []),
+    [threadHead?.rootUnavailable, threadHead?.tags, threadMessages],
+  );
   const {
     closedLine,
     closedMarkerId,
@@ -609,11 +631,14 @@ export function MessageThreadPanel({
   );
   // A root not found yet, or deleted: its top row stands in, and what needs
   // the root itself (its actions, send to group, show in group) is hidden.
+  // A root the reader cannot see still lets replies go to the group (no
+  // excerpt) and the thread be renamed: those need only its id.
   const rootStandIn = isRootStandIn(threadHead);
+  const rootIdOnly = rootStandIn && Boolean(threadHead?.rootUnavailable);
   const stableSendToChannel = useStableSendToChannel(
     channelId,
     threadHead,
-    rootStandIn ? undefined : onSendToChannel,
+    rootStandIn && !rootIdOnly ? undefined : onSendToChannel,
   );
   if (!threadHead) {
     return null;
@@ -690,6 +715,13 @@ export function MessageThreadPanel({
                 data-testid="message-thread-root-deleted"
               >
                 {t("messages.thread.rootDeleted")}
+              </p>
+            ) : threadHead.rootUnavailable ? (
+              <p
+                className="px-3 py-1 text-sm italic text-muted-foreground"
+                data-testid="message-thread-root-unavailable"
+              >
+                {t("messages.thread.rootUnavailable")}
               </p>
             ) : (
               <p
@@ -1048,8 +1080,10 @@ export function MessageThreadPanel({
               <MessageComposer
                 audienceContext={{
                   type: "thread",
-                  rootContent: threadHead.body,
-                  rootTags: threadHead.tags,
+                  // A root the reader cannot see: the thread name and the
+                  // agents of the loaded replies stand in for it.
+                  rootContent: rootIdOnly ? threadHead.author : threadHead.body,
+                  rootTags: threadAudienceRootTags,
                 }}
                 channelId={channelId}
                 channelName={channelName}
@@ -1134,7 +1168,7 @@ export function MessageThreadPanel({
               key={`${channelId}:${threadHead.id}`}
               channelId={channelId}
               threadId={threadHead.id}
-              disabled={disabled || rootStandIn}
+              disabled={disabled || (rootStandIn && !rootIdOnly)}
               headerProps={{
                 headerActions: goalHeaderChip,
                 headerLeading,

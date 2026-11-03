@@ -58,4 +58,6 @@ export type TimelineMessage = {
   rootPlaceholder?: boolean;
   /** Thread panel top row for a root proven deleted; the replies stay. */
   rootDeleted?: boolean;
+  /** With `rootPlaceholder`: the relay answered without the root. */
+  rootUnavailable?: boolean;
 };
