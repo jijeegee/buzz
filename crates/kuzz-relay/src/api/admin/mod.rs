@@ -10070,13 +10070,18 @@ mod postgres_tests {
     }
 
     /// Join order (U0 review B1): the 39002 member list naming the new member
-    /// is stored and delivered before the 44100, and the 44100 before the
-    /// room's `member_joined` line. Installed desktops refresh their room list
-    /// once on the 44100 by reading 39002, so a 44100 ahead of the 39002 left
-    /// the joined room missing until the next 60 s poll.
+    /// is stored before the 44100 is stored, and the 44100 is delivered before
+    /// the room's `member_joined` line. Installed desktops refresh their room
+    /// list once on the 44100 by reading 39002 with a REQ, so the store order
+    /// is what matters; a 44100 stored ahead of the 39002 left the joined
+    /// room missing until the next 60 s poll.
+    ///
+    /// The 39002 fan-out is spawned, so its frame may reach the socket after
+    /// the 44100; only the store order and the two inline frames are asserted
+    /// (U1 review S2: the wire-order assertion was flaky).
     ///
     /// Falsifiable: moving discovery after the 44100 (the first U0 order)
-    /// delivers the 44100 frame before the 39002 frame.
+    /// stores the 44100 before the 39002.
     #[tokio::test]
     #[ignore = "requires Postgres — join publishes 39002, then 44100, then member_joined"]
     async fn join_stores_member_list_before_member_added_notice() {
@@ -10166,15 +10171,6 @@ mod postgres_tests {
             let frame: serde_json::Value = serde_json::from_str(text.as_str()).expect("frame");
             let event = &frame[2];
             match event["kind"].as_u64() {
-                Some(39002) => {
-                    let lists_joiner = event["tags"].as_array().is_some_and(|tags| {
-                        tags.iter()
-                            .any(|t| t[0] == "p" && t[1].as_str() == Some(joiner_hex.as_str()))
-                    });
-                    if lists_joiner {
-                        order.push("members_39002");
-                    }
-                }
                 Some(44100) => order.push("member_added"),
                 Some(40099)
                     if event["content"]
@@ -10186,7 +10182,33 @@ mod postgres_tests {
                 _ => {}
             }
         }
-        assert_eq!(order, ["members_39002", "member_added", "member_joined"]);
+        assert_eq!(order, ["member_added", "member_joined"]);
+
+        // Store order: `received_at` is each insert transaction's start time.
+        let names_joiner = serde_json::json!([["p", joiner_hex]]);
+        let stored_at = |kind: i32| {
+            let pool = pool.clone();
+            let names_joiner = names_joiner.clone();
+            async move {
+                sqlx::query_scalar::<_, Option<chrono::DateTime<chrono::Utc>>>(
+                    "SELECT min(received_at) FROM events
+                     WHERE community_id = $1 AND kind = $2 AND tags @> $3",
+                )
+                .bind(community_id)
+                .bind(kind)
+                .bind(names_joiner)
+                .fetch_one(&pool)
+                .await
+                .expect("stored event")
+                .unwrap_or_else(|| panic!("no stored kind {kind} naming the joiner"))
+            }
+        };
+        let members = stored_at(39002).await;
+        let member_added = stored_at(44100).await;
+        assert!(
+            members < member_added,
+            "39002 naming the joiner ({members}) must be stored before the 44100 ({member_added})"
+        );
     }
 
     /// K1 under contention (plan U0 row): N concurrent report kicks with N
