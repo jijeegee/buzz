@@ -324,10 +324,11 @@ Future<List<Map<String, dynamic>>> _withPushedReplies(
   List<Map<String, dynamic>> summaries,
 ) async {
   final candidates = await db.rawQuery(
-    'SELECT id, pubkey, created_at, root FROM events '
-    'WHERE room = ? AND root IN (${_marks(roots.length)}) '
-    'AND kind IN (9, 40002) AND id IN (SELECT id FROM pushed_rows) '
-    'ORDER BY created_at, id',
+    'SELECT e.id, e.pubkey, e.created_at, e.root FROM pushed_rows p '
+    'JOIN events e ON e.id = p.id '
+    'WHERE e.room = ? AND e.root IN (${_marks(roots.length)}) '
+    'AND e.kind IN (9, 40002) '
+    'ORDER BY e.created_at, e.id',
     [room, ...roots],
   );
   if (candidates.isEmpty) return summaries;
@@ -337,8 +338,7 @@ Future<List<Map<String, dynamic>>> _withPushedReplies(
       if (!deleted.contains(candidate['id'])) candidate['id']! as String,
   ]);
   final byRoot = <String, Map<String, dynamic>>{
-    for (final summary in summaries)
-      ?_summaryRoot(summary): summary,
+    for (final summary in summaries) ?_summaryRoot(summary): summary,
   };
   for (final root in roots) {
     final summary = byRoot[root];

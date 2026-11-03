@@ -44,6 +44,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
   Future<void> _restoreSavedRows(ChannelHeadScope scope) async {
     final filter = _channelWindowFilter(null);
     final session = _summarySession;
+    final read = ++_storeReads;
     final stored = _read(paintableRoomHeadProvider)(session, channelId, filter)
         .catchError((Object error) {
           debugPrint(
@@ -62,8 +63,13 @@ extension _StoredPaint on ChannelMessagesNotifier {
     var storeDrew = false;
     try {
       await Future.wait([
-        stored.then((events) => storeDrew = _paintSaved(scope, events)),
-        cached.then((events) => storeDrew ? null : _paintSaved(scope, events)),
+        stored.then((events) => storeDrew = _paintStored(scope, events, read)),
+        // A store paint (this one or a later redraw) holds every cached row.
+        cached.then(
+          (events) => storeDrew || _paintedStoreRead > 0
+              ? null
+              : _paintSaved(scope, events),
+        ),
       ]);
     } catch (error) {
       debugPrint(
@@ -80,7 +86,13 @@ extension _StoredPaint on ChannelMessagesNotifier {
   /// shown: [_paintSaved] keeps the relay's window and live rows.
   void _repaintStored() {
     final scope = _readHeadScope();
-    if (!_headRestoreStarted || _relayHistoryArrived || scope == null) return;
+    if (!_hasListeners ||
+        !_headRestoreStarted ||
+        _relayHistoryArrived ||
+        scope == null) {
+      return;
+    }
+    final read = ++_storeReads;
     final filter = _channelWindowFilter(null);
     final stored = _read(paintableRoomHeadProvider)(
       _summarySession,
@@ -88,7 +100,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
       filter,
     );
     unawaited(
-      stored.then((events) => _paintSaved(scope, events)).catchError((
+      stored.then((events) => _paintStored(scope, events, read)).catchError((
         Object error,
       ) {
         debugPrint(
@@ -97,6 +109,18 @@ extension _StoredPaint on ChannelMessagesNotifier {
         return false;
       }),
     );
+  }
+
+  /// Draws the store's window from read [read] unless a later read already
+  /// drew: reads can answer out of order.
+  bool _paintStored(
+    ChannelHeadScope scope,
+    List<NostrEvent>? events,
+    int read,
+  ) {
+    if (read < _paintedStoreRead || !_paintSaved(scope, events)) return false;
+    _paintedStoreRead = read;
+    return true;
   }
 
   /// Draws [events] (a channel-window response) unless the relay's window or

@@ -55,6 +55,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ({int createdAt, String id})? _paintedAnchor;
   int? _paintedContiguousFrom = 0;
   bool _followingStoredHead = false;
+
+  /// Store paint reads started, and the latest one drawn (0: none).
+  int _storeReads = 0;
+  int _paintedStoreRead = 0;
   Completer<void>? _storedHeadShown;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};

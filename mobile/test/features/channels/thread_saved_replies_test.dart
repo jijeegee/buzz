@@ -81,4 +81,33 @@ void main() {
     expect(replies.first.content, 'preloaded', reason: 'the preload wins');
     expect(loading, [true, false], reason: 'the re-read keeps its replies');
   });
+  test(
+    'over a preload, only stored replies newer than its newest are added',
+    () async {
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(_Offline.new),
+          paintableThreadHeadProvider.overrideWithValue(
+            (_, _) async => serveThreadWindow(
+              _channel,
+              _root,
+              // r2 is gone from the relay (deleted), but the store kept it.
+              [_reply('r1', 10), _reply('r2', 20), _reply('r4', 40)],
+              NostrFilter(kinds: const [], limit: 50),
+            ),
+          ),
+          preloadedThreadRepliesProvider.overrideWith(
+            (ref, args) => [_reply('r1', 10), _reply('r3', 30)],
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(savedThreadRepliesProvider(_args), (_, _) {});
+      await container.read(storedThreadRepliesProvider(_args).future);
+      expect(
+        container.read(savedThreadRepliesProvider(_args)).map((r) => r.id),
+        ['r1', 'r3', 'r4'],
+      );
+    },
+  );
 }

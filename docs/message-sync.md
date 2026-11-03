@@ -1200,10 +1200,12 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   paint only: the `summaries` table, the saved head cache and coverage
   stay the relay's. A thread paint draws pushed replies the same way.
   After a drain that wrote at least one file, an open or opening room
-  whose relay window has not landed, and a thread's saved replies (the
-  inbox preload's merged with the store's, the preload's copy winning),
+  that someone watches and whose relay window has not landed, and a
+  thread's saved replies (the inbox preload's plus the stored replies
+  newer than its newest; older stored ones may be deleted on the relay),
   read the store again; the thread's first-load flag stays off for that
-  re-read.
+  re-read. A store read that answers after a later one drew is ignored,
+  and the cached head never draws over a store paint.
 - **Folds:** only the events the store accepted, and only for rooms the
   channel list shows as listed (member, not archived, not a hidden DM; the
   list already leaves hidden DMs out), taken once the saved channel list

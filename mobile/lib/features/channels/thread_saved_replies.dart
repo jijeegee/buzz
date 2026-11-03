@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show BuildContext;
@@ -49,16 +50,22 @@ final storedThreadRepliesProvider = FutureProvider.autoDispose
       }
     });
 
-/// Replies to draw while a thread's own query is out: the inbox preload's
-/// and the device store's, oldest first; the preload's copy of a reply wins.
+/// Replies to draw while a thread's own query is out: the inbox preload's,
+/// with the device store's newer than its newest (a push drained since),
+/// oldest first; else the device store's. Older stored replies are left
+/// out: the preload, from the relay, may have dropped them as deleted.
 final savedThreadRepliesProvider = Provider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
       final preloaded = ref.watch(preloadedThreadRepliesProvider(args));
       final stored =
           ref.watch(storedThreadRepliesProvider(args)).value ?? const [];
-      if (stored.isEmpty) return preloaded;
       if (preloaded.isEmpty) return stored;
-      return mergeThreadEvents(stored, preloaded);
+      final newest = preloaded.map((reply) => reply.createdAt).reduce(max);
+      final newer = [
+        for (final reply in stored)
+          if (reply.createdAt > newest) reply,
+      ];
+      return newer.isEmpty ? preloaded : mergeThreadEvents(preloaded, newer);
     });
 
 /// Whether the device store's replies are still being looked up for the
