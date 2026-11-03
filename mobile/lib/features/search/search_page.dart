@@ -25,6 +25,7 @@ import '../channels/group_avatar.dart';
 import '../channels/group_chat/chat_grid_avatar.dart';
 import '../channels/group_chat/chat_title.dart';
 import '../channels/small_avatar.dart';
+import '../channels/thread_name_provider.dart';
 import '../channels/message_content.dart';
 import '../channels/date_formatters.dart';
 import '../channels/dm_channel_labels.dart';

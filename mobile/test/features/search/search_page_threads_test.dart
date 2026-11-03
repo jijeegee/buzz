@@ -5,6 +5,7 @@ import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/group_avatar.dart';
+import 'package:kuzz/features/channels/thread_name_provider.dart';
 import 'package:kuzz/features/chats/chat_list.dart';
 import 'package:kuzz/features/chats/chat_list_provider.dart';
 import 'package:kuzz/features/profile/profile_provider.dart';
@@ -13,6 +14,7 @@ import 'package:kuzz/features/search/search_page.dart';
 import 'package:kuzz/features/search/search_provider.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
+import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/conversation_row_parts.dart';
 
@@ -67,7 +69,12 @@ final _rows = [
   _threadRow,
 ];
 
-SearchHit _hit(String id, int createdAt, {bool inThread = false}) => SearchHit(
+SearchHit _hit(
+  String id,
+  int createdAt, {
+  bool inThread = false,
+  String rootId = _threadRoot,
+}) => SearchHit(
   eventId: id,
   content: '검색창을 고쳤어요',
   kind: 9,
@@ -77,9 +84,9 @@ SearchHit _hit(String id, int createdAt, {bool inThread = false}) => SearchHit(
   createdAt: createdAt,
   score: 0,
   tags: inThread
-      ? const [
-          ['e', _threadRoot, '', 'root'],
-          ['e', _threadRoot, '', 'reply'],
+      ? [
+          ['e', rootId, '', 'root'],
+          ['e', rootId, '', 'reply'],
         ]
       : const [],
 );
@@ -89,6 +96,7 @@ Future<void> _pump(
   SearchState state, {
   List<Channel>? channels,
   NavigatorObserver? observer,
+  Map<String, String?> threadNames = const {},
 }) async {
   await tester.pumpWidget(
     ProviderScope(
@@ -103,6 +111,16 @@ Future<void> _pump(
           AsyncData(ChatListState(rows: _rows, next: null)),
         ),
         userCacheProvider.overrideWith(_FakeUserCacheNotifier.new),
+        for (final MapEntry(key: headId, value: name) in threadNames.entries)
+          threadNameProvider((
+            channelId: 'general',
+            headId: headId,
+          )).overrideWith(
+            () => _FakeThreadNameNotifier((
+              channelId: 'general',
+              headId: headId,
+            ), name),
+          ),
       ],
       child: MaterialApp(
         theme: AppTheme.light(),
@@ -220,6 +238,40 @@ void main() {
         matching: find.byType(GroupAvatar),
       ),
       findsOneWidget,
+    );
+  });
+
+  testWidgets('a message in a thread missing from Chats shows its name', (
+    tester,
+  ) async {
+    // Closed and quiet threads are not in Chats; their name event names them.
+    await _pump(
+      tester,
+      SearchState(
+        query: '검색',
+        messageResults: [
+          _hit('in-closed', 60, inThread: true, rootId: 'closed-root'),
+          _hit('in-unnamed', 50, inThread: true, rootId: 'unnamed-root'),
+        ],
+      ),
+      threadNames: {'closed-root': '로그인·설정 주소 분리', 'unnamed-root': null},
+    );
+
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('search-message-channel-in-closed')),
+          )
+          .data,
+      'general › 로그인·설정 주소 분리',
+    );
+    expect(
+      tester
+          .widget<Text>(
+            find.byKey(const ValueKey('search-message-channel-in-unnamed')),
+          )
+          .data,
+      'general › Thread',
     );
   });
 
@@ -360,4 +412,26 @@ class _FakeUserCacheNotifier extends UserCacheNotifier {
   Map<String, UserProfile> build() => const {
     'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
   };
+}
+
+class _FakeThreadNameNotifier extends ThreadNameNotifier {
+  final String? name;
+  _FakeThreadNameNotifier(super.key, this.name);
+
+  @override
+  ThreadNameState build() => ThreadNameState(
+    name == null
+        ? null
+        : NostrEvent(
+            id: 'name-${key.headId}',
+            pubkey: 'alice',
+            createdAt: 1,
+            kind: EventKind.threadName,
+            tags: [
+              ['h', key.channelId],
+              ['e', key.headId],
+            ],
+            content: name!,
+          ),
+  );
 }

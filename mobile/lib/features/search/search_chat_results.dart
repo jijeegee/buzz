@@ -235,9 +235,9 @@ final searchChatResultsProvider = Provider<SearchChatResults>((ref) {
   return (rootId: reference.rootId!, parentId: reference.parentId);
 }
 
-/// The Chats title of the thread [thread] points at, or 'Thread' when that
-/// thread is not in the loaded list.
-String searchHitThreadTitle(
+/// The Chats title of the thread [thread] points at, or null when that
+/// thread is not in the loaded list (closed and quiet threads are not).
+String? searchHitThreadTitle(
   ({String rootId, String? parentId}) thread,
   List<ChatListRow> rows,
 ) {
@@ -254,5 +254,5 @@ String searchHitThreadTitle(
       return chatThreadTitle(row);
     }
   }
-  return appL10n.searchThread;
+  return null;
 }
