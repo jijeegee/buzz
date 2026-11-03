@@ -41,6 +41,7 @@ import 'shared/push/push_subscription_provider.dart';
 import 'shared/push/push_relay_capability_provider.dart';
 import 'shared/push/push_inbox.dart';
 import 'shared/push/push_inbox_drain.dart';
+import 'shared/push/push_tray.dart';
 import 'shared/relay/relay.dart';
 import 'shared/read_state/read_state_provider.dart';
 import 'shared/theme/theme.dart';
@@ -262,12 +263,14 @@ class App extends HookConsumerWidget {
         error: (_, _) => const TokenSignInPage(),
         data: (state) => switch (state.status) {
           AuthStatus.authenticated => DeepLinkDispatcher(
-            child: _TokenGateIfNeeded(
-              child: DeviceKeyNotice(
-                child: HomePage(
-                  settingsPageBuilder: _buildSettingsPage,
-                  profilePageBuilder: _buildProfilePage,
-                  hasUnreadInbox: hasUnreadInbox,
+            child: PushTraySweeper(
+              child: _TokenGateIfNeeded(
+                child: DeviceKeyNotice(
+                  child: HomePage(
+                    settingsPageBuilder: _buildSettingsPage,
+                    profilePageBuilder: _buildProfilePage,
+                    hasUnreadInbox: hasUnreadInbox,
+                  ),
                 ),
               ),
             ),

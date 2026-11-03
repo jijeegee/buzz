@@ -80,6 +80,36 @@ public struct KuzzPushNavigationTarget: Codable, Equatable, Sendable {
 
 }
 
+/// A message notification still in Notification Center, as the app reads it
+/// to remove the ones whose message was already read.
+public enum KuzzDeliveredMessageNotification {
+  /// userInfo key of the event's `created_at`, set next to the navigation target.
+  public static let createdAtUserInfoKey = "kuzz_push_created_at"
+
+  /// Arguments for Flutter, or nil for notifications without a message
+  /// target (generic text, older builds without `created_at`).
+  public static func flutterArguments(
+    identifier: String,
+    userInfo: [AnyHashable: Any]
+  ) -> [String: Any]? {
+    guard let target = KuzzPushNavigationTarget.decodeIfPresent(from: userInfo),
+      let createdAt = (userInfo[createdAtUserInfoKey] as? NSNumber)?.intValue,
+      createdAt > 0
+    else { return nil }
+    var arguments: [String: Any] = [
+      "key": identifier,
+      "eventId": target.eventID,
+      "communityId": target.communityID,
+      "channelId": target.channelID,
+      "createdAt": createdAt,
+    ]
+    if let threadRootID = target.threadRootID {
+      arguments["threadRootId"] = threadRootID
+    }
+    return arguments
+  }
+}
+
 /// Thread-safe one-item buffer spanning notification delivery and Flutter
 /// engine startup during a cold notification launch.
 public final class KuzzPushNavigationBuffer: @unchecked Sendable {

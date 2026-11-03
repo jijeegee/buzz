@@ -87,6 +87,7 @@ final class NotificationService: UNNotificationServiceExtension {
     bestAttemptContent = content
     var cleanUserInfo = content.userInfo
     cleanUserInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
+    cleanUserInfo.removeValue(forKey: KuzzDeliveredMessageNotification.createdAtUserInfoKey)
     content.userInfo = cleanUserInfo
 
     resolver.resolve { [weak self] resolution in
@@ -103,6 +104,9 @@ final class NotificationService: UNNotificationServiceExtension {
         if let navigationTarget = resolution.navigationTarget {
           var userInfo = content.userInfo
           userInfo[KuzzPushNavigationTarget.userInfoKey] = navigationTarget.userInfoValue
+          if let createdAt = resolution.eventCreatedAt {
+            userInfo[KuzzDeliveredMessageNotification.createdAtUserInfoKey] = createdAt
+          }
           content.userInfo = userInfo
         }
         self.bestAttemptContent = content
@@ -174,6 +178,7 @@ final class NotificationService: UNNotificationServiceExtension {
     fallback.threadIdentifier = ""
     var userInfo = fallback.userInfo
     userInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
+    userInfo.removeValue(forKey: KuzzDeliveredMessageNotification.createdAtUserInfoKey)
     fallback.userInfo = userInfo
     return fallback
   }

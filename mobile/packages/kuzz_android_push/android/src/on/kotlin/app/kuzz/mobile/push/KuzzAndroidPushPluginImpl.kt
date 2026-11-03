@@ -96,6 +96,14 @@ class KuzzAndroidPushPluginImpl :
                 val args = call.arguments as? Map<String, Any?> ?: emptyMap()
                 KuzzNotifications.show(context, args)
                 result.success(null)
+                // The app may have read this message already: let it sweep.
+                dispatchToApp("notificationPosted", null)
+            }
+            "deliveredMessageNotifications" -> result.success(KuzzNotifications.delivered(context))
+            "removeDeliveredNotifications" -> {
+                val keys = (call.arguments as? List<*>)?.filterIsInstance<String>().orEmpty()
+                KuzzNotifications.remove(context, keys)
+                result.success(null)
             }
             "cancelAll" -> {
                 NotificationManagerCompat.from(context).cancelAll()

@@ -179,6 +179,7 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
 
       XCTAssertEqual(result?.0.navigationTarget?.threadRootID, item.thread, "tags: \(item.tags)")
       XCTAssertEqual(result?.0.navigationTarget?.eventID, "event-id", "tags: \(item.tags)")
+      XCTAssertEqual(result?.0.eventCreatedAt, Self.now, "tags: \(item.tags)")
     }
   }
 

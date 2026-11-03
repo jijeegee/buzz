@@ -61,6 +61,9 @@ class AndroidPushNotice {
   /// Set for a thread reply: the tap opens this thread at [eventId].
   final String? threadRootId;
 
+  /// The event's `created_at`: the app removes the notification once read.
+  final int? createdAt;
+
   const AndroidPushNotice.generic()
     : generic = true,
       title = null,
@@ -69,7 +72,8 @@ class AndroidPushNotice {
       eventId = null,
       communityId = null,
       channelId = null,
-      threadRootId = null;
+      threadRootId = null,
+      createdAt = null;
 
   const AndroidPushNotice.message({
     required String this.title,
@@ -79,6 +83,7 @@ class AndroidPushNotice {
     this.communityId,
     this.channelId,
     this.threadRootId,
+    this.createdAt,
   }) : generic = false;
 
   Map<String, Object?> toChannelArguments(AppLocalizations strings) => {
@@ -92,6 +97,7 @@ class AndroidPushNotice {
       'communityId': communityId,
       'channelId': channelId,
       if (isPushEventId(threadRootId)) 'threadRootId': threadRootId,
+      if (createdAt != null) 'createdAt': createdAt,
     },
   };
 }
@@ -240,6 +246,7 @@ class AndroidPushWake {
       communityId: newest.community.id,
       channelId: channelId,
       threadRootId: pushThreadRootId(newest.event['tags'] as List),
+      createdAt: newest.event['created_at'] as int?,
     );
   }
 

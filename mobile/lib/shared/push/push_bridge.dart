@@ -186,6 +186,46 @@ final pushEndpointGrantError = ValueNotifier<String?>(null);
 /// notifier also carries warm responses into the existing deep-link pipeline.
 final pendingPushNotificationLink = ValueNotifier<MessageDeepLink?>(null);
 
+/// Bumped when the Android wake posted a notification while the app runs,
+/// so already-read messages can be swept from the tray again.
+final pushNotificationsPosted = ValueNotifier<int>(0);
+
+/// Message notifications in the tray (iOS: one per message; Android: one per
+/// room, showing its newest message). Empty without a native bridge.
+Future<List<Map<Object?, Object?>>> readDeliveredPushNotifications() async {
+  final android = androidPushActive;
+  if (!android && defaultTargetPlatform != TargetPlatform.iOS) return const [];
+  try {
+    final list = await (android ? androidPushChannel : _channel)
+        .invokeListMethod<Object?>('deliveredMessageNotifications');
+    return [
+      for (final item in list ?? const [])
+        if (item is Map) item,
+    ];
+  } on MissingPluginException {
+    return const [];
+  } on PlatformException {
+    return const [];
+  }
+}
+
+/// Removes tray notifications by the keys [readDeliveredPushNotifications] gave.
+Future<void> removeDeliveredPushNotifications(List<String> keys) async {
+  if (keys.isEmpty) return;
+  final android = androidPushActive;
+  if (!android && defaultTargetPlatform != TargetPlatform.iOS) return;
+  try {
+    await (android ? androidPushChannel : _channel).invokeMethod<void>(
+      'removeDeliveredNotifications',
+      keys,
+    );
+  } on MissingPluginException {
+    // Flutter tests and builds without the push plugin.
+  } on PlatformException {
+    // Best effort: the notification stays until the next sweep.
+  }
+}
+
 MessageDeepLink? _pushNotificationLink(Object? arguments) {
   if (arguments is! Map) return null;
   final eventId = arguments['eventId'];
@@ -643,6 +683,9 @@ Future<Object?> handleAndroidPushCall(MethodCall call) async {
       final link = _pushNotificationLink(call.arguments);
       if (link == null) return 'ignored';
       pendingPushNotificationLink.value = link;
+      return 'handled';
+    case 'notificationPosted':
+      pushNotificationsPosted.value += 1;
       return 'handled';
     default:
       throw MissingPluginException(
