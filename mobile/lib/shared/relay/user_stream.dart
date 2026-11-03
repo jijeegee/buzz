@@ -491,8 +491,12 @@ class _Connection {
   final int startedAt;
 
   /// The store's mark taken with [startedAt]: rows stored after it are this
-  /// connection's, never "already stored" for the counters.
-  final Future<int?> storedMark;
+  /// connection's, never "already stored" for the counters. Skipped at the
+  /// connect when the relay last had the stream off; then taken at the EOSE.
+  Future<int?>? storedMark;
+
+  /// An accepted EOSE (shadow, live or gated) on this connection.
+  bool accepted = false;
   _Verdict verdict = _Verdict.pending;
   bool ended = false;
   bool authRetried = false;
@@ -542,6 +546,8 @@ class UserStreamHost {
     this.extendCoverage = _noCoverage,
     this.storedMark = _noMark,
     this.catchUp = _noCatchUp,
+    this.readLastResult = _noResult,
+    this.writeLastResult = _ignoreResult,
     this.reportPlatform,
     this.postReport = _noPost,
   });
@@ -587,6 +593,12 @@ class UserStreamHost {
   )
   catchUp;
 
+  /// The last connection's stream result for this account and relay, read
+  /// without waiting: [userStreamResultOff], [userStreamResultOn] or `null`
+  /// (unknown).
+  final String? Function() readLastResult;
+  final void Function(String? result) writeLastResult;
+
   /// `ios` where reports go to the relay (plan U1d); `null` elsewhere.
   final String? reportPlatform;
 
@@ -597,6 +609,8 @@ class UserStreamHost {
   static void _noPost(UserStreamCounters _) {}
   static void _ignoreEpoch(String _) {}
   static int? _noCapture() => null;
+  static String? _noResult() => null;
+  static void _ignoreResult(String? _) {}
   static Future<int?> _noMark() async => null;
   static void _noCoverage(List<String> _, int _, int _, int? _) {}
   static Future<UserStreamCatchUpResult?> _noCatchUp(
@@ -604,6 +618,20 @@ class UserStreamHost {
     bool Function(String) _,
   ) async => null;
 }
+
+/// [UserStreamHost.readLastResult]: the relay refused the stream (off, not
+/// enabled or another refusal no retry changes), or accepted it.
+const userStreamResultOff = 'off';
+const userStreamResultOn = 'on';
+
+/// CLOSED keys before an EOSE that mean the relay will not give the stream.
+const _refusalKeys = {
+  'off',
+  'not_enabled',
+  'too_many_rooms',
+  'restricted',
+  'invalid',
+};
 
 const _countersKey = 'user_stream_counters';
 const _backoffKey = 'user_stream_backoff';
@@ -690,10 +718,23 @@ class UserStream {
   bool get loadingState =>
       userStreamBuild != UserStreamBuild.off && !_loaded && _loading != null;
 
+  /// The relay refused the stream on the last connection of this account:
+  /// the connect neither waits for it nor takes the stored mark.
+  bool get relayKnownOff => host.readLastResult() == userStreamResultOff;
+
+  /// The current connection was the stream's this session: a report may go
+  /// to the relay (iOS) only then.
+  bool _streamAccepted = false;
+
+  void _noteResult(String? result) {
+    if (host.readLastResult() != result) host.writeLastResult(result);
+  }
+
   /// AUTH OK on connection [generation]: the stream REQ goes first, unless
   /// the build switch or the backoff says chunks.
   Future<void> connected(int generation) async {
     _end();
+    _streamAccepted = false;
     // Taken before any chunk REQ of this connection goes out.
     final startedAt = host.nowMs() ~/ 1000;
     // Every early return below means chunks for every room: listeners
@@ -701,8 +742,9 @@ class UserStream {
     if (userStreamBuild == UserStreamBuild.off) return _notify();
     final scope = host.scope();
     if (scope == null) return _notify();
-    // Queued behind every row submitted before this connection.
-    final storedMark = host.storedMark();
+    // Queued behind every row submitted before this connection; skipped
+    // while the relay is known to have the stream off.
+    final storedMark = relayKnownOff ? null : host.storedMark();
     if (scope != _scope || _loading == null) _startLoad(scope);
     // Loaded: the REQ goes out now, ahead of everything else.
     while (!_loaded) {
@@ -955,6 +997,8 @@ class UserStream {
       return;
     }
     final now = host.nowMs();
+    _streamAccepted = connection.accepted = true;
+    _noteResult(userStreamResultOn);
     connection
       ..snapshot = snapshot
       ..verdict = snapshot.live ? _Verdict.keep : _Verdict.skip
@@ -1006,6 +1050,14 @@ class UserStream {
       return;
     }
     if (verdict.bugLog) debugPrint('[user-stream] client bug: $reason');
+    if (!connection.accepted) {
+      final key = verdict.key;
+      if (_refusalKeys.contains(key)) {
+        _noteResult(userStreamResultOff);
+      } else if (key != 'full' && key != 'lagged' && key != 'shadow_full') {
+        _noteResult(null); // Neither refused nor shown on: unknown.
+      }
+    }
     final wasLive = connection.phase == UserStreamPhase.live;
     connection
       ..verdict = _Verdict.skip
@@ -1073,7 +1125,9 @@ class UserStream {
       _totals.seq++;
       debugPrint('[user-stream] report #${_totals.seq} ${_totals.encode()}');
       final now = host.nowMs();
+      // Never with the stream off: only a connection the relay gave it.
       if (host.reportPlatform != null &&
+          _streamAccepted &&
           (_lastPostMs == null ||
               now - _lastPostMs! >= userStreamReportIntervalPostMs)) {
         _lastPostMs = now;

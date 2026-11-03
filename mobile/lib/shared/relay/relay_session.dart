@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../features/age_gate/age_signal_provider.dart';
 import '../app_update/app_update.dart' show appVersion;
@@ -15,6 +16,7 @@ import '../auth/token/relay_origin.dart';
 import '../auth/token/token_session.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
+import '../theme/theme_provider.dart' show savedPrefsProvider;
 import 'community_live_bundle.dart';
 import 'lane_head_batch.dart';
 import 'me_live_bundle.dart';
@@ -174,6 +176,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
   /// Received events are kept on the device under this account's scope.
   MessageStore? _messageStore;
   MessageStoreLease? _storeLease;
+
+  /// Loaded at startup; null where not provided (tests).
+  SharedPreferences? _prefs;
   late final _storeCoverage = RoomBundleCoverage(
     scope: () => switch ((_messageStore, _storeLease)) {
       (final store?, final lease?) => (store: store, lease: lease),
@@ -194,6 +199,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
     ref.onDispose(_dispose);
     _messageStore = ref.read(messageStoreProvider);
+    try {
+      _prefs = ref.read(savedPrefsProvider);
+    } catch (_) {
+      _prefs = null; // Not provided: the last result stays unknown.
+    }
     _storeLease = _messageStore!.lease(
       config.baseUrl,
       ref.read(myPubkeyProvider),

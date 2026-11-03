@@ -955,7 +955,14 @@ void main() {
   group('membership', () {
     for (final c in _cases('membership')) {
       test(c['name'], () async {
-        final s = _Stream();
+        // The EOSE catch-up completes at once, so the snapshot rooms have
+        // their stream span (docs/message-sync.md#catch-up-at-the-stream-eose).
+        final s = _Stream(
+          catchUp: (job, _) async {
+            job.roomsDone?.call(job.rooms);
+            return UserStreamCatchUpResult();
+          },
+        );
         await s.stream.connected(1);
         s.send([
           'EVENT',
@@ -968,7 +975,10 @@ void main() {
           ),
         ]);
         final beforeEose = c['beforeEose'] == true;
-        if (!beforeEose) s.send(['EOSE', 'l-1']);
+        if (!beforeEose) {
+          s.send(['EOSE', 'l-1']);
+          await s.stream.settled;
+        }
         s.coverage.clear();
         for (final raw in c['steps'] as List) {
           final step = (raw as Map).cast<String, dynamic>();
@@ -993,7 +1003,10 @@ void main() {
               ]);
           }
         }
-        if (beforeEose) s.send(['EOSE', 'l-1']);
+        if (beforeEose) {
+          s.send(['EOSE', 'l-1']);
+          await s.stream.settled;
+        }
         final expected = c['expect'] as Map;
         expect(s.stored, expected['stored']);
         expect(s.rendered, expected['rendered']);
@@ -1005,6 +1018,31 @@ void main() {
         }
       });
     }
+
+    test('a rejoin before the catch-up is done writes no span (mobile, '
+        'delta review B1)', () async {
+      final s = _Stream(); // Its catch-up never completes.
+      await s.stream.connected(1);
+      s
+        ..send([
+          'EVENT',
+          'l-1',
+          _part1(rooms: {'a': 1}),
+        ])
+        ..send(['EOSE', 'l-1']);
+      await s.stream.settled;
+      for (final added in [false, true]) {
+        s.stream.noteMembership(
+          added: added,
+          room: 'a',
+          createdAt: 100,
+          pubkey: _relayKey,
+          receivedAt: 120,
+        );
+      }
+      expect(s.stream.carriedRooms, {'a'});
+      expect(s.coverage['a'], isNull);
+    });
 
     test('a notice older than the snapshot is ignored', () async {
       final s = _Stream();

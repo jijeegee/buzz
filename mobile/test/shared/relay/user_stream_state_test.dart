@@ -24,6 +24,8 @@ class _Host {
   var closedSockets = 0;
   var subIds = 0;
   String? reportPlatform;
+  String? lastResult;
+  var marks = 0;
 
   late final stream = UserStream(
     UserStreamHost(
@@ -50,6 +52,9 @@ class _Host {
         jobs.add(job);
         return null;
       },
+      storedMark: () async => ++marks,
+      readLastResult: () => lastResult,
+      writeLastResult: (result) => lastResult = result,
       reportPlatform: reportPlatform,
       postReport: posted.add,
     ),
@@ -300,21 +305,25 @@ void main() {
     test('report lines are posted at most every 5 min, iOS only', () async {
       final h = _Host()..reportPlatform = 'ios';
       await h.stream.connected(1);
+      h.snapshot('shadow', {'a': 1});
       h.stream.onMessage(['CLOSED', h.subId, 'error: user-stream closed']);
       expect(h.posted, hasLength(1));
       expect(h.posted.single.closed, {'closed': 1});
       h.stream.socketEnded(1);
       await h.stream.connected(2);
+      h.snapshot('shadow', {'a': 1});
       h.stream.onMessage(['CLOSED', h.subId, 'error: user-stream closed']);
       expect(h.posted, hasLength(1), reason: 'within 5 min');
       h.nowMs += userStreamReportIntervalPostMs;
       h.stream.socketEnded(2);
       await h.stream.connected(3);
+      h.snapshot('shadow', {'a': 1});
       h.stream.onMessage(['CLOSED', h.subId, 'error: user-stream closed']);
       expect(h.posted, hasLength(2));
 
       final other = _Host();
       await other.stream.connected(1);
+      other.snapshot('shadow', {'a': 1});
       other.stream.onMessage([
         'CLOSED',
         other.subId,
@@ -323,6 +332,24 @@ void main() {
       expect(other.posted, isEmpty);
     });
 
+    test(
+      'nothing is posted while the stream is off (delta review S-M3)',
+      () async {
+        final h = _Host()..reportPlatform = 'ios';
+        for (var g = 1; g <= 3; g++) {
+          await h.stream.connected(g);
+          h.stream.onMessage([
+            'CLOSED',
+            h.subId,
+            'unsupported: user-stream off',
+          ]);
+          h.nowMs += userStreamReportIntervalPostMs;
+          h.stream.socketEnded(g);
+        }
+        expect(h.counters('A').closed, {'off': 3});
+        expect(h.posted, isEmpty);
+      },
+    );
     test('the body has fixed fields, all u32', () {
       final counters = UserStreamCounters()
         ..add('eventsCompared', 1200)
@@ -350,6 +377,50 @@ void main() {
       expect(closed.keys, userStreamReportClosedKeys);
       expect(closed['full'], 1);
       expect(utf8.encode(jsonEncode(body)).length, lessThan(4096));
+    });
+  });
+
+  group('last result per account and relay (delta review S-M1, S-M2)', () {
+    test('a refusal is remembered; the next connect takes no stored mark '
+        'and an accepted EOSE takes it then', () async {
+      final h = _Host();
+      expect(h.stream.relayKnownOff, isFalse);
+      await h.stream.connected(1);
+      expect(h.marks, 1, reason: 'unknown: the mark is taken at the connect');
+      h.stream.onMessage(['CLOSED', h.subId, 'unsupported: user-stream off']);
+      expect(h.lastResult, userStreamResultOff);
+      expect(h.stream.relayKnownOff, isTrue);
+      h.stream.socketEnded(1);
+
+      await h.stream.connected(2);
+      expect(h.marks, 1, reason: 'known off: no MAX(rowid) at the connect');
+      expect(h.sent.where((f) => f.first == 'REQ'), hasLength(2));
+      h.snapshot('live', {'a': 1});
+      expect(h.lastResult, userStreamResultOn);
+      expect(h.stream.relayKnownOff, isFalse);
+      expect(h.marks, 2, reason: 'taken at the EOSE instead');
+      expect(await h.jobs.single.storedMark, 2);
+      h.stream.socketEnded(2);
+
+      await h.stream.connected(3);
+      expect(h.marks, 3);
+    });
+
+    test('other refusals count as off; an unclear CLOSED as unknown', () async {
+      for (final reason in [
+        'unsupported: user-stream not enabled',
+        'unsupported: user-stream too many rooms',
+        'restricted: not a channel member',
+      ]) {
+        final h = _Host();
+        await h.stream.connected(1);
+        h.stream.onMessage(['CLOSED', h.subId, reason]);
+        expect(h.lastResult, userStreamResultOff, reason: reason);
+      }
+      final h = _Host()..lastResult = userStreamResultOff;
+      await h.stream.connected(1);
+      h.stream.onMessage(['CLOSED', h.subId, 'error: user-stream closed']);
+      expect(h.lastResult, isNull);
     });
   });
 }

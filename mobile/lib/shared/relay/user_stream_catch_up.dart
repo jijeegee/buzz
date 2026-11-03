@@ -288,6 +288,7 @@ class UserStreamCatchUpJob {
     this.fallback = false,
     this.storedMark,
     this.stopped,
+    this.roomsDone,
   }) : coverageBefore = coverageBefore ?? liveAt;
 
   /// `live`, `gated` or `shadow` (by name).
@@ -315,6 +316,11 @@ class UserStreamCatchUpJob {
 
   /// True once the connection ended: no further batch starts.
   final bool Function()? stopped;
+
+  /// Hears rooms whose catch-up is done: a batch that completed, or rooms
+  /// the classes leave unwalked (gated equal, stale, uncovered). Only then
+  /// may the stream write their span (docs/message-sync.md#catch-up-at-the-stream-eose).
+  final void Function(List<String> rooms)? roomsDone;
 }
 
 /// What a catch-up found, for tests and the counters.
@@ -418,6 +424,17 @@ class UserStreamCatchUp {
       for (final room in walk) room: resume[room]!,
     }, job.liveAt);
     result.stale.addAll(plan.stale);
+    final roomsDone = job.roomsDone;
+    if (roomsDone != null) {
+      // Audit walks are extra: a gated equal room is done at its class.
+      final batched = {for (final batch in plan.batches) ...batch.rooms}
+        ..removeAll(sampled);
+      final unwalked = [
+        for (final room in job.rooms)
+          if (!batched.contains(room)) room,
+      ];
+      if (unwalked.isNotEmpty) roomsDone(unwalked);
+    }
     final completed = <String, bool>{};
     final newRows = <UserStreamNewRow>[];
     for (final batch in plan.batches) {
@@ -450,6 +467,10 @@ class UserStreamCatchUp {
         (sampled.contains(room) ? result.audited : result.walked).add(room);
       }
       if (done.completed) {
+        roomsDone?.call([
+          for (final room in batch.rooms)
+            if (!sampled.contains(room)) room,
+        ]);
         newRows.addAll(
           userStreamNewRows(done, heads, job.liveAt, receivedLive),
         );
