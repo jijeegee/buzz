@@ -36,6 +36,16 @@ export type AgentPairing = {
 export type HermesStatus = {
   found: boolean;
   canConnect: boolean;
+  profiles: HermesProfile[];
+};
+
+/** A Hermes profile a person can connect (`name` is `default` or its folder). */
+export type HermesProfile = {
+  name: string;
+  isDefault: boolean;
+  pairedAgent: string | null;
+  owner: string | null;
+  blockedReason: string | null;
 };
 
 /**
@@ -60,8 +70,8 @@ export function getHermesStatus(): Promise<HermesStatus> {
   return invokeTauri<HermesStatus>("get_hermes_status");
 }
 
-export function connectHermes(): Promise<HermesPairingRun> {
-  return invokeTauri<HermesPairingRun>("connect_hermes");
+export function connectHermes(profile: string): Promise<HermesPairingRun> {
+  return invokeTauri<HermesPairingRun>("connect_hermes", { profile });
 }
 
 /** Sign a paired computer out. */

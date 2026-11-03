@@ -24599,6 +24599,14 @@
   "@agents.external.hermesConnecting": {
     "description": "Agents page Hermes card: button text while connecting. Short."
   },
+  "agents.external.hermesConnected": "Connected",
+  "@agents.external.hermesConnected": {
+    "description": "Shown on a Hermes profile row that is already connected to Kuzz."
+  },
+  "agents.external.hermesOtherAccount": "Connected to another Kuzz account",
+  "@agents.external.hermesOtherAccount": {
+    "description": "Shown on a Hermes profile row connected by a different Kuzz account on this computer."
+  },
   "agents.external.hermesFailed": "Couldn't connect Hermes. Try again.",
   "@agents.external.hermesFailed": {
     "description": "Agents page Hermes card: error toast. Hermes is a product name."

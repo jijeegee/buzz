@@ -591,16 +591,24 @@ fn find_python() -> Option<&'static str> {
 }
 
 /// `kuzz pair --hermes` options.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct HermesInstall {
     /// Let the installer restart the Hermes gateway (false: the caller does).
     pub restart: bool,
+    /// The Hermes profile to connect (`None`: Hermes's default home).
+    pub home: Option<PathBuf>,
 }
 
 /// After a pairing: install the Hermes plugin for `owner` acting as
-/// `agent`, or say how. Everything goes to stderr (stdout holds the pairing
-/// result).
-fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
+/// `agent`, or say how. `default_agent` is who acted here before this
+/// pairing, which the default profile must stay. Everything goes to stderr
+/// (stdout holds the pairing result).
+fn install_hermes(
+    owner: Option<&str>,
+    agent: &str,
+    default_agent: Option<&str>,
+    options: HermesInstall,
+) {
     let owner_arg = owner.unwrap_or("<owner pubkey>");
     let installer = find_hermes_installer();
     let manual = format!(
@@ -609,7 +617,10 @@ fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
             .as_deref()
             .map_or_else(|| HERMES_INSTALLER.to_owned(), |p| p.display().to_string())
     );
-    let home = hermes_home().filter(|home| home.is_dir());
+    let home = options
+        .home
+        .or_else(hermes_home)
+        .filter(|home| home.is_dir());
     let (Some(installer), Some(home), Some(python), Some(owner)) =
         (installer, home, find_python(), owner)
     else {
@@ -625,6 +636,9 @@ fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
         .arg(agent)
         .arg("--hermes-home")
         .arg(&home);
+    if let Some(default_agent) = default_agent {
+        command.arg("--default-agent").arg(default_agent);
+    }
     if !options.restart {
         command.arg("--no-restart");
     }
@@ -747,6 +761,10 @@ pub(crate) async fn cmd_pair(
         .ok_or_else(|| CliError::Other("cannot locate a data directory for pairings".into()))?;
     let device = pair_device_key().await?;
     let keys_for_name = agent_keys.clone();
+    let previous_agent = relay_origin(relay_url)
+        .ok()
+        .and_then(|origin| store.for_relay(&origin, None))
+        .map(|pairing| pairing.agent_pubkey);
     let pairing = pair(
         PairRequest {
             relay_url,
@@ -792,7 +810,12 @@ pub(crate) async fn cmd_pair(
         })
     );
     if let Some(options) = hermes {
-        install_hermes(pairing.owner.as_deref(), &pairing.agent_pubkey, options);
+        install_hermes(
+            pairing.owner.as_deref(),
+            &pairing.agent_pubkey,
+            previous_agent.as_deref(),
+            options,
+        );
     }
     Ok(())
 }

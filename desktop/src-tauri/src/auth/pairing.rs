@@ -4,8 +4,9 @@
 //! - "Connect external agent": [`start_agent_pairing`] asks the relay for a
 //!   one-use, ten-minute `kuzz pair --relay <url> <code>` command; the screen
 //!   polls [`list_agent_pairings`] until the first valid claim connects.
-//! - Hermes on this computer: [`connect_hermes`] makes a code the same way
-//!   and runs the bundled `kuzz pair --hermes --relay <url> <code>`. The CLI
+//! - Hermes on this computer: [`get_hermes_status`] lists its profiles;
+//!   [`connect_hermes`] makes a code the same way for one of them and runs
+//!   the bundled `kuzz pair --hermes --relay <url> <code>`. The CLI
 //!   makes and keeps the agent key, signs with this computer's device key,
 //!   saves the pairing and installs the Hermes plugin; the app keeps no
 //!   agent key and then reads the pairing list like the connect screen.
@@ -44,6 +45,8 @@ const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
 /// Inherited variables that would change what `kuzz pair` does: another
 /// agent key to bind, or pairing switched off.
 const CLEARED_ENV: [&str; 2] = ["KUZZ_PRIVATE_KEY", "KUZZ_DISABLE_STORED_SESSION"];
+/// Hermes's name for the profile in its home folder.
+const DEFAULT_PROFILE: &str = "default";
 
 /// What the connect screen shows for a new code.
 #[derive(Debug, Serialize)]
@@ -57,6 +60,22 @@ pub struct PairingStartView {
     expires_in: i64,
 }
 
+/// One Hermes profile a person can connect: the default one and those they
+/// made (the agents this app manages have their own profiles, not listed).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HermesProfileView {
+    /// `default`, or the profile's folder name.
+    name: String,
+    is_default: bool,
+    /// The agent this profile acts as (`KUZZ_PAIRED_AGENT` in its `.env`).
+    paired_agent: Option<String>,
+    /// The Kuzz account it was connected for (`KUZZ_OWNER_PUBKEY`).
+    owner: Option<String>,
+    /// Why Hermes would not run this profile, in Hermes's words.
+    blocked_reason: Option<String>,
+}
+
 /// Whether Hermes is on this computer and whether this app can connect it.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,6 +84,8 @@ pub struct HermesStatus {
     /// The bundled `kuzz` offers `pair --hermes` and the plugin files are
     /// where it looks for them.
     can_connect: bool,
+    /// Default first; empty when Hermes isn't found.
+    profiles: Vec<HermesProfileView>,
 }
 
 /// A Hermes pairing run by this app: its code's pairing id, and whether
@@ -134,30 +155,37 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
 #[tauri::command]
 pub async fn get_hermes_status() -> HermesStatus {
     tokio::task::spawn_blocking(|| {
-        let found = hermes_home().is_some();
+        let home = hermes_home();
         HermesStatus {
-            found,
-            can_connect: found && hermes_installer().is_some(),
+            found: home.is_some(),
+            can_connect: home.is_some() && hermes_installer().is_some(),
+            profiles: home.as_deref().map(hermes_profiles).unwrap_or_default(),
         }
     })
     .await
     .unwrap_or(HermesStatus {
         found: false,
         can_connect: false,
+        profiles: Vec::new(),
     })
 }
 
 /// Pair Hermes on this computer: a new code, then the bundled
 /// `kuzz pair --hermes --relay <url> <code>`, which claims it and installs
-/// the plugin. Returns once the CLI is done; the caller reads the pairing
-/// list for the result.
+/// the plugin. `profile` is a name from [`get_hermes_status`], read again
+/// here (never a path from the screen). Returns once the CLI is done; the
+/// caller reads the pairing list for the result.
 #[tauri::command]
-pub async fn connect_hermes(app: AppHandle) -> Result<HermesPairingRun, String> {
-    let kuzz = tokio::task::spawn_blocking(|| hermes_home().and_then(|_| hermes_installer()))
-        .await
-        .ok()
-        .flatten()
-        .ok_or("Hermes can't be connected from this app yet.")?;
+pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPairingRun, String> {
+    let (kuzz, target) = tokio::task::spawn_blocking(move || {
+        let root = hermes_home()?;
+        let target = hermes_profile_target(&root, &profile)?;
+        Some((hermes_installer()?, target))
+    })
+    .await
+    .ok()
+    .flatten()
+    .ok_or("Hermes can't be connected from this app yet.")?;
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
@@ -173,7 +201,7 @@ pub async fn connect_hermes(app: AppHandle) -> Result<HermesPairingRun, String> 
     let code = Zeroizing::new(started.code.to_string());
     let finished = tokio::task::spawn_blocking(move || {
         let mut pair = std::process::Command::new(&kuzz);
-        pair.args(hermes_pair_args(&relay, &code));
+        pair.args(hermes_pair_args(&relay, &code, target.as_deref()));
         for name in CLEARED_ENV {
             pair.env_remove(name);
         }
@@ -194,11 +222,105 @@ pub async fn connect_hermes(app: AppHandle) -> Result<HermesPairingRun, String> 
 
 /// The `kuzz` argv for a Hermes pairing (no shell). Pure. `--no-restart`:
 /// the app restarts the gateway after the pair command ends.
-fn hermes_pair_args(relay: &str, code: &str) -> Vec<OsString> {
-    ["pair", "--hermes", "--no-restart", "--relay", relay, code]
+/// `profile_home`: a named profile's folder (`None`: the default profile).
+fn hermes_pair_args(relay: &str, code: &str, profile_home: Option<&Path>) -> Vec<OsString> {
+    let mut args: Vec<OsString> = ["pair", "--hermes", "--no-restart"]
         .into_iter()
         .map(OsString::from)
+        .collect();
+    if let Some(home) = profile_home {
+        args.push("--hermes-home".into());
+        args.push(home.into());
+    }
+    args.extend(["--relay", relay, code].map(OsString::from));
+    args
+}
+
+/// The profiles to offer under Hermes's `root` home: default first, then the
+/// others by name. Reads two lines of each `.env`, nothing else.
+fn hermes_profiles(root: &Path) -> Vec<HermesProfileView> {
+    let blocked = serving_blocker(root);
+    let mut names: Vec<String> = std::fs::read_dir(root.join("profiles"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().join("config.yaml").is_file())
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| is_person_profile(name))
+        .collect();
+    names.sort();
+    let default = profile_view(DEFAULT_PROFILE, root, true, None);
+    std::iter::once(default)
+        .chain(names.into_iter().map(|name| {
+            let home = root.join("profiles").join(&name);
+            profile_view(&name, &home, false, blocked.clone())
+        }))
         .collect()
+}
+
+fn profile_view(
+    name: &str,
+    home: &Path,
+    is_default: bool,
+    blocked_reason: Option<String>,
+) -> HermesProfileView {
+    let env = std::fs::read_to_string(home.join(".env")).unwrap_or_default();
+    HermesProfileView {
+        name: name.to_owned(),
+        is_default,
+        paired_agent: env_pubkey(&env, "KUZZ_PAIRED_AGENT"),
+        owner: env_pubkey(&env, "KUZZ_OWNER_PUBKEY"),
+        blocked_reason,
+    }
+}
+
+/// A profile id Hermes accepts that a person made: not one this app (or a
+/// Buzz build before it) created for a managed agent. Pure.
+fn is_person_profile(name: &str) -> bool {
+    let id_char = |c: char| c.is_ascii_lowercase() || c.is_ascii_digit();
+    let valid = name.len() <= 64
+        && name.chars().next().is_some_and(id_char)
+        && name.chars().all(|c| id_char(c) || c == '_' || c == '-');
+    let managed = ["kuzz-", "buzz-"].iter().any(|prefix| {
+        name.strip_prefix(prefix)
+            .is_some_and(|hex| hex.len() == 16 && hex.chars().all(|c| c.is_ascii_hexdigit()))
+    });
+    valid && name != DEFAULT_PROFILE && !managed
+}
+
+/// The hex pubkey in `key=...` of a `.env` text. Pure.
+fn env_pubkey(env: &str, key: &str) -> Option<String> {
+    let line = env
+        .lines()
+        .find(|line| crate::managed_agents::hermes_profile::env_line_key(line) == Some(key))?;
+    let value = line.split_once('=')?.1.trim().trim_matches(['"', '\'']);
+    (value.len() == 64 && value.chars().all(|c| c.is_ascii_hexdigit()))
+        .then(|| value.to_ascii_lowercase())
+}
+
+/// Why Hermes's gateway won't serve named profiles at all: one bot token in
+/// two profiles (Hermes's words, from its state file). Other standalone
+/// reasons clear on the restart after Connect, so they don't block it.
+fn serving_blocker(root: &Path) -> Option<String> {
+    let state = std::fs::read(root.join("gateway_state.json")).ok()?;
+    let state: serde_json::Value = serde_json::from_slice(&state).ok()?;
+    blocker_reason(state.get("multiplex_standalone_reason")?.as_str()?)
+}
+
+fn blocker_reason(reason: &str) -> Option<String> {
+    reason.contains("credential").then(|| reason.to_owned())
+}
+
+/// Where to connect `profile`: `Some(None)` for the default profile,
+/// `Some(Some(home))` for a named one, `None` when it isn't offered.
+fn hermes_profile_target(root: &Path, profile: &str) -> Option<Option<PathBuf>> {
+    let view = hermes_profiles(root)
+        .into_iter()
+        .find(|view| view.name == profile)?;
+    if view.blocked_reason.is_some() {
+        return None;
+    }
+    Some((!view.is_default).then(|| root.join("profiles").join(&view.name)))
 }
 
 /// Start `hermes gateway restart --detach` so the gateway loads the new
@@ -355,13 +477,13 @@ fn hermes_plugin_roots(kuzz: &Path, local_data: Option<&Path>) -> Vec<PathBuf> {
     roots
 }
 
-/// Whether `kuzz pair --help` output offers `--hermes` and `--no-restart`
-/// (an older `kuzz` would refuse [`hermes_pair_args`]). Pure.
+/// Whether `kuzz pair --help` output offers every flag of
+/// [`hermes_pair_args`] (an older `kuzz` would refuse them). Pure.
 fn lists_hermes_flag(help: &str) -> bool {
     let words: Vec<&str> = help
         .split(|c: char| c.is_whitespace() || c == ',' || c == '=' || c == '[' || c == ']')
         .collect();
-    ["--hermes", "--no-restart"]
+    ["--hermes", "--no-restart", "--hermes-home"]
         .iter()
         .all(|flag| words.contains(flag))
 }

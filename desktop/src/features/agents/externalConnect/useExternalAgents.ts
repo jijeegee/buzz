@@ -93,6 +93,8 @@ export function useHermesStatusQuery(enabled: boolean) {
     queryKey: HERMES_KEY,
     queryFn: getHermesStatus,
     retry: false,
+    // A profile made in Hermes shows up the next time this screen opens.
+    refetchOnMount: "always",
     staleTime: 60_000,
   });
 }

@@ -11,6 +11,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 from _support import AGENT, CHANNEL, DM, OWNER, STRANGER, FakeKuzz, event_id, watch_line
 
@@ -20,6 +21,7 @@ try:
     from gateway.config import Platform, PlatformConfig
     from gateway.platform_registry import PlatformEntry, platform_registry
 
+    from kuzz import adapter as adapter_module
     from kuzz.adapter import BuzzAdapter, register
 except ImportError:  # Hermes Agent is not on the path
     BuzzAdapter = None
@@ -260,6 +262,57 @@ class AdapterTest(unittest.TestCase):
             self.assertFalse(asyncio.run(adapter.connect()))
             self.assertEqual(adapter.fatal_error_code, "not_paired")
             self.assertEqual(fake.calls("messages", "watch"), [])
+
+
+@unittest.skipIf(BuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
+class SecondaryProfileTest(unittest.TestCase):
+    """Inside a multiplexed secondary profile: its own .env counts, the process env never does."""
+
+    def scoped(self, secrets):
+        self.env = mock.patch.dict("os.environ", {
+            "KUZZ_PAIRED_AGENT": "d" * 64, "KUZZ_OWNER_PUBKEY": "e" * 64, "BUZZ_HOME_CHANNEL": "default-home",
+        })
+        patches = [self.env, mock.patch.object(adapter_module, "_profile_scoped", return_value=True),
+                   mock.patch.object(adapter_module, "_get_secret", side_effect=lambda name, default=None: secrets.get(name, default)),
+                   mock.patch.object(adapter_module, "check_requirements", return_value=True)]
+        for patcher in patches:
+            patcher.start()
+            self.addCleanup(patcher.stop)
+
+    def identity(self):
+        calls = []
+
+        async def whoami(cli, args, env):
+            calls.append(env)
+            return {"mode": "paired", "pubkey": env.get("KUZZ_PAIRED_AGENT") or "c" * 64, "owner": OWNER}
+
+        with mock.patch.object(adapter_module, "_cli_json", whoami):
+            return asyncio.run(adapter_module.resolve_identity(["kuzz"], {})), calls
+
+    def test_it_acts_as_its_pinned_agent(self):
+        pin = "a" * 64
+        self.scoped({"KUZZ_PAIRED_AGENT": pin, "KUZZ_OWNER_PUBKEY": OWNER})
+        identity, [env] = self.identity()
+        self.assertEqual(env["KUZZ_PAIRED_AGENT"], pin)
+        self.assertEqual((identity.self_pubkey, identity.owner), (pin, OWNER))
+        self.assertEqual(identity.env_add, {"KUZZ_PAIRED_AGENT": pin})
+
+    def test_without_a_pin_it_is_not_paired(self):
+        self.scoped({"KUZZ_OWNER_PUBKEY": OWNER})
+        identity, calls = self.identity()
+        self.assertIsNone(identity)
+        self.assertEqual(calls, [])
+
+    def test_it_is_enabled_from_its_own_env_only(self):
+        self.scoped({"KUZZ_OWNER_PUBKEY": OWNER, "BUZZ_HOME_CHANNEL": "own-home"})
+        self.assertEqual(adapter_module._env_enablement(),
+                         {"owner": OWNER, "home_channel": {"chat_id": "own-home", "name": "own-home"}})
+        self.assertEqual(adapter_module._setting(("BUZZ_HOME_CHANNEL",), {}, "home_channel"), "own-home")
+
+    def test_a_profile_never_connected_is_not_enabled(self):
+        self.scoped({})
+        self.assertIsNone(adapter_module._env_enablement())
+        self.assertEqual(adapter_module._setting(("BUZZ_HOME_CHANNEL",), {"home_channel": "x"}, "home_channel"), "x")
 
 
 if __name__ == "__main__":

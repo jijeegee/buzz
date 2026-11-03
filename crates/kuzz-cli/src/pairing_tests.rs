@@ -551,4 +551,11 @@ fn no_restart_goes_with_hermes_only() {
     };
     assert!(hermes && no_restart);
     assert!(crate::parse_args(["kuzz", "pair", "--no-restart", CODE]).is_err());
+    assert!(crate::parse_args(["kuzz", "pair", "--hermes-home", "x", CODE]).is_err());
+    let cli = crate::parse_args(["kuzz", "pair", "--hermes", "--hermes-home", "x", CODE])
+        .expect("parses");
+    let crate::Cmd::Pair { hermes_home, .. } = cli.command else {
+        panic!("pair");
+    };
+    assert_eq!(hermes_home, Some(std::path::PathBuf::from("x")));
 }

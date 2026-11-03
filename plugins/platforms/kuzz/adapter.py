@@ -77,6 +77,7 @@ def _secret(name: str) -> str:
 logger = logging.getLogger(__name__)
 
 PLATFORM_NAME = "buzz"
+PAIRED_AGENT_ENV = "KUZZ_PAIRED_AGENT"
 _SEEN_CAP = 500  # per channel, as in the bundled plugin's cursor file
 _ID_CAP = 2000
 # A channel without a saved cursor ignores messages this much older than the connect time.
@@ -100,12 +101,11 @@ _MISSING = object()
 
 def _setting(names: Sequence[str], extra: dict, key: str, default: Any = None) -> Any:
     """Env (first non-empty of ``names``) overrides ``extra[key]``. Under a secondary
-    profile the process env belongs to the default profile, so only ``extra`` counts."""
-    if not _profile_scoped():
-        for name in names:
-            value = os.getenv(name)
-            if value is not None and value.strip():
-                return value.strip()
+    profile the env is that profile's .env; the process env is the default profile's."""
+    for name in names:
+        value = _secret(name)
+        if value:
+            return value
     return extra.get(key, default)
 
 
@@ -127,10 +127,8 @@ def _flag(raw: Any, default: bool) -> bool:
 
 def _reply_to_mode(config, extra: dict) -> str:
     """Same rule as the bundled plugin: "first"/"all" thread, "off" posts flat."""
-    mode = str(os.getenv("BUZZ_REPLY_TO_MODE") or getattr(config, "reply_to_mode", "first") or "first").strip().lower()
-    rit = os.getenv("BUZZ_REPLY_IN_THREAD")
-    if rit is None:
-        rit = extra.get("reply_in_thread")
+    mode = str(_secret("BUZZ_REPLY_TO_MODE") or getattr(config, "reply_to_mode", "first") or "first").strip().lower()
+    rit = _secret("BUZZ_REPLY_IN_THREAD") or extra.get("reply_in_thread")
     return "off" if rit is not None and not _flag(rit, True) else mode
 
 
@@ -141,7 +139,7 @@ def _relay_url(extra: dict) -> str:
 def _cli_path(extra: dict) -> str:
     """KUZZ_CLI_PATH, then BUZZ_CLI_PATH / cli_path, then buzz, ~/bin/buzz, kuzz."""
     return kuzz_cli.resolve_cli_path(
-        os.getenv("KUZZ_CLI_PATH", ""), str(_setting(("BUZZ_CLI_PATH",), extra, "cli_path", "") or "")
+        _secret("KUZZ_CLI_PATH"), str(_setting(("BUZZ_CLI_PATH",), extra, "cli_path", "") or "")
     )
 
 
@@ -209,13 +207,20 @@ async def _cli_json(cli: Sequence[str], args: List[str], env: Dict[str, str]) ->
 
 
 async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity]:
-    """Paired identity if the CLI reports an owner, else legacy raw-key mode if configured, else None."""
+    """Paired identity if the CLI reports an owner, else legacy raw-key mode if configured, else None.
+
+    The agent pinned in this profile's .env is the one acted as. A secondary profile without a pin
+    has no paired identity: the CLI would pick the newest pairing, another profile's agent."""
     configured_owner = normalize_pubkey(_setting(("KUZZ_OWNER_PUBKEY",), extra, "owner"))
-    me = await _cli_json(cli, ["auth", "whoami"], _child_env())
+    pin = _secret(PAIRED_AGENT_ENV)
+    pinned = {PAIRED_AGENT_ENV: pin} if pin else {}
+    me = None
+    if pin or not _profile_scoped():
+        me = await _cli_json(cli, ["auth", "whoami"], _child_env(add=pinned))
     # A paired CLI answers {"mode": "paired", "pubkey", "owner", ...}; owner may be null until the relay says.
     if isinstance(me, dict) and me.get("mode") == "paired" and normalize_pubkey(me.get("pubkey")):
         return Identity(
-            "paired", {}, normalize_pubkey(me.get("pubkey")) or "", configured_owner or normalize_pubkey(me.get("owner"))
+            "paired", pinned, normalize_pubkey(me.get("pubkey")) or "", configured_owner or normalize_pubkey(me.get("owner"))
         )
     key, tag = _legacy_credentials(extra)
     if not key:
@@ -737,19 +742,19 @@ def validate_config(config) -> bool:
 
 def _env_enablement() -> Optional[dict]:
     """Enable from env (the bundled plugin's variables, or the owner written by `kuzz pair`)."""
-    if _profile_scoped() or not check_requirements():
+    if not check_requirements():
         return None
-    relay = os.getenv("BUZZ_RELAY_URL", "").strip()
-    owner = normalize_pubkey(os.getenv("KUZZ_OWNER_PUBKEY", ""))
+    relay = _secret("BUZZ_RELAY_URL")
+    owner = normalize_pubkey(_secret("KUZZ_OWNER_PUBKEY"))
     if not (relay or owner):
         return None
     seed: dict = {"relay_url": relay} if relay else {"owner": owner}
-    channels = _csv(os.getenv("BUZZ_CHANNELS", ""))
+    channels = _csv(_secret("BUZZ_CHANNELS"))
     if channels:
         seed["channels"] = channels
-    home = os.getenv("BUZZ_HOME_CHANNEL", "").strip() or (channels[0] if channels else "")
+    home = _secret("BUZZ_HOME_CHANNEL") or (channels[0] if channels else "")
     if home:
-        seed["home_channel"] = {"chat_id": home, "name": os.getenv("BUZZ_HOME_CHANNEL_NAME", home)}
+        seed["home_channel"] = {"chat_id": home, "name": _secret("BUZZ_HOME_CHANNEL_NAME") or home}
     return seed
 
 

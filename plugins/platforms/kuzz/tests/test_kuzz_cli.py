@@ -373,6 +373,47 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertIn("BUZZ_HOME_CHANNEL=dm-new", env)
             self.assertNotIn("dm-old", env)
 
+    def test_a_named_profile_uses_its_own_env_and_the_host_gateway(self):
+        with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake, \
+                mock.patch.object(self.install, "enable_plugin", return_value=True), \
+                mock.patch.object(self.install, "find_hermes", return_value="hermes"), \
+                mock.patch.object(self.install.subprocess, "run", wraps=subprocess.run) as run:
+            root = Path(tmp)
+            profile = root / "profiles" / "work"
+            profile.mkdir(parents=True)
+            (root / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_HOME_CHANNEL=root-home\n", encoding="utf-8")
+            agent, default_agent = "b" * 64, "a" * 64
+            with mock.patch.object(self.install, "restart_gateway", return_value=True) as restart:
+                self.assertEqual(self.install.main([
+                    "--owner", NPUB, "--agent", agent, "--default-agent", default_agent,
+                    "--hermes-home", str(profile), "--cli-path", str(fake.exe)]), 0)
+            restart.assert_called_once_with(profile)
+            own = (profile / ".env").read_text(encoding="utf-8")
+            self.assertIn(f"KUZZ_PAIRED_AGENT={agent}", own)
+            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", own)
+            self.assertTrue((profile / "plugins" / "buzz" / "plugin.yaml").exists())
+            # The default profile keeps its agent and its home.
+            default = (root / ".env").read_text(encoding="utf-8")
+            self.assertIn(f"KUZZ_PAIRED_AGENT={default_agent}", default)
+            self.assertIn("BUZZ_HOME_CHANNEL=root-home", default)
+            # The restart is the host's.
+            run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+            self.assertTrue(self.install.restart_gateway(profile))
+            self.assertEqual(run.call_args.kwargs["env"]["HERMES_HOME"], str(root))
+
+    def test_the_default_pin_needs_the_same_owner_and_no_pin(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = root / "profiles" / "work"
+            profile.mkdir(parents=True)
+            for text in (f"KUZZ_OWNER_PUBKEY={'c' * 64}\n", f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nKUZZ_PAIRED_AGENT={'d' * 64}\n"):
+                (root / ".env").write_text(text, encoding="utf-8")
+                self.install.pin_default_profile(profile, NPUB_HEX, "a" * 64)
+                self.assertEqual((root / ".env").read_text(encoding="utf-8"), text)
+            # Connecting the default profile itself never uses it.
+            self.install.pin_default_profile(root, NPUB_HEX, "a" * 64)
+            self.assertNotIn("a" * 64, (root / ".env").read_text(encoding="utf-8"))
+
     def test_a_busy_gateway_still_installs_and_no_restart_skips_it(self):
         with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake,                 mock.patch.object(self.install, "enable_plugin", return_value=True),                 mock.patch.object(self.install, "restart_gateway", return_value=False) as restart:
             home = Path(tmp)

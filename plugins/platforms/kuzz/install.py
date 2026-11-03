@@ -118,14 +118,20 @@ def set_env_values(env_file: Path, values: dict) -> None:
         fh.write(newline.join(lines) + newline)
 
 
+def hermes_root(hermes_home: Path) -> Path:
+    """The default profile's home, for a named profile's ``<root>/profiles/<name>``."""
+    return hermes_home.parent.parent if hermes_home.parent.name == "profiles" else hermes_home
+
+
 def find_hermes(hermes_home: Path) -> Optional[str]:
     """The ``hermes`` launcher; on Windows only ``hermes.exe`` (a .cmd/.bat is never run)."""
     found = which_program("hermes")
     if found and is_runnable(found):
         return found
     name = "hermes.exe" if os.name == "nt" else "hermes"
-    for folder in (hermes_home / "bin", hermes_home / "hermes-agent" / "venv" / "Scripts",
-                   hermes_home / "hermes-agent" / "venv" / "bin"):
+    root = hermes_root(hermes_home)
+    for folder in (root / "bin", root / "hermes-agent" / "venv" / "Scripts",
+                   root / "hermes-agent" / "venv" / "bin"):
         candidate = folder / name
         if is_runnable(str(candidate)):
             return str(candidate)
@@ -256,16 +262,27 @@ def set_home_channel(
     return dm_id.strip()
 
 
+def pin_default_profile(hermes_home: Path, owner: Optional[str], default_agent: str) -> None:
+    """Pairing a named profile makes it the newest pairing. Keep the default profile on the agent
+    it acted as: pin it if that install has no pin yet and belongs to the same owner."""
+    root = hermes_root(hermes_home)
+    if root == hermes_home or read_env_value(root / ".env", PAIRED_AGENT_ENV):
+        return
+    if owner and normalize_pubkey(read_env_value(root / ".env", "KUZZ_OWNER_PUBKEY") or "") == owner:
+        set_env_values(root / ".env", {PAIRED_AGENT_ENV: default_agent})
+
+
 def restart_gateway(hermes_home: Path) -> bool:
     """``hermes gateway restart --detach``: loads the plugin now, and starts a stopped gateway.
     Without ``--yes`` it refuses while Hermes has live work (no prompt without a terminal), so a
-    running turn or cron job is never cut off; the caller then asks for a manual restart."""
+    running turn or cron job is never cut off; the caller then asks for a manual restart.
+    For a named profile too this is the host gateway: it serves the profiles and loads plugins."""
     hermes = find_hermes(hermes_home)
     if not hermes:
         return False
     try:
         result = subprocess.run(
-            [hermes, "gateway", "restart", "--detach"], env=hermes_env(hermes_home),
+            [hermes, "gateway", "restart", "--detach"], env=hermes_env(hermes_root(hermes_home)),
             stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=RESTART_TIMEOUT, check=False,
         )
@@ -278,6 +295,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser = argparse.ArgumentParser(description="Install the Kuzz buzz plugin into Hermes Agent.")
     parser.add_argument("--owner", default=None, help="owner pubkey (hex or npub); default: the owner `kuzz pair` reports")
     parser.add_argument("--agent", default=None, help="the paired agent's pubkey: this Hermes home acts as it (KUZZ_PAIRED_AGENT)")
+    parser.add_argument("--default-agent", default=None, help="the agent acted as before this pairing; pins the default profile")
     parser.add_argument("--hermes-home", type=Path, default=None)
     parser.add_argument("--cli-path", default=None, help="path to the kuzz CLI (default: kuzz on PATH, then the Kuzz app's copy)")
     parser.add_argument("--no-enable", action="store_true", help="copy files only; do not enable the plugin")
@@ -290,11 +308,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     agent = normalize_pubkey(args.agent) if args.agent else None
     if args.agent and not agent:
         parser.error("--agent must be a 64-character hex pubkey or an npub")
+    default_agent = normalize_pubkey(args.default_agent) if args.default_agent else None
+    if args.default_agent and not default_agent:
+        parser.error("--default-agent must be a 64-character hex pubkey or an npub")
     cli_path = args.cli_path or find_installed_kuzz()
     if not cli_path:
         parser.error("the kuzz CLI was not found; install Kuzz or pass --cli-path")
     hermes_home = args.hermes_home or default_hermes_home()
 
+    if default_agent:
+        pin_default_profile(hermes_home, owner, default_agent)
     target = copy_plugin(hermes_home)
     env_file = hermes_home / ".env"
     # A different agent or owner than the one this home was set up for: its home DM is stale.

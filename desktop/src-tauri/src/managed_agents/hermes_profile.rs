@@ -275,17 +275,34 @@ fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
     })
 }
 
-/// Whether a `.env` key belongs to Kuzz rather than to the agent's Hermes:
-/// any `KUZZ_*` key, every reserved launch key, and `HERMES_HOME`.
+/// Bot tokens of Hermes's messaging channels. A managed agent has no gateway,
+/// and a copied token stops the Hermes gateway from serving profiles together
+/// (one token, two profiles).
+const CHANNEL_TOKEN_KEYS: [&str; 7] = [
+    "TELEGRAM_BOT_TOKEN",
+    "DISCORD_BOT_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "SLACK_APP_TOKEN",
+    "MATTERMOST_TOKEN",
+    "MATRIX_ACCESS_TOKEN",
+    "WEIXIN_TOKEN",
+];
+
+/// Whether a `.env` key must not be copied into a managed agent's profile:
+/// any `KUZZ_*`/`BUZZ_*` key, every reserved launch key, `HERMES_HOME`, and
+/// channel bot tokens.
 fn is_kuzz_owned_env_key(key: &str) -> bool {
-    key.to_ascii_uppercase().starts_with("KUZZ_")
+    let upper = key.to_ascii_uppercase();
+    upper.starts_with("KUZZ_")
+        || upper.starts_with("BUZZ_")
         || key.eq_ignore_ascii_case(HERMES_HOME_ENV_VAR)
+        || CHANNEL_TOKEN_KEYS.contains(&upper.as_str())
         || super::is_reserved_env_key(key)
 }
 
 /// The key of a dotenv assignment line (`KEY=value` or `export KEY=value`),
 /// or `None` for blanks, comments, and lines without `=`.
-fn env_line_key(line: &str) -> Option<&str> {
+pub(crate) fn env_line_key(line: &str) -> Option<&str> {
     let line = line.trim_start();
     if line.starts_with('#') {
         return None;

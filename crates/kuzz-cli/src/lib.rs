@@ -314,6 +314,10 @@ once), key_in_use, device_limit, rate_limited.",
         /// restarts it)
         #[arg(long, requires = "hermes")]
         no_restart: bool,
+        /// With --hermes: the Hermes profile folder to connect (default:
+        /// Hermes's default home)
+        #[arg(long, requires = "hermes", value_name = "DIR")]
+        hermes_home: Option<std::path::PathBuf>,
     },
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
@@ -2766,6 +2770,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         device_name,
         hermes,
         no_restart,
+        hermes_home,
     } = cli.command
     {
         let relay = pairing::pair_relay(pair_relay.as_deref(), &cli.relay, cli.relay_from_default)?;
@@ -2777,6 +2782,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             cli.private_key,
             hermes.then_some(pairing::HermesInstall {
                 restart: !no_restart,
+                home: hermes_home,
             }),
         )
         .await;

@@ -1,4 +1,4 @@
-import type { AgentPairing } from "@/shared/api/agentPairing";
+import type { AgentPairing, HermesProfile } from "@/shared/api/agentPairing";
 import type { AuthDevice } from "@/shared/api/tokenAuth";
 
 /** How often the connect screen asks whether the code was used. */
@@ -242,5 +242,41 @@ export function parseRemembered(raw: string | null): RememberedPairing[] {
         ...(hermes === true ? { hermes: true as const } : {}),
       },
     ];
+  });
+}
+
+export type HermesRowState =
+  | "connect"
+  | "connected"
+  | "otherAccount"
+  | "blocked";
+
+export type HermesRow = { profile: HermesProfile; state: HermesRowState };
+
+/**
+ * What each Hermes profile can do for this account. `connectedPubkeys`: this
+ * account's connected agents, lowercase. A default profile connected before
+ * pins existed counts as connected (connecting another profile pins it). When
+ * a copied profile shares a pin, only the first is connected.
+ */
+export function hermesRows(
+  profiles: readonly HermesProfile[],
+  owner: string | null | undefined,
+  connectedPubkeys: ReadonlySet<string>,
+): HermesRow[] {
+  const account = owner?.toLowerCase();
+  const seen = new Set<string>();
+  return profiles.map((profile) => {
+    const pin = profile.pairedAgent;
+    const pinned = pin !== null && connectedPubkeys.has(pin) && !seen.has(pin);
+    if (pinned) seen.add(pin);
+    if (pinned) return { profile, state: "connected" };
+    if (profile.owner && profile.owner !== account) {
+      return { profile, state: "otherAccount" };
+    }
+    if (profile.isDefault && profile.owner && !pin) {
+      return { profile, state: "connected" };
+    }
+    return { profile, state: profile.blockedReason ? "blocked" : "connect" };
   });
 }
