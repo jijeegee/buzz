@@ -1,9 +1,12 @@
 use kuzz_push_gateway::{
+    android_attest::{AndroidAttestVerifier, HttpStatusListFetcher, RevocationList},
     apns::ApnsTransport,
     app_attest::AppAttestVerifier,
     authority::AuthorityStore,
-    config::Config,
+    config::{ApnsCredential, Config},
+    fcm::{FcmTransport, ServiceAccount},
     grant::{GrantKey, GrantKeyring},
+    http::AndroidProfileRuntime,
     postgres::PostgresAuthorityStore,
     router_with_metrics,
     token::{TokenKey, TokenKeyring},
@@ -44,15 +47,61 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             configured.app_attest_environment,
         )?;
         tracing::info!(environment = ?apple.environment(), "App Attest verifier configured");
-        let transport = Arc::new(ApnsTransport::certificate(
-            &fs::read(&configured.apns_cert_path)?,
-            configured.apns_topic.clone(),
-            configured.apns_environment,
-        )?);
+        let transport = Arc::new(match &configured.apns_credential {
+            ApnsCredential::Certificate { path } => ApnsTransport::certificate(
+                &fs::read(path)?,
+                configured.apns_topic.clone(),
+                configured.apns_environment,
+            )?,
+            ApnsCredential::Token {
+                key_path,
+                key_id,
+                team_id,
+            } => ApnsTransport::token(
+                &fs::read(key_path)?,
+                key_id.clone(),
+                team_id.clone(),
+                configured.apns_topic.clone(),
+                configured.apns_environment,
+            )?,
+        });
+        tracing::info!(
+            auth = match configured.apns_credential {
+                ApnsCredential::Certificate { .. } => "certificate",
+                ApnsCredential::Token { .. } => "token",
+            },
+            environment = ?configured.apns_environment,
+            "APNs transport configured"
+        );
         kuzz_push_gateway::http::ProfileRuntime {
             app_attest: Arc::new(apple),
             transport,
         }
+    };
+    let android = match &c.android {
+        Some(android) => {
+            let account = ServiceAccount::from_json(&fs::read(&android.fcm_service_account_path)?)?;
+            tracing::info!(project = account.project_id(), "FCM transport configured");
+            let revocation = Arc::new(RevocationList::new(Arc::new(
+                HttpStatusListFetcher::google()?,
+            )));
+            let attestation = AndroidAttestVerifier::new(
+                &android.package,
+                android.signing_digests.clone(),
+                &fs::read(&android.attestation_roots_path)?,
+                revocation,
+            )?;
+            tracing::info!(
+                package = %android.package,
+                signing_digests = android.signing_digests.len(),
+                "Android Key Attestation configured"
+            );
+            Some(Arc::new(AndroidProfileRuntime {
+                attestation: Arc::new(attestation),
+                transport: Arc::new(FcmTransport::new(account)?),
+            }))
+        }
+        None => None,
     };
     let grant_keyring = GrantKeyring::new(
         c.grant_keys
@@ -97,6 +146,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             authority,
             token_keyring: Arc::new(token_keyring),
             profile: Arc::new(profile),
+            android,
             max_grant_lifetime_seconds: c.max_grant_lifetime_seconds,
             max_installation_lifetime_seconds: c.max_installation_lifetime_seconds,
             endpoint_quota_window_seconds: c.endpoint_quota_window_seconds,

@@ -10,7 +10,7 @@ use crate::{
     app_attest::AppAttestVerifier,
     authority::{AuthorityStore, Delegation, MemoryAuthorityStore, NewInstallation},
     grant::{GrantKey, GrantKeyring},
-    http::ProfileRuntime,
+    http::{AndroidProfileRuntime, ProfileRuntime},
     model::{AppProfile, EndpointGrant},
     router,
     token::{TokenKey, TokenKeyring},
@@ -44,6 +44,23 @@ fn now() -> i64 {
 }
 
 async fn fixture() -> (axum::Router, Keys, Vec<u8>, Arc<AtomicUsize>) {
+    let (app, keys, body, sends, _) = profile_fixture(AppProfile::KuzzIosDogfood, true).await;
+    (app, keys, body, sends)
+}
+
+/// One installation, delegation and grant for `profile`. Returns the iOS and
+/// Android transport send counters; the Android runtime is configured only
+/// when `android_enabled`.
+async fn profile_fixture(
+    profile: AppProfile,
+    android_enabled: bool,
+) -> (
+    axum::Router,
+    Keys,
+    Vec<u8>,
+    Arc<AtomicUsize>,
+    Arc<AtomicUsize>,
+) {
     let keys = Keys::generate();
     let authority = Arc::new(MemoryAuthorityStore::default());
     let token_keyring =
@@ -58,7 +75,7 @@ async fn fixture() -> (axum::Router, Keys, Vec<u8>, Arc<AtomicUsize>) {
                 app_attest_key_id: vec![3; 32],
                 app_attest_public_key: vec![4; 65],
                 assertion_counter: 0,
-                profile: AppProfile::KuzzIosDogfood,
+                profile,
                 token_ciphertext: token_keyring.seal(&[1, 2, 3, 4]).unwrap(),
                 token_fingerprint: [5; 32],
                 endpoint_epoch: 1,
@@ -87,13 +104,25 @@ async fn fixture() -> (axum::Router, Keys, Vec<u8>, Arc<AtomicUsize>) {
             v: 1,
             delegation_id,
             relay_pubkey: keys.public_key().to_hex(),
-            app_profile: AppProfile::KuzzIosDogfood,
+            app_profile: profile,
             endpoint_epoch: 1,
             generation: 1,
             expires_at: now() + 600,
         })
         .unwrap();
     let sends = Arc::new(AtomicUsize::new(0));
+    let android_sends = Arc::new(AtomicUsize::new(0));
+    let android = android_enabled.then(|| {
+        let root =
+            crate::android_attest::tests::root(crate::android_attest::tests::HARDWARE_ROOT_CN);
+        Arc::new(AndroidProfileRuntime {
+            attestation: Arc::new(crate::android_attest::tests::verifier_for(
+                &root.pem,
+                Default::default(),
+            )),
+            transport: Arc::new(TestTransport(android_sends.clone())),
+        })
+    });
     let (app, _) = router(AppState {
         grant_keyring,
         authority,
@@ -108,6 +137,7 @@ async fn fixture() -> (axum::Router, Keys, Vec<u8>, Arc<AtomicUsize>) {
             ),
             transport: Arc::new(TestTransport(sends.clone())),
         }),
+        android,
         max_grant_lifetime_seconds: 600,
         max_installation_lifetime_seconds: 600,
         endpoint_quota_window_seconds: 60,
@@ -119,7 +149,7 @@ async fn fixture() -> (axum::Router, Keys, Vec<u8>, Arc<AtomicUsize>) {
         "v": 1, "endpoint_grant": grant, "request_id": Uuid::new_v4(), "expires_at": now() + 60,
     }))
     .unwrap();
-    (app, keys, body, sends)
+    (app, keys, body, sends, android_sends)
 }
 
 fn signed_header(keys: &Keys, url: &str, method: &str, body: &[u8]) -> String {
@@ -367,4 +397,53 @@ async fn grant_signer_and_replay_checks_remain_enforced() {
         StatusCode::NOT_FOUND
     );
     assert_eq!(sends.load(Ordering::SeqCst), 1);
+}
+
+#[tokio::test]
+async fn android_grant_routes_to_the_android_transport_only() {
+    let (app, keys, body, ios_sends, android_sends) =
+        profile_fixture(AppProfile::KuzzAndroid, true).await;
+    let auth = signed_header(&keys, DIRECT_URL, "POST", &body);
+    let response = app
+        .oneshot(request(DIRECT_URL, None, auth, body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(android_sends.load(Ordering::SeqCst), 1);
+    assert_eq!(ios_sends.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn ios_grant_never_reaches_the_android_transport() {
+    let (app, keys, body, ios_sends, android_sends) =
+        profile_fixture(AppProfile::KuzzIosDogfood, true).await;
+    let auth = signed_header(&keys, DIRECT_URL, "POST", &body);
+    let response = app
+        .oneshot(request(DIRECT_URL, None, auth, body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(ios_sends.load(Ordering::SeqCst), 1);
+    assert_eq!(android_sends.load(Ordering::SeqCst), 0);
+}
+
+#[tokio::test]
+async fn android_grant_without_android_runtime_is_a_retryable_configuration_fault() {
+    let (app, keys, body, ios_sends, android_sends) =
+        profile_fixture(AppProfile::KuzzAndroid, false).await;
+    let auth = signed_header(&keys, DIRECT_URL, "POST", &body);
+    let response = app
+        .oneshot(request(DIRECT_URL, None, auth, body))
+        .await
+        .unwrap();
+    assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+    let bytes = axum::body::to_bytes(response.into_body(), 4096)
+        .await
+        .unwrap();
+    assert_eq!(
+        serde_json::from_slice::<serde_json::Value>(&bytes).unwrap()["error"],
+        "configuration_fault"
+    );
+    assert_eq!(ios_sends.load(Ordering::SeqCst), 0);
+    assert_eq!(android_sends.load(Ordering::SeqCst), 0);
 }

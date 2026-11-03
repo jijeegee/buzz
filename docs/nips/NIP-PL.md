@@ -273,7 +273,41 @@ application identifier. The gateway MUST NOT accept an APNs topic from a client.
 registered with the gateway is called the **installation endpoint** and never
 leaves gateway custody after enrollment.
 
-The opaque string returned as `endpoint_grant` by `POST /v1/delegations` is the **delivery capability**. For this profile, the active lease plaintext's `endpoint` member MUST contain that `endpoint_grant`, not the raw APNs token. `transport` MUST be `apns`, and `app_profile` MUST equal the profile sealed into the grant. Base-protocol endpoint uniqueness, rotation, hashing, and coalescing operate on this opaque lease `endpoint` within an origin. A capability is scoped to one installation, relay signing pubkey, endpoint epoch, generation, and expiry; grants independently issued to different relays are intentionally distinct. The gateway separately enforces global installation-endpoint uniqueness using `(app_profile, SHA-256(token))`. A public-profile relay MUST treat `endpoint` as opaque and MUST NOT parse or transform it.
+### Android profile `kuzz-android`
+
+The registered `app_profile` value `kuzz-android` identifies the Kuzz Android
+application. Its lease `transport` is `fcm`; delivery uses FCM HTTP v1 with a
+data-only wake. It uses the same routes, request objects and transcripts as
+`kuzz-ios-dogfood`, with these differences:
+
+- `endpoint` is the lowercase hex of the UTF-8 FCM registration token. The
+  token MUST be printable ASCII and at most 512 bytes; longer tokens are
+  refused.
+- Enrollment `attestation` is standard base64 of the concatenated DER
+  certificates of an Android Key Attestation chain, leaf first, for a fresh
+  EC P-256 Keystore key whose attestation challenge is SHA-256 of the exact
+  enrollment transcript bytes built with `key_id` set to the empty string
+  (`"key_id":""`); every other member is the request's value. A Keystore
+  fixes the challenge when it generates the key, before the public key
+  exists, so the challenge cannot contain the key's own `key_id`. The request
+  still carries the real `key_id`, standard base64 of SHA-256 of the leaf
+  SubjectPublicKeyInfo DER, and the gateway MUST refuse the enrollment when
+  it does not match the attested leaf. A challenge over the transcript with
+  the real `key_id` is refused.
+- The gateway MUST verify every chain signature up to a configured Google
+  hardware attestation root and MUST refuse the software attestation root.
+  Attestation and KeyMint security levels MUST be TrustedEnvironment or
+  StrongBox, the key origin MUST be GENERATED, the attested application MUST
+  include the configured package, and every attested signing certificate
+  digest MUST be configured. No certificate in the chain may be on Google's
+  revocation status list; a cached list MAY be used for at most 72 hours when
+  a refresh fails, after which enrollment is refused.
+- Every later `assertion` is standard base64 of a DER ECDSA P-256 SHA-256
+  signature by the attested key over the exact transcript bytes. Replay is
+  prevented by the single-use challenge; the gateway advances the stored
+  counter by one per accepted assertion.
+
+The opaque string returned as `endpoint_grant` by `POST /v1/delegations` is the **delivery capability**. For this profile, the active lease plaintext's `endpoint` member MUST contain that `endpoint_grant`, not the raw APNs token. `transport` MUST be `apns` for `kuzz-ios-dogfood` and `fcm` for `kuzz-android`, and `app_profile` MUST equal the profile sealed into the grant. Base-protocol endpoint uniqueness, rotation, hashing, and coalescing operate on this opaque lease `endpoint` within an origin. A capability is scoped to one installation, relay signing pubkey, endpoint epoch, generation, and expiry; grants independently issued to different relays are intentionally distinct. The gateway separately enforces global installation-endpoint uniqueness using `(app_profile, SHA-256(token))`. A public-profile relay MUST treat `endpoint` as opaque and MUST NOT parse or transform it.
 
 ### Common HTTP and value rules
 
@@ -289,7 +323,7 @@ Every App Attest operation signs a **transcript**, not the received request byte
 <domain> + "\\n" + <compact ordered JSON object>
 ```
 
-The JSON object has no insignificant whitespace and members appear in the exact order shown below. Strings use JSON escaping for quotation mark, reverse solidus, and U+0000..U+001F; all authority-bearing strings admitted by this profile are ASCII. UUID strings are canonical lowercase-hyphenated. Integers use shortest decimal notation. The fixed `audience` value is part of the signed object and prevents cross-route use. For enrollment, these exact transcript bytes are the App Attest `clientData` supplied to attestation verification. For every assertion route, `clientDataHash = SHA-256(transcript bytes)` is verified by App Attest. The separately stored challenge must equal the request `challenge`, is single-use, expires after 300 seconds, and is consumed only after successful cryptographic verification. Assertion `signCount` MUST strictly increase atomically for the installation.
+The JSON object has no insignificant whitespace and members appear in the exact order shown below. Strings use JSON escaping for quotation mark, reverse solidus, and U+0000..U+001F; all authority-bearing strings admitted by this profile are ASCII. UUID strings are canonical lowercase-hyphenated. Integers use shortest decimal notation. The fixed `audience` value is part of the signed object and prevents cross-route use. For enrollment, these exact transcript bytes are the App Attest `clientData` supplied to attestation verification (for `kuzz-android`, the Keystore attestation challenge is SHA-256 of the enrollment transcript with an empty `key_id`; see the Android profile). For every assertion route, `clientDataHash = SHA-256(transcript bytes)` is verified by App Attest. The separately stored challenge must equal the request `challenge`, is single-use, expires after 300 seconds, and is consumed only after successful cryptographic verification. Assertion `signCount` MUST strictly increase atomically for the installation.
 
 ### Challenge
 

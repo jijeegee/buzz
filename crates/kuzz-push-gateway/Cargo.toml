@@ -24,11 +24,15 @@ aes-gcm = "0.10"
 appattest = { version = "0.1.1", default-features = false }
 axum = { workspace = true }
 async-trait = "0.1"
+# ECDSA P-256 verification of Android installation assertions (already in Cargo.lock).
+aws-lc-rs = "1.18"
 base64 = "0.22"
 byteorder = "1.5"
 minicbor = "0.25"
 chrono = { workspace = true }
 hex = { workspace = true }
+# RS256 service-account assertions for FCM HTTP v1 (already in Cargo.lock).
+jsonwebtoken = { workspace = true, features = ["use_pem"] }
 getrandom = "0.4"
 metrics = { workspace = true }
 metrics-exporter-prometheus = { workspace = true }
@@ -47,7 +51,11 @@ tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 url = { workspace = true }
 uuid = { workspace = true }
+# Android Key Attestation chain parsing and signature checks (already in Cargo.lock).
+x509-parser = { version = "0.18.1", features = ["verify"] }
 
 [dev-dependencies]
+# Synthetic Android Key Attestation chains for tests (already in Cargo.lock).
+rcgen = { version = "0.14", default-features = false, features = ["crypto", "ring"] }
 proptest = { workspace = true }
 reqwest = { workspace = true }

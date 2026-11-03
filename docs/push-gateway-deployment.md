@@ -1,6 +1,6 @@
 # Kuzz Push Gateway deployment
 
-`kuzz-push-gateway` is a standalone APNs last hop. Build it with `Dockerfile.push-gateway`; do not run it in the relay image or give relays APNs credentials.
+`kuzz-push-gateway` is a standalone APNs (and, optionally, FCM) last hop. Build it with `Dockerfile.push-gateway`; do not run it in the relay image or give relays APNs credentials.
 
 ## Network and health
 
@@ -20,6 +20,9 @@
 | `KUZZ_PUSH_DOGFOOD_APNS_TOPIC` | Server-owned APNs topic. Never accepted from a client. |
 | `KUZZ_PUSH_DOGFOOD_APNS_ENVIRONMENT` | `production` or `sandbox`, selected by deployment configuration. |
 | `KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH` | Read-only certificate/private-key PEM. |
+| `KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH` | Instead of `CERT_PATH`: read-only Apple `.p8` APNs auth key (token-based). Setting both fails startup. |
+| `KUZZ_PUSH_DOGFOOD_APNS_KEY_ID` | Required with `KEY_PATH`: the 10-character Key ID of the `.p8` key. |
+| `KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID` | Required with `KEY_PATH`: the 10-character Apple Developer Team ID. |
 | `KUZZ_PUSH_GRANT_KEYS` | Capability AEAD keyring, `id:base64-32-bytes[,predecessor...]`; current key first. |
 | `KUZZ_PUSH_TOKEN_KEYS` | Independent token-custody AEAD keyring in the same format. Never reuse grant keys. |
 
@@ -30,8 +33,8 @@ the server-owned APNs topic, certificate-backed connection pool, and
 environment. No client request or relay grant can supply or override an APNs
 topic.
 
-This MVP has exactly one compiled-in application profile,
-`kuzz-ios-dogfood`. The chart value
+The always-enabled application profile is
+`kuzz-ios-dogfood`; `kuzz-android` is optional (below). The chart value
 `profiles.dogfood.appAttestAppId` is rendered as
 `KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID`; the gateway rejects startup when it is
 missing or empty. The exact `TEAMID.bundle-id` is environment-owned,
@@ -39,8 +42,32 @@ non-secret deployment configuration. The chart's production values file leaves
 it empty deliberately so a production renderer must supply it from the GitOps
 environment rather than baking a Block team identifier into this repository.
 Supporting another application identity requires an explicit code, schema,
-chart, credential, and deployment change; this gateway does not currently
-select among multiple application profiles.
+chart, credential, and deployment change.
+
+## Android profile (optional)
+
+The `kuzz-android` profile (Android app `app.kuzz.mobile`, FCM HTTP v1
+delivery) is enabled only when `KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH` is
+set; the other three variables are then required. Without it the gateway stays
+iOS-only: Android enrollment is `400 invalid_request` and an Android delivery
+is a retryable `503 configuration_fault`.
+
+| Variable | Purpose |
+|---|---|
+| `KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH` | Read-only mounted Google service-account JSON key with the Firebase Cloud Messaging send role. Its `token_uri` is ignored; the gateway always uses `https://oauth2.googleapis.com/token`. |
+| `KUZZ_PUSH_ANDROID_PACKAGE` | Android application id attested at enrollment (`app.kuzz.mobile`). |
+| `KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256` | Comma-separated SHA-256 digests (hex, colons allowed) of the allowed app signing certificates. Every digest in an attestation must be in this list. |
+| `KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH` | Read-only PEM bundle of Google hardware attestation roots. Startup fails if it contains a software attestation root or a certificate that is not self-signed. |
+
+The gateway fetches Google's revocation status list
+(`https://android.googleapis.com/attestation/status`) on demand and caches it
+for 24 hours. When a refresh fails, a cached list under 72 hours old is still
+used and the failure is logged; an older or missing list refuses Android
+enrollment until a refresh succeeds. The pod therefore needs egress to
+`android.googleapis.com`, `oauth2.googleapis.com` and `fcm.googleapis.com`.
+
+The Helm chart does not render these variables yet; an Android deployment
+needs a chart change that mounts the service-account secret and roots bundle.
 
 Optional endpoint quota policy variables are `KUZZ_PUSH_ENDPOINT_QUOTA_WINDOW_SECONDS` (default `10`, max `86400`) and `KUZZ_PUSH_ENDPOINT_QUOTA_MAX_DELIVERIES` (default `10`, max `10000`). These are Kuzz policy hypotheses, not Apple-published limits; tune under load while retaining a hard ceiling.
 

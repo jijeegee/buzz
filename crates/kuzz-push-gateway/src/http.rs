@@ -1,5 +1,6 @@
 //! Stateful installation, delegation, delivery, and health APIs.
 use crate::{
+    android_attest::AndroidAttestVerifier,
     apns::{DeliveryAttempt, DeliveryOutcome, PushTransport},
     app_attest::AppAttestVerifier,
     authority::{
@@ -42,6 +43,17 @@ pub struct ProfileRuntime {
     pub transport: Arc<dyn PushTransport>,
 }
 
+/// Android profile runtime. Absent when the deployment has no Android
+/// profile configured: Android enrollment is then refused, Android
+/// deliveries fail closed as a retryable configuration fault, and the iOS
+/// profile is unaffected.
+#[derive(Clone)]
+pub struct AndroidProfileRuntime {
+    /// Android Key Attestation verifier for enrollment.
+    pub attestation: Arc<AndroidAttestVerifier>,
+    pub transport: Arc<dyn PushTransport>,
+}
+
 #[derive(Clone)]
 pub struct AppState {
     pub grant_keyring: Arc<GrantKeyring>,
@@ -50,6 +62,8 @@ pub struct AppState {
     /// Server-owned dogfood application identity and APNs transport. The wire
     /// profile selector is fixed and App Attest verifies the configured app ID.
     pub profile: Arc<ProfileRuntime>,
+    /// Optional `kuzz-android` runtime (FCM transport).
+    pub android: Option<Arc<AndroidProfileRuntime>>,
     pub max_grant_lifetime_seconds: i64,
     pub max_installation_lifetime_seconds: i64,
     pub endpoint_quota_window_seconds: i64,
@@ -187,7 +201,7 @@ async fn challenge(State(s): State<AppState>, body: Bytes) -> Response {
         .into_response()
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, Clone, Copy)]
 struct EnrollTranscript<'a> {
     v: u8,
     audience: &'a str,
@@ -199,17 +213,38 @@ struct EnrollTranscript<'a> {
     endpoint_epoch: i64,
     expires_at: i64,
 }
+/// The bytes whose SHA-256 is the Keystore attestation challenge for a
+/// `kuzz-android` enrollment: the enrollment transcript with `key_id` set to
+/// the empty string. A Keystore fixes the challenge when it generates the key,
+/// before the public key (and so `key_id`) exists. The request still carries
+/// the real `key_id`, which the verifier checks against the attested leaf.
+fn android_challenge_transcript(t: &EnrollTranscript<'_>) -> String {
+    let unkeyed = EnrollTranscript { key_id: "", ..*t };
+    // Serializing strings, a UUID and integers cannot fail; an empty string
+    // would only hash to a challenge no key carries (fail closed).
+    transcript("kuzz.push.enroll.v1", &unkeyed).unwrap_or_default()
+}
 async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
     let r: InstallationEnrollRequest = match crate::strict_json::from_slice(&body) {
         Ok(r) => r,
         Err(_) => return error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
     let now = (s.now)();
+    let android = match r.app_profile {
+        AppProfile::KuzzIosDogfood => None,
+        AppProfile::KuzzAndroid => match &s.android {
+            Some(android) => Some(Arc::clone(android)),
+            None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        },
+    };
     let token = match endpoint_bytes(&r.endpoint) {
         Some(v) => v,
-        None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        None => {
+            log_oversized_endpoint(&r.endpoint);
+            return error(StatusCode::BAD_REQUEST, "invalid_request");
+        }
     };
-    if r.app_profile != AppProfile::KuzzIosDogfood {
+    if android.is_some() && !crate::fcm::valid_fcm_token(&token) {
         return error(StatusCode::BAD_REQUEST, "invalid_request");
     }
     if r.v != WIRE_VERSION
@@ -238,15 +273,38 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         Some(v) => v,
         None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
     };
-    let verified =
-        match s
-            .profile
-            .app_attest
-            .verify_attestation(&r.attestation, &r.key_id, signed.as_bytes())
-        {
-            Ok(value) => value,
+    let verified = match &android {
+        None => match s.profile.app_attest.verify_attestation(
+            &r.attestation,
+            &r.key_id,
+            signed.as_bytes(),
+        ) {
+            Ok(value) => VerifiedKey {
+                key_id: value.key_id,
+                public_key: value.public_key,
+            },
             Err(_) => return error(StatusCode::UNAUTHORIZED, "invalid_attestation"),
-        };
+        },
+        Some(android) => match android
+            .attestation
+            .verify_attestation(
+                &r.attestation,
+                &r.key_id,
+                android_challenge_transcript(&t).as_bytes(),
+                now,
+            )
+            .await
+        {
+            Ok(value) => VerifiedKey {
+                key_id: value.key_id,
+                public_key: value.public_key,
+            },
+            Err(reason) => {
+                tracing::info!(%reason, "Android attestation refused");
+                return error(StatusCode::UNAUTHORIZED, "invalid_attestation");
+            }
+        },
+    };
     let fingerprint = endpoint_fingerprint(r.app_profile, &token);
     match s
         .authority
@@ -312,6 +370,23 @@ async fn enroll(State(s): State<AppState>, body: Bytes) -> Response {
         .into_response()
 }
 
+/// Installation key admitted at enrollment, for either profile.
+struct VerifiedKey {
+    key_id: Vec<u8>,
+    public_key: Vec<u8>,
+}
+
+/// N11: an endpoint over the 512-byte token limit is logged (length only,
+/// never the token) before it is refused.
+fn log_oversized_endpoint(endpoint: &str) {
+    if endpoint.len() > MAX_ENDPOINT_HEX_BYTES * 2 {
+        tracing::warn!(
+            endpoint_hex_chars = endpoint.len(),
+            "push endpoint over 512 bytes refused"
+        );
+    }
+}
+
 struct AssertionChallenge<'a> {
     id: uuid::Uuid,
     text: &'a str,
@@ -337,23 +412,42 @@ async fn verify_installation_assertion<T: serde::Serialize>(
         s.authority.installation(installation_id, now).await
     }
     .map_err(authority_error)?;
-    if installation.profile != AppProfile::KuzzIosDogfood {
-        return Err(error(StatusCode::NOT_FOUND, "not_authorized"));
-    }
     let transcript = transcript(domain, signed)
         .ok_or_else(|| error(StatusCode::BAD_REQUEST, "invalid_request"))?;
-    let verified = s
-        .profile
-        .app_attest
-        .verify_assertion(
-            assertion,
-            transcript.as_bytes(),
-            &installation.app_attest_public_key,
-            installation.assertion_counter,
-            challenge.text,
-            challenge.text,
-        )
-        .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?;
+    let next_counter = match installation.profile {
+        AppProfile::KuzzIosDogfood => {
+            s.profile
+                .app_attest
+                .verify_assertion(
+                    assertion,
+                    transcript.as_bytes(),
+                    &installation.app_attest_public_key,
+                    installation.assertion_counter,
+                    challenge.text,
+                    challenge.text,
+                )
+                .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?
+                .counter
+        }
+        AppProfile::KuzzAndroid => {
+            if s.android.is_none() {
+                return Err(error(StatusCode::NOT_FOUND, "not_authorized"));
+            }
+            crate::android_attest::verify_assertion(
+                &installation.app_attest_public_key,
+                assertion,
+                transcript.as_bytes(),
+            )
+            .map_err(|_| error(StatusCode::UNAUTHORIZED, "invalid_attestation"))?;
+            // Android keys have no hardware counter. The single-use challenge
+            // in the transcript stops replay; the stored counter still moves
+            // forward by one under the same compare-and-swap fence.
+            installation
+                .assertion_counter
+                .checked_add(1)
+                .ok_or_else(|| error(StatusCode::NOT_FOUND, "not_authorized"))?
+        }
+    };
     s.authority
         .consume_challenge(challenge.id, challenge_bytes, now)
         .await
@@ -362,7 +456,7 @@ async fn verify_installation_assertion<T: serde::Serialize>(
         .advance_assertion_counter(
             installation_id,
             installation.assertion_counter,
-            verified.counter,
+            next_counter,
         )
         .await
         .map_err(authority_error)
@@ -478,7 +572,10 @@ async fn rotate_endpoint(State(s): State<AppState>, body: Bytes) -> Response {
     };
     let token = match endpoint_bytes(&r.endpoint) {
         Some(v) => v,
-        None => return error(StatusCode::BAD_REQUEST, "invalid_request"),
+        None => {
+            log_oversized_endpoint(&r.endpoint);
+            return error(StatusCode::BAD_REQUEST, "invalid_request");
+        }
     };
     if r.v != WIRE_VERSION
         || r.endpoint_epoch < 1
@@ -494,6 +591,9 @@ async fn rotate_endpoint(State(s): State<AppState>, body: Bytes) -> Response {
         Ok(i) => i,
         Err(e) => return authority_error(e),
     };
+    if installation.profile == AppProfile::KuzzAndroid && !crate::fcm::valid_fcm_token(&token) {
+        return error(StatusCode::BAD_REQUEST, "invalid_request");
+    }
     let t = RotateTranscript {
         v: r.v,
         audience: ROTATE_ENDPOINT_AUDIENCE,
@@ -743,15 +843,21 @@ async fn deliver(
             .await;
         return error(StatusCode::NOT_FOUND, "invalid_grant");
     }
-    if permit.authority.profile != AppProfile::KuzzIosDogfood {
-        crate::metrics::record_delivery_error("profile_disabled");
-        let _ = s
-            .authority
-            .finish_delivery(permit, DeliveryDisposition::Retryable)
-            .await;
-        return error(StatusCode::SERVICE_UNAVAILABLE, "configuration_fault");
-    }
-    let transport = Arc::clone(&s.profile.transport);
+    let profile = permit.authority.profile;
+    let transport = match profile {
+        AppProfile::KuzzIosDogfood => Arc::clone(&s.profile.transport),
+        AppProfile::KuzzAndroid => match &s.android {
+            Some(android) => Arc::clone(&android.transport),
+            None => {
+                crate::metrics::record_delivery_error("profile_disabled");
+                let _ = s
+                    .authority
+                    .finish_delivery(permit, DeliveryDisposition::Retryable)
+                    .await;
+                return error(StatusCode::SERVICE_UNAVAILABLE, "configuration_fault");
+            }
+        },
+    };
     let endpoint = match s.token_keyring.open(&permit.authority.token_ciphertext) {
         Ok(token) => hex::encode(token),
         Err(_) => {
@@ -773,7 +879,7 @@ async fn deliver(
     let delivery = tokio::spawn(async move {
         let started = std::time::Instant::now();
         let outcome = transport.send(attempt, &endpoint).await;
-        crate::metrics::record_apns_delivery(outcome, started.elapsed().as_secs_f64());
+        crate::metrics::record_delivery(profile, outcome, started.elapsed().as_secs_f64());
         let disposition = match outcome {
             DeliveryOutcome::Retry { .. } | DeliveryOutcome::ConfigurationFault => {
                 DeliveryDisposition::Retryable
@@ -937,6 +1043,7 @@ mod request_limit_tests {
                 app_attest: Arc::new(app_attest),
                 transport: Arc::new(NeverTransport),
             }),
+            android: None,
             max_grant_lifetime_seconds: 86_400,
             max_installation_lifetime_seconds: 86_400,
             endpoint_quota_window_seconds: 60,
@@ -1093,6 +1200,28 @@ mod transcript_vector_tests {
         assert_vector("enroll", &transcript("kuzz.push.enroll.v1", &t).unwrap());
     }
 
+    /// The kuzz-android Keystore challenge input: the handler's own
+    /// `android_challenge_transcript` blanks the real request `key_id`.
+    #[test]
+    fn android_enroll_challenge_vector() {
+        let endpoint = hex::encode("dGVzdA:APA91bH-synthetic_token");
+        let t = EnrollTranscript {
+            v: 1,
+            audience: "https://push.buzz.xyz/v1/installations",
+            challenge_id: CHALLENGE_ID,
+            challenge: CHALLENGE,
+            key_id: KEY_ID,
+            app_profile: AppProfile::KuzzAndroid,
+            endpoint: &endpoint,
+            endpoint_epoch: 1,
+            expires_at: 1_752_624_000,
+        };
+        assert_vector(
+            "android_enroll_challenge",
+            &android_challenge_transcript(&t),
+        );
+    }
+
     #[test]
     fn delegate_transcript_vector() {
         let t = DelegateTranscript {
@@ -1165,3 +1294,7 @@ mod transcript_vector_tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "http_android_tests.rs"]
+mod android_tests;

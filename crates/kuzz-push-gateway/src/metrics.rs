@@ -35,6 +35,10 @@ pub fn install() -> Result<PrometheusHandle, BuildError> {
             Matcher::Full("push_gateway_apns_delivery_seconds".to_owned()),
             &APNS_LATENCY_BUCKETS_S,
         )?
+        .set_buckets_for_metric(
+            Matcher::Full("push_gateway_fcm_delivery_seconds".to_owned()),
+            &APNS_LATENCY_BUCKETS_S,
+        )?
         .install_recorder()?;
     Ok(handle)
 }
@@ -60,6 +64,24 @@ pub fn record_apns_send_attempt() {
 }
 
 /// Record the terminal APNs outcome and its send round-trip latency.
+/// Record one finished delivery on the series for the profile's transport.
+pub fn record_delivery(profile: crate::model::AppProfile, outcome: DeliveryOutcome, seconds: f64) {
+    match profile {
+        crate::model::AppProfile::KuzzIosDogfood => record_apns_delivery(outcome, seconds),
+        crate::model::AppProfile::KuzzAndroid => record_fcm_delivery(outcome, seconds),
+    }
+}
+
+pub fn record_fcm_send_attempt() {
+    metrics::counter!("push_gateway_fcm_send_attempts_total").increment(1);
+}
+
+pub fn record_fcm_delivery(outcome: DeliveryOutcome, seconds: f64) {
+    metrics::counter!("push_gateway_fcm_deliveries_total", "outcome" => outcome_label(outcome))
+        .increment(1);
+    metrics::histogram!("push_gateway_fcm_delivery_seconds").record(seconds);
+}
+
 pub fn record_apns_delivery(outcome: DeliveryOutcome, seconds: f64) {
     metrics::counter!("push_gateway_apns_deliveries_total", "outcome" => outcome_label(outcome))
         .increment(1);

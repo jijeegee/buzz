@@ -8,12 +8,25 @@ pub enum ApnsEnvironment {
     Sandbox,
 }
 
+/// Server-owned APNs provider credential. Exactly one form is configured.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ApnsCredential {
+    /// Combined client certificate and private key PEM (certificate-based trust).
+    Certificate { path: PathBuf },
+    /// Apple `.p8` signing key for provider authentication tokens (token-based trust).
+    Token {
+        key_path: PathBuf,
+        key_id: String,
+        team_id: String,
+    },
+}
+
 #[derive(Debug, Clone)]
 pub struct AppProfileConfig {
     pub app_attest_app_id: String,
     /// Exact Apple attestation environment accepted for enrollment.
     pub app_attest_environment: AppAttestEnvironment,
-    pub apns_cert_path: PathBuf,
+    pub apns_credential: ApnsCredential,
     pub apns_topic: String,
     pub apns_environment: ApnsEnvironment,
 }
@@ -26,6 +39,20 @@ pub enum AppAttestEnvironment {
     /// Development-signed applications in an explicitly opted-in gateway build.
     #[cfg(feature = "personal-dev-app-attest")]
     Development,
+}
+
+/// Optional `kuzz-android` profile. Present only when an FCM service account
+/// is configured; the attestation settings are then required.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AndroidProfileConfig {
+    /// Google service-account JSON key file used for FCM HTTP v1.
+    pub fcm_service_account_path: PathBuf,
+    /// Android application id attested at enrollment (`app.kuzz.mobile`).
+    pub package: String,
+    /// SHA-256 digests of the allowed app signing certificates.
+    pub signing_digests: Vec<[u8; 32]>,
+    /// PEM bundle of Google hardware attestation roots.
+    pub attestation_roots_path: PathBuf,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -44,6 +71,8 @@ pub struct Config {
     pub endpoint_quota_max_deliveries: i64,
     /// Server-owned dogfood application identity and APNs transport.
     pub profile: AppProfileConfig,
+    /// Android profile; `None` keeps the gateway iOS-only.
+    pub android: Option<AndroidProfileConfig>,
     pub database_url: String,
     pub app_attest_root_cert_path: PathBuf,
     /// Ordered current key first, followed by decrypt-only predecessors.
@@ -109,6 +138,9 @@ fn parse_keyring(
 fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, ConfigError> {
     let app_id_key = "KUZZ_PUSH_DOGFOOD_APP_ATTEST_APP_ID";
     let cert_key = "KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH";
+    let key_path_key = "KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH";
+    let key_id_key = "KUZZ_PUSH_DOGFOOD_APNS_KEY_ID";
+    let team_id_key = "KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID";
     let topic_key = "KUZZ_PUSH_DOGFOOD_APNS_TOPIC";
     let environment_key = "KUZZ_PUSH_DOGFOOD_APNS_ENVIRONMENT";
     let required = |key: &'static str| {
@@ -128,7 +160,34 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
         Some(_) => return Err(ConfigError::Invalid("KUZZ_PUSH_APP_ATTEST_ENVIRONMENT")),
     };
     let apns_topic = required(topic_key)?.to_owned();
-    let apns_cert_path = PathBuf::from(required(cert_key)?);
+    let present = |key: &str| e.get(key).is_some_and(|value| !value.is_empty());
+    // Apple key and team identifiers are 10-character uppercase alphanumerics.
+    let apple_id = |key: &'static str| {
+        let value = required(key)?;
+        if value.len() == 10
+            && value
+                .bytes()
+                .all(|b| b.is_ascii_uppercase() || b.is_ascii_digit())
+        {
+            Ok(value.to_owned())
+        } else {
+            Err(ConfigError::Invalid(key))
+        }
+    };
+    let apns_credential = if present(key_path_key) {
+        if present(cert_key) {
+            return Err(ConfigError::Invalid(key_path_key));
+        }
+        ApnsCredential::Token {
+            key_path: PathBuf::from(required(key_path_key)?),
+            key_id: apple_id(key_id_key)?,
+            team_id: apple_id(team_id_key)?,
+        }
+    } else {
+        ApnsCredential::Certificate {
+            path: PathBuf::from(required(cert_key)?),
+        }
+    };
     let apns_environment = match e.get(environment_key).map(String::as_str) {
         None | Some("production") => ApnsEnvironment::Production,
         Some("sandbox") => ApnsEnvironment::Sandbox,
@@ -137,10 +196,53 @@ fn parse_profile(e: &HashMap<String, String>) -> Result<AppProfileConfig, Config
     Ok(AppProfileConfig {
         app_attest_app_id,
         app_attest_environment,
-        apns_cert_path,
+        apns_credential,
         apns_topic,
         apns_environment,
     })
+}
+
+fn parse_android(e: &HashMap<String, String>) -> Result<Option<AndroidProfileConfig>, ConfigError> {
+    let key = "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH";
+    let fcm_service_account_path = match e.get(key).map(String::as_str) {
+        None => return Ok(None),
+        Some("") => return Err(ConfigError::Invalid(key)),
+        Some(path) => PathBuf::from(path),
+    };
+    let required = |key: &'static str| {
+        e.get(key)
+            .map(String::as_str)
+            .filter(|value| !value.is_empty())
+            .ok_or(ConfigError::Missing(key))
+    };
+    let package_key = "KUZZ_PUSH_ANDROID_PACKAGE";
+    let package = required(package_key)?;
+    if package.len() > 255
+        || !package
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'.' || b == b'_')
+    {
+        return Err(ConfigError::Invalid(package_key));
+    }
+    let digests_key = "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256";
+    let signing_digests = required(digests_key)?
+        .split(',')
+        .map(|entry| {
+            let hex_digest: String = entry.trim().chars().filter(|c| *c != ':').collect();
+            hex::decode(hex_digest)
+                .ok()
+                .and_then(|bytes| <[u8; 32]>::try_from(bytes).ok())
+                .ok_or(ConfigError::Invalid(digests_key))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(Some(AndroidProfileConfig {
+        fcm_service_account_path,
+        package: package.to_owned(),
+        signing_digests,
+        attestation_roots_path: PathBuf::from(required(
+            "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH",
+        )?),
+    }))
 }
 
 impl Config {
@@ -196,6 +298,7 @@ impl Config {
         let endpoint_quota_max_deliveries =
             bounded_positive("KUZZ_PUSH_ENDPOINT_QUOTA_MAX_DELIVERIES", 10, 10_000)?;
         let profile = parse_profile(e)?;
+        let android = parse_android(e)?;
         let bind_addr = e
             .get("KUZZ_PUSH_BIND_ADDR")
             .map(String::as_str)
@@ -216,6 +319,7 @@ impl Config {
             endpoint_quota_window_seconds,
             endpoint_quota_max_deliveries,
             profile,
+            android,
             database_url: req(e, "DATABASE_URL")?.to_owned(),
             app_attest_root_cert_path: req(e, "KUZZ_PUSH_APP_ATTEST_ROOT_CERT_PATH")?.into(),
             grant_keys,
@@ -323,8 +427,10 @@ mod tests {
     fn dogfood_profile_requires_server_owned_identity_and_certificate() {
         let config = Config::from_map(&base()).unwrap();
         assert_eq!(
-            config.profile.apns_cert_path,
-            PathBuf::from("/dogfood-identity.pem")
+            config.profile.apns_credential,
+            ApnsCredential::Certificate {
+                path: PathBuf::from("/dogfood-identity.pem")
+            }
         );
         assert_eq!(config.profile.apns_topic, "app.kuzz.dogfood.mobile");
 
@@ -339,6 +445,66 @@ mod tests {
                 matches!(Config::from_map(&env), Err(ConfigError::Missing(key)) if key == variable)
             );
         }
+    }
+
+    #[test]
+    fn token_credential_replaces_certificate_and_requires_apple_ids() {
+        let token_env = || {
+            let mut env = base();
+            env.remove("KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH");
+            env.insert(
+                "KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH".into(),
+                "/AuthKey_ABCDE12345.p8".into(),
+            );
+            env.insert("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID".into(), "ABCDE12345".into());
+            env.insert("KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID".into(), "TEAM123456".into());
+            env
+        };
+        assert_eq!(
+            Config::from_map(&token_env())
+                .unwrap()
+                .profile
+                .apns_credential,
+            ApnsCredential::Token {
+                key_path: PathBuf::from("/AuthKey_ABCDE12345.p8"),
+                key_id: "ABCDE12345".into(),
+                team_id: "TEAM123456".into(),
+            }
+        );
+
+        for variable in [
+            "KUZZ_PUSH_DOGFOOD_APNS_KEY_ID",
+            "KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID",
+        ] {
+            let mut env = token_env();
+            env.remove(variable);
+            assert!(
+                matches!(Config::from_map(&env), Err(ConfigError::Missing(key)) if key == variable)
+            );
+        }
+        for (key, value) in [
+            ("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID", "abcde12345"),
+            ("KUZZ_PUSH_DOGFOOD_APNS_KEY_ID", "ABCDE1234"),
+            ("KUZZ_PUSH_DOGFOOD_APNS_TEAM_ID", "TEAM-12345"),
+        ] {
+            let mut env = token_env();
+            env.insert(key.into(), value.into());
+            assert!(
+                matches!(Config::from_map(&env), Err(ConfigError::Invalid(k)) if k == key),
+                "accepted {key}={value}"
+            );
+        }
+
+        // Both credential forms at once is ambiguous and fails startup.
+        let mut env = token_env();
+        env.insert(
+            "KUZZ_PUSH_DOGFOOD_APNS_CERT_PATH".into(),
+            "/dogfood-identity.pem".into(),
+        );
+        assert!(matches!(
+            Config::from_map(&env),
+            Err(ConfigError::Invalid("KUZZ_PUSH_DOGFOOD_APNS_KEY_PATH"))
+        ));
     }
 
     #[test]
@@ -419,6 +585,60 @@ mod tests {
             let mut env = base();
             env.insert("KUZZ_PUSH_TOKEN_KEYS".into(), token_keys);
             assert!(Config::from_map(&env).is_err());
+        }
+    }
+
+    #[test]
+    fn android_profile_is_opt_in_and_fully_specified() {
+        assert_eq!(Config::from_map(&base()).unwrap().android, None);
+        let mut env = base();
+        env.extend([
+            (
+                "KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH".to_owned(),
+                "/fcm-service-account.json".to_owned(),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_PACKAGE".to_owned(),
+                "app.kuzz.mobile".to_owned(),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256".to_owned(),
+                format!("{},{}", "ab".repeat(32), ["CD"; 32].join(":")),
+            ),
+            (
+                "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH".to_owned(),
+                "/google-roots.pem".to_owned(),
+            ),
+        ]);
+        assert_eq!(
+            Config::from_map(&env).unwrap().android,
+            Some(AndroidProfileConfig {
+                fcm_service_account_path: PathBuf::from("/fcm-service-account.json"),
+                package: "app.kuzz.mobile".to_owned(),
+                signing_digests: vec![[0xab; 32], [0xcd; 32]],
+                attestation_roots_path: PathBuf::from("/google-roots.pem"),
+            })
+        );
+        for (key, value) in [
+            ("KUZZ_PUSH_ANDROID_FCM_SERVICE_ACCOUNT_PATH", ""),
+            ("KUZZ_PUSH_ANDROID_PACKAGE", ""),
+            ("KUZZ_PUSH_ANDROID_PACKAGE", "app kuzz"),
+            ("KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256", ""),
+            ("KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256", "abcd"),
+            ("KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH", ""),
+        ] {
+            let mut bad = env.clone();
+            bad.insert(key.into(), value.into());
+            assert!(Config::from_map(&bad).is_err(), "accepted {key}={value:?}");
+        }
+        for key in [
+            "KUZZ_PUSH_ANDROID_PACKAGE",
+            "KUZZ_PUSH_ANDROID_SIGNING_CERT_SHA256",
+            "KUZZ_PUSH_ANDROID_ATTESTATION_ROOTS_PATH",
+        ] {
+            let mut missing = env.clone();
+            missing.remove(key);
+            assert!(matches!(Config::from_map(&missing), Err(ConfigError::Missing(k)) if k == key));
         }
     }
 
