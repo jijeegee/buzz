@@ -59,8 +59,11 @@ export type UserStreamLiveHooks = {
     stream: UserStreamConnection,
     decision: ClosedDecision | null,
   ) => void;
-  /** The socket ended: chunks carry every room from the next connect. */
-  socketEnded: () => void;
+  /**
+   * The socket ended: chunks carry every room from the next connect.
+   * `startedAt` (s): when that connection reached AUTH OK, given once.
+   */
+  socketEnded: (startedAt?: number | null) => void;
   /** A live 44100/44101 for the account. */
   membershipNotice: (event: RelayEvent) => void;
   /** Accepted shadow EOSE: classes and verifies skips, walks nothing. */
@@ -70,6 +73,8 @@ export type UserStreamLiveHooks = {
   ) => void;
   /** An event received live on this connection (stream frame). */
   noteLive?: (eventId: string) => void;
+  /** Live ids are collected only while the stream REQ is pending or accepted. */
+  collectLiveIds?: (on: boolean) => void;
   /** Another account or community: nothing in memory carries over. */
   scopeChanged?: () => void;
 };
@@ -183,6 +188,8 @@ export class UserStreamSession {
   private restored = false;
   /** Bumped per `connected`, so a late restore starts no stale REQ. */
   private attempt = 0;
+  /** When the current connection reached AUTH OK (s), until it ends. */
+  private connectedAt: number | null = null;
   /** The last `connected`'s stream REQ, sent or given up (tests). */
   requested: Promise<void> = Promise.resolve();
   liveHooks: UserStreamLiveHooks | null = null;
@@ -217,10 +224,12 @@ export class UserStreamSession {
     this.current = null;
     // Whatever the last connection carried is on chunks again, also when
     // this one is backed off or off.
-    this.liveHooks?.socketEnded();
+    this.liveHooks?.socketEnded(this.takeConnectedAt());
     const startedAtMs = this.host.nowMs();
+    this.connectedAt = Math.floor(startedAtMs / 1000);
     const attempt = ++this.attempt;
     if (!this.host.enabled()) return Promise.resolve();
+    this.liveHooks?.collectLiveIds?.(true);
     if (!this.restored && this.host.loadState) {
       this.restored = true;
       this.requested = this.restore(this.host.loadState).then((current) => {
@@ -256,6 +265,7 @@ export class UserStreamSession {
     const startedAt = Math.floor(startedAtMs / 1000);
     if (!this.backoff.allowed(Math.floor(this.host.nowMs() / 1000))) {
       this.report.add("backoffSkipped");
+      this.liveHooks?.collectLiveIds?.(false);
       return;
     }
     const stream: UserStreamConnection = {
@@ -413,6 +423,8 @@ export class UserStreamSession {
     if (decision.action === "awaitSocketClose") {
       this.awaitSocketClose(stream);
     }
+    // Refused before its EOSE: this connection counts nothing.
+    if (!stream.streamLive) this.liveHooks?.collectLiveIds?.(false);
     if (stream.streamLive && stream.mode !== "shadow") {
       this.liveHooks?.ended(stream, decision);
     }
@@ -427,8 +439,9 @@ export class UserStreamSession {
       this.host.clearTimeout(this.graceTimer);
       this.graceTimer = null;
     }
+    const startedAt = this.takeConnectedAt();
     if (!stream) {
-      this.liveHooks?.socketEnded();
+      this.liveHooks?.socketEnded(startedAt);
       return;
     }
     stream.comparator?.end(this.host.nowMs());
@@ -438,8 +451,14 @@ export class UserStreamSession {
       this.liveHooks?.ended(stream, null);
     }
     stream.closed = true;
-    this.liveHooks?.socketEnded();
+    this.liveHooks?.socketEnded(startedAt);
     this.maybeReport();
+  }
+
+  private takeConnectedAt() {
+    const at = this.connectedAt;
+    this.connectedAt = null;
+    return at;
   }
 
   /** Another account or community: read its backoff and counters anew. */
@@ -493,6 +512,7 @@ export class UserStreamSession {
   private closeStream(stream: UserStreamConnection) {
     stream.closed = true;
     this.stopComparator(stream);
+    if (!stream.streamLive) this.liveHooks?.collectLiveIds?.(false);
     void this.host
       .send(["CLOSE", stream.subId], stream.generation)
       .catch(() => {});

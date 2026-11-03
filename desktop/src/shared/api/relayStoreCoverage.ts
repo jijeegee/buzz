@@ -408,7 +408,10 @@ export async function catchUpFromStore(
 
 /**
  * The stream's accepted live/gated EOSE at `liveAt`: it carries `rooms`
- * (kept by reference: 44100/44101 change it) and records its own `[L, L]`.
+ * (kept by reference: 44100/44101 change it), in memory only. A room's
+ * stream span `[L, …]` is recorded once its catch-up batch completed
+ * (`spanned`), never for a room whose catch-up was cut short
+ * (docs/message-sync.md#catch-up-at-the-stream-eose).
  * `settled` is its catch-up, which the preload wait waits for.
  */
 export function noteStreamLiveEose({
@@ -431,27 +434,67 @@ export function noteStreamLiveEose({
     storeCoverage: coverage,
   };
   stream = { subscription, rooms };
-  record([...rooms], liveAt, liveAt, scope);
+  /** Carried room -> when the stream began carrying it. */
+  const starts = new Map<string, number>();
+  /** Handed rooms whose catch-up at the EOSE is not done: no span yet. */
+  const pending = new Set<string>();
+  /** Carried rooms whose stream span is in the store. */
+  const spanned = new Set<string>();
+  /** `[start, to]` for each of `roomIds`, grouped by start. */
+  const recordFrom = (roomIds: Iterable<string>, to: number) => {
+    const byStart = new Map<number, string[]>();
+    for (const roomId of roomIds) {
+      const start = starts.get(roomId) ?? liveAt;
+      byStart.set(start, [...(byStart.get(start) ?? []), roomId]);
+    }
+    for (const [start, ids] of byStart) {
+      record(ids, start, Math.max(start, to), scope);
+    }
+  };
   return {
     /** Rooms handed to the stream once their resume points are read. */
     hand: (roomIds: string[]) => {
       if (subscription.storeCoverage !== coverage) return;
-      for (const roomId of roomIds) rooms.add(roomId);
-      record(roomIds, liveAt, liveAt, scope);
+      for (const roomId of roomIds) {
+        rooms.add(roomId);
+        pending.add(roomId);
+        if (!starts.has(roomId)) starts.set(roomId, liveAt);
+      }
+    },
+    /** Rooms whose catch-up is done (walked, or skipped in gated). */
+    span: (roomIds: readonly string[]) => {
+      for (const roomId of roomIds) pending.delete(roomId);
+      // After a CLOSED no span is written (the fallback walks instead).
+      if (subscription.storeCoverage !== coverage) return;
+      const done = roomIds.filter(
+        (roomId) => rooms.has(roomId) && !spanned.has(roomId),
+      );
+      for (const roomId of done) spanned.add(roomId);
+      recordFrom(done, coverage.markedAt);
     },
     /** The catch-up the preload waits for. */
     settle: (settled: Promise<unknown>) => settling.set(coverage, settled),
-    /** A stream frame: extends the span at most once per minute. */
+    /** A stream frame: extends the spans at most once per minute. */
     extend: (to: number) => {
       if (subscription.storeCoverage !== coverage) return;
       if (to - coverage.markedAt < STORE_MARK_INTERVAL_SECS) return;
       coverage.markedAt = to;
-      record([...rooms], liveAt, to, scope);
+      recordFrom(
+        [...spanned].filter((roomId) => rooms.has(roomId)),
+        to,
+      );
     },
-    /** A room the stream starts carrying (44100): its span from `at`. */
+    /**
+     * A room the stream starts carrying (44100): its span from `at`, once
+     * its catch-up at the EOSE is done when it still has one.
+     */
     carry: (roomId: string, at: number) => {
       if (subscription.storeCoverage !== coverage) return;
       rooms.add(roomId);
+      starts.set(roomId, at);
+      spanned.delete(roomId);
+      if (pending.has(roomId)) return;
+      spanned.add(roomId);
       record([roomId], at, at, scope);
     },
   };

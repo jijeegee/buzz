@@ -67,6 +67,20 @@ const roomEvent = (id, room, createdAt = L, kind = 9) => ({
   content: "",
 });
 
+/** Appends `[from, to]` to each room's spans (`resume` as a store). */
+function addSpans(resume, roomIds, from, to) {
+  for (const room of roomIds) {
+    const spans = resume[room];
+    const before =
+      spans === undefined
+        ? []
+        : Array.isArray(spans)
+          ? spans
+          : [[spans, spans]];
+    resume[room] = [...before, [from, to]];
+  }
+}
+
 /**
  * A session with live hooks over a bundle whose chunks are recorded.
  * `pages(request)` answers the relay's history walks.
@@ -82,6 +96,7 @@ function harness({
   vouched = true,
   visibleRoom = null,
   rateLimit = null,
+  persist = false,
 } = {}) {
   const open = new Map();
   const bundle = new RoomLiveBundle(
@@ -161,6 +176,7 @@ function harness({
     },
     extend: async (roomIds, from, to, scope, seq) => {
       calls.extend.push({ roomIds, from, to, scope, seq });
+      if (persist) addSpans(resume, roomIds, from, to);
     },
     getState: async (key) => state[key] ?? null,
     setState: async (key, value) => {
@@ -233,14 +249,15 @@ function harness({
 
 test("live: after the EOSE the snapshot rooms leave their chunks; extras and the rest stay", async () => {
   const h = harness({ resume: { "room-a": L - 100, "room-b": L - 100 } });
-  h.bundle.setMemberRooms(["room-a", "room-b", "room-c"]);
+  h.bundle.setMemberRooms(["room-a", "room-b"]);
   void h.bundle.listenRoom("room-x", () => {});
   await flush();
-  assert.deepEqual([...h.open.keys()].sort(), [
-    "room-a,room-b,room-c",
-    "room-x",
-  ]);
+  assert.deepEqual([...h.open.keys()].sort(), ["room-a,room-b", "room-x"]);
   const subId = await h.start("live", { "room-a": 1, "room-b": 2 });
+  assert.deepEqual([...h.open.keys()].sort(), ["room-x"]);
+  // A member room joining later gets a chunk of its own.
+  h.bundle.setMemberRooms(["room-a", "room-b", "room-c"]);
+  await flush();
   assert.deepEqual([...h.open.keys()].sort(), ["room-c", "room-x"]);
   assert.equal(streamCarries("room-a"), true);
   assert.equal(storeLiveAt("room-a"), L);
@@ -925,4 +942,224 @@ test("S8: the first connect does not wait for the store restore; the REQ follows
   await h.session.requested;
   assert.equal(h.host.sent.length, 1);
   assert.equal(h.host.sent[0][0], "REQ");
+});
+
+test("B1: a catch-up cut short by a drop writes no stream span; the next connection resumes from the real gap start", async () => {
+  // 2 h offline, 200 covered rooms; the socket drops during batch 1.
+  const resume = {};
+  const snapshot = {};
+  const rooms = [];
+  for (let i = 0; i < 200; i += 1) {
+    const room = `room-${String(i).padStart(3, "0")}`;
+    rooms.push(room);
+    resume[room] = [[L - 30_000, L - 7200]];
+    snapshot[room] = 1;
+  }
+  let dropped;
+  const drop = new Promise((resolve) => {
+    dropped = resolve;
+  });
+  let first = true;
+  const h = harness({
+    resume,
+    persist: true,
+    pages: async () => {
+      if (first) {
+        first = false;
+        await drop;
+        throw new Error("socket closed");
+      }
+      return [];
+    },
+  });
+  const restoreSpans = setStoreCoverageDeps({
+    nowSecs: () => Math.floor(h.host.now / 1000),
+    extend: async (roomIds, from, to) => {
+      recorded.push([[...roomIds].sort(), from, to]);
+      addSpans(resume, roomIds, from, to);
+    },
+  });
+  try {
+    await h.session.connected(1);
+    await h.session.requested;
+    let subId = h.host.sent.at(-1)[1];
+    h.session.event(subId, part1("live", snapshot));
+    h.session.eose(subId);
+    for (let i = 0; i < 5; i += 1) await flush();
+    assert.equal(h.calls.pages.length, 1, "batch 1 is in flight");
+    assert.equal(h.calls.pages[0].since, L - 7200 - 1865);
+    assert.equal(h.calls.pages[0].channelIds.length, 128);
+    // A frame a minute on extends no span: no batch has completed.
+    h.host.now = (L + 61) * 1000;
+    h.session.event(subId, roomEvent("f1", "room-000", L + 61));
+    await flush();
+    assert.deepEqual(recorded, [], "no stream span before a batch completes");
+    assert.equal(streamCarries("room-000"), true, "carried, in memory");
+    h.session.socketEnded();
+    dropped();
+    await h.live.settled;
+    await flush();
+    assert.deepEqual(recorded, [], "the cut-short catch-up wrote no span");
+    assert.equal(h.calls.extend.length, 0);
+    // Connection 2, 10 min later.
+    h.calls.pages.length = 0;
+    h.host.now = (L + 600) * 1000;
+    await h.session.connected(1);
+    await h.session.requested;
+    subId = h.host.sent.at(-1)[1];
+    h.session.event(subId, part1("live", snapshot, L + 600));
+    h.session.eose(subId);
+    await h.live.settled;
+    await flush();
+    const catchUp = h.calls.pages.filter(
+      (request) => request.since === L - 7200 - 1865,
+    );
+    assert.deepEqual(
+      catchUp.map((request) => request.channelIds.length),
+      [128, 72],
+      "every room walks from the real gap start, not from L",
+    );
+    assert.deepEqual(
+      h.calls.extend.map((call) => [call.roomIds.length, call.from, call.to]),
+      [
+        [128, L - 7200 - 1865, L + 600],
+        [72, L - 7200 - 1865, L + 600],
+      ],
+    );
+    // Each completed batch then gets its stream span.
+    assert.deepEqual(
+      recorded.map(([ids, from, to]) => [ids.length, from, to]),
+      [
+        [128, L + 600, L + 600],
+        [72, L + 600, L + 600],
+      ],
+    );
+    assert.deepEqual(recorded.flatMap(([ids]) => ids).sort(), rooms);
+  } finally {
+    restoreSpans();
+  }
+});
+
+test("gated: a skipped equal room gets its stream span at once; a walked room after its batch", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const h = harness({
+    rows: { "room-a": [1, 1_999_000] },
+    resume: { "room-a": 1_999_000, "room-b": 1_998_000 },
+    pages: async (request) => {
+      if (request.channelIds.includes("room-b")) await gate;
+      return [];
+    },
+  });
+  await h.session.connected(1);
+  await h.session.requested;
+  const subId = h.host.sent.at(-1)[1];
+  h.session.event(subId, part1("gated", { "room-a": 1, "room-b": 2 }));
+  h.session.eose(subId);
+  for (let i = 0; i < 5; i += 1) await flush();
+  assert.deepEqual(recorded, [[["room-a"], L, L]]);
+  release();
+  await h.live.settled;
+  await flush();
+  assert.deepEqual(recorded, [
+    [["room-a"], L, L],
+    [["room-b"], L, L],
+  ]);
+});
+
+test("S-D1: after a chunk-only connection the next live connection runs the listener repair from its start", async () => {
+  const gap = roomEvent("gap", "room-a", L + 300);
+  const h = harness({
+    resume: { "room-a": L - 100 },
+    pages: (request) => (request.since === L - 1865 ? [gap] : []),
+  });
+  h.bundle.setMemberRooms(["room-a"]);
+  const all = [];
+  h.bundle.listenAllRooms((event) => all.push(event.id));
+  await flush();
+  // Connection 1 at L: the relay has the stream off; chunks carry the room.
+  await h.session.connected(1);
+  await h.session.requested;
+  h.session.closed(h.host.sent.at(-1)[1], "unsupported: user-stream off");
+  await reconnect(h, "live", { "room-a": 2 }, L + 600);
+  assert.ok(
+    h.calls.pages.some(
+      (request) =>
+        request.since === L - 1865 && request.channelIds.includes("room-a"),
+    ),
+    "repair from the chunk-only connection's start minus the lookback",
+  );
+  assert.deepEqual(all, ["gap"]);
+});
+
+test("S-D2: a chunk carrying a room outside the snapshot stays whole after the hand-off", async () => {
+  const h = harness({ resume: { "room-a": L - 100, "room-b": L - 100 } });
+  h.bundle.setMemberRooms(["room-a", "room-b", "room-x"]);
+  await flush();
+  const chunk = h.open.get("room-a,room-b,room-x");
+  assert.ok(chunk);
+  await h.start("live", { "room-a": 1, "room-b": 1 });
+  assert.equal(
+    h.open.get("room-a,room-b,room-x"),
+    chunk,
+    "not re-partitioned: its repair goes on",
+  );
+  assert.equal(streamCarries("room-a"), true);
+  h.session.socketEnded();
+  await flush();
+  assert.ok(h.open.has("room-a,room-b,room-x"));
+});
+
+test("S-D3: live ids are not collected when the stream REQ is refused before its EOSE or not sent", async () => {
+  const h = harness();
+  assert.equal(h.live.liveIds, null, "nothing before a connect");
+  await h.session.connected(1);
+  await h.session.requested;
+  h.live.noteLive("x1");
+  assert.deepEqual([...h.live.liveIds], ["x1"], "collected while pending");
+  h.session.closed(h.host.sent.at(-1)[1], "unsupported: user-stream off");
+  assert.equal(h.live.liveIds, null);
+  h.live.noteLive("x2");
+  assert.equal(h.live.liveIds, null, "stream off costs nothing");
+  // Backed off: the REQ is not sent, nothing is collected.
+  h.session.socketEnded();
+  h.session.backoff.restore(JSON.stringify({ closes: [], until: L + 3600 }));
+  const sent = h.host.sent.length;
+  await h.session.connected(1);
+  await h.session.requested;
+  assert.equal(h.host.sent.length, sent, "backed off");
+  h.live.noteLive("x3");
+  assert.equal(h.live.liveIds, null);
+});
+
+test("membership: a rejoin of a room still in the EOSE catch-up gets its span only when the batch completes", async () => {
+  let release;
+  const gate = new Promise((resolve) => {
+    release = resolve;
+  });
+  const h = harness({
+    resume: { "room-a": L - 100 },
+    pages: async () => {
+      await gate;
+      return [];
+    },
+  });
+  await h.session.connected(1);
+  await h.session.requested;
+  const subId = h.host.sent.at(-1)[1];
+  h.session.event(subId, part1("live", { "room-a": 1 }));
+  h.session.eose(subId);
+  for (let i = 0; i < 5; i += 1) await flush();
+  h.host.now = (L + 10) * 1000;
+  h.session.membershipNotice(roomEvent("l1", "room-a", L + 5, 44101));
+  h.session.membershipNotice(roomEvent("j1", "room-a", L + 5, 44100));
+  await flush();
+  assert.equal(streamCarries("room-a"), true);
+  assert.deepEqual(recorded, [], "pending: no span at the rejoin");
+  release();
+  await h.live.settled;
+  await flush();
+  assert.deepEqual(recorded, [[["room-a"], L + 10, L + 10]]);
 });
