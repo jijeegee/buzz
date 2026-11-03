@@ -11,6 +11,9 @@ import android.media.MediaExtractor
 import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.os.Build
+import android.view.View
+import android.view.ViewGroup
+import android.view.WindowInsets
 import androidx.annotation.RequiresApi
 import com.google.android.play.agesignals.AgeSignalsException
 import com.google.android.play.agesignals.model.AgeSignalsErrorCode
@@ -18,6 +21,7 @@ import com.google.android.play.agesignals.AgeSignalsAccessRequest
 import com.google.android.play.agesignals.AgeSignalsManagerFactory
 import com.google.android.play.agesignals.AgeSignalsRequest
 import io.flutter.embedding.android.FlutterFragmentActivity
+import io.flutter.embedding.android.FlutterView
 import io.flutter.embedding.engine.FlutterEngine
 import io.flutter.plugin.common.MethodChannel
 import java.io.ByteArrayOutputStream
@@ -217,6 +221,35 @@ class MainActivity : FlutterFragmentActivity() {
         }
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) {
+            window.decorView.removeCallbacks(resyncClosedImeInsets)
+            window.decorView.postDelayed(resyncClosedImeInsets, IME_RESYNC_DELAY_MS)
+        }
+    }
+
+    // Flutter defers IME insets while a keyboard animation runs. If the
+    // activity loses its window mid-animation (screen off, app switch), the
+    // animation end can be missed and Flutter keeps the open-keyboard inset
+    // after the keyboard is gone. Once the window is back, hand Flutter the
+    // system's current insets when the keyboard is really closed.
+    private val resyncClosedImeInsets = Runnable {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) return@Runnable
+        val insets = window.decorView.rootWindowInsets ?: return@Runnable
+        if (insets.isVisible(WindowInsets.Type.ime())) return@Runnable
+        findFlutterView(window.decorView)?.onApplyWindowInsets(insets)
+    }
+
+    private fun findFlutterView(view: View): FlutterView? {
+        if (view is FlutterView) return view
+        if (view !is ViewGroup) return null
+        for (index in 0 until view.childCount) {
+            findFlutterView(view.getChildAt(index))?.let { return it }
+        }
+        return null
+    }
+
     override fun onRequestPermissionsResult(
         requestCode: Int,
         permissions: Array<out String>,
@@ -227,6 +260,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     override fun onDestroy() {
+        window.decorView.removeCallbacks(resyncClosedImeInsets)
         ageSignalRequest.retire()
         huddleMediaPlugin?.dispose()
         huddleMediaPlugin = null
@@ -486,6 +520,7 @@ class MainActivity : FlutterFragmentActivity() {
     }
 
     companion object {
+        private const val IME_RESYNC_DELAY_MS = 300L
         private const val MEDIA_UPLOAD_CHANNEL = "kuzz/media_upload"
         private const val AGE_SIGNAL_CHANNEL = "kuzz/age_signal"
         private const val REQUEST_AGE_SIGNAL_METHOD = "requestAgeSignal"
