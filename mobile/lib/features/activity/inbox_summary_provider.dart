@@ -7,24 +7,25 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../channels/channel_live_events.dart';
 import '../channels/channels_provider.dart';
+import '../people/blocked_users_provider.dart';
 import 'inbox_summary.dart';
 
 /// The Channels + Threads view from one relay summary: member rooms and their
 /// replied-to threads, newest first, with server unread counts. The first page
 /// renders at once; later pages load one after another in the background up
 /// to [inboxSummaryBackgroundRows]. Live channel events patch only their row,
-/// so a new message never refetches anything; reconnects, app resume, and
-/// deletions of a shown message reload the first page. Mirrors desktop's
-/// `useInboxSummary`.
+/// so a new message never refetches anything; push inbox events move rows
+/// already loaded; reconnects, app resume, and deletions of a shown message
+/// reload the first page. Mirrors desktop's `useInboxSummary`.
 ///
 /// An error with no value means the relay does not serve the summary (or the
 /// first page failed twice); callers then fall back to per-room loading.
 class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
   int _generation = 0;
 
-  /// Live events that arrive while a first page is in flight; folded into
-  /// that page so a message racing the request is not lost.
-  List<NostrEvent>? _eventsDuringLoad;
+  /// Live and pushed events that arrive while a first page is in flight;
+  /// folded into that page so a message racing the request is not lost.
+  List<({NostrEvent event, bool pushed})>? _eventsDuringLoad;
 
   /// When the current first page was requested; resume and deletion reloads
   /// wait until [inboxSummaryMinReloadIntervalProvider] has passed since.
@@ -90,8 +91,8 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
       sentRead: read,
     );
     var deleted = false;
-    for (final event in buffered) {
-      final result = _foldLiveEvent(summary, event);
+    for (final (:event, :pushed) in buffered) {
+      final result = _foldLiveEvent(summary, event, pushed: pushed);
       summary = result.state;
       deleted = deleted || result.reload;
     }
@@ -105,6 +106,17 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
       Timer.run(() => unawaited(_loadMorePages(generation)));
     }
     return summary;
+  }
+
+  /// This device's read position for [row], once read state is loaded.
+  int? _readAtOf(InboxSummaryRow row) {
+    final readState = ref.read(readStateProvider);
+    if (!readState.isReady) return null;
+    return inboxSummaryRowReadAt(
+      channelId: row.channelId,
+      threadRootId: row.isThread ? row.rootId : null,
+      markerOf: readState.effectiveTimestamp,
+    );
   }
 
   Map<String, int> _readContexts() {
@@ -160,7 +172,7 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     if (generation != _generation) return;
     final buffered = _eventsDuringLoad;
     if (buffered != null) {
-      buffered.add(event);
+      buffered.add((event: event, pushed: false));
       return;
     }
     final current = state.value;
@@ -173,15 +185,49 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
     }
   }
 
+  /// Folds push inbox events of [listed] rooms the store accepted
+  /// (docs/message-sync.md#push-inbox), as replays: only rows already
+  /// loaded move, an event a row has counts once, and the next first page
+  /// replaces them. A first page in flight gets them once it lands.
+  void foldPushed(List<NostrEvent> events, {required Set<String> listed}) {
+    if (!ref.mounted) return;
+    final kept = [
+      for (final event in events)
+        if (listed.contains(event.channelId)) event,
+    ];
+    final buffered = _eventsDuringLoad;
+    if (buffered != null) {
+      buffered.addAll([for (final event in kept) (event: event, pushed: true)]);
+      return;
+    }
+    final current = state.value;
+    if (current == null) return;
+    var summary = current;
+    for (final event in kept) {
+      summary = _foldLiveEvent(summary, event, pushed: true).state;
+    }
+    if (!identical(summary, current)) state = AsyncData(summary);
+  }
+
   /// Patches the row [event] belongs to. A deletion of a shown message or
   /// thread asks for a reload instead; other deletions (for example removed
-  /// reactions) change no row.
+  /// reactions) change no row. A [pushed] event is a replay, and one from
+  /// someone I blocked changes nothing.
   ({InboxSummaryState state, bool reload}) _foldLiveEvent(
     InboxSummaryState current,
-    NostrEvent event,
-  ) {
+    NostrEvent event, {
+    bool pushed = false,
+  }) {
     final channelId = event.channelId;
     if (channelId == null) return (state: current, reload: false);
+    if (pushed) {
+      final author = event.pubkey.toLowerCase();
+      if (ref
+          .read(blockedPubkeysProvider)
+          .any((id) => id.toLowerCase() == author)) {
+        return (state: current, reload: false);
+      }
+    }
     if (event.kind == EventKind.deletion ||
         event.kind == EventKind.nip29DeleteEvent) {
       final targets = [
@@ -203,6 +249,8 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
         channelId: channelId,
         channelType: channel?.isDm == true ? 'dm' : 'stream',
         currentPubkey: ref.read(myPubkeyProvider),
+        replay: pushed,
+        readAtOf: pushed ? _readAtOf : null,
       ),
       reload: false,
     );

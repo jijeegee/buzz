@@ -75,6 +75,30 @@ extension _StoredPaint on ChannelMessagesNotifier {
     }
   }
 
+  /// Reads the device store again after a push inbox drain wrote to it
+  /// (docs/message-sync.md#push-inbox), while the saved rows are still
+  /// shown: [_paintSaved] keeps the relay's window and live rows.
+  void _repaintStored() {
+    final scope = _readHeadScope();
+    if (!_headRestoreStarted || _relayHistoryArrived || scope == null) return;
+    final filter = _channelWindowFilter(null);
+    final stored = _read(paintableRoomHeadProvider)(
+      _summarySession,
+      channelId,
+      filter,
+    );
+    unawaited(
+      stored.then((events) => _paintSaved(scope, events)).catchError((
+        Object error,
+      ) {
+        debugPrint(
+          '[ChannelMessagesNotifier] stored rows not redrawn for $channelId: $error',
+        );
+        return false;
+      }),
+    );
+  }
+
   /// Draws [events] (a channel-window response) unless the relay's window or
   /// any other rows are already shown; saved rows replace saved rows only
   /// while nothing arrived live over them.

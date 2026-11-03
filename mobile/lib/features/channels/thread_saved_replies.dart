@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart' show BuildContext;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/push/push_inbox_events.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_preload.dart';
 import 'timeline_message.dart';
@@ -24,9 +25,11 @@ final paintableThreadHeadProvider = Provider<StoredThreadHeadReader>(
 
 /// A thread's newest replies as the device store holds them, empty when it
 /// holds none. Not yet confirmed: the thread's relay page replaces them
-/// (docs/message-sync.md#opening-a-thread-from-the-store).
+/// (docs/message-sync.md#opening-a-thread-from-the-store). Read again after
+/// a push inbox drain wrote to the store.
 final storedThreadRepliesProvider = FutureProvider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) async {
+      ref.watch(pushInboxRevisionProvider);
       final session = ref.read(relaySessionProvider.notifier);
       try {
         final events = await ref.read(paintableThreadHeadProvider)(
@@ -46,20 +49,25 @@ final storedThreadRepliesProvider = FutureProvider.autoDispose
       }
     });
 
-/// Replies to draw while a thread's own query is out: the inbox preload's,
-/// else the device store's.
+/// Replies to draw while a thread's own query is out: the inbox preload's
+/// and the device store's, oldest first; the preload's copy of a reply wins.
 final savedThreadRepliesProvider = Provider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
       final preloaded = ref.watch(preloadedThreadRepliesProvider(args));
-      if (preloaded.isNotEmpty) return preloaded;
-      return ref.watch(storedThreadRepliesProvider(args)).value ?? const [];
+      final stored =
+          ref.watch(storedThreadRepliesProvider(args)).value ?? const [];
+      if (stored.isEmpty) return preloaded;
+      if (preloaded.isEmpty) return stored;
+      return mergeThreadEvents(stored, preloaded);
     });
 
-/// Whether the device store's replies are still being looked up.
+/// Whether the device store's replies are still being looked up for the
+/// first time; a read again after a drain keeps the replies it had.
 final savedRepliesLoadingProvider = Provider.autoDispose
-    .family<bool, ThreadRepliesArgs>(
-      (ref, args) => ref.watch(storedThreadRepliesProvider(args)).isLoading,
-    );
+    .family<bool, ThreadRepliesArgs>((ref, args) {
+      final stored = ref.watch(storedThreadRepliesProvider(args));
+      return stored.isLoading && !stored.hasValue;
+    });
 
 /// The held reply a thread opens at on the first frame: [id] among
 /// [replies], and for a first [unread] one an older reply too.

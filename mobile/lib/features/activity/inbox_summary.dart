@@ -265,12 +265,19 @@ int _compareRowsNewestFirst(InboxSummaryRow left, InboxSummaryRow right) {
 /// it belongs to changes and moves to the top. Returns [current] unchanged for
 /// events that move no row (other kinds, duplicates, events older than the
 /// row). Mirrors desktop's `applyLiveEventToInboxSummary`.
+///
+/// A [replay] (a push inbox event, docs/message-sync.md#push-inbox) only
+/// moves rows already loaded, skips an event no newer than the row's latest
+/// (already counted), and counts nothing for a row [readAtOf] says this
+/// device has read past it.
 InboxSummaryState applyLiveEventToInboxSummary(
   InboxSummaryState current,
   NostrEvent event, {
   required String channelId,
   required String channelType,
   required String? currentPubkey,
+  bool replay = false,
+  int? Function(InboxSummaryRow row)? readAtOf,
 }) {
   if (!_summaryKinds.contains(event.kind)) return current;
   final rootId = threadReferenceOf(event.tags).rootId;
@@ -291,10 +298,18 @@ InboxSummaryState applyLiveEventToInboxSummary(
           : !row.isThread && row.channelId == channelId,
     );
     final existing = index == -1 ? null : rows[index];
+    if (replay && existing == null) continue;
     final latest = existing?.latest;
     if (latest?.id == event.id) continue;
     // Relay `at` is a receive time; compare message times only.
-    if (latest != null && latest.createdAt > event.createdAt) continue;
+    if (latest != null &&
+        (replay
+            ? latest.createdAt >= event.createdAt
+            : latest.createdAt > event.createdAt)) {
+      continue;
+    }
+    final readAt = existing == null ? null : readAtOf?.call(existing);
+    final readPast = replay && readAt != null && readAt >= event.createdAt;
     final base =
         existing ??
         InboxSummaryRow(
@@ -311,7 +326,7 @@ InboxSummaryState applyLiveEventToInboxSummary(
           latest: null,
           root: null,
         );
-    final next = base._withLiveEvent(event, fromOther: fromOther);
+    final next = base._withLiveEvent(event, fromOther: fromOther && !readPast);
     rows = index == -1
         ? [...rows, next]
         : [for (var i = 0; i < rows.length; i++) i == index ? next : rows[i]];

@@ -163,6 +163,12 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   /// The listed rooms push inbox events may change (the Chats fold's too).
   Set<String> get pushFoldRoomIds => _pushFoldChannels().keys.toSet();
 
+  /// [pushFoldRoomIds] once the saved list read at launch has settled.
+  Future<Set<String>> pushFoldRoomIdsWhenShown() async {
+    await _listSnapshot.pending;
+    return pushFoldRoomIds;
+  }
+
   Map<String, Map<String, ObservedUnreadEvent>>
   get observedUnreadEventsByChannel =>
       Map<String, Map<String, ObservedUnreadEvent>>.unmodifiable({

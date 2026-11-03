@@ -4,6 +4,7 @@ import 'package:kuzz/features/activity/inbox_summary_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_live_events.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/widgets.dart';
@@ -363,4 +364,44 @@ void main() {
       );
     },
   );
+  test('pushed events move loaded rows once, add none, and skip blocked '
+      'authors and what this device has read', () async {
+    final session = _SummarySession([
+      _page([_row(_roomB, 200, 'b-latest'), _row(_roomA, 30, 'a-latest')]),
+    ]);
+    final (:container, lifecycle: _) = setUp(
+      session,
+      overrides: [
+        blockedPubkeysProvider.overrideWithValue(const {'blocked'}),
+      ],
+    );
+    await container.read(channelsProvider.future);
+    await container.read(inboxSummaryProvider.future);
+    NostrEvent pushed(String id, String room, int at, {String by = 'other'}) =>
+        NostrEvent.fromJson({..._eventJson(id, room, at), 'pubkey': by});
+    final events = [
+      pushed('b-latest', _roomB, 200),
+      pushed('b-same-second', _roomB, 200),
+      pushed('blocked', _roomB, 300, by: 'blocked'),
+      pushed('b1', _roomB, 250),
+      // Read here up to 50: moves the row, counts nothing.
+      pushed('a1', _roomA, 40),
+      pushed('unknown', '33333333-3333-4333-8333-333333333333', 400),
+    ];
+    final notifier = container.read(inboxSummaryProvider.notifier);
+    final listed = {_roomA, _roomB, '33333333-3333-4333-8333-333333333333'};
+    notifier.foldPushed(events, listed: listed);
+    notifier.foldPushed(events, listed: listed);
+
+    final rows = {
+      for (final row in container.read(inboxSummaryProvider).requireValue.rows)
+        row.channelId: row,
+    };
+    expect(rows.keys, unorderedEquals([_roomA, _roomB]));
+    expect(rows[_roomB]!.latest!.id, 'b1');
+    expect(rows[_roomB]!.unread, 2);
+    expect(rows[_roomA]!.latest!.id, 'a1');
+    expect(rows[_roomA]!.unread, 1);
+    expect(session.summaryRequests, hasLength(1), reason: 'no reload');
+  });
 }

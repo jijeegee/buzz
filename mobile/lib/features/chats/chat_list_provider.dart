@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/message_store/message_store.dart' show MessageStoreLease;
 import '../../shared/message_store/message_store_provider.dart';
+import '../../shared/push/push_inbox_events.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
@@ -43,10 +44,10 @@ const chatListQueryTimeout = Duration(seconds: 30);
 
 /// The Chats list from the relay's `chat_list`: rooms and live threads,
 /// newest first, with server unread counts. The last first page is saved on
-/// this device and drawn at once on the next start. Live messages patch only
-/// their row; rows only the relay can place, chat-state pings from other
-/// devices, reconnects and app resume reload the first page. Mirrors
-/// desktop's `useServerChatList`.
+/// this device and drawn at once on the next start, with the push inbox's
+/// events since folded in. Live messages patch only their row; rows only
+/// the relay can place, chat-state pings from other devices, reconnects and
+/// app resume reload the first page. Mirrors desktop's `useServerChatList`.
 ///
 /// An error with no value means the relay keeps no chat state; the Chats
 /// screen then shows the channel list instead.
@@ -82,7 +83,8 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
     if (pubkey == null || pubkey.isEmpty || _ownerOf(config, pubkey) != owner) {
       return const ChatListState(rows: [], next: null);
     }
-    final cached = state.value ?? _readCache(config, pubkey);
+    final cached =
+        state.value ?? _withPushed(_readCache(config, pubkey), config, pubkey);
     if (!connected) {
       // Keep (or show the saved) rows until the session reconnects, which
       // rebuilds this provider and reloads the list.
@@ -158,6 +160,8 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
   ) async {
     _loadedAt = DateTime.now();
     _backgrounded = false;
+    final pushed = ref.read(pushedChatEventsProvider);
+    final pushedBefore = pushed.drains;
     final buffered = _eventsDuringLoad = [];
     final ChatListPage page;
     _firstPageInFlight = true;
@@ -180,6 +184,13 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
       list = result.state;
       reload = reload || result.reload;
     }
+    // Pushed events drained before this page was asked for are in it; the
+    // later ones may not be.
+    final lease = _lease(config, pubkey);
+    for (final event in pushed.after(lease, pushedBefore)) {
+      list = _foldLiveEvent(list, event, replay: true, pushed: true).state;
+    }
+    pushed.dropThrough(lease, pushedBefore);
     _writeCache(config, pubkey, page);
     if (reload) {
       Timer.run(() => _reloadSoon(generation));
@@ -269,38 +280,58 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
     if (result.reload) _reloadSoon(generation, immediate: true);
   }
 
-  /// Folds push inbox events the store accepted
-  /// (docs/message-sync.md#push-inbox) into the saved rows drawn before the
-  /// first page, for [listed] rooms only, as replays: the first page
-  /// replaces them, and nothing is saved. A live list (it has these
-  /// events or will reload), another account or a lease that ended folds
-  /// nothing. A row only the relay can place waits for that page.
-  void foldPushed(
-    MessageStoreLease lease,
-    List<NostrEvent> events, {
-    required Set<String> listed,
-  }) {
+  /// Folds push inbox events of listed rooms the store accepted
+  /// (docs/message-sync.md#push-inbox) into the rows shown, saved or live,
+  /// as replays: an event a row already has counts once, and the next first
+  /// page replaces them. Nothing is saved and nothing reloads. Another
+  /// account or a lease that ended folds nothing. A row only the relay can
+  /// place waits for that page.
+  void foldPushed(MessageStoreLease lease, List<NostrEvent> events) {
     final current = state.value;
-    if (!ref.mounted || current == null || !current.fromCache) return;
+    if (!ref.mounted || current == null) return;
     final config = ref.read(relayConfigProvider);
     final pubkey = ref.read(myPubkeyProvider);
     if (pubkey == null ||
         _ownerOf(config, pubkey) != owner ||
-        ref.read(messageStoreProvider).lease(config.baseUrl, pubkey) != lease) {
+        _lease(config, pubkey) != lease) {
       return;
     }
-    var list = current;
-    for (final event in events) {
-      if (!listed.contains(event.channelId)) continue;
-      list = _foldLiveEvent(list, event, replay: true).state;
-    }
+    final list = _foldPushedEvents(current, events);
     if (!identical(list, current)) state = AsyncData(list);
   }
+
+  /// [saved] with the pushed events kept for this lease folded in.
+  ChatListState? _withPushed(
+    ChatListState? saved,
+    RelayConfig config,
+    String pubkey,
+  ) {
+    if (saved == null) return null;
+    return _foldPushedEvents(
+      saved,
+      ref.read(pushedChatEventsProvider).after(_lease(config, pubkey)),
+    );
+  }
+
+  ChatListState _foldPushedEvents(
+    ChatListState current,
+    List<NostrEvent> events,
+  ) {
+    var list = current;
+    for (final event in events) {
+      list = _foldLiveEvent(list, event, replay: true, pushed: true).state;
+    }
+    return list;
+  }
+
+  MessageStoreLease? _lease(RelayConfig config, String pubkey) =>
+      ref.read(messageStoreProvider).lease(config.baseUrl, pubkey);
 
   ({ChatListState state, bool reload}) _foldLiveEvent(
     ChatListState current,
     NostrEvent event, {
     bool replay = false,
+    bool pushed = false,
   }) {
     final channelId = event.channelId;
     if (channelId == null) return (state: current, reload: false);
@@ -326,6 +357,7 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
       channelId: channelId,
       currentPubkey: ref.read(myPubkeyProvider),
       replay: replay,
+      pushed: pushed,
       readAtOf: (row) =>
           ref.read(readStateProvider).effectiveTimestamp(chatRowContextId(row)),
     );
