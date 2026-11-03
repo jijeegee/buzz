@@ -9,12 +9,14 @@ import 'package:kuzz/shared/push/dev_push_lease.dart';
 import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:kuzz/shared/push/push_relay_capability_provider.dart';
 import 'package:kuzz/shared/push/push_subscription.dart';
+import 'package:kuzz/shared/push/push_subscription_provider.dart';
 import 'package:kuzz/shared/relay/app_lifecycle_provider.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:nostr/nostr.dart' as nostr;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -50,6 +52,7 @@ void main() {
           Community.create(
             name: 'Team',
             relayUrl: 'https://relay.example',
+            nsec: nostr.Keys.generate().nsec,
           ).copyWith(
             pushNotificationsEnabled: true,
             pushSubscriptionState: KuzzPushLeaseSubscriptionState.desired(
@@ -67,6 +70,10 @@ void main() {
         ProviderScope(
           overrides: [
             savedPrefsProvider.overrideWithValue(prefs),
+            kuzzPushBuildSupportedProvider.overrideWithValue(true),
+            pushSubscriptionSyncProvider.overrideWithValue(
+              KuzzPushSubscriptionSync.ok,
+            ),
             authProvider.overrideWith(_Auth.new),
             communityStorageProvider.overrideWithValue(storage),
             communitySnapshotWriterProvider.overrideWithValue((
@@ -127,17 +134,26 @@ void main() {
             .value,
         isTrue,
       );
-      expect(
-        find.text(
-          'Push support unavailable; you can still turn notifications off',
-        ),
-        findsOneWidget,
-      );
-      await tester.tap(
-        find.byKey(const ValueKey('push-notifications-open-settings')),
-      );
-      await tester.pump();
-      expect(settingsOpened, 1);
+      // Still checking: the phone's block is what to fix. No push support on
+      // the server: nothing on the phone would help.
+      if (outcome == 'absent') {
+        expect(find.text('Not available right now'), findsOneWidget);
+        expect(
+          find.byKey(const ValueKey('push-notifications-open-settings')),
+          findsNothing,
+        );
+      } else {
+        expect(
+          find.text('Notifications are blocked for Kuzz in phone settings'),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.byKey(const ValueKey('push-notifications-open-settings')),
+        );
+        await tester.pump();
+        expect(settingsOpened, 1);
+      }
+      final openedBeforeOff = settingsOpened;
       await tester.tap(
         find.descendant(
           of: find.byKey(const ValueKey('push-notifications-enabled')),
@@ -151,7 +167,7 @@ void main() {
       expect(tombstones, [8]);
       expect(snapshots.last.single.pushNotificationsEnabled, isFalse);
       expect(
-        find.text('Waiting for relay confirmation; notifications may continue'),
+        find.text('Turning off. Notifications may continue for a moment.'),
         findsOneWidget,
       );
       final offSwitch = tester.widget<Switch>(
@@ -166,7 +182,7 @@ void main() {
         find.byKey(const ValueKey('push-notifications-open-settings')),
       );
       await tester.pump();
-      expect(settingsOpened, 2);
+      expect(settingsOpened, openedBeforeOff + 1);
       relayAvailable = true;
       await container
           .read(communityListProvider.notifier)
@@ -179,7 +195,18 @@ void main() {
             .pendingTombstoneGeneration,
         isNull,
       );
-      expect(find.text('Notifications'), findsNothing);
+      expect(
+        find.text(
+          outcome == 'absent'
+              ? 'Not available right now'
+              : 'Off for this community',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey('push-notifications-open-settings')),
+        findsNothing,
+      );
       expect(tester.takeException(), isNull);
       debugDefaultTargetPlatformOverride = null;
     });

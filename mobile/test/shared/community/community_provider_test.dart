@@ -3,9 +3,11 @@ import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/shared/auth/default_community.dart';
 import 'package:kuzz/shared/community/community.dart';
 import 'package:kuzz/shared/community/community_provider.dart';
 import 'package:kuzz/shared/community/community_storage.dart';
+import 'package:kuzz/shared/push/push_bridge.dart';
 import 'package:kuzz/shared/push/push_subscription.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
@@ -42,13 +44,18 @@ void main() {
 
   tearDown(() => container.dispose());
 
-  ProviderContainer createContainer() {
+  ProviderContainer createContainer({
+    bool pushSupported = false,
+    String? builtInOrigin,
+  }) {
     Future<void> writeSnapshot(List<Community> communities) async {
       snapshots.add(List.of(communities));
     }
 
     return ProviderContainer(
       overrides: [
+        kuzzPushBuildSupportedProvider.overrideWithValue(pushSupported),
+        defaultCommunityOriginProvider.overrideWithValue(builtInOrigin),
         communityStorageProvider.overrideWithValue(communityStorage),
         communitySnapshotWriterProvider.overrideWithValue(writeSnapshot),
         communityPushLeaseDeactivatorProvider.overrideWithValue(deactivator),
@@ -661,6 +668,163 @@ void main() {
     });
   });
 
+  group('push on by default', () {
+    Community keyCommunity(String name, {String? relayUrl}) => Community.create(
+      name: name,
+      relayUrl: relayUrl ?? 'https://$name.example',
+      nsec: nostr.Keys.generate().nsec,
+    );
+
+    test('turns push on once for accounts that never chose', () async {
+      final never = keyCommunity('never');
+      final off = keyCommunity('off').copyWith(pushChoice: KuzzPushChoice.off);
+      final token = Community.create(
+        name: 'token',
+        relayUrl: 'https://token.example',
+        pubkey: 'a' * 64,
+        tokenAuth: true,
+      );
+      final signedOut = keyCommunity('signedout').copyWith(signedOut: true);
+      for (final community in [never, off, token, signedOut]) {
+        await communityStorage.save(community);
+      }
+      container = createContainer(pushSupported: true);
+
+      final loaded = await container.read(communityListProvider.future);
+
+      final byId = {for (final c in loaded) c.id: c};
+      expect(byId[never.id]!.pushNotificationsEnabled, isTrue);
+      expect(byId[never.id]!.pushChoice, KuzzPushChoice.on);
+      expect(byId[never.id]!.pushInboxToken, isNotNull);
+      for (final untouched in [off, token, signedOut]) {
+        expect(byId[untouched.id]!.pushNotificationsEnabled, isFalse);
+        expect(byId[untouched.id]!.pushInboxToken, isNull);
+      }
+      final stored = {
+        for (final c in await communityStorage.loadAll()) c.id: c,
+      };
+      expect(stored[never.id]!.pushNotificationsEnabled, isTrue);
+      expect(stored[never.id]!.pushInboxToken, byId[never.id]!.pushInboxToken);
+      expect(await communityStorage.loadPushDefaultOnApplied(), isTrue);
+      expect(
+        snapshots.last.singleWhere((c) => c.id == never.id).pushChoice,
+        KuzzPushChoice.on,
+      );
+    });
+
+    test('a later turn-off survives the next list build', () async {
+      final community = keyCommunity('team');
+      await communityStorage.save(community);
+      container = createContainer(pushSupported: true);
+      await container.read(communityListProvider.future);
+      await container
+          .read(communityListProvider.notifier)
+          .setPushNotificationsEnabled(community.id, false);
+
+      container.invalidate(communityListProvider);
+      final reloaded = await container.read(communityListProvider.future);
+
+      expect(reloaded.single.pushNotificationsEnabled, isFalse);
+      expect(reloaded.single.pushChoice, KuzzPushChoice.off);
+    });
+
+    test('runs only once even for a record that never chose', () async {
+      await communityStorage.markPushDefaultOnApplied();
+      final community = keyCommunity('team');
+      await communityStorage.save(community);
+      container = createContainer(pushSupported: true);
+
+      final loaded = await container.read(communityListProvider.future);
+
+      expect(loaded.single.pushNotificationsEnabled, isFalse);
+    });
+
+    test('leaves accounts for another server untouched', () async {
+      final home = keyCommunity('home', relayUrl: 'https://home.example');
+      final other = keyCommunity('other', relayUrl: 'https://other.example');
+      await communityStorage.save(home);
+      await communityStorage.save(other);
+      container = createContainer(
+        pushSupported: true,
+        builtInOrigin: 'https://home.example',
+      );
+
+      final loaded = await container.read(communityListProvider.future);
+
+      final byId = {for (final c in loaded) c.id: c};
+      expect(byId[home.id]!.pushNotificationsEnabled, isTrue);
+      expect(byId[other.id]!.pushNotificationsEnabled, isFalse);
+      expect(byId[other.id]!.pushChoice, isNull);
+    });
+
+    test('a build without push changes and marks nothing', () async {
+      final community = keyCommunity('team');
+      await communityStorage.save(community);
+      container = createContainer();
+
+      final loaded = await container.read(communityListProvider.future);
+
+      expect(loaded.single.pushNotificationsEnabled, isFalse);
+      expect(await communityStorage.loadPushDefaultOnApplied(), isFalse);
+    });
+
+    test(
+      'a failed save shows and marks nothing, so the next start retries',
+      () async {
+        final community = keyCommunity('team');
+        await communityStorage.save(community);
+        final failing = _FailingCommunityStorage(fakeSecure)
+          ..failSaveAll = true;
+        communityStorage = failing;
+        container = createContainer(pushSupported: true);
+
+        final loaded = await container.read(communityListProvider.future);
+
+        expect(loaded.single.pushNotificationsEnabled, isFalse);
+        expect(await failing.loadPushDefaultOnApplied(), isFalse);
+
+        failing.failSaveAll = false;
+        container.invalidate(communityListProvider);
+        final retried = await container.read(communityListProvider.future);
+        expect(retried.single.pushNotificationsEnabled, isTrue);
+        expect(await failing.loadPushDefaultOnApplied(), isTrue);
+      },
+    );
+
+    test('a failed marker after a save shows what was saved', () async {
+      final community = keyCommunity('team');
+      await communityStorage.save(community);
+      final failing = _FailingCommunityStorage(fakeSecure)..failMark = true;
+      communityStorage = failing;
+      container = createContainer(pushSupported: true);
+
+      final loaded = await container.read(communityListProvider.future);
+
+      expect(loaded.single.pushNotificationsEnabled, isTrue);
+      expect((await failing.loadAll()).single.pushNotificationsEnabled, isTrue);
+      expect(await failing.loadPushDefaultOnApplied(), isFalse);
+    });
+
+    test('the switch records the choice', () async {
+      final community = keyCommunity('team');
+      container = createContainer();
+      final notifier = container.read(communityListProvider.notifier);
+      await container.read(communityListProvider.future);
+      await notifier.addCommunity(community);
+
+      await notifier.setPushNotificationsEnabled(community.id, true);
+      expect(
+        (await communityStorage.loadAll()).single.pushChoice,
+        KuzzPushChoice.on,
+      );
+      await notifier.setPushNotificationsEnabled(community.id, false);
+      expect(
+        (await communityStorage.loadAll()).single.pushChoice,
+        KuzzPushChoice.off,
+      );
+    });
+  });
+
   group('activeCommunityProvider', () {
     test('returns null when no communities', () async {
       container = createContainer();
@@ -721,4 +885,23 @@ void main() {
       expect(await communityStorage.loadActiveId(), 'nonexistent-id');
     });
   });
+}
+
+class _FailingCommunityStorage extends CommunityStorage {
+  _FailingCommunityStorage(FakeSecureStorage secure) : super(secure: secure);
+
+  bool failSaveAll = false;
+  bool failMark = false;
+
+  @override
+  Future<void> saveAll(List<Community> communities) async {
+    if (failSaveAll) throw StateError('storage write failed');
+    await super.saveAll(communities);
+  }
+
+  @override
+  Future<void> markPushDefaultOnApplied() async {
+    if (failMark) throw StateError('storage write failed');
+    await super.markPushDefaultOnApplied();
+  }
 }

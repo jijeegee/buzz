@@ -123,7 +123,9 @@ export function useSearchHitThreads({
             Promise.all(
               unnamed.map(([rootId, channelId]) =>
                 queryClient
-                  .fetchQuery(threadNameQueryOptions(channelId, rootId))
+                  .fetchQuery(
+                    threadNameQueryOptions(queryClient, channelId, rootId),
+                  )
                   .then(
                     (event) => [rootId, event?.content.trim() || null] as const,
                   )

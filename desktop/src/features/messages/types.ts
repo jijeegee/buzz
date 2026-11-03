@@ -51,4 +51,11 @@ export type TimelineMessage = {
   kind?: number;
   tags?: string[][];
   reactions?: TimelineReaction[];
+  /**
+   * Thread panel top row standing in for a root not found yet: `author`
+   * carries the thread name (docs/message-sync.md#opening-a-thread-from-its-root-id).
+   */
+  rootPlaceholder?: boolean;
+  /** Thread panel top row for a root proven deleted; the replies stay. */
+  rootDeleted?: boolean;
 };

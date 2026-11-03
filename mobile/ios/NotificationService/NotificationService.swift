@@ -5,6 +5,13 @@ import Security
 import UserNotifications
 
 final class NotificationService: UNNotificationServiceExtension {
+  /// Shown when the message can't be loaded. Replaces the gateway's fixed
+  /// English text, which talks about relays.
+  private static let genericBody = NSLocalizedString(
+    "New message",
+    comment: "Notification text when a new message arrived but could not be loaded."
+  )
+
   private var handoff: KuzzNotificationHandoff<UNNotificationContent>?
   private var bestAttemptContent: UNMutableNotificationContent?
   private var restrictedFallbackContent: UNMutableNotificationContent?
@@ -38,6 +45,12 @@ final class NotificationService: UNNotificationServiceExtension {
       Bundle.main.object(
         forInfoDictionaryKey: "KuzzKeychainAccessGroup"
       ) as? String
+    // Read once per run, off the request path. Without it requests are
+    // signed as before, with no device tag.
+    let deviceSigner = Self.loadDeviceSigner(keychainAccessGroup: keychainAccessGroup)
+    // Events fetched for communities with an inbox token are kept here for
+    // the app (docs/message-sync.md#push-inbox).
+    let container = ageRestrictionContainerURL
     return KuzzPushNotificationResolver(
       session: .shared,
       loadCommunitiesData: { [self] in
@@ -51,6 +64,11 @@ final class NotificationService: UNNotificationServiceExtension {
       },
       loadPresentationCacheData: { [self] in
         Self.loadPushSnapshotData(appGroupIdentifier: self.appGroupIdentifier)
+      },
+      deviceSigner: { deviceSigner },
+      pushInbox: container.map { PushInbox(containerURL: $0) },
+      isAgeRestricted: {
+        KuzzAgeRestrictionSession.isRestricted(containerURL: container)
       }
     )
   }()
@@ -65,6 +83,7 @@ final class NotificationService: UNNotificationServiceExtension {
       finish(request.content)
       return
     }
+    content.body = Self.genericBody
     bestAttemptContent = content
     var cleanUserInfo = content.userInfo
     cleanUserInfo.removeValue(forKey: KuzzPushNavigationTarget.userInfoKey)
@@ -178,6 +197,38 @@ final class NotificationService: UNNotificationServiceExtension {
       let data = item as? Data
     else { return nil }
     return String(data: data, encoding: .utf8)
+  }
+
+  /// This install's device key (`DeviceKeyPlugin`, tag `kuzz.device-key.v1`),
+  /// read from the keychain group the app and this extension share. Never
+  /// created here: if the extension can't read the key, nil.
+  private static func loadDeviceSigner(keychainAccessGroup: String?) -> DeviceEventSigning? {
+    var query: [String: Any] = [
+      kSecClass as String: kSecClassKey,
+      kSecAttrApplicationTag as String: Data("kuzz.device-key.v1".utf8),
+      kSecAttrKeyType as String: kSecAttrKeyTypeECSECPrimeRandom,
+      kSecAttrKeyClass as String: kSecAttrKeyClassPrivate,
+      kSecReturnRef as String: true,
+    ]
+    if let keychainAccessGroup, !keychainAccessGroup.isEmpty {
+      query[kSecAttrAccessGroup as String] = keychainAccessGroup
+    }
+    var item: CFTypeRef?
+    guard SecItemCopyMatching(query as CFDictionary, &item) == errSecSuccess,
+      let item, CFGetTypeID(item) == SecKeyGetTypeID()
+    else { return nil }
+    let key = item as! SecKey
+    guard let publicKey = SecKeyCopyPublicKey(key),
+      let raw = SecKeyCopyExternalRepresentation(publicKey, nil) as Data?
+    else { return nil }
+    return DeviceEventSigning(
+      publicKeySEC1: raw,
+      signDER: { message in
+        var error: Unmanaged<CFError>?
+        let signature = SecKeyCreateSignature(
+          key, .ecdsaSignatureMessageX962SHA256, message as CFData, &error)
+        return signature as Data?
+      })
   }
 
   private static func loadPushSnapshotData(appGroupIdentifier: String?) -> Data? {

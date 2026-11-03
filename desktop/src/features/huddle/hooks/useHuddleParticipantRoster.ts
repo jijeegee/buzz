@@ -1,6 +1,7 @@
 import * as React from "react";
 
 import { useRelaySelfQuery } from "@/features/moderation/hooks";
+import { roomHuddle } from "@/features/huddle/lib/roomHuddle";
 import { relayClient } from "@/shared/api/relayClient";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -296,47 +297,31 @@ export function useHuddleParticipantRoster({
     if (!sessionKey || !parentChannelId) return;
 
     let disposed = false;
-    let cleanup: (() => void) | null = null;
     setLifecycle({
       sessionKey,
       events: new Map(),
       canonicalStartEvent: null,
     });
 
-    void relayClient
-      .subscribeToHuddleEvents(parentChannelId, (event) => {
-        if (disposed || lifecycleChannelId(event) !== ephemeralChannelId)
-          return;
-        setLifecycle((current) => {
-          const events =
+    const cleanup = roomHuddle.listen(parentChannelId, (event) => {
+      if (disposed || lifecycleChannelId(event) !== ephemeralChannelId) return;
+      setLifecycle((current) => {
+        const events =
+          current?.sessionKey === sessionKey
+            ? new Map(current.events)
+            : new Map<string, RelayEvent>();
+        if (events.has(event.id)) return current;
+        events.set(event.id, event);
+        return {
+          sessionKey,
+          events,
+          canonicalStartEvent:
             current?.sessionKey === sessionKey
-              ? new Map(current.events)
-              : new Map<string, RelayEvent>();
-          if (events.has(event.id)) return current;
-          events.set(event.id, event);
-          return {
-            sessionKey,
-            events,
-            canonicalStartEvent:
-              current?.sessionKey === sessionKey
-                ? current.canonicalStartEvent
-                : null,
-          };
-        });
-      })
-      .then((dispose) => {
-        if (disposed) {
-          void dispose();
-          return;
-        }
-        cleanup = () => void dispose();
-      })
-      .catch((error) => {
-        console.error(
-          "[huddle] Participant lifecycle subscription failed:",
-          error,
-        );
+              ? current.canonicalStartEvent
+              : null,
+        };
       });
+    });
 
     if (huddleThreadEventId) {
       void relayClient
@@ -362,7 +347,7 @@ export function useHuddleParticipantRoster({
 
     return () => {
       disposed = true;
-      cleanup?.();
+      cleanup();
     };
   }, [ephemeralChannelId, huddleThreadEventId, parentChannelId, sessionKey]);
 

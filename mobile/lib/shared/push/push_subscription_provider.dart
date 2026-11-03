@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/channels/channel.dart';
@@ -10,10 +11,23 @@ import '../community/community_provider.dart';
 import '../relay/relay_provider.dart';
 import 'push_subscription.dart';
 
+/// Whether push can cover the active account's chats.
+enum KuzzPushSubscriptionSync {
+  ok,
+
+  /// The chats don't fit in one push lease (over 750 one-to-one chats or
+  /// 350 muted ones) or can't be described. Push is unavailable for this
+  /// account; the app keeps working.
+  unavailable,
+}
+
 /// Keeps the persisted desired lease and the App Group snapshot aligned with
 /// the active identity, joined channels, and mute state. This is desired client
 /// policy only. Relay-accepted authority is introduced by lease publication.
-final pushSubscriptionSyncProvider = Provider<void>((ref) {
+///
+/// Watched by the app root, so it never throws: a failure is reported as
+/// [KuzzPushSubscriptionSync.unavailable] and the last desired state is kept.
+final pushSubscriptionSyncProvider = Provider<KuzzPushSubscriptionSync>((ref) {
   final active = ref.watch(activeCommunityProvider).value;
   final channels = ref.watch(channelsProvider).value;
   final mutes = ref.watch(channelMutesProvider);
@@ -23,23 +37,30 @@ final pushSubscriptionSyncProvider = Provider<void>((ref) {
       channels == null ||
       ref.read(channelsProvider.notifier).showsSavedList ||
       !mutes.isReady) {
-    return;
+    return KuzzPushSubscriptionSync.ok;
   }
 
-  final subscriptions = desiredKuzzPushSubscriptions(
-    community: active,
-    channels: channels,
-    mutedChannelIds: [
-      for (final entry in mutes.store.channels.entries)
-        if (entry.value.muted) entry.key,
-    ],
-  );
-  if (subscriptions == null) return;
+  final List<KuzzPushSubscription>? subscriptions;
+  try {
+    subscriptions = desiredKuzzPushSubscriptions(
+      community: active,
+      channels: channels,
+      mutedChannelIds: [
+        for (final entry in mutes.store.channels.entries)
+          if (entry.value.muted) entry.key,
+      ],
+    );
+  } catch (error) {
+    debugPrint('Push subscriptions unavailable: $error');
+    return KuzzPushSubscriptionSync.unavailable;
+  }
+  if (subscriptions == null) return KuzzPushSubscriptionSync.ok;
   unawaited(
     ref
         .read(communityListProvider.notifier)
         .updateDesiredPushSubscriptions(active.id, subscriptions),
   );
+  return KuzzPushSubscriptionSync.ok;
 });
 
 List<KuzzPushSubscription>? desiredKuzzPushSubscriptions({

@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 
 import type { TimelineMessage } from "@/features/messages/types";
-import { relayClient } from "@/shared/api/relayClient";
+import { roomHuddle } from "@/features/huddle/lib/roomHuddle";
 import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_HUDDLE_ENDED,
@@ -144,7 +144,6 @@ export function HuddleAttachment({
 
     const huddleChannelId = ephemeralChannelId;
     let disposed = false;
-    let cleanup: (() => void) | null = null;
     const seenEvents = new Map<string, RelayEvent>([
       [
         message.id,
@@ -172,27 +171,17 @@ export function HuddleAttachment({
     }
 
     updateState();
-    relayClient
-      .subscribeToHuddleEvents(channelId, (event) => {
-        if (disposed || seenEvents.has(event.id)) return;
-        if (lifecycleEventChannelId(event) !== huddleChannelId) return;
-        seenEvents.set(event.id, event);
-        updateState();
-      })
-      .then((dispose) => {
-        if (disposed) {
-          void dispose();
-          return;
-        }
-        cleanup = () => void dispose();
-      })
-      .catch((error) => {
-        console.error("[HuddleAttachment] subscription failed:", error);
-      });
+    // One listener per room for every huddle card in it (room bundle).
+    const cleanup = roomHuddle.listen(channelId, (event) => {
+      if (disposed || seenEvents.has(event.id)) return;
+      if (lifecycleEventChannelId(event) !== huddleChannelId) return;
+      seenEvents.set(event.id, event);
+      updateState();
+    });
 
     return () => {
       disposed = true;
-      cleanup?.();
+      cleanup();
     };
   }, [
     channelId,

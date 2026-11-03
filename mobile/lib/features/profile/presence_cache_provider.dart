@@ -79,11 +79,23 @@ class PresenceCacheNotifier extends Notifier<Map<String, String>> {
   }
 
   /// Request initial presence for exact keys. Repeated render calls coalesce.
+  /// New keys join the community bundle's author set; their snapshot is
+  /// fetched at once and live updates follow within 30 s.
   void track(List<String> pubkeys) {
+    final added = <String>[];
     for (final key in pubkeys.map((key) => key.trim().toLowerCase())) {
-      if (key.isNotEmpty && _tracked.add(key)) _pending.add(key);
+      if (key.isNotEmpty && _tracked.add(key)) {
+        _pending.add(key);
+        added.add(key);
+      }
     }
+    if (added.isNotEmpty) _addAuthors(added);
     _schedule(_generation);
+  }
+
+  /// Keys past the bundle's cap stay on the 60-second poll.
+  void _addAuthors(Iterable<String> keys) {
+    ref.read(relaySessionProvider.notifier).addPresenceAuthors(keys);
   }
 
   void _schedule(int generation) {
@@ -106,32 +118,27 @@ class PresenceCacheNotifier extends Notifier<Map<String, String>> {
     if (_opening || generation != _generation) return;
     _opening = true;
     _retrying = false;
-    var closed = false;
     try {
-      final unsub = await ref
-          .read(relaySessionProvider.notifier)
-          .subscribeWithStatus(
-            const NostrFilter(kinds: [EventKind.presenceUpdate], limit: 0),
-            (event) {
-              if (generation == _generation && !closed && !_retrying) {
-                _handlePresenceEvent(event);
-              }
-            },
-            onStatusChanged: (status) {
-              if (generation != _generation || closed) return;
-              _retrying = status == RelaySubscriptionStatus.retrying;
-              _invalidateSnapshot();
-              if (!_retrying) _schedule(generation);
-            },
-            onClosed: (_) {
-              if (generation != _generation || closed) return;
-              closed = true;
-              _presenceUnsub?.call();
-              _presenceUnsub = null;
-              _invalidateSnapshot();
-            },
-          );
-      if (generation != _generation || closed) {
+      final session = ref.read(relaySessionProvider.notifier);
+      if (_tracked.isNotEmpty) session.addPresenceAuthors(_tracked);
+      final unsub = await session.communityPresence(
+        (event) {
+          if (generation == _generation && !_retrying) {
+            _handlePresenceEvent(event);
+          }
+        },
+        onStatusChanged: (status) {
+          if (generation != _generation) return;
+          _retrying = status == RelaySubscriptionStatus.retrying;
+          _invalidateSnapshot();
+          if (!_retrying) _schedule(generation);
+        },
+        // The session reset: the author set is empty again.
+        onReset: () {
+          if (generation == _generation) _addAuthors(_tracked);
+        },
+      );
+      if (generation != _generation) {
         unsub();
         return;
       }

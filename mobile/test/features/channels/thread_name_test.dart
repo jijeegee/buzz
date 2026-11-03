@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/features/channels/thread_name_editor.dart';
 import 'package:kuzz/features/channels/thread_name_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -43,6 +44,8 @@ class Session extends RelaySessionNotifier {
   List<NostrEvent> history = [];
   void Function(NostrEvent)? live;
   bool stopped = false;
+  int subscribes = 0;
+  final queries = <NostrFilter>[];
   bool reject = false;
   NostrEvent? published;
   Completer<List<NostrEvent>>? historyGate;
@@ -53,7 +56,9 @@ class Session extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
+    subscribes++;
     live = onEvent;
     return () {
       stopped = true;
@@ -64,7 +69,11 @@ class Session extends RelaySessionNotifier {
   Future<List<NostrEvent>> queryRelay(
     List<NostrFilter> filters, {
     Duration timeout = const Duration(seconds: 8),
-  }) async => historyGate?.future ?? history;
+  }) async {
+    queries.addAll(filters);
+    return historyGate?.future ?? history;
+  }
+
   @override
   Future<NostrEvent> publish(
     NostrEvent event, {
@@ -82,6 +91,10 @@ class Session extends RelaySessionNotifier {
     return stored;
   }
 }
+
+/// A router that already covers the test room, so name reads go out at once.
+RoomLiveRouter coveredRouter() =>
+    RoomLiveRouter((_, _) async => () {})..setCoveredRooms({'channel'});
 
 void main() {
   late SharedPreferences prefs;
@@ -136,30 +149,81 @@ void main() {
     },
   );
 
-  test(
-    'live update beats delayed history and dispose closes subscription',
-    () async {
-      final gate = Completer<List<NostrEvent>>();
-      final session = Session()..historyGate = gate;
-      final container = ProviderContainer(
+  ProviderContainer roomContainer(Session session, RoomLiveRouter router) =>
+      ProviderContainer(
         overrides: [
           savedPrefsProvider.overrideWithValue(prefs),
           relayConfigProvider.overrideWith(Config.new),
           relaySessionProvider.overrideWith(() => session),
+          roomLiveRouterProvider.overrideWithValue(router),
         ],
       );
+
+  test(
+    'a live rename from the room bundle beats delayed history, with no REQ',
+    () async {
+      final gate = Completer<List<NostrEvent>>();
+      final session = Session()..historyGate = gate;
+      final router = RoomLiveRouter((_, _) async => () {})
+        ..setCoveredRooms({'channel'});
+      final container = roomContainer(session, router);
       final sub = container.listen(threadNameProvider(target), (_, _) {});
-      await Future<void>.delayed(Duration.zero);
-      session.live!(named('live', 3));
+      await Future<void>.delayed(const Duration(milliseconds: 80));
+      expect(session.queries, hasLength(1), reason: 'the batched read is out');
+      router.routeBundleEvent(named('live', 3), {'channel'});
       gate.complete([named('stale', 2)]);
       await Future<void>.delayed(Duration.zero);
       expect(container.read(threadNameProvider(target)).value?.content, 'live');
+      expect(session.subscribes, 0, reason: 'a row opens no live REQ');
       sub.close();
       container.dispose();
-      expect(session.stopped, isTrue);
-      session.live!(named('late', 4));
+      router.routeBundleEvent(named('late', 4, id: 'b'), {'channel'});
     },
   );
+
+  test('50 rows of one room share one HTTP read and no REQ', () async {
+    final session = Session()
+      ..history = [
+        for (var i = 0; i < 50; i++)
+          NostrEvent(
+            id: 'n$i',
+            pubkey: principal,
+            createdAt: 5,
+            kind: EventKind.threadName,
+            tags: [
+              ['h', 'channel'],
+              ['e', 'head$i'],
+            ],
+            content: 'name $i',
+          ),
+      ];
+    final router = RoomLiveRouter((_, _) async => () {})
+      ..setCoveredRooms({'channel'});
+    final container = roomContainer(session, router);
+    final subs = [
+      for (var i = 0; i < 50; i++)
+        container.listen(
+          threadNameProvider((channelId: 'channel', headId: 'head$i')),
+          (_, _) {},
+        ),
+    ];
+    await Future<void>.delayed(const Duration(milliseconds: 80));
+    await Future<void>.delayed(Duration.zero);
+    expect(session.queries, hasLength(1));
+    expect(session.queries.single.tags['#e'], hasLength(50));
+    expect(session.subscribes, 0);
+    expect(
+      container
+          .read(threadNameProvider((channelId: 'channel', headId: 'head7')))
+          .value
+          ?.content,
+      'name 7',
+    );
+    for (final sub in subs) {
+      sub.close();
+    }
+    container.dispose();
+  });
 
   testWidgets('editor enforces limits, keeps failed draft, and saves/clears', (
     tester,
@@ -170,12 +234,14 @@ void main() {
         savedPrefsProvider.overrideWithValue(prefs),
         relayConfigProvider.overrideWith(Config.new),
         relaySessionProvider.overrideWith(() => session),
+        roomLiveRouterProvider.overrideWithValue(coveredRouter()),
       ],
     );
     addTearDown(container.dispose);
     final sub = container.listen(threadNameProvider(target), (_, _) {});
     addTearDown(sub.close);
-    await tester.pump();
+    // The batched read goes out after its 50 ms window.
+    await tester.pump(const Duration(milliseconds: 100));
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
@@ -246,6 +312,7 @@ void main() {
               savedPrefsProvider.overrideWithValue(prefs),
               relayConfigProvider.overrideWith(Config.new),
               relaySessionProvider.overrideWith(() => session),
+              roomLiveRouterProvider.overrideWithValue(coveredRouter()),
             ],
           );
           addTearDown(container.dispose);
@@ -265,6 +332,9 @@ void main() {
             ),
           );
           await tester.tap(find.text('Edit'));
+          await tester.pumpAndSettle();
+          // The batched read goes out after its 50 ms window.
+          await tester.pump(const Duration(milliseconds: 100));
           await tester.pumpAndSettle();
           final saveButton = find.byKey(const ValueKey('thread-name-save'));
           // Real IMEs send composing ranges; enterText alone doesn't.

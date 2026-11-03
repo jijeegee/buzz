@@ -1,5 +1,7 @@
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
+import { namesUserStream } from "@/shared/api/userStreamRules";
 import {
+  liveReqFrame,
   MAX_EXPLICIT_CHANNEL_VALUES,
   type RelaySubscription,
   type RelaySubscriptionFilter,
@@ -84,13 +86,20 @@ async function runWithConcurrency<T>(
   );
 }
 
+/**
+ * The filter a live REQ is re-sent with after a reconnect. A live-only filter
+ * (`limit: 0`) goes back unchanged: the relay returns no stored rows for it,
+ * so a `since` could never recover anything, but the relay also applies
+ * `since` to live matching, so one event stamped ahead of real time would
+ * drop every later live event until the next reconnect.
+ */
 export function buildReconnectReplayFilter(
   filter: RelaySubscriptionFilter,
   since?: number,
   until?: number,
   limit = Math.min(filter.limit, RECONNECT_REPLAY_PAGE_LIMIT),
 ) {
-  if (since === undefined) return filter;
+  if (since === undefined || filter.limit === 0) return filter;
 
   const replayFilter: RelaySubscriptionFilter = {
     ...filter,
@@ -141,6 +150,8 @@ export function reconnectCursors(
 export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
   const roomIds = filter["#h"];
   return (
+    // `$joined` is never a room id (the user stream has its own catch-up).
+    !namesUserStream(filter) &&
     Array.isArray(roomIds) &&
     roomIds.length > 0 &&
     roomIds.length <= MAX_EXPLICIT_CHANNEL_VALUES &&
@@ -370,13 +381,15 @@ export async function replayLiveSubscriptions({
           // gate or an inter-batch delay. Never resurrect a disposed entry (or
           // overwrite its replacement) with a REQ from this stale snapshot.
           if (!isActive() || subscriptions.get(subId) !== subscription) return;
-          await sendRaw([
-            "REQ",
-            subId,
-            shouldPageReplay
-              ? subscription.filter
-              : buildReconnectReplayFilter(subscription.filter, replaySince),
-          ]);
+          await sendRaw(
+            liveReqFrame(
+              subId,
+              subscription,
+              shouldPageReplay
+                ? subscription.filter
+                : buildReconnectReplayFilter(subscription.filter, replaySince),
+            ),
+          );
           // Disposal can race the asynchronous websocket invoke after the
           // identity check. If this exact entry was deleted while REQ was in
           // flight, CLOSE again after REQ settles so wire order converges to

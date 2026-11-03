@@ -347,6 +347,7 @@ class _StoreSession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async => () {};
 }
 

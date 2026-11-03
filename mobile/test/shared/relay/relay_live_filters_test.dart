@@ -1,0 +1,462 @@
+import 'dart:async';
+
+import 'package:flutter_test/flutter_test.dart';
+import 'package:kuzz/shared/relay/relay.dart';
+
+const _status = NostrFilter(
+  kinds: [30315],
+  tags: {
+    '#d': ['general'],
+  },
+  limit: 0,
+);
+NostrFilter _presence(List<String> authors) =>
+    NostrFilter(kinds: const [20001], authors: authors, limit: 0);
+final _a = 'a' * 64;
+final _b = 'b' * 64;
+final _c = 'c' * 64;
+
+void main() {
+  late _RecordingRelaySocket socket;
+  late List<_ManualTimer> timers;
+  late RelaySessionNotifier session;
+  late List<RelaySubscriptionStatus> statuses;
+
+  List<List<dynamic>> reqs() =>
+      socket.messages.where((message) => message.first == 'REQ').toList();
+
+  Future<LiveFiltersHandle> open(List<NostrFilter> filters) async {
+    final pending = session.debugSubscribeFilters(
+      filters,
+      (_) {},
+      onStatusChanged: statuses.add,
+    );
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    return pending;
+  }
+
+  setUp(() {
+    socket = _RecordingRelaySocket();
+    timers = [];
+    statuses = [];
+    session = RelaySessionNotifier(
+      retryTimerFactory: (duration, callback) {
+        final timer = _ManualTimer(duration, callback);
+        timers.add(timer);
+        return timer;
+      },
+    );
+    session.debugAttachSocketForTest(socket);
+  });
+
+  test('bundle filters are live only, at most ten', () {
+    expect(() => assertBundleLiveFilters([]), throwsArgumentError);
+    expect(
+      () => assertBundleLiveFilters([
+        const NostrFilter(kinds: [1], limit: 5),
+      ]),
+      throwsArgumentError,
+    );
+    expect(
+      () => assertBundleLiveFilters([
+        const NostrFilter(
+          kinds: [9],
+          tags: {
+            '#h': ['room'],
+          },
+          limit: 0,
+        ),
+      ]),
+      throwsArgumentError,
+    );
+    expect(
+      () => assertBundleLiveFilters([
+        const NostrFilter(kinds: [1], since: 5, limit: 0),
+      ]),
+      throwsArgumentError,
+    );
+    expect(
+      () => assertBundleLiveFilters([
+        for (var i = 0; i < 11; i++) NostrFilter(kinds: [i], limit: 0),
+      ]),
+      throwsArgumentError,
+    );
+    assertBundleLiveFilters([
+      _status,
+      _presence([_a]),
+    ]);
+  });
+
+  test('the opening REQ carries every filter', () async {
+    await open([
+      _status,
+      _presence([_a]),
+    ]);
+    expect(reqs().single, [
+      'REQ',
+      'l-1',
+      _status.toJson(),
+      _presence([_a]).toJson(),
+    ]);
+    expect(statuses, [RelaySubscriptionStatus.ready]);
+  });
+
+  test('a setFilters EOSE is not a ready for listeners', () async {
+    final handle = await open([
+      _status,
+      _presence([_a]),
+    ]);
+    var done = false;
+    final update = handle
+        .setFilters([
+          _status,
+          _presence([_a, _b]),
+        ])
+        .then((_) => done = true);
+    expect(reqs(), hasLength(2));
+    expect(reqs().last, [
+      'REQ',
+      'l-1',
+      _status.toJson(),
+      _presence([_a, _b]).toJson(),
+    ]);
+    await Future<void>.delayed(Duration.zero);
+    expect(done, isFalse);
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await update;
+    expect(done, isTrue);
+    expect(statuses, [
+      RelaySubscriptionStatus.ready,
+    ], reason: 'presence would blank its snapshot on a second ready');
+    // The same set again sends nothing.
+    await handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    expect(reqs(), hasLength(2));
+  });
+
+  test('two setFilters before an EOSE send one more REQ, newest set', () async {
+    final handle = await open([
+      _status,
+      _presence([_a]),
+    ]);
+    final first = handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    expect(reqs(), hasLength(2));
+    final second = handle.setFilters([
+      _status,
+      _presence([_a, _b, _c]),
+    ]);
+    final third = handle.setFilters([
+      _status,
+      _presence([_a, _c]),
+    ]);
+    expect(reqs(), hasLength(2), reason: 'a REQ is in flight');
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await first;
+    expect(reqs(), hasLength(3));
+    expect(reqs().last[3], _presence([_a, _c]).toJson());
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await Future.wait([second, third]);
+    expect(reqs(), hasLength(3));
+  });
+
+  test('the opening REQ counts as in flight', () async {
+    final pending = session.debugSubscribeFilters(
+      [
+        _status,
+        _presence([_a]),
+      ],
+      (_) {},
+      onStatusChanged: statuses.add,
+    );
+    // The readiness fallback hands the handle out before the relay answered.
+    final handle = await pending;
+    final update = handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    expect(reqs(), hasLength(1));
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    expect(reqs(), hasLength(2));
+    expect(statuses, [RelaySubscriptionStatus.ready]);
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await update;
+    expect(statuses, [RelaySubscriptionStatus.ready]);
+  });
+
+  test('an update while offline rides the replay, unchanged', () async {
+    final handle = await open([
+      _status,
+      _presence([_a]),
+    ]);
+    session.debugMarkSocketDownForTest();
+    final update = handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    expect(reqs(), hasLength(1), reason: 'nothing is sent while offline');
+    session.debugAttachSocketForTest(socket);
+    await session.debugReplayLiveSubscriptions();
+    expect(reqs(), hasLength(2));
+    expect(reqs().last, [
+      'REQ',
+      'l-1',
+      _status.toJson(),
+      _presence([_a, _b]).toJson(),
+    ]);
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await update;
+    expect(statuses, [
+      RelaySubscriptionStatus.ready,
+      RelaySubscriptionStatus.ready,
+    ], reason: 'a replay EOSE is a ready');
+  });
+
+  test('a CLOSED retry re-sends the current set', () async {
+    final handle = await open([
+      _status,
+      _presence([_a]),
+    ]);
+    session.debugHandleMessage(['CLOSED', 'l-1', 'error: relay overloaded']);
+    expect(statuses.last, RelaySubscriptionStatus.retrying);
+    final update = handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    expect(reqs(), hasLength(1), reason: 'the retry sends next');
+    timers.single.fire();
+    await Future<void>.delayed(Duration.zero);
+    await Future<void>.delayed(Duration.zero);
+    expect(reqs(), hasLength(2));
+    expect(reqs().last[3], _presence([_a, _b]).toJson());
+    session.debugHandleMessage(['EOSE', 'l-1']);
+    await update;
+    expect(statuses.last, RelaySubscriptionStatus.ready);
+  });
+
+  test('close completes pending updates and sends CLOSE', () async {
+    final handle = await open([
+      _status,
+      _presence([_a]),
+    ]);
+    final first = handle.setFilters([
+      _status,
+      _presence([_a, _b]),
+    ]);
+    final second = handle.setFilters([
+      _status,
+      _presence([_a, _b, _c]),
+    ]);
+    handle.close();
+    await Future.wait([first, second]);
+    expect(
+      socket.messages.where((m) => m.first == 'CLOSE' && m[1] == 'l-1'),
+      hasLength(1),
+    );
+  });
+
+  group('room filters', () {
+    const room = '11111111-0000-4000-8000-000000000001';
+    const typing = NostrFilter(
+      kinds: [20002],
+      tags: {
+        '#h': [room],
+      },
+      limit: 0,
+    );
+    const goals = NostrFilter(
+      kinds: [40110],
+      tags: {
+        '#h': [room],
+      },
+      limit: 0,
+    );
+
+    test('are live only and name the same single room', () {
+      expect(() => assertRoomLiveFilters([]), throwsArgumentError);
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(kinds: [20002], limit: 0),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          typing,
+          const NostrFilter(kinds: [40110], limit: 0),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          typing,
+          const NostrFilter(
+            kinds: [40110],
+            tags: {
+              '#h': ['other'],
+            },
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room, 'other'],
+            },
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room],
+            },
+            limit: 10,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([
+          const NostrFilter(
+            kinds: [20002],
+            tags: {
+              '#h': [room],
+            },
+            since: 5,
+            limit: 0,
+          ),
+        ]),
+        throwsArgumentError,
+      );
+      expect(
+        () => assertRoomLiveFilters([for (var i = 0; i < 11; i++) typing]),
+        throwsArgumentError,
+      );
+      assertRoomLiveFilters([typing, goals]);
+    });
+
+    test('one REQ carries both, replays and retries them unchanged', () async {
+      final events = <NostrEvent>[];
+      final pending = session.subscribeRoomFilters([typing, goals], events.add);
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      await pending;
+      expect(reqs(), [
+        ['REQ', 'l-1', typing.toJson(), goals.toJson()],
+      ]);
+      session.debugMarkSocketDownForTest();
+      session.debugAttachSocketForTest(socket);
+      await session.debugReplayLiveSubscriptions();
+      expect(reqs().last, ['REQ', 'l-1', typing.toJson(), goals.toJson()]);
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      session.debugHandleMessage(['CLOSED', 'l-1', 'error: relay overloaded']);
+      timers.single.fire();
+      await Future<void>.delayed(Duration.zero);
+      await Future<void>.delayed(Duration.zero);
+      expect(reqs(), hasLength(3));
+      expect(reqs().last, ['REQ', 'l-1', typing.toJson(), goals.toJson()]);
+    });
+
+    test('a terminal CLOSED calls onClosed and is not retried', () async {
+      final closed = <String>[];
+      final pending = session.subscribeRoomFilters(
+        [typing, goals],
+        (_) {},
+        onClosed: closed.add,
+      );
+      session.debugHandleMessage(['EOSE', 'l-1']);
+      await pending;
+      session.debugHandleMessage(['CLOSED', 'l-1', 'restricted: not a member']);
+      expect(closed, ['restricted: not a member']);
+      expect(timers, isEmpty);
+      expect(reqs(), hasLength(1));
+    });
+  });
+
+  test('community presence: an author added after ready is no second ready '
+      '(presence would blank)', () async {
+    final heard = <RelaySubscriptionStatus>[];
+    final pending = session.communityPresence(
+      (_) {},
+      onStatusChanged: heard.add,
+    );
+    session.addPresenceAuthors([_a]);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    final subId = reqs().single[1] as String;
+    expect(reqs().single.sublist(2), [
+      _status.toJson(),
+      _presence([_a]).toJson(),
+    ]);
+    session.debugHandleMessage(['EOSE', subId]);
+    final stop = await pending;
+    expect(heard, [RelaySubscriptionStatus.ready]);
+
+    session.addPresenceAuthors([_b]);
+    await Future<void>.delayed(const Duration(milliseconds: 300));
+    expect(reqs(), hasLength(2));
+    expect(reqs().last, [
+      'REQ',
+      subId,
+      _status.toJson(),
+      _presence([_a, _b]).toJson(),
+    ]);
+    session.debugHandleMessage(['EOSE', subId]);
+    await Future<void>.delayed(Duration.zero);
+    expect(heard, [RelaySubscriptionStatus.ready]);
+    stop();
+  });
+}
+
+class _RecordingRelaySocket extends RelaySocket {
+  _RecordingRelaySocket()
+    : super(
+        wsUrl: 'wss://relay.example',
+        nsec: null,
+        onMessage: (_) {},
+        onConnected: () {},
+        onDisconnected: (_) {},
+      );
+
+  final List<List<dynamic>> messages = [];
+
+  @override
+  void send(List<dynamic> payload) => messages.add(payload);
+
+  @override
+  void dispose() {}
+}
+
+class _ManualTimer implements Timer {
+  _ManualTimer(this.duration, this._callback);
+
+  final Duration duration;
+  final void Function() _callback;
+  bool _active = true;
+
+  void fire() {
+    if (!_active) return;
+    _active = false;
+    _callback();
+  }
+
+  @override
+  void cancel() => _active = false;
+
+  @override
+  bool get isActive => _active;
+
+  @override
+  int get tick => _active ? 0 : 1;
+}

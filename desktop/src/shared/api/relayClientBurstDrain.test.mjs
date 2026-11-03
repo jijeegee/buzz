@@ -40,9 +40,21 @@ Date.now = () => now;
 const { RelayClient } = await import("./relayClientSession.ts");
 const { resetRateLimitGate } = await import("./relayRateLimitGate.ts");
 
-const { openPresenceSubscription } = await import(
-  "./presenceRelaySubscription.ts"
-);
+/** A `limit: 0` REQ with a 5 s readiness budget that must see EOSE. */
+async function openStrictLive(client) {
+  const readiness = { value: "timeout" };
+  const dispose = await client.subscribeLive(
+    { kinds: [20001], authors: ["a".repeat(64)], limit: 0 },
+    () => {},
+    (next) => {
+      readiness.value = next;
+    },
+    5_000,
+  );
+  if (readiness.value === "eose") return dispose;
+  await dispose();
+  throw new Error(`not ready: ${readiness.value}`);
+}
 
 beforeEach(() => {
   resetRateLimitGate();
@@ -149,9 +161,10 @@ test("cold setup drains at most one live REQ per 250ms, prioritizes visible chan
   await Promise.all(entries.map((e) => e.promise));
 });
 
-test("observer control-result subscription takes the next paced slot ahead of cold channels", async () => {
+test("observer frames open the addressed REQ in the live-only tier, ahead of cold channels", async () => {
   const { relayClient: client } = await import("./relayClient.ts");
   const { subscribeToAgentObserverFrames } = await import("./observerRelay.ts");
+  const { ME_ADDRESSED_KINDS } = await import("./relayMeBundle.ts");
   client.wsId = 7;
   clients.push(client);
   start(client, 296);
@@ -166,10 +179,9 @@ test("observer control-result subscription takes the next paced slot ahead of co
   await tickTo(250);
   const request = frames("REQ")[1].frame;
   assert.deepEqual(request[2], {
-    kinds: [24200],
+    kinds: [...ME_ADDRESSED_KINDS],
     "#p": ["owner"],
-    limit: 1000,
-    since: -300,
+    limit: 0,
   });
   const result = { id: "result", kind: 24200, tags: [["p", "owner"]] };
   await deliver(client, ["EVENT", request[1], result]);
@@ -184,7 +196,42 @@ test("observer control-result subscription takes the next paced slot ahead of co
   await tickTo(266); // Flush the session's existing event batch timer.
 });
 
-test("read-state initialization takes the next paced slot ahead of cold channels", async () => {
+test("observer frames join an addressed REQ already live with no REQ of their own", async () => {
+  const { relayClient: client } = await import("./relayClient.ts");
+  const { subscribeToAgentObserverFrames } = await import("./observerRelay.ts");
+  const { meLive } = await import("./relayMeLive.ts");
+  client.wsId = 7;
+  clients.push(client);
+  const notices = [];
+  const opening = meLive.subscribe(
+    { kinds: [40007], "#p": ["owner"], limit: 0 },
+    (event) => notices.push(event.id),
+  );
+  await flush();
+  const [request] = frames("REQ");
+  await deliver(client, ["EOSE", request.frame[1]]);
+  const stopNotices = await opening;
+
+  const received = [];
+  const dispose = await subscribeToAgentObserverFrames("owner", (event) =>
+    received.push(event.id),
+  );
+  assert.equal(frames("REQ").length, 1, "no new REQ for the observer");
+  const frame = { id: "frame", kind: 24200, tags: [["p", "owner"]] };
+  await deliver(client, ["EVENT", request.frame[1], frame]);
+  await tickTo(16);
+  assert.deepEqual(received, ["frame"]);
+  assert.deepEqual(notices, []);
+
+  await dispose();
+  await flush();
+  assert.equal(frames("CLOSE").length, 0, "the observer leaving keeps the REQ");
+  await stopNotices();
+  await flush();
+  await tickTo(100);
+});
+
+test("read-state readiness waits on one unpaced fetch, not behind cold channels", async () => {
   const { ReadStateManager } = await import(
     "../../features/channels/readState/readStateManager.ts"
   );
@@ -211,44 +258,53 @@ test("read-state initialization takes the next paced slot ahead of cold channels
     if (frame[0] === "REQ") await deliver(client, ["EOSE", frame[1]]);
   };
   const pubkey = "a".repeat(64);
-  const manager = new ReadStateManager(pubkey, client);
+  // The live listener joins the authored account bundle (limit 0); the
+  // fetch holds the history and keeps the early slot.
+  const listened = [];
+  const manager = new ReadStateManager(pubkey, client, {
+    listen: async (filter) => {
+      listened.push(filter);
+      return async () => {};
+    },
+  });
   let ready = false;
   const initialized = manager.initialize().then(() => {
     ready = true;
   });
   try {
-    await tickTo(249);
-    assert.equal(
-      ready,
-      false,
-      "initialization must retain its live readiness gate",
-    );
-    assert.equal(
-      frames("REQ").filter(({ frame }) => frame[1].startsWith("live-")).length,
-      1,
-    );
-    await tickTo(250);
+    await flush();
+    await tickTo(1);
     assert.equal(
       ready,
       true,
       "unread UI must not wait behind 295 cold channels",
     );
-    await initialized;
-    const live = frames("REQ").filter(({ frame }) =>
-      frame[1].startsWith("live-"),
+    const fetch = frames("REQ").find(
+      ({ frame }) =>
+        frame[1].startsWith("history-") &&
+        frame[2].kinds?.includes(KIND_READ_STATE),
     );
-    assert.equal(live.length, 2);
-    assert.equal(
-      live[1].at,
-      250,
-      "read-state must retain ordinary request pacing",
-    );
-    assert.deepEqual(live[1].frame[2], {
+    assert.ok(fetch, "the read-state fetch went out");
+    assert.equal(fetch.at, 0, "the fetch is not paced");
+    assert.equal(fetch.frame[2].limit, 500);
+    assert.equal(listened.length, 1);
+    assert.deepEqual(listened[0], {
       kinds: [KIND_READ_STATE],
       authors: [pubkey],
       "#t": ["read-state"],
-      limit: 500,
+      limit: 0,
     });
+    await tickTo(250);
+    await initialized;
+    assert.equal(
+      frames("REQ").some(
+        ({ frame }) =>
+          frame[1].startsWith("live-") &&
+          frame[2].kinds?.includes(KIND_READ_STATE),
+      ),
+      false,
+      "read state opens no live REQ of its own",
+    );
   } finally {
     manager.destroy();
     for (const entry of background) entry.controller.abort();
@@ -303,7 +359,7 @@ test("125 refused live subscriptions cannot stampede beside a publish when coold
     assert.ok(retries[i].at - retries[i - 1].at >= 250);
 });
 
-test("presence waits beyond its 5s budget behind the gate, then EOSE before IPC settles succeeds", async () => {
+test("a limit:0 REQ waits beyond its 5s budget behind the gate, then EOSE before IPC settles succeeds", async () => {
   const client = session();
   const background = start(client, 32);
   await flush();
@@ -312,11 +368,7 @@ test("presence waits beyond its 5s budget behind the gate, then EOSE before IPC 
     "rate-limited: quota exceeded; retry in 6s",
   ]);
   let outcome = "pending";
-  const presence = openPresenceSubscription(
-    ["a".repeat(64)],
-    () => {},
-    client.subscribeLive.bind(client),
-  );
+  const presence = openStrictLive(client);
   presence.then(
     () => {
       outcome = "ready";

@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_identity_names_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
 import 'package:kuzz/shared/relay/relay.dart';
@@ -62,11 +63,23 @@ void main() {
     listenNames();
     await settle();
     expect(labels(), ['Honey', 'Honey (agent)']);
-    expect(session.membershipEvents, isNotNull);
-
-    // A live kind:39002 update reloads the roster. Hold that reload open.
+    // A membership notice on the room bundle reloads the roster. Hold that
+    // reload open.
     final reload = session.holdMemberFetches();
-    session.membershipEvents!(_membersEvent());
+    container.read(roomLiveRouterProvider).routeBundleEvent(
+      NostrEvent(
+        id: 'notice-joined',
+        pubkey: 'relay',
+        createdAt: 3,
+        kind: EventKind.systemMessage,
+        tags: const [
+          ['h', _channelId],
+        ],
+        content: '{"type":"member_joined"}',
+        sig: 'sig',
+      ),
+      {_channelId},
+    );
     await settle();
     expect(session.heldMemberFetches, isPositive);
     expect(labels(), ['Honey', 'Honey (agent)']);
@@ -179,10 +192,8 @@ class _FixedUserCacheNotifier extends UserCacheNotifier {
   Future<bool> preload(List<String> pubkeys) async => true;
 }
 
-/// Serves the channel's kind:39002 roster, can hold member fetches open, and
-/// exposes the live membership subscription's event callback.
+/// Serves the channel's kind:39002 roster and can hold member fetches open.
 class _MembershipRelaySession extends RelaySessionNotifier {
-  void Function(NostrEvent)? membershipEvents;
   Completer<void>? _hold;
   int heldMemberFetches = 0;
 
@@ -217,6 +228,7 @@ class _MembershipRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async => () {};
 
   @override
@@ -226,7 +238,6 @@ class _MembershipRelaySession extends RelaySessionNotifier {
     void Function(String message)? onClosed,
     required void Function(RelaySubscriptionStatus status) onStatusChanged,
   }) async {
-    if (filter.kinds.contains(39002)) membershipEvents = onEvent;
     onStatusChanged(RelaySubscriptionStatus.ready);
     return () {};
   }

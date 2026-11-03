@@ -21,6 +21,7 @@ import '../../shared/widgets/keyboard_dismiss_on_drag.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import 'android_ime_lift.dart';
+import 'channel.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_link_navigation.dart';
 import 'channel_messages_provider.dart';
@@ -30,6 +31,7 @@ import 'channel_typing_provider.dart';
 import 'channel_typing_indicator.dart';
 import 'thread_depth.dart';
 import 'thread_replies_provider.dart';
+import 'thread_root_provider.dart';
 import 'thread_window.dart';
 import 'thread_name_provider.dart';
 import 'thread_name_editor.dart';
@@ -86,6 +88,7 @@ part 'thread_detail_helpers.dart';
 part 'thread_detail_page/thread_message.dart';
 part 'thread_detail_page/avatar.dart';
 part 'thread_detail_page/open_at.dart';
+part 'thread_detail_page/root.dart';
 
 const _landingHighlightDuration = Duration(seconds: 3);
 const _landingHighlightDelay = Duration(milliseconds: 50);
@@ -98,9 +101,22 @@ const _landingHighlightOpacity = 0.12;
 /// Full-screen thread detail page.
 ///
 /// Shows the thread head message, direct replies, typing indicators scoped to
-/// the thread, and a compose bar for replying.
+/// the thread, and a compose bar for replying. Opened by its head's id alone
+/// (a Chats row), it draws at once and fills the head in as it is found
+/// (docs/message-sync.md#opening-a-thread-from-its-root-id).
 class ThreadDetailPage extends HookConsumerWidget {
-  final TimelineMessage threadHead;
+  /// Null when opened by [headId] alone.
+  final TimelineMessage? threadHead;
+  final String? _headId;
+
+  /// The root as the opening row carried it, drawn until it is resolved.
+  final NostrEvent? rootHint;
+
+  /// The thread's name as the opening row carried it.
+  final String? initialThreadName;
+
+  /// A room built from a Chats row: the composer waits for the real room.
+  final Channel? standInChannel;
   final List<TimelineMessage> allMessages;
   final String channelId;
   final String? currentPubkey;
@@ -118,8 +134,12 @@ class ThreadDetailPage extends HookConsumerWidget {
 
   const ThreadDetailPage({
     super.key,
-    required this.threadHead,
-    required this.allMessages,
+    this.threadHead,
+    String? headId,
+    this.rootHint,
+    this.initialThreadName,
+    this.standInChannel,
+    this.allMessages = const [],
     required this.channelId,
     required this.currentPubkey,
     required bool isMember,
@@ -127,9 +147,14 @@ class ThreadDetailPage extends HookConsumerWidget {
     this.initialMessageId,
     this.channelBelow = true,
     this.ownerView,
-  }) : _isMember = isMember;
+  }) : assert(threadHead != null || headId != null),
+       _headId = headId,
+       _isMember = isMember;
 
   final bool _isMember;
+
+  /// The id of the message this page shows the replies of.
+  String get headId => _headId ?? threadHead!.id;
 
   /// The owner view is never a member: no composer, rename or close.
   bool get isMember => _isMember && ownerView == null;
@@ -140,6 +165,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     // the right from the first frame even if the pusher had none.
     final currentPubkey =
         this.currentPubkey ?? ref.watch(currentPubkeyProvider);
+    final resolvedHead = _watchThreadHead(ref, this, currentPubkey);
+    final threadHead = resolvedHead.head;
     final nameKey = (channelId: channelId, headId: threadHead.id);
     // The open thread's dot stays clear while it is read here.
     useMarkOwnerViewSeen(
@@ -148,7 +175,12 @@ class ThreadDetailPage extends HookConsumerWidget {
       (row) =>
           row.isThread && row.rootId == (threadHead.rootId ?? threadHead.id),
     );
-    final threadName = ref.watch(threadNameProvider(nameKey)).value?.content;
+    final threadName =
+        ref.watch(threadNameProvider(nameKey)).value?.content ??
+        initialThreadName;
+    final title = threadName == null || threadName.isEmpty
+        ? context.l10n.threadTitleFallback
+        : threadName;
     final appView = View.of(context);
     final composerDockHeight = useState(0.0);
     final composerFocusNode = useFocusNode();
@@ -176,6 +208,11 @@ class ThreadDetailPage extends HookConsumerWidget {
     // page displays a nested branch. Query that root, then select this head's
     // direct children from the returned subtree below.
     final queryRootId = threadHead.rootId ?? threadHead.id;
+    // Created before the thread query, which settles own pending replies
+    // through it only when it exists. Nothing waits for its rows.
+    final liveChannelEvents =
+        ref.watch(channelMessagesProvider(channelId)).value ??
+        const <NostrEvent>[];
     final repliesArgs = ThreadRepliesArgs(
       channelId: channelId,
       rootId: queryRootId,
@@ -190,10 +227,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     // reaction, edit, or deletion that lands while the thread is open never
     // reaches it — a new pill (and its burst) only showed up after leaving and
     // re-entering, which refetched. The channel socket already receives those
-    // events, so union the two sources and format once.
-    final liveChannelEvents =
-        ref.watch(channelMessagesProvider(channelId)).value ??
-        const <NostrEvent>[];
+    // events, so union the two sources and format once (liveChannelEvents).
     // Loading/error states can still carry replies from the last query.
     // whenData drops that retained value during retries.
     final replyEvents = repliesState.value;
@@ -226,10 +260,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     final canUseMessagesForInitialTarget =
         relayReplyState.value != null ||
         (relayReplyState.hasError && !relayReplyState.retrying);
-    final liveDeletionHidesHead = _isDeletedBy(
-      liveChannelEvents,
-      threadHead.id,
-    );
+    final liveDeletionHidesHead =
+        resolvedHead.deleted || _isDeletedBy(liveChannelEvents, threadHead.id);
     // Replies preloaded from the inbox (else stored on the device) paint with
     // the route snapshot until the full scan lands; they never replace it.
     final preloadedReplies = relayRepliesAvailable
@@ -258,67 +290,14 @@ class ThreadDetailPage extends HookConsumerWidget {
               threadHead,
             ...fetchedReplies,
           ];
-    final routeAnimation = ModalRoute.of(context)?.animation;
     final reducedLandingHighlightMotion = MediaQuery.disableAnimationsOf(
       context,
     );
-    final highlightedMessageId = useState<String?>(null);
     final initialTargetReadyForHighlight = useState(false);
-    useEffect(
-      () {
-        final messageId = initialMessageId;
-        if (messageId == null || !initialTargetReadyForHighlight.value) {
-          return null;
-        }
-        var disposed = false;
-        Timer? revealTimer;
-        Timer? dismissTimer;
-
-        void revealHighlight() {
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (disposed) return;
-            revealTimer = Timer(_landingHighlightDelay, () {
-              if (disposed) return;
-              highlightedMessageId.value = messageId;
-              dismissTimer = Timer(
-                _landingHighlightDuration +
-                    (reducedLandingHighlightMotion
-                        ? Duration.zero
-                        : _landingHighlightTransitionDuration),
-                () {
-                  if (!disposed) highlightedMessageId.value = null;
-                },
-              );
-            });
-          });
-        }
-
-        void handleRouteStatus(AnimationStatus status) {
-          if (status != AnimationStatus.completed) return;
-          routeAnimation?.removeStatusListener(handleRouteStatus);
-          revealHighlight();
-        }
-
-        if (routeAnimation == null ||
-            routeAnimation.status == AnimationStatus.completed) {
-          revealHighlight();
-        } else {
-          routeAnimation.addStatusListener(handleRouteStatus);
-        }
-
-        return () {
-          disposed = true;
-          routeAnimation?.removeStatusListener(handleRouteStatus);
-          revealTimer?.cancel();
-          dismissTimer?.cancel();
-        };
-      },
-      [
-        initialMessageId,
-        initialTargetReadyForHighlight.value,
-        reducedLandingHighlightMotion,
-        routeAnimation,
-      ],
+    final highlightedMessageId = _useLandingHighlight(
+      context,
+      initialMessageId,
+      initialTargetReadyForHighlight.value,
     );
 
     // Index all messages by parentId so we can find direct children of any
@@ -378,9 +357,6 @@ class ThreadDetailPage extends HookConsumerWidget {
           ? _ThreadOpenPhase.opening
           : _ThreadOpenPhase.none,
     );
-    final isOpenHidden =
-        openPhase.value == _ThreadOpenPhase.opening ||
-        openPhase.value == _ThreadOpenPhase.positioning;
     final supportsOpenAt = useState<bool?>(null);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
@@ -388,12 +364,22 @@ class ThreadDetailPage extends HookConsumerWidget {
     // Bumped when this page replaces the window, so its list is drawn anew.
     final listGeneration = useState(0);
     final openedGeneration = useRef<int?>(null);
+    // Set by a user drag or an index jump. Layout alone (a viewport height
+    // reported a frame late, a growing composer) never detaches the list.
+    final userDetached = useRef(false);
+    final openCapped = _useOpenHiddenCap(context, openPhase);
+    // Past the cap the list stays in sight; a later move happens visibly.
+    final isOpenHidden =
+        !openCapped.value &&
+        (openPhase.value == _ThreadOpenPhase.opening ||
+            openPhase.value == _ThreadOpenPhase.positioning);
+    bool stillOpening() =>
+        openPhase.value == _ThreadOpenPhase.opening ||
+        (openCapped.value && openPhase.value == _ThreadOpenPhase.none);
     // Without newer pages there is no window to open at: show the replies
     // now rather than after the reply is found.
     useEffect(() {
-      if (openTarget == null || openPhase.value != _ThreadOpenPhase.opening) {
-        return null;
-      }
+      if (openTarget == null || !stillOpening()) return null;
       unawaited(
         ref
             .read(relayInfoProvider.future)
@@ -411,9 +397,11 @@ class ThreadDetailPage extends HookConsumerWidget {
     }, [readDecided]);
     useEffect(
       () {
-        if (openPhase.value != _ThreadOpenPhase.opening ||
-            didStartOpening.value ||
-            !readDecided) {
+        if (!stillOpening() || didStartOpening.value || !readDecided) {
+          return null;
+        }
+        if (openCapped.value && userDetached.value) {
+          didStartOpening.value = true;
           return null;
         }
         final target = openTarget;
@@ -504,8 +492,9 @@ class ThreadDetailPage extends HookConsumerWidget {
     // leaves the replies at hand, as before.
     useEffect(() {
       if (!openedWindow.value ||
-          openPhase.value != _ThreadOpenPhase.opening ||
-          !canUseMessagesForInitialTarget) {
+          !stillOpening() ||
+          !canUseMessagesForInitialTarget ||
+          (openCapped.value && userDetached.value)) {
         return null;
       }
       if (!relayRepliesAvailable) {
@@ -570,9 +559,6 @@ class ThreadDetailPage extends HookConsumerWidget {
     final initialHighlightTargetIndex = useState<int?>(null);
     final isAtLatest = useState(true);
     final isNavigatingToLatest = useState(false);
-    // Set by a user drag or an index jump. Layout alone (a viewport height
-    // reported a frame late, a growing composer) never detaches the list.
-    final userDetached = useRef(false);
     // A drag away from the newest reply is a deliberate read; focusing the
     // composer then leaves the reader where they are.
     final detachedByDrag = useRef(false);
@@ -1289,10 +1275,7 @@ class ThreadDetailPage extends HookConsumerWidget {
       };
     }, [appView, itemScrollController]);
 
-    // Channel names for message content rendering.
-    final channel = ref.watch(
-      channelsProvider.select(selectChannel(channelId)),
-    );
+    final (:channel, :composerWaits) = _watchThreadChannel(ref, this);
     // A thread in a one-to-one DM with someone I blocked: the Unblock bar
     // stands in for the reply composer and their typing is not shown.
     final blockedCounterpart = channel != null && channel.isOneToOneDm
@@ -1364,9 +1347,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                 : 0,
           ),
           child: Text(
-            threadName == null || threadName.isEmpty
-                ? context.l10n.threadTitleFallback
-                : threadName,
+            title,
             key: const ValueKey('thread-app-bar-title'),
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
@@ -1460,6 +1441,11 @@ class ThreadDetailPage extends HookConsumerWidget {
                           showsHead: showsHead,
                           headIsDeleted: liveDeletionHidesHead,
                           head: liveHead,
+                          headPendingLabel:
+                              resolvedHead.resolving &&
+                                  identical(liveHead, threadHead)
+                              ? title
+                              : null,
                           stickyDayTimestamp: stickyDayTimestamp,
                           channelNames: channelNames.ids,
                           channelId: channelId,
@@ -1534,6 +1520,8 @@ class ThreadDetailPage extends HookConsumerWidget {
                       ),
                       if (blockedCounterpart != null)
                         BlockedDmBar(pubkey: blockedCounterpart)
+                      else if (composerWaits)
+                        _ThreadRootPendingRow(label: context.l10n.loadingLabel)
                       else ...[
                         ComposerQuoteChip(scope: quoteScope),
                         ComposeBar(

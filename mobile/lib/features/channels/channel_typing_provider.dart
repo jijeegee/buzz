@@ -21,9 +21,11 @@ class TypingEntry {
 
 /// Tracks who is currently typing in a specific channel.
 ///
-/// Subscribes to kind:20002 (typing indicator) events via websocket while a
-/// screen of the room watches it; leaving the room closes the subscription.
-/// Entries expire after 8 seconds (matching the desktop TTL).
+/// Listens to kind:20002 (typing indicator) events on the room's open-room
+/// REQ ([RoomLiveRegistry]) while a screen of the room watches it; leaving
+/// the room closes it. A reconnect does not rebuild this: the session's
+/// replay re-sends the REQ. Entries expire after 8 seconds (matching the
+/// desktop TTL).
 class ChannelTypingNotifier extends Notifier<List<TypingEntry>> {
   static const _ttlMs = 8000;
   static const _pruneIntervalMs = 1000;
@@ -35,44 +37,14 @@ class ChannelTypingNotifier extends Notifier<List<TypingEntry>> {
 
   @override
   List<TypingEntry> build() {
-    final connected = ref.watch(
-      relaySessionProvider.select(
-        (session) => session.status == SessionStatus.connected,
-      ),
-    );
-    var disposed = false;
-    void Function()? unsubscribe;
-
+    final stop = ref
+        .watch(roomLiveRegistryProvider)
+        .listen(channelId, EventKind.typingIndicator, _handleTypingEvent);
     ref.onDispose(() {
-      disposed = true;
-      unsubscribe?.call();
+      stop();
       _pruneTimer?.cancel();
       _pruneTimer = null;
     });
-
-    if (connected) {
-      unawaited(() async {
-        final stop = await ref
-            .read(relaySessionProvider.notifier)
-            .subscribe(
-              NostrFilter(
-                kinds: [EventKind.typingIndicator],
-                tags: {
-                  '#h': [channelId],
-                },
-                limit: 10,
-              ),
-              _handleTypingEvent,
-            );
-        // Left the room (or reconnected) while the REQ was opening.
-        if (disposed) {
-          stop();
-        } else {
-          unsubscribe = stop;
-        }
-      }());
-    }
-
     return [];
   }
 

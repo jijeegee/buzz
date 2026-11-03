@@ -1,0 +1,128 @@
+{
+  "description": "Opening a thread from its root id: what one relay answer for the root means. Shared by mobile (thread_root_provider.dart) and desktop (threadRootResolve.ts). Rules: docs/message-sync.md#opening-a-thread-from-its-root-id. The answer is to two filters in one query: the root by id, and a deletion (kind 5 or 9005) tagging it. `answer` null means the request failed (timeout, refusal, dropped connection). Events are [id, kind, pubkey, e_tag_or_null]; all carry h = channel. `verdict` is found | deleted | unresolved; only unresolved is asked again after a reconnect. A failed or empty answer never means deleted. An author's deletion (5) counts only when signed by the root's author: the root in the same answer, or `known_root_author` (the root already known from the store or timeline).",
+  "channel": "room",
+  "root": "root",
+  "root_author": "alice",
+  "cases": [
+    {
+      "name": "a failed request is unresolved",
+      "answer": null,
+      "verdict": "unresolved"
+    },
+    {
+      "name": "an empty answer is unresolved, never deleted",
+      "answer": [],
+      "verdict": "unresolved"
+    },
+    {
+      "name": "the root alone is found",
+      "answer": [
+        [
+          "root",
+          9,
+          "alice",
+          null
+        ]
+      ],
+      "verdict": "found"
+    },
+    {
+      "name": "a relay removal (9005) is deleted",
+      "answer": [
+        [
+          "del",
+          9005,
+          "relay",
+          "root"
+        ]
+      ],
+      "verdict": "deleted"
+    },
+    {
+      "name": "the author's deletion with the root is deleted",
+      "answer": [
+        [
+          "root",
+          9,
+          "alice",
+          null
+        ],
+        [
+          "del",
+          5,
+          "alice",
+          "root"
+        ]
+      ],
+      "verdict": "deleted"
+    },
+    {
+      "name": "another author's deletion with the root stays found",
+      "answer": [
+        [
+          "root",
+          9,
+          "alice",
+          null
+        ],
+        [
+          "del",
+          5,
+          "mallory",
+          "root"
+        ]
+      ],
+      "verdict": "found"
+    },
+    {
+      "name": "an author's deletion without the root and no known root is unresolved",
+      "answer": [
+        [
+          "del",
+          5,
+          "mallory",
+          "root"
+        ]
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "name": "the known author's deletion without the root is deleted",
+      "known_root_author": "alice",
+      "answer": [
+        [
+          "del",
+          5,
+          "alice",
+          "root"
+        ]
+      ],
+      "verdict": "deleted"
+    },
+    {
+      "name": "another author's deletion without the root stays unresolved when the root is known",
+      "known_root_author": "alice",
+      "answer": [
+        [
+          "del",
+          5,
+          "mallory",
+          "root"
+        ]
+      ],
+      "verdict": "unresolved"
+    },
+    {
+      "name": "a deletion of another event is unresolved",
+      "answer": [
+        [
+          "del",
+          9005,
+          "relay",
+          "other"
+        ]
+      ],
+      "verdict": "unresolved"
+    }
+  ]
+}

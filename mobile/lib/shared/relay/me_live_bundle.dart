@@ -21,11 +21,13 @@ const meAuthoredKinds = <int>[
   30300,
 ];
 
-/// Kinds addressed to the account: mentions, approvals, reminders, chat-list
-/// pings, sign-in and membership notices.
+/// Kinds addressed to the account: mentions, approvals, reminders, agent work
+/// frames (24200, never stored, so catch-up returns none), chat-list pings,
+/// sign-in and membership notices.
 const meAddressedKinds = <int>[
   1,
   9,
+  24200,
   24210,
   24211,
   40002,
@@ -149,7 +151,13 @@ typedef MeBundleOpen =
 typedef MeBundleFetch = Future<List<NostrEvent>> Function(NostrFilter filter);
 
 class _Listener {
-  _Listener(this.filter, this.onEvent, this.onClosed, this.openedAt);
+  _Listener(
+    this.filter,
+    this.onEvent,
+    this.onClosed,
+    this.onGap,
+    this.openedAt,
+  );
 
   final NostrFilter filter;
 
@@ -157,6 +165,9 @@ class _Listener {
   final int openedAt;
   final void Function(NostrEvent) onEvent;
   final void Function(String message)? onClosed;
+
+  /// A catch-up may have missed events for this listener (see [MeLiveBundle]).
+  final void Function()? onGap;
   final seen = <String>{};
 
   void deliver(NostrEvent event) {
@@ -190,6 +201,11 @@ int _byCreatedAt(NostrEvent a, NostrEvent b) =>
 /// matches, once. After a reconnect the bundle fetches what each scope missed
 /// while the connection was down ([catchUp]).
 ///
+/// One catch-up fetch per scope is capped at 500 events, shared by every
+/// listener and kind in that scope. When it returns that many, or its last
+/// attempt fails, each listener of the scope gets `onGap` once, so a feature
+/// with history refetches what it needs.
+///
 /// A scope closes once its last listener leaves, after the current task, so
 /// a provider rebuild that resubscribes at once keeps it.
 class MeLiveBundle {
@@ -215,13 +231,14 @@ class MeLiveBundle {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     final scope = meScopeOf(filter);
     if (scope == null) {
       throw ArgumentError('Filter is not scoped to one account.');
     }
     final entry = _scopes[scope.key] ?? _openScope(scope);
-    final listener = _Listener(filter, onEvent, onClosed, _nowSecs());
+    final listener = _Listener(filter, onEvent, onClosed, onGap, _nowSecs());
     entry.listeners.add(listener);
 
     var stopped = false;
@@ -345,15 +362,24 @@ class MeLiveBundle {
             listener.deliver(event);
           }
         }
+        // A full page may have cut off older events: listeners refetch.
+        if (missed.length >= _catchUpLimit) _signalGap(entry);
         return;
       } catch (error) {
         if (attempt == _catchUpAttempts) {
           debugPrint('Failed to catch up account events: $error');
+          if (isCurrent()) _signalGap(entry);
           return;
         }
         await Future<void>.delayed(_catchUpRetry * attempt);
       }
     }
+  }
+}
+
+void _signalGap(_ScopeEntry entry) {
+  for (final listener in [...entry.listeners]) {
+    listener.onGap?.call();
   }
 }
 

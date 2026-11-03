@@ -14,6 +14,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 class SidebarRelay {
   SidebarRelay() {
     session.debugAttachSocketForTest(_ScriptedSocket(_onSend));
+    session.debugBatchLaneHeads = false;
   }
 
   final keys = nostr.Keys.generate();
@@ -173,6 +174,16 @@ class FlakyPrefs extends Fake implements SharedPreferences {
     if (error == null) return false;
     throw error!;
   }
+}
+
+/// The lane listened live-only (on the account bundle) before it read its
+/// one-document head, so nothing published in between is lost.
+void expectListenThenHead(SidebarRelay relay, String dTag) {
+  final live = relay.reqsFor(dTag, 'l-').single;
+  final head = relay.reqsFor(dTag, 'h-').first;
+  expect(relay.reqs.indexOf(live), lessThan(relay.reqs.indexOf(head)));
+  expect((live[2] as Map<String, dynamic>)['limit'], 0);
+  expect((head[2] as Map<String, dynamic>)['limit'], 1);
 }
 
 Future<SharedPreferences> freshPrefs() async {

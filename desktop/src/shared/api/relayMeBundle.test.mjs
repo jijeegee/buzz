@@ -308,3 +308,140 @@ test("reset drops every scope", async () => {
   opened[0].onEvent(event("c1", 3, []));
   assert.deepEqual(seen, []);
 });
+
+test("agent work frames reach only the observer, which shares the addressed REQ", async () => {
+  const { bundle, opened, fetches } = harness();
+  const mentions = [];
+  const frames = [];
+  const mentioning = bundle.subscribe(
+    { kinds: [9], "#p": [ME], limit: 0 },
+    (e) => mentions.push(e.id),
+  );
+  await flush();
+  opened[0].release();
+  await mentioning;
+  const stopObserver = await bundle.subscribe(
+    { kinds: [24200], "#p": [ME], limit: 0 },
+    (e) => frames.push(e.id),
+  );
+  assert.equal(opened.length, 1, "the observer sends no REQ of its own");
+
+  opened[0].onEvent(event("frame", 24200, [["p", ME]], { pubkey: "b" }));
+  opened[0].onEvent(event("mention", 9, [["p", ME]], { pubkey: "b" }));
+  assert.deepEqual(frames, ["frame"]);
+  assert.deepEqual(mentions, ["mention"]);
+
+  // Catch-up asks from the passed time, with 24200 in the filter; the relay
+  // never stores frames, so none come back.
+  await bundle.catchUp(5_000);
+  assert.deepEqual(fetches.at(-1), {
+    kinds: fixtures.addressedKinds,
+    "#p": [ME],
+    limit: fixtures.catchUpLimit,
+    since: 5_000,
+  });
+  assert.ok(fetches.at(-1).kinds.includes(24200));
+
+  await stopObserver();
+  await flush();
+  assert.equal(opened[0].closed, false, "the observer leaving keeps the REQ");
+});
+
+test("onGap fires once per listener when catch-up returns a full page", async () => {
+  const { bundle, opened, setFetchResult } = harness();
+  const gaps = [];
+  const filter = { kinds: [44100], "#p": [ME], limit: 0 };
+  const first = bundle.subscribe(filter, () => {}, undefined, {
+    onGap: () => gaps.push("a"),
+  });
+  await flush();
+  opened[0].release();
+  await first;
+  await bundle.subscribe(
+    { kinds: [40007], "#p": [ME], limit: 0 },
+    () => {},
+    undefined,
+    {
+      onGap: () => gaps.push("b"),
+    },
+  );
+
+  setFetchResult(
+    Array.from({ length: fixtures.catchUpLimit - 1 }, (_, i) =>
+      event(`m${i}`, 9, [["p", ME]]),
+    ),
+  );
+  await bundle.catchUp(100);
+  assert.deepEqual(gaps, [], "a short page is complete");
+
+  setFetchResult(
+    Array.from({ length: fixtures.catchUpLimit }, (_, i) =>
+      event(`f${i}`, 9, [["p", ME]]),
+    ),
+  );
+  await bundle.catchUp(100);
+  assert.deepEqual(gaps.sort(), ["a", "b"], "every listener in the scope");
+});
+
+test("onGap fires when the last catch-up attempt fails, never after reset", async () => {
+  const { bundle, opened, failFetches, runTimers } = harness();
+  const gaps = [];
+  const subscribing = bundle.subscribe(
+    { kinds: [30300], authors: [ME], limit: 0 },
+    () => {},
+    undefined,
+    { onGap: () => gaps.push(1) },
+  );
+  await flush();
+  opened[0].release();
+  await subscribing;
+
+  failFetches(3);
+  const failing = bundle.catchUp(1_000);
+  for (let i = 0; i < 5; i++) {
+    await flush();
+    runTimers();
+  }
+  await failing;
+  assert.equal(gaps.length, 1);
+
+  failFetches(3);
+  const stale = bundle.catchUp(1_000);
+  await flush();
+  bundle.reset();
+  for (let i = 0; i < 5; i++) {
+    await flush();
+    runTimers();
+  }
+  await stale;
+  assert.equal(gaps.length, 1, "a reset generation stays quiet");
+});
+
+test("a terminal CLOSED tells each listener it was removed; reset does not", async () => {
+  const { bundle, opened } = harness();
+  const removed = [];
+  const filter = {
+    kinds: [30078],
+    authors: [ME],
+    "#t": ["read-state"],
+    limit: 0,
+  };
+  const subscribing = bundle.subscribe(filter, () => {}, undefined, {
+    onRemoved: () => removed.push("closed"),
+  });
+  await flush();
+  opened[0].release();
+  await subscribing;
+  opened[0].onRemoved();
+  assert.deepEqual(removed, ["closed"]);
+
+  const again = bundle.subscribe(filter, () => {}, undefined, {
+    onRemoved: () => removed.push("reset"),
+  });
+  await flush();
+  opened[1].release();
+  await again;
+  bundle.reset();
+  opened[1].onRemoved();
+  assert.deepEqual(removed, ["closed"]);
+});

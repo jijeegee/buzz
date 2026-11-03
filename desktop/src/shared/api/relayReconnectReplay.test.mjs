@@ -184,19 +184,15 @@ test("reconnect replay caps large steady-state limits", () => {
   });
 });
 
-test("reconnect replay preserves the live-only zero-history contract", () => {
+test("reconnect replay re-sends a live-only filter unchanged", () => {
   const filter = {
     kinds: [9],
     "#h": ["channel-1"],
     limit: 0,
   };
 
-  assert.deepEqual(replayFilter(filter, 123), {
-    kinds: [9],
-    "#h": ["channel-1"],
-    limit: 0,
-    since: 123,
-  });
+  assert.equal(replayFilter(filter, 123), filter);
+  assert.equal(replayFilter(filter, 123, 400), filter);
 });
 
 test("live-only subscriptions do not page reconnect history", () => {
@@ -1482,4 +1478,69 @@ test("a live-only room bundle is re-sent unchanged and repaired across all its r
     },
   ]);
   assert.deepEqual(delivered, ["missed"]);
+});
+
+// ── Live-only REQs go back unchanged ─────────────────────────────────────────
+
+/** Deliver `events` on `subscription` through the session's event seam, then
+ * reconnect and return the one REQ frame sent for it. */
+async function replayAfterLiveEvents(filter, events) {
+  resetGate();
+  const subscription = { mode: "live", filter, onEvent: () => {} };
+  for (const liveEvent of events) {
+    assert.equal(prepareSubscriptionEvent(subscription, liveEvent), true);
+  }
+  const sent = [];
+  await replayLiveSubscriptions({
+    subscriptions: new Map([["live", subscription]]),
+    sendRaw: async (payload) => {
+      sent.push(payload);
+    },
+    requestRepair: async () => {
+      throw new Error("a non-room filter is never repaired");
+    },
+  });
+  assert.equal(sent.length, 1);
+  return { subscription, frame: sent[0] };
+}
+
+test("a future-stamped event cannot change a live-only REQ on reconnect", async () => {
+  const now = Math.floor(origDateNow() / 1_000);
+  const filter = {
+    kinds: [1, 9, 24200, 40002],
+    "#p": ["me"],
+    limit: 0,
+  };
+  const original = JSON.stringify(["REQ", "live", filter]);
+  const { subscription, frame } = await replayAfterLiveEvents(filter, [
+    { ...event("now", now), kind: 9 },
+    { ...event("ahead", now + 290), kind: 24200 },
+  ]);
+
+  assert.equal(subscription.lastSeenCreatedAt, now + 290);
+  assert.equal(JSON.stringify(frame), original);
+});
+
+test("a far-future presence event cannot pin a presence REQ's since", async () => {
+  const now = Math.floor(origDateNow() / 1_000);
+  const filter = { kinds: [20001], authors: ["a", "b"], limit: 0 };
+  const original = JSON.stringify(["REQ", "live", filter]);
+  const { frame } = await replayAfterLiveEvents(filter, [
+    { ...event("far", now + 86_400), kind: 20001 },
+  ]);
+
+  assert.equal(JSON.stringify(frame), original);
+});
+
+test("a live REQ with history still resumes from the newest seen event", async () => {
+  const filter = { kinds: [40007, 46010], "#p": ["me"], limit: 50 };
+  const { frame } = await replayAfterLiveEvents(filter, [
+    { ...event("notice", 10_000), kind: 40007 },
+  ]);
+
+  assert.deepEqual(frame, [
+    "REQ",
+    "live",
+    { kinds: [40007, 46010], "#p": ["me"], limit: 50, since: 9_995 },
+  ]);
 });

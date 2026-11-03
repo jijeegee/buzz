@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart';
 
+import 'nostr_models.dart';
 import 'relay_socket.dart';
 
 enum SessionStatus { disconnected, connecting, connected, reconnecting }
@@ -35,3 +36,15 @@ class SessionState {
 
 /// Recovery lifecycle for a live relay subscription.
 enum RelaySubscriptionStatus { ready, retrying }
+
+/// A bundle-owned live REQ with several `limit: 0` filters.
+class LiveFiltersHandle {
+  const LiveFiltersHandle({required this.close, required this.setFilters});
+
+  /// Close the REQ; pending [setFilters] futures complete.
+  final void Function() close;
+
+  /// Replace the filters under the same subId. Completes once the relay
+  /// answered the REQ carrying this set, or the REQ is gone.
+  final Future<void> Function(List<NostrFilter> filters) setFilters;
+}

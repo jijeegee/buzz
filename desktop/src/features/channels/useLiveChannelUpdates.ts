@@ -14,6 +14,7 @@ import { ChatListLiveSync } from "@/features/chats/chatListSync";
 import { dmVisibilityQueryKey } from "@/features/channels/useHiddenDmIds";
 import { updateChannelLastMessageAt } from "@/features/channels/lib/channelRecency";
 import { mergeTimelineCacheMessages } from "@/features/messages/hooks";
+import { startThreadNameLive } from "@/features/messages/lib/threadNameLive";
 import { useBlockedPeople } from "@/features/people/BlockedPeopleContext";
 import { channelMessagesKey } from "@/features/messages/lib/messageQueryKeys";
 import {
@@ -510,6 +511,19 @@ export function useLiveChannelUpdates(
         handleIncomingMessage(event);
       }),
     [],
+  );
+
+  // Thread names on screen, in every member room, stay live from the bundle's
+  // room metadata; a reconnect re-reads them.
+  React.useEffect(
+    () =>
+      startThreadNameLive(queryClient, {
+        listenRoomMetadata: (listener) =>
+          relayClient.liveRooms.listenRoomMetadata(listener),
+        subscribeToReconnects: (listener) =>
+          relayClient.subscribeToReconnects(listener),
+      }),
+    [queryClient],
   );
 
   React.useEffect(

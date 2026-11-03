@@ -58,10 +58,14 @@ type HistorySubscription = {
   timeout: number;
   timeoutMs: number;
   closedRetryAttempt?: number;
+  /** `error: busy` retries so far (`retryBusyRequest`). */
+  busyAttempt?: number;
 };
 
 type FirstEventSubscription = {
   mode: "first";
+  filter: RelaySubscriptionFilter;
+  busyAttempt?: number;
   onEvent: (event: RelayEvent) => void;
   resolve: (event: RelayEvent | null) => void;
   reject: (error: Error) => void;
@@ -70,9 +74,38 @@ type FirstEventSubscription = {
 
 export type LiveSubscriptionReadiness = "eose" | "closed" | "timeout";
 
+/**
+ * A bundle-owned live REQ with several filters (`relayLiveFilters.ts`). Its
+ * `filter` is the first of `filters`; every REQ frame for it carries all of
+ * them (`liveReqFrame`) and reports to the in-flight rule.
+ */
+export type LiveMultiFilter = {
+  filters: RelaySubscriptionFilter[];
+  /** A REQ frame with the current `filters` was built for sending. */
+  sent(): void;
+  /** The relay answered that REQ (EOSE). */
+  settled(): void;
+  /** Its socket is gone; the reconnect replay is in flight next. */
+  lost(): void;
+};
+
+/** The REQ frame for `subId`: every filter of a multi-filter entry. */
+export function liveReqFrame(
+  subId: string,
+  subscription: RelaySubscription | undefined,
+  filter: RelaySubscriptionFilter,
+): unknown[] {
+  const multi = subscription?.mode === "live" ? subscription.multi : undefined;
+  if (!multi) return ["REQ", subId, filter];
+  multi.sent();
+  return ["REQ", subId, ...multi.filters];
+}
+
 type LiveSubscription = {
   mode: "live";
   filter: RelaySubscriptionFilter;
+  /** Set for a bundle's multi-filter REQ (see `LiveMultiFilter`). */
+  multi?: LiveMultiFilter;
   /** Client-side admission only; interactive consumers still obey cooldown/pacing. */
   priority?: "interactive";
   onEvent: (event: RelayEvent) => void;

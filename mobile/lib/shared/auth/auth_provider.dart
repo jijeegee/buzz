@@ -10,6 +10,7 @@ import '../community/community_provider.dart';
 import '../community/community_token_session.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/push_bridge.dart';
+import '../push/push_inbox.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import 'default_community.dart';
@@ -122,6 +123,11 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       } else if (community.signedOut) {
         throw StateError('Sign in again to use this community.');
       }
+      if (ref.read(kuzzPushBuildSupportedProvider)) {
+        // Like other messengers, notifications start on at sign-in; the
+        // system prompt follows on the first Home screen.
+        community = community.withPushOnByDefault();
+      }
       await ref.read(communityTransitionProvider).run();
       guard();
       await storage.save(community);
@@ -180,17 +186,20 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       )(existing);
     }
     final community = existing != null
-        ? existing.copyWith(
-            tokenAuth: true,
-            pubkey: principalId,
-            nsec: legacyKey == null ? existing.nsec : null,
-            pushNotificationsEnabled: legacyKey == null
-                ? existing.pushNotificationsEnabled
-                : false,
-            pushSubscriptionState: legacyKey == null
-                ? existing.pushSubscriptionState
-                : const KuzzPushLeaseSubscriptionState.desired(),
-          )
+        ? existing
+              .withCredentials(
+                pubkey: principalId,
+                nsec: legacyKey == null ? existing.nsec : null,
+              )
+              .copyWith(
+                tokenAuth: true,
+                pushNotificationsEnabled: legacyKey == null
+                    ? existing.pushNotificationsEnabled
+                    : false,
+                pushSubscriptionState: legacyKey == null
+                    ? existing.pushSubscriptionState
+                    : const KuzzPushLeaseSubscriptionState.desired(),
+              )
         : Community.create(
             name: Community.nameFromUrl(origin),
             relayUrl: origin,
@@ -290,6 +299,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           unawaited(store.forget(community.relayUrl, account));
         }
       }
+      // So does the push inbox, once the notification extension no longer
+      // writes for it (the launch sweep removes what is left).
+      final inboxTokens = [
+        for (final community in targets) ?community.pushInboxToken,
+      ];
+      if (inboxTokens.isNotEmpty) {
+        await syncCommunitySnapshot(ref, signedOut);
+        unawaited(
+          deletePushInboxFolders(ref.read(pushInboxRootProvider), inboxTokens),
+        );
+      }
       // Cached message heads are derived data; signing out leaves none behind.
       unawaited(
         ref.read(channelHeadCacheProvider).clearAll().catchError((
@@ -385,12 +405,13 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 /// account); one with no backup is kept.
 Community _signedOutCopy(Community community) {
   if (community.googleBackupAccountId == null) {
-    return community.copyWith(signedOut: true);
+    return community.copyWith(signedOut: true, pushInboxToken: null);
   }
   return community.copyWith(
     signedOut: true,
     pubkey: community.pubkey ?? _pubkey(community.nsec),
     nsec: null,
+    pushInboxToken: null,
   );
 }
 

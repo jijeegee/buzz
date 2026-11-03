@@ -260,6 +260,7 @@ async function seedChannelActivity(
   if (includeAgent) {
     await expect(page.getByTestId("channel-working-general")).toBeVisible();
   }
+  return ownRoot;
 }
 
 async function openActivityPopover(page: Page) {
@@ -381,6 +382,33 @@ test.describe("channel activity hover preview", () => {
     const threadPanel = page.getByTestId("message-thread-panel");
     await expect(threadPanel).toBeVisible();
     await expect(threadPanel).toContainText("direct thread link");
+  });
+
+  test("a rename in a room that is not open updates its preview row, without unread", async ({
+    page,
+  }) => {
+    const ownRoot = await seedChannelActivity(page, { includeAgent: false });
+    const popover = await openActivityPopover(page);
+    await expect(popover.getByTestId(/^channel-activity-item-/)).toHaveCount(2);
+    // Another member names the thread; general is not the open room.
+    await page.evaluate(
+      ({ id, createdAt }) =>
+        window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+          channelName: "general",
+          kind: 40009,
+          content: "Handoff plan",
+          createdAt,
+          extraTags: [["e", id]],
+        }),
+      { id: ownRoot.id, createdAt: Math.floor(Date.now() / 1000) + 120 },
+    );
+    await expect(
+      popover.getByText("Handoff plan", { exact: true }),
+    ).toBeVisible();
+    await expect(page.getByTestId("chat-title")).toHaveText("random");
+    // A rename is room metadata, never activity: no badge and no new row.
+    await expect(page.getByTestId("channel-unread-general")).toHaveCount(0);
+    await expect(popover.getByTestId(/^channel-activity-item-/)).toHaveCount(2);
   });
 
   test("unnamed working agents show a generic Agent label, never key text", async ({

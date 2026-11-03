@@ -103,6 +103,7 @@ class _SyntheticSession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) {
     // Preserve the real subscription and buffer delivery implementation. This
     // fixture creates exactly one subscription, whose generated id is l-1.

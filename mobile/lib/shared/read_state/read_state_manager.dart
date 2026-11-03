@@ -41,6 +41,13 @@ class ReadStateCrypto {
 
 enum _ApplyRemoteContextResult { unchanged, advanced }
 
+/// A failed read-state fetch or listener retries after 1 s, doubling to 60 s.
+Duration _retryDelay(int attempt) =>
+    Duration(milliseconds: min(1000 << min(attempt, 6), 60000));
+
+/// Decoded blobs by event id, so one event is decrypted once.
+const _decodeCacheSize = 256;
+
 class ReadStateManager {
   final String pubkey;
   final ReadStateCrypto? _crypto;
@@ -60,8 +67,21 @@ class ReadStateManager {
   Timer? _debounceTimer;
   void Function()? _unsubscribeLive;
 
-  /// The newest remote sync; an older one still waiting on its fetch or
-  /// subscription stops, so overlapping syncs keep one live subscription.
+  /// One live listener at a time: overlapping syncs never open a second.
+  bool _attaching = false;
+  Timer? _reattachTimer;
+  int _reattachAttempt = 0;
+
+  /// One fetch at a time; a request during a fetch runs one more after it.
+  Future<bool>? _fetchInFlight;
+  bool _fetchAgain = false;
+  Timer? _fetchRetryTimer;
+  int _fetchRetryAttempt = 0;
+
+  /// Insertion-ordered (a Dart map literal), so it evicts the oldest.
+  final _decodeCache = <String, DecodedReadStateEvent>{};
+
+  /// The newest remote sync; an older one skips the publish check.
   int _remoteSyncGeneration = 0;
   bool _initialized = false;
   bool _disposed = false;
@@ -145,22 +165,58 @@ class ReadStateManager {
     await _syncRemote();
   }
 
-  /// Fetches the remote read state, then replaces the live subscription. A
-  /// newer sync started meanwhile (a reconnect overlapping the first load)
-  /// owns the subscription; this one stops.
+  /// Listens (live only, on the authored account bundle) if not already,
+  /// then fetches the remote read state. A reconnect keeps the listener and
+  /// only fetches: nothing replays the marks it may have missed.
   Future<void> _syncRemote() async {
     if (_disposed) return;
     final generation = ++_remoteSyncGeneration;
-    _unsubscribeLive?.call();
-    _unsubscribeLive = null;
-    await _fetchAndMerge();
-    if (_disposed || generation != _remoteSyncGeneration) return;
-    await _startLiveSubscription(generation);
+    await _attachListener();
+    if (_disposed) return;
+    await _refetch();
     if (_disposed || generation != _remoteSyncGeneration) return;
     if (!_isIdenticalToLastPublished(_currentContexts())) {
       _schedulePublish();
     }
     _onChanged();
+  }
+
+  /// Fetch and merge, one at a time. A failure retries with backoff until a
+  /// fetch succeeds, since the live-only listener carries no history.
+  Future<bool> _refetch() {
+    if (_disposed) return Future.value(false);
+    final inFlight = _fetchInFlight;
+    if (inFlight != null) {
+      _fetchAgain = true;
+      return inFlight;
+    }
+    Future<bool> run() async {
+      var ok = await _fetchAndMerge();
+      while (_fetchAgain && !_disposed) {
+        _fetchAgain = false;
+        ok = await _fetchAndMerge();
+      }
+      return ok;
+    }
+
+    final flight = run();
+    _fetchInFlight = flight;
+    return flight
+        .whenComplete(() {
+          _fetchInFlight = null;
+        })
+        .then((ok) {
+          if (_disposed) return ok;
+          if (ok) {
+            _fetchRetryAttempt = 0;
+          } else {
+            _fetchRetryTimer ??= Timer(_retryDelay(_fetchRetryAttempt++), () {
+              _fetchRetryTimer = null;
+              unawaited(_refetch());
+            });
+          }
+          return ok;
+        });
   }
 
   void dispose({bool flushPending = true}) {
@@ -180,6 +236,10 @@ class ReadStateManager {
 
     _unsubscribeLive?.call();
     _unsubscribeLive = null;
+    _reattachTimer?.cancel();
+    _reattachTimer = null;
+    _fetchRetryTimer?.cancel();
+    _fetchRetryTimer = null;
   }
 
   void _advanceContext(
@@ -213,7 +273,7 @@ class ReadStateManager {
     }
   }
 
-  Future<void> _fetchAndMerge() async {
+  Future<bool> _fetchAndMerge() async {
     try {
       final events = await _relaySession!.fetchHistory(
         NostrFilter(
@@ -226,12 +286,35 @@ class ReadStateManager {
           limit: readStateFetchLimit,
         ),
       );
+      if (_disposed) return false;
+      // The whole batch goes to the batch merge (own-slot union, squatters).
       _mergeEvents(events);
       _persistLocalState();
       _onChanged();
+      return true;
     } catch (e) {
       debugPrint('[ReadStateManager] fetchAndMerge failed: $e');
+      return false;
     }
+  }
+
+  /// [decodeReadStateEvent] once per event id. Every event still goes
+  /// through merge and the squatter check; this only saves the decrypt.
+  DecodedReadStateEvent? _decode(NostrEvent event, ReadStateCrypto crypto) {
+    final cached = _decodeCache.remove(event.id);
+    if (cached != null) return _decodeCache[event.id] = cached;
+    final decoded = decodeReadStateEvent(
+      event,
+      pubkey: pubkey,
+      decrypt: crypto.decrypt,
+    );
+    // A failed decode is not cached: a later delivery tries again.
+    if (decoded == null) return null;
+    _decodeCache[event.id] = decoded;
+    if (_decodeCache.length > _decodeCacheSize) {
+      _decodeCache.remove(_decodeCache.keys.first);
+    }
+    return decoded;
   }
 
   void _mergeEvents(List<NostrEvent> events) {
@@ -241,11 +324,7 @@ class ReadStateManager {
     var ownBlobCreatedAt = 0;
 
     for (final event in events) {
-      final decoded = decodeReadStateEvent(
-        event,
-        pubkey: pubkey,
-        decrypt: crypto.decrypt,
-      );
+      final decoded = _decode(event, crypto);
       if (decoded == null) continue;
 
       if (_isPlausibleCreatedAt(event.createdAt)) {
@@ -282,7 +361,12 @@ class ReadStateManager {
     }
   }
 
-  Future<void> _startLiveSubscription(int generation) async {
+  /// Attaches the live listener unless one is live or attaching. Live only
+  /// (`limit: 0`): the fetch holds the history. A failure, or a terminal
+  /// CLOSED, re-attaches with backoff and then fetches what it missed.
+  Future<void> _attachListener() async {
+    if (_disposed || _unsubscribeLive != null || _attaching) return;
+    _attaching = true;
     try {
       final unsub = await _relaySession!.subscribe(
         NostrFilter(
@@ -291,19 +375,38 @@ class ReadStateManager {
           tags: const {
             '#t': ['read-state'],
           },
-          limit: readStateFetchLimit,
+          limit: 0,
         ),
         _handleIncomingEvent,
+        onClosed: (message) {
+          debugPrint('[ReadStateManager] live closed: $message');
+          _unsubscribeLive = null;
+          _scheduleReattach();
+        },
+        onGap: () => unawaited(_refetch()),
       );
-      if (_disposed || generation != _remoteSyncGeneration) {
+      if (_disposed) {
         unsub.call();
         return;
       }
       _unsubscribeLive = unsub;
+      _reattachAttempt = 0;
       debugPrint('[ReadStateManager] live subscription established');
     } catch (e) {
       debugPrint('[ReadStateManager] live subscription FAILED: $e');
+      _scheduleReattach();
+    } finally {
+      _attaching = false;
     }
+  }
+
+  void _scheduleReattach() {
+    if (_disposed || _reattachTimer != null) return;
+    _reattachTimer = Timer(_retryDelay(_reattachAttempt++), () async {
+      _reattachTimer = null;
+      await _attachListener();
+      if (_unsubscribeLive != null) unawaited(_refetch());
+    });
   }
 
   void _handleIncomingEvent(NostrEvent event) {
@@ -313,11 +416,7 @@ class ReadStateManager {
       '[ReadStateManager] incoming event=${event.id.substring(0, 8)}… created_at=${event.createdAt}',
     );
 
-    final decoded = decodeReadStateEvent(
-      event,
-      pubkey: pubkey,
-      decrypt: crypto.decrypt,
-    );
+    final decoded = _decode(event, crypto);
     if (decoded == null) return;
 
     if (_isPlausibleCreatedAt(event.createdAt)) {

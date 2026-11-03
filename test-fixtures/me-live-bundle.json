@@ -16,6 +16,7 @@
   "addressedKinds": [
     1,
     9,
+    24200,
     24210,
     24211,
     40002,
@@ -73,6 +74,22 @@
       }
     },
     {
+      "name": "agent work frames ride the addressed bundle",
+      "filter": {
+        "kinds": [
+          24200
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
       "name": "owner devices ride the authored bundle",
       "filter": {
         "kinds": [
@@ -81,6 +98,104 @@
         ],
         "authors": [
           "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "authored",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "home feed approvals and reminders ride the addressed bundle",
+      "filter": {
+        "kinds": [
+          40007,
+          46010
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "event reminders ride the authored bundle",
+      "filter": {
+        "authors": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "kinds": [
+          30300
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "authored",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "membership notices ride the addressed bundle",
+      "filter": {
+        "kinds": [
+          44100,
+          44101
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "mobile activity rides the addressed bundle",
+      "filter": {
+        "kinds": [
+          1,
+          9,
+          40002,
+          43001,
+          43002,
+          43003,
+          43004,
+          43005,
+          43006,
+          45001,
+          45003,
+          46010,
+          46011,
+          46012
+        ],
+        "#p": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "limit": 0
+      },
+      "scope": {
+        "kind": "addressed",
+        "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      }
+    },
+    {
+      "name": "live read state rides the authored bundle",
+      "filter": {
+        "kinds": [
+          30078
+        ],
+        "authors": [
+          "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        ],
+        "#t": [
+          "read-state"
         ],
         "limit": 0
       },
@@ -348,6 +463,31 @@
         "kind": 3,
         "created_at": 2000,
         "tags": []
+      },
+      "matches": false
+    },
+    {
+      "name": "an agent work frame does not reach a mentions listener",
+      "filter": {
+        "kinds": [
+          9
+        ],
+        "#p": [
+          "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "limit": 0
+      },
+      "event": {
+        "id": "e8",
+        "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "kind": 24200,
+        "created_at": 2000,
+        "tags": [
+          [
+            "p",
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+          ]
+        ]
       },
       "matches": false
     }

@@ -547,6 +547,52 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     XCTAssertEqual(URLProtocolStub.requests.count, 2)
   }
 
+  func testPolicyQueryAndRefreshCarryDeviceTagOnlyWithSigner() throws {
+    let message = try Self.signedEvent(
+      privateKey: Self.profilePrivateKey,
+      createdAt: Self.now,
+      kind: 9,
+      tags: [["h", Self.channelID]],
+      content: "Device tagged"
+    )
+    let device = P256.Signing.PrivateKey()
+    let signer = try XCTUnwrap(
+      DeviceEventSigning(
+        publicKeySEC1: device.publicKey.x963Representation,
+        signDER: { try? device.signature(for: $0).derRepresentation }
+      ))
+    for withSigner in [true, false] {
+      URLProtocolStub.reset()
+      URLProtocolStub.handler = { request in
+        if URLProtocolStub.requests.count == 1 {
+          return Self.response(request, status: 200, data: try JSONEncoder().encode([message]))
+        }
+        return Self.response(request, status: 200, data: Data("[]".utf8))
+      }
+      _ = try XCTUnwrap(
+        resolve(
+          makeResolver(
+            communitiesData: try snapshotData([community(relayMetadataPubkey: Self.ownPubkey)]),
+            deviceSigner: withSigner ? signer : nil
+          )))
+
+      XCTAssertEqual(URLProtocolStub.requests.count, 2, "signer: \(withSigner)")
+      for request in URLProtocolStub.requests {
+        let header = try XCTUnwrap(request.value(forHTTPHeaderField: "Authorization"))
+        let data = try XCTUnwrap(Data(base64Encoded: String(header.dropFirst(6))))
+        let auth = try JSONDecoder().decode(VerifiedNostrEvent.self, from: data)
+        XCTAssertTrue(auth.hasValidIDAndSignature())
+        let deviceTags = auth.tags.filter { $0.first == "device" }
+        if withSigner {
+          XCTAssertEqual(deviceTags.map { $0[1] }, [signer.publicKeyHex], request.url?.path ?? "")
+        } else {
+          XCTAssertTrue(deviceTags.isEmpty, request.url?.path ?? "")
+        }
+        XCTAssertEqual(auth.tags.filter { $0.first == "nonce" }.count, 1)
+      }
+    }
+  }
+
   func testMalformedAndUnverifiedRefreshFallsBackWithoutBlockingMessage() throws {
     let message = try Self.signedEvent(
       privateKey: Self.profilePrivateKey,
@@ -713,6 +759,7 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     communitiesData: Data?,
     privateKeys: [String: String] = ["community-id": privateKey],
     presentationCacheData: Data? = nil,
+    deviceSigner: DeviceEventSigning? = nil,
     now: Date = Date()
   ) -> KuzzPushNotificationResolver {
     let configuration = URLSessionConfiguration.ephemeral
@@ -722,6 +769,7 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
       loadCommunitiesData: { communitiesData },
       loadPrivateKey: { privateKeys[$0] },
       loadPresentationCacheData: { presentationCacheData },
+      deviceSigner: { deviceSigner },
       now: { now }
     )
   }

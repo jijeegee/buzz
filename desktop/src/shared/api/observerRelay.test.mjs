@@ -2,61 +2,32 @@ import assert from "node:assert/strict";
 import test, { mock } from "node:test";
 
 import { relayClient } from "./relayClient.ts";
+import { meLive } from "./relayMeLive.ts";
 import { subscribeToAgentObserverFrames } from "./observerRelay.ts";
 
-// Regression guard: the observer subscription MUST request a replay-capable
-// limit. With `limit: 0` the relay truncates reconnect replay to zero rows
-// (NIP-01: limit 0 = no historical rows), so a turn_started missed during a
-// network drop never re-delivers and the active-agents badge never appears.
-test("subscribeToAgentObserverFrames requests a replay-capable limit with a since window", () => {
+// docs/message-sync.md#agent-activity: frames are never stored, so the
+// observer asks for no history and listens on the addressed account bundle.
+test("subscribeToAgentObserverFrames listens live-only through the account bundle", async () => {
   const calls = [];
-  mock.method(relayClient, "subscribeInteractive", (filter) => {
-    calls.push(filter);
-    return () => {};
+  const stop = async () => {};
+  mock.method(meLive, "subscribe", async (filter, onEvent) => {
+    calls.push({ filter, onEvent });
+    return stop;
   });
+  mock.method(relayClient, "subscribeInteractive", () =>
+    assert.fail("the observer must not open a REQ of its own"),
+  );
+  const onEvent = () => {};
 
-  subscribeToAgentObserverFrames("owner-pubkey", () => {});
+  const result = await subscribeToAgentObserverFrames("owner-pubkey", onEvent);
 
+  assert.equal(result, stop);
   assert.equal(calls.length, 1);
-  assert.equal(
-    calls[0].limit,
-    1000,
-    "observer sub must use limit:1000 so reconnect replay can recover missed frames — limit:0 drops the gap",
-  );
-  assert.ok(
-    calls[0].since && calls[0].since > 0,
-    "observer sub must carry `since` so launch history stays suppressed — only the reconnect replay window is backfilled",
-  );
-
-  mock.reset();
-});
-
-// Regression guard: the live subscription lookback MUST be at least 300s so
-// session/prompt frames from long-running active turns are captured when the
-// desktop subscribes mid-turn. This test mocks Date.now() to a fixed epoch and
-// asserts the computed `since` equals exactly (now/1000 - 300). It MUST fail
-// if OBSERVER_LIVE_LOOKBACK_SECS is reverted to 0 or less than 300.
-test("subscribeToAgentObserverFrames since is at least 300s before now", () => {
-  // Pin Date.now() to a known value so the assertion is deterministic.
-  const FIXED_NOW_MS = 1_750_000_000_000;
-  const expectedSince = Math.floor(FIXED_NOW_MS / 1_000) - 300;
-
-  mock.method(Date, "now", () => FIXED_NOW_MS);
-
-  const calls = [];
-  mock.method(relayClient, "subscribeInteractive", (filter) => {
-    calls.push(filter);
-    return () => {};
+  assert.deepEqual(calls[0].filter, {
+    kinds: [24200],
+    "#p": ["owner-pubkey"],
+    limit: 0,
   });
-
-  subscribeToAgentObserverFrames("owner-pubkey", () => {});
-
-  assert.equal(calls.length, 1);
-  assert.equal(
-    calls[0].since,
-    expectedSince,
-    `observer since must be now-300s (${expectedSince}) so session/prompt frames from long-running turns are captured — zero lookback recreates the lifecycle-only turn bug`,
-  );
-
+  assert.equal(calls[0].onEvent, onEvent);
   mock.reset();
 });

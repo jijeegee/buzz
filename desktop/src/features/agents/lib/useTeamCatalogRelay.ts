@@ -7,6 +7,7 @@ import {
 } from "@/features/agents/lib/teamCatalogRelay";
 import { personasQueryKey, teamsQueryKey } from "@/features/agents/hooks";
 import { relayClient } from "@/shared/api/relayClient";
+import { communityLive } from "@/shared/api/relayCommunityLive";
 import { addTeamFromCatalog, setTeamShared } from "@/shared/api/tauriTeams";
 import type {
   AgentTeam,
@@ -50,8 +51,9 @@ export function useTeamCatalogLiveUpdates(communityId: string | null): void {
       });
     };
 
-    void relayClient
-      .subscribeLive({ kinds: [KIND_TEAM_CATALOG], limit: 0 }, invalidate)
+    // Rides the community bundle REQ: opening Agents adds no REQ.
+    void communityLive
+      .subscribe({ kinds: [KIND_TEAM_CATALOG], limit: 0 }, invalidate)
       .then((unsubscribe) => {
         if (disposed) {
           void unsubscribe();

@@ -72,6 +72,7 @@ export function useChannelRouteTarget({
   setThreadScrollTargetId,
   targetJumpOnly = false,
   targetMessageId,
+  targetThreadRootId = null,
   timelineMessages,
 }: {
   activeChannel: Channel | null;
@@ -87,6 +88,8 @@ export function useChannelRouteTarget({
   /** Only scroll to and highlight a root target; keep its reply panel shut. */
   targetJumpOnly?: boolean;
   targetMessageId: string | null;
+  /** The thread the target is a reply in, when the link names it. */
+  targetThreadRootId?: string | null;
   timelineMessages: TimelineMessage[];
 }) {
   const timelineMessageById = React.useMemo(
@@ -101,16 +104,23 @@ export function useChannelRouteTarget({
     targetTimelineMessage,
   );
   const handledThreadRouteTargetRef = React.useRef<string | null>(null);
+  // The link whose thread was opened by its root id before the target and its
+  // ancestors were loaded; they fill in the expanded branch when they arrive.
+  const openedByRootRef = React.useRef<string | null>(null);
 
   React.useEffect(() => {
     if (!targetMessageId) {
       handledThreadRouteTargetRef.current = null;
+      openedByRootRef.current = null;
       return;
     }
 
     const targetKey = `${activeChannelId ?? "none"}:${targetMessageId}`;
     if (handledThreadRouteTargetRef.current !== targetKey) {
       handledThreadRouteTargetRef.current = null;
+    }
+    if (openedByRootRef.current !== targetKey) {
+      openedByRootRef.current = null;
     }
 
     if (
@@ -122,9 +132,34 @@ export function useChannelRouteTarget({
     }
 
     const targetMessage = timelineMessageById.get(targetMessageId) ?? null;
+    const isPlaceholder =
+      targetMessage !== null && isSearchHitPlaceholder(targetMessage.tags);
+    // A link that names the reply's thread opens it by its root id at once,
+    // never waiting for the reply or its ancestors
+    // (docs/message-sync.md#opening-a-thread-from-its-root-id). A reply also
+    // sent to the group is no exception, so the result never depends on
+    // whether the reply is cached; the main timeline scrolls to it as well.
+    if (
+      targetThreadRootId &&
+      targetThreadRootId !== targetMessageId &&
+      openedByRootRef.current === null
+    ) {
+      if (!requireThreadEditResolution()) {
+        return;
+      }
+      closeAgentSession();
+      setProfilePanelPubkey(null, { replace: true });
+      setEditTargetId(null);
+      setOpenThreadHeadId(targetThreadRootId, { replace: true });
+      setThreadReplyTargetId(targetThreadRootId);
+      setThreadScrollTargetId(targetMessageId);
+      setExpandedThreadReplyIds(new Set());
+      openedByRootRef.current = targetKey;
+    }
+
     // A search-hit placeholder has no thread tags yet; acting on it would open
     // a reply's own empty panel. Wait for the relay copy to replace it.
-    if (!targetMessage || isSearchHitPlaceholder(targetMessage.tags)) {
+    if (!targetMessage || isPlaceholder) {
       return;
     }
 
@@ -150,7 +185,12 @@ export function useChannelRouteTarget({
       return;
     }
 
-    if (isBroadcastReply(targetMessage.tags ?? [])) {
+    // Without a thread in the link, a reply also sent to the group stays in
+    // the main timeline. With one, its panel is already open on the root.
+    if (
+      isBroadcastReply(targetMessage.tags ?? []) &&
+      openedByRootRef.current !== targetKey
+    ) {
       return;
     }
 
@@ -159,6 +199,13 @@ export function useChannelRouteTarget({
       timelineMessageById,
     );
     if (!routeTarget) {
+      return;
+    }
+    if (openedByRootRef.current === targetKey) {
+      // Already open on its root: only expand the branch down to the reply.
+      setExpandedThreadReplyIds(routeTarget.expandedReplyIds);
+      setThreadScrollTargetId(targetMessageId);
+      handledThreadRouteTargetRef.current = targetKey;
       return;
     }
     if (!requireThreadEditResolution()) {
@@ -188,6 +235,7 @@ export function useChannelRouteTarget({
     setThreadScrollTargetId,
     targetJumpOnly,
     targetMessageId,
+    targetThreadRootId,
     timelineMessageById,
   ]);
 

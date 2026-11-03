@@ -14,6 +14,75 @@ import 'package:kuzz/shared/push/push_subscription.dart';
 import '../community/community_storage_test.dart';
 
 void main() {
+  group('push on by default at sign-in', () {
+    Future<Community> signIn(
+      Community community, {
+      required bool supported,
+    }) async {
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          kuzzPushBuildSupportedProvider.overrideWithValue(supported),
+        ],
+      );
+      addTearDown(container.dispose);
+      await container.read(authProvider.future);
+      await container
+          .read(authProvider.notifier)
+          .authenticateWithCommunity(community);
+      return (await storage.loadAll()).single;
+    }
+
+    test('a key account starts with push on', () async {
+      final saved = await signIn(
+        Community.create(
+          name: 'Team',
+          relayUrl: 'https://relay.test',
+          nsec: nostr.Keys.generate().nsec,
+        ),
+        supported: true,
+      );
+      expect(saved.pushNotificationsEnabled, isTrue);
+      expect(saved.pushInboxToken, isNotNull);
+      expect(saved.pushChoice, isNull);
+    });
+
+    test('an explicit off is kept', () async {
+      final saved = await signIn(
+        Community.create(
+          name: 'Team',
+          relayUrl: 'https://relay.test',
+          nsec: nostr.Keys.generate().nsec,
+        ).copyWith(pushChoice: KuzzPushChoice.off),
+        supported: true,
+      );
+      expect(saved.pushNotificationsEnabled, isFalse);
+    });
+
+    test('a token account and a build without push stay off', () async {
+      final token = await signIn(
+        Community.create(
+          name: 'Team',
+          relayUrl: 'https://relay.test',
+          pubkey: 'a' * 64,
+          tokenAuth: true,
+        ),
+        supported: true,
+      );
+      expect(token.pushNotificationsEnabled, isFalse);
+      final unsupported = await signIn(
+        Community.create(
+          name: 'Team',
+          relayUrl: 'https://relay.test',
+          nsec: nostr.Keys.generate().nsec,
+        ),
+        supported: false,
+      );
+      expect(unsupported.pushNotificationsEnabled, isFalse);
+    });
+  });
+
   test(
     'startup preserves Google-backed pubkey metadata when its local key is missing',
     () async {

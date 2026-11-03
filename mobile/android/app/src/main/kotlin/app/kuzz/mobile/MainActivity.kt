@@ -131,7 +131,6 @@ class MainActivity : FlutterFragmentActivity() {
     private var ageSignalChannel: MethodChannel? = null
     private val ageSignalRequest = AgeSignalRequest()
     private var huddleMediaPlugin: HuddleMediaPlugin? = null
-    private var deviceKeyPlugin: DeviceKeyPlugin? = null
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -162,11 +161,6 @@ class MainActivity : FlutterFragmentActivity() {
 
         huddleMediaPlugin = HuddleMediaPlugin(
             this,
-            flutterEngine.dartExecutor.binaryMessenger,
-        )
-
-        deviceKeyPlugin = DeviceKeyPlugin(
-            applicationContext,
             flutterEngine.dartExecutor.binaryMessenger,
         )
 
@@ -236,8 +230,6 @@ class MainActivity : FlutterFragmentActivity() {
         ageSignalRequest.retire()
         huddleMediaPlugin?.dispose()
         huddleMediaPlugin = null
-        deviceKeyPlugin?.dispose()
-        deviceKeyPlugin = null
         super.onDestroy()
     }
 

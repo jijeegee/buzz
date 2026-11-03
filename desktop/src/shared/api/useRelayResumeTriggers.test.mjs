@@ -1,7 +1,10 @@
 import assert from "node:assert/strict";
 import { afterEach, describe, it } from "node:test";
 
-import { installRelayResumeTriggers } from "./useRelayResumeTriggers.ts";
+import {
+  installRelayResumeTriggers,
+  installUserStreamNetworkWatch,
+} from "./useRelayResumeTriggers.ts";
 
 const originalDocument = globalThis.document;
 const originalWindow = globalThis.window;
@@ -137,5 +140,34 @@ describe("relay resume triggers", () => {
     assert.equal(attempts, 0);
     assert.equal(stub.documentListeners.size, 0);
     assert.equal(stub.windowListeners.size, 0);
+  });
+});
+
+describe("user stream network watch", () => {
+  it("reports only a real change of network types", () => {
+    const events = installEventStub();
+    let types = ["wifi"];
+    let changes = 0;
+    const stop = installUserStreamNetworkWatch(
+      () => {
+        changes += 1;
+      },
+      () => types,
+    );
+    events.emitWindow("online");
+    assert.equal(changes, 0, "the state at start and a repeat are no change");
+    types = [];
+    events.emitWindow("offline");
+    assert.equal(changes, 0, "no network is no change");
+    types = ["wifi"];
+    events.emitWindow("online");
+    assert.equal(changes, 1, "back from no network is a change");
+    types = ["ethernet", "wifi"];
+    events.emitWindow("online");
+    types = ["wifi", "ethernet"];
+    events.emitWindow("online");
+    assert.equal(changes, 2, "a set compares regardless of order");
+    stop();
+    assert.equal(events.windowListeners.size, 0);
   });
 });

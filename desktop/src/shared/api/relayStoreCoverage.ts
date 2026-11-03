@@ -16,6 +16,7 @@ import {
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
+import { namesUserStream } from "@/shared/api/userStreamRules";
 
 /** Same margin as reconnect repair: relay future tolerance plus storage fence. */
 export const STORE_RESUME_LOOKBACK_SECS = 900 + 960 + 5;
@@ -31,6 +32,28 @@ const STORE_LIVE_POLL_MS = 100;
 
 type LiveSubscription = Extract<RelaySubscription, { mode: "live" }>;
 
+/** Rule-W rows riding a span: each room's snapshot seq, under `epoch`. */
+export type StreamSeqWrite = { epoch: string; seqs: Record<string, number> };
+
+/**
+ * What the user stream adds to a chunk catch-up that starts after its
+ * shadow EOSE on the same connection (docs/message-sync.md#counters):
+ * rule-W rows for the span, and the walk's rows when it completes.
+ */
+export type StreamCatchUpVouch = {
+  seq: StreamSeqWrite | null;
+  /** The walk ended; `events` are its rows when it completed. */
+  ended: (completed: boolean, events: RelayEvent[]) => void;
+};
+let streamVouch:
+  | ((roomIds: string[], liveAt: number) => StreamCatchUpVouch | null)
+  | null = null;
+
+/** The shadow stream's hook into chunk catch-ups (`null`: none). */
+export function setStreamCatchUpVouch(next: typeof streamVouch) {
+  streamVouch = next;
+}
+
 type CoverageDeps = {
   nowSecs: () => number;
   nowMs: () => number;
@@ -41,12 +64,13 @@ type CoverageDeps = {
    * backend took when subscription `subId` reached EOSE, or one taken now.
    */
   scope: (subId?: string) => Promise<string | null>;
-  /** Refused when `scope` is no longer current. */
+  /** Refused when `scope` is no longer current; rule-W rows with `seq`. */
   extend: (
     roomIds: string[],
     from: number,
     to: number,
     scope: string,
+    seq?: StreamSeqWrite,
   ) => Promise<void>;
   resumePoints: (
     roomIds: string[],
@@ -77,13 +101,22 @@ const defaultDeps: CoverageDeps = {
   },
   scope: (subId) =>
     invokeTauri<string | null>("message_store_scope", { subId: subId ?? null }),
-  extend: (roomIds, from, to, scope) =>
-    invokeTauri<void>("message_store_extend_coverage", {
-      roomIds,
-      from,
-      to,
-      scope,
-    }),
+  extend: (roomIds, from, to, scope, seq) =>
+    seq
+      ? invokeTauri<void>("message_store_extend_stream_coverage", {
+          roomIds,
+          from,
+          to,
+          scope,
+          epoch: seq.epoch,
+          seqs: seq.seqs,
+        })
+      : invokeTauri<void>("message_store_extend_coverage", {
+          roomIds,
+          from,
+          to,
+          scope,
+        }),
   resumePoints: async (roomIds, before) => {
     const points = await invokeTauri<Record<string, number> | null>(
       "message_store_resume_points",
@@ -105,6 +138,13 @@ const liveSubscriptions = new Set<LiveSubscription>();
 const settling = new WeakMap<object, Promise<unknown>>();
 /** A reconnect repair in flight per REQ: resolved when it completes. */
 const repairs = new WeakMap<LiveSubscription, () => void>();
+/**
+ * The user stream's coverage while it carries rooms in live/gated
+ * (docs/message-sync.md#user-stream): a stand-in REQ whose `storeCoverage`
+ * is cleared when the stream stops, so tokens taken under it stop holding.
+ */
+let stream: { subscription: LiveSubscription; rooms: Set<string> } | null =
+  null;
 
 /** Replace the store bridge (tests). Returns the restore function. */
 export function setStoreCoverageDeps(next: Partial<CoverageDeps>) {
@@ -120,11 +160,17 @@ function record(
   from: number,
   to: number,
   scope: Promise<string | null>,
+  seq?: StreamSeqWrite,
 ) {
+  if (roomIds.length === 0) return;
   // No scope (signed out at the time): nothing is recorded.
   void scope
     .then((current) =>
-      current === null ? undefined : deps.extend(roomIds, from, to, current),
+      current === null
+        ? undefined
+        : seq
+          ? deps.extend(roomIds, from, to, current, seq)
+          : deps.extend(roomIds, from, to, current),
     )
     .catch(() => {});
 }
@@ -138,6 +184,7 @@ function currentScope() {
 export function storeCoveredRooms(filter: RelaySubscriptionFilter) {
   const roomIds = filter["#h"];
   if (
+    namesUserStream(filter) ||
     !Array.isArray(roomIds) ||
     roomIds.length === 0 ||
     roomIds.length > MAX_EXPLICIT_CHANNEL_VALUES ||
@@ -170,9 +217,11 @@ export function noteStoreLiveEose(
   if (subscription.reconnectReplay?.generation !== generation) {
     // Stops once this REQ's coverage is retired or replaced.
     const live = () => subscription.storeCoverage === coverage;
+    // Rooms the stream carries are caught up by the stream (`chunkCatchUp`).
+    const own = roomIds.filter((roomId) => !streamCarries(roomId));
     settling.set(
       coverage,
-      catchUpFromStore(roomIds, liveAt, scope, live).catch(() => {}),
+      catchUpFromStore(own, liveAt, scope, live).catch(() => {}),
     );
   } else if (!subscription.reconnectReplay.repairDone) {
     // A waiter on an earlier EOSE of this REQ stops waiting.
@@ -244,6 +293,10 @@ export type StoreLiveCoverage = {
  */
 export function storeLiveCoverage(roomId: string): StoreLiveCoverage[] {
   const live: StoreLiveCoverage[] = [];
+  const streamCoverage = stream?.subscription.storeCoverage;
+  if (stream && streamCoverage && stream.rooms.has(roomId)) {
+    live.push({ subscription: stream.subscription, coverage: streamCoverage });
+  }
   for (const subscription of liveSubscriptions) {
     const coverage = subscription.storeCoverage;
     if (!coverage) {
@@ -314,25 +367,148 @@ export async function catchUpFromStore(
   // the relay stamped after liveAt but sent before EOSE are fetched too.
   let until: number | undefined;
   let beforeId: string | undefined;
+  // Taken before the first page (rule W: it started after the stream EOSE).
+  const vouch = streamVouch?.(covered, liveAt) ?? null;
+  const walked: RelayEvent[] = [];
+  const end = (completed: boolean) => {
+    vouch?.ended(completed, walked);
+    return completed;
+  };
   for (let page = 0; page < STORE_CATCH_UP_MAX_PAGES; page++) {
     if (isRateLimited()) await waitForRateLimit();
-    if (!live()) return false;
-    const events = await deps.requestPage({
-      channelIds: covered,
-      since,
-      limit: STORE_CATCH_UP_PAGE_LIMIT,
-      until,
-      beforeId,
-    });
+    if (!live()) return end(false);
+    let events: RelayEvent[];
+    try {
+      events = await deps.requestPage({
+        channelIds: covered,
+        since,
+        limit: STORE_CATCH_UP_PAGE_LIMIT,
+        until,
+        beforeId,
+      });
+    } catch (error) {
+      end(false);
+      throw error;
+    }
+    if (vouch) walked.push(...events);
     const terminal = events.at(-1);
     if (events.length < STORE_CATCH_UP_PAGE_LIMIT || !terminal) {
-      if (!live()) return false;
-      record(covered, since, liveAt, scope);
-      return true;
+      if (!live()) return end(false);
+      record(covered, since, liveAt, scope, vouch?.seq ?? undefined);
+      return end(true);
     }
-    if (terminal.created_at === until && terminal.id === beforeId) return false;
+    if (terminal.created_at === until && terminal.id === beforeId) {
+      return end(false);
+    }
     until = terminal.created_at;
     beforeId = terminal.id;
   }
-  return false;
+  return end(false);
+}
+
+/**
+ * The stream's accepted live/gated EOSE at `liveAt`: it carries `rooms`
+ * (kept by reference: 44100/44101 change it), in memory only. A room's
+ * stream span `[L, …]` is recorded once its catch-up batch completed
+ * (`spanned`), never for a room whose catch-up was cut short
+ * (docs/message-sync.md#catch-up-at-the-stream-eose).
+ * `settled` is its catch-up, which the preload wait waits for.
+ */
+export function noteStreamLiveEose({
+  generation,
+  liveAt,
+  rooms,
+  scope,
+}: {
+  generation: number;
+  liveAt: number;
+  rooms: Set<string>;
+  scope: Promise<string | null>;
+}) {
+  endStreamCoverage();
+  const coverage = { generation, liveAt, markedAt: liveAt, scope };
+  const subscription: LiveSubscription = {
+    mode: "live",
+    filter: { kinds: [...CHANNEL_EVENT_KINDS], limit: 0 },
+    onEvent: () => {},
+    storeCoverage: coverage,
+  };
+  stream = { subscription, rooms };
+  /** Carried room -> when the stream began carrying it. */
+  const starts = new Map<string, number>();
+  /** Handed rooms whose catch-up at the EOSE is not done: no span yet. */
+  const pending = new Set<string>();
+  /** Carried rooms whose stream span is in the store. */
+  const spanned = new Set<string>();
+  /** `[start, to]` for each of `roomIds`, grouped by start. */
+  const recordFrom = (roomIds: Iterable<string>, to: number) => {
+    const byStart = new Map<number, string[]>();
+    for (const roomId of roomIds) {
+      const start = starts.get(roomId) ?? liveAt;
+      byStart.set(start, [...(byStart.get(start) ?? []), roomId]);
+    }
+    for (const [start, ids] of byStart) {
+      record(ids, start, Math.max(start, to), scope);
+    }
+  };
+  return {
+    /** Rooms handed to the stream once their resume points are read. */
+    hand: (roomIds: string[]) => {
+      if (subscription.storeCoverage !== coverage) return;
+      for (const roomId of roomIds) {
+        rooms.add(roomId);
+        pending.add(roomId);
+        if (!starts.has(roomId)) starts.set(roomId, liveAt);
+      }
+    },
+    /** Rooms whose catch-up is done (walked, or skipped in gated). */
+    span: (roomIds: readonly string[]) => {
+      for (const roomId of roomIds) pending.delete(roomId);
+      // After a CLOSED no span is written (the fallback walks instead).
+      if (subscription.storeCoverage !== coverage) return;
+      const done = roomIds.filter(
+        (roomId) => rooms.has(roomId) && !spanned.has(roomId),
+      );
+      for (const roomId of done) spanned.add(roomId);
+      recordFrom(done, coverage.markedAt);
+    },
+    /** The catch-up the preload waits for. */
+    settle: (settled: Promise<unknown>) => settling.set(coverage, settled),
+    /** A stream frame: extends the spans at most once per minute. */
+    extend: (to: number) => {
+      if (subscription.storeCoverage !== coverage) return;
+      if (to - coverage.markedAt < STORE_MARK_INTERVAL_SECS) return;
+      coverage.markedAt = to;
+      recordFrom(
+        [...spanned].filter((roomId) => rooms.has(roomId)),
+        to,
+      );
+    },
+    /**
+     * A room the stream starts carrying (44100): its span from `at`, once
+     * its catch-up at the EOSE is done when it still has one.
+     */
+    carry: (roomId: string, at: number) => {
+      if (subscription.storeCoverage !== coverage) return;
+      rooms.add(roomId);
+      starts.set(roomId, at);
+      spanned.delete(roomId);
+      if (pending.has(roomId)) return;
+      spanned.add(roomId);
+      record([roomId], at, at, scope);
+    },
+  };
+}
+
+/** Whether the stream carries `roomId` now (its catch-up is the stream's). */
+export function streamCarries(roomId: string) {
+  return (
+    stream?.subscription.storeCoverage !== undefined && stream.rooms.has(roomId)
+  );
+}
+
+/** The stream stopped (CLOSED, socket end): its spans stop growing. */
+export function endStreamCoverage() {
+  if (stream) stream.subscription.storeCoverage = undefined;
+  stream = null;
 }

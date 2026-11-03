@@ -16,6 +16,7 @@ import {
   type SubscriptionEventBufferItem,
 } from "@/shared/api/relayClientShared";
 import type { RelayEvent } from "@/shared/api/types";
+import { busyRetryDelaySecs } from "@/shared/api/userStreamRules";
 
 const RETRY_BASE_DELAY_MS = 1_000;
 const RETRY_MAX_DELAY_MS = 30_000;
@@ -26,6 +27,57 @@ export function clearClosedRetry(subscription: LiveSubscription) {
   if (subscription.closedRetryTimeout === undefined) return;
   window.clearTimeout(subscription.closedRetryTimeout);
   subscription.closedRetryTimeout = undefined;
+}
+
+/** The relay refused a history REQ to protect a stream connection. */
+export function isBusyClosed(message: string) {
+  return message.trim() === "error: busy";
+}
+
+/** The key `subscription` is held under now (busy retries re-key it). */
+export function keyOf<T>(subscriptions: Map<string, T>, subscription: T) {
+  for (const [subId, held] of subscriptions) {
+    if (held === subscription) return subId;
+  }
+  return null;
+}
+
+/**
+ * `error: busy` on a history or first-event REQ: send it again on a fresh
+ * sub id after 1, 2, 4, 8, 16, 30, 30… s, until the caller's own timeout
+ * (still armed, it finds the subscription by value) gives up. Frames of the
+ * refused id that arrive after its CLOSED belong to nobody.
+ */
+export function retryBusyRequest<T, S extends T & { busyAttempt?: number }>({
+  subscriptions,
+  subId,
+  subscription,
+  prefix,
+  send,
+  onSendFailed,
+}: {
+  subscriptions: Map<string, T>;
+  subId: string;
+  subscription: S;
+  prefix: string;
+  send: (subId: string) => Promise<void>;
+  onSendFailed: (error: unknown) => void;
+}) {
+  const attempt = subscription.busyAttempt ?? 0;
+  subscription.busyAttempt = attempt + 1;
+  const retryId = `${prefix}-${crypto.randomUUID()}`;
+  subscriptions.delete(subId);
+  subscriptions.set(retryId, subscription);
+  const isOwned = () => subscriptions.get(retryId) === subscription;
+  window.setTimeout(() => {
+    if (!isOwned()) return;
+    void send(retryId).catch((error) => {
+      if (!isOwned()) return;
+      subscriptions.delete(retryId);
+      onSendFailed(error);
+    });
+  }, busyRetryDelaySecs(attempt) * 1000);
+  return retryId;
 }
 
 /** A live REQ stops receiving (removed or its socket gone). */
@@ -49,6 +101,20 @@ export function handleRelayClosed({
 }) {
   const subscription = subscriptions.get(subId);
   if (!subscription) return;
+  if (subscription.mode !== "live" && isBusyClosed(message)) {
+    retryBusyRequest({
+      subscriptions,
+      subId,
+      subscription,
+      prefix: subscription.mode,
+      send: (retryId) => sendReq(retryId, subscription.filter),
+      onSendFailed: () => {
+        window.clearTimeout(subscription.timeout);
+        subscription.reject(new Error(message));
+      },
+    });
+    return;
+  }
   if (subscription.mode !== "live") {
     // Classify before acting so a `rate-limited:` CLOSED arms the gate for
     // concurrent ops regardless of whether this specific sub can be retried.
@@ -161,6 +227,8 @@ function recoverLiveSubscriptionFromClosed({
     subscription.onRemoved?.();
     return;
   }
+  // Its retry is the next REQ in flight and carries the newest filters.
+  subscription.multi?.lost();
 
   if (subscription.closedRetryTimeout !== undefined) return;
 
@@ -307,6 +375,7 @@ export function handleSubscriptionEose({
     subscription.resolveReady = undefined;
     subscription.closedRetryAttempt = 0;
     clearClosedRetry(subscription);
+    subscription.multi?.settled();
     return;
   }
   window.clearTimeout(subscription.timeout);

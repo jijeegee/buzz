@@ -7,14 +7,21 @@ import 'package:fake_async/fake_async.dart';
 import 'package:flutter/widgets.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/channels/channel_live_events.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
+import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/unread_badge/observed_unread_event.dart';
 import 'package:kuzz/features/channels/room_goals_provider.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/features/goals/goal_provider.dart';
+import 'package:kuzz/shared/message_store/message_store.dart';
+import 'package:kuzz/shared/message_store/message_store_provider.dart';
 import 'package:kuzz/shared/read_state/read_state_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 part 'channels_provider_live_cases.dart';
+part 'channels_provider_push_cases.dart';
 part 'channels_provider_terminal_cases.dart';
 
 /// Tests for [ChannelsNotifier] in the pure-Nostr world.
@@ -944,6 +951,52 @@ void main() {
     );
   });
 
+  // docs/message-sync.md#handoff: the stream EOSE's hand-off re-syncs the
+  // chunks; an unread catch-up it retires runs again with that sync.
+  for (final handoff in [false, true]) {
+    test('reconnect unread catch-up lands with a stream hand-off mid-flight: '
+        '$handoff', () async {
+      final session = _FakeRelaySession(
+        memberships: [_membership(_channelA, myPk)],
+        metadata: [_meta(id: _channelA, name: 'joined-a')],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      // A message sent while the phone was offline.
+      session.recentMessages = const [
+        NostrEvent(
+          id: 'gap-in-a',
+          pubkey: 'alice',
+          createdAt: 50,
+          kind: 9,
+          tags: [
+            ['h', _channelA],
+            ['p', myPk],
+          ],
+          content: 'sent while offline',
+          sig: 'sig',
+        ),
+      ];
+      session.pauseNextUnreadCatchUpQuery();
+      session.setStatus(SessionStatus.reconnecting);
+      session.setStatus(SessionStatus.connected);
+      await session.nextUnreadCatchUpQueryStarted;
+      final notifier = container.read(channelsProvider.notifier);
+      if (handoff) {
+        // The stream EOSE lands while the backstop's catch-up is parked.
+        notifier.debugStreamCarried({_channelA});
+        await _settle();
+      }
+      session.resumePausedUnreadCatchUpQuery();
+      await _settle();
+      expect(notifier.latestObservedByChannel, {_channelA: 50});
+      expect(notifier.observedUnreadEventsByChannel[_channelA]?.keys, [
+        'gap-in-a',
+      ]);
+    });
+  }
+
   test('identity switch discards a parked unread catch-up', () async {
     final session = _FakeRelaySession(
       memberships: const [],
@@ -1610,6 +1663,7 @@ void main() {
 
   _liveSubscriptionTests();
   _terminalSubscriptionTests();
+  _pushFoldTests();
 
   test('retains channel-list member snapshots for immediate reuse', () async {
     final joinedAt = DateTime.fromMillisecondsSinceEpoch(1000, isUtc: true);
@@ -3150,11 +3204,32 @@ class _FakeRelaySession extends RelaySessionNotifier {
     }).toList();
   }
 
+  /// Status callbacks of the chunks opened with [subscribeWithStatus].
+  final List<void Function(RelaySubscriptionStatus)> statusListeners = [];
+
+  void reportReady() {
+    for (final listener in List.of(statusListeners)) {
+      listener(RelaySubscriptionStatus.ready);
+    }
+  }
+
+  @override
+  Future<void Function()> subscribeWithStatus(
+    NostrFilter filter,
+    void Function(NostrEvent) onEvent, {
+    void Function(String message)? onClosed,
+    required void Function(RelaySubscriptionStatus status) onStatusChanged,
+  }) {
+    statusListeners.add(onStatusChanged);
+    return subscribe(filter, onEvent, onClosed: onClosed);
+  }
+
   @override
   Future<void Function()> subscribe(
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     totalSubscribeCount++;
     subscribeFilters.add(filter);

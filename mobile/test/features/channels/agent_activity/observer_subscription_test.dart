@@ -7,6 +7,7 @@ import 'package:nostr/nostr.dart' as nostr;
 import 'package:kuzz/features/channels/agent_activity/observer_models.dart';
 import 'package:kuzz/features/channels/agent_activity/observer_subscription.dart';
 import 'package:kuzz/shared/crypto/nip44.dart';
+import 'package:kuzz/shared/relay/me_live_bundle.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 void main() {
@@ -113,14 +114,13 @@ void main() {
       // Verify the subscription filter shape.
       expect(relaySession.filters, hasLength(1));
       final filter = relaySession.filters.first;
+      // Live only and no history: frames are never stored, and the filter
+      // rides the addressed account bundle (docs/message-sync.md).
       expect(filter.kinds, [EventKind.agentObserverFrame]);
-      expect(filter.limit, observerLiveLimit);
-      expect(filter.tags['#p'], contains(myPubkey));
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      expect(
-        filter.since,
-        inInclusiveRange(now - observerLiveLookbackSeconds - 5, now),
-      );
+      expect(filter.limit, 0);
+      expect(filter.since, isNull);
+      expect(filter.tags['#p'], [myPubkey]);
+      expect(meScopeOf(filter)?.kind, MeScopeKind.addressed);
     },
   );
 
@@ -688,6 +688,7 @@ class _RecordingRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     filters.add(filter);
     _listeners.add(onEvent);

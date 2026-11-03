@@ -25,6 +25,13 @@ const roomMarksSchema = [
       'history_at INTEGER NOT NULL DEFAULT 0)',
   'CREATE INDEX IF NOT EXISTS targets_id ON targets(id)',
   'CREATE INDEX IF NOT EXISTS summaries_room ON summaries(room)',
+  // When (this device's clock, unix seconds) a room was last forgotten: a
+  // pushed row fetched before then is from the membership it ended
+  // (docs/message-sync.md#push-inbox).
+  'CREATE TABLE IF NOT EXISTS room_forgot(room TEXT PRIMARY KEY, at INTEGER NOT NULL)',
+  // Rows only the push inbox wrote: no room or thread draws them until the
+  // relay's copy arrives.
+  'CREATE TABLE IF NOT EXISTS pushed_rows(id TEXT PRIMARY KEY)',
 ];
 
 /// Rooms forgotten per transaction; between chunks other work runs, so a
@@ -192,7 +199,7 @@ const _everyRow = 0x7fffffffffffffff;
 /// room-less overlays (reactions, deletions) aimed only at them (one also
 /// naming a row that stays is kept, or that row would lose it), their thread
 /// summaries (every summary of the room when null) and all the room's
-/// coverage.
+/// coverage. Stamps the room's `room_forgot` with now.
 Future<void> _forgetRoom(DatabaseExecutor db, String room, int? before) async {
   final until = before ?? _everyRow;
   await db.execute(
@@ -223,8 +230,16 @@ Future<void> _forgetRoom(DatabaseExecutor db, String room, int? before) async {
   await db.rawDelete(
     'DELETE FROM events WHERE id IN (SELECT id FROM purge_ids)',
   );
+  await db.rawDelete(
+    'DELETE FROM pushed_rows WHERE id IN (SELECT id FROM purge_ids)',
+  );
   await db.rawDelete('DELETE FROM purge_ids');
   await db.rawDelete('DELETE FROM coverage WHERE room = ?', [room]);
+  await db.rawDelete('DELETE FROM room_seq WHERE room = ?', [room]);
+  await db.rawInsert(
+    'INSERT OR REPLACE INTO room_forgot(room, at) VALUES (?, ?)',
+    [room, DateTime.now().millisecondsSinceEpoch ~/ 1000],
+  );
 }
 
 /// Forgets a room a list dropped and marks it left as of its newest stored

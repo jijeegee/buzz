@@ -40,7 +40,6 @@ export function useLiveHomeFeedActions(
     let disposers: Array<() => Promise<void>> = [];
     let retryTimer: ReturnType<typeof globalThis.setTimeout> | null = null;
     let retryAttempt = 0;
-    const since = Math.floor(Date.now() / 1_000);
 
     const disposeAll = (currentDisposers: Array<() => Promise<void>>) => {
       void Promise.allSettled(currentDisposers.map((dispose) => dispose()));
@@ -62,26 +61,32 @@ export function useLiveHomeFeedActions(
         return;
       }
 
+      // Live only: the home feed and reminders queries hold the history. Both
+      // ride the account bundle; a catch-up that may have missed events
+      // (onGap) refreshes them like a live event does.
+      const onReminder = () => {
+        handleLiveReminderEvent(normalizedPubkey);
+      };
       void Promise.allSettled([
         meLive.subscribe(
           {
             kinds: [...HOME_FEED_ACTION_KINDS],
             "#p": [normalizedPubkey],
-            limit: 50,
-            since,
+            limit: 0,
           },
           handleLiveHomeFeedEvent,
+          undefined,
+          { onGap: handleLiveHomeFeedEvent },
         ),
         meLive.subscribe(
           {
             authors: [normalizedPubkey],
             kinds: [KIND_EVENT_REMINDER],
-            limit: 50,
-            since,
+            limit: 0,
           },
-          () => {
-            handleLiveReminderEvent(normalizedPubkey);
-          },
+          onReminder,
+          undefined,
+          { onGap: onReminder },
         ),
       ]).then((results) => {
         const nextDisposers = results.flatMap((result) =>

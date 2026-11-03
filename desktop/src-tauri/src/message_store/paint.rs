@@ -20,6 +20,10 @@ use super::{global, read, read_thread, Lease, MessageStore};
 /// history).
 pub(crate) type RoomPaint = (Vec<Value>, Option<i64>);
 
+/// A thread's stored root (`None` when only a removal of it is stored) and
+/// whether a stored deletion removes it.
+pub(crate) type StoredRoot = (Option<Value>, bool);
+
 /// A thread's painted replies: `(rows newest first, next older cursor when
 /// more remain, complete from as for rooms)`.
 pub(crate) type ThreadPaint = (Vec<Value>, Option<(i64, String)>, Option<i64>);
@@ -126,6 +130,19 @@ impl MessageStore {
             Ok(Some((head.rows, head.next_cursor, complete)))
         })?
     }
+
+    /// `root` of `room` with its stored deletion, without waiting for queued
+    /// writes; `None` when neither it nor a removal of it is stored.
+    pub(crate) fn paint_thread_root(
+        &self,
+        lease: &Lease,
+        room: &str,
+        root: &str,
+    ) -> Option<StoredRoot> {
+        self.read(lease, "thread root", |conn| {
+            read_thread::thread_root(conn, room, root)
+        })?
+    }
 }
 
 /// `room`'s newest stored window for `relay_url` and `account`, to draw
@@ -155,4 +172,17 @@ pub(crate) fn paint_thread_head(
     let store = global()?;
     let lease = store.lease(relay_url, account)?;
     store.paint_thread_head(&lease, room, root, kinds, limit)
+}
+
+/// `root` of `room` for `relay_url` and `account` with its stored deletion,
+/// to draw a thread's top row before the relay answers.
+pub(crate) fn paint_thread_root(
+    relay_url: &str,
+    account: &str,
+    room: &str,
+    root: &str,
+) -> Option<StoredRoot> {
+    let store = global()?;
+    let lease = store.lease(relay_url, account)?;
+    store.paint_thread_root(&lease, room, root)
 }

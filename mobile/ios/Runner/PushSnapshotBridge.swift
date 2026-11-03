@@ -65,6 +65,13 @@ final class KuzzPushSnapshotBridge {
       }
       return true
     }
+    if call.method == "pushInboxRoot" {
+      // Where the notification extension keeps fetched events for the app
+      // (docs/message-sync.md#push-inbox). Nil without an App Group.
+      result(
+        containerURL()?.appendingPathComponent(PushInbox.folderName, isDirectory: true).path)
+      return true
+    }
     if call.method == "purgeAgeRestrictedNotifications" {
       purgeAgeRestrictedNotifications(result: result)
       return true

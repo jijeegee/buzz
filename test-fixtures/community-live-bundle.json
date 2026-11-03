@@ -1,0 +1,110 @@
+{
+  "_doc": "Community bundle rows (docs/message-sync.md#community-bundle) and the listener filters each app routes to them. Read by desktop relayCommunityBundle.test.mjs and mobile community_live_bundle_test.dart.",
+  "rows": [
+    {
+      "name": "emoji",
+      "filter": { "kinds": [30030], "#d": ["kuzz:custom-emoji"], "limit": 0 },
+      "desktop": true,
+      "mobile": false
+    },
+    {
+      "name": "status",
+      "filter": { "kinds": [30315], "#d": ["general"], "limit": 0 },
+      "desktop": true,
+      "mobile": true
+    },
+    {
+      "name": "catalogs",
+      "filter": { "kinds": [30175, 30178], "limit": 0 },
+      "desktop": true,
+      "mobile": false
+    },
+    {
+      "name": "presence",
+      "filter": { "kinds": [20001], "limit": 0 },
+      "authors": "the presence author set, omitted while empty",
+      "desktop": true,
+      "mobile": true
+    }
+  ],
+  "scopeCases": [
+    {
+      "filter": { "kinds": [30030], "#d": ["kuzz:custom-emoji"], "limit": 0 },
+      "desktop": "emoji",
+      "mobile": null
+    },
+    {
+      "filter": { "kinds": [30315], "#d": ["general"], "limit": 0 },
+      "desktop": "status",
+      "mobile": "status"
+    },
+    {
+      "filter": { "kinds": [30175], "limit": 0 },
+      "desktop": "catalogs",
+      "mobile": null
+    },
+    {
+      "filter": { "kinds": [30178], "limit": 0 },
+      "desktop": "catalogs",
+      "mobile": null
+    },
+    {
+      "filter": { "kinds": [30175, 30178], "limit": 0 },
+      "desktop": "catalogs",
+      "mobile": null
+    },
+    {
+      "filter": { "kinds": [20001], "limit": 0 },
+      "desktop": "presence",
+      "mobile": "presence"
+    },
+    {
+      "_why": "authors would silently get only the tracked set",
+      "filter": { "kinds": [20001], "authors": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "a different d tag",
+      "filter": { "kinds": [30315], "#d": ["music"], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "missing the row's d tag",
+      "filter": { "kinds": [30315], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "history",
+      "filter": { "kinds": [30315], "#d": ["general"], "limit": 50 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "since",
+      "filter": { "kinds": [20001], "since": 100, "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "kinds across two rows",
+      "filter": { "kinds": [30315, 20001], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "another tag",
+      "filter": { "kinds": [30175], "#p": ["aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    },
+    {
+      "_why": "a kind no row carries",
+      "filter": { "kinds": [30176], "limit": 0 },
+      "desktop": null,
+      "mobile": null
+    }
+  ]
+}

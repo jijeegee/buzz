@@ -24,6 +24,9 @@ import 'thread_head.dart';
 export 'clock_check.dart' show clockTrusted, noteServerDate;
 import 'stored_event.dart';
 
+part 'message_store_pushed.dart';
+part 'message_store_user_stream.dart';
+
 const messageStoreSchemaVersion = 1;
 
 /// Receives waiting for the writer, as on desktop: one submit is one input,
@@ -56,6 +59,7 @@ const _schema = [
   lo_at INTEGER NOT NULL, lo_id TEXT NOT NULL, hi_at INTEGER NOT NULL, hi_id TEXT NOT NULL)''',
   'CREATE INDEX IF NOT EXISTS coverage_stream ON coverage(room, stream)',
   'CREATE TABLE IF NOT EXISTS sync_state(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+  roomSeqSchema,
   ...purge.roomMarksSchema,
   snapshotSchema,
 ];
@@ -117,12 +121,24 @@ typedef StoreCapture = ({MessageStoreLease lease, int sequence});
 /// A coverage span, queued behind the events received before it; its
 /// capture began at [captured].
 class _CoverageOp {
-  const _CoverageOp(this.rooms, this.from, this.to, this.captured);
+  const _CoverageOp(
+    this.rooms,
+    this.from,
+    this.to,
+    this.captured, {
+    this.seqs,
+    this.epoch,
+  });
 
   final List<String> rooms;
   final int from;
   final int to;
   final int captured;
+
+  /// Rule-W rows riding the span, under the stream epoch they were vouched
+  /// in (docs/message-sync.md#watermark-room_seq).
+  final Map<String, int>? seqs;
+  final String? epoch;
 }
 
 /// Apply this membership list, fetched from capture [captured] on.
@@ -191,6 +207,10 @@ class _Writer {
   int queuedEvents = 0;
 
   void clearQueue() {
+    for (final input in queue) {
+      if (input is _PushedOp) input.drop();
+      if (input is _StoredMarkOp) input.complete(null);
+    }
     queue.clear();
     headOffset = 0;
     queuedEvents = 0;
@@ -201,10 +221,17 @@ class _Writer {
   /// The file's rooms, loaded with the first write after it opens.
   purge.StoredRooms? rooms;
 
+  /// Ids in `pushed_rows` (a superset is fine), loaded with the first write
+  /// after the file opens: a relay copy of one clears its mark.
+  Set<String>? pushedIds;
+
   Future<void> drained = Future.value();
   bool scheduled = false;
   bool lossy = false;
   bool stopped = false;
+
+  /// Tests: the next event transaction fails.
+  bool failNextForTest = false;
 
   /// When (unix seconds) something received was last not written: a span
   /// starting at or before then may miss it.
@@ -320,13 +347,43 @@ class MessageStore {
 
   void _enqueueEvents(_Writer writer, Object input, int count) {
     if (count == 0) return;
-    if (writer.queue.length >= _queueInputs ||
-        writer.queuedEvents + count > _queueEvents) {
+    if (!_queueHas(writer, count)) {
       writer.noteLoss();
     } else {
       writer.enqueue(input);
       writer.queuedEvents += count;
     }
+  }
+
+  bool _queueHas(_Writer writer, int count) =>
+      writer.queue.length < _queueInputs &&
+      writer.queuedEvents + count <= _queueEvents;
+
+  /// Queues [events] from the push inbox, fetched at [fetchedAt] (unix
+  /// seconds), for [lease]'s file (docs/message-sync.md#push-inbox). The
+  /// outcome says whether they were written; only then may the inbox files
+  /// go. A full queue drops them without marking the file lossy: they claim
+  /// no coverage.
+  Future<PushedWriteOutcome> submitPushed(
+    MessageStoreLease? lease,
+    Iterable<Object?> events, {
+    required int fetchedAt,
+  }) {
+    final writer = _writerFor(lease);
+    if (writer == null) return Future.value(PushedWriteOutcome.dropped);
+    final input = events.whereType<Map<String, dynamic>>().toList();
+    if (input.isEmpty) {
+      return Future.value(const PushedWriteOutcome.written({}));
+    }
+    final op = _PushedOp(input, fetchedAt);
+    if (!_queueHas(writer, input.length)) {
+      op.drop();
+    } else {
+      writer.enqueue(op);
+      writer.queuedEvents += input.length;
+      _schedule(writer);
+    }
+    return op.done.future;
   }
 
   /// Notes the signing key (NIP-11 `self`) of [lease]'s server: relay
@@ -374,12 +431,16 @@ class MessageStore {
     int from,
     int to, {
     int? captured,
+    Map<String, int>? seqs,
+    String? epoch,
   }) {
     if (rooms.isEmpty || from > to) return;
     final writer = _writerFor(lease);
     if (writer == null) return;
     final at = captured ?? writer.queued;
-    writer.enqueue(_CoverageOp(List.of(rooms), from, to, at));
+    writer.enqueue(
+      _CoverageOp(List.of(rooms), from, to, at, seqs: seqs, epoch: epoch),
+    );
     _schedule(writer);
   }
 
@@ -536,6 +597,7 @@ class MessageStore {
           kinds: kinds,
           limit: limit,
           liveAt: null,
+          includePushed: true,
         ),
       ),
     );
@@ -543,6 +605,19 @@ class MessageStore {
         ? null
         : head.toResponse(room, root);
   }
+
+  /// The event [id] of [room] as the store holds it, to draw a thread's root
+  /// before the relay answers; `null` when it is not stored. Does not wait
+  /// for the writer (docs/message-sync.md#opening-a-thread-from-its-root-id).
+  Future<({Map<String, dynamic> event, bool deleted})?> paintableEvent(
+    MessageStoreLease? lease, {
+    required String room,
+    required String id,
+  }) => _read<({Map<String, dynamic> event, bool deleted})?>(
+    lease,
+    'event paint',
+    (db) => readPaintableEvent(db, room: room, id: id),
+  );
 
   /// The saved value [key] of [lease]'s file (docs/message-sync.md#launch-order),
   /// or `null` when none is saved, the file does not exist or the lease has
@@ -653,6 +728,11 @@ class MessageStore {
   void noteLossForTest(MessageStoreLease lease) =>
       _writerFor(lease)?.noteLoss();
 
+  /// Makes the next event write transaction of [lease]'s file fail (tests).
+  @visibleForTesting
+  void failNextWriteForTest(MessageStoreLease lease) =>
+      _writerFor(lease)?.failNextForTest = true;
+
   @visibleForTesting
   Future<void> flushed() => Future.wait(_writers.values.map((w) => w.drained));
 
@@ -685,10 +765,35 @@ class MessageStore {
     try {
       while (writer.queue.isNotEmpty && !writer.stopped) {
         final head = writer.queue.first;
+        if (head is _PushedOp) {
+          writer.queue.removeAt(0);
+          writer.queuedEvents -= head.events.length;
+          await _writePushed(writer, head);
+          writer.advance(1);
+          continue;
+        }
         final coverage = head is _CoverageOp ? head : null;
         final forget = head is _ForgetOp ? head : null;
         final notice = head is _NoticeOp ? head : null;
         final heads = head is _HeadsOp ? head : null;
+        if (head is _StreamSeqOp) {
+          writer.queue.removeAt(0);
+          try {
+            await _applyStreamSeqOp(writer, head);
+          } catch (_) {
+            // Kept for the retry below, a few times at most.
+            if (head.epoch != null) writer.queue.insert(0, head);
+            rethrow;
+          }
+          writer.advance(1);
+          continue;
+        }
+        if (head is _StoredMarkOp) {
+          writer.queue.removeAt(0);
+          await _applyStoredMarkOp(writer, head);
+          writer.advance(1);
+          continue;
+        }
         if (head is _HeadSentOp) {
           writer.queue.removeAt(0);
           writer.marks.open(writer.passed + 1, head.rooms);
@@ -760,8 +865,14 @@ class MessageStore {
         final db = await (writer.database ??= writer.open());
         if (writer.stopped) return;
         final known = writer.rooms ??= await purge.StoredRooms.load(db);
+        final pushed = writer.pushedIds ??= await _loadPushedIds(db);
+        final confirmed = <String>[];
         final forgotten = <String>[];
         String? historyOf;
+        if (writer.failNextForTest) {
+          writer.failNextForTest = false;
+          throw StateError('write failed (test)');
+        }
         await db.transaction((txn) async {
           // A notice forgets the rows received before it, then is written.
           final row = rows.firstOrNull;
@@ -785,14 +896,21 @@ class MessageStore {
             };
             if (room != null) known.note(room);
             _write(batch, row);
+            // The relay's copy of a pushed row: rooms may draw it now.
+            if (row is StoredRow && pushed.contains(row.id)) {
+              batch.rawDelete('DELETE FROM pushed_rows WHERE id = ?', [row.id]);
+              confirmed.add(row.id);
+            }
           }
           if (lossy) {
             batch.rawInsert(
               "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('lossy', '1')",
             );
             batch.rawDelete('DELETE FROM coverage');
+            batch.rawDelete('DELETE FROM room_seq');
           }
           await batch.commit(noResult: true);
+          pushed.removeAll(confirmed);
           if (coverage != null && !lossy && coverage.from > writer.lostAt) {
             // Not for a room forgotten after the span's capture began.
             final rooms = coverage.rooms
@@ -802,6 +920,7 @@ class MessageStore {
                 .toList();
             rooms.forEach(known.note);
             await spans.extendCoverage(txn, rooms, coverage.from, coverage.to);
+            await _writeRoomSeqs(txn, rooms, coverage);
           }
           if (heads != null && closed != null && !lossy) {
             for (final span in heads.heads) {
@@ -845,8 +964,25 @@ class MessageStore {
     } catch (error) {
       debugPrint('[MessageStore] write failed: $error');
       writer.rooms = null;
+      writer.pushedIds = null;
+      // An accepted part 1's epoch survives the failure: dropped, the old
+      // epoch and its rows would stay for this connection's whole catch-up.
+      final epochs = [
+        for (final input in writer.queue)
+          if (input is _StreamSeqOp &&
+              input.epoch != null &&
+              input.retries < _streamSeqRetries)
+            _StreamSeqOp(epoch: input.epoch, retries: input.retries + 1),
+      ];
       writer.clearQueue();
       writer.noteLoss();
+      if (epochs.isNotEmpty && !writer.stopped) {
+        // Everything queued so far is dropped; the epochs go again as new
+        // inputs, and the next drain applies them (with the loss clear).
+        writer.advance(writer.queued);
+        epochs.forEach(writer.enqueue);
+        scheduleMicrotask(() => _schedule(writer));
+      }
     } finally {
       writer.scheduled = false;
       // Dropped on failure or stop: nothing left to wait for.

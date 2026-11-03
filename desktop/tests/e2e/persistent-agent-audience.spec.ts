@@ -715,6 +715,10 @@ test("always-mentioned agents remain selected without replaying their animation 
   await expect(addressPrefix).toBeVisible();
   await expect(addressPrefix).toHaveText("Morgarita");
 
+  // The optimistic row can render its highlight before the delayed send
+  // settles; the composer stays read-only until then, so typing earlier
+  // would drop the keystrokes. Wait for it to accept input again.
+  await expect(input).toHaveAttribute("contenteditable", "true");
   await input.type("follow up");
   await input.press("Enter");
   const inlineMentionRow = page

@@ -234,11 +234,15 @@ async function waitForMockLiveSubscription(
                   __KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?: (input: {
                     channelName: string;
                     kind?: number;
+                    exactChannel?: boolean;
                   }) => boolean;
                 }
               ).__KUZZ_E2E_HAS_MOCK_LIVE_SUBSCRIPTION__?.({
                 channelName: currentChannelName,
                 kind,
+                // The room's own REQ: an account-wide REQ carrying the kind
+                // can open first and would not deliver this room's events.
+                exactChannel: true,
               }) ?? false
             );
           },

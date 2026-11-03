@@ -301,6 +301,10 @@ type MockBridgeOptions = {
   /** Reject `clear_pending_navigation_deep_links` with this message. */
   clearPendingNavigationDeepLinksError?: string;
   openDmDelayMs?: number;
+  /** DMs (by channel name) hidden at launch (kind:30622). */
+  hiddenDms?: string[];
+  /** Holds `hide_dm` this long before it resolves. */
+  hideDmDelayMs?: number;
   sendMessageDelayMs?: number;
   /** Delay (ms) for `start_managed_agent` so e2e tests can switch the
    * community mid-startup and observe the fail-closed scope check. */
@@ -311,6 +315,8 @@ type MockBridgeOptions = {
   deferSendMessageLiveEcho?: boolean;
   /** Close the first channel-window live REQ; its retry is accepted. */
   closeChannelLiveSubscriptionOnce?: boolean;
+  /** Answer the user stream REQ in this mode (unset: as an old relay). */
+  userStreamMode?: "shadow" | "live" | "gated";
   /** Reject successive kind-9 sends with these messages, then resume. */
   sendMessageErrors?: string[];
   /** Test-only observer control results emitted after mock control publishes. */

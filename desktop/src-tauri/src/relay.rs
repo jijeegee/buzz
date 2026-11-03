@@ -428,6 +428,20 @@ pub async fn query_relay_at(
     query_with_keys(state, api_base_url, filters, &credential, None, lease).await
 }
 
+/// [`query_relay_at`] signed by a credential the caller already read and
+/// checked against the account the request belongs to, so an account switch
+/// during the admission wait cannot send it as another account.
+pub(crate) async fn query_relay_at_as(
+    state: &AppState,
+    api_base_url: &str,
+    credential: &crate::auth::credential::UserCredential,
+    filters: &[serde_json::Value],
+) -> Result<Vec<nostr::Event>, String> {
+    let lease =
+        crate::message_store::query_lease(api_base_url, &credential.signer_pubkey().to_hex());
+    query_with_keys(state, api_base_url, filters, credential, None, lease).await
+}
+
 /// A query signed with `keys` (an agent, robot or other signer). Its answer
 /// is not kept in the device store.
 pub async fn query_relay_at_with_keys(

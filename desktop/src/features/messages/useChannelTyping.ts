@@ -4,7 +4,7 @@ import {
   getChannelIdFromTags,
   getThreadReference,
 } from "@/features/messages/lib/threading";
-import { relayClient } from "@/shared/api/relayClient";
+import { roomLive } from "@/shared/api/relayRoomLive";
 import type { Channel, RelayEvent } from "@/shared/api/types";
 import {
   KIND_STREAM_MESSAGE,
@@ -181,37 +181,10 @@ export function useChannelTyping(
       return;
     }
 
-    let isDisposed = false;
-    let cleanup: (() => Promise<void>) | undefined;
-
-    relayClient
-      .subscribeToTypingIndicators(channelId, (event) => {
-        if (!isDisposed) {
-          registerTyping(event);
-        }
-      })
-      .then((dispose) => {
-        if (isDisposed) {
-          void dispose();
-          return;
-        }
-
-        cleanup = dispose;
-      })
-      .catch((error) => {
-        console.error(
-          "Failed to subscribe to typing indicators",
-          channelId,
-          error,
-        );
-      });
-
-    return () => {
-      isDisposed = true;
-      if (cleanup) {
-        void cleanup();
-      }
-    };
+    // Typing rides the open room's own REQ, shared with the goal tree.
+    return roomLive.listen(channelId, KIND_TYPING_INDICATOR, (event) => {
+      registerTyping(event);
+    });
   }, [channelId, channelType]);
 
   const hasActiveTypers = Object.keys(typingByPubkey).length > 0;

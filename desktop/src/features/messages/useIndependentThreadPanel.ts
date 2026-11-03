@@ -1,6 +1,10 @@
 import * as React from "react";
 
-import { buildIndependentThreadPanel } from "@/features/messages/lib/independentThreadPanel";
+import {
+  buildIndependentThreadPanel,
+  buildRootOpenedThreadPanel,
+  type ThreadRootOpen,
+} from "@/features/messages/lib/independentThreadPanel";
 import type { UserProfileLookup } from "@/features/profile/lib/identity";
 import type {
   Channel,
@@ -24,6 +28,12 @@ export function useIndependentThreadPanel(args: {
   personaLookup: Map<string, string>;
   respondToLookup: Map<string, RespondToMode>;
   relaySelfPubkey: string | null | undefined;
+  /**
+   * Open on the root id alone, with a placeholder or deleted top row
+   * (channel screen only; without it the panel has no head until the root
+   * is loaded).
+   */
+  rootOpen?: ThreadRootOpen | null;
 }) {
   // Depend on the individual fields, NOT the `args` object — callers pass a
   // fresh object literal every render, so `[args]` never memoizes and the
@@ -33,9 +43,12 @@ export function useIndependentThreadPanel(args: {
   // screen) that saturates the main thread and starves keystrokes — see
   // typing-latency.perf.ts scenario "thread68+". Mirrors the main timeline's
   // memoization of the same formatter (ChannelScreen `timelineMessages`).
+  const rootOpen = args.rootOpen ?? null;
   return React.useMemo(
     () =>
-      buildIndependentThreadPanel(
+      (rootOpen
+        ? buildRootOpenedThreadPanel.bind(null, rootOpen)
+        : buildIndependentThreadPanel)(
         args.channelEvents,
         args.threadReplyEvents,
         args.rootId,
@@ -66,6 +79,7 @@ export function useIndependentThreadPanel(args: {
       args.personaLookup,
       args.respondToLookup,
       args.relaySelfPubkey,
+      rootOpen,
     ],
   );
 }

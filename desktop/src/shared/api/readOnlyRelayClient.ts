@@ -11,6 +11,11 @@ import {
   toRelayFrames,
   type RelaySubscriptionFilter,
 } from "@/shared/api/relayClientShared";
+import {
+  isBusyClosed,
+  keyOf,
+  retryBusyRequest,
+} from "@/shared/api/relayClosedRecovery";
 import { closeWebSocket } from "@/shared/api/relayWebSocketClose";
 import { isSignedOutRefusal } from "@/shared/api/remoteSignOut";
 import {
@@ -24,10 +29,12 @@ import {
 } from "@/shared/api/relayClientTimings";
 
 type PendingHistory = {
+  filter: RelaySubscriptionFilter;
   events: RelayEvent[];
   resolve: (events: RelayEvent[]) => void;
   reject: (error: Error) => void;
   timeout: number;
+  busyAttempt?: number;
 };
 
 type LiveSubscription = {
@@ -257,12 +264,21 @@ export class ReadOnlyRelayClient {
     return new Promise<RelayEvent[]>((resolve, reject) => {
       const subId = `observer-history-${crypto.randomUUID()}`;
       const timeout = window.setTimeout(() => {
-        this.histories.delete(subId);
-        void this.sendRaw(["CLOSE", subId]).catch(() => {});
+        // A busy retry may have moved it to a fresh id.
+        const current = keyOf(this.histories, pending) ?? subId;
+        this.histories.delete(current);
+        void this.sendRaw(["CLOSE", current]).catch(() => {});
         reject(new Error("Timed out while loading observer relay history."));
       }, HISTORY_TIMEOUT_MS);
 
-      this.histories.set(subId, { events: [], resolve, reject, timeout });
+      const pending: PendingHistory = {
+        filter,
+        events: [],
+        resolve,
+        reject,
+        timeout,
+      };
+      this.histories.set(subId, pending);
 
       void this.sendRaw(["REQ", subId, filter]).catch((error) => {
         window.clearTimeout(timeout);
@@ -330,6 +346,23 @@ export class ReadOnlyRelayClient {
       return;
     }
     if (type === "CLOSED" && typeof rest[0] === "string") {
+      const history = this.histories.get(rest[0]);
+      if (history && isBusyClosed(String(rest[1] ?? ""))) {
+        retryBusyRequest({
+          subscriptions: this.histories,
+          subId: rest[0],
+          subscription: history,
+          prefix: "observer-history",
+          send: (retryId) => this.sendRaw(["REQ", retryId, history.filter]),
+          onSendFailed: (error) => {
+            window.clearTimeout(history.timeout);
+            history.reject(
+              error instanceof Error ? error : new Error("error: busy"),
+            );
+          },
+        });
+        return;
+      }
       const live = this.lives.get(rest[0]);
       if (live) {
         this.lives.delete(rest[0]);

@@ -113,8 +113,9 @@ class ChannelSectionsManager {
     );
   }
 
-  /// One startup-sync attempt: fetch the remote blob, then start the live
-  /// subscription. Either step can lose a transient race on cold start (the
+  /// One startup-sync attempt: start the live subscription, then fetch the
+  /// remote blob (even when subscribing failed), so nothing published in
+  /// between is lost: the listener carries no history. Either step can lose a transient race on cold start (the
   /// relay rate-limits the burst of per-channel subscriptions and rejects
   /// with `rate-limited: quota exceeded`) — retry with backoff instead of
   /// silently giving up, which left desktop-created groups invisible until
@@ -143,14 +144,14 @@ class ChannelSectionsManager {
   }
 
   Future<void> _runSyncWithRelay() async {
+    final subscribed = _unsubscribe != null || await _startLiveSubscription();
+    if (_disposed) return;
+
     if (!_startupFetchSucceeded) {
       final fetched = await _fetchAndMerge();
       if (_disposed) return;
       _startupFetchSucceeded = fetched;
     }
-
-    final subscribed = _unsubscribe != null || await _startLiveSubscription();
-    if (_disposed) return;
 
     if (!_startupFetchSucceeded || !subscribed) {
       _scheduleStartupRetry();
@@ -366,10 +367,13 @@ class ChannelSectionsManager {
           tags: const {
             '#d': ['channel-sections'],
           },
-          limit: 1,
+          // Live only, on the account bundle: the head read holds history.
+          limit: 0,
         ),
         _handleIncomingEvent,
         onClosed: (message) => _handleSubscriptionClosed(generation, message),
+        // A catch-up may have missed the head: read it again.
+        onGap: refreshFromRelay,
       );
       if (_disposed || generation != _subscriptionGeneration) {
         unsubscribe();
@@ -397,6 +401,8 @@ class ChannelSectionsManager {
     );
     _unsubscribe = null;
     _subscriptionGeneration++;
+    // The new listener has no backlog: read the head again after it.
+    _startupFetchSucceeded = false;
     _scheduleStartupRetry();
   }
 

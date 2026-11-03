@@ -107,7 +107,8 @@ void main() {
       final submitted = await signed.submitted.future.timeout(
         const Duration(seconds: 1),
       );
-      expect(relay.fetchCount, greaterThanOrEqualTo(4));
+      // One startup read, the failed preflight, and its retry.
+      expect(relay.fetchCount, greaterThanOrEqualTo(3));
       final payload =
           jsonDecode(crypto.decrypt(submitted.content)) as Map<String, dynamic>;
       expect(payload['groups'], {'dms': 'recent'});
@@ -268,7 +269,7 @@ void main() {
     },
   );
 
-  test('retries failed startup and closes fetch-subscribe gap', () async {
+  test('retries a failed startup read after the listener is live', () async {
     final relay = _FakeRelaySession()..fetchFailures = 1;
     final subject = manager(relay, _RecordingSignedEventRelay());
     await subject.initialize();
@@ -277,7 +278,7 @@ void main() {
     ];
     await Future<void>.delayed(const Duration(milliseconds: 40));
     expect(subject.sortModeFor('starred'), ChannelSortMode.recent);
-    expect(relay.fetchCount, greaterThanOrEqualTo(3));
+    expect(relay.fetchCount, greaterThanOrEqualTo(2));
     subject.dispose();
   });
 
@@ -368,6 +369,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     _listener = onEvent;
     return () => _listener = null;

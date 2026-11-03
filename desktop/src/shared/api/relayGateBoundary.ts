@@ -7,6 +7,7 @@
  */
 import { collectWithConcurrency } from "@/shared/api/concurrency";
 import { AUX_BACKFILL_CHUNK_SIZE } from "@/shared/api/relayChannelFilters";
+import { keyOf } from "@/shared/api/relayClosedRecovery";
 import { waitForRateLimit } from "@/shared/api/relayRateLimitGate";
 import type {
   RelaySubscription,
@@ -34,12 +35,14 @@ export async function requestHistoryGated(
   return new Promise<RelayEvent[]>((resolve, reject) => {
     const subId = `history-${crypto.randomUUID()}`;
     const timeout = window.setTimeout(() => {
-      subscriptions.delete(subId);
-      void closeSubscription(subId);
+      // A busy retry may have moved it to a fresh id.
+      const current = keyOf(subscriptions, subscription) ?? subId;
+      subscriptions.delete(current);
+      void closeSubscription(current);
       reject(new Error("Timed out while loading messages."));
     }, historyTimeoutMs);
 
-    subscriptions.set(subId, {
+    const subscription: RelaySubscription = {
       mode: "history",
       filter,
       events: [],
@@ -47,7 +50,8 @@ export async function requestHistoryGated(
       reject,
       timeout,
       timeoutMs: historyTimeoutMs,
-    });
+    };
+    subscriptions.set(subId, subscription);
 
     void sendRaw(["REQ", subId, filter]).catch((error) => {
       window.clearTimeout(timeout);
@@ -76,24 +80,30 @@ export async function requestFirstEventGated(
 
   return new Promise<RelayEvent | null>((resolve, reject) => {
     const subId = `first-${crypto.randomUUID()}`;
+    // A busy retry may have moved it to a fresh id.
+    const drop = () => {
+      const current = keyOf(subscriptions, subscription) ?? subId;
+      subscriptions.delete(current);
+      void closeSubscription(current);
+    };
     const timeout = window.setTimeout(() => {
-      subscriptions.delete(subId);
-      void closeSubscription(subId);
+      drop();
       reject(new Error("Timed out while loading relay event."));
     }, historyTimeoutMs);
 
-    subscriptions.set(subId, {
+    const subscription: RelaySubscription = {
       mode: "first",
+      filter,
       onEvent: (event) => {
         window.clearTimeout(timeout);
-        subscriptions.delete(subId);
-        void closeSubscription(subId);
+        drop();
         resolve(event);
       },
       resolve,
       reject,
       timeout,
-    });
+    };
+    subscriptions.set(subId, subscription);
 
     void sendRaw(["REQ", subId, filter]).catch((error) => {
       window.clearTimeout(timeout);

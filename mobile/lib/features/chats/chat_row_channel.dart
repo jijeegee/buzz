@@ -1,4 +1,8 @@
+import 'package:flutter/widgets.dart';
+
+import '../agents/owner_view/owner_view.dart';
 import '../channels/channel.dart';
+import '../channels/thread_detail_page.dart';
 import 'chat_list.dart';
 
 /// The room a Chats row belongs to, built from the row, to open at once when
@@ -60,4 +64,29 @@ Channel channelFromId(String channelId) => Channel(
   createdAt: DateTime.fromMillisecondsSinceEpoch(0, isUtc: true),
   memberCount: 0,
   isMember: true,
+);
+
+/// The thread page for a Chats thread row, opened on its root id alone
+/// (docs/message-sync.md#opening-a-thread-from-its-root-id): the row's name,
+/// root and archived flag draw at once and the root fills in later.
+/// [standIn] when [channel] was built from the row: the composer waits for
+/// the real room.
+Widget threadPageForRow(
+  ChatListRow row,
+  String rootId, {
+  required Channel channel,
+  required bool standIn,
+  OwnerView? ownerView,
+}) => ThreadDetailPage(
+  headId: rootId,
+  rootHint: row.root,
+  initialThreadName: row.threadName,
+  standInChannel: standIn ? channel : null,
+  channelId: row.channelId,
+  currentPubkey: null,
+  isMember: channel.isMember,
+  isArchived: row.archived || channel.isArchived,
+  // The thread is the route itself: its group button opens the group.
+  channelBelow: false,
+  ownerView: ownerView,
 );

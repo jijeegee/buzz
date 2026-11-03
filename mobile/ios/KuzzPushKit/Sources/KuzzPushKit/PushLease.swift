@@ -16,6 +16,9 @@ public struct PushLeaseCommunity: Codable, Equatable, Sendable {
   public let relayMetadataPubkey: String?
   public let pubkey: String?
   public let policies: [PushResolutionPolicy]
+  /// Push inbox folder name (32 lowercase hex). Absent: keep nothing for
+  /// the app (`KUZZ_PUSH_INBOX=off`, or an app build without the inbox).
+  public let inboxToken: String?
 
   public init(
     id: String,
@@ -23,7 +26,8 @@ public struct PushLeaseCommunity: Codable, Equatable, Sendable {
     relayUrl: String,
     relayMetadataPubkey: String? = nil,
     pubkey: String?,
-    policies: [PushResolutionPolicy]
+    policies: [PushResolutionPolicy],
+    inboxToken: String? = nil
   ) {
     self.id = id
     self.name = name
@@ -31,6 +35,7 @@ public struct PushLeaseCommunity: Codable, Equatable, Sendable {
     self.relayMetadataPubkey = relayMetadataPubkey
     self.pubkey = pubkey
     self.policies = policies
+    self.inboxToken = inboxToken
   }
 }
 

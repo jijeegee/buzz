@@ -4,6 +4,8 @@ import { useQueryClient } from "@tanstack/react-query";
 import { channelsQueryKey } from "@/features/channels/hooks";
 import { noteChannelMembershipChange } from "@/shared/api/channelMembershipWrites";
 import { getChannelIdFromTags } from "@/features/messages/lib/threading";
+import { historyThenLive } from "@/shared/api/historyThenLive";
+import { relayClient } from "@/shared/api/relayClient";
 import { meLive } from "@/shared/api/relayMeLive";
 import type { RelayEvent } from "@/shared/api/types";
 import {
@@ -13,7 +15,17 @@ import {
 
 const MEMBERSHIP_NOTIFICATION_RETRY_BASE_MS = 1_000;
 const MEMBERSHIP_NOTIFICATION_RETRY_MAX_MS = 30_000;
+/** The first attach reads notices from just before it went live. */
+const MEMBERSHIP_NOTIFICATION_LOOKBACK_SECONDS = 30;
+const MEMBERSHIP_NOTIFICATION_FETCH_LIMIT = 50;
 
+/**
+ * Membership notices addressed to me. The listener rides the addressed
+ * account bundle (`limit: 0`); once it is live, one fetch reads the notices
+ * of the last 30 seconds, through a shared seen gate so each notice is
+ * handled once. A catch-up that may have missed notices (onGap) refetches
+ * the channel list instead.
+ */
 export function useMembershipNotifications(currentPubkey?: string) {
   const queryClient = useQueryClient();
   const normalizedCurrentPubkey = currentPubkey?.trim().toLowerCase() ?? "";
@@ -44,29 +56,49 @@ export function useMembershipNotifications(currentPubkey?: string) {
     let retryAttempt = 0;
     let dispose: (() => Promise<void>) | undefined;
 
+    const kinds = [
+      KIND_MEMBER_ADDED_NOTIFICATION,
+      KIND_MEMBER_REMOVED_NOTIFICATION,
+    ];
     const subscribe = async (): Promise<boolean> => {
       try {
-        const nextDispose = await meLive.subscribe(
-          {
-            kinds: [
-              KIND_MEMBER_ADDED_NOTIFICATION,
-              KIND_MEMBER_REMOVED_NOTIFICATION,
-            ],
-            "#p": [normalizedCurrentPubkey],
-            limit: 50,
-            since: Math.floor(Date.now() / 1_000) - 30,
-          },
-          (event) => {
+        const live = await historyThenLive({
+          listen: (apply) =>
+            meLive.subscribe(
+              { kinds, "#p": [normalizedCurrentPubkey], limit: 0 },
+              apply,
+              undefined,
+              {
+                onGap: () => {
+                  if (isCancelled) return;
+                  void queryClient.invalidateQueries({
+                    queryKey: channelsQueryKey,
+                  });
+                },
+              },
+            ),
+          fetch: () =>
+            relayClient.fetchEvents({
+              kinds,
+              "#p": [normalizedCurrentPubkey],
+              since:
+                Math.floor(Date.now() / 1_000) -
+                MEMBERSHIP_NOTIFICATION_LOOKBACK_SECONDS,
+              limit: MEMBERSHIP_NOTIFICATION_FETCH_LIMIT,
+            }),
+          apply: (event) => {
             if (!isCancelled) {
               handleMembershipNotification(event);
             }
           },
-        );
+          onFetchError: (error) =>
+            console.error("Failed to fetch membership notifications", error),
+        });
         if (isCancelled) {
-          void nextDispose().catch(() => {});
+          void live.stop().catch(() => {});
           return true;
         }
-        dispose = nextDispose;
+        dispose = live.stop;
         return true;
       } catch (error) {
         console.error("Failed to subscribe to membership notifications", error);
@@ -102,5 +134,5 @@ export function useMembershipNotifications(currentPubkey?: string) {
         void dispose().catch(() => {});
       }
     };
-  }, [normalizedCurrentPubkey]);
+  }, [normalizedCurrentPubkey, queryClient]);
 }

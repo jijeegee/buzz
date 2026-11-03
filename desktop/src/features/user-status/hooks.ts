@@ -8,6 +8,7 @@ import {
 
 import type { UserStatusInput } from "@/features/user-status/types";
 import { relayClient } from "@/shared/api/relayClient";
+import { communityLive } from "@/shared/api/relayCommunityLive";
 import type {
   RelayEvent,
   UserStatus,
@@ -379,8 +380,12 @@ export function useUserStatusSubscription() {
 
     function subscribeWithRetry(attempt = 0) {
       if (isCancelled) return;
-      void relayClient
-        .subscribeToUserStatusUpdates(handleStatusEvent)
+      // Live only (no backfill), on the community bundle REQ.
+      void communityLive
+        .subscribe(
+          { kinds: [KIND_USER_STATUS], "#d": ["general"], limit: 0 },
+          handleStatusEvent,
+        )
         .then((unsubFn) => {
           if (isCancelled) {
             void unsubFn();

@@ -75,6 +75,61 @@ void main() {
       );
     });
   }
+
+  for (final fixture in fixtures['delivery'] as List) {
+    test('shared fixture: ${fixture['name']}', () async {
+      final members = {
+        for (final room in fixture['memberRooms'] as List) room as String,
+      };
+      final quietRooms = {
+        for (final room in (fixture['quietRooms'] as List?) ?? const [])
+          room as String,
+      };
+      // A room both member and quiet is a member, as the chunk owner sets it
+      // (channels_provider_lifecycle.dart).
+      final quietOnly = quietRooms.difference(members);
+      final carried = {...members, ...quietRooms};
+      final browsed = fixture['browsedRoom'] as String?;
+      final own = <void Function(NostrEvent)>[];
+      final router =
+          RoomLiveRouter((filter, onEvent) async {
+              own.add(onEvent);
+              return () {};
+            })
+            ..setQuietRooms(quietOnly)
+            ..setBundleRooms(carried)
+            ..setCoveredRooms(carried);
+      final event = _event(fixture['event'] as Map);
+      final room = event.channelId!;
+      final inRoom = <String>[];
+      final metadata = <String>[];
+      final quiet = <String>[];
+      router
+        ..listenMetadata((e) => metadata.add(e.id))
+        ..listenQuiet((e, _) => quiet.add(e.id));
+      await router.listenRoom(room, (e) => inRoom.add(e.id));
+      final repeat = (fixture['repeat'] as int?) ?? 1;
+      for (var i = 0; i < repeat; i++) {
+        if (browsed != null) {
+          own.single(event);
+        } else {
+          router.routeBundleEvent(event, carried);
+        }
+      }
+      final name = fixture['name'] as String;
+      int once(Object? expected) => expected == true ? 1 : 0;
+      expect(inRoom.length, once(fixture['room']), reason: name);
+      expect(metadata.length, once(fixture['metadata']), reason: name);
+      expect(quiet.length, once(fixture['quiet']), reason: name);
+      // The all-room consumers only see member rooms' events
+      // (channels_provider_lifecycle.dart); their stores are idempotent.
+      expect(
+        members.contains(room) && reachesAllRoomListeners(event),
+        fixture['allRooms'],
+        reason: name,
+      );
+    });
+  }
 }
 
 NostrEvent _event(Map json) => NostrEvent(

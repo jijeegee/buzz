@@ -26,7 +26,15 @@ function harness() {
   return { deps, invalidations, notes, timers };
 }
 
-for (const type of ["member_joined", "member_left", "member_removed"]) {
+for (const type of [
+  "member_joined",
+  "member_left",
+  "member_removed",
+  "admin_kick",
+  "dm_created",
+  "channel_created",
+  "channel_unarchived",
+]) {
   test(`${type} refreshes now and again after the member list settles`, () => {
     const { deps, invalidations, notes, timers } = harness();
     const handled = refreshOnSystemMessage(

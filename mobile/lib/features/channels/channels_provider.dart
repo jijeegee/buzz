@@ -15,6 +15,13 @@ import '../../shared/profile/user_profile.dart';
 import '../../shared/push/push_presentation_cache.dart';
 import '../../shared/push/push_presentation_export_recovery.dart';
 import '../../shared/relay/relay.dart';
+import '../../shared/relay/user_stream.dart'
+    show
+        UserStream,
+        UserStreamBurst,
+        UserStreamCarried,
+        UserStreamRoute,
+        userStreamRoute;
 import '../../shared/theme/theme_provider.dart';
 import '../../shared/utils/string_utils.dart';
 import '../goals/goal_provider.dart';
@@ -39,8 +46,10 @@ part 'channel_list_recovery.dart';
 part 'channel_list_requests.dart';
 part 'channel_list_snapshot.dart';
 part 'channel_push_cache.dart';
+part 'channel_unread_events.dart';
 part 'channel_member_snapshots.dart';
 part 'channels_provider_lifecycle.dart';
+part 'channels_user_stream.dart';
 
 const _channelTypeOrder = {'stream': 0, 'forum': 1, 'dm': 2};
 const _unreadCatchUpLimit = 1000;
@@ -79,6 +88,11 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   Future<void> _liveSubscriptionQueue = Future.value();
   Set<String> _desiredLiveChannelIds = const {};
   int _subscriptionVersion = 0;
+
+  /// An unread catch-up was asked for and has not finished un-retired: the
+  /// next live sync runs one even when its caller did not ask (a stream
+  /// hand-off retires the reconnect catch-up in flight).
+  bool _unreadCatchUpOwed = false;
   int _nextLiveChunkGeneration = 0;
   final Set<String> _terminallyClosedLiveChunks = {};
   String? _subscriptionRelayBaseUrl;
@@ -140,6 +154,14 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         };
 
   void _showList(List<Channel> channels) => state = AsyncData(channels);
+  List<Channel>? get _shownList => state.value;
+
+  /// Folds push inbox events the store accepted (docs/message-sync.md#push-inbox).
+  Future<void> foldPushed(MessageStoreLease lease, List<NostrEvent> events) =>
+      _foldPushed(lease, events);
+
+  /// The listed rooms push inbox events may change (the Chats fold's too).
+  Set<String> get pushFoldRoomIds => _pushFoldChannels().keys.toSet();
 
   Map<String, Map<String, ObservedUnreadEvent>>
   get observedUnreadEventsByChannel =>
@@ -188,6 +210,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         // A new authenticated connection can change relay admission policy.
         // Ordinary refreshes must not retry an unchanged terminal rejection.
         _terminallyClosedLiveChunks.clear();
+        _reopenStreamChunks();
         unawaited(_backstopRefresh());
       }
     });
@@ -763,47 +786,16 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
         }
       }
 
-      final recordedAtByChannel = <String, int>{};
-      for (final event in events) {
-        final channelId = event.channelId;
-        if (channelId == null) continue;
-        final channel = channelById[channelId];
-        if (channel == null) continue;
-        final readAt = readAtByChannel[channelId];
-        if (event.pubkey.toLowerCase() == myPk.toLowerCase()) continue;
-        if (readAt != null && event.createdAt <= readAt) continue;
-        if (!shouldNotifyForEvent(
-          event,
-          myPk,
-          participatedRootIds: _participatedRootIds,
-          followedRootIds: _followedRootIds(),
-          authoredRootIds: _authoredRootIds,
-          mutedChannelIds: mutedChannelIds,
-          channelId: channel.id,
-        )) {
-          continue;
-        }
-        _recordUnreadEvent(channel, event, myPk);
-        recordedAtByChannel[channelId] = max(
-          recordedAtByChannel[channelId] ?? 0,
-          event.createdAt,
-        );
-      }
-      // Republish only when this catch-up actually changed unread state. A
-      // batch that recorded nothing has nothing to show, and a failed or
-      // superseded batch must not repaint another refresh's list: the retired
-      // check above already returned in that case, and no await separates it
-      // from here, so a second check would be dead code.
-      // Recorded events also advance `lastMessageAt`, as live events do: a
-      // deadline-unavailable latest-message batch leaves it unset.
-      if (recordedAtByChannel.isNotEmpty) {
-        state = state.whenData(
-          (channels) => [
-            for (final channel in channels)
-              _advanceLastMessageAt(channel, recordedAtByChannel[channel.id]),
-          ],
-        );
-      }
+      // A superseded batch must not repaint another refresh's list: the
+      // retired check above already returned in that case, and no await
+      // separates it from here.
+      applyUnreadEvents(
+        events,
+        readState,
+        channelById,
+        myPk: myPk,
+        mutedChannelIds: mutedChannelIds,
+      );
     } catch (error) {
       if (!ref.mounted) return;
       debugPrint('[ChannelsNotifier] unread catch-up failed: $error');
@@ -827,6 +819,20 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
     } finally {
       subscription.close();
     }
+  }
+
+  /// Republishes the list after [applyUnreadEvents] recorded something: a
+  /// batch that recorded nothing has nothing to show. Recorded events also
+  /// advance `lastMessageAt`, as live events do: a deadline-unavailable
+  /// latest-message batch leaves it unset.
+  void _publishRecordedUnread(Map<String, int> recordedAtByChannel) {
+    if (recordedAtByChannel.isEmpty) return;
+    state = state.whenData(
+      (channels) => [
+        for (final channel in channels)
+          _advanceLastMessageAt(channel, recordedAtByChannel[channel.id]),
+      ],
+    );
   }
 
   static Channel _advanceLastMessageAt(Channel channel, int? createdAt) {

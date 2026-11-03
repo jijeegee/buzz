@@ -22,6 +22,7 @@ class ThreadGoalsButton extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    ref.watch(goalTreeLiveProvider(channelId));
     final root = ref.watch(goalTreeProvider(channelId)).asData?.value.tree.root;
     return IconButton(
       key: const ValueKey('thread-goals-button'),

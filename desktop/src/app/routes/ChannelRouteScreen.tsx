@@ -5,6 +5,10 @@ import type { SearchHighlightNavigation } from "@/app/navigation/searchHighlight
 import { getCachedSearchHitEvent } from "@/app/navigation/searchHitEventCache";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useChannelFromRow } from "@/app/routes/useChannelFromRow";
+import {
+  routeTargetKeyFor,
+  useRouteTargetResolution,
+} from "@/app/routes/useRouteTargetResolution";
 import { channelFromAgentChatRow } from "@/features/agents/ownerView/agentChatList";
 import type { OwnerViewChat } from "@/features/agents/ownerView/OwnerViewLayout";
 import { OwnerViewBar } from "@/features/agents/ownerView/OwnerViewBar";
@@ -226,21 +230,24 @@ export function ChannelRouteScreen({
     const cachedTarget = getCachedSearchHitEvent(targetMessageId);
     return cachedTarget ? [cachedTarget] : [];
   });
-  // The route target the last fetch settled for. Until it settles, a thread
-  // opened by this route waits for its root instead of closing as missing.
+  // Only a message target (`messageId`) is fetched here. A thread opened by
+  // its root id alone resolves its root in the channel screen
+  // (docs/message-sync.md#opening-a-thread-from-its-root-id).
   const routeTargetKey =
-    !selectedPostId && (targetMessageId || targetThreadRootId)
-      ? `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`
+    !selectedPostId && targetMessageId
+      ? routeTargetKeyFor(targetMessageId, targetThreadRootId)
       : null;
-  const [resolvedRouteTargetKey, setResolvedRouteTargetKey] = React.useState<
-    string | null
-  >(null);
-  const isRouteTargetResolving =
-    routeTargetKey !== null && resolvedRouteTargetKey !== routeTargetKey;
-  // Preloaded roots and replies are at hand on the first render, so a thread
+  const {
+    isResolving: isRouteTargetResolving,
+    markResolved: markRouteTargetResolved,
+  } = useRouteTargetResolution(channelId, routeTargetKey);
+  // Preloaded roots and replies are at hand on the first render, so a reply
   // opened from the inbox shows its root without waiting a render for them.
   const displayedTargetMessageEvents = React.useMemo(() => {
-    const remembered = [targetThreadRootId, targetMessageId].flatMap((id) => {
+    const remembered = [
+      targetMessageId ? targetThreadRootId : null,
+      targetMessageId,
+    ].flatMap((id) => {
       const event = id ? getRememberedRouteEvent(queryClient, id) : null;
       return event ? [event] : [];
     });
@@ -322,7 +329,7 @@ export function ChannelRouteScreen({
     // deep-linked message, the spliced event is the only copy — dropping it on
     // param-clear blanks the timeline. Resetting on channel / forum-post change
     // is handled by the effect below; here we only fetch when there's a target.
-    if ((!targetMessageId && !targetThreadRootId) || selectedPostId) {
+    if (!targetMessageId || selectedPostId) {
       return () => {
         isCancelled = true;
       };
@@ -351,8 +358,9 @@ export function ChannelRouteScreen({
       targetThreadRootId,
     ).then((events) => {
       if (!isCancelled) {
-        setResolvedRouteTargetKey(
-          `${targetMessageId ?? ""}|${targetThreadRootId ?? ""}`,
+        markRouteTargetResolved(
+          channelId,
+          routeTargetKeyFor(targetMessageId, targetThreadRootId),
         );
         setTargetMessageEvents((currentEvents) => {
           const eventsById = new Map<string, RelayEvent>();
@@ -367,7 +375,14 @@ export function ChannelRouteScreen({
     return () => {
       isCancelled = true;
     };
-  }, [queryClient, selectedPostId, targetMessageId, targetThreadRootId]);
+  }, [
+    channelId,
+    markRouteTargetResolved,
+    queryClient,
+    selectedPostId,
+    targetMessageId,
+    targetThreadRootId,
+  ]);
 
   const screenOwnerView = React.useMemo(
     () =>
@@ -438,6 +453,7 @@ export function ChannelRouteScreen({
       isRouteTargetResolving={isRouteTargetResolving}
       targetMessageEvents={displayedTargetMessageEvents}
       targetMessageId={targetMessageId}
+      targetThreadRootId={targetMessageId ? targetThreadRootId : null}
       targetSearchMessageId={activeSearchHighlight?.messageId}
       targetSearchQuery={activeSearchHighlight?.query}
     />

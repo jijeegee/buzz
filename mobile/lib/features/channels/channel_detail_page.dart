@@ -197,11 +197,8 @@ Future<void Function()> _subscribeToDmIdentityUpdates(
   }
 
   final unsubscribe = await session.subscribeWithStatus(
-    NostrFilter(
-      kinds: const [0, 10100],
-      authors: participantPubkeys,
-      limit: 100,
-    ).copyWithSince(DateTime.now().millisecondsSinceEpoch ~/ 1000 - 5),
+    // Live only (history: fetchHistory below): a reconnect re-sends it as is.
+    NostrFilter(kinds: const [0, 10100], authors: participantPubkeys, limit: 0),
     handleEvent,
     onClosed: (_) => onFailure(),
     onStatusChanged: (status) {
@@ -841,12 +838,16 @@ class ChannelDetailPage extends HookConsumerWidget {
         };
         if (eventIds.isEmpty) return null;
         final notifier = ref.read(channelMessagesProvider(channel.id).notifier);
+        var current = true; // a run replaced (late read state) settles nothing
         unawaited(
           _loadDeepLinkEvents(ref, channel.id, eventIds).then((_) {
-            if (context.mounted) deepLinkLoads.value++;
+            if (current && context.mounted) deepLinkLoads.value++;
           }),
         );
-        return () => notifier.releaseDeepLinkEvents(eventIds);
+        return () {
+          current = false;
+          notifier.releaseDeepLinkEvents(eventIds);
+        };
       },
       [
         channel.id,
@@ -872,10 +873,11 @@ class ChannelDetailPage extends HookConsumerWidget {
       return subscription.close;
     }, [channel.id, initialThreadRootId]);
 
-    // A thread opened straight from Inbox, a draft, a goal or a notification
-    // never shows the channel: this route stands in with a thread-shaped
-    // placeholder and swaps itself for the thread once the head is known,
-    // either cached on the timeline or fetched by id above.
+    // A thread opened straight from a draft, goal or notification never shows
+    // the channel: this placeholder swaps itself for the thread once the head
+    // is known (timeline, or fetched by id above), or once that fetch settled
+    // without it, or at once while reconnecting: the thread then finds its
+    // head by id itself.
     final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
     final directThreadHead = opensThreadDirectly
         ? directThreadEvents
@@ -885,27 +887,22 @@ class ChannelDetailPage extends HookConsumerWidget {
                   .read(channelMessagesProvider(channel.id).notifier)
                   .deepLinkEvent(initialThreadRootId!)
         : null;
-    // The head could not be found (deleted, or the fetch failed) once both the
-    // by-id fetch and the timeline have settled: show the channel instead.
-    final directThreadMissing =
-        opensThreadDirectly &&
-        directThreadHead == null &&
-        deepLinkLoads.value > 0 &&
-        messagesState.hasValue &&
-        !messagesState.isLoading;
     useEffect(() {
       final rootId = initialThreadRootId;
       final head = directThreadHead;
-      if (rootId == null || head == null || didOpenDirectThread.value) {
-        return null;
-      }
+      if (!opensThreadDirectly || didOpenDirectThread.value) return null;
+      // A dropped connection; a first connect still waits for the fetch.
+      final offline = sessionStatus == SessionStatus.reconnecting;
+      if (head == null && deepLinkLoads.value == 0 && !offline) return null;
       didOpenDirectThread.value = true;
       final events = directThreadEvents;
       final messages = formatTimeline([
-        ...events,
-        if (!events.any((event) => event.id == rootId)) head,
+        if (head != null) ...[
+          ...events,
+          if (!events.any((event) => event.id == rootId)) head,
+        ],
       ], currentPubkey: currentPubkey);
-      final threadHead = messages.firstWhere((message) => message.id == rootId);
+      final threadHead = messages.where((m) => m.id == rootId).firstOrNull;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
           return;
@@ -914,6 +911,7 @@ class ChannelDetailPage extends HookConsumerWidget {
           _DirectThreadRoute(
             builder: (_) => ThreadDetailPage(
               threadHead: threadHead,
+              headId: rootId,
               allMessages: messages,
               channelId: channel.id,
               currentPubkey: currentPubkey,
@@ -927,7 +925,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         );
       });
       return null;
-    }, [directThreadHead]);
+    }, [directThreadHead, deepLinkLoads.value, sessionStatus]);
 
     useEffect(() {
       // The owner view reads someone else's chat: nothing is marked read.
@@ -944,7 +942,7 @@ class ChannelDetailPage extends HookConsumerWidget {
       });
     }, [channel.id, readState.isReady, readTimestamp]);
 
-    if (opensThreadDirectly && !directThreadMissing) {
+    if (opensThreadDirectly) {
       return _DirectThreadPlaceholder(
         channelId: channel.id,
         rootId: initialThreadRootId!,

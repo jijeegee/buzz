@@ -1,4 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
+
+import 'package:fake_async/fake_async.dart';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/features/channels/channel_mutes/channel_mutes_manager.dart';
@@ -6,6 +9,8 @@ import 'package:kuzz/features/channels/channel_names/channel_names_manager.dart'
 import 'package:kuzz/features/channels/channel_names/channel_names_storage.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:shared_preferences/shared_preferences.dart';
+
+import '../sidebar_sync_fixture.dart';
 
 void main() {
   setUp(() => SharedPreferences.setMockInitialValues({}));
@@ -102,6 +107,58 @@ void main() {
         ChannelNamesStorage(prefs).read(keys.public).nameFor('c1'),
         isNull,
       );
+    });
+  });
+
+  group('names sync', () {
+    late SidebarRelay relay;
+    late ChannelNamesManager manager;
+    setUp(() => relay = SidebarRelay());
+    tearDown(() => manager.dispose());
+
+    void start(FakeAsync clock, SharedPreferences prefs) {
+      manager = ChannelNamesManager(
+        pubkey: relay.pubkey,
+        prefs: prefs,
+        crypto: ChannelMutesCrypto(relay.keys.nsec, relay.pubkey),
+        relaySession: relay.session,
+        signedEventRelay: relay.signer,
+        remoteEnabled: true,
+        onChanged: () {},
+      );
+      unawaited(manager.initialize());
+      clock.flushMicrotasks();
+    }
+
+    test('listens live-only, then reads the head', () async {
+      final prefs = await freshPrefs();
+      fakeAsync((clock) {
+        relay.stored.add(
+          relay.event(channelNamesDTag, {'c1': 'Trip'}, nowSeconds()),
+        );
+        start(clock, prefs);
+        expectListenThenHead(relay, channelNamesDTag);
+        expect(manager.store.nameFor('c1'), 'Trip');
+      });
+    });
+
+    test('a failed head read is retried: live carries no history', () async {
+      final prefs = await freshPrefs();
+      fakeAsync((clock) {
+        relay
+          ..historyFailures = 1
+          ..stored.add(
+            relay.event(channelNamesDTag, {'c1': 'Trip'}, nowSeconds()),
+          );
+        start(clock, prefs);
+        expect(manager.store.nameFor('c1'), isNull);
+        clock.elapse(const Duration(seconds: 3));
+        expect(relay.reqsFor(channelNamesDTag, 'h-'), hasLength(2));
+        expect(relay.reqsFor(channelNamesDTag, 'l-'), hasLength(1));
+        expect(manager.store.nameFor('c1'), 'Trip');
+        clock.elapse(const Duration(minutes: 2));
+        expect(relay.reqsFor(channelNamesDTag, 'h-'), hasLength(2));
+      });
     });
   });
 }

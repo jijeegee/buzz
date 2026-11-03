@@ -10,27 +10,48 @@ const _maxLiveChannelsPerSubscription = 128;
 /// lifecycle state while keeping `channels_provider.dart` below the mobile
 /// file-size ratchet.
 extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
+  /// Hidden DMs ride the room chunks as quiet rooms: their events reach the
+  /// room router (resurface), never the all-rooms consumers below.
+  Set<String> get _quietLiveChannelIds =>
+      _hiddenDmIds.difference(_desiredLiveChannelIds);
+
+  /// Every room the chunks carry: listed member rooms ∪ quiet rooms. Chunk
+  /// keys always come from this set; all-rooms delivery stays on
+  /// [_desiredLiveChannelIds].
+  Set<String> get _liveChunkRoomIds => {
+    ..._desiredLiveChannelIds,
+    ..._quietLiveChannelIds,
+  };
+
   /// Subscribe to live events in deterministic chunks that stay within the
   /// relay's aggregate explicit-`#h` limit. Also starts a 60s WS backstop poll
   /// to reconcile membership changes without downloading the global directory.
   Future<void> _subscribeLive(
     List<Channel> channels,
-    _ChannelRefreshFence fence,
-  ) {
+    _ChannelRefreshFence fence, {
+    bool unreadCatchUp = true,
+  }) {
     final channelIds = {
       for (final channel in channels)
         if (channel.isMember && !channel.isArchived) channel.id,
     };
     final relayBaseUrl = _lifecycleRef.read(relayConfigProvider).baseUrl;
     _desiredLiveChannelIds = channelIds;
+    _attachUserStream(channels, fence);
+    _coverageRouter
+      ?..setQuietRooms(_quietLiveChannelIds)
+      ..setBundleRooms({..._liveChunkRoomIds, ..._streamCarried});
     // A changed filter may be admitted, but an unchanged terminal rejection
     // cannot recover just because a timer or manual refresh fetched it again.
     // Drop obsolete keys so this quarantine stays bounded by desired chunks.
     final desiredKeys = chunkChannelIdsForLiveSubscriptions(
-      channelIds,
+      _chunkRoomIds,
     ).map(_liveChunkKey).toSet();
     _terminallyClosedLiveChunks.retainAll(desiredKeys);
     final subscriptionVersion = ++_subscriptionVersion;
+    // This bump retires any unread catch-up in flight: run it again here.
+    if (_unreadCatchUpOwed) unreadCatchUp = true;
+    if (unreadCatchUp) _unreadCatchUpOwed = true;
 
     final sync = _liveSubscriptionQueue.then(
       (_) => _syncLiveSubscriptions(
@@ -38,6 +59,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         subscriptionVersion,
         channels,
         fence,
+        unreadCatchUp,
       ),
     );
     _liveSubscriptionQueue = sync
@@ -61,6 +83,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     int subscriptionVersion,
     List<Channel> channels,
     _ChannelRefreshFence fence,
+    bool unreadCatchUp,
   ) async {
     if (!_lifecycleRef.mounted) return;
     fence.ensureCurrent();
@@ -76,9 +99,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     }
     if (_lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl) return;
 
-    final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
-    );
+    final desiredChunks = chunkChannelIdsForLiveSubscriptions(_chunkRoomIds);
     // Keep existing coverage while replacements are installed. Cleanup runs
     // when this generation settles, and retains old coverage on failures.
 
@@ -98,37 +119,54 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       _liveSubscriptionsByChunk[chunkKey] = subscription;
       final chunkRooms = chunk.toSet();
       try {
-        final unsubscribe = await session.subscribe(
-          NostrFilter(
-            // The open rooms ride these chunks too (see RoomLiveRouter), so
-            // they carry the thread-summary recounts the rooms need.
-            kinds: roomLiveEventKinds,
-            tags: {'#h': chunk},
-            limit: 0,
-          ),
-          (event) {
-            if (!_lifecycleRef.mounted ||
-                _refreshCoordinator.currentScope() != fence.scope) {
-              return;
-            }
-            _lifecycleRef
-                .read(roomLiveRouterProvider)
-                .routeBundleEvent(event, chunkRooms);
-            // Superseded chunks can overlap during replacement or recovery.
-            // Deliver only the current scope's still-desired channels;
-            // duplicate events are already idempotent in the unread/timestamp
-            // stores. Thread summaries are room metadata, never unread or chat
-            // rows.
-            if (event.kind == EventKind.channelThreadSummary ||
-                !_desiredLiveChannelIds.contains(event.channelId)) {
-              return;
-            }
-            _handleLiveEvent(event);
-            _lifecycleRef.read(channelLiveEventsProvider).emit(event);
-          },
-          onClosed: (message) =>
-              _handleLiveChunkClosed(chunkKey, generation, message),
+        final filter = NostrFilter(
+          // The open rooms ride these chunks too (see RoomLiveRouter), so
+          // they carry the thread-summary recounts the rooms need.
+          kinds: roomLiveEventKinds,
+          tags: {'#h': chunk},
+          limit: 0,
         );
+        void onEvent(NostrEvent event) {
+          if (!_lifecycleRef.mounted ||
+              _refreshCoordinator.currentScope() != fence.scope) {
+            return;
+          }
+          _lifecycleRef
+              .read(roomLiveRouterProvider)
+              .routeBundleEvent(event, chunkRooms);
+          // Superseded chunks can overlap during replacement or recovery.
+          // Deliver only the current scope's still-desired channels;
+          // duplicate events are already idempotent in the unread/timestamp
+          // stores. Thread summaries and room metadata (thread names) are
+          // never unread or chat rows.
+          if (!reachesAllRoomListeners(event) ||
+              !_desiredLiveChannelIds.contains(event.channelId)) {
+            return;
+          }
+          _handleLiveEvent(event);
+          _lifecycleRef.read(channelLiveEventsProvider).emit(event);
+        }
+
+        void onClosed(String message) =>
+            _handleLiveChunkClosed(chunkKey, generation, message);
+        // A chunk carrying quiet rooms reports each ready (EOSE, also after a
+        // reconnect re-sent it): the hidden-DM backfill waits for it.
+        final unsubscribe = chunk.any(_quietLiveChannelIds.contains)
+            ? await session.subscribeWithStatus(
+                filter,
+                onEvent,
+                onClosed: onClosed,
+                onStatusChanged: (status) {
+                  if (status != RelaySubscriptionStatus.ready ||
+                      !_lifecycleRef.mounted) {
+                    return;
+                  }
+                  _lifecycleRef
+                      .read(roomLiveRouterProvider)
+                      .markRoomsReady(chunkRooms);
+                },
+              )
+            : await session.subscribe(filter, onEvent, onClosed: onClosed);
         subscription.unsubscribe = unsubscribe;
         if (!_lifecycleRef.mounted || !fence.isCurrent) {
           _liveSubscriptionsByChunk.remove(chunkKey);
@@ -141,7 +179,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
                 SessionStatus.connected ||
             _lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl ||
             _subscriptionRelayBaseUrl != relayBaseUrl ||
-            !chunk.every(_desiredLiveChannelIds.contains)) {
+            !chunk.every(_chunkRoomIds.contains)) {
           _liveSubscriptionsByChunk.remove(chunkKey);
           unsubscribe();
           return;
@@ -173,7 +211,17 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     }
 
     fence.ensureCurrent();
-    unawaited(_catchUpUnreadEvents(channels, fence, subscriptionVersion));
+    if (unreadCatchUp) {
+      unawaited(
+        _catchUpUnreadEvents(channels, fence, subscriptionVersion).whenComplete(
+          () {
+            if (!_isCatchUpRetired(fence, subscriptionVersion)) {
+              _unreadCatchUpOwed = false;
+            }
+          },
+        ),
+      );
+    }
 
     _backstopTimer?.cancel();
     _backstopTimer = Timer.periodic(
@@ -192,7 +240,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     // transient/rate-limit retries have their own backoff. Do not turn a
     // terminal rejection into a fresh membership/history/REQ loop here.
     if (chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
+      _chunkRoomIds,
     ).any((chunk) => _liveChunkKey(chunk) == chunkKey)) {
       _terminallyClosedLiveChunks.add(chunkKey);
     }
@@ -202,9 +250,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   }
 
   void _removeUndesiredLiveChunks() {
-    final desiredChunks = chunkChannelIdsForLiveSubscriptions(
-      _desiredLiveChannelIds,
-    );
+    final desiredChunks = chunkChannelIdsForLiveSubscriptions(_chunkRoomIds);
     final desiredKeys = desiredChunks.map(_liveChunkKey).toSet();
     final retainedKeys = <String>{...desiredKeys};
     final uncoveredIds = <String>{};
@@ -258,12 +304,19 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     _coverageRouter?.setCoveredRooms({
       for (final MapEntry(:key, :value) in _liveSubscriptionsByChunk.entries)
         if (value.unsubscribe != null) ...key.split('\u0000'),
+      // The stream in live/gated carries its rooms like an installed chunk.
+      ..._streamCarried,
     });
   }
 
   void _clearLiveSubscriptions() {
+    _detachUserStream();
     _subscriptionVersion++;
+    _unreadCatchUpOwed = false;
     _desiredLiveChannelIds = const {};
+    _coverageRouter
+      ?..setQuietRooms(const {})
+      ..setBundleRooms(const {});
     _terminallyClosedLiveChunks.clear();
     _clearRetainedLiveChunks();
     _subscriptionRelayBaseUrl = null;

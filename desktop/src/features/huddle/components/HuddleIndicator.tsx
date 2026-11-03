@@ -4,7 +4,7 @@ import * as React from "react";
 import { toast } from "sonner";
 import { useQueryClient } from "@tanstack/react-query";
 
-import { relayClient } from "@/shared/api/relayClient";
+import { roomHuddle } from "@/features/huddle/lib/roomHuddle";
 import type { RelayEvent } from "@/shared/api/types";
 import { cn } from "@/shared/lib/cn";
 import {
@@ -64,7 +64,6 @@ export function HuddleIndicator({
     if (!channelId) return;
 
     let disposed = false;
-    let cleanup: (() => void) | null = null;
 
     // Track all seen events for reconstruction. Keyed by event.id for dedup.
     const seenEvents = new Map<string, RelayEvent>();
@@ -163,34 +162,23 @@ export function HuddleIndicator({
       }
     }
 
-    // Subscribe to huddle lifecycle events only (kinds 48100–48103).
-    // limit: 100 covers long-lived huddles with many join/leave cycles.
-    relayClient
-      .subscribeToHuddleEvents(channelId, (event: RelayEvent) => {
-        if (disposed) return;
+    // Huddle lifecycle events (kinds 48100–48103) of this room, shared with
+    // the room's huddle cards and roster on the room bundle.
+    const cleanup = roomHuddle.listen(channelId, (event: RelayEvent) => {
+      if (disposed) return;
 
-        // Dedup by event ID — ignore replayed events from reconnect.
-        if (seenEvents.has(event.id)) return;
-        seenEvents.set(event.id, event);
+      // Dedup by event ID — ignore replayed events from reconnect.
+      if (seenEvents.has(event.id)) return;
+      seenEvents.set(event.id, event);
 
-        // Reconstruct from full history on every new event.
-        // This is cheap — huddle lifecycle events are rare (typically <20).
-        reconstruct();
-      })
-      .then((dispose) => {
-        if (disposed) {
-          void dispose();
-          return;
-        }
-        cleanup = () => void dispose();
-      })
-      .catch((err) => {
-        console.error("[HuddleIndicator] subscription failed:", err);
-      });
+      // Reconstruct from full history on every new event.
+      // This is cheap — huddle lifecycle events are rare (typically <20).
+      reconstruct();
+    });
 
     return () => {
       disposed = true;
-      cleanup?.();
+      cleanup();
       setActiveHuddle(null);
     };
   }, [channelId]);

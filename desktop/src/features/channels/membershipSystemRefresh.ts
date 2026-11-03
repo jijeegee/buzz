@@ -21,6 +21,9 @@ const MEMBERSHIP_SYSTEM_TYPES = new Set([
   "member_left",
   "member_removed",
   "admin_kick",
+  "dm_created",
+  "channel_created",
+  "channel_unarchived",
 ]);
 
 /** Delays (ms) of the follow-up refreshes after the immediate one. */

@@ -2,11 +2,8 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import {
-  buildObserverLiveFilter,
-  OBSERVER_LIVE_LIMIT,
-  OBSERVER_LIVE_LOOKBACK_SECS,
-} from "./observerLiveFilter.ts";
+import { buildObserverLiveFilter } from "./observerLiveFilter.ts";
+import { meScopeOf } from "./relayMeBundle.ts";
 
 const fixture = JSON.parse(
   readFileSync(
@@ -15,13 +12,16 @@ const fixture = JSON.parse(
   ),
 );
 
-test("shared fixture: observer lookback and limit match mobile", () => {
-  assert.equal(OBSERVER_LIVE_LOOKBACK_SECS, fixture.lookbackSecs);
-  assert.equal(OBSERVER_LIVE_LIMIT, fixture.limit);
-  assert.deepEqual(buildObserverLiveFilter("ab", 10_000), {
-    kinds: [24200],
-    "#p": ["ab"],
-    limit: fixture.limit,
-    since: 10_000 - fixture.lookbackSecs,
+test("shared fixture: the observer filter matches mobile", () => {
+  assert.deepEqual(
+    buildObserverLiveFilter(fixture.ownerPubkey),
+    fixture.filter,
+  );
+});
+
+test("the observer filter rides the addressed account bundle", () => {
+  assert.deepEqual(meScopeOf(buildObserverLiveFilter(fixture.ownerPubkey)), {
+    kind: "addressed",
+    pubkey: fixture.ownerPubkey,
   });
 });

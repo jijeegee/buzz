@@ -12,7 +12,9 @@ import '../l10n/l10n.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
+import '../push/push_inbox.dart';
 import '../push/push_lease_revocation_outbox.dart';
+import '../push/push_snapshot.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
@@ -167,7 +169,7 @@ Future<void> _deactivateCommunityPushLease(
       .where(
         (grant) =>
             grant.relayOrigin == descriptor.origin &&
-            grant.appProfile == kuzzDevPushAppProfile,
+            grant.appProfile == kuzzPushAppProfile,
       )
       .firstOrNull;
   if (matchingGrant == null) {
@@ -253,6 +255,7 @@ class _CommunitySnapshotSync {
             community.pubkey,
             community.nsec,
             community.pushNotificationsEnabled,
+            community.pushInboxToken,
             kuzzPushSubscriptionStateFingerprint(
               community.pushSubscriptionState,
             ),
@@ -296,9 +299,74 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   @override
   Future<List<Community>> build() async {
     final storage = ref.read(communityStorageProvider);
-    final communities = await storage.loadAll();
+    var communities = await storage.loadAll();
+    communities = await _turnPushOnByDefault(communities);
+    if (pushInboxEnabled) communities = await _backfillInboxTokens(communities);
     await syncCommunitySnapshot(ref, communities);
     return communities;
+  }
+
+  /// Turns push on, once per install, for saved accounts on this build's
+  /// server that never chose. Until push on by default, push started off
+  /// and the switch could not be reached, so no saved record can hold an
+  /// explicit off without [Community.pushChoice]. Flipped records are marked
+  /// [KuzzPushChoice.on], so a later run never overrides a newer choice.
+  /// Without push in this build nothing changes and nothing is marked.
+  Future<List<Community>> _turnPushOnByDefault(
+    List<Community> communities,
+  ) async {
+    if (!ref.read(kuzzPushBuildSupportedProvider)) return communities;
+    final storage = ref.read(communityStorageProvider);
+    var saved = communities;
+    try {
+      if (await storage.loadPushDefaultOnApplied()) return communities;
+      final builtInOrigin = ref.read(defaultCommunityOriginProvider);
+      var changed = false;
+      final updated = [...communities];
+      for (var i = 0; i < updated.length; i++) {
+        final community = updated[i];
+        if (community.pushChoice != null ||
+            !isServerAllowed(
+              community.relayUrl,
+              builtInOrigin: builtInOrigin,
+            )) {
+          continue;
+        }
+        final on = community.withPushOnByDefault();
+        if (identical(on, community)) continue;
+        updated[i] = on.copyWith(pushChoice: KuzzPushChoice.on);
+        changed = true;
+      }
+      if (changed) {
+        await storage.saveAll(updated);
+        saved = updated;
+      }
+      await storage.markPushDefaultOnApplied();
+      return updated;
+    } catch (error) {
+      // Nothing is marked, so the next start tries again. What was saved
+      // is shown, so the switch matches storage.
+      developer.log('Push default-on migration failed: $error');
+      return saved;
+    }
+  }
+
+  /// Records saved before push inbox tokens existed get one, so the
+  /// notification extension can keep fetched events for them.
+  Future<List<Community>> _backfillInboxTokens(
+    List<Community> communities,
+  ) async {
+    final filled = [for (final c in communities) c.withPushInboxToken()];
+    for (var i = 0; i < filled.length; i++) {
+      if (identical(filled[i], communities[i])) continue;
+      try {
+        await ref.read(communityStorageProvider).save(filled[i]);
+      } catch (error) {
+        developer.log('Push inbox token not saved: $error');
+        filled[i] = communities[i];
+      }
+    }
+    return filled;
   }
 
   /// Add a community. If one with the same relay URL already exists, update
@@ -319,7 +387,7 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           if (existing.signedOut) {
             throw StateError(appL10n.communitySignInBeforeChanging);
           }
-          final updated = existing.copyWith(
+          final updated = existing.withCredentials(
             pubkey: community.pubkey,
             nsec: community.nsec,
           );
@@ -404,6 +472,12 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
             ref.read(messageStoreProvider).forget(removed.relayUrl, account),
           );
         }
+        // The NSE snapshot no longer has it (above): its inbox goes too.
+        unawaited(
+          deletePushInboxFolders(ref.read(pushInboxRootProvider), [
+            removed.pushInboxToken,
+          ]),
+        );
         unawaited(
           ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
             Object error,
@@ -586,12 +660,18 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
             pushState.generationCursor ?? pushState.acceptedGeneration ?? 0;
         pushState = pushState.withPendingTombstone(cursor + 1);
       }
-      final updated = community.copyWith(
-        pushNotificationsEnabled: enabled,
-        pushSubscriptionState: pushState,
-      );
+      final updated = community
+          .copyWith(
+            pushNotificationsEnabled: enabled,
+            pushChoice: enabled ? KuzzPushChoice.on : KuzzPushChoice.off,
+            pushSubscriptionState: pushState,
+          )
+          .withPushInboxToken();
       await storage.save(updated);
       final updatedList = [...current]..[index] = updated;
+      // Before the new state is seen, so setup starts once, with the new
+      // retry count, instead of once before the bump and once after it.
+      noteKuzzPushToggled(id, enabled: enabled);
       state = AsyncData(updatedList);
       await syncCommunitySnapshot(ref, updatedList);
       shouldDeactivate =

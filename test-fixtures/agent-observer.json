@@ -1,5 +1,13 @@
 {
-  "description": "Observer frame (kind 24200) subscription shared by desktop (observerRelay.ts) and mobile (observer_subscription.dart). See docs/message-sync.md.",
-  "lookbackSecs": 300,
-  "limit": 1000
+  "description": "Observer frame (kind 24200) listener filter shared by desktop (observerLiveFilter.ts) and mobile (observer_subscription.dart): live only, no history (frames are never stored), so it rides the addressed account bundle. See docs/message-sync.md#agent-activity.",
+  "ownerPubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "filter": {
+    "kinds": [
+      24200
+    ],
+    "#p": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ],
+    "limit": 0
+  }
 }

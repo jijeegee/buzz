@@ -660,6 +660,7 @@ class _Session extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String)? onClosed,
+    void Function()? onGap,
   }) async {
     subscriptions++;
     return () {};

@@ -8,6 +8,11 @@ import {
   splitContextsIntoBudgetedSlots,
   trimContextsToBudget,
 } from "./readStateManager.ts";
+import { readStateLive } from "./readStateSync.ts";
+
+// Managers built without an injected listener must not reach the real
+// account bundle from unit tests.
+readStateLive.listen = async () => async () => {};
 
 // ── ReadStateManager integration helpers ─────────────────────────────────────
 // Provide browser globals required by ReadStateManager (localStorage,
@@ -81,7 +86,7 @@ function makeFakeRelay() {
   return {
     fetchEvents: async () => [],
     publishEvent: async () => {},
-    subscribeInteractive: () => () => {},
+    subscribeToReconnects: () => () => {},
   };
 }
 
@@ -850,7 +855,7 @@ test("publishSplitSlots_noopSuppression_skipsWhenUnchanged", async () => {
   const fakeRelay = {
     fetchEvents: async () => [],
     publishEvent: async () => {},
-    subscribeInteractive: () => () => {},
+    subscribeToReconnects: () => () => {},
   };
 
   const pubkey = "b".repeat(64);
@@ -966,4 +971,286 @@ test("rememberPublishedId_evictsOldestBeyondCap", () => {
   assert.ok(ids.has(`id-${total - 1}`), "newest id must be retained");
 
   mgr.destroy();
+});
+
+// ── ReadStateManager — live-only listener on the account bundle ───────────────
+
+const flushAsync = async () => {
+  for (let i = 0; i < 30; i++) await Promise.resolve();
+};
+
+/** A relay whose fetches and reconnect hook the test drives, a listener that
+ * records its filter and options, and blobs parsed from `event.blob`. */
+function liveRig(pubkey, { fetchFailures = 0, listenFailures = 0 } = {}) {
+  const rig = {
+    fetches: [],
+    stored: [],
+    fetchFailures,
+    listenFailures,
+    listens: [],
+    reconnectListeners: new Set(),
+  };
+  rig.relay = {
+    fetchEvents: async (filter) => {
+      rig.fetches.push(filter);
+      // Only full fetches (back to the horizon) fail; the launch gap fetch
+      // reaches back seconds.
+      if (rig.fetchFailures > 0 && Date.now() / 1_000 - filter.since > 3_600) {
+        rig.fetchFailures--;
+        throw new Error("timed out");
+      }
+      return rig.stored.filter((e) => e.created_at >= (filter.since ?? 0));
+    },
+    publishEvent: async () => {},
+    subscribeToReconnects: (listener) => {
+      rig.reconnectListeners.add(listener);
+      return () => rig.reconnectListeners.delete(listener);
+    },
+  };
+  rig.listen = async (filter, onEvent, options) => {
+    if (rig.listenFailures > 0) {
+      rig.listenFailures--;
+      throw new Error("closed");
+    }
+    const entry = { filter, onEvent, options, stopped: false };
+    rig.listens.push(entry);
+    return () => {
+      entry.stopped = true;
+    };
+  };
+  rig.event = (
+    id,
+    clientId,
+    contexts,
+    createdAt = Math.floor(Date.now() / 1_000) - 3_600,
+    dTag = "read-state:other",
+  ) => ({
+    id,
+    pubkey,
+    kind: 30078,
+    created_at: createdAt,
+    content: "",
+    tags: [
+      ["d", dTag],
+      ["t", "read-state"],
+    ],
+    blob: { v: 1, client_id: clientId, contexts },
+  });
+  rig.manager = () => {
+    const mgr = new ReadStateManager(pubkey, rig.relay, { listen: rig.listen });
+    mgr.parseEvent = async (event) =>
+      event.blob
+        ? {
+            dTag: event.tags[0][1],
+            blob: event.blob,
+            createdAt: event.created_at,
+          }
+        : null;
+    return mgr;
+  };
+  rig.reconnect = () => {
+    for (const listener of rig.reconnectListeners) listener();
+  };
+  return rig;
+}
+
+test("the read-state listener is live-only; the fetch keeps limit 500", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("1".repeat(64));
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    assert.equal(rig.listens.length, 1);
+    assert.equal(rig.listens[0].filter.limit, 0);
+    assert.equal("since" in rig.listens[0].filter, false);
+    assert.equal(rig.fetches[0].limit, 500);
+    assert.equal(mgr.hasMergedRelayState(), true);
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a failed fetch with a healthy socket retries and merges another device's mark", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("2".repeat(64), { fetchFailures: 2 });
+  rig.stored.push(rig.event("e1", "other-device", { "channel-1": 500 }));
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    assert.equal(mgr.getEffectiveTimestamp("channel-1"), null);
+    assert.equal(mgr.hasMergedRelayState(), false);
+
+    timers.advanceBy(1_000); // first retry: fails again
+    await flushAsync();
+    assert.equal(mgr.getEffectiveTimestamp("channel-1"), null);
+    timers.advanceBy(2_000); // second retry: succeeds
+    await flushAsync();
+    assert.equal(mgr.getEffectiveTimestamp("channel-1"), 500);
+    assert.equal(mgr.hasMergedRelayState(), true);
+
+    // Read-state fetches only; the publish pre-read asks by #d.
+    const readStateFetches = () => rig.fetches.filter((f) => f["#t"]).length;
+    const fetchesAfterSuccess = readStateFetches();
+    timers.advanceBy(120_000);
+    await flushAsync();
+    assert.equal(
+      readStateFetches(),
+      fetchesAfterSuccess,
+      "no retry after success",
+    );
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a reconnect refetches once; destroy unregisters the hook", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("3".repeat(64));
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    // Full fetches reach back the horizon; the launch gap fetch only seconds.
+    const full = () =>
+      rig.fetches.filter((f) => Date.now() / 1_000 - f.since > 3_600).length;
+    assert.equal(full(), 1);
+    rig.stored.push(rig.event("e1", "other-device", { "channel-2": 700 }));
+    rig.reconnect();
+    await flushAsync();
+    assert.equal(full(), 2);
+    assert.equal(mgr.getEffectiveTimestamp("channel-2"), 700);
+    assert.equal(rig.listens.length, 1, "the listener survives a reconnect");
+
+    mgr.destroy();
+    assert.equal(rig.reconnectListeners.size, 0);
+    assert.equal(rig.listens[0].stopped, true);
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a catch-up gap refetches", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("4".repeat(64));
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    const before = rig.fetches.length;
+    rig.listens[0].options.onGap();
+    await flushAsync();
+    assert.equal(rig.fetches.length, before + 1);
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a listener that fails at launch re-attaches with backoff and refetches", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("5".repeat(64), { listenFailures: 1 });
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    assert.equal(rig.listens.length, 0);
+    assert.equal(mgr.hasMergedRelayState(), true, "the fetch ran anyway");
+    const before = rig.fetches.length;
+    timers.advanceBy(1_000);
+    await flushAsync();
+    assert.equal(rig.listens.length, 1);
+    assert.equal(
+      rig.fetches.length,
+      before + 1,
+      "re-attach reads what it missed",
+    );
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a terminal CLOSED re-attaches one listener with backoff, not a loop", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("6".repeat(64));
+  const mgr = rig.manager();
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    rig.listens[0].options.onRemoved();
+    rig.listens[0].options.onRemoved();
+    await flushAsync();
+    assert.equal(rig.listens.length, 1, "no immediate re-attach");
+    timers.advanceBy(999);
+    await flushAsync();
+    assert.equal(rig.listens.length, 1);
+    timers.advanceBy(1);
+    await flushAsync();
+    assert.equal(rig.listens.length, 2);
+    timers.advanceBy(120_000);
+    await flushAsync();
+    assert.equal(rig.listens.length, 2);
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
+});
+
+test("a squatter seen live first still reaches the squatter check on the next fetch", async () => {
+  globalThis.window.localStorage = makeLocalStorage();
+  const { timers, restore } = withFakeTimers();
+  const rig = liveRig("7".repeat(64));
+  const mgr = rig.manager();
+  let parses = 0;
+  const parse = mgr.parseEvent;
+  mgr.parseEvent = async (event) => {
+    parses++;
+    return parse(event);
+  };
+  try {
+    await mgr.initialize();
+    await flushAsync();
+    const ownSlot = `read-state:${mgr.slotId}`;
+    const squatter = rig.event(
+      "sq",
+      "someone-else",
+      { "channel-3": 10 },
+      undefined,
+      ownSlot,
+    );
+    rig.listens[0].onEvent(squatter);
+    await flushAsync();
+    assert.equal(mgr.getEffectiveTimestamp("channel-3"), 10);
+    const parsesAfterLive = parses;
+
+    rig.stored.push(squatter);
+    rig.listens[0].options.onGap();
+    await flushAsync();
+    assert.notEqual(
+      `read-state:${mgr.slotId}`,
+      ownSlot,
+      "the fetch rotates away",
+    );
+    assert.equal(parses, parsesAfterLive, "the repeat decrypt is cached");
+  } finally {
+    mgr.destroy();
+    timers.runAll();
+    restore();
+  }
 });

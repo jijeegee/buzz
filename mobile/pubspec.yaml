@@ -1,7 +1,7 @@
 name: kuzz
 description: Kuzz mobile client
 publish_to: 'none'
-version: 0.6.5+1
+version: 0.6.17+26102857
 
 environment:
   sdk: ^3.11.4
@@ -54,6 +54,11 @@ dependencies:
   flutter_web_auth_2: ^5.1.0
   crypto: ^3.0.7
   sqflite: ^2.4.2+1
+  # This install's device key, registered in every Flutter engine.
+  kuzz_device_key:
+    path: packages/kuzz_device_key
+  kuzz_android_push:
+    path: packages/kuzz_android_push
 
 dev_dependencies:
   flutter_test:

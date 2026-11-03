@@ -29,6 +29,137 @@ const _maxRooms = 128;
 
 typedef StoreScope = ({MessageStore store, MessageStoreLease lease});
 
+/// A `/query` answered inside a zone with this key set is not stored by the
+/// session: a probing walk stores it itself once it knows which rows are new.
+const storeWalkProbeZoneKey = #storeWalkProbe;
+
+/// Rule-W terms a walk carries (docs/message-sync.md#watermark-room_seq):
+/// the snapshot seq of each vouched room and the epoch it was taken under.
+class StoreSeqVouch {
+  const StoreSeqVouch(this.seqs, this.epoch);
+
+  final Map<String, int> seqs;
+  final String epoch;
+}
+
+/// How a walk ended; [inserted] are the rows it stored that were not stored
+/// before (probing walks only): before the walk, or before the stored mark
+/// it was given (docs/message-sync.md#counters).
+class StoreWalk {
+  const StoreWalk(this.completed, this.inserted);
+
+  static const failed = StoreWalk(false, []);
+
+  final bool completed;
+  final List<Map<String, dynamic>> inserted;
+}
+
+/// What the user stream asks of chunk catch-ups
+/// (docs/message-sync.md#handoff).
+abstract interface class StoreStreamHooks {
+  /// Rooms whose catch-up is the stream's now (accepted `live`/`gated`).
+  Set<String> streamOwnedRooms();
+
+  /// The rule-W vouch for a catch-up of [rooms] starting now on connection
+  /// [generation], or `null`.
+  StoreSeqVouch? vouch(int generation, List<String> rooms);
+
+  /// Connection [generation]'s stored mark: rows stored after it are not
+  /// "already stored" for the counters (docs/message-sync.md#counters).
+  Future<int?> storedMark(int generation);
+
+  /// A catch-up of [rooms] completed ([heads]: their newest spans begun
+  /// before [liveAt], read before the walk when it was vouched).
+  void walkEnded(
+    StoreSeqVouch? vouch,
+    List<String> rooms,
+    int liveAt,
+    StoreWalk walk,
+    Map<String, (int, int)> heads,
+  );
+}
+
+/// One keyset walk of [rooms] from [since] into the store only; on
+/// completion it records `[since, liveAt]` (with [vouch]'s rule-W rows).
+/// [probe]: the answers are stored here, after asking which rows are new;
+/// a row stored after [storedBefore] (a stored mark) counts as new too.
+Future<StoreWalk> walkStore({
+  required StoreScope scope,
+  required Future<Object?> Function(List<Map<String, dynamic>> filters) query,
+  required bool Function() switched,
+  required List<String> rooms,
+  required int since,
+  required int liveAt,
+  int? captured,
+  StoreSeqVouch? vouch,
+  bool probe = false,
+  int? storedBefore,
+}) async {
+  final inserted = <Map<String, dynamic>>[];
+  final seen = <String>{};
+  // The first page starts at the relay's newest, not at this device's
+  // clock: rows the relay stamped after liveAt but sent before EOSE are
+  // fetched too.
+  int? until;
+  String? beforeId;
+  for (var page = 0; page < storeCatchUpMaxPages; page++) {
+    if (switched()) return StoreWalk.failed;
+    final filters = [
+      {
+        '#h': rooms,
+        'kinds': EventKind.channelEventKinds,
+        'since': since,
+        'limit': storeCatchUpPageLimit,
+        'until': ?until,
+        'before_id': ?beforeId,
+      },
+    ];
+    final decoded = probe
+        ? await runZoned(
+            () => query(filters),
+            zoneValues: {storeWalkProbeZoneKey: true},
+          )
+        : await query(filters);
+    if (decoded is! List || switched()) return StoreWalk.failed;
+    if (probe) {
+      final events = decoded.whereType<Map<String, dynamic>>().toList();
+      final stored = await scope.store.storedEventIds(scope.lease, [
+        for (final event in events)
+          if (event['id'] case final String id) id,
+      ], storedBefore: storedBefore);
+      if (stored == null || switched()) return StoreWalk.failed;
+      for (final event in events) {
+        final id = event['id'];
+        if (id is String && !stored.contains(id) && seen.add(id)) {
+          inserted.add(event);
+        }
+      }
+      scope.store.submit(scope.lease, events);
+    }
+    final terminal = decoded.isEmpty ? null : decoded.last;
+    if (decoded.length < storeCatchUpPageLimit || terminal == null) {
+      scope.store.extendCoverage(
+        scope.lease,
+        rooms,
+        since,
+        liveAt,
+        captured: captured,
+        seqs: vouch?.seqs,
+        epoch: vouch?.epoch,
+      );
+      return StoreWalk(true, inserted);
+    }
+    if (terminal is! Map) return StoreWalk.failed;
+    final createdAt = terminal['created_at'];
+    final id = terminal['id'];
+    if (createdAt is! int || id is! String) return StoreWalk.failed;
+    if (createdAt == until && id == beforeId) return StoreWalk.failed;
+    until = createdAt;
+    beforeId = id;
+  }
+  return StoreWalk.failed;
+}
+
 class _Live {
   _Live(this.generation, this.liveAt, this.scope, this.captured)
     : markedAt = liveAt;
@@ -63,6 +194,7 @@ class RoomBundleCoverage {
     required this.scope,
     required this.query,
     int Function()? nowSecs,
+    this.hooks,
   }) : _nowSecs =
            nowSecs ?? (() => DateTime.now().millisecondsSinceEpoch ~/ 1000);
 
@@ -72,6 +204,9 @@ class RoomBundleCoverage {
   /// A `/query` request; its event results are stored by the session.
   final Future<Object?> Function(List<Map<String, dynamic>> filters) query;
   final int Function() _nowSecs;
+
+  /// The user stream's say in chunk catch-ups, if any.
+  StoreStreamHooks? hooks;
   final _live = Expando<_Live>();
   Future<void> _catchUps = Future.value();
 
@@ -96,12 +231,17 @@ class RoomBundleCoverage {
       captured: at,
     );
     _catchUps = _catchUps.then(
-      (_) => catchUp(current, roomIds, liveAt, captured: at).catchError((
-        Object error,
-      ) {
-        debugPrint('[MessageStore] catch-up stopped: $error');
-        return false;
-      }),
+      (_) =>
+          catchUp(
+            current,
+            roomIds,
+            liveAt,
+            captured: at,
+            generation: generation,
+          ).catchError((Object error) {
+            debugPrint('[MessageStore] catch-up stopped: $error');
+            return false;
+          }),
     );
     live.settled = _catchUps;
   }
@@ -164,19 +304,25 @@ class RoomBundleCoverage {
   /// coverage and [liveAt]. Rooms never covered are skipped; a gap too old
   /// or too large is left to opening the room. [captured]: the store
   /// capture of the REQ's EOSE (default: when the span is recorded).
+  /// Rooms the user stream catches up itself are left out; [generation]
+  /// lets the stream vouch for rule-W rows (docs/message-sync.md#handoff).
   @visibleForTesting
   Future<bool> catchUp(
     StoreScope scope,
     List<String> roomIds,
     int liveAt, {
     int? captured,
+    int? generation,
   }) async {
     // After an account or server switch the pages are stored for the new
     // lease, so they say nothing about this one's rooms.
     bool switched() => scope.lease != this.scope()?.lease;
     // Spans opened at liveAt (this REQ's own) may be written already.
     final points = await scope.store.resumePoints(scope.lease, roomIds, liveAt);
-    final covered = roomIds.where(points.containsKey).toList();
+    final owned = hooks?.streamOwnedRooms() ?? const <String>{};
+    final covered = roomIds
+        .where((room) => points.containsKey(room) && !owned.contains(room))
+        .toList();
     if (covered.isEmpty) return false;
     final oldest = covered
         .map((roomId) => points[roomId]!)
@@ -185,43 +331,24 @@ class RoomBundleCoverage {
         ? 0
         : oldest - storeResumeLookbackSecs;
     if (since < liveAt - storeCatchUpMaxAgeSecs) return false;
-    // The first page starts at the relay's newest, not at this device's
-    // clock: rows the relay stamped after liveAt but sent before EOSE are
-    // fetched too.
-    int? until;
-    String? beforeId;
-    for (var page = 0; page < storeCatchUpMaxPages; page++) {
-      if (switched()) return false;
-      final decoded = await query([
-        {
-          '#h': covered,
-          'kinds': EventKind.channelEventKinds,
-          'since': since,
-          'limit': storeCatchUpPageLimit,
-          'until': ?until,
-          'before_id': ?beforeId,
-        },
-      ]);
-      if (decoded is! List || switched()) return false;
-      final terminal = decoded.isEmpty ? null : decoded.last;
-      if (decoded.length < storeCatchUpPageLimit || terminal == null) {
-        scope.store.extendCoverage(
-          scope.lease,
-          covered,
-          since,
-          liveAt,
-          captured: captured,
-        );
-        return true;
-      }
-      if (terminal is! Map) return false;
-      final createdAt = terminal['created_at'];
-      final id = terminal['id'];
-      if (createdAt is! int || id is! String) return false;
-      if (createdAt == until && id == beforeId) return false;
-      until = createdAt;
-      beforeId = id;
-    }
-    return false;
+    final vouch = generation == null ? null : hooks?.vouch(generation, covered);
+    final heads = vouch == null
+        ? const <String, (int, int)>{}
+        : await scope.store.coverageHeads(scope.lease, covered, liveAt);
+    final mark = vouch == null ? null : await hooks?.storedMark(generation!);
+    final walk = await walkStore(
+      scope: scope,
+      query: query,
+      switched: switched,
+      rooms: covered,
+      since: since,
+      liveAt: liveAt,
+      captured: captured,
+      vouch: vouch,
+      probe: vouch != null,
+      storedBefore: mark,
+    );
+    if (walk.completed) hooks?.walkEnded(vouch, covered, liveAt, walk, heads);
+    return walk.completed;
   }
 }

@@ -1,0 +1,1159 @@
+{
+ "description": "Push inbox (docs/message-sync.md#push-inbox): what the iPhone notification extension saves from its relay fetch and what the app takes into the message store. `origin`: relay URLs and the store origin they map to (null: refused). `matcher`: events against `matcher_policies` for `matcher_account` (`match`: kept as a pushed message; `keep_as_profile`: kept only as a profile from the presentation refresh). `file`: inbox files the app reads as `file_account` on `file_relay_url` (`accept`: its events are taken; `delete`: a refused file is removed; `ids`: the events kept). `caps`: per-token pruning (files named `<unixms>-<uuid>.json`; `kept`: names left, sorted). `cursor`: the fetch window (`since`) and the cursor after a fetch (`next`). `drain`: pushed rows against the store's kept list, left marks and `room_forgot` stamps (unix seconds); `written`: ids stored. Read by KuzzPushKit tests (Swift) and mobile tests (Dart).",
+ "origin": [
+  {
+   "relay_url": "wss://Relay.Example",
+   "origin": "https://relay.example"
+  },
+  {
+   "relay_url": "https://relay.example",
+   "origin": "https://relay.example"
+  },
+  {
+   "relay_url": "wss://relay.example:8443",
+   "origin": "https://relay.example:8443"
+  },
+  {
+   "relay_url": "WSS://RELAY.EXAMPLE/",
+   "origin": "https://relay.example"
+  },
+  {
+   "relay_url": "wss://relay.example/path",
+   "origin": null
+  },
+  {
+   "relay_url": "wss://user@relay.example",
+   "origin": null
+  },
+  {
+   "relay_url": "ftp://relay.example",
+   "origin": null
+  }
+ ],
+ "matcher_account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "matcher_policies": [
+  {
+   "filter": {
+    "kinds": [
+     9,
+     40002,
+     45001,
+     45003
+    ],
+    "#p": [
+     "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    ]
+   },
+   "ignore": [
+    {
+     "kinds": [
+      9,
+      40002,
+      45001,
+      45003
+     ],
+     "authors": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "kinds": [
+      9
+     ],
+     "#h": [
+      "33333333-3333-4333-8333-333333333333"
+     ]
+    }
+   ],
+   "suppress": {
+    "p_tags_max": 20
+   }
+  },
+  {
+   "filter": {
+    "kinds": [
+     9
+    ],
+    "#h": [
+     "11111111-1111-4111-8111-111111111111",
+     "22222222-2222-4222-8222-222222222222"
+    ]
+   },
+   "ignore": [
+    {
+     "kinds": [
+      9,
+      40002,
+      45001,
+      45003
+     ],
+     "authors": [
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    },
+    {
+     "kinds": [
+      9
+     ],
+     "#h": [
+      "33333333-3333-4333-8333-333333333333"
+     ]
+    }
+   ],
+   "suppress": {
+    "p_tags_max": 20
+   }
+  }
+ ],
+ "matcher": [
+  {
+   "name": "channel message in a pushed room",
+   "event": {
+    "kind": 9,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "11111111-1111-4111-8111-111111111111"
+     ]
+    ]
+   },
+   "match": true
+  },
+  {
+   "name": "kind outside the channel filter",
+   "event": {
+    "kind": 40002,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "11111111-1111-4111-8111-111111111111"
+     ]
+    ]
+   },
+   "match": false
+  },
+  {
+   "name": "mention by #p",
+   "event": {
+    "kind": 40002,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "33333333-3333-4333-8333-333333333333"
+     ],
+     [
+      "p",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    ]
+   },
+   "match": true
+  },
+  {
+   "name": "room not in any filter",
+   "event": {
+    "kind": 9,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "44444444-4444-4444-8444-444444444444"
+     ]
+    ]
+   },
+   "match": false
+  },
+  {
+   "name": "own message is ignored",
+   "event": {
+    "kind": 9,
+    "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "tags": [
+     [
+      "h",
+      "11111111-1111-4111-8111-111111111111"
+     ]
+    ]
+   },
+   "match": false
+  },
+  {
+   "name": "muted room message is ignored",
+   "event": {
+    "kind": 9,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "33333333-3333-4333-8333-333333333333"
+     ],
+     [
+      "p",
+      "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+     ]
+    ]
+   },
+   "match": false
+  },
+  {
+   "name": "20 p tags still match",
+   "event": {
+    "kind": 9,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "11111111-1111-4111-8111-111111111111"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000000"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000001"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000002"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000003"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000004"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000005"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000006"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000007"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000008"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000009"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000a"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000b"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000c"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000d"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000e"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000f"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000010"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000011"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000012"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000013"
+     ]
+    ]
+   },
+   "match": true
+  },
+  {
+   "name": "21 p tags are suppressed",
+   "event": {
+    "kind": 9,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "h",
+      "11111111-1111-4111-8111-111111111111"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000000"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000001"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000002"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000003"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000004"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000005"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000006"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000007"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000008"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000009"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000a"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000b"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000c"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000d"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000e"
+     ],
+     [
+      "p",
+      "000000000000000000000000000000000000000000000000000000000000000f"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000010"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000011"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000012"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000013"
+     ],
+     [
+      "p",
+      "0000000000000000000000000000000000000000000000000000000000000014"
+     ]
+    ]
+   },
+   "match": false
+  },
+  {
+   "name": "kind 0 is never a pushed message",
+   "event": {
+    "kind": 0,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": []
+   },
+   "match": false,
+   "keep_as_profile": true
+  },
+  {
+   "name": "39000 is never kept",
+   "event": {
+    "kind": 39000,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "d",
+      "11111111-1111-4111-8111-111111111111"
+     ]
+    ]
+   },
+   "match": false,
+   "keep_as_profile": false
+  },
+  {
+   "name": "39002 is never kept",
+   "event": {
+    "kind": 39002,
+    "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "tags": [
+     [
+      "d",
+      "11111111-1111-4111-8111-111111111111"
+     ]
+    ]
+   },
+   "match": false,
+   "keep_as_profile": false
+  }
+ ],
+ "file_account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "file_relay_url": "wss://relay.example",
+ "file": [
+  {
+   "name": "v1",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": true
+  },
+  {
+   "name": "uppercase host and wss scheme",
+   "file": {
+    "v": 1,
+    "relayUrl": "WSS://Relay.EXAMPLE/",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": true
+  },
+  {
+   "name": "https form of the same origin",
+   "file": {
+    "v": 1,
+    "relayUrl": "https://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": true
+  },
+  {
+   "name": "unknown version is skipped and kept",
+   "file": {
+    "v": 2,
+    "relayUrl": "wss://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": false
+  },
+  {
+   "name": "missing account",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "another account",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "account": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "another server",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://other.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "relay URL with a path",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example/x",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "relay URL with user info",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://u@relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "bad event shape and other kinds are dropped, the rest kept",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     },
+     {
+      "id": "short",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1,
+      "kind": 9,
+      "tags": [],
+      "content": "",
+      "sig": ""
+     },
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000002",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 7,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m2",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     },
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000003",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 0,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m3",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "accept": true,
+   "ids": [
+    "0000000000000000000000000000000000000000000000000000000000000001",
+    "0000000000000000000000000000000000000000000000000000000000000003"
+   ]
+  },
+  {
+   "name": "oversize",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "pad_bytes": 2097153,
+   "accept": false,
+   "delete": true
+  },
+  {
+   "name": "temporary file is ignored",
+   "file": {
+    "v": 1,
+    "relayUrl": "wss://relay.example",
+    "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+    "fetchedAt": 2000,
+    "events": [
+     {
+      "id": "0000000000000000000000000000000000000000000000000000000000000001",
+      "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "created_at": 1000,
+      "kind": 9,
+      "tags": [
+       [
+        "h",
+        "11111111-1111-4111-8111-111111111111"
+       ]
+      ],
+      "content": "m1",
+      "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+     }
+    ]
+   },
+   "file_name": "1700000000000-x.json.tmp",
+   "accept": false,
+   "delete": false
+  }
+ ],
+ "caps_limits": {
+  "max_age_ms": 604800000,
+  "max_events": 500,
+  "max_bytes": 2097152
+ },
+ "caps": [
+  {
+   "name": "files older than 7 days go first",
+   "now_ms": 1800000000000,
+   "files": [
+    {
+     "name": "1799308800000-a.json",
+     "events": 1
+    },
+    {
+     "name": "1799481600000-b.json",
+     "events": 1
+    }
+   ],
+   "kept": [
+    "1799481600000-b.json"
+   ]
+  },
+  {
+   "name": "over 500 events drops the oldest files",
+   "now_ms": 1800000000000,
+   "files": [
+    {
+     "name": "1799999997000-a.json",
+     "events": 200
+    },
+    {
+     "name": "1799999998000-b.json",
+     "events": 200
+    },
+    {
+     "name": "1799999999000-c.json",
+     "events": 200
+    }
+   ],
+   "kept": [
+    "1799999998000-b.json",
+    "1799999999000-c.json"
+   ]
+  },
+  {
+   "name": "over 2 MB drops the oldest files",
+   "now_ms": 1800000000000,
+   "files": [
+    {
+     "name": "1799999997000-a.json",
+     "events": 1,
+     "content_bytes": 800000
+    },
+    {
+     "name": "1799999998000-b.json",
+     "events": 1,
+     "content_bytes": 800000
+    },
+    {
+     "name": "1799999999000-c.json",
+     "events": 1,
+     "content_bytes": 800000
+    }
+   ],
+   "kept": [
+    "1799999998000-b.json",
+    "1799999999000-c.json"
+   ]
+  },
+  {
+   "name": "temporary and cursor files are not counted or removed",
+   "now_ms": 1800000000000,
+   "files": [
+    {
+     "name": "1799308800000-a.json.tmp",
+     "events": 1
+    },
+    {
+     "name": "cursor",
+     "raw": "123"
+    },
+    {
+     "name": "1799999999000-b.json",
+     "events": 1
+    }
+   ],
+   "kept": [
+    "1799308800000-a.json.tmp",
+    "1799999999000-b.json",
+    "cursor"
+   ]
+  }
+ ],
+ "cursor_limits": {
+  "lookback_secs": 1865,
+  "window_secs": 259200
+ },
+ "cursor": [
+  {
+   "name": "no cursor reads the last 3 days",
+   "now": 1000000,
+   "cursor": null,
+   "since": 740800
+  },
+  {
+   "name": "recent cursor looks back 1865 s",
+   "now": 1000000,
+   "cursor": 999000,
+   "since": 997135
+  },
+  {
+   "name": "old cursor is capped at 3 days",
+   "now": 1000000,
+   "cursor": 100,
+   "since": 740800
+  },
+  {
+   "name": "truncated answer still advances to the newest returned row",
+   "now": 1000000,
+   "cursor": 995000,
+   "returned": [
+    999800,
+    999900
+   ],
+   "truncated": true,
+   "next": 999900
+  },
+  {
+   "name": "empty answer leaves the cursor",
+   "now": 1000000,
+   "cursor": 995000,
+   "returned": [],
+   "next": 995000
+  },
+  {
+   "name": "fallback query leaves the cursor",
+   "now": 1000000,
+   "cursor": 995000,
+   "returned": [
+    999950
+   ],
+   "fallback": true,
+   "next": 995000
+  },
+  {
+   "name": "a rewound cursor only refetches",
+   "now": 1000000,
+   "cursor": 900000,
+   "returned": [
+    901000
+   ],
+   "next": 901000
+  }
+ ],
+ "drain_account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+ "drain": [
+  {
+   "name": "room in the kept list is written",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": [
+    "0000000000000000000000000000000000000000000000000000000000000001"
+   ]
+  },
+  {
+   "name": "no list kept yet writes nothing",
+   "kept": null,
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  },
+  {
+   "name": "room outside the kept list is dropped",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000002",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "22222222-2222-4222-8222-222222222222"
+      ]
+     ],
+     "content": "p2",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  },
+  {
+   "name": "room marked left is dropped",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "left": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  },
+  {
+   "name": "room forgotten after the fetch is dropped",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "forgot": {
+    "11111111-1111-4111-8111-111111111111": 2000
+   },
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  },
+  {
+   "name": "room forgotten within 5 s before the fetch is dropped",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "forgot": {
+    "11111111-1111-4111-8111-111111111111": 1996
+   },
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  },
+  {
+   "name": "room forgotten well before the fetch is written",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "forgot": {
+    "11111111-1111-4111-8111-111111111111": 1994
+   },
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000001",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [
+      [
+       "h",
+       "11111111-1111-4111-8111-111111111111"
+      ]
+     ],
+     "content": "p1",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": [
+    "0000000000000000000000000000000000000000000000000000000000000001"
+   ]
+  },
+  {
+   "name": "row without a room is dropped",
+   "kept": [
+    "11111111-1111-4111-8111-111111111111"
+   ],
+   "fetched_at": 2000,
+   "events": [
+    {
+     "id": "0000000000000000000000000000000000000000000000000000000000000003",
+     "pubkey": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+     "created_at": 1000,
+     "kind": 9,
+     "tags": [],
+     "content": "x",
+     "sig": "00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000"
+    }
+   ],
+   "written": []
+  }
+ ]
+}

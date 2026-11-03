@@ -9,7 +9,7 @@ import 'l10n.dart';
 
 /// Where the chosen app language is saved on this device. Same key as
 /// desktop's `kuzz.locale`; absent means "follow the phone".
-const _localePreferenceKey = 'kuzz.locale';
+const localePreferenceKey = 'kuzz.locale';
 
 /// The shipped language whose tag (`ko`, `zh-Hans`, `pt-BR`) is [tag], or
 /// `null` when this build has no such language.
@@ -26,7 +26,7 @@ Locale? shippedLocaleForTag(String? tag) {
 class LocalePreferenceNotifier extends Notifier<Locale?> {
   @override
   Locale? build() => shippedLocaleForTag(
-    ref.watch(savedPrefsProvider).getString(_localePreferenceKey),
+    ref.watch(savedPrefsProvider).getString(localePreferenceKey),
   );
 
   /// Pick [locale], or `null` to follow the phone again.
@@ -34,9 +34,9 @@ class LocalePreferenceNotifier extends Notifier<Locale?> {
     state = locale;
     final prefs = ref.read(savedPrefsProvider);
     if (locale == null) {
-      await prefs.remove(_localePreferenceKey);
+      await prefs.remove(localePreferenceKey);
     } else {
-      await prefs.setString(_localePreferenceKey, locale.toLanguageTag());
+      await prefs.setString(localePreferenceKey, locale.toLanguageTag());
     }
   }
 }

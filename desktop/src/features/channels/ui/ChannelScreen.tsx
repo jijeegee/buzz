@@ -93,6 +93,7 @@ import { useChannelOpenReadState } from "./useChannelOpenReadState";
 import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
 import { readingPositionScope } from "@/features/channels/readingPositionStore";
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
+import { useThreadRootOpen } from "./useThreadRootOpen";
 import { useChannelUnreadState } from "./useChannelUnreadState";
 import type { ChannelScreenProps } from "./ChannelScreen.types";
 import { OwnerCanReadNotice } from "@/features/agents/ownerView/OwnerCanReadNotice";
@@ -109,7 +110,7 @@ export function ChannelScreen({
   onAddFiles, onCloseIdleAuxiliaryPanel,
   onCloseForumPost, onSelectForumPost,
   selectedForumPostId, targetForumReplyId,
-  targetMessageEvents, targetMessageId, isRouteTargetResolving = false,
+  targetMessageEvents, targetMessageId, targetThreadRootId = null, isRouteTargetResolving = false,
   ...searchTarget
 }: ChannelScreenProps) {
   const queryClient = useQueryClient();
@@ -454,8 +455,11 @@ export function ChannelScreen({
       resolvedMessages,
     ],
   );
+  // The panel opens on the root id alone; the root resolves in the background.
+  const threadRootOpen = useThreadRootOpen({ activeChannel, isHuddleTranscript, loadedEvents: resolvedMessages, rootId: effectiveOpenThreadHeadId });
   const threadPanelData = useIndependentThreadPanel({
     activeChannel,
+    rootOpen: threadRootOpen,
     channelEvents: resolvedMessages,
     threadReplyEvents,
     rootId: effectiveOpenThreadHeadId,
@@ -482,9 +486,7 @@ export function ChannelScreen({
     isOpenFrontierPending,
     isOpenFrontierUnknown,
     threadOpenRead,
-    openThreadHeadMessage,
     threadFirstUnreadReplyId,
-    threadReplyTargetMessage,
     threadReplyUnreadCounts,
     threadUnreadCounts,
     unreadCount,
@@ -725,8 +727,13 @@ export function ChannelScreen({
     setThreadScrollTargetId,
     targetJumpOnly: messageRouteJumpOnly,
     targetMessageId,
+    targetThreadRootId,
     timelineMessages,
   });
+  const displayedThreadHeadMessage = threadPanelData.threadHead;
+  const displayedThreadAllMessages = threadPanelData.messages;
+  const displayedThreadMessages = threadPanelData.visibleReplies;
+  const displayedThreadReplyTargetMessage = threadPanelData.replyTargetMessage;
   useThreadTargetSync({
     clearOptimisticThreadOverride,
     editTargetId,
@@ -734,14 +741,16 @@ export function ChannelScreen({
     // A thread opened by the route keeps waiting while its root is fetched.
     isTimelineLoading: isTimelineLoading || isRouteTargetResolving,
     openThreadHeadId,
-    openThreadHeadMessage,
+    opensOnRootId: threadRootOpen !== null,
     setEditTargetId,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,
     setThreadReplyTargetId,
     setThreadScrollTargetId,
+    threadHeadId: effectiveOpenThreadHeadId,
+    threadHeadMessage: displayedThreadHeadMessage,
     threadReplyTargetId,
-    threadReplyTargetMessage,
+    threadReplyTargetMessage: displayedThreadReplyTargetMessage,
   });
   const hasAuxiliaryPanel = Boolean(
     effectiveOpenThreadHeadId ||
@@ -749,10 +758,6 @@ export function ChannelScreen({
       profilePanelPubkey ||
       channelManagementOpen,
   );
-  const displayedThreadHeadMessage = threadPanelData.threadHead;
-  const displayedThreadAllMessages = threadPanelData.messages;
-  const displayedThreadMessages = threadPanelData.visibleReplies;
-  const displayedThreadReplyTargetMessage = threadPanelData.replyTargetMessage;
   // A thread read is sent only once the thread has decided where it opens.
   useThreadOpenServerRead(
     threadOpenRead === "pending" ? null : displayedThreadHeadMessage,

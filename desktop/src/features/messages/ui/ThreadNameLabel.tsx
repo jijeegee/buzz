@@ -1,6 +1,10 @@
-import { useThreadName } from "../lib/useThreadName";
+import { useThreadNameLabel } from "../lib/useThreadName";
 
-/** Shared name in compact thread lists; absent names retain the existing layout. */
+/**
+ * Shared name in compact thread lists; absent names retain the existing
+ * layout. Read-only: a row costs no live subscription (renames arrive on the
+ * room bundle).
+ */
 export function ThreadNameLabel({
   channelId,
   threadId,
@@ -8,7 +12,7 @@ export function ThreadNameLabel({
   channelId: string;
   threadId: string;
 }) {
-  const { name } = useThreadName(channelId, threadId);
+  const name = useThreadNameLabel(channelId, threadId);
   return name ? (
     <span
       className="mr-2 inline-block max-w-full truncate align-bottom font-medium"

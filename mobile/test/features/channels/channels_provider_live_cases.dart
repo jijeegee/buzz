@@ -132,10 +132,11 @@ void _liveSubscriptionTests() {
         _channelB,
       ]);
       // The open rooms ride these chunks too, so they carry the
-      // thread-summary recounts.
+      // thread-summary recounts, plus thread names as room metadata.
       expect(session.subscribeFilters.single.kinds, [
         ...EventKind.channelEventKinds,
         EventKind.channelThreadSummary,
+        EventKind.threadName,
       ]);
       expect(session.subscribeFilters.single.limit, 0);
 
@@ -534,6 +535,98 @@ void _liveSubscriptionTests() {
 
     session.emit(_liveMessage(_channelA));
     expect(roomA, 1);
+  });
+
+  group('hidden DMs ride the chunks as quiet rooms', () {
+    Future<(ProviderContainer, _FakeRelaySession)> loaded() async {
+      final session = _FakeRelaySession(
+        memberships: [
+          _membership(_channelA, myPk),
+          _membership(_channelB, myPk),
+        ],
+        metadata: [
+          _meta(id: _channelA, name: 'room'),
+          _meta(id: _channelB, name: 'Bob', channelType: 'dm'),
+        ],
+        hiddenDmEvents: [
+          _hiddenDms([_channelB], pubkey: myPk),
+        ],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _waitUntil(() => session.activeSubscriptionCount == 1);
+      return (container, session);
+    }
+
+    test('one chunk carries the listed room and the hidden DM', () async {
+      final (container, session) = await loaded();
+      expect(session.activeChannels, {_channelA, _channelB});
+      expect(
+        container.read(roomLiveRouterProvider).isQuietRoom(_channelB),
+        isTrue,
+      );
+      expect(
+        container.read(roomLiveRouterProvider).isQuietRoom(_channelA),
+        isFalse,
+      );
+    });
+
+    test("a hidden DM's events reach the room router only, never the "
+        'all-rooms consumers', () async {
+      final (container, session) = await loaded();
+      final allRooms = <String>[];
+      final quiet = <String>[];
+      container
+          .read(channelLiveEventsProvider)
+          .listen((e) => allRooms.add(e.id));
+      container
+          .read(roomLiveRouterProvider)
+          .listenQuiet((e, roomId) => quiet.add(roomId));
+      final requests = session.membershipRequestCount;
+      session
+        ..emit(_liveMessage(_channelB))
+        ..emit(
+          _systemMessage(_channelB, {'type': 'member_joined', 'actor': 'bob'}),
+        );
+      await _settle();
+      expect(allRooms, isEmpty);
+      expect(quiet, [_channelB, _channelB]);
+      expect(
+        session.membershipRequestCount,
+        requests,
+        reason: "a hidden DM's system message must not refetch the list",
+      );
+      session.emit(_liveMessage(_channelA));
+      expect(allRooms, ['live-$_channelA']);
+    });
+
+    test('the chunk carrying a hidden DM reports each ready to the router '
+        '(the gap read after a reconnect waits for it)', () async {
+      final (container, session) = await loaded();
+      final router = container.read(roomLiveRouterProvider);
+      expect(session.statusListeners, hasLength(1));
+      final tick = router.readyTick;
+      final ready = router.whenRoomsReadySince({_channelB}, tick);
+      session.reportReady();
+      expect(await ready, isTrue);
+      expect(router.readyTick, greaterThan(tick));
+    });
+
+    test('a terminal CLOSED on a chunk with a hidden DM is not re-sent on '
+        'the next refresh', () async {
+      final (container, session) = await loaded();
+      final subscribes = session.totalSubscribeCount;
+      session.closeSubscriptionContaining(
+        _channelB,
+        'restricted: terminal closure',
+      );
+      await _settle();
+      await container.read(channelsProvider.notifier).refresh();
+      await _settle();
+      expect(session.totalSubscribeCount, subscribes);
+      expect(session.activeSubscriptionCount, 0);
+    });
   });
 }
 

@@ -2,8 +2,11 @@ import 'dart:async';
 
 import 'package:kuzz/features/activity/activity_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
+import 'package:kuzz/features/channels/channel_live_events.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
+import 'package:kuzz/features/channels/room_live_router.dart';
+import 'package:kuzz/shared/relay/me_live_bundle.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -21,13 +24,14 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
   int mentionFetchCount = 0;
   int activeMentionFetches = 0;
   int maxActiveMentionFetches = 0;
-  Completer<void>? hiddenSubscribeGate;
-  bool failNextHiddenSubscribe = false;
-  int hiddenUnsubscribeCount = 0;
-  // Per-batch gates keyed by hidden-subscribe call order (0-based), so a test
-  // can park an individual batch's REQ while letting earlier ones settle.
-  final Map<int, Completer<void>> hiddenSubscribeGatesByCall = {};
-  int hiddenSubscribeCallCount = 0;
+  final List<NostrFilter> queryFilters = [];
+
+  /// Order of addressed (`#p`) subscribes and feed queries.
+  final List<String> calls = [];
+  final List<void Function()> gapListeners = [];
+
+  /// Answer a gated mention query from history as it was before the gate.
+  bool snapshotBeforeGate = false;
 
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
@@ -67,6 +71,11 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     queryFilterCounts.add(filters.length);
+    queryFilters.addAll(filters);
+    calls.add('query');
+    final snapshot = _history
+        .where((event) => filters.any((filter) => _matches(filter, event)))
+        .toList();
     if (failNextQueryRelay) {
       failNextQueryRelay = false;
       throw StateError('transient HTTP query failure');
@@ -95,6 +104,7 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
         activeMentionFetches -= 1;
       }
     }
+    if (snapshotBeforeGate) return snapshot;
     return _history
         .where((event) => filters.any((filter) => _matches(filter, event)))
         .toList();
@@ -105,31 +115,32 @@ class _RecordingSessionNotifier extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
-    // A hidden-DM resurface subscription carries the full channel-message kind
-    // set plus an `#h` tag; the visible-DM sub uses only kind 9. Batching and
-    // teardown assertions look only at the hidden-DM subscriptions.
-    final isHidden =
-        filter.tags.containsKey('#h') &&
-        filter.kinds.length == EventKind.channelMessageEventKinds.length;
-    if (isHidden) {
-      final callIndex = hiddenSubscribeCallCount++;
-      final perCallGate = hiddenSubscribeGatesByCall[callIndex];
-      if (perCallGate != null) await perCallGate.future;
-      final gate = hiddenSubscribeGate;
-      if (gate != null) await gate.future;
-      if (failNextHiddenSubscribe) {
-        failNextHiddenSubscribe = false;
-        throw StateError('relay rejected hidden-DM subscription');
-      }
+    if (filter.tags.containsKey('#p')) {
+      calls.add('subscribe#p');
+      if (onGap != null) gapListeners.add(onGap);
     }
     final subscription = (filter: filter, onEvent: onEvent);
     _subscriptions.add(subscription);
-    return () {
-      if (isHidden) hiddenUnsubscribeCount += 1;
-      _subscriptions.remove(subscription);
-    };
+    return () => _subscriptions.remove(subscription);
   }
+
+  void setStatus(SessionStatus status) => state = SessionState(status: status);
+
+  /// Every `#h` value of the open subscriptions.
+  Set<String> get subscribedRooms => {
+    for (final subscription in _subscriptions)
+      ...subscription.filter.tags['#h'] ?? const <String>[],
+  };
+
+  /// The `#h` values of the hidden-DM gap reads (`queryRelay`), per filter.
+  List<NostrFilter> get hiddenGapReads => [
+    for (final filter in queryFilters)
+      if (filter.tags.containsKey('#h') &&
+          filter.kinds.length == EventKind.channelMessageEventKinds.length)
+        filter,
+  ];
 
   /// The `#h` value lists of every registered hidden-DM subscription, in order.
   List<List<String>> get hiddenDmSubscriptionBatches => [
@@ -219,8 +230,16 @@ NostrEvent _mentionEvent(String id, int createdAt) => NostrEvent(
   sig: '',
 );
 
-Future<void> _waitFor(bool Function() predicate) async {
-  for (var attempt = 0; attempt < 100; attempt++) {
+/// Delivers [event] as a room chunk carrying the hidden DMs (quiet rooms)
+/// would.
+void _emitQuiet(ProviderContainer container, NostrEvent event) {
+  container.read(roomLiveRouterProvider)
+    ..setQuietRooms(container.read(channelsProvider.notifier).hiddenDmIds)
+    ..routeBundleEvent(event, {event.channelId!});
+}
+
+Future<void> _waitFor(bool Function() predicate, {int attempts = 100}) async {
+  for (var attempt = 0; attempt < attempts; attempt++) {
     if (predicate()) return;
     await Future<void>.delayed(const Duration(milliseconds: 10));
   }
@@ -398,7 +417,8 @@ void main() {
       await container.read(activityProvider.future);
       await Future<void>.delayed(const Duration(milliseconds: 10));
 
-      session.emit(
+      _emitQuiet(
+        container,
         const NostrEvent(
           id: 'hidden-dm-message',
           pubkey: alice,
@@ -465,7 +485,8 @@ void main() {
       container.read(channelsProvider);
       await container.read(activityProvider.future);
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      session.emit(
+      _emitQuiet(
+        container,
         const NostrEvent(
           id: 'hidden-dm-during-discovery',
           pubkey: alice,
@@ -556,10 +577,10 @@ void main() {
       sig: '',
     );
 
-    session.emit(hiddenDmEvent('message-a'));
+    _emitQuiet(container, hiddenDmEvent('message-a'));
     await _waitFor(() => reopenCalls == 1);
     // Follower arrives while attempt A is in flight → coalesced for retry.
-    session.emit(hiddenDmEvent('message-b'));
+    _emitQuiet(container, hiddenDmEvent('message-b'));
     await Future<void>.delayed(const Duration(milliseconds: 10));
     firstReopenGate.complete();
 
@@ -644,7 +665,7 @@ void main() {
       );
 
       // Attempt A starts on generation N and suspends inside the reopen.
-      session.emit(hiddenDmEvent('message-a'));
+      _emitQuiet(container, hiddenDmEvent('message-a'));
       await _waitFor(() => reopenCalls == 1);
 
       // Activity rebuilds (generation N+1). Follower B lands on the replacement
@@ -654,7 +675,7 @@ void main() {
       container.invalidate(activityProvider);
       await container.read(activityProvider.future);
       await Future<void>.delayed(const Duration(milliseconds: 10));
-      session.emit(hiddenDmEvent('message-b'));
+      _emitQuiet(container, hiddenDmEvent('message-b'));
       await _waitFor(() => reopenCalls == 2);
 
       // A retires while B is still pending. Its instance-checked cleanup must
@@ -667,7 +688,7 @@ void main() {
       // present, C coalesces into it (no new attempt). With unconditional
       // cleanup, A would have evicted B's entry and C would wrongly start a
       // third overlapping attempt.
-      session.emit(hiddenDmEvent('message-c'));
+      _emitQuiet(container, hiddenDmEvent('message-c'));
       await Future<void>.delayed(const Duration(milliseconds: 10));
       expect(reopenCalls, 2);
 
@@ -715,7 +736,8 @@ void main() {
     await container.read(channelsProvider.future);
     await container.read(activityProvider.future);
     await Future<void>.delayed(const Duration(milliseconds: 10));
-    session.emit(
+    _emitQuiet(
+      container,
       const NostrEvent(
         id: 'hidden-dm-stale-message',
         pubkey: alice,
@@ -779,6 +801,80 @@ void main() {
       );
     },
   );
+
+  group('addressed listener on the account bundle', () {
+    ProviderContainer containerFor(_RecordingSessionNotifier session) {
+      final container = ProviderContainer(
+        overrides: [
+          relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
+          myPubkeyProvider.overrideWithValue('me_pk'),
+          relaySessionProvider.overrideWith(() => session),
+          channelsProvider.overrideWith(
+            () => _FixedChannelsNotifier(const <Channel>[]),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+      return container;
+    }
+
+    test('listens live only, before the feed fetch', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      await container.read(activityProvider.future);
+
+      expect(session.calls.take(2), ['subscribe#p', 'query']);
+      final addressed = session._subscriptions.singleWhere(
+        (s) => s.filter.tags.containsKey('#p'),
+      );
+      expect(addressed.filter.limit, 0);
+      expect(addressed.filter.since, isNull);
+      expect(meScopeOf(addressed.filter)?.kind, MeScopeKind.addressed);
+    });
+
+    test('a live event during build refreshes once after it, and the newer '
+        'feed wins', () async {
+      final session = _RecordingSessionNotifier()
+        ..seed(_mentionEvent('existing', 1_700_000_001))
+        ..snapshotBeforeGate = true
+        ..mentionFetchGate = Completer<void>();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      final building = container.read(activityProvider.future);
+      await _waitFor(() => session.activeMentionFetches == 1);
+
+      session.emit(_mentionEvent('live-during-build', 1_700_000_002));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(session.mentionFetchCount, 1, reason: 'no refresh during build');
+
+      session.mentionFetchGate!.complete();
+      session.mentionFetchGate = null;
+      await building;
+      await _waitFor(
+        () => container
+            .read(inboxItemsProvider)
+            .any((item) => item.id == 'live-during-build'),
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(session.mentionFetchCount, 2, reason: 'exactly one refresh');
+    });
+
+    test('a catch-up gap refreshes the feed', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session);
+      await container.read(channelsProvider.future);
+      await container.read(activityProvider.future);
+      final before = session.mentionFetchCount;
+
+      session.seed(_mentionEvent('missed', 1_700_000_003));
+      session.gapListeners.single();
+      await _waitFor(
+        () => container.read(inboxItemsProvider).any((i) => i.id == 'missed'),
+      );
+      expect(session.mentionFetchCount, before + 1);
+    });
+  });
 
   test('serializes manual and live inbox refreshes', () async {
     final session = _RecordingSessionNotifier();
@@ -848,83 +944,47 @@ void main() {
     );
   });
 
-  group('hidden-DM subscription batching', () {
+  group('hidden DMs as quiet rooms', () {
     const self =
         '1111111111111111111111111111111111111111111111111111111111111111';
+    const alice =
+        '2222222222222222222222222222222222222222222222222222222222222222';
+    const hiddenTarget = 'hidden-dm';
 
     Set<String> hiddenIds(int count) => {
       for (var i = 0; i < count; i++) 'dm-${i.toString().padLeft(4, '0')}',
     };
 
-    ProviderContainer containerFor(
-      _RecordingSessionNotifier session,
-      Set<String> hidden,
-    ) => ProviderContainer(
-      overrides: [
-        relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
-        myPubkeyProvider.overrideWithValue(self),
-        relaySessionProvider.overrideWith(() => session),
-        channelsProvider.overrideWith(
-          () => _FixedChannelsNotifier(const <Channel>[], hiddenDmIds: hidden),
-        ),
+    int nowSeconds() => DateTime.now().millisecondsSinceEpoch ~/ 1000;
+
+    NostrEvent hiddenMessage(String id, {int? createdAt}) => NostrEvent(
+      id: id,
+      pubkey: alice,
+      createdAt: createdAt ?? nowSeconds(),
+      kind: EventKind.streamMessageV2,
+      tags: const [
+        ['p', self],
+        ['h', hiddenTarget],
       ],
+      content: 'Hello again',
+      sig: '',
     );
 
-    test(
-      '128 hidden DMs register a single subscription within the cap',
-      () async {
-        final session = _RecordingSessionNotifier();
-        final container = containerFor(session, hiddenIds(128));
-        addTearDown(container.dispose);
-
-        await container.read(channelsProvider.future);
-        await container.read(activityProvider.future);
-        await _waitFor(() => session.hiddenDmSubscriptionBatches.isNotEmpty);
-
-        final batches = session.hiddenDmSubscriptionBatches;
-        expect(batches, hasLength(1));
-        expect(batches.single, hasLength(128));
-      },
-    );
-
-    test(
-      '129 hidden DMs split into two subscriptions, both within the cap',
-      () async {
-        final session = _RecordingSessionNotifier();
-        final container = containerFor(session, hiddenIds(129));
-        addTearDown(container.dispose);
-
-        await container.read(channelsProvider.future);
-        await container.read(activityProvider.future);
-        await _waitFor(() => session.hiddenDmSubscriptionBatches.length == 2);
-
-        final batches = session.hiddenDmSubscriptionBatches;
-        expect(batches.map((batch) => batch.length), [128, 1]);
-        final all = batches.expand((batch) => batch).toSet();
-        expect(all, hasLength(129));
-        for (final batch in batches) {
-          expect(batch.length, lessThanOrEqualTo(128));
-        }
-      },
-    );
-
-    test('activity on the final batch resurfaces its DM', () async {
-      const alice =
-          '2222222222222222222222222222222222222222222222222222222222222222';
-      final hidden = hiddenIds(129);
-      final target = 'dm-0128';
-      final session = _RecordingSessionNotifier();
-      final reopened = <List<String>>[];
+    ProviderContainer containerFor(
+      _RecordingSessionNotifier session, {
+      Set<String> hidden = const {hiddenTarget},
+      List<Channel> visible = const <Channel>[],
+      List<List<String>>? reopened,
+    }) {
       final container = ProviderContainer(
         overrides: [
           relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
           myPubkeyProvider.overrideWithValue(self),
           relaySessionProvider.overrideWith(() => session),
           channelsProvider.overrideWith(
-            () =>
-                _FixedChannelsNotifier(const <Channel>[], hiddenDmIds: hidden),
+            () => _FixedChannelsNotifier(visible, hiddenDmIds: hidden),
           ),
-          channelMembersProvider(target).overrideWith(
+          channelMembersProvider(hiddenTarget).overrideWith(
             (ref) async => [
               ChannelMember(
                 pubkey: self,
@@ -939,180 +999,213 @@ void main() {
             ],
           ),
           dmResurfaceActionProvider.overrideWithValue((pubkeys) async {
-            reopened.add(pubkeys);
-            return target;
+            reopened?.add(pubkeys);
+            return hiddenTarget;
           }),
         ],
       );
       addTearDown(container.dispose);
+      // Keep Activity listened to, so a new connection rebuilds it.
+      container.listen(activityProvider, (_, _) {});
+      return container;
+    }
 
+    /// Activity built, with the hidden DMs on a ready chunk.
+    Future<RoomLiveRouter> start(ProviderContainer container) async {
+      final router = container.read(roomLiveRouterProvider)
+        ..setQuietRooms(container.read(channelsProvider.notifier).hiddenDmIds);
+      router.markRoomsReady(
+        router.isQuietRoom(hiddenTarget) ? {hiddenTarget} : {},
+      );
       await container.read(channelsProvider.future);
       await container.read(activityProvider.future);
-      await _waitFor(() => session.hiddenDmSubscriptionBatches.length == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      return router;
+    }
 
-      // The target lives only in the second batch; delivering it exercises
-      // that batch's live subscription.
-      session.emit(
-        NostrEvent(
-          id: 'final-batch-message',
-          pubkey: alice,
-          createdAt: 1_700_000_000,
-          kind: EventKind.streamMessageV2,
-          tags: [
-            ['p', self],
-            ['h', target],
-          ],
-          content: 'Hello again',
-          sig: '',
-        ),
-      );
+    /// The connection drops and comes back.
+    Future<void> reconnect(
+      ProviderContainer container,
+      _RecordingSessionNotifier session,
+    ) async {
+      session.setStatus(SessionStatus.disconnected);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+      session.setStatus(SessionStatus.connected);
+      await container.read(activityProvider.future);
+      await Future<void>.delayed(const Duration(milliseconds: 10));
+    }
 
+    test('129 hidden DMs open no REQ of their own', () async {
+      final session = _RecordingSessionNotifier();
+      final hidden = hiddenIds(129);
+      final container = containerFor(session, hidden: hidden);
+      await start(container);
+
+      expect(session.hiddenDmSubscriptionBatches, isEmpty);
+      expect(session.subscribedRooms.intersection(hidden), isEmpty);
+    });
+
+    test('a quiet-room message resurfaces its DM; the same message on a REQ '
+        'of its own does not', () async {
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(session, reopened: reopened);
+      await start(container);
+
+      session.emit(hiddenMessage('on-a-req'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(reopened, isEmpty);
+
+      _emitQuiet(container, hiddenMessage('quiet'));
       await _waitFor(() => reopened.isNotEmpty);
       expect(reopened.single, [alice]);
     });
 
-    test('a batch subscription failure does not abort later batches', () async {
-      final session = _RecordingSessionNotifier()
-        ..failNextHiddenSubscribe = true;
-      final container = containerFor(session, hiddenIds(129));
-      addTearDown(container.dispose);
+    test('after a drop, the gap is read once the chunk is live on the new '
+        'connection, and resurfaces once', () async {
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(session, reopened: reopened);
+      final router = await start(container);
 
-      await container.read(channelsProvider.future);
-      await container.read(activityProvider.future);
-      // The first batch throws; the loop continues and registers the second.
-      await _waitFor(() => session.hiddenDmSubscriptionBatches.isNotEmpty);
+      final droppedAround = nowSeconds();
+      // Sent while the connection is down: no live delivery.
+      session.seed(hiddenMessage('during-drop'));
+      await reconnect(container, session);
+      // The re-sent chunk REQ is not ready yet: nothing read.
+      expect(session.hiddenGapReads, isEmpty);
 
-      final batches = session.hiddenDmSubscriptionBatches;
-      expect(batches, hasLength(1));
-      expect(batches.single, hasLength(1));
+      router.markRoomsReady({hiddenTarget});
+      await _waitFor(() => reopened.isNotEmpty);
+      final read = session.hiddenGapReads.single;
+      expect(read.tags['#h'], [hiddenTarget]);
+      expect(read.since, greaterThanOrEqualTo(droppedAround - 1865));
+      expect(read.since, lessThanOrEqualTo(nowSeconds() - 1865));
+
+      // The same message arriving live as well changes nothing.
+      _emitQuiet(container, hiddenMessage('during-drop'));
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(reopened, hasLength(1));
     });
 
-    test('teardown during batch-1 setup self-disposes batch 1 and never starts '
-        'batch 2', () async {
-      final session = _RecordingSessionNotifier()
-        ..hiddenSubscribeGatesByCall[0] = Completer<void>();
-      final container = containerFor(session, hiddenIds(129));
+    test('when the chunk is late, the gap is read at the bound and again on '
+        'ready; the message resurfaces once', () async {
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(session, reopened: reopened);
+      final router = await start(container);
 
-      await container.read(channelsProvider.future);
-      await container.read(activityProvider.future);
-      // Batch 1's REQ is parked in flight; batch 2 has not been requested.
-      await _waitFor(() => session.hiddenSubscribeCallCount == 1);
+      session.seed(hiddenMessage('during-drop'));
+      await reconnect(container, session);
+      // The 1.5 s bound passes first.
+      await _waitFor(() => session.hiddenGapReads.length == 1, attempts: 300);
+      await _waitFor(() => reopened.isNotEmpty);
 
-      // Supersede this generation mid-setup, then let batch 1's REQ resolve.
-      container.dispose();
-      session.hiddenSubscribeGatesByCall[0]!.complete();
-
-      // Batch 1 resolves stale and self-disposes; batch 2 is never requested.
-      await _waitFor(() => session.hiddenUnsubscribeCount == 1);
-      expect(session.hiddenUnsubscribeCount, 1);
-      expect(session.hiddenSubscribeCallCount, 1);
-      expect(session.hiddenDmSubscriptionBatches, isEmpty);
+      router.markRoomsReady({hiddenTarget});
+      await _waitFor(() => session.hiddenGapReads.length == 2);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(reopened, hasLength(1));
     });
 
-    test(
-      'teardown after batch 1 settles while batch 2 is pending tears down both',
-      () async {
-        final session = _RecordingSessionNotifier()
-          ..hiddenSubscribeGatesByCall[1] = Completer<void>();
-        final container = containerFor(session, hiddenIds(129));
+    test('the first connect reads no gap', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session);
+      final router = await start(container);
+      router.markRoomsReady({hiddenTarget});
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(session.hiddenGapReads, isEmpty);
+    });
 
-        await container.read(channelsProvider.future);
-        await container.read(activityProvider.future);
-        // Batch 1 has settled and registered; batch 2's REQ is parked in flight.
-        await _waitFor(() => session.hiddenSubscribeCallCount == 2);
-        expect(session.hiddenDmSubscriptionBatches, hasLength(1));
+    test('a past message from before the room turned quiet is not '
+        'reopened by the gap read', () async {
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(session, reopened: reopened);
+      final router = await start(container);
 
-        // Supersede this generation with batch 2 pending, then let it resolve.
-        container.dispose();
-        session.hiddenSubscribeGatesByCall[1]!.complete();
+      // Ten minutes old: inside the gap read's window, but older than the
+      // room's start on the bundle.
+      session.seed(hiddenMessage('old', createdAt: nowSeconds() - 600));
+      await reconnect(container, session);
+      router.markRoomsReady({hiddenTarget});
+      await _waitFor(() => session.hiddenGapReads.isNotEmpty);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(reopened, isEmpty);
+    });
 
-        // Batch 2 resolves stale and disposes itself plus the settled batch 1.
-        await _waitFor(() => session.hiddenUnsubscribeCount == 2);
-        expect(session.hiddenUnsubscribeCount, 2);
-        expect(session.hiddenDmSubscriptionBatches, isEmpty);
-      },
-    );
-
-    test(
-      '129 visible DMs batch under the cap and hidden activity still resurfaces',
-      () async {
-        // An over-cap visible-DM set previously rejected as one REQ, aborting
-        // the whole live setup — so the hidden batches never registered and
-        // resurfacing silently died. Batching the visible set keeps every REQ
-        // within the cap and leaves the hidden subscription intact.
-        const alice =
-            '2222222222222222222222222222222222222222222222222222222222222222';
-        final visibleChannels = [
-          for (var i = 0; i < 129; i++)
-            _dmChannel('visible-${i.toString().padLeft(4, '0')}'),
-        ];
-        const hiddenTarget = 'hidden-dm';
-        final session = _RecordingSessionNotifier();
-        final reopened = <List<String>>[];
-        final container = ProviderContainer(
-          overrides: [
-            relayConfigProvider.overrideWith(_FixedRelayConfigNotifier.new),
-            myPubkeyProvider.overrideWithValue(self),
-            relaySessionProvider.overrideWith(() => session),
-            channelsProvider.overrideWith(
-              () => _FixedChannelsNotifier(
-                visibleChannels,
-                hiddenDmIds: const {hiddenTarget},
-              ),
-            ),
-            channelMembersProvider(hiddenTarget).overrideWith(
-              (ref) async => [
-                ChannelMember(
-                  pubkey: self,
-                  role: 'member',
-                  joinedAt: DateTime(2026),
-                ),
-                ChannelMember(
-                  pubkey: alice,
-                  role: 'member',
-                  joinedAt: DateTime(2026),
-                ),
-              ],
-            ),
-            dmResurfaceActionProvider.overrideWithValue((pubkeys) async {
-              reopened.add(pubkeys);
-              return hiddenTarget;
-            }),
+    NostrEvent dmMessage(String id, String roomId, {int kind = 9}) =>
+        NostrEvent(
+          id: id,
+          pubkey: alice,
+          createdAt: nowSeconds(),
+          kind: kind,
+          tags: [
+            ['h', roomId],
           ],
-        );
-        addTearDown(container.dispose);
-
-        await container.read(channelsProvider.future);
-        await container.read(activityProvider.future);
-        await _waitFor(() => session.hiddenDmSubscriptionBatches.isNotEmpty);
-
-        // Every visible-DM REQ stays within the cap, split 128 + 1.
-        final visibleBatches = session.visibleDmSubscriptionBatches;
-        expect(visibleBatches.map((batch) => batch.length), [128, 1]);
-        expect(visibleBatches.expand((batch) => batch).toSet(), hasLength(129));
-        // The hidden subscription registered despite the over-cap visible set.
-        expect(session.hiddenDmSubscriptionBatches, hasLength(1));
-
-        // Hidden activity still resurfaces its DM.
-        session.emit(
-          NostrEvent(
-            id: 'hidden-message',
-            pubkey: alice,
-            createdAt: 1_700_000_000,
-            kind: EventKind.streamMessageV2,
-            tags: [
-              ['p', self],
-              ['h', hiddenTarget],
-            ],
-            content: 'Hello again',
-            sig: '',
-          ),
+          content: 'Hi',
+          sig: '',
         );
 
-        await _waitFor(() => reopened.isNotEmpty);
-        expect(reopened.single, [alice]);
-      },
-    );
+    int feedQueries(_RecordingSessionNotifier session) =>
+        session.calls.where((call) => call == 'query').length;
+
+    test('129 visible DMs open no REQ; a kind 9 in one on the room bundle '
+        'refreshes the feed', () async {
+      final visibleChannels = [
+        for (var i = 0; i < 129; i++)
+          _dmChannel('visible-${i.toString().padLeft(4, '0')}'),
+      ];
+      final visibleIds = {for (final channel in visibleChannels) channel.id};
+      final session = _RecordingSessionNotifier();
+      final reopened = <List<String>>[];
+      final container = containerFor(
+        session,
+        visible: visibleChannels,
+        reopened: reopened,
+      );
+      container.read(roomLiveRouterProvider)
+        ..setBundleRooms(visibleIds)
+        ..setCoveredRooms(visibleIds);
+      await start(container);
+
+      expect(session.visibleDmSubscriptionBatches, isEmpty);
+      expect(session.subscribedRooms.intersection(visibleIds), isEmpty);
+
+      // Covered at fetch time: no coverage refresh follows.
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final afterBuild = feedQueries(session);
+
+      final live = container.read(channelLiveEventsProvider);
+      live
+        ..emit(dmMessage('reaction', 'visible-0005', kind: 7))
+        ..emit(dmMessage('other-room', 'channel-1'));
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      expect(feedQueries(session), afterBuild);
+
+      live.emit(dmMessage('dm-message', 'visible-0128'));
+      await _waitFor(() => feedQueries(session) == afterBuild + 1);
+
+      // Hidden activity still resurfaces its DM.
+      _emitQuiet(container, hiddenMessage('hidden-message'));
+      await _waitFor(() => reopened.isNotEmpty);
+      expect(reopened.single, [alice]);
+    });
+
+    test('a DM the bundle did not cover at fetch time refreshes once when it '
+        'is covered', () async {
+      final session = _RecordingSessionNotifier();
+      final container = containerFor(session, visible: [_dmChannel('late-dm')]);
+      final router = container.read(roomLiveRouterProvider)
+        ..setBundleRooms({'late-dm'});
+      await start(container);
+      await Future<void>.delayed(const Duration(milliseconds: 100));
+      final afterBuild = feedQueries(session);
+
+      router.setCoveredRooms({'late-dm'});
+      await _waitFor(() => feedQueries(session) == afterBuild + 1);
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(feedQueries(session), afterBuild + 1);
+    });
   });
 }
 

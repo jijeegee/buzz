@@ -1,9 +1,21 @@
+import 'dart:async';
+
 import 'package:kuzz/shared/relay/relay.dart';
 
-/// A connected relay session that records subscriptions and publishes, and
-/// lets a test deliver live events to every subscription.
+/// A connected relay session that records subscriptions, reads and
+/// publishes, and lets a test deliver live events to every subscription.
 class FakeOwnDeviceSession extends RelaySessionNotifier {
   final List<NostrFilter> filters = [];
+
+  /// Every subscribe ('live') and read ('read'), in order.
+  final List<String> calls = [];
+  final List<NostrFilter> reads = [];
+
+  /// Events a read returns.
+  final List<NostrEvent> stored = [];
+
+  /// How many next reads fail.
+  int readFailures = 0;
   final List<void Function(NostrEvent)> _listeners = [];
   final List<NostrEvent> published = [];
 
@@ -18,10 +30,26 @@ class FakeOwnDeviceSession extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
+    calls.add('live');
     filters.add(filter);
     _listeners.add(onEvent);
     return () => _listeners.remove(onEvent);
+  }
+
+  @override
+  Future<List<NostrEvent>> fetchHistory(
+    NostrFilter filter, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    calls.add('read');
+    reads.add(filter);
+    if (readFailures > 0) {
+      readFailures--;
+      throw TimeoutException('read timed out');
+    }
+    return List.of(stored);
   }
 
   @override

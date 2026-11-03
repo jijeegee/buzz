@@ -9,6 +9,9 @@
  * through the production hook and manager, the feed through the production
  * query hook and its real Tauri command name.
  *
+ * The read state reads again once per real reconnect (the relay client's
+ * reconnect hook): its listener is live-only, so nothing replays its marks.
+ *
  * Falsifiability: keying useReadState's manager effect on the connection
  * state, or the home feed query on it, makes each step fetch again.
  */
@@ -46,6 +49,7 @@ const { QueryClient, QueryClientProvider } = await import(
   "@tanstack/react-query"
 );
 const { relayClient } = await import("@/shared/api/relayClient");
+const { meLive } = await import("@/shared/api/relayMeLive");
 const { RelayConnectionStateEmitter } = await import(
   "@/shared/api/relayConnectionStateEmitter"
 );
@@ -77,17 +81,26 @@ async function settle() {
 test("launch and a reconnect fetch the read state and the home feed once", async () => {
   const emitter = new RelayConnectionStateEmitter("idle");
   const counts = { readStateFetches: 0, readStateSubscribes: 0 };
+  const reconnectListeners = new Set();
   mock.method(relayClient, "getConnectionState", () => emitter.get());
   mock.method(relayClient, "subscribeToConnectionState", (listener) =>
     emitter.subscribe(listener),
   );
+  mock.method(relayClient, "subscribeToReconnects", (listener) => {
+    reconnectListeners.add(listener);
+    return () => reconnectListeners.delete(listener);
+  });
   mock.method(relayClient, "fetchEvents", async (filter) => {
-    if (filter.kinds?.includes(KIND_READ_STATE)) counts.readStateFetches++;
+    // Full reads reach back the horizon; the launch gap read only seconds.
+    const full = Date.now() / 1_000 - (filter.since ?? 0) > 3_600;
+    if (filter.kinds?.includes(KIND_READ_STATE) && full) {
+      counts.readStateFetches++;
+    }
     return [];
   });
-  mock.method(relayClient, "subscribeInteractive", async (filter) => {
+  mock.method(meLive, "subscribe", async (filter) => {
     if (filter.kinds?.includes(KIND_READ_STATE)) counts.readStateSubscribes++;
-    return () => {};
+    return async () => {};
   });
   mock.method(relayClient, "publishEvent", async () => ({}));
 
@@ -129,11 +142,18 @@ test("launch and a reconnect fetch the read state and the home feed once", async
   await step("reconnecting");
   await step("connecting");
   await step("connected");
-  // The relay client replays live subscriptions on reconnect; the read
-  // state and the feed are not refetched for status steps.
+  // Status steps refetch nothing; the listener survives.
   assert.equal(counts.readStateFetches, 1);
   assert.equal(counts.readStateSubscribes, 1);
   assert.equal(feedFetches(), 1);
+
+  // The real reconnect (the relay client's hook) reads the read state once.
+  await act(async () => {
+    for (const listener of reconnectListeners) listener();
+  });
+  await settle();
+  assert.equal(counts.readStateFetches, 2);
+  assert.equal(counts.readStateSubscribes, 1);
 
   await act(async () => root.unmount());
   queryClient.clear();

@@ -251,6 +251,7 @@ void main() {
       expect(relaySession.liveFilters.single.kinds, [
         ...EventKind.channelEventKinds,
         EventKind.channelThreadSummary,
+        EventKind.threadName,
       ]);
       expect(relaySession.liveFilters.single.tags['#h'], [_channelId]);
       // Not yet covered by the room bundle: a live-only room subscription.
@@ -5538,6 +5539,7 @@ class _RecordingRelaySessionNotifier extends RelaySessionNotifier {
     NostrFilter filter,
     void Function(NostrEvent) onEvent, {
     void Function(String message)? onClosed,
+    void Function()? onGap,
   }) async {
     operations.add('subscribe');
     liveFilters.add(filter);

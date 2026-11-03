@@ -11,6 +11,7 @@ import {
 } from "@/shared/constants/kinds";
 import {
   getTextPayload,
+  liveReqFrame,
   parseRelayFrame,
   toRelayFrames,
   type ConnectionState,
@@ -33,11 +34,25 @@ import {
   prepareSubscriptionEvent,
 } from "@/shared/api/relayClosedRecovery";
 import { getChannelReconnectRepairEvents } from "@/shared/api/channelReconnectRepair";
+import { replayUntilRequestsRestored } from "@/shared/api/relayReconnectReplay";
 import {
-  replayUntilRequestsRestored,
-  reconnectCursors,
-} from "@/shared/api/relayReconnectReplay";
+  type LiveSessionHost,
+  sendRawWithReconnectRetry,
+  subscribeLiveSession,
+} from "@/shared/api/relayLiveSubscribe";
+import {
+  subscribeLiveFilters,
+  subscribeRoomLiveFilters,
+} from "@/shared/api/relayLiveFilters";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
+import {
+  UserStreamSession,
+  userStreamEnabled,
+} from "@/shared/api/relayUserStream";
+import {
+  attachUserStreamLive,
+  tauriStreamStore,
+} from "@/shared/api/relayUserStreamStore";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
@@ -125,8 +140,52 @@ export class RelayClient {
       clearTimeout: (id) => window.clearTimeout(id),
     },
   );
+  /** The account's user stream, sent first after AUTH OK (`relayUserStream.ts`). */
+  readonly userStream = new UserStreamSession({
+    generation: () => this.connectionGeneration,
+    send: (payload, generation) =>
+      this.sendRawForGeneration(payload, generation),
+    closeSocket: (generation) => {
+      if (generation === this.connectionGeneration)
+        this.resetConnection(new Error("Relay ended the user stream."));
+    },
+    chunkRooms: () => this.liveRooms.chunkRooms(),
+    roomOf: (event) => this.liveRooms.streamRoomOf(event),
+    nowMs: () => Date.now(),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    log: (line) => console.info(line),
+    enabled: userStreamEnabled,
+    loadState: tauriStreamStore.getState,
+    saveState: (key, value) =>
+      void tauriStreamStore.setState(key, value).catch(() => {}),
+  });
+  readonly userStreamLive = attachUserStreamLive(
+    this.userStream,
+    this.liveRooms,
+    () => this.channelAccessRevocations.hint(),
+    () => this.visibleChannelId,
+  );
+  readonly stopShadowCompare = this.liveRooms.observeChunkEvents(
+    (event, roomId) => this.userStream.chunkEvent(event, roomId),
+  );
   private authOkTracker = new AuthOkTracker();
   private terminal = false;
+  /** The session as live REQs see it (`relayLiveSubscribe.ts`). */
+  private readonly liveHost: LiveSessionHost = {
+    subscriptions: this.subscriptions,
+    liveReqDrain: this.liveReqDrain,
+    sessionEpoch: () => this.sessionEpoch,
+    sessionSignal: () => this.liveSessionAbort.signal,
+    connectionGeneration: () => this.connectionGeneration,
+    visibleChannelId: () => this.visibleChannelId,
+    ensureConnected: () => this.ensureConnected(),
+    sendRawForGeneration: (payload, generation) =>
+      this.sendRawForGeneration(payload, generation),
+    recoverFromSocketFailure: (error, fallback) =>
+      this.recoverFromSocketFailure(error, fallback),
+    closeSubscription: (subId) => this.closeSubscription(subId),
+  };
 
   private connectionStateEmitter = new RelayConnectionStateEmitter("idle");
   private stallWatchdog = new RelayStallWatchdog({
@@ -156,6 +215,8 @@ export class RelayClient {
     this.liveSessionAbort.abort();
     this.liveSessionAbort = new AbortController();
     this.liveRooms.reset();
+    this.userStream.socketEnded();
+    this.userStream.scopeChanged();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     this.keepAliveRequested = false;
@@ -362,39 +423,6 @@ export class RelayClient {
     return this.liveRooms.listenRoom(channelId, onEvent);
   }
 
-  /**
-   * Subscribe to huddle lifecycle events (kinds 48100–48103) for a channel,
-   * so HuddleIndicator detects active huddles without being drowned out by
-   * regular channel messages. Includes the last 10 historical events.
-   */
-  async subscribeToHuddleEvents(
-    channelId: string,
-    onEvent: (event: RelayEvent) => void,
-  ) {
-    return this.subscribe(
-      {
-        kinds: [48100, 48101, 48102, 48103],
-        "#h": [channelId],
-        limit: 100,
-      },
-      onEvent,
-    );
-  }
-
-  async subscribeToTypingIndicators(
-    channelId: string,
-    onEvent: (event: RelayEvent) => void,
-  ) {
-    return this.subscribe(
-      {
-        kinds: [KIND_TYPING_INDICATOR],
-        "#h": [channelId],
-        limit: 10,
-        since: Math.floor(Date.now() / 1_000) - 10,
-      },
-      onEvent,
-    );
-  }
   async publishUserStatus(status: UserStatusInput): Promise<RelayEvent> {
     await this.ensureConnected();
     const tags: string[][] = [["d", "general"]];
@@ -412,14 +440,6 @@ export class RelayClient {
     );
   }
 
-  /** Subscribe to kind:30315 user status events (live only, no backfill). */
-  async subscribeToUserStatusUpdates(onEvent: (event: RelayEvent) => void) {
-    return this.subscribe(
-      { kinds: [KIND_USER_STATUS], "#d": ["general"], limit: 0 },
-      onEvent,
-    );
-  }
-
   async subscribeToAllStreamMessages(onEvent: (event: RelayEvent) => void) {
     return this.subscribe(buildGlobalStreamFilter(50), onEvent);
   }
@@ -433,6 +453,44 @@ export class RelayClient {
     gone?: () => void, // dropped for good: disposed or a terminal CLOSED
   ) {
     return this.subscribe(filter, onEvent, onReady, timeoutMs, signal, gone);
+  }
+  /** One live REQ with several `limit: 0` filters, for a bundle. */
+  async subscribeLiveFilters(
+    filters: RelaySubscriptionFilter[],
+    onEvent: (event: RelayEvent) => void,
+    onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    signal?: AbortSignal,
+    gone?: () => void,
+  ) {
+    return subscribeLiveFilters(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
+      filters,
+      onEvent,
+      onReady,
+      signal,
+      gone,
+    );
+  }
+  /** One live REQ with several `limit: 0` filters for one room. */
+  async subscribeRoomLiveFilters(
+    filters: RelaySubscriptionFilter[],
+    onEvent: (event: RelayEvent) => void,
+    onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    signal?: AbortSignal,
+    gone?: () => void,
+  ) {
+    return subscribeRoomLiveFilters(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
+      filters,
+      onEvent,
+      onReady,
+      signal,
+      gone,
+    );
   }
   /** Prioritize an interactive live consumer without changing its replay filter or pacing. */
   async subscribeInteractive(
@@ -602,6 +660,7 @@ export class RelayClient {
       }, BACKOFF_RESET_STABLE_MS);
 
       this.connectionStateEmitter.set("connected");
+      await this.userStream.connected(generation);
       await this.replayLiveSubscriptions();
       this.stallWatchdog.start();
       this.emitReconnectIfNeeded();
@@ -618,7 +677,7 @@ export class RelayClient {
     }
   }
 
-  private async subscribe(
+  private subscribe(
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
@@ -627,87 +686,18 @@ export class RelayClient {
     onGone?: () => void,
     priority?: "interactive",
   ) {
-    const epoch = this.sessionEpoch;
-    const sessionSignal = this.liveSessionAbort.signal;
-    signal?.throwIfAborted();
-    const subId = `live-${crypto.randomUUID()}`;
-    let fallbackTimeout: number | undefined;
-    let settleReady = () => {};
-    const onRemoved = () => {
-      signal?.removeEventListener("abort", abort);
-      sessionSignal.removeEventListener("abort", abort);
-      window.clearTimeout(fallbackTimeout);
-      settleReady();
-      onGone?.();
-    };
-    const subscription: Extract<RelaySubscription, { mode: "live" }> = {
-      mode: "live",
+    return subscribeLiveSession(
+      this.liveHost,
+      (payload, fallback, onDispatch) =>
+        this.sendRawWithReconnectRetry(payload, fallback, onDispatch),
       filter,
-      priority,
       onEvent,
-      onRemoved,
-      ...reconnectCursors(filter, this.subscriptions.values()),
-    };
-    const dispose = async () => {
-      if (this.subscriptions.get(subId) !== subscription) return;
-      this.subscriptions.delete(subId);
-      this.liveReqDrain.cancel(subId);
-      retireLiveSubscription(subscription);
-      onRemoved();
-      // Workspace teardown closes its socket; never send on its replacement.
-      if (epoch === this.sessionEpoch) await this.closeSubscription(subId);
-    };
-    let rejectCancelled = (_error: Error) => {};
-    const cancelled = new Promise<never>((_resolve, reject) => {
-      rejectCancelled = reject;
-    });
-    const abort = () => {
-      rejectCancelled(
-        new DOMException("Live subscription cancelled.", "AbortError"),
-      );
-      void dispose().catch(() => {});
-      onRemoved();
-    };
-    signal?.addEventListener("abort", abort, { once: true });
-    sessionSignal.addEventListener("abort", abort, { once: true });
-    try {
-      await Promise.race([this.ensureConnected(), cancelled]);
-      signal?.throwIfAborted();
-      sessionSignal.throwIfAborted();
-      const ready = new Promise<void>((resolve) => {
-        settleReady = resolve;
-      });
-      let readySettled = false;
-      subscription.resolveReady = (readiness) => {
-        if (readySettled) return;
-        readySettled = true;
-        window.clearTimeout(fallbackTimeout);
-        onReady?.(readiness);
-        settleReady();
-      };
-      this.subscriptions.set(subId, subscription);
-      await Promise.race([
-        this.sendRawWithReconnectRetry(
-          ["REQ", subId, filter],
-          "Failed to restore relay subscription.",
-          () => {
-            if (readySettled) return;
-            window.clearTimeout(fallbackTimeout);
-            fallbackTimeout = window.setTimeout(
-              () => subscription.resolveReady?.("timeout"),
-              readinessTimeoutMs,
-            );
-          },
-        ),
-        cancelled,
-      ]);
-      await Promise.race([ready, cancelled]);
-      return dispose;
-    } catch (error) {
-      await dispose().catch(() => {});
-      onRemoved();
-      throw error;
-    }
+      onReady,
+      readinessTimeoutMs,
+      signal,
+      onGone,
+      priority,
+    );
   }
 
   private async sendRaw(payload: unknown[]) {
@@ -748,92 +738,17 @@ export class RelayClient {
     return normalizedError;
   }
 
-  private async sendRawWithReconnectRetry(
+  private sendRawWithReconnectRetry(
     payload: unknown[],
     fallbackMessage: string,
     onDispatch?: () => void,
   ) {
-    const epoch = this.sessionEpoch;
-    const subId = payload[1] as string;
-    const subscription = this.subscriptions.get(subId);
-    const isOwned = () =>
-      subscription !== undefined &&
-      epoch === this.sessionEpoch &&
-      this.subscriptions.get(subId) === subscription;
-    const checkOwned = () => {
-      if (!isOwned())
-        throw new DOMException("Relay subscription retired.", "AbortError");
-    };
-    let generation = this.connectionGeneration;
-    const send = async () => {
-      checkOwned();
-      generation = this.connectionGeneration;
-      try {
-        onDispatch?.();
-        await this.sendRawForGeneration(payload, generation);
-      } finally {
-        // A dispatched REQ cannot be unsent. Converge to CLOSE on that socket,
-        // without touching a replacement workspace or connection.
-        if (
-          !isOwned() &&
-          epoch === this.sessionEpoch &&
-          generation === this.connectionGeneration
-        ) {
-          await this.closeSubscription(subId).catch(() => {});
-        }
-      }
-    };
-    const dispatch = () => {
-      const queuedGeneration = this.connectionGeneration;
-      return subscription?.mode === "live"
-        ? this.liveReqDrain.run(
-            subId,
-            () => isOwned() && queuedGeneration === this.connectionGeneration,
-            () =>
-              subscription.priority === "interactive" ||
-              (this.visibleChannelId !== null &&
-                subscription.filter["#h"]?.includes(this.visibleChannelId) ===
-                  true)
-                ? 0
-                : subscription.filter.limit === 0
-                  ? 1
-                  : 2,
-            send,
-          )
-        : send();
-    };
-    try {
-      await dispatch();
-    } catch (error) {
-      checkOwned(); // Cancellation is not a socket failure and must not reconnect.
-      if (generation !== this.connectionGeneration) {
-        // Live entries survive reset and belong to the new connection's replay.
-        // A late old-socket failure must not tear down that retained ownership.
-        if (subscription?.mode === "live") return;
-        throw error;
-      }
-      const normalizedError = this.recoverFromSocketFailure(
-        error,
-        fallbackMessage,
-      );
-      let retryGeneration: number | null = null;
-      try {
-        await this.ensureConnected();
-        checkOwned();
-        retryGeneration = this.connectionGeneration;
-        await dispatch();
-      } catch (retryError) {
-        checkOwned();
-        if (generation !== this.connectionGeneration) {
-          if (retryGeneration !== null && subscription?.mode === "live") return;
-          throw retryError;
-        }
-        throw this.recoverFromSocketFailure(
-          retryError,
-          normalizedError.message,
-        );
-      }
-    }
+    return sendRawWithReconnectRetry(
+      this.liveHost,
+      payload,
+      fallbackMessage,
+      onDispatch,
+    );
   }
 
   private async closeSubscription(subId: string) {
@@ -897,6 +812,14 @@ export class RelayClient {
       await this.handleAuthChallenge(rest[0], generation);
       return;
     }
+    if (typeof rest[0] === "string" && this.userStream.handles(rest[0])) {
+      if (type === "EVENT" && rest[1])
+        this.userStream.event(rest[0], rest[1] as RelayEvent);
+      else if (type === "EOSE") this.userStream.eose(rest[0]);
+      else if (type === "CLOSED")
+        this.userStream.closed(rest[0], String(rest[1] ?? ""));
+      return;
+    }
     if (type === "EVENT" && typeof rest[0] === "string" && rest[1]) {
       this.handleEvent(rest[0], rest[1] as RelayEvent, generation);
       return;
@@ -927,7 +850,7 @@ export class RelayClient {
         message: typeof rest[1] === "string" ? rest[1] : "",
         sendReq: (subId, filter) =>
           this.sendRawWithReconnectRetry(
-            ["REQ", subId, filter],
+            liveReqFrame(subId, this.subscriptions.get(subId), filter),
             "Failed to restore relay subscription after CLOSED.",
           ),
         closeSubscription: (subId) => this.closeSubscription(subId),
@@ -975,6 +898,10 @@ export class RelayClient {
     }
 
     if (!prepareSubscriptionEvent(subscription, event)) return;
+    if (subscription.mode === "live") this.userStreamLive.noteLive(event.id);
+    if (event.kind === 44100 || event.kind === 44101) {
+      if (subscription.mode === "live") this.userStream.membershipNotice(event);
+    }
     this.liveReqDrain.cancel(subId);
     this.eventBuffer.push({ subId, event, generation });
     this.flushTimeout ??= window.setTimeout(
@@ -1013,6 +940,7 @@ export class RelayClient {
       const decision = this.authOkTracker.record(success, message);
       if (decision === "authenticated") {
         authRequest.resolve();
+        this.userStream.authOk(this.connectionGeneration);
       } else {
         const error = new Error(message || "Relay authentication rejected.");
         authRequest.reject(error);
@@ -1081,7 +1009,9 @@ export class RelayClient {
     // ±25% jitter spreads a fleet's AUTH storms across a 50% window instead
     // of hitting the relay at the same instant.
     const jitter = this.reconnectDelayMs * (0.75 + Math.random() * 0.5);
-    const delay = Math.min(jitter, RECONNECT_MAX_DELAY_MS);
+    const delay =
+      Math.min(jitter, RECONNECT_MAX_DELAY_MS) +
+      this.userStream.takeReconnectJitterMs();
     this.reconnectDelayMs = Math.min(
       this.reconnectDelayMs * 2,
       RECONNECT_MAX_DELAY_MS,
@@ -1128,6 +1058,7 @@ export class RelayClient {
   ) {
     this.onMessageChannel = null;
     this.stallWatchdog.stop();
+    this.userStream.socketEnded();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     if (this.stabilityTimer !== null) {
@@ -1185,6 +1116,7 @@ export class RelayClient {
       subscription.resolveReady?.("closed");
       subscription.resolveReady = undefined;
       retireLiveSubscription(subscription);
+      subscription.multi?.lost();
     }
     for (const [eventId, pendingEvent] of this.pendingEvents) {
       window.clearTimeout(pendingEvent.timeout);

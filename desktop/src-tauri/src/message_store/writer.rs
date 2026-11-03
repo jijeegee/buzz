@@ -20,6 +20,7 @@ use super::classify::{classify, Filed};
 use super::coverage;
 use super::head::{self, HeadSpan};
 use super::purge;
+use super::room_seq::{self, SeqWrite};
 use super::snapshot;
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
@@ -51,6 +52,24 @@ pub(crate) enum Input {
         to: i64,
         captured: u64,
     },
+    /// A [`Self::Coverage`] that also writes rule-W `room_seq` rows, in the
+    /// span's transaction and refused with it
+    /// (docs/message-sync.md#watermark-room_seq).
+    StreamCoverage {
+        rooms: Vec<String>,
+        from: i64,
+        to: i64,
+        captured: u64,
+        seq: SeqWrite,
+    },
+    /// An accepted snapshot epoch: a different one clears every `room_seq`
+    /// row.
+    StreamEpoch { epoch: String },
+    /// A user stream `sync_state` value ([`room_seq::STATE_KEYS`]).
+    StreamState { key: String, value: String },
+    /// Rows a snapshot is behind (the relay DB was restored): deleted, so
+    /// the room's walk writes its seq afresh.
+    StreamClearRows { rooms: Vec<String> },
     /// Answers once everything queued before it is written: `true` when
     /// nothing was lost.
     Barrier(SyncSender<bool>),
@@ -97,6 +116,10 @@ fn rows_of(input: Input) -> (Vec<Filed>, Option<Arc<str>>) {
             (events.iter().filter_map(classify).collect(), relay_key)
         }
         Input::Coverage { .. }
+        | Input::StreamCoverage { .. }
+        | Input::StreamEpoch { .. }
+        | Input::StreamState { .. }
+        | Input::StreamClearRows { .. }
         | Input::ForgetExcept { .. }
         | Input::Barrier(_)
         | Input::HeadSent { .. }
@@ -122,7 +145,7 @@ const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS events(
   id TEXT PRIMARY KEY, kind INTEGER NOT NULL, pubkey TEXT NOT NULL,
   created_at INTEGER NOT NULL, room TEXT, root TEXT,
-  broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL);
+  broadcast INTEGER NOT NULL DEFAULT 0, raw TEXT NOT NULL, stored_at INTEGER);
 CREATE INDEX IF NOT EXISTS events_room_order ON events(room, root, created_at, id);
 CREATE INDEX IF NOT EXISTS events_job_rooms ON events(room) WHERE kind BETWEEN 43001 AND 43006;
 CREATE INDEX IF NOT EXISTS events_room_rows ON events(room, created_at DESC, id) WHERE root IS NULL OR broadcast = 1;
@@ -155,13 +178,35 @@ pub(crate) fn open(path: &Path) -> Result<Connection, String> {
         ));
     }
     conn.execute_batch(SCHEMA)
+        .and_then(|()| add_stored_at(&conn))
         .and_then(|()| conn.execute_batch(purge::MARKS_SCHEMA))
         .and_then(|()| conn.execute_batch(snapshot::SNAPSHOT_SCHEMA))
+        .and_then(|()| conn.execute_batch(room_seq::ROOM_SEQ_SCHEMA))
         .map_err(|error| error.to_string())?;
     conn.pragma_update(None, "user_version", SCHEMA_VERSION)
         .map_err(|error| error.to_string())?;
     coverage::drop_stale(&conn).map_err(|error| error.to_string())?;
     Ok(conn)
+}
+
+/// Adds `events.stored_at` (ms, this device's clock) to a file made before
+/// it. Rows stored before have none: they count as stored before any
+/// connection (docs/message-sync.md#counters). Older builds name their insert
+/// columns, so the version stays.
+fn add_stored_at(conn: &Connection) -> rusqlite::Result<()> {
+    let has = conn
+        .prepare("SELECT 1 FROM pragma_table_info('events') WHERE name = 'stored_at'")?
+        .exists([])?;
+    if !has {
+        conn.execute_batch("ALTER TABLE events ADD COLUMN stored_at INTEGER")?;
+    }
+    Ok(())
+}
+
+pub(crate) fn now_ms() -> i64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_or(0, |elapsed| elapsed.as_millis() as i64)
 }
 
 /// Writes `rows` in one transaction. The first copy of an event id wins; a
@@ -175,8 +220,8 @@ pub(crate) fn write(conn: &mut Connection, rows: &[Filed]) -> rusqlite::Result<(
 fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
     {
         let mut event = tx.prepare_cached(
-            "INSERT OR IGNORE INTO events(id, kind, pubkey, created_at, room, root, broadcast, raw)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+            "INSERT OR IGNORE INTO events(id, kind, pubkey, created_at, room, root, broadcast, raw, stored_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
         )?;
         let mut target =
             tx.prepare_cached("INSERT OR IGNORE INTO targets(id, target) VALUES (?1, ?2)")?;
@@ -186,6 +231,7 @@ fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
                created_at = excluded.created_at, raw = excluded.raw
              WHERE excluded.created_at >= summaries.created_at",
         )?;
+        let stored_at = now_ms();
         for row in rows {
             match row {
                 Filed::Event(row) => {
@@ -197,7 +243,8 @@ fn write_in(tx: &Transaction, rows: &[Filed]) -> rusqlite::Result<()> {
                         row.room,
                         row.root,
                         row.broadcast,
-                        row.raw
+                        row.raw,
+                        stored_at
                     ])?;
                     if added > 0 {
                         for id in &row.targets {
@@ -394,6 +441,25 @@ fn run(
                 return;
             }
             sequence += 1;
+            // Rule-W rows ride their span: peeled off here, written with it.
+            let (input, seq) = match input {
+                Input::StreamCoverage {
+                    rooms,
+                    from,
+                    to,
+                    captured,
+                    seq,
+                } => (
+                    Input::Coverage {
+                        rooms,
+                        from,
+                        to,
+                        captured,
+                    },
+                    Some(seq),
+                ),
+                other => (other, None),
+            };
             match input {
                 Input::Coverage {
                     mut rooms,
@@ -411,9 +477,32 @@ fn run(
                         known.note(room);
                     }
                     if !lost && from > lossy.at.load(Ordering::SeqCst) {
-                        if let Err(error) = coverage::extend(&mut conn, &rooms, from, to) {
+                        let written = coverage::extend_with(&mut conn, &rooms, from, to, |tx| {
+                            seq.as_ref()
+                                .map_or(Ok(0), |seq| room_seq::write(tx, &rooms, to, seq))
+                                .map(|_| ())
+                        });
+                        if let Err(error) = written {
                             eprintln!("kuzz-desktop: message store: coverage failed: {error}");
                         }
+                    }
+                }
+                Input::StreamEpoch { epoch } => {
+                    // After the rows queued before it, so a loss among them
+                    // is noted (and its rows cleared) first.
+                    flush(&mut conn, &mut rows, &lossy);
+                    if let Err(error) = room_seq::set_epoch(&mut conn, &epoch) {
+                        eprintln!("kuzz-desktop: message store: stream epoch failed: {error}");
+                    }
+                }
+                Input::StreamClearRows { rooms } => {
+                    if let Err(error) = room_seq::clear_rooms(&mut conn, &rooms) {
+                        eprintln!("kuzz-desktop: message store: clearing seqs failed: {error}");
+                    }
+                }
+                Input::StreamState { key, value } => {
+                    if let Err(error) = room_seq::set_state(&conn, &key, &value) {
+                        eprintln!("kuzz-desktop: message store: stream state failed: {error}");
                     }
                 }
                 Input::Barrier(reply) => {
@@ -552,8 +641,14 @@ fn flush(conn: &mut Connection, rows: &mut Vec<Filed>, lossy: &Loss) -> bool {
         return false;
     }
     // Until the spans are gone the loss stays pending, so reads stay
-    // uncertain and the next flush tries again.
-    if let Err(error) = note_lossy(conn).and_then(|()| coverage::clear(conn)) {
+    // uncertain and the next flush tries again. `room_seq` goes with them.
+    let cleared = conn.transaction().and_then(|tx| {
+        note_lossy(&tx)?;
+        coverage::clear(&tx)?;
+        room_seq::clear(&tx)?;
+        tx.commit()
+    });
+    if let Err(error) = cleared {
         eprintln!("kuzz-desktop: message store: forgetting coverage failed: {error}");
         lossy.pending.store(true, Ordering::SeqCst);
     }

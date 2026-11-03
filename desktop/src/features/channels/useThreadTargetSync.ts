@@ -5,9 +5,12 @@ import type { TimelineMessage } from "@/features/messages/types";
 
 /**
  * Keeps thread-panel and edit-composer targets consistent with the messages
- * that are actually loaded: closes the thread panel when its head message
- * disappears, seeds the reply target from the thread head, and clears stale
- * reply/edit targets that no longer resolve to a message.
+ * the panel shows: seeds the reply target from the open thread's root id,
+ * points a reply target that no longer resolves back at the root, and clears
+ * a stale edit target. The panel opens on the root id alone, so a missing
+ * root never closes it (docs/message-sync.md#opening-a-thread-from-its-root-id);
+ * only a panel that does not open that way (forum rooms, huddle transcripts)
+ * still closes when its head is not loaded.
  */
 export function useThreadTargetSync({
   clearOptimisticThreadOverride,
@@ -15,12 +18,14 @@ export function useThreadTargetSync({
   editTargetMessage,
   isTimelineLoading,
   openThreadHeadId,
-  openThreadHeadMessage,
+  opensOnRootId,
   setEditTargetId,
   setExpandedThreadReplyIds,
   setOpenThreadHeadId,
   setThreadReplyTargetId,
   setThreadScrollTargetId,
+  threadHeadId,
+  threadHeadMessage,
   threadReplyTargetId,
   threadReplyTargetMessage,
 }: {
@@ -28,18 +33,25 @@ export function useThreadTargetSync({
   editTargetId: string | null;
   editTargetMessage: TimelineMessage | null;
   isTimelineLoading: boolean;
+  /** The `thread` route value. */
   openThreadHeadId: string | null;
-  openThreadHeadMessage: TimelineMessage | null;
+  /** The panel opens on the root id alone (placeholder head until found). */
+  opensOnRootId: boolean;
   setEditTargetId: (id: string | null) => void;
   setExpandedThreadReplyIds: (ids: Set<string>) => void;
   setOpenThreadHeadId: PanelValueSetter;
   setThreadReplyTargetId: (id: string | null) => void;
   setThreadScrollTargetId: (id: string | null) => void;
+  /** The thread the panel shows (the route's, or a huddle's own). */
+  threadHeadId: string | null;
+  /** The panel's head as shown, placeholder or deleted row included. */
+  threadHeadMessage: TimelineMessage | null;
   threadReplyTargetId: string | null;
+  /** The panel's reply target as shown. */
   threadReplyTargetMessage: TimelineMessage | null;
 }) {
   React.useEffect(() => {
-    if (openThreadHeadId && !openThreadHeadMessage) {
+    if (!opensOnRootId && openThreadHeadId && !threadHeadMessage) {
       if (isTimelineLoading) {
         return;
       }
@@ -50,13 +62,18 @@ export function useThreadTargetSync({
       return;
     }
 
-    if (openThreadHeadMessage && !threadReplyTargetId) {
-      setThreadReplyTargetId(openThreadHeadMessage.id);
+    const headId = threadHeadMessage?.id ?? (opensOnRootId ? threadHeadId : null);
+    if (headId && !threadReplyTargetId) {
+      setThreadReplyTargetId(headId);
       return;
     }
 
-    if (threadReplyTargetId && !threadReplyTargetMessage) {
-      setThreadReplyTargetId(openThreadHeadMessage?.id ?? null);
+    if (
+      threadReplyTargetId &&
+      !threadReplyTargetMessage &&
+      threadReplyTargetId !== headId
+    ) {
+      setThreadReplyTargetId(headId);
     }
     if (editTargetId && !editTargetMessage) {
       setEditTargetId(null);
@@ -67,12 +84,14 @@ export function useThreadTargetSync({
     editTargetMessage,
     isTimelineLoading,
     openThreadHeadId,
-    openThreadHeadMessage,
+    opensOnRootId,
     setEditTargetId,
     setExpandedThreadReplyIds,
     setOpenThreadHeadId,
     setThreadReplyTargetId,
     setThreadScrollTargetId,
+    threadHeadId,
+    threadHeadMessage,
     threadReplyTargetId,
     threadReplyTargetMessage,
   ]);

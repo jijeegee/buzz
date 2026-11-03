@@ -3,7 +3,12 @@
 Open a stream thread and use the pencil beside its heading to set or change its
 name. The name also appears in the channel reply summary and sidebar activity
 preview. Save an empty name to restore the normal heading. Other channel readers
-receive changes live. Message bodies and reply counts do not change.
+receive changes live, in every room they belong to, open or not (sidebar
+previews and inbox rows included). Message bodies and reply counts do not change.
+
+Names reach clients as room metadata on the live room bundle, and rows read
+them in batches, so a list of thread rows costs no live subscription per row
+(docs/message-sync.md#thread-names).
 
 The limit is 40 units, counted like Twitter: scalars below U+1100 (Latin,
 Cyrillic, Greek, Arabic, Hebrew, Indic, Thai, ...) and general punctuation
@@ -63,5 +68,11 @@ keyboard is still composing the last syllable; no trailing space is needed.
 - Playwright `thread-name.spec.ts` exercises editing, limits, Korean composition,
   list display, live updates and clearing through the application.
 - Mobile `thread_name_test.dart` exercises editor limits, rejected-save recovery,
-  clearing, relay-stamped events, live/history ordering, cache isolation and
-  subscription disposal.
+  clearing, relay-stamped events, live/history ordering (a live rename from the
+  room bundle beats delayed history), cache isolation, and 50 rows sharing one
+  read with no live REQ.
+- Desktop `threadNameBatch.test.mjs` / mobile `thread_name_batch_test.dart`
+  cover batching, paging and failures; desktop `threadNameLive.test.mjs` covers
+  the live listener and in-flight renames.
+- The live REQ budget e2e (desktop) and `live_req_budget_test.dart` (mobile)
+  assert that 10 or 50 thread rows hold the room's own live REQs only.

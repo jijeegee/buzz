@@ -14,10 +14,14 @@ export const ME_AUTHORED_KINDS: readonly number[] = [
   3, 5, 30078, 30175, 30176, 30177, 30178, 30180, 30181, 30182, 30300,
 ];
 
-/** Kinds addressed to the account: mentions, approvals, reminders, chat-list pings, sign-in and membership notices. */
+/**
+ * Kinds addressed to the account: mentions, approvals, reminders, agent work
+ * frames (24200, never stored, so catch-up returns none), chat-list pings,
+ * sign-in and membership notices.
+ */
 export const ME_ADDRESSED_KINDS: readonly number[] = [
-  1, 9, 24210, 24211, 40002, 40007, 43001, 43002, 43003, 43004, 43005, 43006,
-  44100, 44101, 45001, 45003, 46010, 46011, 46012,
+  1, 9, 24200, 24210, 24211, 40002, 40007, 43001, 43002, 43003, 43004, 43005,
+  43006, 44100, 44101, 45001, 45003, 46010, 46011, 46012,
 ];
 
 /** Filter keys a bundle listener may use; anything else needs its own REQ. */
@@ -94,7 +98,15 @@ export function meScopeFilter(scope: MeScope): RelaySubscriptionFilter {
     : { kinds: [...ME_ADDRESSED_KINDS], "#p": [scope.pubkey], limit: 0 };
 }
 
-type Listener = {
+/** Optional per-listener signals (see `MeLiveBundle`). */
+export type MeListenerOptions = {
+  /** A catch-up may have missed events: refetch what the feature needs. */
+  onGap?: () => void;
+  /** A terminal CLOSED dropped the scope; subscribe again to keep listening. */
+  onRemoved?: () => void;
+};
+
+type Listener = MeListenerOptions & {
   filter: RelaySubscriptionFilter;
   onEvent: (event: RelayEvent) => void;
   seen: Map<string, true>;
@@ -139,6 +151,10 @@ function deliver(listener: Listener, event: RelayEvent) {
   listener.onEvent(event);
 }
 
+function signalGap(entry: ScopeEntry) {
+  for (const listener of [...entry.listeners]) listener.onGap?.();
+}
+
 function byCreatedAt(a: RelayEvent, b: RelayEvent) {
   return a.created_at - b.created_at;
 }
@@ -151,6 +167,11 @@ function byCreatedAt(a: RelayEvent, b: RelayEvent) {
  * matches, once. After a reconnect the bundle fetches what each scope missed
  * while the connection was down (`catchUp`); listeners drop events they
  * already had.
+ *
+ * One catch-up fetch per scope is capped at 500 events, shared by every
+ * listener and kind in that scope. When it returns that many, or its last
+ * attempt fails, each listener of the scope gets `onGap` once (current
+ * generation only), so a feature with history refetches what it needs.
  *
  * A scope closes once its last listener leaves, after the current task, so an
  * effect that re-subscribes at once keeps it.
@@ -173,12 +194,14 @@ export class MeLiveBundle {
     filter: RelaySubscriptionFilter,
     onEvent: (event: RelayEvent) => void,
     onReady?: (readiness: LiveSubscriptionReadiness) => void,
+    options: MeListenerOptions = {},
   ): Promise<() => Promise<void>> {
     const scope = meScopeOf(filter);
     if (!scope) throw new Error("Filter is not scoped to one account.");
     const key = `${scope.kind}:${scope.pubkey}`;
     const entry = this.scopes.get(key) ?? this.openScope(key, scope);
     const listener: Listener = {
+      ...options,
       filter,
       onEvent,
       seen: new Map(),
@@ -257,9 +280,11 @@ export class MeLiveBundle {
         () => {
           // A terminal CLOSED: the next subscriber opens a fresh REQ, as it
           // did with a REQ of its own (mobile does the same).
-          if (this.scopes.get(key) !== entry) return;
+          if (generation !== this.generation || this.scopes.get(key) !== entry)
+            return;
           this.scopes.delete(key);
           this.closeScope(entry);
+          for (const listener of [...entry.listeners]) listener.onRemoved?.();
         },
       )
       .then(
@@ -326,10 +351,13 @@ export class MeLiveBundle {
             deliver(listener, event);
           }
         }
+        // A full page may have cut off older events: listeners refetch.
+        if (missed.length >= CATCH_UP_LIMIT) signalGap(entry);
         return;
       } catch (error) {
         if (attempt === CATCH_UP_ATTEMPTS) {
           console.error("Failed to catch up account events", error);
+          if (isCurrent()) signalGap(entry);
           return;
         }
         await new Promise<void>((resolve) => {
