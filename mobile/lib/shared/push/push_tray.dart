@@ -50,8 +50,7 @@ class DeliveredPushNotification {
         communityId.isEmpty ||
         channelId is! String ||
         channelId.isEmpty ||
-        createdAt is! int ||
-        createdAt <= 0) {
+        createdAt is! int) {
       return null;
     }
     return DeliveredPushNotification(
@@ -65,22 +64,29 @@ class DeliveredPushNotification {
   }
 }
 
-/// Keys of the [delivered] notifications of [communityId] whose message
-/// [readState] shows as read — the same rule as the app's unread marks,
-/// and anything marked unread on purpose stays.
+/// Keys of the [delivered] notifications of [communityId] whose messages
+/// [readState] all shows as read — the same rule as the app's unread marks,
+/// and anything marked unread on purpose stays. Several rows may share a key
+/// (an Android room notification lists several messages).
 List<String> readPushNotificationKeys(
   Iterable<DeliveredPushNotification> delivered, {
   required ReadStateState readState,
   required String communityId,
 }) {
   if (!readState.isReady) return const [];
+  final read = <String, bool>{};
+  for (final item in delivered) {
+    if (item.communityId != communityId) continue;
+    read[item.key] = (read[item.key] ?? true) && _isRead(item, readState);
+  }
   return [
-    for (final item in delivered)
-      if (item.communityId == communityId && _isRead(item, readState)) item.key,
+    for (final entry in read.entries)
+      if (entry.value) entry.key,
   ];
 }
 
 bool _isRead(DeliveredPushNotification item, ReadStateState readState) {
+  if (item.createdAt <= 0) return false;
   final thread = item.threadRootId;
   if (readState.isForcedUnread(item.channelId) ||
       (thread != null && readState.isForcedUnread(threadContextKey(thread)))) {
@@ -168,7 +174,12 @@ class _PushTraySweeperState extends ConsumerState<PushTraySweeper> {
       for (final raw in await readDeliveredPushNotifications())
         ?DeliveredPushNotification.fromNative(raw),
     ];
-    if (!mounted || delivered.isEmpty) return;
+    // The account may have switched during the native call.
+    if (!mounted ||
+        delivered.isEmpty ||
+        ref.read(activeCommunityProvider).value?.id != community.id) {
+      return;
+    }
     final keys = readPushNotificationKeys(
       delivered,
       readState: ref.read(readStateProvider),

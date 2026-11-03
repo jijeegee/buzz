@@ -34,6 +34,9 @@ object KuzzNotifications {
     private const val EXTRA_THREAD = "app.kuzz.mobile.push.threadRootId"
     private const val EXTRA_CREATED_AT = "app.kuzz.mobile.push.createdAt"
 
+    /** Every message the room notification shows: "eventId createdAt thread?". */
+    private const val EXTRA_LINES = "app.kuzz.mobile.push.lines"
+
     /** The notification id of a room; 0 stays the generic notice's. */
     fun roomId(communityId: String, channelId: String): Int {
         val id = "$communityId\n$channelId".hashCode() and 0x7fffffff
@@ -89,7 +92,20 @@ object KuzzNotifications {
         (args["subtitle"] as? String)?.let { builder.setSubText(it) }
         if (room) {
             val previous = active(context, TAG, id)
-            if (previous?.extras?.getString(EXTRA_EVENT) == eventId) return
+            val previousLines = previous?.extras?.getStringArrayList(EXTRA_LINES).orEmpty()
+            if (previousLines.any { it.substringBefore(' ') == eventId }) return
+            // A late wake for an older message never replaces the newer one.
+            val previousAt = previous?.extras?.getLong(EXTRA_CREATED_AT, 0L) ?: 0L
+            if (createdAt != null && createdAt < previousAt) return
+            val line = listOfNotNull(
+                eventId,
+                (createdAt ?: 0L).toString(),
+                args["threadRootId"] as? String,
+            ).joinToString(" ")
+            extras.putStringArrayList(
+                EXTRA_LINES,
+                ArrayList(previousLines.takeLast(MAX_LINES - 1) + line),
+            )
             builder.setStyle(roomStyle(previous, title, body, createdAt))
                 .addExtras(extras)
                 .setGroup(GROUP)
@@ -161,7 +177,10 @@ object KuzzNotifications {
         }
     }
 
-    /** Room notifications in the tray with the newest message each shows. */
+    /**
+     * One row per message a room notification in the tray shows (same key);
+     * the app removes a room's notification once all its rows are read.
+     */
     fun delivered(context: Context): List<Map<String, Any>> {
         val system = context.getSystemService(NotificationManager::class.java) ?: return emptyList()
         val active = try {
@@ -169,20 +188,22 @@ object KuzzNotifications {
         } catch (_: RuntimeException) {
             return emptyList()
         }
-        return active.filter { it.tag == TAG && it.id != 0 }.mapNotNull { posted ->
+        return active.filter { it.tag == TAG && it.id != 0 }.flatMap { posted ->
             val extras = posted.notification.extras
-            val eventId = extras.getString(EXTRA_EVENT) ?: return@mapNotNull null
-            val communityId = extras.getString(EXTRA_COMMUNITY) ?: return@mapNotNull null
-            val channelId = extras.getString(EXTRA_CHANNEL) ?: return@mapNotNull null
-            val createdAt = extras.getLong(EXTRA_CREATED_AT, 0L)
-            if (createdAt <= 0L) return@mapNotNull null
-            buildMap {
-                put("key", posted.id.toString())
-                put("eventId", eventId)
-                put("communityId", communityId)
-                put("channelId", channelId)
-                put("createdAt", createdAt)
-                extras.getString(EXTRA_THREAD)?.let { put("threadRootId", it) }
+            val communityId = extras.getString(EXTRA_COMMUNITY) ?: return@flatMap emptyList()
+            val channelId = extras.getString(EXTRA_CHANNEL) ?: return@flatMap emptyList()
+            val lines = extras.getStringArrayList(EXTRA_LINES) ?: return@flatMap emptyList()
+            lines.map { line ->
+                val parts = line.split(' ')
+                buildMap<String, Any> {
+                    put("key", posted.id.toString())
+                    put("eventId", parts[0])
+                    put("communityId", communityId)
+                    put("channelId", channelId)
+                    // A malformed row (0) keeps the notification.
+                    put("createdAt", parts.getOrNull(1)?.toLongOrNull() ?: 0L)
+                    parts.getOrNull(2)?.let { put("threadRootId", it) }
+                }
             }
         }
     }
@@ -193,7 +214,10 @@ object KuzzNotifications {
         for (key in keys) key.toIntOrNull()?.let { manager.cancel(TAG, it) }
         val system = context.getSystemService(NotificationManager::class.java) ?: return
         val left = try {
-            system.activeNotifications.any { it.tag == TAG && it.id != 0 }
+            // Cancels apply asynchronously: leave out the rooms just removed.
+            system.activeNotifications.any {
+                it.tag == TAG && it.id != 0 && it.id.toString() !in keys
+            }
         } catch (_: RuntimeException) {
             true
         }

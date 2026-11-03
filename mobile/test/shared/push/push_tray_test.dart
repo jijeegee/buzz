@@ -69,6 +69,16 @@ void main() {
     expect(keys([reply], state(read, forced: {'msg:r1': room})), isEmpty);
   });
 
+  test('a room notification goes only when all its messages are read', () {
+    final rows = [
+      note('room', eventId: 'm1', createdAt: 100),
+      note('room', eventId: 'r1', thread: head, createdAt: 200),
+    ];
+    expect(keys(rows, state({'thread:$head': 200})), isEmpty);
+    expect(keys(rows, state({'thread:$head': 200, room: 100})), ['room']);
+    expect(keys([note('x', createdAt: 0)], state({room: 500})), isEmpty);
+  });
+
   test('other accounts and an unready read state are left alone', () {
     expect(keys([note('x', communityId: 'c2')], state({room: 500})), isEmpty);
     expect(keys([note('x')], state({room: 500}, ready: false)), isEmpty);
@@ -101,6 +111,7 @@ void main() {
         'eventId': 'e',
         'communityId': 'c1',
         'channelId': room,
+        'createdAt': 'x',
       }),
       isNull,
     );
