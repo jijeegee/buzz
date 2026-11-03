@@ -162,6 +162,26 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     }
   }
 
+  func testThreadReplyTargetCarriesItsThread() {
+    let head = String(repeating: "a", count: 64)
+    let parent = String(repeating: "b", count: 64)
+    let cases: [(tags: [[String]], thread: String?)] = [
+      ([["h", Self.channelID]], nil),
+      ([["h", Self.channelID], ["e", head, "", "reply"]], head),
+      ([["h", Self.channelID], ["e", head, "", "root"], ["e", parent, "", "reply"]], parent),
+      ([["h", Self.channelID], ["e", head, "", "reply"], ["broadcast", "1"]], nil),
+    ]
+    for item in cases {
+      let result = KuzzPushNotificationResolver.decodeResolution(
+        events: [event(content: "Preview", tags: item.tags)],
+        community: community()
+      )
+
+      XCTAssertEqual(result?.0.navigationTarget?.threadRootID, item.thread, "tags: \(item.tags)")
+      XCTAssertEqual(result?.0.navigationTarget?.eventID, "event-id", "tags: \(item.tags)")
+    }
+  }
+
   func testResolveSucceedsAndMutatesGatewayContent() throws {
     let event = try JSONDecoder().decode(
       VerifiedNostrEvent.self,

@@ -8,19 +8,51 @@ public struct KuzzPushNavigationTarget: Codable, Equatable, Sendable {
   public let eventID: String
   public let communityID: String
   public let channelID: String
+  /// The message whose thread holds [eventID] when the event is a thread
+  /// reply; nil for messages on the room's main timeline.
+  public let threadRootID: String?
 
-  public init(eventID: String, communityID: String, channelID: String) {
+  public init(
+    eventID: String,
+    communityID: String,
+    channelID: String,
+    threadRootID: String? = nil
+  ) {
     self.eventID = eventID
     self.communityID = communityID
     self.channelID = channelID
+    self.threadRootID = threadRootID.flatMap { Self.isEventID($0) ? $0 : nil }
   }
 
   public var userInfoValue: [String: String] {
-    [
+    var value = [
       "event_id": eventID,
       "community_id": communityID,
       "channel_id": channelID,
     ]
+    if let threadRootID {
+      value["thread_root_id"] = threadRootID
+    }
+    return value
+  }
+
+  /// The thread a reply opens in, read from its NIP-10 tags like the app's
+  /// `threadReferenceOf`: the `reply` parent, unless the reply is broadcast
+  /// to the room's main timeline.
+  public static func threadRootID(tags: [[String]]) -> String? {
+    if tags.contains(where: { $0.count >= 2 && $0[0] == "broadcast" && $0[1] == "1" }) {
+      return nil
+    }
+    guard
+      let parent = tags.last(where: { $0.count >= 4 && $0[0] == "e" && $0[3] == "reply" })?[1],
+      isEventID(parent)
+    else { return nil }
+    return parent
+  }
+
+  static func isEventID(_ value: String) -> Bool {
+    value.utf8.count == 64
+      && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }
   }
 
   /// Decodes a target without trusting other fields from the APNs payload.
@@ -28,7 +60,7 @@ public struct KuzzPushNavigationTarget: Codable, Equatable, Sendable {
     from userInfo: [AnyHashable: Any]
   ) -> KuzzPushNavigationTarget? {
     guard let raw = userInfo[userInfoKey] as? [String: Any],
-      raw.count == 3,
+      raw.count == 3 || (raw.count == 4 && raw["thread_root_id"] is String),
       let eventID = raw["event_id"] as? String,
       let communityID = raw["community_id"] as? String,
       let channelID = raw["channel_id"] as? String,
@@ -41,7 +73,8 @@ public struct KuzzPushNavigationTarget: Codable, Equatable, Sendable {
     return KuzzPushNavigationTarget(
       eventID: eventID,
       communityID: communityID,
-      channelID: channelID
+      channelID: channelID,
+      threadRootID: raw["thread_root_id"] as? String
     )
   }
 

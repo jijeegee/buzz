@@ -14,6 +14,7 @@ import '../relay/app_lifecycle_provider.dart';
 import 'android_push.dart';
 import 'android_push_enrollment.dart';
 import 'push_snapshot.dart';
+import 'push_thread_target.dart';
 
 const _channel = MethodChannel('kuzz/push');
 
@@ -198,10 +199,13 @@ MessageDeepLink? _pushNotificationLink(Object? arguments) {
       channelId.isEmpty) {
     return null;
   }
+  final threadRootId = arguments['threadRootId'];
   return MessageDeepLink(
     communityId: communityId,
     channelId: channelId,
     messageId: eventId,
+    // A thread reply opens its thread; a malformed id falls back to the room.
+    threadRootId: isPushEventId(threadRootId) ? threadRootId as String : null,
   );
 }
 

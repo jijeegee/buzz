@@ -18,10 +18,12 @@ object KuzzNotifications {
     private const val EXTRA_EVENT = "app.kuzz.mobile.push.eventId"
     private const val EXTRA_COMMUNITY = "app.kuzz.mobile.push.communityId"
     private const val EXTRA_CHANNEL = "app.kuzz.mobile.push.channelId"
+    private const val EXTRA_THREAD = "app.kuzz.mobile.push.threadRootId"
 
     /**
      * `args`: id (int), channelName (localized), title, body, subtitle?,
-     * eventId?, communityId?, channelId? (all three or none open a room).
+     * eventId?, communityId?, channelId? (all three or none open a room),
+     * threadRootId? (with them, opens that thread instead).
      */
     fun show(context: Context, args: Map<String, Any?>) {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -49,6 +51,7 @@ object KuzzNotifications {
             launch.putExtra(EXTRA_EVENT, eventId)
             launch.putExtra(EXTRA_COMMUNITY, communityId)
             launch.putExtra(EXTRA_CHANNEL, roomId)
+            (args["threadRootId"] as? String)?.let { launch.putExtra(EXTRA_THREAD, it) }
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
@@ -80,12 +83,19 @@ object KuzzNotifications {
         val eventId = intent.getStringExtra(EXTRA_EVENT) ?: return null
         val communityId = intent.getStringExtra(EXTRA_COMMUNITY) ?: return null
         val channelId = intent.getStringExtra(EXTRA_CHANNEL) ?: return null
-        return mapOf("eventId" to eventId, "communityId" to communityId, "channelId" to channelId)
+        val payload = mutableMapOf(
+            "eventId" to eventId,
+            "communityId" to communityId,
+            "channelId" to channelId,
+        )
+        intent.getStringExtra(EXTRA_THREAD)?.let { payload["threadRootId"] = it }
+        return payload
     }
 
     fun clearPayload(intent: Intent) {
         intent.removeExtra(EXTRA_EVENT)
         intent.removeExtra(EXTRA_COMMUNITY)
         intent.removeExtra(EXTRA_CHANNEL)
+        intent.removeExtra(EXTRA_THREAD)
     }
 }
