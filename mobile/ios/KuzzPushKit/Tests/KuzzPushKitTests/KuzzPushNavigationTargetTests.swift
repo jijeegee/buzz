@@ -129,3 +129,37 @@ import Testing
   #expect(buffer.take() == first)
   #expect(buffer.take() == nil)
 }
+
+@Test func `Delivered message notification needs a target and its created_at`() {
+  let thread = String(repeating: "c", count: 64)
+  let target = KuzzPushNavigationTarget(
+    eventID: "message-id",
+    communityID: "community-id",
+    channelID: "channel-id",
+    threadRootID: thread
+  )
+  let arguments = KuzzDeliveredMessageNotification.flutterArguments(
+    identifier: "request-1",
+    userInfo: [
+      KuzzPushNavigationTarget.userInfoKey: target.userInfoValue,
+      KuzzDeliveredMessageNotification.createdAtUserInfoKey: 1_700_000_000,
+    ]
+  )
+  #expect(arguments?["key"] as? String == "request-1")
+  #expect(arguments?["eventId"] as? String == "message-id")
+  #expect(arguments?["createdAt"] as? Int == 1_700_000_000)
+  #expect(arguments?["threadRootId"] as? String == thread)
+
+  #expect(
+    KuzzDeliveredMessageNotification.flutterArguments(
+      identifier: "request-2",
+      userInfo: [KuzzPushNavigationTarget.userInfoKey: target.userInfoValue]
+    ) == nil
+  )
+  #expect(
+    KuzzDeliveredMessageNotification.flutterArguments(
+      identifier: "request-3",
+      userInfo: [KuzzDeliveredMessageNotification.createdAtUserInfoKey: 1]
+    ) == nil
+  )
+}

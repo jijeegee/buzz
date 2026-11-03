@@ -258,6 +258,7 @@ void main() {
       }
 
       expect((await noticeFor([]))!.threadRootId, isNull);
+      expect((await noticeFor([]))!.createdAt, nowSeconds - 5);
       expect(
         (await noticeFor([
           ['e', head, '', 'reply'],
@@ -414,6 +415,18 @@ void main() {
     expect(message['title'], 'Alice');
     expect(message['eventId'], 'e');
     expect(message.containsKey('threadRootId'), isFalse);
+    expect(message.containsKey('createdAt'), isFalse);
+    expect(
+      const AndroidPushNotice.message(
+        title: 'Alice',
+        body: 'hi',
+        eventId: 'e',
+        communityId: 'c',
+        channelId: 'r',
+        createdAt: 42,
+      ).toChannelArguments(strings)['createdAt'],
+      42,
+    );
     final reply = AndroidPushNotice.message(
       title: 'Alice',
       body: 'hi',

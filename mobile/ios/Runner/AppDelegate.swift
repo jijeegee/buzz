@@ -471,6 +471,22 @@ import os.log
       startPushRegistration(result: result)
     case "takePendingNotificationResponse":
       result(pushNavigationBuffer.take()?.flutterArguments)
+    case "deliveredMessageNotifications":
+      UNUserNotificationCenter.current().getDeliveredNotifications { notifications in
+        let delivered = notifications.compactMap {
+          KuzzDeliveredMessageNotification.flutterArguments(
+            identifier: $0.request.identifier,
+            userInfo: $0.request.content.userInfo
+          )
+        }
+        DispatchQueue.main.async { result(delivered) }
+      }
+    case "removeDeliveredNotifications":
+      let keys = (call.arguments as? [String]) ?? []
+      if !keys.isEmpty {
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: keys)
+      }
+      result(nil)
     case "notificationAuthorizationStatus":
       UNUserNotificationCenter.current().getNotificationSettings { settings in
         DispatchQueue.main.async {

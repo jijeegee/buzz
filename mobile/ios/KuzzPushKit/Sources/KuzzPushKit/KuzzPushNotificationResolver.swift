@@ -11,6 +11,9 @@ public struct KuzzPushResolution: Decodable, Equatable, Sendable {
   public let subtitle: String?
   public let threadIdentifier: String?
   public let navigationTarget: KuzzPushNavigationTarget?
+  /// `created_at` of the event behind [navigationTarget]; the app removes the
+  /// notification once that message is read.
+  public let eventCreatedAt: Int?
   public let senderPubkey: String?
   public let senderAvatarPNG: Data?
   public let conversationIdentifier: String?
@@ -24,6 +27,7 @@ public struct KuzzPushResolution: Decodable, Equatable, Sendable {
     subtitle: String?,
     threadIdentifier: String?,
     navigationTarget: KuzzPushNavigationTarget? = nil,
+    eventCreatedAt: Int? = nil,
     senderPubkey: String? = nil,
     senderAvatarPNG: Data? = nil,
     conversationIdentifier: String? = nil,
@@ -35,6 +39,7 @@ public struct KuzzPushResolution: Decodable, Equatable, Sendable {
     self.subtitle = subtitle
     self.threadIdentifier = threadIdentifier
     self.navigationTarget = navigationTarget
+    self.eventCreatedAt = eventCreatedAt
     self.senderPubkey = senderPubkey
     self.senderAvatarPNG = senderAvatarPNG
     self.conversationIdentifier = conversationIdentifier
@@ -663,6 +668,7 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
           threadRootID: KuzzPushNavigationTarget.threadRootID(tags: event.tags)
         )
       },
+      eventCreatedAt: channelID == nil ? nil : event.createdAt,
       senderPubkey: event.pubkey.lowercased(),
       senderAvatarPNG: profile?.avatarPNG,
       conversationIdentifier: conversationIdentifier,

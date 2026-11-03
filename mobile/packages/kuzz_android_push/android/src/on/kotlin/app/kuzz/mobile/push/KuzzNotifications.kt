@@ -1,29 +1,50 @@
 package app.kuzz.mobile.push
 
 import android.Manifest
+import android.app.NotificationManager
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Build
+import android.os.Bundle
 import androidx.core.app.NotificationChannelCompat
 import androidx.core.app.NotificationCompat
 import androidx.core.app.NotificationManagerCompat
+import androidx.core.app.Person
 import androidx.core.content.ContextCompat
 
-/** Message notifications the wake engine posts, and their tap payload. */
+/**
+ * Message notifications the wake engine posts, and their tap payload.
+ *
+ * Like KakaoTalk: one notification per room (thread replies included), whose
+ * expanded view lists the room's last few messages and whose tap opens the
+ * newest one. Rooms share one group with a summary.
+ */
 object KuzzNotifications {
     private const val CHANNEL_ID = "kuzz_messages"
     private const val TAG = "kuzz_message"
+    private const val SUMMARY_TAG = "kuzz_message_summary"
+    private const val SUMMARY_ID = 1
+    private const val GROUP = "kuzz_messages"
+    private const val MAX_LINES = 5
     private const val EXTRA_EVENT = "app.kuzz.mobile.push.eventId"
     private const val EXTRA_COMMUNITY = "app.kuzz.mobile.push.communityId"
     private const val EXTRA_CHANNEL = "app.kuzz.mobile.push.channelId"
     private const val EXTRA_THREAD = "app.kuzz.mobile.push.threadRootId"
+    private const val EXTRA_CREATED_AT = "app.kuzz.mobile.push.createdAt"
+
+    /** The notification id of a room; 0 stays the generic notice's. */
+    fun roomId(communityId: String, channelId: String): Int {
+        val id = "$communityId\n$channelId".hashCode() and 0x7fffffff
+        return if (id == 0 || id == SUMMARY_ID) 2 else id
+    }
 
     /**
-     * `args`: id (int), channelName (localized), title, body, subtitle?,
-     * eventId?, communityId?, channelId? (all three or none open a room),
-     * threadRootId? (with them, opens that thread instead).
+     * `args`: id (int, generic notices), channelName (localized), title, body,
+     * subtitle?, eventId?, communityId?, channelId? (all three or none open a
+     * room), threadRootId? (with them, opens that thread instead), createdAt?
+     * (seconds, lets the app remove the notification once it is read).
      */
     fun show(context: Context, args: Map<String, Any?>) {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -41,27 +62,41 @@ object KuzzNotifications {
                 .setName(channelName)
                 .build(),
         )
-        val id = (args["id"] as? Number)?.toInt() ?: 0
-        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
-            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
         val eventId = args["eventId"] as? String
         val communityId = args["communityId"] as? String
         val roomId = args["channelId"] as? String
-        if (launch != null && eventId != null && communityId != null && roomId != null) {
-            launch.putExtra(EXTRA_EVENT, eventId)
-            launch.putExtra(EXTRA_COMMUNITY, communityId)
-            launch.putExtra(EXTRA_CHANNEL, roomId)
-            (args["threadRootId"] as? String)?.let { launch.putExtra(EXTRA_THREAD, it) }
+        val room = eventId != null && communityId != null && roomId != null
+        val id = if (room) roomId(communityId!!, roomId!!) else (args["id"] as? Number)?.toInt() ?: 0
+        val createdAt = (args["createdAt"] as? Number)?.toLong()
+        val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
+            ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
+        val extras = Bundle()
+        if (room) {
+            extras.putString(EXTRA_EVENT, eventId)
+            extras.putString(EXTRA_COMMUNITY, communityId)
+            extras.putString(EXTRA_CHANNEL, roomId)
+            (args["threadRootId"] as? String)?.let { extras.putString(EXTRA_THREAD, it) }
+            createdAt?.let { extras.putLong(EXTRA_CREATED_AT, it) }
+            launch?.putExtras(extras)
         }
         val builder = NotificationCompat.Builder(context, CHANNEL_ID)
             .setSmallIcon(context.applicationInfo.icon)
             .setContentTitle(title)
             .setContentText(body)
-            .setStyle(NotificationCompat.BigTextStyle().bigText(body))
             .setCategory(NotificationCompat.CATEGORY_MESSAGE)
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)
         (args["subtitle"] as? String)?.let { builder.setSubText(it) }
+        if (room) {
+            val previous = active(context, TAG, id)
+            if (previous?.extras?.getString(EXTRA_EVENT) == eventId) return
+            builder.setStyle(roomStyle(previous, title, body, createdAt))
+                .addExtras(extras)
+                .setGroup(GROUP)
+            createdAt?.let { builder.setWhen(it * 1000) }
+        } else {
+            builder.setStyle(NotificationCompat.BigTextStyle().bigText(body))
+        }
         if (launch != null) {
             builder.setContentIntent(
                 PendingIntent.getActivity(
@@ -74,9 +109,95 @@ object KuzzNotifications {
         }
         try {
             manager.notify(TAG, id, builder.build())
+            if (room) {
+                manager.notify(
+                    SUMMARY_TAG,
+                    SUMMARY_ID,
+                    NotificationCompat.Builder(context, CHANNEL_ID)
+                        .setSmallIcon(context.applicationInfo.icon)
+                        .setCategory(NotificationCompat.CATEGORY_MESSAGE)
+                        .setGroup(GROUP)
+                        .setGroupSummary(true)
+                        .setGroupAlertBehavior(NotificationCompat.GROUP_ALERT_CHILDREN)
+                        .setAutoCancel(true)
+                        .build(),
+                )
+            }
         } catch (_: SecurityException) {
             // Permission withdrawn between the check and the post.
         }
+    }
+
+    /** The room's earlier lines (newest last, at most [MAX_LINES]) plus this one. */
+    private fun roomStyle(
+        previous: android.app.Notification?,
+        sender: String,
+        body: String,
+        createdAt: Long?,
+    ): NotificationCompat.MessagingStyle {
+        val style = NotificationCompat.MessagingStyle(Person.Builder().setName("You").build())
+        val earlier = previous
+            ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
+            ?.messages
+            .orEmpty()
+        for (message in earlier.takeLast(MAX_LINES - 1)) style.addMessage(message)
+        style.addMessage(
+            NotificationCompat.MessagingStyle.Message(
+                body,
+                (createdAt ?: (System.currentTimeMillis() / 1000)) * 1000,
+                Person.Builder().setName(sender).build(),
+            ),
+        )
+        style.isGroupConversation = true
+        return style
+    }
+
+    private fun active(context: Context, tag: String, id: Int): android.app.Notification? {
+        val system = context.getSystemService(NotificationManager::class.java) ?: return null
+        return try {
+            system.activeNotifications.firstOrNull { it.tag == tag && it.id == id }?.notification
+        } catch (_: RuntimeException) {
+            null
+        }
+    }
+
+    /** Room notifications in the tray with the newest message each shows. */
+    fun delivered(context: Context): List<Map<String, Any>> {
+        val system = context.getSystemService(NotificationManager::class.java) ?: return emptyList()
+        val active = try {
+            system.activeNotifications
+        } catch (_: RuntimeException) {
+            return emptyList()
+        }
+        return active.filter { it.tag == TAG && it.id != 0 }.mapNotNull { posted ->
+            val extras = posted.notification.extras
+            val eventId = extras.getString(EXTRA_EVENT) ?: return@mapNotNull null
+            val communityId = extras.getString(EXTRA_COMMUNITY) ?: return@mapNotNull null
+            val channelId = extras.getString(EXTRA_CHANNEL) ?: return@mapNotNull null
+            val createdAt = extras.getLong(EXTRA_CREATED_AT, 0L)
+            if (createdAt <= 0L) return@mapNotNull null
+            buildMap {
+                put("key", posted.id.toString())
+                put("eventId", eventId)
+                put("communityId", communityId)
+                put("channelId", channelId)
+                put("createdAt", createdAt)
+                extras.getString(EXTRA_THREAD)?.let { put("threadRootId", it) }
+            }
+        }
+    }
+
+    /** Removes room notifications by key, and the summary once no room is left. */
+    fun remove(context: Context, keys: List<String>) {
+        val manager = NotificationManagerCompat.from(context)
+        for (key in keys) key.toIntOrNull()?.let { manager.cancel(TAG, it) }
+        val system = context.getSystemService(NotificationManager::class.java) ?: return
+        val left = try {
+            system.activeNotifications.any { it.tag == TAG && it.id != 0 }
+        } catch (_: RuntimeException) {
+            true
+        }
+        if (!left) manager.cancel(SUMMARY_TAG, SUMMARY_ID)
     }
 
     fun payload(intent: Intent): Map<String, String>? {
@@ -97,5 +218,6 @@ object KuzzNotifications {
         intent.removeExtra(EXTRA_COMMUNITY)
         intent.removeExtra(EXTRA_CHANNEL)
         intent.removeExtra(EXTRA_THREAD)
+        intent.removeExtra(EXTRA_CREATED_AT)
     }
 }
