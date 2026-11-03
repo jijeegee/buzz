@@ -22,7 +22,7 @@ export type ReqLogEntry = {
 );
 
 /** `live` stays open by design; `oneShot` closes after EOSE or first event. */
-export type SubIdClass = "live" | "oneShot" | "unclassified";
+export type SubIdClass = "live" | "stream" | "oneShot" | "unclassified";
 
 export type OpenSubscription = {
   socketId: number;
@@ -38,6 +38,8 @@ const ONE_SHOT_PREFIXES = ["observer-history-", "history-", "first-"];
 
 export function classifySubId(subId: string): SubIdClass {
   if (subId.startsWith("live-")) return "live";
+  // The user stream is its own live REQ (one per connection).
+  if (subId.startsWith("stream-")) return "stream";
   if (ONE_SHOT_PREFIXES.some((prefix) => subId.startsWith(prefix))) {
     return "oneShot";
   }

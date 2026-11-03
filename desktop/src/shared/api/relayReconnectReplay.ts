@@ -1,4 +1,5 @@
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
+import { namesUserStream } from "@/shared/api/userStreamRules";
 import {
   liveReqFrame,
   MAX_EXPLICIT_CHANNEL_VALUES,
@@ -149,6 +150,8 @@ export function reconnectCursors(
 export function shouldPageReconnectReplay(filter: RelaySubscriptionFilter) {
   const roomIds = filter["#h"];
   return (
+    // `$joined` is never a room id (the user stream has its own catch-up).
+    !namesUserStream(filter) &&
     Array.isArray(roomIds) &&
     roomIds.length > 0 &&
     roomIds.length <= MAX_EXPLICIT_CHANNEL_VALUES &&

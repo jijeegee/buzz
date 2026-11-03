@@ -43,7 +43,10 @@ import {
   mockLiveFiltersMatch,
 } from "./e2eBridgeMultiFilter.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
-import { handleSnapshotMockCommand } from "./e2eBridgeSnapshots.ts";
+import {
+  handleSnapshotMockCommand,
+  handleStreamStoreMockCommand,
+} from "./e2eBridgeSnapshots.ts";
 import {
   getOpenSubscriptions,
   getReqLog,
@@ -431,6 +434,9 @@ type E2eConfig = {
     deferSendMessageLiveEcho?: boolean;
     /** Close the first channel-window live REQ; its retry is accepted. */
     closeChannelLiveSubscriptionOnce?: boolean;
+    /** Answer the user stream REQ (`#h: ["$joined"]`) in this mode. Unset:
+     *  as an old relay (`restricted: not a channel member`). */
+    userStreamMode?: "shadow" | "live" | "gated";
     /** Reject successive kind-9 sends with these messages, then resume. */
     sendMessageErrors?: string[];
     /** Test-only observer control requests captured after mock publish. */
@@ -1482,6 +1488,8 @@ declare global {
     ) => void;
     /** Inject CLOSED into every active mock live subscription. */
     __KUZZ_E2E_CLOSE_LIVE_SUBSCRIPTIONS__?: (reason: string) => number;
+    /** Inject CLOSED into the open user stream subs (`stream-`) only. */
+    __KUZZ_E2E_CLOSE_USER_STREAM__?: (reason: string) => number;
     /** Queue CLOSED responses for channel history REQs. */
     __KUZZ_E2E_QUEUE_CHANNEL_HISTORY_CLOSES__?: (reasons: string[]) => void;
     __KUZZ_E2E_SET_STALL_WEBSOCKET_SENDS__?: (stall: boolean) => void;
@@ -4709,6 +4717,68 @@ function sendWsText(handler: WsHandler, payload: unknown[]) {
     type: "Text",
     data: JSON.stringify(payload),
   });
+}
+
+/**
+ * The user stream (docs/message-sync.md#user-stream): one relay-signed
+ * snapshot part with every member room, then EOSE, then later events of
+ * those rooms. Unset mode answers as an old relay.
+ */
+function answerMockUserStream(
+  socket: {
+    handler: WsHandler;
+    subscriptions: Map<string, ReturnType<typeof createMockSubscription>>;
+  },
+  subId: string,
+  filters: MockFilter[],
+) {
+  const config = getConfig();
+  const mode = config?.mock?.userStreamMode;
+  if (!mode) {
+    sendWsText(socket.handler, [
+      "CLOSED",
+      subId,
+      "restricted: not a channel member",
+    ]);
+    return;
+  }
+  const rooms = listMockChannels(config)
+    .filter((channel) => channel.is_member)
+    .map((channel) => channel.id);
+  const content = JSON.stringify({
+    v: 1,
+    op: "snapshot",
+    part: 1,
+    parts: 1,
+    mode,
+    epoch: "e2e-epoch",
+    kinds: filters[0]?.kinds ?? [],
+    rooms: Object.fromEntries(
+      rooms.map((room) => [room, getMockMessageStore(room).length]),
+    ),
+  });
+  const createdAt = Math.floor(Date.now() / 1000);
+  sendWsText(socket.handler, [
+    "EVENT",
+    subId,
+    {
+      id: createdAt.toString(16).padStart(64, "0"),
+      pubkey: "e2e0".padEnd(64, "0"),
+      created_at: createdAt,
+      kind: 24220,
+      tags: [["p", getMockIdentity().pubkey]],
+      content,
+      sig: "0".repeat(128),
+    },
+  ]);
+  sendWsText(socket.handler, ["EOSE", subId]);
+  // Later events of the member rooms ride the stream in every mode.
+  socket.subscriptions.set(
+    subId,
+    createMockSubscription(
+      filters.map((filter) => ({ ...filter, "#h": rooms })),
+    ),
+  );
 }
 
 function sendWsClose(handler: WsHandler, code?: number, reason?: string) {
@@ -11591,6 +11661,11 @@ function sendToMockSocket(args: {
       return;
     }
 
+    if (filters.some((filter) => filter["#h"]?.includes("$joined"))) {
+      answerMockUserStream(socket, subId, filters);
+      return;
+    }
+
     if (subId.startsWith("live-")) {
       const subscription = createMockSubscription(filters);
       // Rooms ride one live bundle; the thread-summary kind marks it.
@@ -12433,6 +12508,19 @@ export function maybeInstallE2eTauriMocks() {
     let closed = 0;
     for (const socket of mockSockets.values()) {
       for (const subId of [...socket.subscriptions.keys()]) {
+        sendWsText(socket.handler, ["CLOSED", subId, reason]);
+        socket.subscriptions.delete(subId);
+        closed += 1;
+      }
+    }
+    return closed;
+  };
+
+  window.__KUZZ_E2E_CLOSE_USER_STREAM__ = (reason) => {
+    let closed = 0;
+    for (const socket of mockSockets.values()) {
+      for (const subId of [...socket.subscriptions.keys()]) {
+        if (!subId.startsWith("stream-")) continue;
         sendWsText(socket.handler, ["CLOSED", subId, reason]);
         socket.subscriptions.delete(subId);
         closed += 1;
@@ -16003,6 +16091,8 @@ export function maybeInstallE2eTauriMocks() {
         if (goals) return goals.value;
         const snapshot = handleSnapshotMockCommand(command, payload);
         if (snapshot) return snapshot.value;
+        const stream = handleStreamStoreMockCommand(command, payload);
+        if (stream) return stream.value;
         throw new Error(`Unsupported mocked Tauri command: ${command}`);
       }
     }

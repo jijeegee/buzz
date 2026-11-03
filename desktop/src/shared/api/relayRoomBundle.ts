@@ -165,12 +165,27 @@ export class RoomLiveBundle {
   /** Rooms that just left member ∪ quiet → their grace timer. */
   private graceRetained = new Map<string, number>();
   private extraRooms = new Map<string, number>();
+  /** Rooms the user stream carries in live/gated: no chunk for them. */
+  private streamRooms: ReadonlySet<string> | null = null;
+  /**
+   * Snapshot rooms the stream did not take (no usable resume point): the
+   * chunk carrying one stays as it is, so its reconnect repair goes on.
+   */
+  private keptRooms: ReadonlySet<string> | null = null;
+  /**
+   * `false` while a stopped stream waits for its socket to close (overflow,
+   * `lagged`): its rooms stay off chunks but are neither live nor settled.
+   */
+  private streamLive = true;
   private chunks = new Map<string, Chunk>();
   private roomListeners = new Map<string, Set<RoomLiveListener>>();
   private allRoomListeners = new Set<RoomLiveListener>();
   private metadataListeners = new Set<RoomLiveListener>();
   private quietListeners = new Set<RoomLiveListener>();
   private resetListeners = new Set<() => void>();
+  private chunkObservers = new Set<
+    (event: RelayEvent, roomId: string) => void
+  >();
   private waiters = new Set<RoomWaiter>();
   private coverWaiters = new Set<CoverWaiter>();
   /** Set by the first non-empty member list since the last reset. */
@@ -338,6 +353,95 @@ export class RoomLiveBundle {
     return stop;
   }
 
+  /** Every chunk delivery with its room, duplicates included (shadow comparison). */
+  observeChunkEvents(observer: (event: RelayEvent, roomId: string) => void) {
+    this.chunkObservers.add(observer);
+    return () => {
+      this.chunkObservers.delete(observer);
+    };
+  }
+
+  /**
+   * The user stream carries `rooms` from its live/gated EOSE (kept by
+   * reference), or nothing (`null`): chunks then carry every room again.
+   * Extras keep their own chunks, and so does every chunk carrying one of
+   * `kept` (docs/message-sync.md#handoff).
+   */
+  setStreamRooms(
+    rooms: ReadonlySet<string> | null,
+    live = true,
+    kept: ReadonlySet<string> | null = null,
+  ) {
+    const keptNow = rooms ? kept : null;
+    if (
+      this.streamRooms === rooms &&
+      this.streamLive === live &&
+      this.keptRooms === keptNow
+    ) {
+      return;
+    }
+    this.streamRooms = rooms;
+    this.streamLive = live;
+    this.keptRooms = keptNow;
+    this.queueSync();
+    this.settleWaiters();
+    this.settleCoverWaiters();
+  }
+
+  /** A stream room's set changed in place (44100/44101). */
+  streamRoomsChanged() {
+    this.queueSync();
+    this.settleCoverWaiters();
+  }
+
+  /**
+   * A live/gated stream frame of `roomId`, delivered once by id like a
+   * chunk's. Returns whether the room is known here (member, quiet or open);
+   * an unknown room asks for a list refresh.
+   */
+  dispatchStream(event: RelayEvent, roomId: string) {
+    this.deliver(event, roomId);
+    return (
+      this.memberRooms.has(roomId) ||
+      this.quietRooms.has(roomId) ||
+      this.roomListeners.has(roomId)
+    );
+  }
+
+  /** Whether an event id was delivered here (stream or chunk). */
+  delivered(eventId: string) {
+    return this.seen.has(eventId);
+  }
+
+  /** Member ∪ quiet rooms and the extras on their own chunks. */
+  roomLists() {
+    return {
+      carried: new Set([...this.memberRooms, ...this.quietRooms]),
+      extras: [...this.extraRooms.keys()],
+    };
+  }
+
+  /** Rooms a chunk carries now (live or opening). */
+  chunkRooms(): ReadonlySet<string> {
+    const rooms = new Set<string>();
+    for (const chunk of this.chunks.values()) {
+      for (const roomId of chunk.rooms) rooms.add(roomId);
+    }
+    return rooms;
+  }
+
+  /** The room of a stream frame: its `h` tag or a referenced event's room. */
+  streamRoomOf(event: RelayEvent) {
+    const tagged = tagValue(event, "h");
+    if (tagged) return tagged;
+    for (const eventId of referencedIds(event)) {
+      const roomId =
+        this.eventRooms.get(eventId) ?? this.resolveRoomOfEvent(eventId);
+      if (roomId) return roomId;
+    }
+    return null;
+  }
+
   /** Drop every subscription and remembered event (community switch). */
   reset() {
     this.generation += 1;
@@ -350,6 +454,9 @@ export class RoomLiveBundle {
     }
     this.graceRetained.clear();
     this.membershipKnown = false;
+    this.streamRooms = null;
+    this.keptRooms = null;
+    this.streamLive = true;
     this.seen.clear();
     this.eventRooms.clear();
     // Rooms still listened to are covered again on the next session.
@@ -408,8 +515,30 @@ export class RoomLiveBundle {
     const extras = [...this.extraRooms.keys()].filter(
       (roomId) => !carried.has(roomId),
     );
+    const stream = this.streamRooms;
+    const kept = this.keptRooms;
+    // A chunk carrying a kept room stays whole, its repair still running.
+    const pinned: string[][] = [];
+    const onPinned = new Set<string>();
+    if (stream && kept && kept.size > 0) {
+      for (const chunk of this.chunks.values()) {
+        const rooms = [...chunk.rooms];
+        if (rooms.length === 1 && this.extraRooms.has(rooms[0])) continue;
+        if (!rooms.some((roomId) => kept.has(roomId) && carried.has(roomId))) {
+          continue;
+        }
+        pinned.push(rooms);
+        for (const roomId of rooms) onPinned.add(roomId);
+      }
+    }
+    const chunked = stream
+      ? [...carried].filter(
+          (roomId) => !stream.has(roomId) && !onPinned.has(roomId),
+        )
+      : carried;
     return [
-      ...chunkRoomIds(carried),
+      ...pinned,
+      ...chunkRoomIds(chunked),
       ...extras.sort().map((roomId) => [roomId]),
     ];
   }
@@ -540,6 +669,7 @@ export class RoomLiveBundle {
 
   /** A room is settled when a chunk carrying it is live or has given up once. */
   private isRoomSettled(roomId: string) {
+    if (this.streamLive && this.streamRooms?.has(roomId)) return true;
     for (const chunk of this.chunks.values()) {
       if (!chunk.rooms.has(roomId)) continue;
       if (chunk.status !== "opening") return true;
@@ -548,6 +678,7 @@ export class RoomLiveBundle {
   }
 
   private isRoomLive(roomId: string) {
+    if (this.streamLive && this.streamRooms?.has(roomId)) return true;
     for (const chunk of this.chunks.values()) {
       if (chunk.status === "live" && chunk.rooms.has(roomId)) return true;
     }
@@ -599,9 +730,15 @@ export class RoomLiveBundle {
   }
 
   private dispatch(chunk: Chunk, event: RelayEvent) {
-    if (this.seen.has(event.id)) return;
+    if (this.seen.has(event.id) && this.chunkObservers.size === 0) return;
     const roomId = this.roomOf(chunk, event);
     if (!roomId) return;
+    for (const observer of this.chunkObservers) observer(event, roomId);
+    this.deliver(event, roomId);
+  }
+
+  private deliver(event: RelayEvent, roomId: string) {
+    if (this.seen.has(event.id)) return;
     remember(this.seen, event.id, true, SEEN_EVENT_LIMIT);
     remember(this.eventRooms, event.id, roomId, EVENT_ROOM_LIMIT);
 

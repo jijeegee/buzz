@@ -1,3 +1,4 @@
+import { USER_STREAM_ROOM } from "@/shared/api/userStreamRules";
 import type {
   LiveMultiFilter,
   LiveSubscriptionReadiness,
@@ -202,6 +203,7 @@ export function assertRoomLiveFilters(filters: RelaySubscriptionFilter[]) {
     const rooms = filter["#h"];
     if (
       !roomId ||
+      roomId === USER_STREAM_ROOM ||
       rooms?.length !== 1 ||
       rooms[0] !== roomId ||
       filter.limit !== 0 ||

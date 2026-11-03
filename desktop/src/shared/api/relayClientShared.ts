@@ -58,10 +58,14 @@ type HistorySubscription = {
   timeout: number;
   timeoutMs: number;
   closedRetryAttempt?: number;
+  /** `error: busy` retries so far (`retryBusyRequest`). */
+  busyAttempt?: number;
 };
 
 type FirstEventSubscription = {
   mode: "first";
+  filter: RelaySubscriptionFilter;
+  busyAttempt?: number;
   onEvent: (event: RelayEvent) => void;
   resolve: (event: RelayEvent | null) => void;
   reject: (error: Error) => void;

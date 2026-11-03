@@ -4,7 +4,7 @@
 
 use std::collections::HashMap;
 
-use rusqlite::{params, Connection, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 
 /// The stream a room's own timeline is recorded under.
 pub(crate) const ROOM_STREAM: &str = "room";
@@ -18,7 +18,7 @@ pub(crate) fn drop_stale(conn: &Connection) -> rusqlite::Result<()> {
     if is_current(conn)? {
         return Ok(());
     }
-    conn.execute_batch("BEGIN IMMEDIATE; DELETE FROM coverage;")?;
+    conn.execute_batch("BEGIN IMMEDIATE; DELETE FROM coverage; DELETE FROM room_seq;")?;
     conn.execute(
         "INSERT OR REPLACE INTO sync_state(key, value) VALUES ('coverage_version', ?1)",
         params![COVERAGE_VERSION.to_string()],
@@ -60,7 +60,7 @@ pub(crate) fn merge(segments: &[(i64, i64)], from: i64, to: i64) -> Vec<(i64, i6
     merged
 }
 
-fn segments(conn: &Connection, room: &str) -> rusqlite::Result<Vec<(i64, i64)>> {
+pub(crate) fn segments(conn: &Connection, room: &str) -> rusqlite::Result<Vec<(i64, i64)>> {
     let mut statement = conn.prepare_cached(
         "SELECT lo_at, hi_at FROM coverage WHERE room = ?1 AND stream = ?2 ORDER BY lo_at",
     )?;
@@ -70,12 +70,14 @@ fn segments(conn: &Connection, room: &str) -> rusqlite::Result<Vec<(i64, i64)>> 
     rows.collect()
 }
 
-/// Records that every event of `rooms` in `[from, to]` is stored.
-pub(crate) fn extend(
+/// Records that every event of `rooms` in `[from, to]` is stored, then runs
+/// `then` in the same transaction (rule-W rows).
+pub(crate) fn extend_with(
     conn: &mut Connection,
     rooms: &[String],
     from: i64,
     to: i64,
+    then: impl FnOnce(&Transaction) -> rusqlite::Result<()>,
 ) -> rusqlite::Result<()> {
     let tx = conn.transaction()?;
     for room in rooms {
@@ -91,10 +93,12 @@ pub(crate) fn extend(
             insert.execute(params![room, ROOM_STREAM, lo, hi])?;
         }
     }
+    then(&tx)?;
     tx.commit()
 }
 
-/// Forgets every span: some received event may not have been written.
+/// Forgets every span: some received event may not have been written. The
+/// caller clears `room_seq` in the same transaction.
 pub(crate) fn clear(conn: &Connection) -> rusqlite::Result<()> {
     conn.execute("DELETE FROM coverage", []).map(|_| ())
 }

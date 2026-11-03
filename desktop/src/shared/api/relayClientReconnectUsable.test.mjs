@@ -117,6 +117,9 @@ async function reconnectWithPendingRepair() {
   const client = new RelayClient();
   clients.push(client);
   client.hasConnectedOnce = true;
+  // An earlier connect already read the stream's backoff and counters; a
+  // first connect of a scope sends the stream REQ after that read lands.
+  client.userStream.restored = true;
   client.subscriptions.set("live-chunk", {
     mode: "live",
     filter: chunkFilter,
@@ -138,10 +141,15 @@ async function reconnectWithPendingRepair() {
 test("sends, new REQs and history go out while the repair walk is unfinished", async () => {
   const { client, connecting, isConnected } =
     await reconnectWithPendingRepair();
+  // The user stream REQ goes out first after AUTH OK
+  // (docs/message-sync.md#user-stream), then the live chunk.
   assert.deepEqual(
-    writes.map((frame) => frame[0]),
-    ["REQ"],
-    "the live chunk is re-sent first",
+    writes.map((frame) => [frame[0], frame[1].split("-")[0]]),
+    [
+      ["REQ", "stream"],
+      ["REQ", "live"],
+    ],
+    "the stream, then the live chunk, are re-sent first",
   );
   assert.equal(repairCalls.length, 1, "the repair walk has started");
   assert.ok(isConnected(), "connect resolves before the walk ends");
@@ -160,7 +168,9 @@ test("sends, new REQs and history go out while the repair walk is unfinished", a
   void send.catch(() => {});
   await flush();
 
-  const reqs = writes.filter((frame) => frame[0] === "REQ");
+  const reqs = writes.filter(
+    (frame) => frame[0] === "REQ" && !frame[1].startsWith("stream-"),
+  );
   assert.equal(reqs.length, 3, "history and live REQs went out");
   assert.deepEqual(reqs[1][2], { kinds: [9], "#h": ["room-b"], limit: 20 });
   assert.deepEqual(reqs[2][2], { kinds: [9], "#h": ["room-b"], limit: 0 });

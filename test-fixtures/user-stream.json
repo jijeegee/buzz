@@ -1,0 +1,3346 @@
+{
+ "description": "User stream (docs/message-sync.md#user-stream): one live REQ for all of the account's rooms, chosen by the relay per account. Read by desktop (relayUserStream.test.mjs and the store tests) and mobile (user_stream_fixture_test.dart and the store tests). Times are unix seconds unless a key ends in Ms. Room ids are opaque strings; room lists are sets, listed by id, unless the key is `batches` or `rooms` of a batch (ordered). Sections: `part1` (parse snapshot parts in arrival order on the stream sub; `eose` true means EOSE came after them; `accept` false means CLOSE the stream, chunks for this connection), `modes` (what each mode does), `storeSkip` (which stream frames the store keeps: `eose` is the stream EOSE, `req` re-sends the REQ on the same id, `close` is the client CLOSE, `closed` a relay CLOSED; `badKinds` marks a part 1 whose kinds differ from the frozen kinds), `closed` (reason -> action: chunks = stream off for this connection, chunks stay or carry everything; fallback = the mid-connection fallback; awaitSocketClose = no fallback, wait up to 2 s for the relay to close the socket, then close it, then reconnect normally; retryAfterAuth = resend after the next AUTH OK, only before the stream EOSE in live/gated), `backoff` (closes that count are `full`, `closed` and `other` after the stream EOSE in live/gated; `lagged` and `shadow_full` never count), `busyRetry` (history REQs ended by `error: busy`), `epoch`, `snapshot` (per-room classes at stream EOSE and what each mode does with them), `skipCoverage`, `connectionSpans` (`connectedAt` is the connection's start time, recorded before any chunk REQ is answered; catch-up resume points and the new-row base use only coverage that began before it, so an EOSE span [C, C] from a chunk on the same connection is ignored; `segments` are room-a's, `since` its walk start, `head` its new-row base), `batching` (`stale` rooms are taken out before batching and not walked), `ruleW` (steps -> room_seq rows [seq, at]), `clearing`, `newRow`, `skipVerification`, `auditSampling`, `auditVerdicts`, `liveMissed`, `lastFrame`, `comparator` (shadow counters), `handoff`, `midConnectionClosed`, `spanStop` (the stream's own coverage span), `chunkCatchUp` (which rooms a chunk's own catch-up and repair still walk), `membership` (44100/44101 in live/gated), `routing` (stream frames in live/gated).",
+ "v": 1,
+ "streamKind": 24220,
+ "frozenKinds": [5, 7, 9, 9005, 39005, 40001, 40002, 40003, 40008, 40009, 40099, 45001, 45003, 48100, 48101, 48102, 48103],
+ "request": {
+  "#h": ["$joined"],
+  "kinds": [5, 7, 9, 9005, 39005, 40001, 40002, 40003, 40008, 40009, 40099, 45001, 45003, 48100, 48101, 48102, 48103],
+  "limit": 0
+ },
+ "limits": {
+  "maxRoomsPerPart": 500,
+  "maxRooms": 5000,
+  "catchUpBatchRooms": 128,
+  "lookbackSecs": 1865,
+  "catchUpPageLimit": 500,
+  "catchUpMaxPages": 4,
+  "catchUpMaxAgeSecs": 604800,
+  "compareWindowMs": 5000,
+  "auditSampleMax": 128,
+  "liveMissedAfterEoseSecs": 5,
+  "liveMissedBeforeLastFrameSecs": 900,
+  "listenerFloorSecs": 5,
+  "spanExtendSecs": 60,
+  "fullClosesForBackoff": 2,
+  "fullCloseWindowSecs": 600,
+  "backoffSecs": 3600,
+  "backgroundResetSecs": 3600,
+  "laggedJitterSecs": [0, 10],
+  "busyRetryDelaysSecs": [1, 2, 4, 8, 16, 30, 30],
+  "reportChangeRatio": 0.1,
+  "reportIntervalSecs": 600
+ },
+ "part1": [
+  {
+   "name": "one part in shadow",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"shadow\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":5,\"room-b\":0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "shadow",
+    "epoch": "e1",
+    "rooms": {"room-a": 5, "room-b": 0},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "an account with no rooms",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e1",
+    "rooms": {},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "later parts may carry rooms only",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {"kind": 24220, "content": "{\"rooms\":{\"room-b\":2}}"}
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e1",
+    "rooms": {"room-a": 1, "room-b": 2},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "a later part that numbers itself must be in order",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"gated\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":2,\"rooms\":{\"room-b\":2}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "gated",
+    "epoch": "e1",
+    "rooms": {"room-a": 1, "room-b": 2},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "kinds compare as a set",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[48103,48102,48101,48100,45003,45001,40099,40009,40008,40003,40002,40001,39005,9005,9,7,5,9],\"rooms\":{\"room-a\":3}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e1",
+    "rooms": {"room-a": 3},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "a non-snapshot frame before part 1 is ignored",
+   "events": [
+    {"kind": 9, "content": "hi"},
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"shadow\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":3}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "shadow",
+    "epoch": "e1",
+    "rooms": {"room-a": 3},
+    "ignoredBeforePart1": 1
+   }
+  },
+  {
+   "name": "v is not 1",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":2,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "v written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1.0,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "part written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1.0,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1.0,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a kinds entry written as 5.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5.0,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as 1.0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1.0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "v written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1e0,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "part written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1e0,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1e0,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a kinds entry written as 5e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5e0,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as 1e0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1e0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as -0 is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":-0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room seq written as -0 in a later part is not a plain integer",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {"kind": 24220, "content": "{\"rooms\":{\"room-b\":-0}}"}
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "-0 inside a string is not a number",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e-0\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-0\":1,\"-0\":0}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e-0",
+    "rooms": {"room-0": 1, "-0": 0},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "unknown mode",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"active\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a kind missing",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "an extra kind",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103,43001],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts incomplete at EOSE",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "more parts than announced",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {"kind": 24220, "content": "{\"rooms\":{\"room-b\":2}}"}
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a later part out of order",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":3,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":3,\"rooms\":{\"room-b\":2}}"
+    },
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":2,\"rooms\":{\"room-c\":2}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "the first part numbers itself 2",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":2,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "parts is 0",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":0,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "op is not snapshot",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"other\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "empty epoch",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "missing epoch",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a room in two parts",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":2,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1}}"
+    },
+    {"kind": 24220, "content": "{\"rooms\":{\"room-a\":1}}"}
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a negative seq",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":-1}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a fractional seq",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":1.5}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a string seq",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":\"1\"}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a seq above 2^53 - 1",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":9007199254740992}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "a seq of 2^53 - 1",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"e1\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{\"room-a\":9007199254740991}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "e1",
+    "rooms": {"room-a": 9007199254740991},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "an epoch longer than 64 characters",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  },
+  {
+   "name": "an epoch of 64 characters",
+   "events": [
+    {
+     "kind": 24220,
+     "content": "{\"v\":1,\"op\":\"snapshot\",\"part\":1,\"parts\":1,\"mode\":\"live\",\"epoch\":\"eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee\",\"kinds\":[5,7,9,9005,39005,40001,40002,40003,40008,40009,40099,45001,45003,48100,48101,48102,48103],\"rooms\":{}}"
+    }
+   ],
+   "eose": true,
+   "expect": {
+    "accept": true,
+    "mode": "live",
+    "epoch": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+    "rooms": {},
+    "ignoredBeforePart1": 0
+   }
+  },
+  {
+   "name": "content is not JSON",
+   "events": [
+    {"kind": 24220, "content": "{not json"}
+   ],
+   "eose": true,
+   "expect": {"accept": false}
+  }
+ ],
+ "modes": [
+  {
+   "mode": "shadow",
+   "storeFrames": false,
+   "routeFrames": false,
+   "compare": true,
+   "streamCoverage": false,
+   "closeChunksAfterEose": false,
+   "catchUpAt": "chunkEose",
+   "skipEqualSeq": false,
+   "predictSkips": true,
+   "audit": false,
+   "liveMissed": false,
+   "overflowKey": "shadow_full"
+  },
+  {
+   "mode": "live",
+   "storeFrames": true,
+   "routeFrames": true,
+   "compare": false,
+   "streamCoverage": true,
+   "closeChunksAfterEose": true,
+   "catchUpAt": "streamEose",
+   "skipEqualSeq": false,
+   "predictSkips": true,
+   "audit": false,
+   "liveMissed": true,
+   "overflowKey": "full"
+  },
+  {
+   "mode": "gated",
+   "storeFrames": true,
+   "routeFrames": true,
+   "compare": false,
+   "streamCoverage": true,
+   "closeChunksAfterEose": true,
+   "catchUpAt": "streamEose",
+   "skipEqualSeq": true,
+   "predictSkips": false,
+   "audit": true,
+   "liveMissed": true,
+   "overflowKey": "full"
+  }
+ ],
+ "storeSkip": [
+  {
+   "name": "frames before part 1 are dropped; an accepted live snapshot keeps later frames",
+   "frames": [
+    {"id": "x1", "kind": 9},
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": ["x2"]
+  },
+  {
+   "name": "an accepted gated snapshot keeps later frames",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "gated"},
+    {"eose": true},
+    {"id": "x2", "kind": 7}
+   ],
+   "stored": ["x2"]
+  },
+  {
+   "name": "shadow never stores",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "shadow"},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "a frame between part 1 and EOSE is dropped (still pending)",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"id": "x0", "kind": 9},
+    {"eose": true},
+    {"id": "x1", "kind": 9}
+   ],
+   "stored": ["x1"]
+  },
+  {
+   "name": "a refused part 1 stores nothing",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "active"},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "part 1 with the wrong kinds stores nothing",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live", "badKinds": true},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "parts incomplete at EOSE store nothing, the held frame included",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live", "parts": 2},
+    {"id": "x0", "kind": 9},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "24220 is never stored, later parts included",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live", "parts": 2},
+    {"id": "p2", "kind": 24220},
+    {"eose": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": ["x2"]
+  },
+  {
+   "name": "stragglers after a relay CLOSED are not stored",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
+    {"id": "x1", "kind": 9},
+    {"closed": "error: user-stream closed"},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": ["x1"]
+  },
+  {
+   "name": "stragglers after the client's CLOSE are not stored",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
+    {"close": true},
+    {"id": "x2", "kind": 9}
+   ],
+   "stored": []
+  },
+  {
+   "name": "a REQ re-sent on the same id starts over at pending",
+   "frames": [
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
+    {"id": "x1", "kind": 9},
+    {"req": true},
+    {"id": "x2", "kind": 9},
+    {"id": "p1b", "kind": 24220, "mode": "shadow"},
+    {"eose": true},
+    {"id": "x3", "kind": 9}
+   ],
+   "stored": ["x1"]
+  },
+  {
+   "name": "a REQ re-sent after an auth-required CLOSED is pending again",
+   "frames": [
+    {"closed": "auth-required: authenticate first"},
+    {"req": true},
+    {"id": "p1", "kind": 24220, "mode": "live"},
+    {"eose": true},
+    {"id": "x1", "kind": 9}
+   ],
+   "stored": ["x1"]
+  }
+ ],
+ "closedReasons": [
+  {"match": "exact", "value": "unsupported: user-stream off", "key": "off"},
+  {"match": "exact", "value": "unsupported: user-stream not enabled", "key": "not_enabled"},
+  {"match": "prefix", "value": "invalid: user-stream", "key": "invalid"},
+  {
+   "match": "exact",
+   "value": "unsupported: user-stream too many rooms",
+   "key": "too_many_rooms"
+  },
+  {"match": "exact", "value": "restricted: not a channel member", "key": "restricted"},
+  {"match": "prefix", "value": "auth-required:", "key": "auth_required"},
+  {"match": "exact", "value": "error: user-stream overflow", "key": "overflow"},
+  {"match": "exact", "value": "error: user-stream lagged", "key": "lagged"},
+  {"match": "exact", "value": "error: user-stream closed", "key": "closed"}
+ ],
+ "closed": [
+  {
+   "name": "env off before part 1",
+   "reason": "unsupported: user-stream off",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "off",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "not allowlisted",
+   "reason": "unsupported: user-stream not enabled",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "not_enabled",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "bad shape is a client bug",
+   "reason": "invalid: user-stream kinds",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "invalid",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": true
+   }
+  },
+  {
+   "name": "a repeat within 5 s",
+   "reason": "invalid: user-stream repeat",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "invalid",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": true
+   }
+  },
+  {
+   "name": "too many rooms",
+   "reason": "unsupported: user-stream too many rooms",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "too_many_rooms",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an old relay",
+   "reason": "restricted: not a channel member",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "restricted",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "REQ before AUTH is retried after AUTH OK",
+   "reason": "auth-required: authenticate first",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "retryAfterAuth",
+    "key": "auth_required",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "a second auth-required on one connection falls back",
+   "reason": "auth-required: authenticate first",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "auth_required",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   },
+   "afterRetry": true
+  },
+  {
+   "name": "auth-required after the stream EOSE in live falls back",
+   "reason": "auth-required: authenticate first",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "auth_required",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "shadow overflow stops only the stream",
+   "reason": "error: user-stream overflow",
+   "mode": "shadow",
+   "streamLive": true,
+   "expect": {
+    "action": "chunks",
+    "key": "shadow_full",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "live overflow waits for the socket to close",
+   "reason": "error: user-stream overflow",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "full",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "gated overflow waits for the socket to close",
+   "reason": "error: user-stream overflow",
+   "mode": "gated",
+   "streamLive": true,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "full",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "overflow of the pre-EOSE queue in live",
+   "reason": "error: user-stream overflow",
+   "mode": "live",
+   "streamLive": false,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "full",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "lagged in live waits, then reconnects with jitter",
+   "reason": "error: user-stream lagged",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "lagged",
+    "countsTowardBackoff": false,
+    "reconnectJitter": true,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "lagged in shadow too",
+   "reason": "error: user-stream lagged",
+   "mode": "shadow",
+   "streamLive": true,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "lagged",
+    "countsTowardBackoff": false,
+    "reconnectJitter": true,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "lagged before part 1",
+   "reason": "error: user-stream lagged",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "awaitSocketClose",
+    "key": "lagged",
+    "countsTowardBackoff": false,
+    "reconnectJitter": true,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "fail-closed in live falls back at once and counts",
+   "reason": "error: user-stream closed",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "closed",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "fail-closed in shadow",
+   "reason": "error: user-stream closed",
+   "mode": "shadow",
+   "streamLive": true,
+   "expect": {
+    "action": "chunks",
+    "key": "closed",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "live part 1 but CLOSED before EOSE: chunks never closed",
+   "reason": "error: user-stream closed",
+   "mode": "live",
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "closed",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an unknown reason",
+   "reason": "error: something new",
+   "mode": null,
+   "streamLive": false,
+   "expect": {
+    "action": "chunks",
+    "key": "other",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an unknown reason after EOSE in gated counts",
+   "reason": "error: something new",
+   "mode": "gated",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "other",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an unknown reason after EOSE in shadow does not count",
+   "reason": "error: something new",
+   "mode": "shadow",
+   "streamLive": true,
+   "expect": {
+    "action": "chunks",
+    "key": "other",
+    "countsTowardBackoff": false,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "an empty reason",
+   "reason": "",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "other",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  },
+  {
+   "name": "error: busy on the stream sub is an unknown reason",
+   "reason": "error: busy",
+   "mode": "live",
+   "streamLive": true,
+   "expect": {
+    "action": "fallback",
+    "key": "other",
+    "countsTowardBackoff": true,
+    "reconnectJitter": false,
+    "bugLog": false
+   }
+  }
+ ],
+ "backoff": [
+  {
+   "name": "one full close keeps the stream",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 1, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "two full closes within 10 min stop it for 1 h",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"},
+    {"at": 600, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 601, "streamAllowed": false},
+    {"at": 4199, "streamAllowed": false},
+    {"at": 4200, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "two full closes more than 10 min apart",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"},
+    {"at": 601, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 602, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "shadow_full never counts",
+   "events": [
+    {"at": 0, "op": "closed", "key": "shadow_full"},
+    {"at": 1, "op": "closed", "key": "shadow_full"},
+    {"at": 2, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 3, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "lagged never counts",
+   "events": [
+    {"at": 0, "op": "closed", "key": "lagged"},
+    {"at": 1, "op": "closed", "key": "lagged"},
+    {"at": 2, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 3, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "a fail-closed and an overflow count together",
+   "events": [
+    {"at": 0, "op": "closed", "key": "closed"},
+    {"at": 5, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 6, "streamAllowed": false},
+    {"at": 3605, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "two unknown reasons after EOSE count",
+   "events": [
+    {"at": 0, "op": "closed", "key": "other"},
+    {"at": 5, "op": "closed", "key": "other"}
+   ],
+   "checks": [
+    {"at": 6, "streamAllowed": false}
+   ]
+  },
+  {
+   "name": "a network change resets",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"},
+    {"at": 10, "op": "closed", "key": "full"},
+    {"at": 20, "op": "networkChange"}
+   ],
+   "checks": [
+    {"at": 15, "streamAllowed": false},
+    {"at": 21, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "resume after at least 1 h in background resets",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"},
+    {"at": 10, "op": "closed", "key": "full"},
+    {"at": 100, "op": "resume", "backgroundSecs": 3599},
+    {"at": 200, "op": "resume", "backgroundSecs": 3600}
+   ],
+   "checks": [
+    {"at": 150, "streamAllowed": false},
+    {"at": 201, "streamAllowed": true}
+   ]
+  },
+  {
+   "name": "a reset forgets earlier closes",
+   "events": [
+    {"at": 0, "op": "closed", "key": "full"},
+    {"at": 10, "op": "closed", "key": "full"},
+    {"at": 20, "op": "networkChange"},
+    {"at": 30, "op": "closed", "key": "full"}
+   ],
+   "checks": [
+    {"at": 31, "streamAllowed": true}
+   ]
+  }
+ ],
+ "busyRetry": [
+  {
+   "name": "each busy CLOSED waits longer, up to 30 s, on a fresh sub id",
+   "busyCloses": 7,
+   "expect": {"delaysSecs": [1, 2, 4, 8, 16, 30, 30], "freshSubIdEachRetry": true}
+  },
+  {
+   "name": "an answer after one retry ends it",
+   "busyCloses": 1,
+   "expect": {"delaysSecs": [1], "freshSubIdEachRetry": true}
+  },
+  {
+   "name": "frames of the refused REQ after its CLOSED are not the retry's",
+   "steps": [
+    {"op": "req", "sub": "h1"},
+    {"op": "closed", "sub": "h1", "reason": "error: busy"},
+    {"op": "event", "sub": "h1", "id": "late"},
+    {"op": "req", "sub": "h2"},
+    {"op": "event", "sub": "h2", "id": "x"},
+    {"op": "eose", "sub": "h2"}
+   ],
+   "expect": {"result": ["x"]}
+  }
+ ],
+ "epoch": [
+  {
+   "name": "first epoch is stored",
+   "storedEpoch": null,
+   "part1": {"accept": true, "epoch": "e1"},
+   "rowsBefore": {},
+   "expect": {
+    "storedEpoch": "e1",
+    "rows": {}
+   }
+  },
+  {
+   "name": "same epoch keeps rows",
+   "storedEpoch": "e1",
+   "part1": {"accept": true, "epoch": "e1"},
+   "rowsBefore": {"room-a": [7, 1000]},
+   "expect": {
+    "storedEpoch": "e1",
+    "rows": {"room-a": [7, 1000]}
+   }
+  },
+  {
+   "name": "a new epoch clears every row",
+   "storedEpoch": "e1",
+   "part1": {"accept": true, "epoch": "e2"},
+   "rowsBefore": {"room-a": [7, 1000], "room-b": [3, 900]},
+   "expect": {
+    "storedEpoch": "e2",
+    "rows": {}
+   }
+  },
+  {
+   "name": "a mode change alone keeps rows",
+   "storedEpoch": "e1",
+   "part1": {"accept": true, "epoch": "e1", "mode": "gated"},
+   "rowsBefore": {"room-a": [7, 1000]},
+   "expect": {
+    "storedEpoch": "e1",
+    "rows": {"room-a": [7, 1000]}
+   }
+  },
+  {
+   "name": "a rejected part 1 changes nothing",
+   "storedEpoch": "e1",
+   "part1": {"accept": false, "epoch": "e2"},
+   "rowsBefore": {"room-a": [7, 1000]},
+   "expect": {
+    "storedEpoch": "e1",
+    "rows": {"room-a": [7, 1000]}
+   }
+  }
+ ],
+ "snapshot": [
+  {
+   "name": "gated skips equal rooms only",
+   "mode": "gated",
+   "L": 2000000,
+   "snapshot": {"eq": 7, "lt": 9, "gt": 3, "norow": 4, "uncov": 2},
+   "stored": {"eq": 7, "lt": 5, "gt": 6, "gone": 11},
+   "resume": {"eq": 1999900, "lt": 1999800, "gt": 1999700, "norow": 1999950, "gone": 1999990},
+   "expect": {
+    "classes": {"eq": "equal", "lt": "behind", "gt": "ahead", "norow": "behind", "uncov": "uncovered"},
+    "skip": ["eq"],
+    "predictedSkips": [],
+    "walk": ["gt", "lt", "norow"],
+    "clearedRows": ["gt"],
+    "notFetched": ["uncov"],
+    "untouchedRows": ["gone"]
+   }
+  },
+  {
+   "name": "live walks every covered room and predicts skips",
+   "mode": "live",
+   "L": 2000000,
+   "snapshot": {"eq": 7, "lt": 9, "gt": 3, "norow": 4, "uncov": 2},
+   "stored": {"eq": 7, "lt": 5, "gt": 6, "gone": 11},
+   "resume": {"eq": 1999900, "lt": 1999800, "gt": 1999700, "norow": 1999950, "gone": 1999990},
+   "expect": {
+    "classes": {"eq": "equal", "lt": "behind", "gt": "ahead", "norow": "behind", "uncov": "uncovered"},
+    "skip": [],
+    "predictedSkips": ["eq"],
+    "walk": ["eq", "gt", "lt", "norow"],
+    "clearedRows": ["gt"],
+    "notFetched": ["uncov"],
+    "untouchedRows": ["gone"]
+   }
+  },
+  {
+   "name": "shadow walks nothing itself; chunk catch-ups run as today",
+   "mode": "shadow",
+   "L": 2000000,
+   "snapshot": {"eq": 7, "lt": 9, "gt": 3, "norow": 4, "uncov": 2},
+   "stored": {"eq": 7, "lt": 5, "gt": 6, "gone": 11},
+   "resume": {"eq": 1999900, "lt": 1999800, "gt": 1999700, "norow": 1999950, "gone": 1999990},
+   "expect": {
+    "classes": {"eq": "equal", "lt": "behind", "gt": "ahead", "norow": "behind", "uncov": "uncovered"},
+    "skip": [],
+    "predictedSkips": ["eq"],
+    "walk": [],
+    "clearedRows": ["gt"],
+    "notFetched": ["uncov"],
+    "untouchedRows": ["gone"]
+   }
+  },
+  {
+   "name": "equal seq without coverage is not a skip",
+   "mode": "gated",
+   "L": 2000000,
+   "snapshot": {"room-a": 7},
+   "stored": {},
+   "resume": {},
+   "expect": {
+    "classes": {"room-a": "uncovered"},
+    "skip": [],
+    "predictedSkips": [],
+    "walk": [],
+    "clearedRows": [],
+    "notFetched": ["room-a"],
+    "untouchedRows": []
+   }
+  }
+ ],
+ "connectionSpans": [
+  {
+   "name": "a chunk EOSE span of this connection is not the resume point",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999998, 999998]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "the stream's own [L, L] and a chunk span extended on this connection do not count either",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999991, 999999], [1000000, 1000000]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "a span begun before the connection and grown on it counts up to its end",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 999995]],
+   "expect": {"class": "behind", "resume": 999995, "since": 998130, "head": [970000, 999995]}
+  },
+  {
+   "name": "a span begun at the connection start is this connection's",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[970000, 992800], [999990, 999990]],
+   "expect": {"class": "behind", "resume": 992800, "since": 990935, "head": [970000, 992800]}
+  },
+  {
+   "name": "a room covered only on this connection is uncovered",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "segments": [[999992, 999999]],
+   "expect": {"class": "uncovered", "resume": null, "since": null, "head": null}
+  },
+  {
+   "name": "a row from the offline gap is new, so a predicted skip with it is a false skip",
+   "connectedAt": 999990,
+   "L": 1000000,
+   "mode": "live",
+   "seq": 5,
+   "storedSeq": 5,
+   "segments": [[970000, 992800], [999998, 999998]],
+   "walkRows": [{"id": "gap", "created_at": 995000}],
+   "expect": {"class": "equal", "resume": 992800, "since": 990935, "head": [970000, 992800], "predictedSkips": 1, "falseSkip": 1}
+  }
+ ],
+ "skipCoverage": [
+  {
+   "name": "a gated skip records only the stream EOSE span and keeps room_seq",
+   "mode": "gated",
+   "L": 2000000,
+   "room": "room-a",
+   "verdict": "skip",
+   "before": {
+    "segments": [[1995000, 1999900]],
+    "row": [7, 1999900]
+   },
+   "expect": {
+    "segments": [[1995000, 1999900], [2000000, 2000000]],
+    "row": [7, 1999900]
+   }
+  },
+  {
+   "name": "a walked room records its catch-up span and (S, L)",
+   "mode": "gated",
+   "L": 2000000,
+   "room": "room-a",
+   "verdict": "walkCompleted",
+   "S": 9,
+   "since": 1998035,
+   "before": {
+    "segments": [[1995000, 1999900]],
+    "row": [7, 1999900]
+   },
+   "expect": {
+    "segments": [[1995000, 2000000]],
+    "row": [9, 2000000]
+   }
+  }
+ ],
+ "batching": [
+  {
+   "name": "sorted by resume point, ties by id",
+   "L": 2000000,
+   "resume": {"room-c": 1999990, "room-a": 1999970, "room-b": 1999970},
+   "expect": {
+    "stale": [],
+    "batches": [
+     {"rooms": ["room-a", "room-b", "room-c"], "since": 1998105}
+    ]
+   }
+  },
+  {
+   "name": "130 rooms make batches of 128 and 2",
+   "L": 2000000,
+   "resume": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127,
+    "r128": 1999128,
+    "r129": 1999129
+   },
+   "expect": {
+    "stale": [],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     },
+     {"rooms": ["r128", "r129"], "since": 1997263}
+    ]
+   }
+  },
+  {
+   "name": "a stale room is taken out first; the fresh rooms are all walked",
+   "L": 2000000,
+   "resume": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127,
+    "old": 1395200
+   },
+   "expect": {
+    "stale": ["old"],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     }
+    ]
+   }
+  },
+  {
+   "name": "two stale rooms and 128 fresh ones",
+   "L": 2000000,
+   "resume": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127,
+    "old1": 1395200,
+    "old2": 790400
+   },
+   "expect": {
+    "stale": ["old1", "old2"],
+    "batches": [
+     {
+      "rooms": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+      "since": 1997135
+     }
+    ]
+   }
+  },
+  {
+   "name": "the 7-day limit is inclusive",
+   "L": 2000000,
+   "resume": {"room-a": 1397065, "room-b": 1397064},
+   "expect": {
+    "stale": ["room-b"],
+    "batches": [
+     {"rooms": ["room-a"], "since": 1395200}
+    ]
+   }
+  }
+ ],
+ "ruleW": [
+  {
+   "name": "catch-up after the stream EOSE on the same connection writes (S, L)",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [7, 1000]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "catch-up before the stream EOSE writes nothing",
+   "steps": [
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 1
+   }
+  },
+  {
+   "name": "catch-up after part 1 but before EOSE writes nothing",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 1
+   }
+  },
+  {
+   "name": "a snapshot from an earlier connection does not vouch",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 2, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 1
+   }
+  },
+  {
+   "name": "an unfinished walk writes nothing and is not an order skip",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "catchUpEnd", "id": "c1", "completed": false}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a purge between walk start and write refuses it",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7, "room-b": 2}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a", "room-b"], "liveAt": 1000},
+    {"op": "purge", "room": "room-a"},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-b": [2, 1000]},
+    "seqWriteSkippedOrder": 0
+   },
+   "note": "Only the purged room is refused here; its span is refused the same way."
+  },
+  {
+   "name": "a loss after the capture refuses the write and clears rows",
+   "steps": [
+    {"op": "seedRow", "room": "room-z", "row": [1, 500]},
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "loss"},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "an epoch change clears rows",
+   "steps": [
+    {"op": "seedEpoch", "epoch": "e1"},
+    {"op": "seedRow", "room": "room-a", "row": [7, 900]},
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e2",
+     "rooms": {"room-a": 7}
+    }
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a room absent from the snapshot gets no row",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a", "room-x"], "liveAt": 1000},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [7, 1000]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "an epoch change while a walk runs refuses its write",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e2",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a walk from an earlier connection still writes when the epoch is unchanged",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e1",
+     "rooms": {"room-a": 8}
+    },
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [7, 1000]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a write never lowers a stored seq (walks ending out of order)",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {
+     "op": "part1",
+     "gen": 2,
+     "epoch": "e1",
+     "rooms": {"room-a": 9}
+    },
+    {"op": "streamEose", "gen": 2},
+    {"op": "catchUpStart", "id": "c2", "gen": 2, "rooms": ["room-a"], "liveAt": 1300},
+    {"op": "catchUpEnd", "id": "c2", "completed": true},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [9, 1300]},
+    "seqWriteSkippedOrder": 0
+   }
+  },
+  {
+   "name": "a stream CLOSED after EOSE does not undo the vouching",
+   "steps": [
+    {
+     "op": "part1",
+     "gen": 1,
+     "epoch": "e1",
+     "rooms": {"room-a": 7}
+    },
+    {"op": "streamEose", "gen": 1},
+    {"op": "closed", "gen": 1},
+    {"op": "catchUpStart", "id": "c1", "gen": 1, "rooms": ["room-a"], "liveAt": 1000},
+    {"op": "catchUpEnd", "id": "c1", "completed": true}
+   ],
+   "expect": {
+    "rows": {"room-a": [7, 1000]},
+    "seqWriteSkippedOrder": 0
+   }
+  }
+ ],
+ "clearingRowsBefore": {"room-a": [7, 1000], "room-b": [3, 900]},
+ "clearing": [
+  {"event": "queueFull", "platforms": ["desktop", "mobile"], "scope": "all"},
+  {"event": "writeFailed", "platforms": ["desktop", "mobile"], "scope": "all"},
+  {"event": "memoryGuard", "platforms": ["mobile"], "scope": "all"},
+  {"event": "purge", "platforms": ["desktop", "mobile"], "scope": "room"},
+  {"event": "coverageVersion", "platforms": ["desktop", "mobile"], "scope": "all"},
+  {"event": "signOut", "platforms": ["desktop", "mobile"], "scope": "all"},
+  {"event": "scopeEnd", "platforms": ["desktop", "mobile"], "scope": "all"},
+  {"event": "epochChange", "platforms": ["desktop", "mobile"], "scope": "all"}
+ ],
+ "newRow": [
+  {
+   "name": "inserted inside the newest segment",
+   "L": 5000,
+   "segments": [[1000, 2000], [3000, 4000]],
+   "row": {"inserted": true, "created_at": 3500},
+   "counts": true
+  },
+  {
+   "name": "inserted after the newest segment",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 4500},
+   "counts": true
+  },
+  {
+   "name": "at the segment start",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 3000},
+   "counts": true
+  },
+  {
+   "name": "in an older gap (a refill)",
+   "L": 5000,
+   "segments": [[1000, 2000], [3000, 4000]],
+   "row": {"inserted": true, "created_at": 2500},
+   "counts": false
+  },
+  {
+   "name": "already stored",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": false, "created_at": 3500},
+   "counts": false
+  },
+  {
+   "name": "after L",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 5001},
+   "counts": false
+  },
+  {
+   "name": "at L",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 5000},
+   "counts": true
+  },
+  {
+   "name": "no coverage",
+   "L": 5000,
+   "segments": [],
+   "row": {"inserted": true, "created_at": 4500},
+   "counts": false
+  },
+  {
+   "name": "the stream's own [L, L] is never the base",
+   "L": 5000,
+   "segments": [[3000, 4000], [5000, 5000]],
+   "row": {"inserted": true, "created_at": 3500},
+   "counts": true
+  },
+  {
+   "name": "a row also received live on this connection is not new",
+   "L": 5000,
+   "segments": [[3000, 4000]],
+   "row": {"inserted": true, "created_at": 4500, "receivedLive": true},
+   "counts": false
+  },
+  {
+   "name": "a row received before the stream EOSE (on a chunk) is not new",
+   "L": 5000,
+   "segments": [[3000, 4000], [5000, 5000]],
+   "row": {"inserted": true, "created_at": 4990, "receivedLive": true},
+   "counts": false
+  }
+ ],
+ "skipVerification": [
+  {
+   "name": "a predicted skip with no new rows is verified",
+   "rooms": [
+    {"room": "room-a", "walked": true, "newRows": 0}
+   ],
+   "expect": {"verifiedSkips": 1, "falseSkip": 0}
+  },
+  {
+   "name": "a predicted skip with a new row is a false skip",
+   "rooms": [
+    {"room": "room-a", "walked": true, "newRows": 2}
+   ],
+   "expect": {"verifiedSkips": 0, "falseSkip": 1}
+  },
+  {
+   "name": "a failed batch verifies nothing",
+   "rooms": [
+    {"room": "room-a", "walked": false, "newRows": 0}
+   ],
+   "expect": {"verifiedSkips": 0, "falseSkip": 0}
+  }
+ ],
+ "auditSampling": [
+  {
+   "name": "only rooms inside the age limit are eligible",
+   "L": 2000000,
+   "skipped": {"room-a": 1999900, "room-b": 1397065, "old": 1397064},
+   "expect": {"eligible": ["room-a", "room-b"], "sampleSize": 2}
+  },
+  {
+   "name": "at most 128 are sampled",
+   "L": 2000000,
+   "skipped": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127,
+    "r128": 1999128,
+    "r129": 1999129
+   },
+   "expect": {
+    "eligible": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127", "r128", "r129"],
+    "sampleSize": 128
+   }
+  },
+  {
+   "name": "128 or fewer are all walked",
+   "L": 2000000,
+   "skipped": {
+    "r000": 1999000,
+    "r001": 1999001,
+    "r002": 1999002,
+    "r003": 1999003,
+    "r004": 1999004,
+    "r005": 1999005,
+    "r006": 1999006,
+    "r007": 1999007,
+    "r008": 1999008,
+    "r009": 1999009,
+    "r010": 1999010,
+    "r011": 1999011,
+    "r012": 1999012,
+    "r013": 1999013,
+    "r014": 1999014,
+    "r015": 1999015,
+    "r016": 1999016,
+    "r017": 1999017,
+    "r018": 1999018,
+    "r019": 1999019,
+    "r020": 1999020,
+    "r021": 1999021,
+    "r022": 1999022,
+    "r023": 1999023,
+    "r024": 1999024,
+    "r025": 1999025,
+    "r026": 1999026,
+    "r027": 1999027,
+    "r028": 1999028,
+    "r029": 1999029,
+    "r030": 1999030,
+    "r031": 1999031,
+    "r032": 1999032,
+    "r033": 1999033,
+    "r034": 1999034,
+    "r035": 1999035,
+    "r036": 1999036,
+    "r037": 1999037,
+    "r038": 1999038,
+    "r039": 1999039,
+    "r040": 1999040,
+    "r041": 1999041,
+    "r042": 1999042,
+    "r043": 1999043,
+    "r044": 1999044,
+    "r045": 1999045,
+    "r046": 1999046,
+    "r047": 1999047,
+    "r048": 1999048,
+    "r049": 1999049,
+    "r050": 1999050,
+    "r051": 1999051,
+    "r052": 1999052,
+    "r053": 1999053,
+    "r054": 1999054,
+    "r055": 1999055,
+    "r056": 1999056,
+    "r057": 1999057,
+    "r058": 1999058,
+    "r059": 1999059,
+    "r060": 1999060,
+    "r061": 1999061,
+    "r062": 1999062,
+    "r063": 1999063,
+    "r064": 1999064,
+    "r065": 1999065,
+    "r066": 1999066,
+    "r067": 1999067,
+    "r068": 1999068,
+    "r069": 1999069,
+    "r070": 1999070,
+    "r071": 1999071,
+    "r072": 1999072,
+    "r073": 1999073,
+    "r074": 1999074,
+    "r075": 1999075,
+    "r076": 1999076,
+    "r077": 1999077,
+    "r078": 1999078,
+    "r079": 1999079,
+    "r080": 1999080,
+    "r081": 1999081,
+    "r082": 1999082,
+    "r083": 1999083,
+    "r084": 1999084,
+    "r085": 1999085,
+    "r086": 1999086,
+    "r087": 1999087,
+    "r088": 1999088,
+    "r089": 1999089,
+    "r090": 1999090,
+    "r091": 1999091,
+    "r092": 1999092,
+    "r093": 1999093,
+    "r094": 1999094,
+    "r095": 1999095,
+    "r096": 1999096,
+    "r097": 1999097,
+    "r098": 1999098,
+    "r099": 1999099,
+    "r100": 1999100,
+    "r101": 1999101,
+    "r102": 1999102,
+    "r103": 1999103,
+    "r104": 1999104,
+    "r105": 1999105,
+    "r106": 1999106,
+    "r107": 1999107,
+    "r108": 1999108,
+    "r109": 1999109,
+    "r110": 1999110,
+    "r111": 1999111,
+    "r112": 1999112,
+    "r113": 1999113,
+    "r114": 1999114,
+    "r115": 1999115,
+    "r116": 1999116,
+    "r117": 1999117,
+    "r118": 1999118,
+    "r119": 1999119,
+    "r120": 1999120,
+    "r121": 1999121,
+    "r122": 1999122,
+    "r123": 1999123,
+    "r124": 1999124,
+    "r125": 1999125,
+    "r126": 1999126,
+    "r127": 1999127
+   },
+   "expect": {
+    "eligible": ["r000", "r001", "r002", "r003", "r004", "r005", "r006", "r007", "r008", "r009", "r010", "r011", "r012", "r013", "r014", "r015", "r016", "r017", "r018", "r019", "r020", "r021", "r022", "r023", "r024", "r025", "r026", "r027", "r028", "r029", "r030", "r031", "r032", "r033", "r034", "r035", "r036", "r037", "r038", "r039", "r040", "r041", "r042", "r043", "r044", "r045", "r046", "r047", "r048", "r049", "r050", "r051", "r052", "r053", "r054", "r055", "r056", "r057", "r058", "r059", "r060", "r061", "r062", "r063", "r064", "r065", "r066", "r067", "r068", "r069", "r070", "r071", "r072", "r073", "r074", "r075", "r076", "r077", "r078", "r079", "r080", "r081", "r082", "r083", "r084", "r085", "r086", "r087", "r088", "r089", "r090", "r091", "r092", "r093", "r094", "r095", "r096", "r097", "r098", "r099", "r100", "r101", "r102", "r103", "r104", "r105", "r106", "r107", "r108", "r109", "r110", "r111", "r112", "r113", "r114", "r115", "r116", "r117", "r118", "r119", "r120", "r121", "r122", "r123", "r124", "r125", "r126", "r127"],
+    "sampleSize": 128
+   }
+  }
+ ],
+ "auditVerdicts": [
+  {
+   "name": "verdicts are per room",
+   "batches": [
+    {
+     "rooms": ["room-a", "room-b"],
+     "completed": true,
+     "newRows": {"room-a": 0, "room-b": 1}
+    },
+    {
+     "rooms": ["room-c"],
+     "completed": false,
+     "newRows": {}
+    }
+   ],
+   "expect": {"skipAudited": 2, "skipAuditNew": 1, "skipAuditFailed": 1}
+  },
+  {
+   "name": "several new rows in one room count once",
+   "batches": [
+    {
+     "rooms": ["room-a"],
+     "completed": true,
+     "newRows": {"room-a": 3}
+    }
+   ],
+   "expect": {"skipAudited": 1, "skipAuditNew": 1, "skipAuditFailed": 0}
+  }
+ ],
+ "liveMissed": [
+  {
+   "name": "a new row inside the window is missed",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 101000,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 1}
+  },
+  {
+   "name": "the lower bound is inclusive",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 100005,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 1}
+  },
+  {
+   "name": "before the lower bound",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 100004,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "the upper bound is inclusive",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 104100,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 1}
+  },
+  {
+   "name": "after the upper bound",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 104101,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "a relay-signed 9005 is excluded",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 101000,
+     "kind": 9005,
+     "pubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "a 9005 by another key counts",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 101000,
+     "kind": 9005,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 1}
+  },
+  {
+   "name": "a room outside the previous live set",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-c",
+     "created_at": 101000,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "a failed batch is neither checked nor counted",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": false},
+   "rows": [
+    {
+     "room": "room-b",
+     "created_at": 101000,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 1, "liveMissed": 0}
+  },
+  {
+   "name": "a row already stored",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 105000},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 101000,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": false
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "an empty window counts nothing",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": ["room-a", "room-b"], "eoseAt": 100000, "lastFrameAt": 100300},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 100100,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 2, "liveMissed": 0}
+  },
+  {
+   "name": "no previous live connection",
+   "relayPubkey": "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+   "L": 110000,
+   "prev": {"liveRooms": [], "eoseAt": null, "lastFrameAt": null},
+   "segments": {
+    "room-a": [[100000, 105000]],
+    "room-b": [[100000, 105000]],
+    "room-c": [[100000, 105000]]
+   },
+   "walked": {"room-a": true, "room-b": true, "room-c": true},
+   "rows": [
+    {
+     "room": "room-a",
+     "created_at": 101000,
+     "kind": 9,
+     "pubkey": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+     "inserted": true
+    }
+   ],
+   "expect": {"liveRoomsChecked": 0, "liveMissed": 0}
+  }
+ ],
+ "lastFrame": [
+  {
+   "name": "a frame stamped in the past counts at its created_at",
+   "frames": [
+    {"created_at": 1000, "receivedAt": 1010}
+   ],
+   "lastFrameAt": 1000
+  },
+  {
+   "name": "a future-stamped frame is clamped to its receive time",
+   "frames": [
+    {"created_at": 1000, "receivedAt": 1010},
+    {"created_at": 1900, "receivedAt": 1020}
+   ],
+   "lastFrameAt": 1020
+  },
+  {
+   "name": "the newest of all frames, part 1 included",
+   "frames": [
+    {"created_at": 500, "receivedAt": 500, "kind": 24220},
+    {"created_at": 700, "receivedAt": 800}
+   ],
+   "lastFrameAt": 700
+  }
+ ],
+ "comparator": [
+  {
+   "name": "seen on both within 5 s",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "chunk", "id": "e1", "room": "room-a"},
+    {"atMs": 6000, "on": "stream", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 1, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "the 5 s window is inclusive",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "stream", "id": "e1", "room": "room-a"},
+    {"atMs": 7000, "on": "chunk", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 1, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "chunk only",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "chunk", "id": "e1", "room": "room-a"},
+    {"atMs": 7001, "on": "stream", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 1, "chunkOnly": 1, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "a room the stream does not carry is not compared",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "chunk", "id": "e1", "room": "room-c"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "stream only in a snapshot room is expected",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "stream", "id": "e1", "room": "room-b"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 1, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "stream only in a room in both sets is expected",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "stream", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 1, "chunkOnly": 0, "streamOnlyExpected": 1, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "stream only outside the snapshot without a 44100 is unexpected",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "stream", "id": "e1", "room": "room-x"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 1}
+  },
+  {
+   "name": "a 44100 makes it expected",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [
+    {"room": "room-x", "atMs": 1500}
+   ],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "stream", "id": "e1", "room": "room-x"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 1, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "chunk events before the stream EOSE are not compared",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 800, "on": "chunk", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "a window still open at the end is discarded",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 19000, "on": "chunk", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "duplicates count once",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "chunk", "id": "e1", "room": "room-a"},
+    {"atMs": 2100, "on": "chunk", "id": "e1", "room": "room-a"},
+    {"atMs": 2200, "on": "stream", "id": "e1", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 1, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  },
+  {
+   "name": "frames after the stream CLOSED are ignored; open windows are discarded",
+   "snapshotRooms": ["room-a", "room-b"],
+   "chunkRooms": ["room-a", "room-c"],
+   "joined": [],
+   "streamEoseAtMs": 1000,
+   "chunkEoseAtMs": 500,
+   "observations": [
+    {"atMs": 2000, "on": "chunk", "id": "e1", "room": "room-a"},
+    {"atMs": 3000, "closed": true},
+    {"atMs": 3500, "on": "stream", "id": "e1", "room": "room-a"},
+    {"atMs": 4000, "on": "chunk", "id": "e2", "room": "room-a"}
+   ],
+   "endAtMs": 20000,
+   "expect": {"eventsCompared": 0, "chunkOnly": 0, "streamOnlyExpected": 0, "streamOnlyUnexpected": 0}
+  }
+ ],
+ "handoff": [
+  {
+   "name": "live closes member chunks after the stream EOSE",
+   "mode": "live",
+   "memberRooms": ["a", "b", "c"],
+   "quietRooms": [],
+   "snapshotRooms": ["a", "b", "c"],
+   "expect": {"beforeEose": ["a", "b", "c"], "afterEose": []}
+  },
+  {
+   "name": "quiet rooms in the snapshot leave the chunks too",
+   "mode": "gated",
+   "memberRooms": ["a", "b"],
+   "quietRooms": ["d"],
+   "snapshotRooms": ["a", "b", "d"],
+   "expect": {"beforeEose": ["a", "b", "d"], "afterEose": []}
+  },
+  {
+   "name": "rooms the snapshot lacks stay on chunks",
+   "mode": "live",
+   "memberRooms": ["a", "b", "x"],
+   "quietRooms": [],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"beforeEose": ["a", "b", "x"], "afterEose": ["x"]}
+  },
+  {
+   "name": "shadow leaves chunks alone",
+   "mode": "shadow",
+   "memberRooms": ["a", "b", "c"],
+   "quietRooms": [],
+   "snapshotRooms": ["a", "b", "c"],
+   "expect": {"beforeEose": ["a", "b", "c"], "afterEose": ["a", "b", "c"]}
+  },
+  {
+   "name": "a CLOSED before EOSE leaves chunks alone",
+   "mode": "live",
+   "closedBeforeEose": true,
+   "memberRooms": ["a", "b"],
+   "quietRooms": [],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"beforeEose": ["a", "b"], "afterEose": ["a", "b"]}
+  },
+  {
+   "name": "no stream (CLOSED at once) leaves chunks alone",
+   "mode": null,
+   "memberRooms": ["a", "b"],
+   "quietRooms": [],
+   "snapshotRooms": [],
+   "expect": {"beforeEose": ["a", "b"], "afterEose": ["a", "b"]}
+  }
+ ],
+ "handoffDedupe": {
+  "name": "overlap deliveries are routed once by id",
+  "deliveries": [
+   {"on": "chunk", "id": "e1"},
+   {"on": "stream", "id": "e1"},
+   {"on": "stream", "id": "e2"},
+   {"on": "chunk", "id": "e2"}
+  ],
+  "routed": ["e1", "e2"]
+ },
+ "midConnectionClosed": [
+  {
+   "name": "live: chunks reopen at once and carried rooms catch up",
+   "mode": "live",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a", "b"],
+   "chunkExtras": ["x"],
+   "resume": {"a": 49900, "b": 49960},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {"a": 41000, "b": 49500}
+   },
+   "expect": {
+    "chunkRooms": ["a", "b", "x"],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a", "b"], "since": 48035}
+     ]
+    },
+    "desktopRepair": {
+     "rooms": ["a", "b"],
+     "since": 48105,
+     "listenerFloor": {"a": 40995, "b": 49495}
+    },
+    "streamAgainThisConnection": false
+   }
+  },
+  {
+   "name": "gated: the same",
+   "mode": "gated",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a"],
+   "chunkExtras": [],
+   "resume": {"a": 49900},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {"a": 41000}
+   },
+   "expect": {
+    "chunkRooms": ["a"],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a"], "since": 48035}
+     ]
+    },
+    "desktopRepair": {
+     "rooms": ["a"],
+     "since": 48105,
+     "listenerFloor": {"a": 40995}
+    },
+    "streamAgainThisConnection": false
+   }
+  },
+  {
+   "name": "carried rooms without coverage reopen chunks but are not walked",
+   "mode": "live",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a", "n"],
+   "chunkExtras": [],
+   "resume": {"a": 49900},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {"a": 41000, "n": 41000}
+   },
+   "expect": {
+    "chunkRooms": ["a", "n"],
+    "catchUp": {
+     "stale": [],
+     "batches": [
+      {"rooms": ["a"], "since": 48035}
+     ]
+    },
+    "desktopRepair": {
+     "rooms": ["a", "n"],
+     "since": 48105,
+     "listenerFloor": {"a": 40995, "n": 40995}
+    },
+    "streamAgainThisConnection": false
+   }
+  },
+  {
+   "name": "shadow: chunks were never closed, nothing to do",
+   "mode": "shadow",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a"],
+   "chunkExtras": [],
+   "resume": {"a": 49900},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {}
+   },
+   "expect": {
+    "chunkRooms": ["a"],
+    "catchUp": null,
+    "desktopRepair": null,
+    "streamAgainThisConnection": false
+   }
+  },
+  {
+   "name": "overflow in live: no fallback on the dying socket",
+   "mode": "live",
+   "reason": "error: user-stream overflow",
+   "streamLive": true,
+   "closedAt": 50000,
+   "carriedRooms": ["a"],
+   "chunkExtras": [],
+   "resume": {"a": 49900},
+   "stream": {
+    "lastSeenCreatedAt": 49970,
+    "liveSince": {"a": 41000}
+   },
+   "expect": {
+    "chunkRooms": [],
+    "catchUp": null,
+    "desktopRepair": null,
+    "awaitSocketCloseSecs": 2,
+    "streamAgainThisConnection": false
+   }
+  }
+ ],
+ "spanStop": [
+  {
+   "name": "the stream's spans stop at its CLOSED; chunk frames do not extend them",
+   "streamEoseAt": 1000,
+   "events": [
+    {"at": 1070, "on": "stream"},
+    {"at": 1100, "closed": true},
+    {"at": 1200, "on": "chunk"},
+    {"at": 1300, "on": "chunk"}
+   ],
+   "expect": {"streamSpan": [1000, 1070]}
+  },
+  {
+   "name": "spans extend at most once every 60 s while live",
+   "streamEoseAt": 1000,
+   "events": [
+    {"at": 1030, "on": "stream"},
+    {"at": 1059, "on": "stream"},
+    {"at": 1061, "on": "stream"}
+   ],
+   "expect": {"streamSpan": [1000, 1061]}
+  }
+ ],
+ "chunkCatchUp": [
+  {
+   "name": "mode unknown: chunk catch-up and repair run as today",
+   "stream": "pending",
+   "chunkRooms": ["a", "b", "x"],
+   "snapshotRooms": [],
+   "expect": {"chunkCatchUpRooms": ["a", "b", "x"]}
+  },
+  {
+   "name": "no stream (CLOSED, off or backoff): as today",
+   "stream": "none",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": [],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
+  },
+  {
+   "name": "shadow: as today",
+   "stream": "shadow",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
+  },
+  {
+   "name": "live after its accepted EOSE: only rooms outside the snapshot",
+   "stream": "liveEose",
+   "chunkRooms": ["a", "b", "x"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["x"]}
+  },
+  {
+   "name": "gated after its accepted EOSE: the same",
+   "stream": "gatedEose",
+   "chunkRooms": ["a", "x"],
+   "snapshotRooms": ["a"],
+   "expect": {"chunkCatchUpRooms": ["x"]}
+  },
+  {
+   "name": "after a mid-connection CLOSED the reopened chunks follow the chunk rules",
+   "stream": "closedAfterEose",
+   "chunkRooms": ["a", "b"],
+   "snapshotRooms": ["a", "b"],
+   "expect": {"chunkCatchUpRooms": ["a", "b"]}
+  }
+ ],
+ "membershipCarriedBefore": ["a"],
+ "membership": [
+  {
+   "name": "a frame newer than a 44101 is stored but not shown",
+   "steps": [
+    {"op": "44101", "room": "a", "created_at": 100},
+    {"op": "frame", "id": "f1", "room": "a", "created_at": 101}
+   ],
+   "expect": {"stored": ["f1"], "rendered": [], "carried": []}
+  },
+  {
+   "name": "a frame in the same second is shown",
+   "steps": [
+    {"op": "44101", "room": "a", "created_at": 100},
+    {"op": "frame", "id": "f1", "room": "a", "created_at": 100}
+   ],
+   "expect": {"stored": ["f1"], "rendered": ["f1"], "carried": []}
+  },
+  {
+   "name": "a late frame from before the removal is shown",
+   "steps": [
+    {"op": "44101", "room": "a", "created_at": 100},
+    {"op": "frame", "id": "f1", "room": "a", "created_at": 90}
+   ],
+   "expect": {"stored": ["f1"], "rendered": ["f1"], "carried": []}
+  },
+  {
+   "name": "a rejoin (44100 not older) shows frames again and carries the room",
+   "steps": [
+    {"op": "44101", "room": "a", "created_at": 100},
+    {"op": "44100", "room": "a", "created_at": 100, "receivedAt": 120},
+    {"op": "frame", "id": "f1", "room": "a", "created_at": 130}
+   ],
+   "expect": {
+    "stored": ["f1"],
+    "rendered": ["f1"],
+    "carried": ["a"],
+    "coverage": {
+     "a": [[120, 120]]
+    }
+   }
+  },
+  {
+   "name": "a 44100 older than the 44101 is ignored",
+   "steps": [
+    {"op": "44101", "room": "a", "created_at": 100},
+    {"op": "44100", "room": "a", "created_at": 99, "receivedAt": 120},
+    {"op": "frame", "id": "f1", "room": "a", "created_at": 130}
+   ],
+   "expect": {"stored": ["f1"], "rendered": [], "carried": []}
+  },
+  {
+   "name": "a 44100 for a new room carries it with a span at its receive time",
+   "steps": [
+    {"op": "44100", "room": "n", "created_at": 200, "receivedAt": 205},
+    {"op": "frame", "id": "f1", "room": "n", "created_at": 206}
+   ],
+   "expect": {
+    "stored": ["f1"],
+    "rendered": ["f1"],
+    "carried": ["a", "n"],
+    "coverage": {
+     "n": [[205, 205]]
+    }
+   }
+  },
+  {
+   "name": "a 44100 before the stream EOSE changes nothing carried",
+   "beforeEose": true,
+   "steps": [
+    {"op": "44100", "room": "n", "created_at": 200, "receivedAt": 205}
+   ],
+   "expect": {"stored": [], "rendered": [], "carried": ["a"]}
+  }
+ ],
+ "routingLists": {"memberRooms": ["a"], "archivedRooms": ["arch"], "openRooms": ["a", "arch"]},
+ "routing": [
+  {
+   "name": "a member room reaches everyone as on a chunk",
+   "frame": {"id": "f1", "room": "a"},
+   "expect": {"store": true, "openRoom": true, "allRooms": true, "listRefresh": false}
+  },
+  {
+   "name": "an archived room is stored, never in the all-room lists",
+   "frame": {"id": "f2", "room": "arch"},
+   "expect": {"store": true, "openRoom": true, "allRooms": false, "listRefresh": false}
+  },
+  {
+   "name": "an unknown room is stored and refreshes the list",
+   "frame": {"id": "f3", "room": "new"},
+   "expect": {"store": true, "openRoom": false, "allRooms": false, "listRefresh": true}
+  }
+ ],
+ "routingBurst": {
+  "name": "unknown rooms in one burst refresh the list once",
+  "frames": [
+   {"id": "g1", "room": "new1"},
+   {"id": "g2", "room": "new2"},
+   {"id": "g3", "room": "new1"}
+  ],
+  "listRefreshes": 1
+ }
+}

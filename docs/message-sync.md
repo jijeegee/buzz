@@ -36,7 +36,9 @@ forgetting a room's in
 head spans' in
 [`test-fixtures/message-store-head-coverage.json`](../test-fixtures/message-store-head-coverage.json),
 the store-first preload plan's in
-[`test-fixtures/message-store-preload-plan.json`](../test-fixtures/message-store-preload-plan.json).
+[`test-fixtures/message-store-preload-plan.json`](../test-fixtures/message-store-preload-plan.json),
+the user stream's in
+[`test-fixtures/user-stream.json`](../test-fixtures/user-stream.json).
 
 ## Live room bundle
 
@@ -46,7 +48,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 - **One stream for every room.** The rooms the account belongs to share one
   live REQ per 128 rooms (the relay's explicit-`#h` cap per REQ): ids sorted
   and deduplicated, then split in order. A room does not get a REQ of its own
-  when it is opened.
+  when it is opened. When the relay runs the account's
+  [user stream](#user-stream) in `live` or `gated` mode, that one REQ
+  carries the member rooms instead, and only rooms it lacks stay on chunks.
 - **Filter.** Every channel event kind plus the thread-summary recount
   (39005) and room metadata (thread names, 40009), `limit: 0` and no
   `since`. The relay applies `since` to live matching, so a `since` would
@@ -201,6 +205,13 @@ live REQ per room, shared by every screen of that room (desktop
   once the REQs are back on the socket; mobile marks the session connected
   at AUTH OK and re-sends the REQs behind it. The first connect after launch
   has no live REQs to re-send or repair yet.
+- **User stream first.** The [user stream](#user-stream) REQ is the first
+  REQ after AUTH OK on every connection; the chunks are re-sent as usual
+  right behind it, and in `live`/`gated` they shrink only after the stream
+  EOSE. The stream is not one of the chunks below: it has its own repair
+  (the stream EOSE catch-up, and desktop's listener repair from the
+  stream's last-seen event time minus 1865 s) and is never replayed by the
+  generic paths.
 - Desktop re-sends each chunk unchanged and repairs the missed window over
   HTTP: one keyset walk per chunk covering all its rooms, from the chunk's
   last-seen event time (or its start) minus the 1865 s lookback. Every row
@@ -245,6 +256,8 @@ live REQ per room, shared by every screen of that room (desktop
 - Both apps also catch the device store up after every chunk EOSE (see
   [Coverage](#coverage)). Desktop skips this when its reconnect repair runs
   for the chunk on that connection; mobile has no repair, so it always runs.
+  In `live`/`gated` the stream EOSE does the same for the rooms it carries
+  ([Catch-up at the stream EOSE](#catch-up-at-the-stream-eose)).
 
 ## Account bundle
 
@@ -491,11 +504,16 @@ in the commit.
 | Idle with an agent DM (`idleWithAgent`) | 5 | — |
 | Idle as the relay's own key (`idleRelaySelf`) | 5 | — |
 | Idle with a hidden DM (`idleHiddenDm`) | 5 | 4 |
+| Idle, user stream in `shadow` (`idleStreamShadow`) | 6 (idle + the stream) | 5 (idle + the stream) |
+| Idle, user stream in `live` (`idleStreamLive`) | 5 (idle − the member chunk + the stream) | 4 (the stream replaces the room chunk) |
 | Activity inbox (`activityInbox`) | — | 4 |
 
 The REQs behind them: the community bundle, the room bundle (one per 128
 rooms), the account bundles (authored and addressed), and per open room its
-typing + goal-tree REQ.
+typing + goal-tree REQ. The pinned counts are for a relay without the
+[user stream](#user-stream) (the e2e mock). With it, `shadow` adds one REQ
+(the stream) next to the chunks (`idleStreamShadow`), and `live`/`gated`
+replace the member chunks with it (`idleStreamLive`).
 
 Rules:
 - No REQ per row (thread rows, inbox rows, search hits): rows ride a bundle
@@ -575,7 +593,10 @@ Workflow kinds 43001–43006 and thread summaries are stored but not covered.
 Merging rules and cases: `test-fixtures/message-store-coverage.json`.
 
 - **Who records:** a live REQ that names explicit rooms (at most 128) and
-  carries every channel event kind (a room-bundle chunk or a room's own REQ).
+  carries every channel event kind (a room-bundle chunk or a room's own REQ),
+  and the [user stream](#user-stream) in `live`/`gated` for the rooms it
+  carries: its snapshot rooms from its EOSE, and a room joined by 44100 from
+  that notice's receive time (`[T, T]`). A `shadow` stream records nothing.
 - **EOSE at L:** records `[L, L]` for its rooms; from then on the REQ receives
   every new event.
 - **While live:** an event arriving on the same connection extends the span to
@@ -591,10 +612,14 @@ Merging rules and cases: `test-fixtures/message-store-coverage.json`.
   not cut off by a slow clock) into the store only; nothing is shown. When it ends within 4 pages it
   records `[since, L]`. A longer or more than 7-day gap records nothing and
   is left for opening the room. Rooms without coverage are never fetched.
+  The stream's catch-up walks its rooms in batches of 128 sorted by resume
+  point, may skip rooms in `gated`, and writes the `room_seq` watermark
+  under rule W ([User stream](#watermark-room_seq)).
 - **Order and loss:** spans go through the same write queue as events, so a
   span is recorded only after the events received before it are written. A
   dropped event or failed write clears every span of the file, and any later
-  span starting at or before the time of the loss is not recorded.
+  span starting at or before the time of the loss is not recorded. Each path
+  that clears spans also clears `room_seq` in the same transaction.
 - **Version:** the file records which coverage version wrote its spans
   (`sync_state.coverage_version`, now 2). On open, spans of another version
   are deleted; desktop reads also trust no span until the version matches.
@@ -1286,6 +1311,494 @@ keeps counts (matches and differences per room and thread stream, and
 differences by type) and logs them at most once a minute as
 `[message-store] comparisons this run`: the evidence for turning off the
 follow-up request.
+
+## User stream
+
+One live REQ for all of the account's rooms, with the room set kept by the
+relay: no 128-room chunks, no re-chunking on join, no client re-subscribe for
+a room joined offline. The relay decides per account, on every connection,
+how much the clients rely on it. Cases:
+[`test-fixtures/user-stream.json`](../test-fixtures/user-stream.json); each
+rule below names its section there.
+
+- **Build switch:** `VITE_KUZZ_USER_STREAM=off|follow` (desktop) or
+  `--dart-define=KUZZ_USER_STREAM=off|follow` (mobile). `follow` (default)
+  sends the stream REQ and obeys the relay's mode; `off` never sends it.
+- **REQ:** `["REQ", <sub>, {"#h": ["$joined"], "kinds": <frozen kinds>,
+  "limit": 0}]` (`request`), sent **first after AUTH OK** on every
+  connection, as its own subscription type. It is never in the generic
+  live-subscription map: no generic path (reconnect replay, coverage,
+  access revocations, the CLOSED retry) ever sees `$joined` as a room id.
+- **Frozen v1 kinds** (`frozenKinds`): 5, 7, 9, 9005, 39005, 40001, 40002,
+  40003, 40008, 40009, 40099, 45001, 45003, 48100–48103, the same set as
+  `ROOM_LIVE_KINDS`. The relay accepts exactly this set; any change bumps `v`.
+- **Not stored, not routed:** kind 24220 (the snapshot) is never stored.
+
+### Modes
+
+Part 1 of the snapshot names the mode for this connection (`modes`). It is
+never cached across connections.
+
+| Mode | Chunks | Stream frames | Store catch-up | `room_seq` |
+|---|---|---|---|---|
+| `shadow` | as without the stream | not stored, not routed; compared with the chunks | at chunk EOSE, as today | written under rule W |
+| `live` | member rooms leave the chunks after the stream EOSE; extras stay | stored and routed like a chunk's | at the stream EOSE, every covered snapshot room | written under rule W |
+| `gated` | as `live` | as `live` | as `live`, minus rooms whose stored seq equals the snapshot's, plus the skip audit | written under rule W |
+
+No stream (the build switch, the overflow backoff below, or any CLOSED) means
+chunks exactly as without it, for that connection. In `live`/`gated` the
+stream counts as a live REQ carrying every room it carries
+([Coverage](#coverage)); in `shadow` it records no coverage.
+
+### Snapshot
+
+The relay answers the REQ with every snapshot part, then EOSE, and only
+then live frames (it queues frames that arrive meanwhile). Each part is a
+relay-signed kind 24220 event addressed to the account (`p`), on the stream
+sub.
+
+- **Part 1:** content `{"v":1, "op":"snapshot", "part":1, "parts":n,
+  "mode":"shadow|live|gated", "epoch":"…", "kinds":[…], "rooms":{"<room>":
+  <seq>, …}}`, at most 500 rooms per part. `seq` is the room's accepted
+  sequence: an integer from 0 to 2^53 − 1. `epoch` is a non-empty string of
+  at most 64 characters.
+- **Later parts** need only `rooms`. A later part that carries `part` must
+  carry its arrival position (2, 3, …); `v`, `op` and other fields there are
+  ignored.
+- **Refused (`part1`):** content that is not JSON; `v` ≠ 1; `op` ≠
+  `snapshot`; part 1 not numbered 1; `parts` < 1; an unknown `mode`; an empty
+  or missing `epoch`; `kinds` ≠ the frozen kinds (compared as sets); a seq
+  that is not a non-negative integer; a room in two parts; more parts than
+  announced, or a part out of order; fewer parts than announced at EOSE. A
+  refused snapshot CLOSEs the stream: chunks for this connection. The store
+  layer runs the same checks ([Store skip](#store-skip)).
+- **Integer fields:** every integer field (`v`, `part`, `parts`, `kinds`,
+  room seq) must be written as plain digits (no sign, fraction or
+  exponent), as the store's serde check (`as_u64`) reads it: `1.0`, `1e0`
+  and `-0` are refused alike (serde reads `-0` as a float). This holds for
+  a later part's `part` and room seqs too. The fixture lists the cases.
+  Both apps check the literal number tokens of the content text
+  (`parsePlainIntegers`) and read any other token as `null`. Desktop: in
+  `userStreamRules.ts`. Mobile: in `user_stream.dart`, because `jsonDecode`
+  reads `-0` as the int 0.
+- Any other kind arriving before part 1 is ignored (not stored, routed or
+  compared). 24220 events after EOSE are ignored.
+- **Epoch (`epoch`):** the file keeps the last epoch in `sync_state`. An
+  accepted part 1 whose epoch differs (or the first one) clears every
+  `room_seq` row and stores the new epoch, in one writer transaction queued
+  before any rule-W write of that connection. Every rule-W write carries the
+  epoch its catch-up started under, and the writer refuses it when the
+  stored epoch differs at apply time, so a walk still running from before
+  the change writes nothing ([rule W](#watermark-room_seq)). A refused part
+  1 changes nothing. The relay bumps the epoch on a DB restore and when an
+  account leaves `gated`.
+
+### Store skip
+
+The store layer decides for itself whether a stream frame is stored
+(`storeSkip`), so the decision is made before any feature sees it.
+
+- Desktop `SocketTap` learns the stream sub id from the outgoing REQ (its
+  filter carries `$joined`) and sets that sub's verdict to `pending`. Mobile
+  keeps the same state in `user_stream.dart`, checked in `_handleEvent`
+  before `submit`.
+- The verdict stays `pending` until the stream EOSE has validated the whole
+  snapshot: the store layer runs the `part1` checks itself, including the
+  part count at EOSE. Then it becomes `keep` (`live`, `gated`) or `skip`
+  (`shadow`, or any refusal).
+- **While `pending`, frames on the stream sub are dropped:** not stored, not
+  held, not routed. The relay sends no live frame before EOSE (it queues
+  them and flushes them after EOSE, when the verdict is already `keep`), so
+  a frame seen while pending breaks that rule. Its event comes on the chunks
+  anyway (they stay until the stream EOSE), and rule W's walk covers what
+  was committed before EOSE. Kind 24220 is never stored in any state.
+- A client CLOSE or a relay CLOSED for that id sets `skip` until the socket
+  ends, so frames still queued behind a CLOSED are never stored. A new REQ
+  on the same id overrides that and resets the verdict to `pending`; only
+  the `auth-required` retry reuses the id. A new socket starts with no
+  entries.
+
+### Relay answers
+
+`closed` and `closedReasons`. `auth-required:` and `invalid: user-stream`
+match as prefixes, the rest exactly.
+
+| Reason | Client |
+|---|---|
+| (snapshot parts, then EOSE) | mode from part 1 |
+| `unsupported: user-stream off` | chunks for this connection |
+| `unsupported: user-stream not enabled` | chunks for this connection |
+| `invalid: user-stream <detail>` | chunks for this connection, and a log line (a client bug) |
+| `unsupported: user-stream too many rooms` | chunks for this connection |
+| `restricted: not a channel member` (old relay) | chunks for this connection |
+| `auth-required: …` | before the stream EOSE (or in `shadow`): send the REQ again after the next AUTH OK, once per connection; a second one → chunks. After the EOSE in `live`/`gated`: the [mid-connection fallback](#mid-connection-fallback) at once, no retry (the relay already dropped frames; a retry would leave that gap unrepaired) |
+| `error: user-stream overflow` | `shadow`: stream off, chunks untouched (`closed{shadow_full}`). `live`/`gated`: wait for the socket to close (`closed{full}`, counts toward the backoff) |
+| `error: user-stream lagged` | any mode: wait for the socket to close; the reconnect first waits a random 0–10 s |
+| `error: user-stream closed` | as any CLOSED for the mode (counts toward the backoff after the EOSE in `live`/`gated`) |
+| anything else | as any CLOSED for the mode (counts as `closed` does) |
+
+"As any CLOSED for the mode": before the stream EOSE, or in `shadow`,
+chunks for this connection (they were never closed); after the EOSE in
+`live`/`gated`, the [mid-connection fallback](#mid-connection-fallback), at
+once. The stream is not requested again on that connection.
+
+"Wait for the socket to close": the relay cancels the connection right
+after these CLOSEDs, so the client starts no fallback, chunk or walk on the
+dying socket. If the socket is still open 2 s later the client closes it
+itself. Then it reconnects normally (with the lagged jitter when the reason
+was `lagged`), and the next connection takes the stream or chunks by the
+usual rules. This keeps a relay-wide lag from turning into one synchronized
+catch-up burst. From the CLOSED on, carried rooms no longer count as
+live or settled for coverage or store opens (the relay dropped frames), but
+no chunk opens for them on the dying socket. Every
+connect and every socket end, including a backed-off connect, puts the
+carried rooms back on chunks: a connection with no stream for any reason
+(CLOSED, refused, the build switch, the backoff) starts with nothing
+carried, so every member room is on chunks.
+
+- **Overflow backoff (`backoff`):** two counting closes within 10 min (per
+  account and server) stop the stream REQ for 1 h from the second close.
+  Counting closes are `full` and, after the stream EOSE in `live`/`gated`,
+  `closed` and unknown reasons, so a fail-closed that fires on every
+  connection cannot loop reconnect and catch-up. `lagged` (relay-wide,
+  jittered) and `shadow_full` never count. A network change or a resume
+  after at least 1 h in the background ends it early and forgets earlier
+  closes. A network change is a change in the set of network types the OS
+  reports: the first report after the app starts and a repeat of the same
+  set (Android capability updates) are not changes. The backoff is kept in
+  `sync_state`, so an app restart does not end it; the `auth-required` retry
+  count is per connection.
+- **`error: busy` on a history REQ (`busyRetry`).** The relay refuses a
+  history frame that would fill a live/gated stream connection's send
+  buffer past 80% and ends that REQ with `CLOSED "error: busy"`. History
+  query paths on both apps retry it instead of failing: 1 s doubling to 30 s
+  (`busyRetryDelaysSecs`), each retry on a fresh sub id so no late frame of
+  the refused REQ is taken for the retry's, until the caller's own timeout
+  or the socket ends. Desktop: `handleRelayClosed` in
+  `relayClosedRecovery.ts` for one-shot subscriptions, and
+  `readOnlyRelayClient.ts`. Mobile: the history branch of `_handleClosed`
+  (`relay_session.dart`, logic in `relay_session_busy_retry.dart`). On the
+  stream sub itself `error: busy` is just an unknown reason.
+
+### Handoff
+
+`handoff`, `handoffDedupe`.
+
+- **At connect:** chunks open at once, as without the stream, so an account
+  without it waits no extra round trip. The stream REQ goes first after AUTH
+  OK. Mobile reads the stream state when the socket starts connecting; on
+  the first connect of an account, if that read is still running at AUTH
+  OK, the chunk replay waits for the stream REQ at most 300 ms. With the
+  stream switched off in the build nothing waits. Desktop: on the first
+  connect of an account or community the stored backoff and counters are
+  read first (off the main thread); the chunks do not wait for that read,
+  and the REQ follows when it lands (when that connect is still current).
+- **`live`/`gated`:** after the stream EOSE (never at part 1) the chunks are
+  replaced ([replacing a chunk](#live-room-bundle)) by chunks of the rooms
+  the stream does not take (member ∪ quiet − handed); usually none remain.
+  Deliveries in the overlap are routed once by id. Per-room listener starts
+  carry over from the chunk that carried the room.
+- **Rooms without a usable resume point:** a snapshot room has a usable
+  resume point when it was covered before this connection
+  ([connectionSpans](#catch-up-at-the-stream-eose)), is not stale, and was
+  read from a store that vouches for what it holds (nothing queued
+  unwritten, no write loss pending). The stream catch-up and listener
+  repair cannot reach a room without one (uncovered, stale more than 7
+  days, or after a write loss), yet such a room must still get its offline
+  gap delivered to listeners on this connection. The stream still carries
+  and stores its frames (routed once by id).
+  - Desktop: such rooms are not handed to the stream (`handed`) for this
+    connection: they keep their chunks, so the existing chunk catch-up and
+    chunk reconnect repair still reach them, and the next connection (which
+    then has their chunk spans) hands them over. Desktop keeps the chunk
+    carrying such a room as it is, not re-partitioned, so its repair in
+    flight is not cut; that chunk may carry handed rooms too until the
+    socket ends. A room a 44100 adds after the EOSE is handed at once.
+    `handoffKept` counts the rooms kept.
+  - Mobile: every snapshot room is handed. Mobile room chunks are `limit: 0`
+    and never re-delivered the gap, so keeping them would repair nothing.
+    The listeners reload from the relay whatever the coverage: the open
+    room refetches its newest page on reconnect, and the unread catch-up
+    runs from read markers for every member room
+    ([Catch-up at the stream EOSE](#catch-up-at-the-stream-eose)).
+- **`shadow`, or a CLOSED before the EOSE:** chunks stay.
+- **Carried rooms:** the snapshot rooms, plus a room whose 44100 arrives
+  after the stream EOSE (below), minus a room whose 44101 arrives. The
+  stream's coverage spans and the mid-connection fallback cover the handed
+  ones only.
+- **Chunk catch-up and repair (`chunkCatchUp`):** while the mode is unknown
+  (no accepted EOSE yet), and with no stream or in `shadow`, the chunks'
+  own catch-up and desktop's chunk repair run as today; walks already
+  running when the stream EOSE is accepted finish as today. After an
+  accepted EOSE in `live`/`gated`, chunk catch-ups and repairs skip the
+  handed rooms, whose catch-up is the stream's; rooms outside the snapshot
+  and desktop's kept rooms keep chunk catch-up. After a mid-connection
+  CLOSED the reopened chunks follow the chunk rules again.
+
+### Mid-connection fallback
+
+A CLOSED after the stream EOSE in `live`/`gated`, other than an overflow
+or `lagged` (those wait for the socket to close, above)
+(`midConnectionClosed`):
+
+1. Reopen chunks for every handed room at once (plus the extras and
+   desktop's kept rooms, already on chunks).
+2. Catch the store up for the carried rooms that have coverage, from their
+   resume points (the stream's coverage end), batched and sorted as below,
+   with L = the time of the CLOSED. The reopened chunks then follow the
+   chunk rules from their own EOSE.
+3. Desktop also runs the listener repair for every handed room, from the
+   stream's last-seen time minus 1865 s, with each room's listener floor at
+   its live start minus 5 s ([Reconnect](#reconnect)), alongside step 2 and
+   the room on screen first. Its walks start no page once the socket ends.
+
+New chunks would not repair a gap before their own EOSE, so these steps are
+not optional. The stream's coverage spans stop growing at its CLOSED
+(`spanStop`): chunk frames never extend them, and the reopened chunks
+record their own spans from their EOSE.
+
+### Membership notices in `live`/`gated`
+
+44100/44101 ride the addressed account bundle as before; the stream hooks
+into that listener (`membership`, `routing`).
+
+- **44100** after the stream EOSE for a room the stream does not carry: the
+  relay has already added it, so the room becomes carried, with a coverage
+  span at the notice's receive time. A 44100 before the stream EOSE, or in
+  `shadow`, changes nothing carried: the snapshot or the chunks cover the
+  room.
+- **44101:** the room stops being carried. A later stream frame for it whose
+  `created_at` is after the 44101's is stored but not shown, until a 44100
+  for the room that is not older than the 44101. Same-second frames are
+  shown. A notice older than the last applied notice for that room is
+  ignored. This rule is for rendering only; catch-up after a rejoin repairs
+  the store.
+- **Rooms not in the member list:** an archived room's frames are stored
+  and reach an open room, never the all-rooms consumers. A room the list
+  does not know is stored and triggers a debounced list refresh: one per
+  burst (1 s), at most once per 10 s per room, and at most one every 5 s
+  over all rooms. Desktop: the burst debounce is the room list's own
+  (500 ms, trailing), behind the 10 s / 5 s throttle.
+
+### Watermark (`room_seq`)
+
+`room_seq(room, seq, at)` is a freshness token for the room's coverage head,
+for the [coverage](#coverage) kinds only: "a walk that started after the
+relay's seq for this room was `seq` completed up to `at`". It is not a
+completeness proof.
+
+**Rule W (`ruleW`).** A row `(S, L)` is written only when all hold:
+
+1. S comes from the stream snapshot of connection G, and the catch-up that
+   vouches for it sent its first page after that stream's EOSE, on G.
+   Otherwise nothing is written and `seqWriteSkippedOrder` counts the room.
+   In `shadow` a chunk-EOSE catch-up qualifies only when the stream EOSE came
+   first. A later CLOSED of that stream does not undo it.
+2. The walk completed (at most 4 pages, at most 7 days); L is its live time.
+3. The write rides that catch-up's own span record in the write queue, under
+   its capture and scope, and is refused exactly when the span is refused.
+4. The write carries the epoch its catch-up started under; the writer
+   refuses it when `sync_state` holds another epoch at apply time. A walk
+   from an earlier connection still writes when the epoch is unchanged.
+5. The writer never lowers a stored seq: a write with S below the stored
+   seq is dropped (walks can end out of order). An equal S moves `at`.
+6. Every path that clears coverage clears `room_seq` in the same writer
+   transaction, and refuses the rule-W writes in flight across it
+   (`clearing`):
+
+| Event | Desktop | Mobile | Rows cleared; writes refused |
+|---|---|---|---|
+| Full write queue | writer loss note → file `lossy` | `writer.lossy` | all; writes whose walk started at or before the loss |
+| Failed write transaction | `note_lossy` | `lossy` persisted | all; as a full queue |
+| Memory guard (50000 waiting events) | — | as a full queue | all; as a full queue |
+| Forgetting a room (incl. a rejoin forget) | `purge.rs` | `purge.dart` | that room; its writes whose walk started before the forget |
+| Coverage version change, sign-out, scope end | as coverage | as coverage | all; every write of the old version or scope |
+| Epoch change | `sync_state` epoch | same | all; every write tagged with the old epoch |
+
+A row for a room missing from the snapshot is left alone: only room lists
+forget rooms.
+
+### Catch-up at the stream EOSE
+
+At the stream EOSE (time L), each snapshot room with seq S is classed
+(`snapshot`). Its coverage here is what it had **before this connection**
+(`connectionSpans`): each connection records its start time before any
+chunk REQ is answered (mobile: at AUTH OK, before its first REQ), and
+catch-up resume points and the new-row base use only coverage that began
+before that start time. An EOSE span `[C, C]` from a chunk on the same
+connection is ignored, even when it came before the stream EOSE, and so is
+the stream's own `[L, L]`. A span begun before the start and grown on this
+connection (a chunk catch-up that finished before the stream EOSE) counts
+up to its end. The mid-connection fallback keeps L = the CLOSED time as
+its bound: there the stream's own span is the resume point.
+
+- **uncovered:** no coverage that began before the connection start. Not
+  fetched, as today.
+- **equal:** covered and stored seq = S.
+- **behind:** covered, and stored seq < S or no row.
+- **ahead:** covered and stored seq > S (the relay DB was restored): the row
+  is deleted, the room is walked like a behind one, and one line is logged.
+
+`live` walks equal, behind and ahead rooms and counts equal ones as
+`predictedSkips`; `gated` skips equal rooms and walks the rest; `shadow`
+walks nothing itself (chunk catch-ups run as today) and counts
+`predictedSkips`. The fixture lists these room sets by id.
+
+- **Batches (`batching`):** first take out every stale room, one whose own
+  resume point minus 1865 s is more than 7 days before L: it is not walked
+  and records nothing, left for opening the room, as today. Sort the rest
+  by resume point, then id, and split them 128 per batch; each batch walks
+  from its oldest resume point minus 1865 s. One stale room never holds
+  back fresh ones. Stream, audit and fallback catch-ups all batch this way.
+- **Connection end and rate limits:** a stream catch-up starts no new batch
+  or page once its connection ended (pages already written stay; rooms not
+  reached count in no counter), and each page waits out the session's
+  rate-limit window first. A connection's catch-up starts only after every
+  earlier connection's catch-up has ended, so they never overlap. Desktop:
+  the same holds for the audit, listener repair and fallback walks; the
+  fallback's walks stop only when the socket ends.
+- **A skip records nothing (`skipCoverage`):** no span beyond the stream's
+  own `[L, L]`, and `room_seq.at` does not move. The gap from the room's last
+  `hi` to L stays uncovered, so opening or preloading the room fetches it,
+  and desktop preload does not count the room as certain across it. R2's
+  saving in this release is reconnect traffic only.
+- **Desktop listener repair:** rooms walked at the stream EOSE (in `gated`:
+  non-skipped plus the audit sample, drawn when the rooms are classed) also
+  get the repair walk from the stream's last-seen time minus 1865 s; rows
+  newer than each room's live start minus 5 s go to listeners, quiet rooms
+  to the quiet listeners. The repair starts as soon as the rooms are
+  classed, alongside the catch-up rather than after it, with the room on
+  screen first on its own, then the rest 128 per walk. The last-seen time
+  is the newest stream frame `created_at` or accepted live/gated EOSE time,
+  whichever is later, as a chunk's cursor starts at its creation, so a
+  connection that saw no frame still repairs the next one. It lives in
+  memory: the first connect after launch, and the first after an account or
+  community switch, has none and runs no listener repair. Rooms that were
+  not handed get their chunk's repair instead ([Handoff](#handoff)).
+- **Mobile:** store catch-up batched and sorted, plus the open-room refetch.
+  The reconnect unread catch-up runs from read markers; a chunk re-sync
+  that retires it before it lands (the hand-off at the stream EOSE, a
+  44100/44101) runs it again.
+  The quiet-room backfill after a drop waits for the stream EOSE instead of
+  the chunks'.
+
+### Counters
+
+Counters are kept per account and server, persisted cumulatively in
+`sync_state` with a report sequence number. A line `[user-stream] report
+#<seq> <counters as JSON>` is logged when a counter changed by at least 10%
+since the last line (any change from 0), or 10 min after the last line if
+anything changed.
+
+- **Already stored (`newRow`):** when the gate counters (`falseSkip`,
+  `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
+  after this connection's start time does not count as "already stored",
+  whichever path stored it (chunk catch-up, unread refresh, room reload, live
+  frame).
+  - Desktop: keeps `events.stored_at` (ms, this device's clock; rows from
+    before the column have none and count as stored before) and compares it
+    with the connection start taken at AUTH OK. After a walk it asks only
+    about the candidate rows (in the window, not received live), after the
+    write queue drained. "Received live" means socket frames only: a row a
+    repair or catch-up walk delivered is not. When it cannot tell (no
+    segments or stored-at answer from a drained store, or too many live ids
+    to track), the batch verifies nothing: its rooms count in none of
+    `verifiedSkips`, `falseSkip`, `liveRoomsChecked`, `skipAudited` or
+    `skipAuditNew` (an audited batch counts in `skipAuditFailed`), and
+    `newRowUncounted` counts its rooms.
+  - Mobile: takes a stored mark at the connection start (the newest
+    `events` rowid once every earlier write is done); a row with a higher
+    rowid was stored on this connection. The mark always answers, so mobile
+    has no `newRowUncounted`.
+- **New-row rule (`newRow`):** a row counts as new only if it was not
+  already stored (above), it was not also received live on this connection
+  (on the stream or a chunk, before or after the stream EOSE, including the
+  frames the relay held until EOSE), and its `created_at` is at or before L
+  and at or after the start of the room's newest coverage segment that
+  began before the connection start (the one the walk resumes from; an
+  EOSE span `[C, C]` from a chunk on the same connection and the stream's
+  own `[L, L]` never count, so a gap row is never left out by
+  construction).
+- **Shadow comparison (`comparator`):** starts at the stream EOSE. A room is
+  compared when a live chunk carries it and the stream carries it (snapshot
+  or 44100). Each event id is classified once, 5 s (inclusive) after it was
+  first seen on either side: seen on both → compared; chunk only →
+  `chunkOnly`; stream only → `streamOnlyUnexpected` if the room is not in the
+  snapshot and no 44100 for it arrived on this connection, else
+  `streamOnlyExpected`. `eventsCompared` counts the ids of compared rooms.
+  Windows still open when the stream CLOSEs or the connection ends are
+  dropped, and frames after a stream CLOSED are ignored.
+- **Skip verification (`skipVerification`):** a predicted skip whose batch
+  completed is `verifiedSkips` with no new row, `falseSkip` with one. In
+  `shadow`, the rooms are classed at the stream EOSE (against coverage from
+  before the connection, after queueing the epoch) and counted in
+  `predictedSkips`; a chunk catch-up that starts after that EOSE on the same
+  connection writes the rule-W rows with its span and verifies the
+  predicted rooms it walked, each room once per connection. Desktop chunk
+  reconnect repairs start before the stream EOSE and verify nothing.
+- **Skip audit (`gated`, `auditSampling`, `auditVerdicts`):** each reconnect
+  samples uniformly up to 128 skipped rooms whose own walk start (resume
+  point minus 1865 s) is within 7 days of L (all of them when there are 128
+  or fewer), and walks them as ordinary catch-ups (they record spans and
+  rows like any walk). A room of a completed batch counts in
+  `skipAudited`, and in `skipAuditNew` when it got a new row; a room of a
+  failed batch counts in `skipAuditFailed`.
+- **`liveMissed` (`live`/`gated`, `liveMissed`, `lastFrame`):** for rooms in
+  the previous connection's live set whose batch completed on this one
+  (`liveRoomsChecked`), new rows with `created_at` from `prevEose + 5 s` to
+  `prevLastFrame − 900 s` (both inclusive), leaving out kind 9005 signed by
+  the relay (the key that signed part 1). `prevEose` is the previous part 1's
+  `created_at`; `prevLastFrame` is the newest `min(created_at, receive time)`
+  over that connection's stream frames, so a future-dated event cannot widen
+  the window. The live set (carried rooms) and both bounds are persisted in
+  `sync_state` at the EOSE and with each 60 s span extension; they are read
+  before the new connection's EOSE replaces them. No previous live
+  connection: nothing is checked.
+
+| Counter | Mode | Must be |
+|---|---|---|
+| `eventsCompared` | shadow | denominator |
+| `chunkOnly` | shadow | 0 |
+| `streamOnlyUnexpected` / `streamOnlyExpected` | shadow | 0 / info |
+| `predictedSkips` / `verifiedSkips` | shadow, live | denominator |
+| `falseSkip` | shadow, live | 0 |
+| `liveRoomsChecked` / `liveMissed` | live, gated | denominator / 0 |
+| `skipAudited` / `skipAuditNew` / `skipAuditFailed` | gated | — / 0 / info |
+| `seqWriteSkippedOrder`, `closed{key}`, `fallbacks{key}`, `reconnects`, `snapshotMs` | all | info |
+| `handoffKept`, `newRowUncounted` (desktop only) | live, gated | info |
+
+`handoffKept` and `newRowUncounted` are desktop only: mobile hands every
+snapshot room to the stream and its stored mark always answers, so both
+would stay 0.
+
+`closed{key}` and `fallbacks{key}` use the keys of `closedReasons`
+(`overflow` splits into `shadow_full` and `full`; an unknown reason is
+`other`).
+
+- **iOS report (mobile, iOS only):** iOS has no readable log, so each report
+  line is also POSTed (NIP-98, the `/query` auth) to
+  `/api/user-stream/shadow-report`, at most once every 5 min: `{"platform":
+  "ios", "app_version": "<semver>", "seq": n, "counters": {<every counter
+  above but the desktop-only ones>, "snapshotMs"}, "closed": {<every
+  closedReasons key>}}`, every number a u32, at most 4096 bytes. Best effort: an error or a 404 (relay
+  without the endpoint) is logged and not retried.
+
+### Limits
+
+- Rows changed without a new seq (soft-delete updates, visibility or
+  history-policy changes, expiry) are missed by catch-up today; under
+  `gated` the miss lasts until the room is opened or gets a new commit. R4
+  deletion records cover non-author deletes.
+- 40009 has a seq but is not a coverage kind; offline renames come back
+  through the thread-name batch. 39005 is never stored.
+- Backdated `created_at` is bounded at ±900 s by the relay. R4 backfill
+  records carry the time they were written.
+- The R4 backfill can write many 9005 rows with `created_at` near now in a
+  few rooms; more than 2000 in one 128-room batch fails that catch-up
+  (4 pages of 500).
+- Frames carry no seq, so the 44101 rendering rule compares `created_at`
+  with the notice's: a frame created before the removal but delivered after
+  the notice is still shown.
 
 ## Opening at a position
 

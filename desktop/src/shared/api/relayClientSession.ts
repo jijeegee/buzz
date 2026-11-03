@@ -45,6 +45,14 @@ import {
   subscribeRoomLiveFilters,
 } from "@/shared/api/relayLiveFilters";
 import { RoomLiveBundle } from "@/shared/api/relayRoomBundle";
+import {
+  UserStreamSession,
+  userStreamEnabled,
+} from "@/shared/api/relayUserStream";
+import {
+  attachUserStreamLive,
+  tauriStreamStore,
+} from "@/shared/api/relayUserStreamStore";
 import { RelayLiveReqDrain } from "./relayLiveReqDrain";
 import { RelayChannelAccessRevocations } from "./relayChannelAccessRevocations";
 import { publishSessionEvent } from "@/shared/api/relayEventPublisher";
@@ -132,6 +140,35 @@ export class RelayClient {
       clearTimeout: (id) => window.clearTimeout(id),
     },
   );
+  /** The account's user stream, sent first after AUTH OK (`relayUserStream.ts`). */
+  readonly userStream = new UserStreamSession({
+    generation: () => this.connectionGeneration,
+    send: (payload, generation) =>
+      this.sendRawForGeneration(payload, generation),
+    closeSocket: (generation) => {
+      if (generation === this.connectionGeneration)
+        this.resetConnection(new Error("Relay ended the user stream."));
+    },
+    chunkRooms: () => this.liveRooms.chunkRooms(),
+    roomOf: (event) => this.liveRooms.streamRoomOf(event),
+    nowMs: () => Date.now(),
+    setTimeout: (fn, ms) => window.setTimeout(fn, ms),
+    clearTimeout: (id) => window.clearTimeout(id),
+    log: (line) => console.info(line),
+    enabled: userStreamEnabled,
+    loadState: tauriStreamStore.getState,
+    saveState: (key, value) =>
+      void tauriStreamStore.setState(key, value).catch(() => {}),
+  });
+  readonly userStreamLive = attachUserStreamLive(
+    this.userStream,
+    this.liveRooms,
+    () => this.channelAccessRevocations.hint(),
+    () => this.visibleChannelId,
+  );
+  readonly stopShadowCompare = this.liveRooms.observeChunkEvents(
+    (event, roomId) => this.userStream.chunkEvent(event, roomId),
+  );
   private authOkTracker = new AuthOkTracker();
   private terminal = false;
   /** The session as live REQs see it (`relayLiveSubscribe.ts`). */
@@ -178,6 +215,8 @@ export class RelayClient {
     this.liveSessionAbort.abort();
     this.liveSessionAbort = new AbortController();
     this.liveRooms.reset();
+    this.userStream.socketEnded();
+    this.userStream.scopeChanged();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     this.keepAliveRequested = false;
@@ -621,6 +660,7 @@ export class RelayClient {
       }, BACKOFF_RESET_STABLE_MS);
 
       this.connectionStateEmitter.set("connected");
+      await this.userStream.connected(generation);
       await this.replayLiveSubscriptions();
       this.stallWatchdog.start();
       this.emitReconnectIfNeeded();
@@ -772,6 +812,14 @@ export class RelayClient {
       await this.handleAuthChallenge(rest[0], generation);
       return;
     }
+    if (typeof rest[0] === "string" && this.userStream.handles(rest[0])) {
+      if (type === "EVENT" && rest[1])
+        this.userStream.event(rest[0], rest[1] as RelayEvent);
+      else if (type === "EOSE") this.userStream.eose(rest[0]);
+      else if (type === "CLOSED")
+        this.userStream.closed(rest[0], String(rest[1] ?? ""));
+      return;
+    }
     if (type === "EVENT" && typeof rest[0] === "string" && rest[1]) {
       this.handleEvent(rest[0], rest[1] as RelayEvent, generation);
       return;
@@ -850,6 +898,10 @@ export class RelayClient {
     }
 
     if (!prepareSubscriptionEvent(subscription, event)) return;
+    if (subscription.mode === "live") this.userStreamLive.noteLive(event.id);
+    if (event.kind === 44100 || event.kind === 44101) {
+      if (subscription.mode === "live") this.userStream.membershipNotice(event);
+    }
     this.liveReqDrain.cancel(subId);
     this.eventBuffer.push({ subId, event, generation });
     this.flushTimeout ??= window.setTimeout(
@@ -888,6 +940,7 @@ export class RelayClient {
       const decision = this.authOkTracker.record(success, message);
       if (decision === "authenticated") {
         authRequest.resolve();
+        this.userStream.authOk(this.connectionGeneration);
       } else {
         const error = new Error(message || "Relay authentication rejected.");
         authRequest.reject(error);
@@ -956,7 +1009,9 @@ export class RelayClient {
     // ±25% jitter spreads a fleet's AUTH storms across a 50% window instead
     // of hitting the relay at the same instant.
     const jitter = this.reconnectDelayMs * (0.75 + Math.random() * 0.5);
-    const delay = Math.min(jitter, RECONNECT_MAX_DELAY_MS);
+    const delay =
+      Math.min(jitter, RECONNECT_MAX_DELAY_MS) +
+      this.userStream.takeReconnectJitterMs();
     this.reconnectDelayMs = Math.min(
       this.reconnectDelayMs * 2,
       RECONNECT_MAX_DELAY_MS,
@@ -1003,6 +1058,7 @@ export class RelayClient {
   ) {
     this.onMessageChannel = null;
     this.stallWatchdog.stop();
+    this.userStream.socketEnded();
     this.connectionGeneration++;
     this.liveReqDrain.reset();
     if (this.stabilityTimer !== null) {
