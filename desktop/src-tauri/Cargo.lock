@@ -4859,7 +4859,7 @@ dependencies = [
 
 [[package]]
 name = "kuzz-desktop"
-version = "0.6.14"
+version = "0.6.17"
 dependencies = [
  "anyhow",
  "arboard",
