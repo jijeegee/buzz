@@ -156,6 +156,34 @@ async fn a_burst_of_busy_refusals_does_not_cancel_the_socket() {
     assert_eq!(h.conn.backpressure_count.load(Ordering::Relaxed), 0);
 }
 
+/// Review S6: a search REQ refused with `error: busy` releases its sub-id
+/// claim with the CLOSED, so refused searches never count toward the
+/// subscription limit.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_busy_search_refusal_releases_its_claim() {
+    let mut h = harness(100, |_| live()).await;
+    let room = h.room(true, 0).await;
+    stored_message(&h, room).await;
+    open_stream(&mut h).await;
+    fill(&h, 80);
+    let search = filter(serde_json::json!({"kinds": [9], "search": "history", "limit": 5}));
+    crate::handlers::req::handle_req(
+        "q".into(),
+        vec![search],
+        vec![None],
+        Arc::clone(&h.conn),
+        Arc::clone(&h.state),
+    )
+    .await;
+    let frames = h.frames();
+    assert_eq!(closed(&frames, "q"), ["error: busy"], "{frames:?}");
+    assert_eq!(events(&frames, "q"), 0);
+    assert!(!h.conn.subscriptions.lock().await.contains_key("q"));
+    assert!(h.conn.subscriptions.lock().await.contains_key("s"));
+    assert!(!h.conn.cancel.is_cancelled());
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn history_headroom_applies_only_to_live_stream_connections() {

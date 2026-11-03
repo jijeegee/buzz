@@ -996,7 +996,17 @@ async fn handle_search_req(
                     }
                     if super::user_stream::history_busy(state, conn) {
                         super::user_stream::note_history_busy();
-                        conn.send_threshold(RelayMessage::closed(sub_id, BUSY_CLOSED));
+                        // Retire the claim with the CLOSED, as the history
+                        // path does: the client retries on a fresh id and
+                        // never CLOSEs this one.
+                        super::close::close_if_owner_at_threshold(
+                            sub_id,
+                            owner,
+                            BUSY_CLOSED,
+                            conn,
+                            state,
+                        )
+                        .await;
                         return;
                     }
                     if !conn.send(RelayMessage::event(sub_id, &stored.event)) {
