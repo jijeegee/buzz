@@ -108,14 +108,10 @@ export type StreamStore = {
 /** The room bundle as the stream hands rooms to it and from it. */
 export type StreamBundle = {
   /**
-   * `live: false`: off chunks, but not live (a stopped stream's wait).
-   * `kept`: rooms whose chunk stays as it is.
+   * `live: false`: off chunks, but not live (a stopped stream's wait). A
+   * chunk carrying a room outside `rooms` stays as it is.
    */
-  setStreamRooms: (
-    rooms: ReadonlySet<string> | null,
-    live?: boolean,
-    kept?: ReadonlySet<string> | null,
-  ) => void;
+  setStreamRooms: (rooms: ReadonlySet<string> | null, live?: boolean) => void;
   streamRoomsChanged: () => void;
   /** Delivers once by id; `false` when the room is unknown here. */
   dispatchStream: (event: RelayEvent, roomId: string) => boolean;
@@ -269,8 +265,11 @@ export class UserStreamLive implements UserStreamLiveHooks {
   private lastSeenCreatedAt: number | null = null;
   /** When the stream first carried each room in this app run. */
   private readonly liveSince = new Map<string, number>();
-  /** Ids received live on this connection (stream or chunk frames). */
-  private liveIds: Set<string> | null = new Set();
+  /**
+   * Ids received live on this connection (stream or chunk frames), only
+   * while its stream REQ is pending or accepted (`null`: none collected).
+   */
+  private liveIds: Set<string> | null = null;
   private readonly host: UserStreamLiveHost;
   private readonly unknownRooms: UnknownRoomRefresh;
 
@@ -355,6 +354,12 @@ export class UserStreamLive implements UserStreamLiveHooks {
     );
   }
 
+  /** The stream REQ is pending (`true`), or was refused or not sent. */
+  collectLiveIds(on: boolean) {
+    if (!on) this.liveIds = null;
+    else this.liveIds ??= new Set();
+  }
+
   noteLive(eventId: string) {
     const ids = this.liveIds;
     if (!ids) return;
@@ -405,7 +410,7 @@ export class UserStreamLive implements UserStreamLiveHooks {
       // Waiting for the socket to close: no chunk starts on the dying
       // socket, but its rooms no longer count as live (`socketEnded` puts
       // them on chunks).
-      this.host.bundle.setStreamRooms(live.handed, false, live.kept);
+      this.host.bundle.setStreamRooms(live.handed, false);
       return;
     }
     live.report.add(`fallback_${decision.key}`);
@@ -414,8 +419,24 @@ export class UserStreamLive implements UserStreamLiveHooks {
     );
   }
 
-  /** The socket ended: every room is on chunks again from the next connect. */
-  socketEnded() {
+  /**
+   * The socket ended: every room is on chunks again from the next connect.
+   * `startedAt`: when that connection began, if it reached AUTH OK; its
+   * chunks carried rooms from then, so the next live connection's listener
+   * repair starts no later than that (`B1`, as a chunk cursor).
+   */
+  socketEnded(startedAt: number | null = null) {
+    const { carried } = this.host.bundle.roomLists();
+    if (startedAt !== null && carried.size > 0) {
+      this.lastSeenCreatedAt = Math.max(
+        this.lastSeenCreatedAt ?? startedAt,
+        startedAt,
+      );
+      // Their listeners heard the chunks from then on.
+      for (const room of carried) {
+        if (!this.liveSince.has(room)) this.liveSince.set(room, startedAt);
+      }
+    }
     const live = this.current;
     this.current = null;
     if (live) {
@@ -430,7 +451,7 @@ export class UserStreamLive implements UserStreamLiveHooks {
       this.shadow = null;
       setStreamCatchUpVouch(null);
     }
-    this.liveIds = new Set();
+    this.liveIds = null;
     this.host.bundle.setStreamRooms(null);
   }
 
@@ -480,7 +501,7 @@ export class UserStreamLive implements UserStreamLiveHooks {
     }
     live.coverage.hand(handed);
     live.report.add("handoffKept", live.kept.size);
-    this.host.bundle.setStreamRooms(live.handed, true, live.kept);
+    this.host.bundle.setStreamRooms(live.handed, true);
   }
 
   private async catchUp(
@@ -509,6 +530,8 @@ export class UserStreamLive implements UserStreamLiveHooks {
       rowsOf(stored, snapshot.epoch),
       resume,
     );
+    // A gated skip is a completed catch-up: its stream span now.
+    live.coverage.span(plan.skip);
     report.add("predictedSkips", plan.predictedSkips.length);
     if (plan.clearedRows.length > 0) {
       await host.store.clearRows(plan.clearedRows).catch(() => {});
@@ -545,6 +568,9 @@ export class UserStreamLive implements UserStreamLiveHooks {
       for (const batch of batches) {
         if (stop()) break;
         const result = await this.walkBatch(live, batch, true, true, stop);
+        // Only a completed batch gets the stream span: a cut-short one
+        // resumes from its earlier coverage on the next connection.
+        if (result.completed) live.coverage.span(batch.rooms);
         if (result.completed && !result.counted) {
           report.add("newRowUncounted", batch.rooms.length);
         }

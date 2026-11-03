@@ -168,11 +168,6 @@ export class RoomLiveBundle {
   /** Rooms the user stream carries in live/gated: no chunk for them. */
   private streamRooms: ReadonlySet<string> | null = null;
   /**
-   * Snapshot rooms the stream did not take (no usable resume point): the
-   * chunk carrying one stays as it is, so its reconnect repair goes on.
-   */
-  private keptRooms: ReadonlySet<string> | null = null;
-  /**
    * `false` while a stopped stream waits for its socket to close (overflow,
    * `lagged`): its rooms stay off chunks but are neither live nor settled.
    */
@@ -364,25 +359,13 @@ export class RoomLiveBundle {
   /**
    * The user stream carries `rooms` from its live/gated EOSE (kept by
    * reference), or nothing (`null`): chunks then carry every room again.
-   * Extras keep their own chunks, and so does every chunk carrying one of
-   * `kept` (docs/message-sync.md#handoff).
+   * Extras keep their own chunks, and so does every chunk carrying a room
+   * outside `rooms` (docs/message-sync.md#handoff).
    */
-  setStreamRooms(
-    rooms: ReadonlySet<string> | null,
-    live = true,
-    kept: ReadonlySet<string> | null = null,
-  ) {
-    const keptNow = rooms ? kept : null;
-    if (
-      this.streamRooms === rooms &&
-      this.streamLive === live &&
-      this.keptRooms === keptNow
-    ) {
-      return;
-    }
+  setStreamRooms(rooms: ReadonlySet<string> | null, live = true) {
+    if (this.streamRooms === rooms && this.streamLive === live) return;
     this.streamRooms = rooms;
     this.streamLive = live;
-    this.keptRooms = keptNow;
     this.queueSync();
     this.settleWaiters();
     this.settleCoverWaiters();
@@ -455,7 +438,6 @@ export class RoomLiveBundle {
     this.graceRetained.clear();
     this.membershipKnown = false;
     this.streamRooms = null;
-    this.keptRooms = null;
     this.streamLive = true;
     this.seen.clear();
     this.eventRooms.clear();
@@ -516,15 +498,17 @@ export class RoomLiveBundle {
       (roomId) => !carried.has(roomId),
     );
     const stream = this.streamRooms;
-    const kept = this.keptRooms;
-    // A chunk carrying a kept room stays whole, its repair still running.
+    // A chunk carrying a room the stream does not repair (kept, outside the
+    // snapshot) stays whole, its repair still running.
     const pinned: string[][] = [];
     const onPinned = new Set<string>();
-    if (stream && kept && kept.size > 0) {
+    if (stream) {
       for (const chunk of this.chunks.values()) {
         const rooms = [...chunk.rooms];
         if (rooms.length === 1 && this.extraRooms.has(rooms[0])) continue;
-        if (!rooms.some((roomId) => kept.has(roomId) && carried.has(roomId))) {
+        if (
+          !rooms.some((roomId) => carried.has(roomId) && !stream.has(roomId))
+        ) {
           continue;
         }
         pinned.push(rooms);

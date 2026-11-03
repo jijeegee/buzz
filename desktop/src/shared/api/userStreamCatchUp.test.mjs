@@ -241,6 +241,8 @@ for (const testCase of fixture.membership) {
           step.created_at,
           step.receivedAt,
         );
+        // As mobile's runner: the EOSE catch-up is already done here, so a
+        // rejoin writes its span at once (a pending room waits for it).
         if (from !== null) coverage[step.room] = [[from, from]];
       } else {
         stored.push(step.id);
