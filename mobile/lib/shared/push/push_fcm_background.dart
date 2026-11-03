@@ -22,6 +22,7 @@ import '../relay/service_address.dart';
 import 'push_inbox.dart' show isPushInboxToken;
 import 'push_inbox_writer.dart';
 import 'push_lease_matcher.dart';
+import 'push_room_title.dart';
 import 'push_thread_target.dart';
 
 /// The Android background push handler (stage B A3.3).
@@ -54,12 +55,20 @@ class AndroidPushNotice {
   final String? title;
   final String? body;
   final String? subtitle;
+
+  /// The room, titled like its Chats row. Null when [title] (the sender)
+  /// alone titles the notification: a 1:1 DM, or a room with no usable name.
+  final String? conversationTitle;
   final String? eventId;
   final String? communityId;
   final String? channelId;
 
   /// Set for a thread reply: the tap opens this thread at [eventId].
   final String? threadRootId;
+
+  /// The thread's head, set with [threadRootId]: a thread is its own
+  /// notification, like its own Chats row.
+  final String? threadHeadId;
 
   /// The event's `created_at`: the app removes the notification once read.
   final int? createdAt;
@@ -69,20 +78,24 @@ class AndroidPushNotice {
       title = null,
       body = null,
       subtitle = null,
+      conversationTitle = null,
       eventId = null,
       communityId = null,
       channelId = null,
       threadRootId = null,
+      threadHeadId = null,
       createdAt = null;
 
   const AndroidPushNotice.message({
     required String this.title,
     required String this.body,
     this.subtitle,
+    this.conversationTitle,
     this.eventId,
     this.communityId,
     this.channelId,
     this.threadRootId,
+    this.threadHeadId,
     this.createdAt,
   }) : generic = false;
 
@@ -92,11 +105,13 @@ class AndroidPushNotice {
     'title': generic ? 'Kuzz' : title,
     'body': generic ? strings.pushAndroidGenericNotification : body,
     if (subtitle != null) 'subtitle': subtitle,
+    if (conversationTitle != null) 'conversationTitle': conversationTitle,
     if (eventId != null && communityId != null && channelId != null) ...{
       'eventId': eventId,
       'communityId': communityId,
       'channelId': channelId,
       if (isPushEventId(threadRootId)) 'threadRootId': threadRootId,
+      if (isPushEventId(threadHeadId)) 'threadHeadId': threadHeadId,
       if (createdAt != null) 'createdAt': createdAt,
     },
   };
@@ -151,6 +166,9 @@ class AndroidPushWake {
   /// Rows per filter in the inbox fetch.
   static const inboxFetchLimit = 50;
   static const profileResponseBytes = 256 * 1024;
+
+  /// A room's metadata, thread name and thread root (up to 256 KB of text).
+  static const roomResponseBytes = 512 * 1024;
 
   final http.Client client;
   final Future<List<Community>> Function() loadCommunities;
@@ -226,7 +244,17 @@ class AndroidPushWake {
       return null;
     }
 
+    final tags = newest.event['tags'] as List;
+    final channelId = _tagValue(newest.event, 'h');
+    final threadHeadId = pushThreadHeadId(tags);
+    final roomRows = _roomRows(
+      newest.community,
+      channelId,
+      threadHeadId,
+      start,
+    );
     final profile = await _profile(newest.event, newest.community, start);
+    final rows = await roomRows;
     final activeId = await loadActiveCommunityId();
     // N10: a sender profile is kept only for the community on screen.
     await _keep(
@@ -237,15 +265,27 @@ class AndroidPushWake {
     final body = previewBody('${newest.event['content'] ?? ''}');
     if (body.isEmpty) return const AndroidPushNotice.generic();
     final senderName = profile == null ? null : profileDisplayName(profile);
-    final channelId = _tagValue(newest.event, 'h');
+    final title = senderName ?? newest.community.name;
     return AndroidPushNotice.message(
-      title: senderName ?? newest.community.name,
+      title: title,
       body: body,
       subtitle: senderName == null ? null : newest.community.name,
+      conversationTitle: await _conversationTitle(
+        rows,
+        event: newest.event,
+        community: newest.community,
+        channelId: channelId,
+        threadHeadId: threadHeadId,
+        sender: title,
+        senderName: senderName,
+        body: body,
+        start: start,
+      ),
       eventId: newest.event['id'] as String,
       communityId: newest.community.id,
       channelId: channelId,
-      threadRootId: pushThreadRootId(newest.event['tags'] as List),
+      threadRootId: pushThreadRootId(tags),
+      threadHeadId: threadHeadId,
       createdAt: newest.event['created_at'] as int?,
     );
   }
@@ -440,6 +480,167 @@ class AndroidPushWake {
       if (best == null || _newer(row, best)) best = row;
     }
     return best;
+  }
+
+  /// The room's kind:39000 and, for a thread, its latest name and root.
+  /// Null when it got no usable answer. Clients cannot publish kind:39000,
+  /// so the relay's answer needs no author check.
+  Future<List<Map<String, dynamic>>?> _roomRows(
+    Community community,
+    String? channelId,
+    String? threadHeadId,
+    DateTime start,
+  ) async {
+    if (channelId == null) return null;
+    final rows = await _post(
+      community,
+      queryUrl(community.relayUrl),
+      [
+        {
+          'kinds': [39000],
+          '#d': [channelId],
+          'limit': 1,
+        },
+        if (threadHeadId != null) ...[
+          {
+            'kinds': [40009],
+            '#h': [channelId],
+            '#e': [threadHeadId],
+            'limit': 1,
+          },
+          {
+            'ids': [threadHeadId],
+            '#h': [channelId],
+          },
+        ],
+      ],
+      _ByteBudget(roomResponseBytes),
+      start.add(profileDeadline),
+    );
+    return rows?.where(isVerifiedEvent).toList();
+  }
+
+  /// The title of the room [rows] describe; null when the sender alone
+  /// titles the notification or the room is unknown.
+  Future<String?> _conversationTitle(
+    List<Map<String, dynamic>>? rows, {
+    required Map<String, dynamic> event,
+    required Community community,
+    required String? channelId,
+    required String? threadHeadId,
+    required String sender,
+    required String? senderName,
+    required String body,
+    required DateTime start,
+  }) async {
+    if (rows == null || channelId == null) return null;
+    Map<String, dynamic>? metadata;
+    Map<String, dynamic>? name;
+    Map<String, dynamic>? root;
+    for (final row in rows) {
+      if (row['kind'] == 39000 && _tagValue(row, 'd') == channelId) {
+        if (metadata == null || _newer(row, metadata)) metadata = row;
+      } else if (row['kind'] == 40009 &&
+          threadHeadId != null &&
+          _tagValue(row, 'h') == channelId &&
+          _tagValue(row, 'e') == threadHeadId) {
+        if (name == null || _newer(row, name)) name = row;
+      } else if (row['id'] == threadHeadId) {
+        root = row;
+      }
+    }
+    final room = PushRoom.fromMetadata(metadata);
+    if (room == null) return null;
+    return pushConversationTitle(
+      room: room,
+      memberTitle: room.namedByMembers
+          ? await _memberTitle(
+              room,
+              community,
+              channelId,
+              event['pubkey'] as String,
+              senderName,
+              start,
+            )
+          : '',
+      sender: sender,
+      threadTitle: threadHeadId == null
+          ? null
+          : pushThreadTitle(
+              threadName: name?['content'] as String?,
+              rootContent: root?['content'] as String?,
+              fallback: body,
+            ),
+    );
+  }
+
+  /// "Ann, Bob, Cy +2": a group chat's members come from its kind:39002
+  /// (join order), a DM's from its kind:39000.
+  Future<String> _memberTitle(
+    PushRoom room,
+    Community community,
+    String channelId,
+    String senderPubkey,
+    String? senderName,
+    DateTime start,
+  ) async {
+    final url = queryUrl(community.relayUrl);
+    final deadline = start.add(profileDeadline);
+    var members = room.dmMembers;
+    if (room.isGroupChat) {
+      final rows = await _post(
+        community,
+        url,
+        [
+          {
+            'kinds': [39002],
+            '#d': [channelId],
+            'limit': 1,
+          },
+        ],
+        _ByteBudget(profileResponseBytes),
+        deadline,
+      );
+      Map<String, dynamic>? best;
+      for (final row in rows ?? const <Map<String, dynamic>>[]) {
+        if (row['kind'] != 39002 || !isVerifiedEvent(row)) continue;
+        if (_tagValue(row, 'd') != channelId) continue;
+        if (best == null || _newer(row, best)) best = row;
+      }
+      members = [
+        for (final tag in best?['tags'] as List? ?? const [])
+          if (tag is List && tag.length >= 2 && tag[0] == 'p') '${tag[1]}',
+      ];
+    }
+    final others = pushOtherMembers(members, _account(community));
+    final names = <String, String>{senderPubkey.toLowerCase(): ?senderName};
+    final missing = [
+      for (final pubkey in others.take(pushTitleMemberLimit))
+        if (!names.containsKey(pubkey)) pubkey,
+    ];
+    if (missing.isNotEmpty) {
+      final rows = await _post(
+        community,
+        url,
+        [
+          {
+            'kinds': [0],
+            'authors': missing,
+            'limit': missing.length,
+          },
+        ],
+        _ByteBudget(profileResponseBytes * pushTitleMemberLimit),
+        deadline,
+      );
+      for (final row in rows ?? const <Map<String, dynamic>>[]) {
+        final pubkey = row['pubkey'];
+        if (row['kind'] != 0 || !missing.contains(pubkey)) continue;
+        if (!isVerifiedEvent(row)) continue;
+        final name = profileDisplayName(row);
+        if (name != null) names[pubkey as String] = name;
+      }
+    }
+    return pushMemberTitle(others, names);
   }
 
   /// Writes the run's fetches: only for tokens still stored (re-read now)

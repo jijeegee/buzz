@@ -25,3 +25,21 @@ String? pushThreadRootId(List<dynamic> tags) {
   }
   return isPushEventId(parent) ? parent : null;
 }
+
+/// The head of the thread holding an event with these [tags], which keys its
+/// Chats row and name: the `root` tag, else the `reply` parent. Null for a
+/// message on the room's main timeline.
+String? pushThreadHeadId(List<dynamic> tags) {
+  final parent = pushThreadRootId(tags);
+  if (parent == null) return null;
+  for (final tag in tags) {
+    if (tag is List &&
+        tag.length >= 4 &&
+        tag[0] == 'e' &&
+        tag[3] == 'root' &&
+        isPushEventId(tag[1])) {
+      return tag[1] as String;
+    }
+  }
+  return parent;
+}

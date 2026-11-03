@@ -69,7 +69,8 @@ final class NotificationService: UNNotificationServiceExtension {
       pushInbox: container.map { PushInbox(containerURL: $0) },
       isAgeRestricted: {
         KuzzAgeRestrictionSession.isRestricted(containerURL: container)
-      }
+      },
+      titlesByRoom: true
     )
   }()
 

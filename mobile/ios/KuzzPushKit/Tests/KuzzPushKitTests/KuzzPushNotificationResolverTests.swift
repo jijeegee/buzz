@@ -162,6 +162,113 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     }
   }
 
+  /// Resolves a message against a relay answering every query with `rows`.
+  private func resolveTitled(
+    messageTags: [[String]] = [],
+    rows: [VerifiedNostrEvent]
+  ) throws -> KuzzPushResolution? {
+    let message = try Self.signedEvent(
+      privateKey: Self.profilePrivateKey, createdAt: Self.now, kind: 9,
+      tags: [["h", Self.channelID]] + messageTags, content: "Hi there")
+    let profile = try Self.signedEvent(
+      privateKey: Self.profilePrivateKey, createdAt: Self.now, kind: 0,
+      content: #"{"display_name":"Alice"}"#)
+    let data = try JSONEncoder().encode([message, profile] + rows)
+    URLProtocolStub.handler = { request in Self.response(request, status: 200, data: data) }
+    return resolve(
+      makeResolver(communitiesData: try snapshotData([community()]), titlesByRoom: true))
+  }
+
+  private func metadata(_ tags: [[String]]) throws -> VerifiedNostrEvent {
+    try Self.signedEvent(
+      privateKey: Self.relayPrivateKey, createdAt: Self.now, kind: 39_000,
+      tags: [["d", Self.channelID]] + tags)
+  }
+
+  func testGroupNotificationIsTitledByTheGroupWithTheSenderBelow() throws {
+    let result = try resolveTitled(rows: [metadata([["name", "Kuzz"], ["t", "stream"]])])
+
+    XCTAssertEqual(result?.title, "Kuzz")
+    XCTAssertEqual(result?.subtitle, "Alice")
+    XCTAssertNil(result?.conversationRecipientCount)
+  }
+
+  func testOneToOneDMKeepsTheSenderTitle() throws {
+    let result = try resolveTitled(rows: [
+      metadata([
+        ["name", "DM"], ["t", "dm"],
+        ["p", Self.ownPubkey], ["p", String(repeating: "b", count: 64)],
+      ])
+    ])
+
+    XCTAssertEqual(result?.title, "Alice")
+    XCTAssertEqual(result?.subtitle, "Community")
+  }
+
+  func testThreadNotificationIsTitledGroupThreadAndIsItsOwnConversation() throws {
+    let root = try Self.signedEvent(
+      privateKey: Self.profilePrivateKey, createdAt: Self.now - 9, kind: 9,
+      tags: [["h", Self.channelID]], content: "Launch plan\nmore")
+    let tags = [["e", root.id, "", "reply"]]
+    let result = try resolveTitled(
+      messageTags: tags, rows: [metadata([["name", "Kuzz"]]), root])
+
+    XCTAssertEqual(result?.title, "Kuzz > Launch plan")
+    XCTAssertEqual(result?.subtitle, "Alice")
+    XCTAssertEqual(
+      result?.threadIdentifier,
+      KuzzPushPresentationIdentity.conversation(
+        communityID: "community-id", channelID: Self.channelID, threadHeadID: root.id))
+    XCTAssertEqual(result?.navigationTarget?.threadRootID, root.id)
+
+    let name = try Self.signedEvent(
+      privateKey: Self.profilePrivateKey, createdAt: Self.now, kind: 40_009,
+      tags: [["e", root.id], ["h", Self.channelID]], content: "Launch")
+    let named = try resolveTitled(
+      messageTags: tags, rows: [metadata([["name", "Kuzz"]]), root, name])
+    XCTAssertEqual(named?.title, "Kuzz > Launch")
+  }
+
+  func testAFailedRoomLookupKeepsTheSenderTitle() throws {
+    let result = try resolveTitled(rows: [])
+
+    XCTAssertEqual(result?.title, "Alice")
+    XCTAssertEqual(result?.subtitle, "Community")
+  }
+
+  func testRoomTitleRules() throws {
+    let others = KuzzPushRoom.others(
+      ["A", "b", "B", "c", "d", "e"].map { String(repeating: $0, count: 64) },
+      me: String(repeating: "a", count: 64))
+    XCTAssertEqual(others.count, 4)
+    XCTAssertEqual(
+      KuzzPushRoom.memberTitle(
+        others: others,
+        names: Dictionary(uniqueKeysWithValues: others.map { ($0, String($0.prefix(1))) })),
+      "b, c, d +1")
+    XCTAssertEqual(
+      KuzzPushRoom.threadTitle(
+        threadName: nil, rootContent: String(repeating: "z", count: 90), fallback: "y"),
+      String(repeating: "z", count: 80) + "…")
+    XCTAssertEqual(KuzzPushRoom.threadTitle(threadName: "", rootContent: nil, fallback: "y"), "y")
+
+    let groupChat = try XCTUnwrap(KuzzPushRoom(metadata: metadata([["group_chat"]])))
+    XCTAssertTrue(groupChat.namedByMembers)
+    XCTAssertEqual(
+      groupChat.conversationTitle(memberTitle: "Bob, Cy", sender: "Bob", threadTitle: nil),
+      "Bob, Cy")
+    XCTAssertNil(groupChat.conversationTitle(memberTitle: "", sender: "Bob", threadTitle: nil))
+
+    let head = String(repeating: "a", count: 64)
+    let parent = String(repeating: "b", count: 64)
+    XCTAssertEqual(
+      KuzzPushNavigationTarget.threadHeadID(tags: [
+        ["e", head, "", "root"], ["e", parent, "", "reply"],
+      ]), head)
+    XCTAssertEqual(
+      KuzzPushNavigationTarget.threadHeadID(tags: [["e", parent, "", "reply"]]), parent)
+  }
+
   func testThreadReplyTargetCarriesItsThread() {
     let head = String(repeating: "a", count: 64)
     let parent = String(repeating: "b", count: 64)
@@ -781,7 +888,8 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     privateKeys: [String: String] = ["community-id": privateKey],
     presentationCacheData: Data? = nil,
     deviceSigner: DeviceEventSigning? = nil,
-    now: Date = Date()
+    now: Date = Date(),
+    titlesByRoom: Bool = false
   ) -> KuzzPushNotificationResolver {
     let configuration = URLSessionConfiguration.ephemeral
     configuration.protocolClasses = [URLProtocolStub.self]
@@ -791,7 +899,8 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
       loadPrivateKey: { privateKeys[$0] },
       loadPresentationCacheData: { presentationCacheData },
       deviceSigner: { deviceSigner },
-      now: { now }
+      now: { now },
+      titlesByRoom: titlesByRoom
     )
   }
 

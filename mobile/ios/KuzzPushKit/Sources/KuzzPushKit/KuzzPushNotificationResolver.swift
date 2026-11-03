@@ -71,9 +71,14 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
   private let inboxDeadlines: (bounded: TimeInterval, fallback: TimeInterval)
   private let now: () -> Date
   private let presentationCacheLifetime: TimeInterval
+  private let titlesByRoom: Bool
 
   /// Rows per filter in the push inbox fetch.
   static let inboxFetchLimit = 50
+  /// A room's metadata, thread name and thread root (up to 256 KB of text).
+  static let maximumRoomResponseBytes = 512 * 1_024
+  /// Seconds from the room lookup's start to the end of its queries.
+  static let roomDeadline: TimeInterval = 6
 
   /// Creates a resolver around the notification extension's App Group and Keychain I/O.
   /// `deviceSigner` returns this install's device key signer, or nil when the
@@ -87,6 +92,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
   /// run; when one is cut off or has nothing to show, today's query
   /// (`since` none, limit 10) decides the notification, ending by
   /// `inboxDeadlines.fallback`. Nothing is kept while `isAgeRestricted`.
+  /// With `titlesByRoom`, one more query names the notification like its
+  /// Chats row.
   public init(
     session: URLSession,
     loadCommunitiesData: @escaping () -> Data?,
@@ -98,7 +105,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     inboxByteBudget: Int = 1_048_576,
     inboxDeadlines: (bounded: TimeInterval, fallback: TimeInterval) = (10, 17),
     now: @escaping () -> Date = Date.init,
-    presentationCacheLifetime: TimeInterval = KuzzPushPresentationCacheStore.freshnessLifetime
+    presentationCacheLifetime: TimeInterval = KuzzPushPresentationCacheStore.freshnessLifetime,
+    titlesByRoom: Bool = false
   ) {
     self.session = session
     self.loadCommunitiesData = loadCommunitiesData
@@ -111,6 +119,7 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     self.inboxDeadlines = inboxDeadlines
     self.now = now
     self.presentationCacheLifetime = presentationCacheLifetime
+    self.titlesByRoom = titlesByRoom
   }
 
   public func resolve(completion: @escaping (KuzzPushResolution?) -> Void) {
@@ -155,10 +164,26 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
         completion(nil)
         return
       }
+      let roomStart = self.now()
+      let roomGroup = DispatchGroup()
+      var roomRows: [VerifiedNostrEvent]?
+      roomGroup.enter()
+      self.fetchRoomRows(event: newest.0, community: newest.1, start: roomStart) { rows in
+        roomRows = rows
+        roomGroup.leave()
+      }
       self.resolvePresentation(event: newest.0, community: newest.1) { resolution, profile in
         // Kept before the notification is handed back.
         self.keep(fetches, profile: profile, profileCommunityID: newest.1.id)
-        completion(resolution)
+        roomGroup.notify(queue: .global(qos: .userInitiated)) {
+          guard let resolution else {
+            completion(nil)
+            return
+          }
+          self.applyRoomTitle(
+            resolution, rows: roomRows, event: newest.0, community: newest.1, start: roomStart,
+            completion: completion)
+        }
       }
     }
   }
@@ -309,6 +334,181 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
         // fetches whatever was not kept.
         continue
       }
+    }
+  }
+
+  /// Verified rows of one lookup query, or nil without a usable answer.
+  private func lookup(
+    _ community: PushLeaseCommunity,
+    filters: [[String: Any]],
+    maxBytes: Int,
+    deadline: Date,
+    completion: @escaping ([VerifiedNostrEvent]?) -> Void
+  ) {
+    guard let privateKey = loadPrivateKey(community.id),
+      let relayURL = community.relayURL,
+      let url = URL(string: "/query", relativeTo: relayURL),
+      let body = try? JSONSerialization.data(withJSONObject: filters)
+    else {
+      completion(nil)
+      return
+    }
+    var request = URLRequest(url: url)
+    request.httpMethod = "POST"
+    request.httpBody = body
+    request.timeoutInterval = Self.roomDeadline
+    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+    guard
+      let auth = try? NostrHTTPAuth.authorizationHeader(
+        url: url, method: "POST", body: body, privateKeyHex: privateKey,
+        deviceSigner: deviceSigner()
+      )
+    else {
+      completion(nil)
+      return
+    }
+    request.setValue(auth, forHTTPHeaderField: "Authorization")
+    BoundedDataTask.start(
+      request, configuration: session.configuration,
+      budget: ResponseByteBudget(bytes: maxBytes),
+      maxBytes: maxBytes, deadline: deadline, now: now()
+    ) { outcome in
+      guard case let .response(response, data) = outcome,
+        (200..<300).contains(response.statusCode),
+        let events = try? JSONDecoder().decode([VerifiedNostrEvent].self, from: data)
+      else {
+        completion(nil)
+        return
+      }
+      completion(events.filter { $0.hasValidIDAndSignature() })
+    }
+  }
+
+  /// The room's kind-39000 and, for a thread, its latest name and root.
+  private func fetchRoomRows(
+    event: VerifiedNostrEvent,
+    community: PushLeaseCommunity,
+    start: Date,
+    completion: @escaping ([VerifiedNostrEvent]?) -> Void
+  ) {
+    guard titlesByRoom, let channelID = Self.tagValue("h", in: event) else {
+      completion(nil)
+      return
+    }
+    var filters: [[String: Any]] = [
+      ["kinds": [39_000], "#d": [channelID], "limit": 1]
+    ]
+    if let head = KuzzPushNavigationTarget.threadHeadID(tags: event.tags) {
+      filters.append(["kinds": [40_009], "#h": [channelID], "#e": [head], "limit": 1])
+      filters.append(["ids": [head], "#h": [channelID]])
+    }
+    lookup(
+      community, filters: filters, maxBytes: Self.maximumRoomResponseBytes,
+      deadline: start.addingTimeInterval(Self.roomDeadline), completion: completion)
+  }
+
+  /// Retitles `resolution` by its room: the room as title and the sender as
+  /// subtitle, as an ordinary notification. A 1:1 DM, an unusable room name
+  /// or a failed lookup leave it as it is.
+  private func applyRoomTitle(
+    _ resolution: KuzzPushResolution,
+    rows: [VerifiedNostrEvent]?,
+    event: VerifiedNostrEvent,
+    community: PushLeaseCommunity,
+    start: Date,
+    completion: @escaping (KuzzPushResolution?) -> Void
+  ) {
+    let head = KuzzPushNavigationTarget.threadHeadID(tags: event.tags)
+    guard let channelID = Self.tagValue("h", in: event),
+      let metadata = Self.newest((rows ?? []).filter {
+        $0.kind == 39_000 && Self.tagValue("d", in: $0) == channelID
+      }),
+      let room = KuzzPushRoom(metadata: metadata)
+    else {
+      completion(resolution)
+      return
+    }
+    let threadTitle = head.map { head in
+      KuzzPushRoom.threadTitle(
+        threadName: Self.newest((rows ?? []).filter {
+          $0.kind == 40_009 && Self.tagValue("h", in: $0) == channelID
+            && Self.tagValue("e", in: $0) == head
+        })?.content,
+        rootContent: rows?.first { $0.id == head }?.content,
+        fallback: resolution.body)
+    }
+    let finish: (String) -> Void = { memberTitle in
+      guard
+        let title = room.conversationTitle(
+          memberTitle: memberTitle, sender: resolution.title, threadTitle: threadTitle)
+      else {
+        completion(resolution)
+        return
+      }
+      completion(
+        KuzzPushResolution(
+          title: title,
+          body: resolution.body,
+          subtitle: resolution.title,
+          threadIdentifier: resolution.threadIdentifier,
+          navigationTarget: resolution.navigationTarget,
+          eventCreatedAt: resolution.eventCreatedAt,
+          senderPubkey: resolution.senderPubkey,
+          senderAvatarPNG: resolution.senderAvatarPNG,
+          conversationIdentifier: resolution.conversationIdentifier))
+    }
+    guard room.namedByMembers else {
+      finish("")
+      return
+    }
+    roomMembers(room, channelID: channelID, community: community, start: start) { members in
+      let others = KuzzPushRoom.others(members, me: community.pubkey)
+      let sender = event.pubkey.lowercased()
+      var names = [sender: resolution.title]
+      let missing = others.prefix(KuzzPushRoom.memberLimit).filter { names[$0] == nil }
+      guard !missing.isEmpty else {
+        finish(KuzzPushRoom.memberTitle(others: others, names: names))
+        return
+      }
+      self.lookup(
+        community,
+        filters: [["kinds": [0], "authors": Array(missing), "limit": missing.count]],
+        maxBytes: Self.maximumPresentationResponseBytes * KuzzPushRoom.memberLimit,
+        deadline: start.addingTimeInterval(Self.roomDeadline)
+      ) { profiles in
+        for profile in profiles ?? [] where profile.kind == 0 {
+          let pubkey = profile.pubkey.lowercased()
+          guard missing.contains(pubkey) else { continue }
+          names[pubkey] = KuzzPushPresentationCacheStore.profileMetadata(profile).displayName
+        }
+        finish(KuzzPushRoom.memberTitle(others: others, names: names))
+      }
+    }
+  }
+
+  /// A group chat's members from its kind-39002 (join order), a DM's from
+  /// its kind-39000.
+  private func roomMembers(
+    _ room: KuzzPushRoom,
+    channelID: String,
+    community: PushLeaseCommunity,
+    start: Date,
+    completion: @escaping ([String]) -> Void
+  ) {
+    guard room.isGroupChat else {
+      completion(room.dmMembers)
+      return
+    }
+    lookup(
+      community,
+      filters: [["kinds": [39_002], "#d": [channelID], "limit": 1]],
+      maxBytes: Self.maximumPresentationResponseBytes,
+      deadline: start.addingTimeInterval(Self.roomDeadline)
+    ) { rows in
+      let roster = Self.newest((rows ?? []).filter {
+        $0.kind == 39_002 && Self.tagValue("d", in: $0) == channelID
+      })
+      completion((roster?.tags ?? []).filter { $0.count >= 2 && $0[0] == "p" }.map { $0[1] })
     }
   }
 
@@ -650,7 +850,10 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
     guard !body.isEmpty else { return nil }
     let channelID = tagValue("h", in: event)
     let conversationIdentifier = channelID.map {
-      KuzzPushPresentationIdentity.conversation(communityID: community.id, channelID: $0)
+      KuzzPushPresentationIdentity.conversation(
+        communityID: community.id,
+        channelID: $0,
+        threadHeadID: KuzzPushNavigationTarget.threadHeadID(tags: event.tags))
     }
     let conversation = channel.flatMap {
       communicationConversation(event: event, community: community, channel: $0)
