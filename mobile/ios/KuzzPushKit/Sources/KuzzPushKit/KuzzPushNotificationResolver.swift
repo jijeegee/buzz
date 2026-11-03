@@ -435,7 +435,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
             && Self.tagValue("e", in: $0) == head
         })?.content,
         rootContent: rows?.first { $0.id == head }?.content,
-        fallback: resolution.body)
+        fallback: KuzzPushRoom.threadTitle(
+          threadName: nil, rootContent: event.content, fallback: resolution.body))
     }
     let finish: (String) -> Void = { memberTitle in
       guard

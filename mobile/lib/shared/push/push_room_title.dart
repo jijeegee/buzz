@@ -5,8 +5,6 @@ library;
 
 import 'dart:math';
 
-import '../utils/string_utils.dart';
-
 /// Other members named in a title before "+N".
 const pushTitleMemberLimit = 3;
 
@@ -77,19 +75,18 @@ List<String> pushOtherMembers(Iterable<String> pubkeys, String? me) {
   ];
 }
 
-/// "Ann, Bob, Cy +2" over [others], with unknown people by short key. Empty
-/// when there is nobody else.
+/// "Ann, Bob, Cy +2" over [others]. Empty when there is nobody else or a shown
+/// person has no name: a title never shows a key.
 String pushMemberTitle(List<String> others, Map<String, String> names) {
-  final shown = [
-    for (final pubkey in others.take(pushTitleMemberLimit))
-      names[pubkey] ?? shortPubkey(pubkey),
-  ].join(', ');
+  final people = others.take(pushTitleMemberLimit);
+  if (people.any((pubkey) => !names.containsKey(pubkey))) return '';
+  final shown = people.map((pubkey) => names[pubkey]).join(', ');
   final hidden = others.length - min(others.length, pushTitleMemberLimit);
   return hidden > 0 ? '$shown +$hidden' : shown;
 }
 
-/// A thread's title: its name, else the root's first line, else the new
-/// message's ([fallback]).
+/// A thread's title: its name, else the first line of its root, else
+/// [fallback] (the Chats row reads the latest message there).
 String pushThreadTitle({
   String? threadName,
   String? rootContent,

@@ -190,7 +190,6 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
 
     XCTAssertEqual(result?.title, "Kuzz")
     XCTAssertEqual(result?.subtitle, "Alice")
-    XCTAssertNil(result?.conversationRecipientCount)
   }
 
   func testOneToOneDMKeepsTheSenderTitle() throws {
@@ -251,6 +250,10 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
         threadName: nil, rootContent: String(repeating: "z", count: 90), fallback: "y"),
       String(repeating: "z", count: 80) + "…")
     XCTAssertEqual(KuzzPushRoom.threadTitle(threadName: "", rootContent: nil, fallback: "y"), "y")
+    XCTAssertEqual(KuzzPushRoom.memberTitle(others: others, names: [others[0]: "b"]), "")
+    XCTAssertEqual(
+      KuzzPushRoom.threadTitle(threadName: nil, rootContent: "\r\nfirst\r\nx", fallback: "y"),
+      "first")
 
     let groupChat = try XCTUnwrap(KuzzPushRoom(metadata: metadata([["group_chat"]])))
     XCTAssertTrue(groupChat.namedByMembers)

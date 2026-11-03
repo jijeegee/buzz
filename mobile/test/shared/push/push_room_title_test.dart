@@ -90,6 +90,7 @@ void main() {
       'P1, P2, P3 +2',
     );
     expect(pushMemberTitle(const [], const {}), isEmpty);
+    expect(pushMemberTitle(others, {bob: 'Bob'}), isEmpty);
   });
 
   test('a thread title is its name, the root line, else the message', () {

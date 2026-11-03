@@ -53,17 +53,18 @@ public struct KuzzPushRoom: Equatable, Sendable {
     return pubkeys.map { $0.lowercased() }.filter { $0 != mine && seen.insert($0).inserted }
   }
 
-  /// "Ann, Bob, Cy +2" over `others`. Empty when there is nobody else.
+  /// "Ann, Bob, Cy +2" over `others`. Empty when there is nobody else or a
+  /// shown person has no name: a title never shows a key.
   public static func memberTitle(others: [String], names: [String: String]) -> String {
-    let shown = others.prefix(memberLimit).map {
-      names[$0] ?? KuzzPushNotificationResolver.shortPubkey($0)
-    }.joined(separator: ", ")
+    let people = others.prefix(memberLimit).compactMap { names[$0] }
+    guard people.count == min(others.count, memberLimit) else { return "" }
+    let shown = people.joined(separator: ", ")
     let hidden = others.count - min(others.count, memberLimit)
     return hidden > 0 ? "\(shown) +\(hidden)" : shown
   }
 
-  /// A thread's title: its name, else the root's first line, else the new
-  /// message's (`fallback`).
+  /// A thread's title: its name, else the first line of its root, else
+  /// `fallback` (the Chats row reads the latest message there).
   public static func threadTitle(
     threadName: String?, rootContent: String?, fallback: String
   ) -> String {
@@ -71,7 +72,7 @@ public struct KuzzPushRoom: Equatable, Sendable {
       return name
     }
     let firstLine = rootContent?
-      .components(separatedBy: "\n")
+      .components(separatedBy: .newlines)
       .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
       .first { !$0.isEmpty }
     guard let firstLine else { return fallback }

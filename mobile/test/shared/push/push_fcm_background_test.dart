@@ -382,6 +382,9 @@ void main() {
       expect(unnamed.threadHeadId, head['id']);
       expect(unnamed.threadRootId, parent);
 
+      final hiddenRoot = await notice(message, rows: [group]);
+      expect(hiddenRoot.conversationTitle, 'Kuzz > hello');
+
       final named = await notice(
         message,
         rows: [

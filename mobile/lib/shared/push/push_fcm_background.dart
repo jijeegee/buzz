@@ -569,7 +569,10 @@ class AndroidPushWake {
           : pushThreadTitle(
               threadName: name?['content'] as String?,
               rootContent: root?['content'] as String?,
-              fallback: body,
+              fallback: pushThreadTitle(
+                rootContent: event['content'] as String?,
+                fallback: body,
+              ),
             ),
     );
   }
