@@ -590,9 +590,17 @@ fn find_python() -> Option<&'static str> {
     })
 }
 
-/// After a pairing: install the Hermes plugin for `owner`, or say how.
-/// Everything goes to stderr (stdout holds the pairing result).
-fn install_hermes(owner: Option<&str>) {
+/// `kuzz pair --hermes` options.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct HermesInstall {
+    /// Let the installer restart the Hermes gateway (false: the caller does).
+    pub restart: bool,
+}
+
+/// After a pairing: install the Hermes plugin for `owner` acting as
+/// `agent`, or say how. Everything goes to stderr (stdout holds the pairing
+/// result).
+fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
     let owner_arg = owner.unwrap_or("<owner pubkey>");
     let installer = find_hermes_installer();
     let manual = format!(
@@ -608,23 +616,25 @@ fn install_hermes(owner: Option<&str>) {
         eprintln!("{manual}");
         return;
     };
-    let output = std::process::Command::new(python)
+    let mut command = std::process::Command::new(python);
+    command
         .arg(&installer)
         .arg("--owner")
         .arg(owner)
+        .arg("--agent")
+        .arg(agent)
         .arg("--hermes-home")
-        .arg(&home)
-        .output();
+        .arg(&home);
+    if !options.restart {
+        command.arg("--no-restart");
+    }
+    let output = command.output();
     match output {
         Ok(output) => {
             eprint!("{}", String::from_utf8_lossy(&output.stdout));
             eprint!("{}", String::from_utf8_lossy(&output.stderr));
-            if output.status.success() {
-                eprintln!(
-                    "Hermes plugin installed in {}; restart Hermes",
-                    home.display()
-                );
-            } else {
+            // The installer reports the restart (done, or the manual step).
+            if !output.status.success() {
                 eprintln!("warning: the Hermes plugin installer failed. {manual}");
             }
         }
@@ -701,7 +711,7 @@ pub(crate) async fn cmd_pair(
     agent_name: Option<String>,
     device_name: Option<String>,
     private_key: Option<String>,
-    hermes: bool,
+    hermes: Option<HermesInstall>,
 ) -> Result<(), CliError> {
     if kuzz_token_broker::stored_session_disabled(|name| std::env::var(name).ok()) {
         return Err(CliError::Usage(format!(
@@ -781,8 +791,8 @@ pub(crate) async fn cmd_pair(
             "owner": pairing.owner,
         })
     );
-    if hermes {
-        install_hermes(pairing.owner.as_deref());
+    if let Some(options) = hermes {
+        install_hermes(pairing.owner.as_deref(), &pairing.agent_pubkey, options);
     }
     Ok(())
 }

@@ -283,8 +283,6 @@ class BuzzAdapter(BasePlatformAdapter):
         self._sent = _Bounded(_ID_CAP)
         # event id -> thread root (None for top level), so replies join the thread instead of nesting.
         self._roots = _Bounded(_ID_CAP)
-        # Thread roots this agent posted in (or that are its own messages).
-        self._our_threads = _Bounded(_ID_CAP)
         self._dm_channels: Set[str] = set()
         self._dm_checked_at = 0.0
         self._channel_names: Dict[str, str] = {}
@@ -539,9 +537,9 @@ class BuzzAdapter(BasePlatformAdapter):
         return bool(self._self_pubkey()) and self._self_pubkey() in msg.mentions
 
     def _is_addressed(self, msg: WatchMessage, is_dm: bool) -> bool:
-        if is_dm or not self.require_mention or self._mentions_me(msg):
-            return True
-        return bool(msg.thread_root and msg.thread_root in self._our_threads)
+        """DMs always; elsewhere only a mention, threads included (a room may hold several
+        agents, so a reply in our thread may be meant for someone else)."""
+        return is_dm or not self.require_mention or self._mentions_me(msg)
 
     def _strip_mention(self, content: str) -> str:
         text = content.strip()
@@ -566,7 +564,6 @@ class BuzzAdapter(BasePlatformAdapter):
 
     async def _handle(self, msg: WatchMessage, state: dict) -> None:
         if msg.author == self._self_pubkey() or msg.id in self._sent:
-            self._our_threads.put(msg.thread_root or msg.id)
             return
         if msg.created_at < state["cutoff"]:
             return
@@ -626,7 +623,6 @@ class BuzzAdapter(BasePlatformAdapter):
     def _record_sent(self, chat_id: str, event_id: str, thread: Optional[str]) -> None:
         self._sent.put(event_id)
         self._roots.put(event_id, thread)
-        self._our_threads.put(thread or event_id)
         self._channel(str(chat_id))["seen"].put(event_id)
 
     async def _post(
@@ -805,7 +801,7 @@ def register(ctx) -> None:
         allow_update_command=True,
         platform_hint=(
             "You are collaborating in a Kuzz workspace (a human+agent messenger). Markdown IS "
-            "supported. Users address you by @-mentioning your name in channels or by replying "
-            "in your thread; direct messages reach you without a mention. Keep responses conversational."
+            "supported. Users address you by @-mentioning your name in channels and threads; "
+            "direct messages reach you without a mention. Keep responses conversational."
         ),
     )

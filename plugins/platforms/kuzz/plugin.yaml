@@ -32,7 +32,7 @@ optional_env:
     prompt: "Allowed users (comma-separated)"
     password: false
   - name: BUZZ_REQUIRE_MENTION
-    description: "Channel messages must @mention the agent or continue its thread (true/false, default true)"
+    description: "Channel and thread messages must @mention the agent; DMs never need one (true/false, default true)"
     prompt: "Require a mention in channels? (true/false)"
     password: false
   - name: BUZZ_REPLY_IN_THREAD
