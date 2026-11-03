@@ -49,6 +49,8 @@ class MessageQuoteHeader extends ConsumerWidget {
 
     TimelineMessage? quoted;
     for (final message in loadedMessages ?? const <TimelineMessage>[]) {
+      // A thread's stand-in head (root not loaded) carries only its id.
+      if (message.pubkey.isEmpty) continue;
       if (message.id.toLowerCase() == reference.eventId) {
         quoted = message;
         break;

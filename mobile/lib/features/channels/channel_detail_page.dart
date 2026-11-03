@@ -858,26 +858,6 @@ class ChannelDetailPage extends HookConsumerWidget {
       ],
     );
 
-    // Start the thread's newest replies alongside its head instead of after
-    // the thread page mounts, so opening it costs one relay round trip. The
-    // thread page watches the same query and picks up the in-flight result.
-    useEffect(() {
-      final rootId = initialThreadRootId;
-      if (channel.isForum || rootId == null) return null;
-      final subscription = ref.listenManual(
-        threadRepliesProvider(
-          ThreadRepliesArgs(channelId: channel.id, rootId: rootId),
-        ),
-        (_, _) {},
-      );
-      return subscription.close;
-    }, [channel.id, initialThreadRootId]);
-
-    // A thread opened straight from a draft, goal or notification never shows
-    // the channel: this placeholder swaps itself for the thread once the head
-    // is known (timeline, or fetched by id above), or once that fetch settled
-    // without it, or at once while reconnecting: the thread then finds its
-    // head by id itself.
     final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
     final directThreadHead = opensThreadDirectly
         ? directThreadEvents
@@ -887,6 +867,47 @@ class ChannelDetailPage extends HookConsumerWidget {
                   .read(channelMessagesProvider(channel.id).notifier)
                   .deepLinkEvent(initialThreadRootId!)
         : null;
+    // A head that does not come back may be a reply hidden from this reader
+    // (joined after it): the thread opens at the root the linked message
+    // names instead.
+    final directThreadTarget =
+        opensThreadDirectly &&
+            directThreadHead == null &&
+            initialMessageId != null
+        ? directThreadEvents
+                  .where((event) => event.id == initialMessageId)
+                  .firstOrNull ??
+              ref
+                  .read(channelMessagesProvider(channel.id).notifier)
+                  .deepLinkEvent(initialMessageId!)
+        : null;
+    final directThreadReference = directThreadTarget?.threadReference;
+    final directThreadHeadId =
+        directThreadReference != null &&
+            directThreadReference.parentId == initialThreadRootId
+        ? directThreadReference.rootId ?? initialThreadRootId
+        : initialThreadRootId;
+
+    // Start the thread's newest replies alongside its head instead of after
+    // the thread page mounts, so opening it costs one relay round trip. The
+    // thread page watches the same query and picks up the in-flight result.
+    useEffect(() {
+      final rootId = directThreadHeadId;
+      if (channel.isForum || rootId == null) return null;
+      final subscription = ref.listenManual(
+        threadRepliesProvider(
+          ThreadRepliesArgs(channelId: channel.id, rootId: rootId),
+        ),
+        (_, _) {},
+      );
+      return subscription.close;
+    }, [channel.id, directThreadHeadId]);
+
+    // A thread opened straight from a draft, goal or notification never shows
+    // the channel: this placeholder swaps itself for the thread once the head
+    // is known (timeline, or fetched by id above), or once that fetch settled
+    // without it, or at once while reconnecting: the thread then finds its
+    // head by id itself.
     useEffect(() {
       final rootId = initialThreadRootId;
       final head = directThreadHead;
@@ -903,22 +924,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         ],
       ], currentPubkey: currentPubkey);
       final threadHead = messages.where((m) => m.id == rootId).firstOrNull;
-      // A head that never came back may be a reply hidden from this reader
-      // (joined after it): open at the root the linked message names.
-      var headId = rootId;
-      final targetId = initialMessageId;
-      if (head == null && targetId != null) {
-        final notifier = ref.read(channelMessagesProvider(channel.id).notifier);
-        final target =
-            events.where((event) => event.id == targetId).firstOrNull ??
-            notifier.deepLinkEvent(targetId);
-        final reference = target?.threadReference;
-        if (reference != null &&
-            reference.parentId == rootId &&
-            reference.rootId != null) {
-          headId = reference.rootId;
-        }
-      }
+      final headId = directThreadHeadId;
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
           return;

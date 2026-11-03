@@ -25,16 +25,20 @@ class _ThreadStickyDateIndex {
     required TimelineMessage head,
     required List<TimelineMessage> replies,
   }) : messageCount = replies.length + 1 {
-    final messages = [head, ...replies];
-    var activeDayTimestamp = head.createdAt;
+    // A stand-in head (root not loaded) has no time: it takes the first
+    // reply's day instead of 1970.
+    final headAt = head.pubkey.isEmpty && replies.isNotEmpty
+        ? replies.first.createdAt
+        : head.createdAt;
+    final timestamps = [headAt, for (final reply in replies) reply.createdAt];
+    var activeDayTimestamp = headAt;
     var activeDayStartIndex = 0;
-    for (var index = 0; index < messages.length; index += 1) {
-      final message = messages[index];
+    for (var index = 0; index < timestamps.length; index += 1) {
+      final createdAt = timestamps[index];
       final startsDay =
-          index == 0 ||
-          !isSameDay(messages[index - 1].createdAt, message.createdAt);
+          index == 0 || !isSameDay(timestamps[index - 1], createdAt);
       if (startsDay) {
-        activeDayTimestamp = message.createdAt;
+        activeDayTimestamp = createdAt;
         activeDayStartIndex = index;
         _dayHeaderIndices.add(index);
       }

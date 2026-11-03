@@ -32,6 +32,16 @@ _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
   );
 }
 
+/// What stands in for a hidden root's tags when seeding agent pins: the
+/// replies' authors and the people they tag (only agents are kept).
+List<List<String>> _standInRootTags(List<TimelineMessage> replies) => [
+  for (final reply in replies) ...[
+    ['p', reply.pubkey],
+    for (final tag in reply.tags)
+      if (tag.length > 1 && tag[0] == 'p') tag,
+  ],
+];
+
 /// The thread's room for sending, and whether the composer waits for it: a
 /// room built from a Chats row stands in for display only, so replies need
 /// the listed room or its details first (docs/message-sync.md#launch-snapshots).

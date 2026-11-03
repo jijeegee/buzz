@@ -172,7 +172,11 @@ class ThreadMoreMenu extends ConsumerWidget {
           case 'copy-link':
             await copyToClipboard(
               context,
-              buildMessageLink(channelId: channelId, messageId: rootId),
+              buildMessageLink(
+                channelId: channelId,
+                messageId: rootId,
+                threadRootId: rootId,
+              ),
               message: context.l10n.threadLinkCopied,
             );
           case 'close':

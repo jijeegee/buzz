@@ -244,6 +244,13 @@ void threadOpenRootTests() {
         findsNothing,
       );
       expect(findRichText('row 109'), findsOneWidget);
+      // The reply summary stays under the stand-in row.
+      expect(find.text('10 replies'), findsOneWidget);
+      // The replies name this id as their root, so it may be closed.
+      expect(
+        tester.widget<ThreadMoreMenu>(find.byType(ThreadMoreMenu)).canClose,
+        isTrue,
+      );
     });
 
     testWidgets('an empty answer without replies keeps the name row', (
