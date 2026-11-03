@@ -659,7 +659,8 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
         KuzzPushNavigationTarget(
           eventID: event.id,
           communityID: community.id,
-          channelID: $0
+          channelID: $0,
+          threadRootID: KuzzPushNavigationTarget.threadRootID(tags: event.tags)
         )
       },
       senderPubkey: event.pubkey.lowercased(),

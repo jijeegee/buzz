@@ -1031,10 +1031,14 @@ import os.log
 
 extension KuzzPushNavigationTarget {
   fileprivate var flutterArguments: [String: String] {
-    [
+    var arguments = [
       "eventId": eventID,
       "communityId": communityID,
       "channelId": channelID,
     ]
+    if let threadRootID {
+      arguments["threadRootId"] = threadRootID
+    }
+    return arguments
   }
 }

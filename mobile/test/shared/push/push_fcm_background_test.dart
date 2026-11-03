@@ -32,6 +32,7 @@ void main() {
     required int at,
     String content = 'hello',
     String room = '11111111-1111-4111-8111-111111111111',
+    List<List<String>> extraTags = const [],
   }) {
     final event = nostr.Event.from(
       kind: kind,
@@ -41,6 +42,7 @@ void main() {
       tags: [
         if (kind != 0) ['h', room],
         if (kind != 0) ['p', me.public],
+        ...extraTags,
       ],
     );
     return {
@@ -241,6 +243,44 @@ void main() {
     expect(notice.subtitle, isNull);
   });
 
+  test(
+    'a thread reply notice opens its thread, a broadcast the room',
+    () async {
+      final head = 'a' * 64;
+      final parent = 'b' * 64;
+      Future<AndroidPushNotice?> noticeFor(List<List<String>> tags) {
+        final message = signed(alice, at: nowSeconds - 5, extraTags: tags);
+        return wake(
+          relay(
+            (filters) => isProfileQuery(filters) ? <Object>[] : [message],
+          ).client,
+        ).run();
+      }
+
+      expect((await noticeFor([]))!.threadRootId, isNull);
+      expect(
+        (await noticeFor([
+          ['e', head, '', 'reply'],
+        ]))!.threadRootId,
+        head,
+      );
+      expect(
+        (await noticeFor([
+          ['e', head, '', 'root'],
+          ['e', parent, '', 'reply'],
+        ]))!.threadRootId,
+        parent,
+      );
+      expect(
+        (await noticeFor([
+          ['e', head, '', 'reply'],
+          ['broadcast', '1'],
+        ]))!.threadRootId,
+        isNull,
+      );
+    },
+  );
+
   test('forged and unmatched rows are neither shown nor kept', () async {
     final forged = {...signed(alice, at: nowSeconds - 5), 'content': 'changed'};
     final other = signed(alice, at: nowSeconds - 4, kind: 1);
@@ -373,6 +413,26 @@ void main() {
     ).toChannelArguments(strings);
     expect(message['title'], 'Alice');
     expect(message['eventId'], 'e');
+    expect(message.containsKey('threadRootId'), isFalse);
+    final reply = AndroidPushNotice.message(
+      title: 'Alice',
+      body: 'hi',
+      eventId: 'e',
+      communityId: 'c',
+      channelId: 'r',
+      threadRootId: 'a' * 64,
+    ).toChannelArguments(strings);
+    expect(reply['threadRootId'], 'a' * 64);
+    final malformed = const AndroidPushNotice.message(
+      title: 'Alice',
+      body: 'hi',
+      eventId: 'e',
+      communityId: 'c',
+      channelId: 'r',
+      threadRootId: 'not-an-id',
+    ).toChannelArguments(strings);
+    expect(malformed.containsKey('threadRootId'), isFalse);
+    expect(malformed['channelId'], 'r');
     final korean = lookupAppLocalizations(const Locale('ko'));
     expect(
       const AndroidPushNotice.generic().toChannelArguments(korean)['body'],
