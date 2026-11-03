@@ -5,6 +5,7 @@ import {
   CHAT_LIST_QUERY_KEY,
   createEventIdLru,
   type ChatListEvent,
+  type ChatListRow,
   type ChatListState,
 } from "@/features/chats/chatListState";
 import {
@@ -93,6 +94,7 @@ type TimerHost = {
 export class ChatListLiveSync {
   private readonly queryClient: QueryClient;
   private readonly isRoomHidden: (channelId: string) => boolean;
+  private readonly readAtOf: (row: ChatListRow) => number | null;
   private readonly now: () => number;
   private readonly timers: TimerHost;
   private readonly seen = createEventIdLru(SEEN_EVENT_IDS);
@@ -105,12 +107,15 @@ export class ChatListLiveSync {
     options: {
       /** Hidden DMs and archived rooms are not listed: never refetch for them. */
       isRoomHidden?: (channelId: string) => boolean;
+      /** This device's read position for a row; read rows count from zero. */
+      readAtOf?: (row: ChatListRow) => number | null;
       now?: () => number;
       timers?: TimerHost;
     } = {},
   ) {
     this.queryClient = queryClient;
     this.isRoomHidden = options.isRoomHidden ?? (() => false);
+    this.readAtOf = options.readAtOf ?? (() => null);
     this.now = options.now ?? Date.now;
     this.timers = options.timers ?? window;
     this.debounce = createTrailingDebounce(
@@ -186,6 +191,7 @@ export class ChatListLiveSync {
         currentPubkey,
         mentionsMe,
         replay,
+        this.readAtOf,
       );
       if (!replay) missingRow ||= patch.refetch;
       return patch.state;

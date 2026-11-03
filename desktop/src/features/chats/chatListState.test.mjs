@@ -518,3 +518,58 @@ test("a thread row hands over its root only as a whole signed event", async () =
   assert.equal(chatRowRootEvent({ ...thread, root: undefined }), null);
   assert.equal(chatRowRootEvent({ ...thread, type: "room" }), null);
 });
+
+test("a row this device read past counts new messages from zero", () => {
+  // The relay still counts 5 (another device's read never reached it).
+  const current = state([row({ unread: 5, unread_mentions: 1, at: 10 })]);
+  const readAt = () => 10;
+  const next = applyLiveEventToChatList(
+    current,
+    event("n1", 20),
+    ROOM,
+    ME,
+    false,
+    false,
+    readAt,
+  );
+  assert.equal(next.state.rows[0].unread, 1);
+  assert.equal(next.state.rows[0].unread_mentions, 0);
+  const mention = applyLiveEventToChatList(
+    current,
+    event("n2", 20),
+    ROOM,
+    ME,
+    true,
+    false,
+    readAt,
+  );
+  assert.equal(mention.state.rows[0].unread, 1);
+  assert.equal(mention.state.rows[0].unread_mentions, 1);
+});
+
+test("a row not read past its latest, or marked unread, keeps its count", () => {
+  const unread = state([row({ unread: 5, at: 10 })]);
+  for (const readAt of [() => null, () => 9, undefined]) {
+    const next = applyLiveEventToChatList(
+      unread,
+      event("n1", 20),
+      ROOM,
+      ME,
+      false,
+      false,
+      readAt,
+    );
+    assert.equal(next.state.rows[0].unread, 6);
+  }
+  const marked = state([row({ unread: 5, unread_mark: true, at: 10 })]);
+  const next = applyLiveEventToChatList(
+    marked,
+    event("n1", 20),
+    ROOM,
+    ME,
+    false,
+    false,
+    () => 10,
+  );
+  assert.equal(next.state.rows[0].unread, 6);
+});
