@@ -15384,19 +15384,37 @@ export function maybeInstallE2eTauriMocks() {
           ),
         );
       // Opening a thread from its root id: the root when the mock has it.
-      case "get_thread_root":
+      case "get_thread_root": {
+        const { channelId, rootId } = payload as {
+          channelId: string;
+          rootId: string;
+        };
         try {
           return [
             JSON.parse(
-              await handleGetEvent(
-                { eventId: (payload as { rootId: string }).rootId },
-                activeConfig,
-              ),
+              await handleGetEvent({ eventId: rootId }, activeConfig),
             ) as RelayEvent,
           ];
         } catch {
-          return [];
+          // A root marked deleted comes back as its removal (9005).
+          return activeConfig?.mock?.deletedEventIds?.includes(rootId)
+            ? [
+                {
+                  id: `removal-${rootId}`,
+                  pubkey: "0".repeat(64),
+                  created_at: Math.floor(Date.now() / 1000),
+                  kind: 9005,
+                  tags: [
+                    ["h", channelId],
+                    ["e", rootId],
+                  ],
+                  content: "",
+                  sig: "",
+                },
+              ]
+            : [];
         }
+      }
       case "message_store_thread_root":
         return null;
       // Key-mode fixtures have no bearer token; exercise the NIP-42 fallback.

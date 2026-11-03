@@ -12,7 +12,7 @@ import 'thread_replies_provider.dart';
 /// without it: the root only fills the top bubble, agent pins and the menu.
 @immutable
 class ThreadRoot {
-  const ThreadRoot({this.event, this.deleted = false});
+  const ThreadRoot({this.event, this.deleted = false, this.missing = false});
 
   /// The root as found so far: on the timeline, in the store, then from the
   /// relay, whose copy replaces a stored one.
@@ -21,6 +21,11 @@ class ThreadRoot {
   /// Only on an explicit deletion: a stored or relay removal (9005) or the
   /// author's deletion (5). A failed or empty lookup never means deleted.
   final bool deleted;
+
+  /// The relay answered without the root or a deletion of it, and no copy is
+  /// known: it is hidden from this reader (joined after it in a room whose
+  /// history starts at joining) or gone. Asked again after a reconnect.
+  final bool missing;
 }
 
 /// What one relay answer for a root says. Cases:
@@ -224,6 +229,9 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
         _pending = null;
         state = ThreadRoot(event: result.root ?? state.event, deleted: true);
       case ThreadRootVerdict.unresolved:
+        if (state.event == null && !state.missing) {
+          state = ThreadRoot(deleted: state.deleted, missing: true);
+        }
         _pending = answer.any((event) => event.kind == EventKind.deletion)
             ? answer
             : null;

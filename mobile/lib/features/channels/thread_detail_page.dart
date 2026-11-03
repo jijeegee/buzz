@@ -302,10 +302,21 @@ class ThreadDetailPage extends HookConsumerWidget {
 
     // Index all messages by parentId so we can find direct children of any
     // message and compute thread summaries for nested threads.
+    // When the root is hidden from this reader (joined after it), a reply
+    // whose parent is hidden too hangs off the root, like desktop's
+    // attachToRootIfParentMissing.
+    final loadedIds = resolvedHead.missing
+        ? {for (final msg in allMsgs) msg.id}
+        : const <String>{};
     final childrenByParent = <String, List<TimelineMessage>>{};
     for (final msg in allMsgs) {
-      final pid = msg.parentId;
+      var pid = msg.parentId;
       if (pid == null) continue;
+      if (resolvedHead.missing &&
+          msg.rootId == threadHead.id &&
+          !loadedIds.contains(pid)) {
+        pid = threadHead.id;
+      }
       childrenByParent.putIfAbsent(pid, () => []).add(msg);
     }
 
@@ -1442,10 +1453,15 @@ class ThreadDetailPage extends HookConsumerWidget {
                           headIsDeleted: liveDeletionHidesHead,
                           head: liveHead,
                           headPendingLabel:
-                              resolvedHead.resolving &&
+                              (resolvedHead.resolving ||
+                                      resolvedHead.missing) &&
                                   identical(liveHead, threadHead)
                               ? title
                               : null,
+                          headUnavailable:
+                              resolvedHead.missing &&
+                              identical(liveHead, threadHead) &&
+                              allReplies.isNotEmpty,
                           stickyDayTimestamp: stickyDayTimestamp,
                           channelNames: channelNames.ids,
                           channelId: channelId,

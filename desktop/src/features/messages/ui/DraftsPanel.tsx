@@ -525,18 +525,22 @@ export function useDraftViewItems(enabled: boolean): DraftViewItem[] {
   useDraftsSnapshot();
   const drafts = getActiveDraftEntries().filter(isVisibleDraft);
 
-  const threadRootIds = React.useMemo(() => {
-    const ids = new Set<string>();
+  const { threadRootIds, channelIdByRootId } = React.useMemo(() => {
+    const channels = new Map<string, string>();
     for (const entry of drafts) {
       const rootId = getThreadRootId(entry.key);
       if (rootId) {
-        ids.add(rootId);
+        channels.set(rootId, entry.draft.channelId);
       }
     }
-    return [...ids];
+    return { threadRootIds: [...channels.keys()], channelIdByRootId: channels };
   }, [drafts]);
 
-  const rootStatusMap = useDraftRootStatus(threadRootIds, enabled);
+  const rootStatusMap = useDraftRootStatus(
+    threadRootIds,
+    enabled,
+    channelIdByRootId,
+  );
 
   const profilePubkeys = React.useMemo(() => {
     const draftChannels = (channelsQuery.data ?? []).filter((channel) =>

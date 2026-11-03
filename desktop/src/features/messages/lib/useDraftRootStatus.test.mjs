@@ -1,11 +1,11 @@
 /**
  * Unit tests for useDraftRootStatus helpers.
  *
- * Tests import the ACTUAL exported `classifyError` and `deriveActiveDraftCount`
+ * Tests import the ACTUAL exported `resolveDraftRootStatus` and `deriveActiveDraftCount`
  * (via DraftsPanel) so any implementation change is caught immediately.
  *
  * Tests cover:
- *   - classifyError: "event not found" → deleted; other errors → error
+ *   - resolveDraftRootStatus: not found → deleted only on an explicit deletion
  *   - deriveActiveDraftCount: exclusion by status, channel-root pass-through
  */
 
@@ -39,45 +39,72 @@ Object.defineProperty(globalThis, "localStorage", {
 });
 
 // Import the real exported helpers.
-import { classifyError } from "./useDraftRootStatus.ts";
+import { resolveDraftRootStatus } from "./useDraftRootStatus.ts";
 import { deriveActiveDraftCount } from "../ui/DraftsPanel.tsx";
 
-// ── classifyError: string errors ─────────────────────────────────────────────
+// ── resolveDraftRootStatus: deleted only on an explicit deletion ────────────
 
-test("classifyError_event_not_found_string_returns_deleted", () => {
-  assert.equal(classifyError("event not found"), "deleted");
+const ROOT = "1".repeat(64);
+const CHAN = "chan";
+const notFound = async () => {
+  throw new Error("event not found");
+};
+const removal = {
+  id: "2".repeat(64),
+  pubkey: "3".repeat(64),
+  created_at: 1,
+  kind: 9005,
+  tags: [
+    ["h", CHAN],
+    ["e", ROOT],
+  ],
+  content: "",
+  sig: "",
+};
+
+test("resolveDraftRootStatus_found_root_is_available", async () => {
+  const status = await resolveDraftRootStatus(ROOT, CHAN, {
+    getEvent: async () => ({ id: ROOT }),
+    askRoot: async () => assert.fail("not asked"),
+  });
+  assert.equal(status, "available");
 });
 
-test("classifyError_event_not_found_string_with_prefix_returns_deleted", () => {
-  // The tauri command error is exactly "event not found" (see messages.rs:419)
-  // but we test a slightly prefixed variant in case the format changes.
-  assert.equal(classifyError("get_event: event not found"), "deleted");
+test("resolveDraftRootStatus_not_found_without_deletion_stays_available", async () => {
+  // A root from before the member joined a since-join room is never returned.
+  assert.equal(
+    await resolveDraftRootStatus(ROOT, CHAN, {
+      getEvent: notFound,
+      askRoot: async () => [],
+    }),
+    "available",
+  );
+  assert.equal(
+    await resolveDraftRootStatus(ROOT, CHAN, {
+      getEvent: notFound,
+      askRoot: async () => null,
+    }),
+    "available",
+  );
 });
 
-test("classifyError_transport_failure_string_returns_error", () => {
-  assert.equal(classifyError("transport error: connection refused"), "error");
+test("resolveDraftRootStatus_not_found_with_removal_is_deleted", async () => {
+  const status = await resolveDraftRootStatus(ROOT, CHAN, {
+    getEvent: notFound,
+    askRoot: async () => [removal],
+  });
+  assert.equal(status, "deleted");
 });
 
-test("classifyError_empty_string_returns_error", () => {
-  assert.equal(classifyError(""), "error");
-});
-
-test("classifyError_auth_error_string_returns_error", () => {
-  assert.equal(classifyError("unauthorized: token expired"), "error");
-});
-
-test("classifyError_serialize_error_string_returns_error", () => {
-  assert.equal(classifyError("serialize event: invalid json"), "error");
-});
-
-// ── classifyError: Error instances ───────────────────────────────────────────
-
-test("classifyError_Error_instance_with_event_not_found_returns_deleted", () => {
-  assert.equal(classifyError(new Error("event not found")), "deleted");
-});
-
-test("classifyError_Error_instance_with_other_message_returns_error", () => {
-  assert.equal(classifyError(new Error("network failure")), "error");
+test("resolveDraftRootStatus_transport_failure_throws_for_error_status", async () => {
+  await assert.rejects(
+    resolveDraftRootStatus(ROOT, CHAN, {
+      getEvent: async () => {
+        throw new Error("transport error: connection refused");
+      },
+      askRoot: async () => [removal],
+    }),
+  );
 });
 
 // ── Only deleted excludes from count ─────────────────────────────────────────

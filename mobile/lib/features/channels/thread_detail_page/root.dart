@@ -2,15 +2,14 @@ part of '../thread_detail_page.dart';
 
 /// The page's head: the one it was pushed with, else the root as resolved
 /// from its id (docs/message-sync.md#opening-a-thread-from-its-root-id),
-/// else a stand-in carrying only the id while it is [resolving]. Nothing on
-/// the page waits for it.
-({TimelineMessage head, bool resolving, bool deleted}) _watchThreadHead(
-  WidgetRef ref,
-  ThreadDetailPage page,
-  String? currentPubkey,
-) {
+/// else a stand-in carrying only the id while it is [resolving] or [missing]
+/// (the relay answered without it). Nothing on the page waits for it.
+({TimelineMessage head, bool resolving, bool missing, bool deleted})
+_watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
   final passed = page.threadHead;
-  if (passed != null) return (head: passed, resolving: false, deleted: false);
+  if (passed != null) {
+    return (head: passed, resolving: false, missing: false, deleted: false);
+  }
   final root = ref.watch(
     threadRootProvider(
       ThreadRepliesArgs(channelId: page.channelId, rootId: page.headId),
@@ -27,7 +26,8 @@ part of '../thread_detail_page.dart';
     head:
         head ??
         TimelineMessage(id: page.headId, pubkey: '', createdAt: 0, content: ''),
-    resolving: head == null,
+    resolving: head == null && !root.missing,
+    missing: head == null && root.missing,
     deleted: root.deleted,
   );
 }
@@ -144,13 +144,17 @@ ValueNotifier<bool> _useOpenHiddenCap(
 /// The top row while the root is still on the way: the thread's name.
 class _ThreadRootPendingRow extends StatelessWidget {
   final String label;
+  final Key rowKey;
 
-  const _ThreadRootPendingRow({required this.label});
+  const _ThreadRootPendingRow({
+    required this.label,
+    this.rowKey = const ValueKey('thread-root-pending'),
+  });
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      key: const ValueKey('thread-root-pending'),
+      key: rowKey,
       padding: const EdgeInsets.symmetric(vertical: Grid.xs),
       child: Text(
         label,

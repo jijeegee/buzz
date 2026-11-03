@@ -691,6 +691,13 @@ export function MessageThreadPanel({
               >
                 {t("messages.thread.rootDeleted")}
               </p>
+            ) : threadHead.rootUnavailable ? (
+              <p
+                className="px-3 py-1 text-sm italic text-muted-foreground"
+                data-testid="message-thread-root-unavailable"
+              >
+                {t("messages.thread.rootUnavailable")}
+              </p>
             ) : (
               <p
                 className="truncate px-3 py-1 text-sm font-medium text-foreground"

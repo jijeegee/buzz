@@ -10,6 +10,7 @@ import {
 import { relayClient } from "@/shared/api/relayClient";
 import { buildChannelReactionAuxFilter } from "@/shared/api/relayChannelFilters";
 import { getEventById } from "@/shared/api/tauri";
+import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
 import type { FeedItem, RelayEvent } from "@/shared/api/types";
 import {
   CHANNEL_TIMELINE_CONTENT_KINDS,
@@ -133,8 +134,10 @@ export function useInboxThreadContext(
               const event = await getEventById(eventId);
               eventsById.set(event.id, event);
               return event;
-            } catch {
-              failed = true;
+            } catch (error) {
+              // Not found is an answer, not a failure: a root from before
+              // the member joined a since-join room is never returned.
+              if (!isDefinitiveEventNotFound(error)) failed = true;
               return null;
             }
           };

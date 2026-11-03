@@ -2,7 +2,12 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 
-import { isRootStandIn, threadRootVerdict } from "./threadRootResolve.ts";
+import {
+  isRootStandIn,
+  isThreadRootUnavailable,
+  markThreadRootUnavailable,
+  threadRootVerdict,
+} from "./threadRootResolve.ts";
 
 // Shared rules with mobile (test-fixtures/thread-open-root.json).
 const fixture = JSON.parse(
@@ -50,4 +55,15 @@ test("only placeholder and deleted rows are stand-ins", () => {
 test("a reply under a root not loaded yet names that root as its thread", async () => {
   const { resolveReplyRootId } = await import("./threading.ts");
   assert.equal(resolveReplyRootId("root", []), "root");
+});
+
+test("an unavailable root is remembered per query client and room", () => {
+  const client = {};
+  const other = {};
+  const root = "r".repeat(64);
+  assert.equal(isThreadRootUnavailable(client, "room", root), false);
+  markThreadRootUnavailable(client, "room", root);
+  assert.equal(isThreadRootUnavailable(client, "room", root), true);
+  assert.equal(isThreadRootUnavailable(client, "other-room", root), false);
+  assert.equal(isThreadRootUnavailable(other, "room", root), false);
 });

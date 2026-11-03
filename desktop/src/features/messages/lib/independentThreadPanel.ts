@@ -2,6 +2,7 @@ import {
   formatTimelineMessages,
   isTimelineContentEvent,
 } from "@/features/messages/lib/formatTimelineMessages";
+import { isThreadMarkerReply } from "@/features/messages/lib/taskThread";
 import { buildThreadPanelData } from "@/features/messages/lib/threadPanel";
 import {
   type ThreadRootState,
@@ -126,6 +127,7 @@ function rootStandIn(
   rootId: string,
   title: string,
   deleted: boolean,
+  unavailable: boolean,
 ): TimelineMessage {
   return {
     id: rootId,
@@ -137,7 +139,11 @@ function rootStandIn(
     body: "",
     tags: [],
     author: title,
-    ...(deleted ? { rootDeleted: true } : { rootPlaceholder: true }),
+    ...(deleted
+      ? { rootDeleted: true }
+      : unavailable
+        ? { rootPlaceholder: true, rootUnavailable: true }
+        : { rootPlaceholder: true }),
   };
 }
 
@@ -154,6 +160,23 @@ function headlessHead(
   return row
     ? { ...row, kind: head.kind, rootId: null, parentId: null, depth: 0 }
     : null;
+}
+
+/**
+ * With the root unavailable, the earlier replies may be too: a reply to one
+ * of them is drawn under the root instead of being dropped with its parent.
+ */
+function attachToRootIfParentMissing(
+  message: TimelineMessage,
+  rootId: string,
+  loadedIds: ReadonlySet<string>,
+): TimelineMessage {
+  return message.parentId &&
+    message.parentId !== rootId &&
+    message.rootId === rootId &&
+    !loadedIds.has(message.parentId)
+    ? { ...message, parentId: rootId }
+    : message;
 }
 
 function buildPanel(
@@ -210,9 +233,24 @@ function buildPanel(
     // head (author and time, no body) instead of a placeholder forever.
     const headless =
       head && !deleted ? headlessHead(head, rootId, formatArgs) : null;
+    const unavailable =
+      !head &&
+      !deleted &&
+      Boolean(rootOpen.root.unavailable) &&
+      messages.some(
+        (message) => message.id !== rootId && !isThreadMarkerReply(message),
+      );
+    const loadedIds = new Set(messages.map((message) => message.id));
     messages = [
-      headless ?? rootStandIn(rootId, rootOpen.placeholderTitle, deleted),
-      ...messages.filter((message) => message.id !== rootId),
+      headless ??
+        rootStandIn(rootId, rootOpen.placeholderTitle, deleted, unavailable),
+      ...messages
+        .filter((message) => message.id !== rootId)
+        .map((message) =>
+          unavailable
+            ? attachToRootIfParentMissing(message, rootId, loadedIds)
+            : message,
+        ),
     ];
   }
   return {

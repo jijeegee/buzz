@@ -343,3 +343,22 @@ test("resolveCachedReplyRootId sends only roots proven by a cached parent", () =
   assert.equal(resolveCachedReplyRootId(parentId, [[], [parent]]), rootId);
   assert.equal(resolveCachedReplyRootId(parentId, [[], []]), null);
 });
+
+test("resolveCachedReplyRootId proves a root the relay withholds by a cached reply's root tag", () => {
+  const rootId = "1".repeat(64);
+  const reply = {
+    id: "2".repeat(64),
+    pubkey: IDENTITY.pubkey,
+    kind: 9,
+    created_at: 1,
+    content: "reply",
+    tags: [
+      ["e", rootId, "", "root"],
+      ["e", "3".repeat(64), "", "reply"],
+    ],
+    sig: "",
+  };
+
+  assert.equal(resolveCachedReplyRootId(rootId, [[], [reply]]), rootId);
+  assert.equal(resolveCachedReplyRootId("4".repeat(64), [[reply]]), null);
+});

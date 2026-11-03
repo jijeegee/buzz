@@ -4,6 +4,8 @@
  * cases with mobile (`thread_root_provider.dart`):
  * test-fixtures/thread-open-root.json.
  */
+import type { QueryClient } from "@tanstack/react-query";
+
 import type { RelayEvent } from "@/shared/api/types";
 import {
   KIND_DELETION,
@@ -16,6 +18,11 @@ export type ThreadRootState = {
   event: RelayEvent | null;
   /** Only on an explicit deletion (stored, live or in the relay's answer). */
   deleted: boolean;
+  /**
+   * The relay answered without the root: in a room whose history starts at
+   * the member's join, a root from before it is never returned.
+   */
+  unavailable?: boolean;
 };
 
 /** What one answer says about the root; only `unresolved` is asked again. */
@@ -65,6 +72,35 @@ export function threadRootVerdict(
   if (deleted) return { verdict: "deleted", root };
   if (root) return { verdict: "found", root };
   return { verdict: "unresolved", root: null };
+}
+
+const unavailableRoots = new WeakMap<QueryClient, Set<string>>();
+
+/**
+ * Remember a thread root the relay answered without (opened by its root id,
+ * so it is a root): a reply to it can name it as its root without the event.
+ */
+export function markThreadRootUnavailable(
+  queryClient: QueryClient,
+  channelId: string,
+  rootId: string,
+): void {
+  let roots = unavailableRoots.get(queryClient);
+  if (!roots) {
+    roots = new Set();
+    unavailableRoots.set(queryClient, roots);
+  }
+  roots.add(`${channelId}/${rootId}`);
+}
+
+export function isThreadRootUnavailable(
+  queryClient: QueryClient,
+  channelId: string,
+  rootId: string,
+): boolean {
+  return (
+    unavailableRoots.get(queryClient)?.has(`${channelId}/${rootId}`) ?? false
+  );
 }
 
 /** A thread panel top row standing in for a root not found yet or deleted. */

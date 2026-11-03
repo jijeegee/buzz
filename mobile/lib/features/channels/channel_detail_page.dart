@@ -903,6 +903,22 @@ class ChannelDetailPage extends HookConsumerWidget {
         ],
       ], currentPubkey: currentPubkey);
       final threadHead = messages.where((m) => m.id == rootId).firstOrNull;
+      // A head that never came back may be a reply hidden from this reader
+      // (joined after it): open at the root the linked message names.
+      var headId = rootId;
+      final targetId = initialMessageId;
+      if (head == null && targetId != null) {
+        final notifier = ref.read(channelMessagesProvider(channel.id).notifier);
+        final target =
+            events.where((event) => event.id == targetId).firstOrNull ??
+            notifier.deepLinkEvent(targetId);
+        final reference = target?.threadReference;
+        if (reference != null &&
+            reference.parentId == rootId &&
+            reference.rootId != null) {
+          headId = reference.rootId;
+        }
+      }
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
           return;
@@ -911,7 +927,7 @@ class ChannelDetailPage extends HookConsumerWidget {
           _DirectThreadRoute(
             builder: (_) => ThreadDetailPage(
               threadHead: threadHead,
-              headId: rootId,
+              headId: headId,
               allMessages: messages,
               channelId: channel.id,
               currentPubkey: currentPubkey,

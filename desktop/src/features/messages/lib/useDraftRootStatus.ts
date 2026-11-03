@@ -1,6 +1,9 @@
-import { useQueries } from "@tanstack/react-query";
+import { useQueries, useQueryClient } from "@tanstack/react-query";
 
-import { getEventById } from "@/shared/api/tauri";
+import { storeScope } from "@/features/messages/lib/paintCoverage";
+import { threadRootVerdict } from "@/features/messages/lib/threadRootResolve";
+import { getEventById, invokeTauri } from "@/shared/api/tauri";
+import type { RelayEvent } from "@/shared/api/types";
 import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
 
 /**
@@ -9,18 +12,44 @@ import { isDefinitiveEventNotFound } from "@/shared/lib/eventLookupError";
  * - `checking`   — query in flight. Treated as available/counted (optimistic)
  *                  so a slow relay does not blink drafts out of the badge.
  * - `available`  — `getEventById` resolved; root exists.
- * - `deleted`    — ONLY when `get_event` returned the definitive
- *                  `"event not found"` string (relay query succeeded with zero
- *                  rows). Excluded from the badge count; open+send disabled;
- *                  "thread deleted" label shown.
+ * - `deleted`    — ONLY on an explicit deletion of the root (a removal, or
+ *                  the author's deletion when the author is known) returned
+ *                  after `get_event` found no root. Excluded from the badge
+ *                  count; open+send disabled; "thread deleted" label shown.
+ *                  A root merely not found (e.g. from before the member
+ *                  joined a since-join room) stays `available`.
  * - `error`      — any other rejection (transport/auth/serialize). Treated
  *                  as available/counted; NOT labeled deleted. Re-checked on
  *                  next panel open.
  */
 export type RootStatus = "checking" | "available" | "deleted" | "error";
 
-export function classifyError(err: unknown): RootStatus {
-  return isDefinitiveEventNotFound(err) ? "deleted" : "error";
+type DraftRootDeps = {
+  getEvent: (rootId: string) => Promise<RelayEvent>;
+  /** The relay's answer to the root and deletion filters; null = failed. */
+  askRoot: (channelId: string, rootId: string) => Promise<RelayEvent[] | null>;
+};
+
+/**
+ * `available` or `deleted` for a draft's thread root; a failed lookup throws
+ * (status `error`). Not found is deleted only on an explicit deletion.
+ */
+export async function resolveDraftRootStatus(
+  rootId: string,
+  channelId: string | null,
+  deps: DraftRootDeps,
+): Promise<"available" | "deleted"> {
+  try {
+    await deps.getEvent(rootId);
+    return "available";
+  } catch (error) {
+    if (!isDefinitiveEventNotFound(error)) throw error;
+  }
+  if (!channelId) return "available";
+  const answer = await deps.askRoot(channelId, rootId);
+  return threadRootVerdict(answer, { channelId, rootId }).verdict === "deleted"
+    ? "deleted"
+    : "available";
 }
 
 /**
@@ -46,11 +75,35 @@ export function classifyError(err: unknown): RootStatus {
 export function useDraftRootStatus(
   rootIds: string[],
   isOpen: boolean,
+  channelIdByRootId: ReadonlyMap<string, string> = new Map(),
 ): Map<string, RootStatus> {
+  const queryClient = useQueryClient();
+  const deps: DraftRootDeps = {
+    getEvent: getEventById,
+    askRoot: async (channelId, rootId) => {
+      const scope = storeScope(queryClient);
+      if (!scope) return null;
+      try {
+        return await invokeTauri<RelayEvent[]>("get_thread_root", {
+          channelId,
+          rootId,
+          account: scope.pubkey,
+          relayUrl: scope.relayUrl,
+        });
+      } catch {
+        return null;
+      }
+    },
+  };
   const results = useQueries({
     queries: rootIds.map((rootId) => ({
       queryKey: ["draftRootStatus", rootId] as const,
-      queryFn: () => getEventById(rootId),
+      queryFn: () =>
+        resolveDraftRootStatus(
+          rootId,
+          channelIdByRootId.get(rootId) ?? null,
+          deps,
+        ),
       staleTime: 0,
       refetchOnMount: "always" as const,
       retry: false,
@@ -68,9 +121,9 @@ export function useDraftRootStatus(
     if (result.isPending || result.isFetching) {
       statusMap.set(rootId, "checking");
     } else if (result.isError) {
-      statusMap.set(rootId, classifyError(result.error));
+      statusMap.set(rootId, "error");
     } else {
-      statusMap.set(rootId, "available");
+      statusMap.set(rootId, result.data ?? "available");
     }
   });
 

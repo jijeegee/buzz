@@ -6695,6 +6695,10 @@
   "@threadMessageDeleted": {
     "description": "Thread page, shown in place of the thread's first message when it was deleted."
   },
+  "threadEarlierMessagesUnavailable": "Earlier messages aren't available",
+  "@threadEarlierMessagesUnavailable": {
+    "description": "Thread page, shown in place of the thread's first message when it can't be loaded for this reader, for example because they joined the group after it was posted."
+  },
   "threadOpenGroup": "Open group",
   "@threadOpenGroup": {
     "description": "Thread page, tooltip of the button that opens the group this thread is in. Short."

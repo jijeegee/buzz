@@ -83,6 +83,29 @@ void main() {
     expect(root.deleted, isTrue);
   });
 
+  test(
+    'an empty answer marks the root missing until a copy turns up',
+    () async {
+      final mounted = _mount(const []);
+      final sub = mounted.container.listen(_provider, (_, _) {});
+      addTearDown(sub.close);
+      await _settle();
+      var root = mounted.container.read(_provider);
+      expect(root.event, isNull);
+      expect(root.missing, isTrue);
+      expect(root.deleted, isFalse);
+
+      mounted.stored.complete((
+        event: _event(_root, 9, _alice),
+        deleted: false,
+      ));
+      await _settle();
+      root = mounted.container.read(_provider);
+      expect(root.event?.id, _root);
+      expect(root.missing, isFalse);
+    },
+  );
+
   test("a lone deletion by another author stays unresolved once the author is "
       'known', () async {
     final mounted = _mount([_event('d' * 64, 5, _mallory, target: _root)]);
