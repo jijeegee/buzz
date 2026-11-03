@@ -5,18 +5,32 @@
 //! is the highest one whose set **and every wider set** contain it:
 //! `gated` needs GATED ∩ LIVE ∩ STREAM, `live` needs LIVE ∩ STREAM, and
 //! `shadow` needs STREAM. With the stream `off`, LIVE and GATED are ignored
-//! with a warning; a narrower set that is not inside a wider one is a warning
-//! too, never a refusal, so a rollback that narrows one switch always starts.
+//! with a warning (even a malformed one); a narrower set that is not inside a
+//! wider one is a warning too, never a refusal, so a rollback that narrows one
+//! switch always starts. Empty allowlist entries (`allowlist:`, a trailing
+//! comma) are skipped; a list left empty is `off`, with a warning.
 //!
 //! Refusals (deterministic, also run by `kuzz-relay --check-config`): stream
 //! not off with no epoch, an epoch over 64 characters, `KUZZ_MESH=on`,
-//! effective GATED with replica routing on, and any malformed value.
+//! effective GATED with replica routing on, and a malformed value while the
+//! stream is not off.
+//!
+//! The stream is single-process: while it is on, run exactly one relay pod
+//! per Redis. Startup logs [`SINGLE_POD_WARNING`]; only `KUZZ_MESH=on` is
+//! detectable and refused.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
 /// Longest accepted `KUZZ_STREAM_EPOCH` (the clients refuse longer ones).
 pub const MAX_EPOCH_CHARS: usize = 64;
+
+/// Logged at startup (and by `--check-config`) while the stream is not off.
+/// A second pod would learn a cross-pod join only from a spawned recheck,
+/// after the 44100 already reached the client, so a `live`/`gated` stream
+/// could miss frames the client counts as covered.
+pub const SINGLE_POD_WARNING: &str = "KUZZ_USER_STREAM is on: this requires a single relay pod \
+     per Redis (cross-pod joins can leave unannounced gaps in live/gated streams)";
 
 /// One switch: who it covers.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
@@ -31,8 +45,14 @@ pub enum Access {
 }
 
 impl Access {
-    /// Parse one switch value. `name` is used in error messages only.
-    pub fn parse(name: &str, raw: Option<&str>) -> Result<Self, String> {
+    /// Parse one switch value. `name` is used in messages only. Empty
+    /// allowlist entries are skipped; a list with no entry left is `Off`
+    /// and pushes a warning.
+    pub fn parse(
+        name: &str,
+        raw: Option<&str>,
+        warnings: &mut Vec<String>,
+    ) -> Result<Self, String> {
         let raw = raw.map(str::trim).unwrap_or("");
         if raw.is_empty() || raw.eq_ignore_ascii_case("off") {
             return Ok(Self::Off);
@@ -51,12 +71,19 @@ impl Access {
         let mut set = BTreeSet::new();
         for entry in list.split(',') {
             let entry = entry.trim().to_ascii_lowercase();
+            if entry.is_empty() {
+                continue;
+            }
             if entry.len() != 64 || !entry.bytes().all(|b| b.is_ascii_hexdigit()) {
                 return Err(format!(
                     "{name}: malformed allowlist entry {entry:?} (need a 64-character hex pubkey)"
                 ));
             }
             set.insert(entry);
+        }
+        if set.is_empty() {
+            warnings.push(format!("{name} is an empty allowlist: treated as off"));
+            return Ok(Self::Off);
         }
         Ok(Self::Allowlist(set))
     }
@@ -188,22 +215,35 @@ pub struct DeploymentFacts {
 impl UserStreamConfig {
     /// Resolve the switches. `Err` is a startup refusal.
     pub fn resolve(env: &UserStreamEnv, facts: DeploymentFacts) -> Result<Self, String> {
-        let stream = Access::parse("KUZZ_USER_STREAM", env.stream.as_deref())?;
-        let live_raw = Access::parse("KUZZ_USER_STREAM_LIVE", env.live.as_deref())?;
-        let gated_raw = Access::parse("KUZZ_USER_STREAM_GATED", env.gated.as_deref())?;
+        let mut warnings = Vec::new();
+        let stream = Access::parse("KUZZ_USER_STREAM", env.stream.as_deref(), &mut warnings)?;
         let epoch = env
             .epoch
             .as_deref()
             .map(str::trim)
             .unwrap_or("")
             .to_string();
-        let mut warnings = Vec::new();
 
         if stream.is_empty() {
-            if !live_raw.is_empty() || !gated_raw.is_empty() {
+            // LIVE and GATED are ignored here; a malformed one only warns,
+            // so a rollback to `off` always starts.
+            let mut ignored = Vec::new();
+            for (name, raw) in [
+                ("KUZZ_USER_STREAM_LIVE", env.live.as_deref()),
+                ("KUZZ_USER_STREAM_GATED", env.gated.as_deref()),
+            ] {
+                match Access::parse(name, raw, &mut warnings) {
+                    Ok(Access::Off) => {}
+                    Ok(access) => ignored.push(format!("{name}={access}")),
+                    Err(error) => {
+                        warnings.push(format!("KUZZ_USER_STREAM is off: ignoring {error}"))
+                    }
+                }
+            }
+            if !ignored.is_empty() {
                 warnings.push(format!(
-                    "KUZZ_USER_STREAM is off: ignoring KUZZ_USER_STREAM_LIVE={live_raw} and \
-                     KUZZ_USER_STREAM_GATED={gated_raw}"
+                    "KUZZ_USER_STREAM is off: ignoring {}",
+                    ignored.join(" and ")
                 ));
             }
             return Ok(Self {
@@ -228,6 +268,12 @@ impl UserStreamConfig {
                 "KUZZ_USER_STREAM is single-process: refusing with KUZZ_MESH=on".to_string(),
             );
         }
+        let live_raw = Access::parse("KUZZ_USER_STREAM_LIVE", env.live.as_deref(), &mut warnings)?;
+        let gated_raw = Access::parse(
+            "KUZZ_USER_STREAM_GATED",
+            env.gated.as_deref(),
+            &mut warnings,
+        )?;
 
         if !live_raw.is_subset_of(&stream) {
             warnings.push(format!(
@@ -390,9 +436,7 @@ mod tests {
         assert_eq!(config.mode_for(&"a".repeat(64)), Some(StreamMode::Shadow));
         for bad in [
             format!("allowlist:{}", "a".repeat(63)),
-            format!("allowlist:{},", "a".repeat(64)),
             format!("allowlist:{}", "g".repeat(64)),
-            "allowlist:".to_string(),
             "yes".to_string(),
         ] {
             assert!(
@@ -401,6 +445,47 @@ mod tests {
             );
         }
         assert!(resolve(env("on", "bogus", "", "e1")).is_err());
+        assert!(resolve(env("on", "", "allowlist:xyz", "e1")).is_err());
+    }
+
+    /// Review S4: empty entries are skipped and an empty list is `off`.
+    #[test]
+    fn empty_allowlist_entries_are_skipped() {
+        let (a, b) = (key('a'), key('b'));
+        let config = resolve(env(&format!("allowlist:{a}, ,{b},"), "", "", "e1")).expect("ok");
+        assert_eq!(config.stream, Access::Allowlist([a.clone(), b].into()));
+        assert!(config.warnings.is_empty(), "{:?}", config.warnings);
+
+        // A narrowed LIVE left as `allowlist:` is off, with a warning.
+        let config = resolve(env("on", "allowlist:", "", "e1")).expect("ok");
+        assert_eq!(config.live, Access::Off);
+        assert_eq!(config.mode_for(&a), Some(StreamMode::Shadow));
+        assert_eq!(config.warnings.len(), 1, "{:?}", config.warnings);
+
+        let config = resolve(env("allowlist: , ", "", "", "")).expect("ok");
+        assert!(config.is_off());
+        assert_eq!(config.warnings.len(), 1, "{:?}", config.warnings);
+    }
+
+    /// Review S4: with the stream off, a malformed LIVE or GATED only warns
+    /// (`--check-config` prints the warnings).
+    #[test]
+    fn stream_off_never_refuses_malformed_live_or_gated() {
+        let config = resolve(env(
+            "off",
+            "bogus",
+            &format!("allowlist:{}", "a".repeat(63)),
+            "",
+        ))
+        .expect("off never refuses");
+        assert!(config.is_off());
+        assert_eq!(config.live, Access::Off);
+        assert_eq!(config.gated, Access::Off);
+        assert_eq!(config.warnings.len(), 2, "{:?}", config.warnings);
+        assert!(config.warnings.iter().all(|w| w.contains("ignoring")));
+
+        let config = resolve(env("", "on", "bogus", "")).expect("unset stream never refuses");
+        assert_eq!(config.warnings.len(), 2, "{:?}", config.warnings);
     }
 
     #[test]
@@ -433,7 +518,11 @@ mod tests {
     fn rollback_rows_always_start() {
         let a = key('a');
         let allow = format!("allowlist:{a}");
+        let trailing = format!("allowlist:{a},");
         for (stream, live, gated) in [
+            ("on", "allowlist:", ""),
+            ("on", trailing.as_str(), "allowlist:"),
+            ("off", "allowlist:", "bogus"),
             ("off", "on", "on"),
             ("off", allow.as_str(), allow.as_str()),
             (allow.as_str(), "", allow.as_str()),

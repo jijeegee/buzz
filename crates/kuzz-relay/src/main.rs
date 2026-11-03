@@ -185,6 +185,12 @@ fn check_config() -> i32 {
     for warning in &config.user_stream.warnings {
         println!("warning: {warning}");
     }
+    if !config.user_stream.is_off() {
+        println!(
+            "warning: {}",
+            kuzz_relay::user_stream_config::SINGLE_POD_WARNING
+        );
+    }
     println!("{}", config.user_stream.summary());
     println!("configuration ok");
     0
@@ -319,6 +325,13 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     );
     for warning in &config.user_stream.warnings {
         warn!(target: "kuzz_relay::user_stream", "{warning}");
+    }
+    if !config.user_stream.is_off() {
+        warn!(
+            target: "kuzz_relay::user_stream",
+            "{}",
+            kuzz_relay::user_stream_config::SINGLE_POD_WARNING
+        );
     }
     info!(target: "kuzz_relay::user_stream", "{}", config.user_stream.summary());
 
