@@ -72,6 +72,7 @@ import 'package:kuzz/features/channels/small_avatar.dart';
 import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/features/profile/profile_provider.dart';
 import 'package:kuzz/features/profile/presence_cache_provider.dart';
+import 'package:kuzz/shared/push/push_inbox_events.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
 import 'package:kuzz/features/profile/user_profile_sheet.dart';
@@ -104,6 +105,7 @@ part 'channel_detail_page_test/quote_tests.dart';
 part 'channel_detail_page_test/open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_at_tests.dart';
 part 'channel_detail_page_test/thread_open_root_tests.dart';
+part 'channel_detail_page_test/direct_thread_page_tests.dart';
 part 'channel_detail_page_test/owner_view_tests.dart';
 
 const _channelId = '11111111-2222-4333-8444-555555555555';
@@ -584,6 +586,7 @@ void main() {
   quoteTests();
   openAtTests();
   threadOpenAtTests();
+  directThreadPageTests();
   threadOpenRootTests();
   ownerViewTests();
   setUp(() async {
@@ -11433,6 +11436,7 @@ void main() {
       await tester.pumpWidget(
         _buildTestable(
           messages: [root],
+          relayInfo: const RelayInfo(),
           pendingThreadReplies: {'root': replyCompleter.future},
           users: const {
             'alice': UserProfile(pubkey: 'alice', displayName: 'Alice'),
@@ -11536,6 +11540,7 @@ void main() {
 
       await tester.pumpWidget(
         _buildTestable(
+          relayInfo: const RelayInfo(),
           messages: [root, target],
           providerRetry: (retryCount, _) =>
               retryCount == 0 ? const Duration(seconds: 30) : null,
@@ -14534,6 +14539,7 @@ void main() {
 
         await tester.pumpWidget(
           _buildTestable(
+            relayInfo: const RelayInfo(),
             messages: [rootEvent],
             pendingThreadReplies: {'thread-root': completer.future},
             users: const {
@@ -14927,6 +14933,7 @@ void main() {
 
       await tester.pumpWidget(
         _buildTestable(
+          relayInfo: const RelayInfo(),
           messages: [rootEvent],
           pendingThreadReplies: {'thread-root': authoritativeReplies.future},
           localThreadReplies: {'thread-root': replies},

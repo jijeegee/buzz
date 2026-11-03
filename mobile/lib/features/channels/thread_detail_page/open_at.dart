@@ -66,6 +66,14 @@ _ThreadOpenTarget? _threadOpenTarget({
   );
 }
 
+/// Whether [replies] already reach [target].
+bool _holdsOpenTarget(
+  List<TimelineMessage> replies,
+  _ThreadOpenTarget? target,
+) =>
+    target != null &&
+    heldReplyToOpenAt(replies, target.id, unread: target.isUnread) != null;
+
 /// The list a thread window is drawn in: a new [epoch] draws a new list at
 /// [index] and [alignment] from its first frame.
 class _ThreadListPlacement {

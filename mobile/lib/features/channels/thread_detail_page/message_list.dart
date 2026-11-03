@@ -26,11 +26,17 @@ class _ThreadMessageList extends StatelessWidget {
   final VoidCallback onRetryReplies;
   final Map<String, DateTime> localSendAnimations;
 
-  /// False while the first relay page is pending: a loading row stands in
-  /// for the head so an open never paints it before the newest replies.
+  /// False while the first relay page is pending: the thread's name above
+  /// held replies, else a loading row, stands in for the head so an open
+  /// never paints it before the newest replies.
   final bool showsHead;
   final bool headIsDeleted;
   final TimelineMessage head;
+  final String threadTitle;
+
+  /// The device store has not answered yet: without replies the list stays
+  /// blank rather than saying it loads what may be stored.
+  final bool savedLoading;
 
   /// Set while the head is on the way (opened by its id): a thin row with
   /// this label stands in for it.
@@ -72,6 +78,8 @@ class _ThreadMessageList extends StatelessWidget {
     required this.showsHead,
     required this.headIsDeleted,
     required this.head,
+    required this.threadTitle,
+    required this.savedLoading,
     this.headPendingLabel,
     this.headUnavailable = false,
     required this.stickyDayTimestamp,
@@ -172,6 +180,10 @@ class _ThreadMessageList extends StatelessWidget {
     final headIndex = replies.length;
     if (index == headIndex) {
       if (!showsHead) {
+        if (replies.isNotEmpty) {
+          return _ThreadRootPendingRow(label: threadTitle);
+        }
+        if (savedLoading) return const SizedBox.shrink();
         return Padding(
           key: const ValueKey('thread-replies-loading'),
           padding: const EdgeInsets.symmetric(vertical: Grid.xs),

@@ -4,11 +4,26 @@ part of '../thread_detail_page.dart';
 /// from its id (docs/message-sync.md#opening-a-thread-from-its-root-id),
 /// else a stand-in carrying only the id while it is [resolving] or [missing]
 /// (the relay answered without it). Nothing on the page waits for it.
-({TimelineMessage head, bool resolving, bool missing, bool deleted})
+/// [unconfirmed] while its root is still in doubt: only a
+/// [ThreadDetailPage.headMayBeNested] head, until the lookup found it, came
+/// back without it, or failed.
+({
+  TimelineMessage head,
+  bool resolving,
+  bool missing,
+  bool deleted,
+  bool unconfirmed,
+})
 _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
   final passed = page.threadHead;
   if (passed != null) {
-    return (head: passed, resolving: false, missing: false, deleted: false);
+    return (
+      head: passed,
+      resolving: false,
+      missing: false,
+      deleted: false,
+      unconfirmed: false,
+    );
   }
   final root = ref.watch(
     threadRootProvider(
@@ -25,10 +40,18 @@ _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
   return (
     head:
         head ??
-        TimelineMessage(id: page.headId, pubkey: '', createdAt: 0, content: ''),
+        TimelineMessage(
+          id: page.headId,
+          pubkey: '',
+          createdAt: 0,
+          content: '',
+          rootId: page.rootId,
+        ),
     resolving: head == null && !root.missing,
     missing: head == null && root.missing,
     deleted: root.deleted,
+    unconfirmed:
+        page.headMayBeNested && head == null && !root.missing && !root.failed,
   );
 }
 
@@ -59,6 +82,32 @@ List<List<String>> _standInRootTags(List<TimelineMessage> replies) => [
   final details = ref.watch(channelDetailsProvider(page.channelId)).value;
   final channel = details == null ? null : standIn.mergeDetails(details);
   return (channel: channel, composerWaits: channel == null);
+}
+
+/// Follows the keyboard: the list's viewport as metrics settle, and
+/// [settledInset] on Android's fixed viewport.
+void _useSettledImeInset(
+  LaidOutViewport listViewport,
+  ValueNotifier<double> settledInset,
+) {
+  final appView = View.of(useContext());
+  useEffect(() {
+    final observer = ImeMetricsSettleObserver(
+      onMetricsSettled: () {
+        listViewport.reportAfterLayout();
+        if (!usesFixedAndroidImeViewport) return;
+        final nextInset = appView.viewInsets.bottom / appView.devicePixelRatio;
+        if ((settledInset.value - nextInset).abs() >= 0.5) {
+          settledInset.value = nextInset;
+        }
+      },
+    );
+    WidgetsBinding.instance.addObserver(observer);
+    return () {
+      WidgetsBinding.instance.removeObserver(observer);
+      observer.dispose();
+    };
+  }, [appView, listViewport]);
 }
 
 /// Flashes the linked reply once the route has settled and it is laid out.
@@ -119,6 +168,36 @@ ValueNotifier<String?> _useLandingHighlight(
   return highlightedMessageId;
 }
 
+/// Sets [ready] once the list has laid out the reply at [targetIndex].
+void _useHighlightTargetLayout(
+  BuildContext context,
+  ItemPositionsListener listener,
+  int? targetIndex,
+  ValueNotifier<bool> ready,
+) {
+  useEffect(() {
+    if (targetIndex == null || ready.value) return null;
+    var completionScheduled = false;
+    void markReadyAfterTargetLayout() {
+      if (completionScheduled ||
+          !listener.itemPositions.value.any(
+            (position) => position.index == targetIndex,
+          )) {
+        return;
+      }
+      completionScheduled = true;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (context.mounted) ready.value = true;
+      });
+    }
+
+    listener.itemPositions.addListener(markReadyAfterTargetLayout);
+    markReadyAfterTargetLayout();
+    return () =>
+        listener.itemPositions.removeListener(markReadyAfterTargetLayout);
+  }, [targetIndex, ready.value]);
+}
+
 /// The longest a thread keeps its list out of sight while it opens.
 const _openHiddenCap = Duration(milliseconds: 1200);
 
@@ -149,6 +228,25 @@ ValueNotifier<bool> _useOpenHiddenCap(
     return timer.cancel;
   }, const []);
   return capped;
+}
+
+/// Lets a thread that gave up on its linked reply for want of its time open
+/// there when [createdAt] comes: past the cap, so the move happens in sight
+/// and only if the reader has not moved. Returns the mark to set on giving up.
+ObjectRef<bool> _useLateLinkedReply(
+  int? createdAt, {
+  required ObjectRef<bool> didStartOpening,
+  required ValueNotifier<bool> capped,
+}) {
+  final gaveUp = useRef(false);
+  useEffect(() {
+    if (createdAt == null || !gaveUp.value) return null;
+    gaveUp.value = false;
+    didStartOpening.value = false;
+    capped.value = true;
+    return null;
+  }, [createdAt]);
+  return gaveUp;
 }
 
 /// The top row while the root is still on the way: the thread's name.
