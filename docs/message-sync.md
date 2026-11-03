@@ -1489,7 +1489,12 @@ carried, so every member room is on chunks.
   OK. Mobile reads the stream state when the socket starts connecting; on
   the first connect of an account, if that read is still running at AUTH
   OK, the chunk replay waits for the stream REQ at most 300 ms. With the
-  stream switched off in the build nothing waits. Desktop: on the first
+  stream switched off in the build nothing waits, nor when the relay
+  refused the stream (a CLOSED like `unsupported: user-stream off`, or
+  another refusal no retry changes) on the last connection of that account
+  and relay; mobile keeps that result in its preferences, so it is known
+  before the store opens. An accepted EOSE, or an answer that is neither,
+  brings the wait back. Desktop: on the first
   connect of an account or community the stored backoff and counters are
   read first (off the main thread); the chunks do not wait for that read,
   and the REQ follows when it lands (when that connect is still current).
@@ -1657,6 +1662,9 @@ walks nothing itself (chunk catch-ups run as today) and counts
   earlier connection's catch-up has ended, so they never overlap. Desktop:
   the same holds for the audit, listener repair and fallback walks; the
   fallback's walks stop only when the socket ends.
+
+A room's stream coverage span is written to the store only after that room's catch-up batch has completed (walked, or verified equal and skipped by gated). If the catch-up stops early (connection ended), rooms whose batch didn't complete get no stream span, so the next connection resumes them from their pre-existing coverage.
+
 - **A skip records nothing (`skipCoverage`):** no span beyond the stream's
   own `[L, L]`, and `room_seq.at` does not move. The gap from the room's last
   `hi` to L stays uncovered, so opening or preloading the room fetches it,
@@ -1709,7 +1717,9 @@ anything changed.
   - Mobile: takes a stored mark at the connection start (the newest
     `events` rowid once every earlier write is done); a row with a higher
     rowid was stored on this connection. The mark always answers, so mobile
-    has no `newRowUncounted`.
+    has no `newRowUncounted`. When the relay refused the stream on the last
+    connection ([Handoff](#handoff)) the connect takes no mark; if this
+    relay then gives the stream, the mark is taken at its EOSE instead.
 - **New-row rule (`newRow`):** a row counts as new only if it was not
   already stored (above), it was not also received live on this connection
   (on the stream or a chunk, before or after the stream EOSE, including the
@@ -1777,7 +1787,9 @@ would stay 0.
 
 - **iOS report (mobile, iOS only):** iOS has no readable log, so each report
   line is also POSTed (NIP-98, the `/query` auth) to
-  `/api/user-stream/shadow-report`, at most once every 5 min: `{"platform":
+  `/api/user-stream/shadow-report`, at most once every 5 min, and only
+  while the connection's stream was accepted (`shadow`, `live` or `gated`),
+  never with the stream off: `{"platform":
   "ios", "app_version": "<semver>", "seq": n, "counters": {<every counter
   above but the desktop-only ones>, "snapshotMs"}, "closed": {<every
   closedReasons key>}}`, every number a u32, at most 4096 bytes. Best effort: an error or a 404 (relay

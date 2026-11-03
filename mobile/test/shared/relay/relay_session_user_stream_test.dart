@@ -7,6 +7,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
 import 'package:nostr/nostr.dart' as nostr;
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 import 'package:kuzz/features/channels/room_live_router.dart';
 import 'package:kuzz/shared/auth/auth_provider.dart';
@@ -14,6 +15,7 @@ import 'package:kuzz/shared/message_store/message_store.dart';
 import 'package:kuzz/shared/message_store/message_store_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/relay/user_stream.dart';
+import 'package:kuzz/shared/theme/theme_provider.dart';
 
 const _relay = 'https://relay.example';
 const _account =
@@ -69,7 +71,11 @@ void main() {
   late List<(Duration, void Function())> timers;
   late List<List<Map<String, dynamic>>> queries;
 
-  Future<void> start(String account, {RelayRateLimitGate? gate}) async {
+  Future<void> start(
+    String account, {
+    RelayRateLimitGate? gate,
+    SharedPreferences? prefs,
+  }) async {
     dir = await Directory.systemTemp.createTemp('relay_session_user_stream');
     store = MessageStore(
       factory: () => databaseFactoryFfi,
@@ -100,6 +106,7 @@ void main() {
         relayConfigProvider.overrideWith(() => _FakeRelayConfigNotifier()),
         myPubkeyProvider.overrideWithValue(account),
         messageStoreProvider.overrideWithValue(store),
+        if (prefs != null) savedPrefsProvider.overrideWithValue(prefs),
       ],
     );
     addTearDown(() async {
@@ -437,6 +444,63 @@ void main() {
     await Future<void>.delayed(Duration.zero);
     expect(reqOrder(), ['chunk']);
     await connected;
+  });
+
+  group('the relay refused the stream last time (delta review S-M1)', () {
+    late SharedPreferences prefs;
+
+    setUp(() async {
+      SharedPreferences.setMockInitialValues({});
+      prefs = await SharedPreferences.getInstance();
+    });
+
+    String resultKey() {
+      final lease = session.storeScope!.lease;
+      return 'user_stream_last_result:${lease.stem}:${lease.account}';
+    }
+
+    Future<void> subscribeRoom() => session.subscribe(
+      NostrFilter(
+        kinds: roomLiveEventKinds,
+        tags: {
+          '#h': [_room],
+        },
+        limit: 0,
+      ),
+      (_) {},
+    );
+
+    test('the refusal is kept per account and relay', () async {
+      await start(_account, prefs: prefs);
+      final subId = await connect();
+      session.debugHandleMessage([
+        'CLOSED',
+        subId,
+        'unsupported: user-stream off',
+      ]);
+      expect(prefs.getString(resultKey()), userStreamResultOff);
+      session.debugHandleDisconnected();
+      socket = _RecordingRelaySocket();
+      session.debugAttachSocketForTest(socket);
+      final next = await connect();
+      session
+        ..debugHandleMessage(['EVENT', next, _part1('shadow')])
+        ..debugHandleMessage(['EOSE', next]);
+      expect(prefs.getString(resultKey()), userStreamResultOn);
+    });
+
+    test('a first connect does not hold the chunk replay', () async {
+      await start(_account, prefs: prefs);
+      await prefs.setString(resultKey(), userStreamResultOff);
+      await subscribeRoom();
+      socket.messages.clear();
+      await session.debugHandleConnected();
+      expect(reqOrder().first, 'chunk');
+      for (var i = 0; i < 20 && reqOrder().length < 2; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 5));
+      }
+      expect(reqOrder(), ['chunk', 'stream'], reason: 'the REQ still goes');
+    });
   });
 
   test('a stream catch-up waits out the rate-limit window', () async {

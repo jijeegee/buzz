@@ -55,7 +55,7 @@ Map<String, dynamic> _roomEvent(String id, String room, int at) => {
 };
 
 class _Stream {
-  _Stream({this.catchUp, this.storedMark});
+  _Stream({this.catchUp, this.storedMark, this.extendCoverage});
 
   final Future<UserStreamCatchUpResult?> Function(
     UserStreamCatchUpJob job,
@@ -63,6 +63,8 @@ class _Stream {
   )?
   catchUp;
   final Future<int?> Function()? storedMark;
+  final void Function(List<String> rooms, int from, int to, int? captured)?
+  extendCoverage;
   var nowMs = _liveAt * 1000;
 
   late final stream = UserStream(
@@ -79,6 +81,7 @@ class _Stream {
       nowMs: () => nowMs,
       timer: (_, _) => Timer(const Duration(days: 1), () {}),
       storedMark: storedMark ?? () async => null,
+      extendCoverage: extendCoverage ?? (_, _, _, _) {},
       catchUp: catchUp ?? (_, _) async => null,
     ),
   );
@@ -302,6 +305,65 @@ void main() {
       await s.stream.settled;
       // Connection 1 started no second batch after its socket ended.
       expect(pages, ['1:128', '2:128', '2:72']);
+    });
+
+    test('a catch-up cut short leaves the next connection the real gap start '
+        '(delta review B1)', () async {
+      // 2 h offline, 200 covered rooms; the socket drops during batch 1.
+      final rooms = [for (var i = 0; i < 200; i++) 'r${'$i'.padLeft(3, '0')}'];
+      store.extendCoverage(lease, rooms, _liveAt - 30000, _liveAt - 7200);
+      await store.flushed();
+      final gate = Completer<void>();
+      final pages = <String>[];
+      var connection = 1;
+      late _Stream s;
+      s = _Stream(
+        extendCoverage: (r, from, to, captured) =>
+            store.extendCoverage(lease, r, from, to, captured: captured),
+        catchUp: (job, _) {
+          final owner = connection;
+          return runner((filters) async {
+            final f = filters.single;
+            pages.add('$owner:${(f['#h'] as List).length}:${f['since']}');
+            if (pages.length == 1) await gate.future;
+            // What the session's query does once the connection ended.
+            if (job.stopped?.call() ?? false) throw StateError('stopped');
+            return const [];
+          }).run(job, audit: false);
+        },
+      );
+      final snapshot = _part1(rooms: {for (final r in rooms) r: 1});
+      await s.stream.connected(1);
+      s
+        ..send(['EVENT', 'l-1', snapshot])
+        ..send(['EOSE', 'l-1']);
+      final first = s.stream.settled!;
+      for (var i = 0; i < 50 && pages.isEmpty; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 10));
+      }
+      // Live in memory, but no stream span before the batch completes.
+      expect(s.stream.liveAtOf('r000'), _liveAt);
+      expect(await store.resumePoints(lease, ['r000'], _liveAt + 1), {
+        'r000': _liveAt - 7200,
+      });
+      s.stream.socketEnded(1);
+      connection = 2;
+      s.nowMs = (_liveAt + 60) * 1000;
+      await s.stream.connected(2);
+      s
+        ..send(['EVENT', 'l-1', snapshot])
+        ..send(['EOSE', 'l-1']);
+      gate.complete();
+      await first;
+      await s.stream.settled;
+      await store.flushed();
+      const gapStart = _liveAt - 7200 - storeResumeLookbackSecs;
+      expect(pages, ['1:128:$gapStart', '2:128:$gapStart', '2:72:$gapStart']);
+      // Connection 2's batches completed: their stream span is written.
+      expect(await store.resumePoints(lease, ['r000', 'r199'], _liveAt + 61), {
+        'r000': _liveAt + 60,
+        'r199': _liveAt + 60,
+      });
     });
   });
 

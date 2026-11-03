@@ -90,8 +90,15 @@ class _Carry {
   final int? captured;
   final String relayPubkey;
 
-  /// Carried room -> when the stream started carrying it.
+  /// Carried room -> when the stream started carrying it. In memory only
+  /// until the room's catch-up is done ([pending]).
   final rooms = <String, int>{};
+
+  /// Rooms whose catch-up at the EOSE is not done yet: no stream span.
+  final pending = <String>{};
+
+  /// Rooms whose stream span is in the store: only these are extended.
+  final spanned = <String>{};
   late final span = UserStreamSpan(liveAt);
 
   /// Room -> the `created_at` of its last applied notice, and of its last
@@ -136,11 +143,17 @@ extension _UserStreamLive on UserStream {
       for (final room in rooms) {
         carry.rooms[room] = liveAt;
       }
-      host.extendCoverage(rooms, liveAt, liveAt, captured);
+      // No span yet: a room's span is written once its catch-up is done, so
+      // a catch-up cut short leaves the next connection its old resume point.
+      carry.pending.addAll(rooms);
       prev = _livePrev;
       _saveLivePrev(connection);
     }
     final ids = connection.liveIds;
+    final carry = connection.carry;
+    // Rows stored after it are this connection's; taken here when the
+    // connect skipped it (the relay last had the stream off).
+    final storedMark = connection.storedMark ??= host.storedMark();
     connection.settled =
         _runCatchUp(
           connection,
@@ -156,8 +169,9 @@ extension _UserStreamLive on UserStream {
             // [L, L]) never stand for the offline gap.
             coverageBefore: min(connection.startedAt, liveAt),
             prev: prev,
-            storedMark: connection.storedMark,
+            storedMark: storedMark,
             stopped: () => connection.ended,
+            roomsDone: carry == null ? null : (done) => _spanRooms(carry, done),
           ),
           ids.contains,
         ).then((result) {
@@ -167,6 +181,27 @@ extension _UserStreamLive on UserStream {
               if (value == UserStreamRoomClass.equal) key,
           ]);
         });
+  }
+
+  /// [rooms]' catch-up is done: their stream span `[since, span end]` goes
+  /// to the store, unless a CLOSED stopped the span (the fallback walks).
+  void _spanRooms(_Carry carry, List<String> rooms) {
+    final byStart = <int, List<String>>{};
+    for (final room in rooms) {
+      carry.pending.remove(room);
+      final since = carry.rooms[room];
+      if (since == null || carry.span.stopped) continue;
+      carry.spanned.add(room);
+      byStart.putIfAbsent(since, () => []).add(room);
+    }
+    for (final MapEntry(key: since, value: spanned) in byStart.entries) {
+      host.extendCoverage(
+        spanned,
+        since,
+        max(since, carry.span.to),
+        carry.captured,
+      );
+    }
   }
 
   /// Catch-ups of successive connections never overlap: a connection's
@@ -248,8 +283,9 @@ extension _UserStreamLive on UserStream {
     final now = host.nowMs() ~/ 1000;
     if (carry.span.noteFrame(now)) {
       final byStart = <int, List<String>>{};
-      for (final MapEntry(key: room, value: since) in carry.rooms.entries) {
-        byStart.putIfAbsent(since, () => []).add(room);
+      for (final room in carry.spanned) {
+        final since = carry.rooms[room];
+        if (since != null) byStart.putIfAbsent(since, () => []).add(room);
       }
       for (final MapEntry(key: since, value: rooms) in byStart.entries) {
         host.extendCoverage(rooms, since, now, carry.captured);
@@ -356,7 +392,11 @@ extension UserStreamCarried on UserStream {
     carry.removedAt.remove(room);
     if (carry.rooms.containsKey(room)) return;
     carry.rooms[room] = receivedAt;
-    host.extendCoverage([room], receivedAt, receivedAt, host.capture());
+    // A room still in the EOSE catch-up gets its span when that is done.
+    if (!carry.pending.contains(room)) {
+      carry.spanned.add(room);
+      host.extendCoverage([room], receivedAt, receivedAt, host.capture());
+    }
     _notify();
   }
 }
@@ -392,7 +432,7 @@ class _UserStreamHooks implements StoreStreamHooks {
   Future<int?> storedMark(int generation) async {
     final connection = stream._connection;
     if (connection == null || connection.generation != generation) return null;
-    return connection.storedMark;
+    return await connection.storedMark;
   }
 
   @override

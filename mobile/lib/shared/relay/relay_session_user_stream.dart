@@ -36,6 +36,18 @@ extension RelaySessionUserStream on RelaySessionNotifier {
         extendCoverage: (rooms, from, to, captured) => _messageStore
             ?.extendCoverage(_storeLease, rooms, from, to, captured: captured),
         catchUp: _runUserStreamCatchUp,
+        readLastResult: () =>
+            switch ((_userStreamPrefs, _userStreamResultKey)) {
+              (final prefs?, final key?) => prefs.getString(key),
+              _ => null,
+            },
+        writeLastResult: (result) {
+          final (prefs, key) = (_userStreamPrefs, _userStreamResultKey);
+          if (prefs == null || key == null) return;
+          unawaited(
+            result == null ? prefs.remove(key) : prefs.setString(key, result),
+          );
+        },
         reportPlatform: defaultTargetPlatform == TargetPlatform.iOS
             ? 'ios'
             : null,
@@ -45,6 +57,16 @@ extension RelaySessionUserStream on RelaySessionNotifier {
     _storeCoverage.hooks = stream.hooks;
     return stream;
   }
+
+  /// Preferences are already loaded at startup, so the last result is read
+  /// without the store (whose first open is what the wait is about).
+  SharedPreferences? get _userStreamPrefs => _prefs;
+
+  /// One key per account and relay.
+  String? get _userStreamResultKey => switch (_storeLease) {
+    final lease? => 'user_stream_last_result:${lease.stem}:${lease.account}',
+    null => null,
+  };
 
   Future<UserStreamCatchUpResult?> _runUserStreamCatchUp(
     UserStreamCatchUpJob job,
@@ -117,9 +139,10 @@ extension RelaySessionUserStream on RelaySessionNotifier {
 
   /// The stream REQ goes ahead of the chunk replay: while the first
   /// connect's state read is still running, the replay waits for it at most
-  /// [_userStreamFirstWait]. With the stream switched off nothing waits.
+  /// [_userStreamFirstWait]. With the stream switched off, or refused by
+  /// this relay on the last connection, nothing waits.
   Future<void> _userStreamReqFirst(Future<void> connected) async {
-    if (!_userStream.loadingState) return;
+    if (!_userStream.loadingState || _userStream.relayKnownOff) return;
     await connected.timeout(_userStreamFirstWait, onTimeout: () {});
   }
 
