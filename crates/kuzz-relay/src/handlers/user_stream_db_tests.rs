@@ -552,6 +552,29 @@ async fn a_full_queue_closes_a_live_stream_and_the_socket() {
     assert!(h.state.sub_registry.stream_of(h.conn.conn_id).is_none());
 }
 
+/// Review S5: an EOSE (or a snapshot part) that meets a full send buffer
+/// closes the stream with the overflow reason instead of retiring it
+/// silently. The CLOSED falls back to the control channel; before EOSE the
+/// socket stays up because the client still keeps its chunks.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_full_buffer_at_snapshot_closes_with_overflow() {
+    let mut h = harness(1, |_| UserStreamConfig {
+        live: Access::On,
+        ..on()
+    })
+    .await;
+    h.room(true, 0).await;
+    h.req("s", vec![request()], None).await;
+    let frames = h.frames();
+    assert_eq!(frames.len(), 1, "only part 1 fits: {frames:?}");
+    assert_eq!(snapshot_content(&frames[0])["mode"], "live");
+    assert_eq!(closed(&drain(&mut h.ctrl_rx), "s"), [reason::OVERFLOW]);
+    assert!(!h.conn.cancel.is_cancelled(), "pre-EOSE keeps the socket");
+    assert!(!h.conn.subscriptions.lock().await.contains_key("s"));
+    assert!(h.state.sub_registry.stream_of(h.conn.conn_id).is_none());
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "requires Postgres"]
 async fn live_frames_never_precede_the_eose() {

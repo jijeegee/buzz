@@ -358,13 +358,21 @@ pub async fn handle_stream_req(
                 return;
             }
         };
-        if !handle.is_open() || !conn.send(RelayMessage::event(&sub_id, &event)) {
+        if !handle.is_open() {
             close_stream(&state, conn_id, &handle, None, false).await;
             return;
         }
+        if !conn.send(RelayMessage::event(&sub_id, &event)) {
+            snapshot_send_failed(&state, conn_id, &handle).await;
+            return;
+        }
     }
-    if !handle.is_open() || !conn.send(RelayMessage::eose(&sub_id)) {
+    if !handle.is_open() {
         close_stream(&state, conn_id, &handle, None, false).await;
+        return;
+    }
+    if !conn.send(RelayMessage::eose(&sub_id)) {
+        snapshot_send_failed(&state, conn_id, &handle).await;
         return;
     }
     let mut sent = RawSend::Sent;
@@ -389,6 +397,15 @@ pub async fn handle_stream_req(
     metrics::histogram!("kuzz_user_stream_snapshot_seconds", "mode" => mode.as_str())
         .record(started.elapsed().as_secs_f64());
     debug!(%conn_id, %sub_id, rooms = snapshot.len(), mode = mode.as_str(), "user stream live");
+}
+
+/// A snapshot part or the EOSE did not fit the send buffer (review S5): close
+/// with the overflow reason so the client learns the mode failed. Before EOSE
+/// the client still keeps its chunks, so the socket is not cancelled; the
+/// CLOSED goes on the data channel, else the control channel, else the
+/// connection is cancelled. On a gone socket it is a no-op.
+async fn snapshot_send_failed(state: &AppState, conn_id: ConnId, handle: &StreamHandle) {
+    close_stream(state, conn_id, handle, Some(reason::OVERFLOW), false).await;
 }
 
 /// Outcome of [`set_stream_rooms`].
