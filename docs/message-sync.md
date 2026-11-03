@@ -1188,23 +1188,42 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   mark, and do not count as written for a list fetched meanwhile (it can
   still drop their room). A full queue drops them without marking the file
   lossy.
-- **Lists, and thread paints on mobile:** rooms do not draw pushed rows
-  until the relay's copy arrives (`pushed_rows` marks them; the relay copy
-  or a purge clears the mark). The store paint has no gap marker to put
-  between pushed rows and the covered head, so pushed rows show in the
-  lists only until catch-up. A mobile thread's store paint draws them until
-  the relay's page replaces them (a first load always asks the relay);
-  a certain thread read still leaves them out.
+- **Lists, and thread paints on mobile:** a certain read (room or thread)
+  leaves pushed rows out (`pushed_rows` marks them; the relay copy or a
+  purge clears the mark). Store paints draw them until the relay's answer
+  replaces them, and a first open always asks the relay. A room paint puts
+  them in its window; no span vouches for them, so the paint's
+  `complete_from` is none past the spans, and its summaries count the
+  pushed replies (9, 40002, not deleted) newer than a root's
+  `last_reply_at` (direct replies in `reply_count`, all in
+  `descendant_count`; a root without a summary gets one). That count is
+  paint only: the `summaries` table, the saved head cache and coverage
+  stay the relay's. A thread paint draws pushed replies the same way.
+  After a drain that wrote at least one file, an open or opening room
+  that someone watches and whose relay window has not landed, and a
+  thread's saved replies (the inbox preload's plus the stored replies
+  newer than its newest; older stored ones may be deleted on the relay),
+  read the store again; the thread's first-load flag stays off for that
+  re-read. A store read that answers after a later one drew is ignored,
+  and the cached head never draws over a store paint.
 - **Folds:** only the events the store accepted, and only for rooms the
   channel list shows as listed (member, not archived, not a hidden DM; the
-  list already leaves hidden DMs out). The channel list moves those rooms'
+  list already leaves hidden DMs out), taken once the saved channel list
+  read at launch has settled. The channel list moves those rooms'
   `lastMessageAt` at once and records unread once read state is loaded,
-  by the catch-up's rule. Chats folds them into the saved rows drawn
-  before the first page, as replays through the live path (blocked
-  authors, deletions; a thread marker only asks for the page). It writes
-  nothing to prefs, and the first page replaces those rows. A fold whose
-  lease is no longer current changes nothing. Kind:0 profiles are cached
-  for the active community, newer wins.
+  by the catch-up's rule. Chats keeps them in memory for the lease (at most
+  500, numbered by drain) and folds them, as replays through the live path
+  (blocked authors, deletions; a thread marker only asks for the page),
+  into the rows shown, saved or live, and into the saved rows it draws at
+  a later start, before the socket connects. A replay counts an event a
+  row already has once, and counts nothing for a row this device has read
+  past it. A first page drops the kept events drained before it was asked
+  for (the page has them) and folds the later ones. Pushes never reload
+  Chats, and nothing pushed is written to prefs. The Inbox folds them, as
+  replays, into rows already loaded (a first page in flight gets them once
+  it lands); it adds no row and skips blocked authors. A fold whose lease
+  is no longer current changes nothing. Kind:0 profiles are cached for the
+  active community, newer wins.
 - **Build switch:** `--dart-define=KUZZ_PUSH_INBOX=off` stops tokens,
   reading and draining. It is set at build time, so rolling back means a
   new build.

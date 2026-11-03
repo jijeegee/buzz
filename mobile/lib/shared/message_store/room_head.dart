@@ -188,13 +188,17 @@ Future<List<Map<String, dynamic>>> _overlays(
 
 /// [room]'s newest [limit] top-level rows of [kinds], with their overlays
 /// and thread summaries. [liveAt] is when the room's live REQ reached EOSE
-/// on the current connection, if it is live.
+/// on the current connection, if it is live. [includePushed] (a paint only)
+/// also takes rows only the push inbox wrote, and counts pushed replies
+/// newer than a row's stored summary into it; the relay's window replaces
+/// both, and nothing is written.
 Future<StoredRoomHead> readRoomHead(
   DatabaseExecutor db, {
   required String room,
   required List<int> kinds,
   required int limit,
   required int? liveAt,
+  bool includePushed = false,
 }) async {
   final rows = <Map<String, dynamic>>[];
   final rowIds = <String>[];
@@ -209,8 +213,9 @@ Future<StoredRoomHead> readRoomHead(
         'SELECT id, pubkey, created_at, root FROM events '
         'WHERE room = ? AND kind IN (${kinds.join(', ')}) '
         'AND (root IS NULL OR broadcast = 1) '
-        // Rows only the push inbox wrote wait for the relay's copy.
-        'AND id NOT IN (SELECT id FROM pushed_rows) '
+        // Rows only the push inbox wrote claim no coverage: a certain window
+        // leaves them out; a paint draws them until the relay's copy.
+        '${includePushed ? '' : 'AND id NOT IN (SELECT id FROM pushed_rows) '}'
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
         [room, page, offset],
       );
@@ -253,13 +258,17 @@ Future<StoredRoomHead> readRoomHead(
     if (seen.add(removal['id'] as String? ?? '')) aux.add(removal);
   }
 
-  final summaries = rowIds.isEmpty
+  var stored = rowIds.isEmpty
       ? <Map<String, dynamic>>[]
       : (await db.rawQuery(
           'SELECT raw FROM summaries WHERE root IN (${_marks(rowIds.length)}) '
           'ORDER BY root',
           rowIds,
-        )).map((row) => _parse(row['raw'])).nonNulls.where(_hasReplies).toList();
+        )).map((row) => _parse(row['raw'])).nonNulls.toList();
+  if (includePushed && rowIds.isNotEmpty) {
+    stored = await _withPushedReplies(db, room, rowIds, stored);
+  }
+  final summaries = stored.where(_hasReplies).toList();
 
   var certain = false;
   final cursor = nextCursor;
@@ -302,6 +311,99 @@ Future<StoredRoomHead> readRoomHead(
     summaries: summaries,
     nextCursor: nextCursor,
   );
+}
+
+/// [summaries] of [roots] with the replies only the push inbox wrote counted
+/// in: each pushed reply newer than a root's `last_reply_at` adds to
+/// `descendant_count`, and to `reply_count` when it replies to the root
+/// itself. A root with no summary gets one. Deleted replies do not count.
+Future<List<Map<String, dynamic>>> _withPushedReplies(
+  DatabaseExecutor db,
+  String room,
+  List<String> roots,
+  List<Map<String, dynamic>> summaries,
+) async {
+  final candidates = await db.rawQuery(
+    'SELECT e.id, e.pubkey, e.created_at, e.root FROM pushed_rows p '
+    'JOIN events e ON e.id = p.id '
+    'WHERE e.room = ? AND e.root IN (${_marks(roots.length)}) '
+    'AND e.kind IN (9, 40002) '
+    'ORDER BY e.created_at, e.id',
+    [room, ...roots],
+  );
+  if (candidates.isEmpty) return summaries;
+  final deleted = await storedDeletedIds(db, candidates);
+  final events = await storedEventsById(db, [
+    for (final candidate in candidates)
+      if (!deleted.contains(candidate['id'])) candidate['id']! as String,
+  ]);
+  final byRoot = <String, Map<String, dynamic>>{
+    for (final summary in summaries) ?_summaryRoot(summary): summary,
+  };
+  for (final root in roots) {
+    final summary = byRoot[root];
+    final content = summary == null ? null : _parse(summary['content']);
+    if (summary != null && content == null) continue;
+    final lastReplyAt = content?['last_reply_at'];
+    final newer = [
+      for (final candidate in candidates)
+        if (candidate['root'] == root &&
+            (lastReplyAt is! int ||
+                (candidate['created_at']! as int) > lastReplyAt))
+          ?events[candidate['id']],
+    ];
+    if (newer.isEmpty) continue;
+    int count(String key) => switch (content?[key]) {
+      final int value => value,
+      _ => 0,
+    };
+    final participants = <String>[
+      ...?(content?['participants'] as List?)?.whereType<String>(),
+    ];
+    for (final reply in newer) {
+      final author = reply['pubkey'];
+      if (author is String && !participants.contains(author)) {
+        participants.add(author);
+      }
+    }
+    final newest = newer.last['created_at']! as int;
+    final createdAt = summary?['created_at'];
+    byRoot[root] = {
+      'id': summary?['id'] ?? '0' * 64,
+      'pubkey': summary?['pubkey'] ?? '0' * 64,
+      'sig': summary?['sig'] ?? '0' * 128,
+      'kind': 39005,
+      'created_at': createdAt is int && createdAt > newest ? createdAt : newest,
+      'tags':
+          summary?['tags'] ??
+          [
+            ['e', root],
+            ['d', root],
+            ['h', room],
+          ],
+      'content': jsonEncode({
+        ...?content,
+        'reply_count':
+            count('reply_count') +
+            newer.where((reply) => _parentOf(reply) == root).length,
+        'descendant_count': count('descendant_count') + newer.length,
+        'last_reply_at': newest,
+        'participants': participants,
+      }),
+    };
+  }
+  return byRoot.values.toList();
+}
+
+String? _summaryRoot(Map<String, dynamic> summary) {
+  final tags = summary['tags'];
+  if (tags is! List) return null;
+  for (final tag in tags) {
+    if (tag is List && tag.length > 1 && tag[0] == 'e' && tag[1] is String) {
+      return tag[1] as String;
+    }
+  }
+  return null;
 }
 
 /// The oldest `created_at` from which [room]'s stored rows run without a gap

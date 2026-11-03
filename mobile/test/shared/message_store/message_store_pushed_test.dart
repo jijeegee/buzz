@@ -5,6 +5,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:kuzz/shared/message_store/message_store.dart';
+import 'package:kuzz/shared/message_store/room_head.dart';
 import 'package:kuzz/shared/message_store/thread_head.dart';
 
 const _relay = 'wss://relay.example';
@@ -196,9 +197,11 @@ void main() {
     );
   });
 
-  test('rooms draw pushed rows only once the relay copy arrives', () async {
+  test('a room paint draws pushed rows, with no gap-free start past the '
+      'spans; a certain read leaves them out', () async {
     await applyList({'r'});
     store.submit(lease, [event('a1', 'r', 10)]);
+    store.extendCoverage(lease, ['r'], 1, 15);
     await store.flushed();
     final outcome = await store.submitPushed(lease, [
       event('p1', 'r', 20),
@@ -208,23 +211,146 @@ void main() {
     expect(outcome.accepted, {'p1', 'a1'});
     expect(await column('SELECT id FROM pushed_rows'), ['p1']);
 
-    Future<List<Object?>> painted() async => [
-      for (final message
-          in await store.paintableRoomHead(
-                lease,
-                room: 'r',
-                kinds: const [9],
-                limit: 50,
-              ) ??
-              const <Map<String, dynamic>>[])
-        if (message['kind'] == 9) message['id'],
-    ];
-    expect(await painted(), ['a1']);
+    Future<List<Map<String, dynamic>>> paint() async =>
+        await store.paintableRoomHead(
+          lease,
+          room: 'r',
+          kinds: const [9],
+          limit: 50,
+        ) ??
+        const [];
+    Object? contiguousFrom(List<Map<String, dynamic>> events) {
+      final bounds = events.singleWhere((e) => e['kind'] == 39006);
+      final content = jsonDecode(bounds['content'] as String) as Map;
+      expect(content, contains('contiguous_from'));
+      return content['contiguous_from'];
+    }
 
+    final painted = await paint();
+    expect(
+      [
+        for (final message in painted)
+          if (message['kind'] == 9) message['id'],
+      ],
+      ['p1', 'a1'],
+    );
+    expect(contiguousFrom(painted), isNull);
+    final certain = await withDb(
+      (db) => readRoomHead(
+        db,
+        room: 'r',
+        kinds: const [9],
+        limit: 50,
+        liveAt: null,
+      ),
+    );
+    expect([for (final row in certain.rows) row['id']], ['a1']);
+
+    // The relay's copy: the row is confirmed and the span vouches again.
     store.submit(lease, [event('p1', 'r', 20)]);
+    store.extendCoverage(lease, ['r'], 1, 30);
     await store.flushed();
     expect(await column('SELECT id FROM pushed_rows'), isEmpty);
-    expect(await painted(), ['p1', 'a1']);
+    expect(contiguousFrom(await paint()), 1 + rowReceiveMarginSecs);
+  });
+
+  test('a room paint counts pushed replies into its summaries, the first '
+      'reply included; deleted and already counted ones not', () async {
+    Map<String, dynamic> reply(
+      String id,
+      int at, {
+      String root = 'root',
+      String? parent,
+    }) => {
+      ...event(id, 'r', at),
+      'tags': [
+        ['h', 'r'],
+        if (parent != null) ['e', root, '', 'root'],
+        ['e', parent ?? root, '', 'reply'],
+      ],
+    };
+    final summary = {
+      'id': 's-root',
+      'kind': 39005,
+      'pubkey': 'relay',
+      'created_at': 10,
+      'tags': [
+        ['e', 'root'],
+        ['d', 'root'],
+        ['h', 'r'],
+      ],
+      'content': jsonEncode({
+        'reply_count': 1,
+        'descendant_count': 1,
+        'last_reply_at': 10,
+        'participants': ['cc' * 32],
+      }),
+    };
+    await applyList({'r'});
+    store.submit(lease, [
+      event('root', 'r', 5),
+      event('root2', 'r', 6),
+      reply('a1', 10),
+      summary,
+    ]);
+    await store.flushed();
+    await store.submitPushed(lease, [
+      // Older than the summary's last reply: already counted.
+      reply('p0', 8),
+      reply('p1', 20),
+      reply('p2', 25, parent: 'p1'),
+      reply('p3', 30),
+      reply('q1', 40, root: 'root2'),
+    ], fetchedAt: now());
+    // The author deleted p3.
+    store.submit(lease, [
+      {
+        ...event('del', 'r', 31),
+        'kind': 5,
+        'tags': [
+          ['h', 'r'],
+          ['e', 'p3'],
+        ],
+      },
+    ]);
+    await store.flushed();
+
+    Map<String, Map> summaries(List<Map<String, dynamic>> events) => {
+      for (final e in events)
+        if (e['kind'] == 39005)
+          (e['tags'] as List).firstWhere((t) => t[0] == 'e')[1] as String:
+              jsonDecode(e['content'] as String) as Map,
+    };
+    final painted = summaries(
+      (await store.paintableRoomHead(
+        lease,
+        room: 'r',
+        kinds: const [9],
+        limit: 50,
+      ))!,
+    );
+    expect(painted['root']!['reply_count'], 2);
+    expect(painted['root']!['descendant_count'], 3);
+    expect(painted['root']!['last_reply_at'], 25);
+    expect(painted['root']!['participants'], ['cc' * 32, 'bb' * 32]);
+    expect(painted['root2']!['reply_count'], 1);
+    expect(painted['root2']!['descendant_count'], 1);
+    expect(painted['root2']!['last_reply_at'], 40);
+
+    // Paint only: the certain read and the summaries table stay the relay's.
+    final certain = await withDb(
+      (db) => readRoomHead(
+        db,
+        room: 'r',
+        kinds: const [9],
+        limit: 50,
+        liveAt: null,
+      ),
+    );
+    final certainSummaries = summaries(certain.summaries);
+    expect(certainSummaries.keys, ['root']);
+    expect(certainSummaries['root']!['reply_count'], 1);
+    expect(await column('SELECT root FROM summaries'), ['root']);
   });
 
   test('a thread paint draws pushed replies; a certain read leaves them '

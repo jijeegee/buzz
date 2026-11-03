@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../features/activity/inbox_summary_provider.dart';
 import '../../features/age_gate/age_signal_provider.dart';
 import '../../features/channels/channels_provider.dart';
 import '../../features/chats/chat_list_provider.dart';
@@ -16,6 +17,7 @@ import '../relay/app_lifecycle_provider.dart';
 import '../relay/nostr_models.dart';
 import '../relay/relay_provider.dart';
 import 'push_inbox.dart';
+import 'push_inbox_events.dart';
 import 'push_snapshot.dart';
 
 /// Takes the push inbox (docs/message-sync.md#push-inbox) into the message
@@ -26,30 +28,55 @@ import 'push_snapshot.dart';
 typedef PushInboxFold =
     void Function(MessageStoreLease lease, List<NostrEvent> events);
 
-/// The list folds (docs/message-sync.md#push-inbox): the channel list, and
-/// the saved Chats rows when shown. Both take only the rooms the channel
-/// list shows as listed, so a hidden DM changes neither.
+/// The list folds (docs/message-sync.md#push-inbox): the channel list, the
+/// Chats rows and the Inbox. All take only the rooms the channel list shows
+/// as listed, so a hidden DM changes none.
 final pushInboxFoldsProvider = Provider<List<PushInboxFold>>(
   (ref) => [
     (lease, events) => unawaited(
       ref.read(channelsProvider.notifier).foldPushed(lease, events),
     ),
+    (lease, events) => unawaited(_foldChats(ref, lease, events)),
     (lease, events) {
-      final owner = ref.read(chatListOwnerProvider);
-      // Only a list already shown: reading would create one to fold into.
-      if (owner == null || !ref.exists(chatListForOwnerProvider(owner))) {
-        return;
-      }
+      // Only a summary already loaded: reading would load one.
+      if (!ref.exists(inboxSummaryProvider)) return;
       ref
-          .read(chatListForOwnerProvider(owner).notifier)
+          .read(inboxSummaryProvider.notifier)
           .foldPushed(
-            lease,
             events,
             listed: ref.read(channelsProvider.notifier).pushFoldRoomIds,
           );
     },
   ],
 );
+
+/// Keeps the listed rooms' events for saved Chats rows drawn later, then
+/// folds them into a list already shown. Waits for the saved channel list,
+/// which says what is listed at launch.
+Future<void> _foldChats(
+  Ref ref,
+  MessageStoreLease lease,
+  List<NostrEvent> events,
+) async {
+  final listed = await ref
+      .read(channelsProvider.notifier)
+      .pushFoldRoomIdsWhenShown();
+  final kept = [
+    for (final event in events)
+      if (listed.contains(event.channelId)) event,
+  ];
+  if (kept.isEmpty || !ref.mounted) return;
+  final config = ref.read(relayConfigProvider);
+  final current = ref
+      .read(messageStoreProvider)
+      .lease(config.baseUrl, ref.read(myPubkeyProvider));
+  if (current != lease) return;
+  ref.read(pushedChatEventsProvider).add(lease, kept);
+  final owner = ref.read(chatListOwnerProvider);
+  // Only a list already shown: reading would create one to fold into.
+  if (owner == null || !ref.exists(chatListForOwnerProvider(owner))) return;
+  ref.read(chatListForOwnerProvider(owner).notifier).foldPushed(lease, kept);
+}
 
 /// What one drain works on.
 typedef PushInboxDrainScope = ({
@@ -82,7 +109,8 @@ PushInboxDrainScope? pushInboxDrainScope({
 /// One drain of [scope]'s folder under [root]: refused files are deleted;
 /// each accepted file is submitted with its own fetch time and deleted only
 /// once the store reports it written. While [current] holds, the accepted
-/// events are folded and the profiles cached. Returns the files deleted.
+/// events are folded and the profiles cached, and [onWritten] runs once
+/// after at least one file was written. Returns the files deleted.
 Future<int> drainPushInbox({
   required MessageStore store,
   required PushInboxDrainScope scope,
@@ -90,6 +118,7 @@ Future<int> drainPushInbox({
   required bool Function() current,
   required List<PushInboxFold> folds,
   required void Function(NostrEvent profile) cacheProfile,
+  void Function()? onWritten,
 }) async {
   final read = await readPushInboxFolder(
     folder: '$root/${scope.token}',
@@ -139,6 +168,9 @@ Future<int> drainPushInbox({
   }
   for (var i = 0; i < read.files.length; i++) {
     if (outcomes[i].written) await delete(read.files[i].path);
+  }
+  if (outcomes.any((outcome) => outcome.written) && current()) {
+    onWritten?.call();
   }
   return deleted;
 }
@@ -206,6 +238,8 @@ class PushInboxDrain {
       current: () => !_disposed && _currentLease() == scope.lease,
       folds: _ref.read(pushInboxFoldsProvider),
       cacheProfile: _ref.read(userCacheProvider.notifier).cacheProfileEvent,
+      // Store paints drawn before the relay's answer read the store again.
+      onWritten: _ref.read(pushInboxRevisionProvider.notifier).bump,
     );
   }
 }

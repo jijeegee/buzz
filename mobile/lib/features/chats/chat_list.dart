@@ -381,12 +381,15 @@ bool _hasThreadMarker(NostrEvent event, String rootId) => event.tags.any(
 /// [replay] is for events buffered during a fetch: one no newer than the
 /// row's latest is already counted. [readAtOf] gives this device's read
 /// position for a row; a row read past its latest message counts from zero.
+/// A [pushed] event (from the push inbox) this device has read past moves
+/// the row without counting.
 ({ChatListState state, bool refetch}) applyLiveEventToChatList(
   ChatListState current,
   NostrEvent event, {
   required String channelId,
   required String? currentPubkey,
   bool replay = false,
+  bool pushed = false,
   int? Function(ChatListRow row)? readAtOf,
 }) {
   if (!_messageKinds.contains(event.kind)) {
@@ -442,11 +445,16 @@ bool _hasThreadMarker(NostrEvent event, String rootId) => event.tags.any(
             unreadMentionsOverflow: false,
           )
         : existing;
+    final readPast = pushed && readAt != null && readAt >= event.createdAt;
     final unread = fromMe
         ? (count: 0, overflow: false)
+        : readPast
+        ? (count: base.unread, overflow: base.unreadOverflow)
         : _bump(base.unread, base.unreadOverflow);
     final mentions = fromMe
         ? (count: 0, overflow: false)
+        : readPast
+        ? (count: base.unreadMentions, overflow: base.unreadMentionsOverflow)
         : mentionsMe
         ? _bump(base.unreadMentions, base.unreadMentionsOverflow)
         : (count: base.unreadMentions, overflow: base.unreadMentionsOverflow);

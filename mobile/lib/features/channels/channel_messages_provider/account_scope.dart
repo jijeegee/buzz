@@ -47,6 +47,7 @@ extension _AccountScope on ChannelMessagesNotifier {
     _pendingRelayWindow = null;
     _paintedAnchor = null;
     _paintedContiguousFrom = 0;
+    _paintedStoreRead = 0;
     _followingStoredHead = false;
     final shown = _storedHeadShown;
     _storedHeadShown = null;

@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/features/channels/channel_messages_provider.dart';
 import 'package:kuzz/features/channels/window_anchor.dart';
+import 'package:kuzz/shared/push/push_inbox_events.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
 import 'window_relay_fixture.dart';
@@ -190,6 +191,93 @@ void main() {
       expect(notifier.isShowingCachedHead, isFalse);
     },
   );
+
+  test('a push inbox drain redraws the saved rows until the relay window '
+      'lands', () async {
+    final rows = [for (var n = 1; n <= 60; n++) _row(n)];
+    final session = _Session(rows, connected: false);
+    var stored = rows.sublist(0, 55);
+    var paints = 0;
+    final container = _container(
+      session,
+      paint: (filter) async {
+        paints++;
+        return serveChannelWindow(_channelId, stored, filter);
+      },
+    );
+    container.listen(channelMessagesProvider(_channelId), (_, _) {});
+    await _settle();
+    expect(_shown(container).last, rows[54].id);
+
+    // The drain wrote a newer row into the store.
+    stored = rows.sublist(0, 56);
+    container.read(pushInboxRevisionProvider.notifier).bump();
+    await _settle();
+    expect(paints, 2);
+    expect(_shown(container).last, rows[55].id);
+
+    session.connect();
+    session.headGate.complete();
+    await _settle();
+    expect(_shown(container).last, rows.last.id);
+
+    // Once the relay's window is drawn, a drain draws nothing over it.
+    container.read(pushInboxRevisionProvider.notifier).bump();
+    await _settle();
+    expect(paints, 2);
+    expect(_shown(container).last, rows.last.id);
+  });
+
+  test('a first store read answering after a redraw does not draw over '
+      'it, nor does the cached head', () async {
+    final rows = [for (var n = 1; n <= 60; n++) _row(n)];
+    final session = _Session(rows, connected: false);
+    final firstRead = Completer<List<NostrEvent>?>();
+    var paints = 0;
+    final container = _container(
+      session,
+      cached: serveChannelWindow(
+        _channelId,
+        rows.sublist(0, 50),
+        NostrFilter(kinds: const [], limit: 50),
+      ),
+      paint: (filter) {
+        paints++;
+        if (paints == 1) return firstRead.future;
+        return Future.value(
+          serveChannelWindow(_channelId, rows.sublist(0, 56), filter),
+        );
+      },
+    );
+    final listening = container.listen(
+      channelMessagesProvider(_channelId),
+      (_, _) {},
+    );
+    await _settle();
+    expect(_shown(container).last, rows[49].id, reason: 'the cached head');
+
+    // A drain lands while the first store read is still out.
+    container.read(pushInboxRevisionProvider.notifier).bump();
+    await _settle();
+    expect(_shown(container).last, rows[55].id);
+
+    firstRead.complete(
+      serveChannelWindow(
+        _channelId,
+        rows.sublist(0, 55),
+        NostrFilter(kinds: const [], limit: 50),
+      ),
+    );
+    await _settle();
+    expect(_shown(container).last, rows[55].id, reason: 'older read ignored');
+
+    // A room nobody watches does not read the store on a drain.
+    listening.close();
+    await _settle();
+    container.read(pushInboxRevisionProvider.notifier).bump();
+    await _settle();
+    expect(paints, 2);
+  });
 
   test('nothing saved still marks the rows checked', () async {
     final session = _Session(const [], connected: false);

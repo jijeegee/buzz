@@ -548,8 +548,11 @@ class MessageStore {
   /// before the relay answers
   /// (docs/message-sync.md#opening-a-room-from-the-store). It does not wait
   /// for the writer: rows still queued are missing, and the relay's window
-  /// replaces these rows anyway. Its bounds say from when the rows run
-  /// without a gap. `null` when none are stored.
+  /// replaces these rows anyway. Rows and replies only the push inbox wrote
+  /// are drawn too (docs/message-sync.md#push-inbox); no span vouches for
+  /// them, so the bounds' gap-free start comes out none past a span. Its
+  /// bounds say from when the rows run without a gap. `null` when none are
+  /// stored.
   Future<List<Map<String, dynamic>>?> paintableRoomHead(
     MessageStoreLease? lease, {
     required String room,
@@ -565,6 +568,7 @@ class MessageStore {
         kinds: kinds,
         limit: limit,
         liveAt: null,
+        includePushed: true,
       );
       final newest = head.rows.firstOrNull?['created_at'];
       if (newest is! int) return null;

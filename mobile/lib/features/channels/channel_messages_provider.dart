@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show ProviderListenable;
 
 import '../../shared/message_store/store_compare.dart';
+import '../../shared/push/push_inbox_events.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_head_cache.dart';
@@ -54,6 +55,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   ({int createdAt, String id})? _paintedAnchor;
   int? _paintedContiguousFrom = 0;
   bool _followingStoredHead = false;
+
+  /// Store paint reads started, and the latest one drawn (0: none).
+  int _storeReads = 0;
+  int _paintedStoreRead = 0;
   Completer<void>? _storedHeadShown;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
@@ -166,6 +171,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     // [me] is this build's signer; a switch rebuilds and restores its own.
     final me = ref.watch(myPubkeyProvider);
     _scopeToAccount();
+    // A push inbox drain wrote to the store: a store paint still drawn
+    // reads it again.
+    ref.listen(pushInboxRevisionProvider, (_, _) => _repaintStored());
 
     Future.microtask(() => restoreLocalSends(ref, this, me));
     final localSends = splitLocalSendsBySigner(

@@ -101,6 +101,7 @@ void main() {
     ]);
     final folded = <List<String>>[];
     final profiles = <String>[];
+    var written = 0;
     final deleted = await drainPushInbox(
       store: store,
       scope: scope(),
@@ -113,8 +114,10 @@ void main() {
         },
       ],
       cacheProfile: (NostrEvent p) => profiles.add(p.id),
+      onWritten: () => written++,
     );
     expect(deleted, 1);
+    expect(written, 1, reason: 'store paints read again');
     expect(file.existsSync(), isFalse);
     expect(folded, [
       [event(1)['id']],
@@ -138,6 +141,7 @@ void main() {
         current: () => true,
         folds: [(_, events) => folded.addAll(events)],
         cacheProfile: (_) {},
+        onWritten: () => fail('nothing was written'),
       ),
       0,
     );
