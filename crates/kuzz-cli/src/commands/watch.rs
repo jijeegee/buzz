@@ -21,6 +21,12 @@
 //! connection is probed every [`IDLE_PING`]. In token mode the token is
 //! renewed before every reconnect. Status goes to stderr; stdout holds only
 //! messages.
+//!
+//! While it runs, the watch reports this identity online the way `kuzz-acp`
+//! does: a `kind:20001` once a connection is subscribed, then every
+//! [`PRESENCE_EVERY`] on the same socket. Ctrl+C, SIGTERM or a closed stdout
+//! report offline, best effort. Presence never ends the watch: a failure is
+//! a line on stderr and the next beat tries again.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::future::Future;
@@ -29,10 +35,11 @@ use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use kuzz_core::kind::{
-    KIND_MEMBER_ADDED_NOTIFICATION, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_V2,
+    KIND_MEMBER_ADDED_NOTIFICATION, KIND_PRESENCE_UPDATE, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_V2,
 };
 use kuzz_ws_client::{NostrWsConnection, RelayMessage, WsClientError};
+use nostr::{EventBuilder, Kind};
 use serde_json::{json, Value};
 
 use crate::client::KuzzClient;
@@ -71,6 +78,12 @@ const MAX_AUTH_REFUSALS: u32 = 3;
 /// Remembered message ids (dedupe across reconnects).
 const SEEN_CAP: usize = 4096;
 const NAME_CACHE_CAP: usize = 4096;
+/// How often a running watch repeats "online" (as `kuzz-acp` does; the relay
+/// forgets presence after 180 s).
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(60);
+/// Budget for "offline" on the way out: a fresh connection, within the 5 s
+/// the Hermes plugin grants after SIGTERM.
+const OFFLINE_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn now_secs() -> i64 {
     chrono::Utc::now().timestamp()
@@ -338,6 +351,45 @@ async fn subscribe_channels(conn: &mut NostrWsConnection, watch: &Watch) -> Resu
     Ok(())
 }
 
+/// The `kind:20001` for `status`: the bare status as content and no tags, as
+/// `kuzz-acp` publishes it.
+fn presence_event(client: &KuzzClient, status: &str) -> Result<nostr::Event, CliError> {
+    client.sign_event(EventBuilder::new(
+        Kind::Custom(KIND_PRESENCE_UPDATE as u16),
+        status,
+    ))
+}
+
+/// Report online on `conn` without waiting: the relay's answer arrives in the
+/// read loop. A failure is only logged; a dead socket shows up there too.
+async fn announce_online(client: &KuzzClient, conn: &mut NostrWsConnection) {
+    let sent = match presence_event(client, "online") {
+        Ok(event) => conn
+            .send_raw(&json!(["EVENT", event]))
+            .await
+            .map_err(|error| error.to_string()),
+        Err(error) => Err(error.to_string()),
+    };
+    if let Err(error) = sent {
+        eprintln!("kuzz watch: could not report online: {error}");
+    }
+}
+
+/// Report offline on a connection of its own (the watch's socket may be gone
+/// by now), within [`OFFLINE_TIMEOUT`].
+async fn announce_offline(client: &KuzzClient) {
+    let published = async {
+        client
+            .publish_ephemeral_event(presence_event(client, "offline")?)
+            .await
+    };
+    match tokio::time::timeout(OFFLINE_TIMEOUT, published).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("kuzz watch: could not report offline: {error}"),
+        Err(_) => eprintln!("kuzz watch: reporting offline timed out"),
+    }
+}
+
 /// Print one line and flush; a closed stdout ends the watch.
 fn emit(line: &Value) -> Result<(), End> {
     let mut out = std::io::stdout().lock();
@@ -346,8 +398,9 @@ fn emit(line: &Value) -> Result<(), End> {
         .map_err(|e| End::Fatal(CliError::Other(format!("stdout closed: {e}"))))
 }
 
-/// One connection: subscribe, then print messages until it is lost.
-async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
+/// One connection: subscribe, report online every `presence_every`, and print
+/// messages until it is lost.
+async fn run_connection(client: &KuzzClient, watch: &mut Watch, presence_every: Duration) -> End {
     let mut conn = match tokio::time::timeout(CONNECT_TIMEOUT, client.ws_connect()).await {
         Ok(Ok(conn)) => conn,
         Ok(Err(error)) => return ws_lost(error),
@@ -360,7 +413,14 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
         let mut last_frame = Instant::now();
         let mut members_at = Instant::now();
         let mut ping_sent: Option<Instant> = None;
+        // Set once subscribed: online means messages are being received.
+        let mut presence_at: Option<Instant> = None;
         loop {
+            // Here, not in the timeout arm below: a busy channel never idles.
+            if presence_at.is_some_and(|at| at.elapsed() >= presence_every) {
+                announce_online(client, &mut conn).await;
+                presence_at = Some(Instant::now());
+            }
             let message = match conn.next_event(TICK).await {
                 Ok(message) => message,
                 Err(WsClientError::Timeout) => {
@@ -429,10 +489,16 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                         "kuzz watch: connected; watching {} channel(s) and mentions",
                         watch.channels.len()
                     );
+                    announce_online(client, &mut conn).await;
+                    presence_at = Some(Instant::now());
                 }
                 RelayMessage::Eose { subscription_id } if subscription_id == PING_SUB => {
                     ping_sent = None;
                     send(&mut conn, &json!(["CLOSE", PING_SUB])).await?;
+                }
+                // Presence is the only thing a watch publishes.
+                RelayMessage::Ok(ok) if !ok.accepted => {
+                    eprintln!("kuzz watch: relay refused presence: {}", ok.message);
                 }
                 RelayMessage::Closed {
                     subscription_id,
@@ -466,6 +532,61 @@ pub async fn cmd_watch(
     since: Option<i64>,
     reauth: Option<Reauth>,
 ) -> Result<(), CliError> {
+    watch_until(client, since, reauth, stop_requested()).await
+}
+
+/// Ctrl+C or, on Unix, SIGTERM. Listening replaces the default exit, so every
+/// path out of a watch comes through here. A handler that cannot be installed
+/// just never fires.
+async fn stop_requested() {
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                terminate.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    let interrupt = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        () = terminate => {}
+        () = interrupt => {}
+    }
+}
+
+/// Watch until `stop` resolves, then report offline and return `Ok`.
+async fn watch_until(
+    client: &KuzzClient,
+    since: Option<i64>,
+    reauth: Option<Reauth>,
+    stop: impl Future<Output = ()>,
+) -> Result<(), CliError> {
+    // Out here so the newest login is still at hand once the watch is dropped.
+    let mut renewed: Option<KuzzClient> = None;
+    tokio::select! {
+        result = watch_loop(client, since, reauth, &mut renewed) => return result,
+        () = stop => {}
+    }
+    announce_offline(renewed.as_ref().unwrap_or(client)).await;
+    Ok(())
+}
+
+/// Connect and reconnect until a final error. `renewed` holds the newest
+/// client in token mode.
+async fn watch_loop(
+    client: &KuzzClient,
+    since: Option<i64>,
+    reauth: Option<Reauth>,
+    renewed: &mut Option<KuzzClient>,
+) -> Result<(), CliError> {
     let mut watch = Watch {
         me: client.pubkey().to_hex(),
         cursor: since.unwrap_or_else(now_secs),
@@ -474,14 +595,13 @@ pub async fn cmd_watch(
         seen_order: VecDeque::new(),
         names: HashMap::new(),
     };
-    let mut renewed: Option<KuzzClient> = None;
     let mut attempt: u32 = 0;
     let mut refusals: u32 = 0;
     let mut first = true;
     loop {
         if let (false, Some(reauth)) = (first, &reauth) {
             match reauth().await {
-                Ok(fresh) => renewed = Some(fresh),
+                Ok(fresh) => *renewed = Some(fresh),
                 Err(CliError::Auth(message)) if credential_word(&message).is_some() => {
                     let word = credential_word(&message).unwrap_or("signed_out");
                     return Err(CliError::Auth(format!("{word}: {message}")));
@@ -494,8 +614,11 @@ pub async fn cmd_watch(
         first = false;
         let current = renewed.as_ref().unwrap_or(client);
         let started = Instant::now();
-        let reason = match run_connection(current, &mut watch).await {
-            End::Fatal(error) => return Err(error),
+        let reason = match run_connection(current, &mut watch, PRESENCE_EVERY).await {
+            End::Fatal(error) => {
+                announce_offline(current).await;
+                return Err(error);
+            }
             End::Refused(message) => {
                 if let Some(word) = parked_reason(&message) {
                     return Err(CliError::Auth(format!(
@@ -533,7 +656,9 @@ pub async fn cmd_watch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
+    use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+    use nostr::{Keys, Tag};
+    use tokio::sync::mpsc;
 
     fn event(kind: u16, tags: &[&[&str]], keys: &Keys) -> nostr::Event {
         let tags: Vec<Tag> = tags
@@ -747,6 +872,143 @@ mod tests {
             );
         }
         assert!(backoff_delay(30) >= BACKOFF_MAX / 2);
+    }
+
+    /// What a [`fake_relay`] does beyond the handshake.
+    #[derive(Clone, Copy)]
+    struct RelayScript {
+        /// Answer EVENTs with a refusal.
+        refuse: bool,
+        /// Send a frame every few ms, so the read loop never idles.
+        busy: bool,
+    }
+
+    /// A relay that challenges, accepts AUTH, ends the membership
+    /// subscription and hands every EVENT it receives to the channel.
+    async fn fake_relay(script: RelayScript) -> (String, mpsc::UnboundedReceiver<nostr::Event>) {
+        let (events, received) = mpsc::unbounded_channel();
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(move |ws: WebSocketUpgrade| {
+                let events = events.clone();
+                async move { ws.on_upgrade(move |socket| fake_session(socket, script, events)) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        (url, received)
+    }
+
+    async fn fake_session(
+        mut socket: WebSocket,
+        script: RelayScript,
+        events: mpsc::UnboundedSender<nostr::Event>,
+    ) {
+        let frame = |value: Value| Message::Text(value.to_string().into());
+        let _ = socket.send(frame(json!(["AUTH", "challenge"]))).await;
+        let mut noise = tokio::time::interval(Duration::from_millis(5));
+        loop {
+            let incoming = tokio::select! {
+                incoming = socket.recv() => incoming,
+                _ = noise.tick(), if script.busy => {
+                    let _ = socket.send(frame(json!(["EOSE", "noise"]))).await;
+                    continue;
+                }
+            };
+            let Some(Ok(Message::Text(text))) = incoming else {
+                return;
+            };
+            let value: Value = serde_json::from_str(text.as_str()).unwrap();
+            let reply = match value[0].as_str() {
+                Some("AUTH") => json!(["OK", value[1]["id"], true, ""]),
+                Some("REQ") if value[1] == MEMBERS_SUB => json!(["EOSE", MEMBERS_SUB]),
+                Some("EVENT") => {
+                    let event: nostr::Event = serde_json::from_value(value[1].clone()).unwrap();
+                    let id = event.id.to_hex();
+                    let _ = events.send(event);
+                    if script.refuse {
+                        json!(["OK", id, false, "restricted: no presence today"])
+                    } else {
+                        json!(["OK", id, true, ""])
+                    }
+                }
+                _ => continue,
+            };
+            let _ = socket.send(frame(reply)).await;
+        }
+    }
+
+    fn assert_presence(event: &nostr::Event, status: &str, keys: &Keys) {
+        assert_eq!(u32::from(event.kind.as_u16()), KIND_PRESENCE_UPDATE);
+        assert_eq!(event.content, status);
+        assert_eq!(event.pubkey, keys.public_key());
+        assert!(event.tags.is_empty(), "the shape kuzz-acp publishes");
+        event.verify().expect("a valid signature");
+    }
+
+    #[tokio::test]
+    async fn online_repeats_on_a_busy_socket_and_survives_refusals() {
+        let (url, mut events) = fake_relay(RelayScript {
+            refuse: true,
+            busy: true,
+        })
+        .await;
+        let keys = Keys::generate();
+        let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
+        let mut watch = Watch {
+            me: keys.public_key().to_hex(),
+            cursor: now_secs(),
+            channels: BTreeSet::new(),
+            seen: HashSet::new(),
+            seen_order: VecDeque::new(),
+            names: HashMap::new(),
+        };
+        let run = run_connection(&client, &mut watch, Duration::from_millis(20));
+        tokio::pin!(run);
+        for _ in 0..3 {
+            let event = tokio::select! {
+                _ = &mut run => panic!("presence must not end the connection"),
+                event = tokio::time::timeout(Duration::from_secs(4), events.recv()) => {
+                    event.expect("the beat keeps going while frames arrive").unwrap()
+                }
+            };
+            assert_presence(&event, "online", &keys);
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_reports_offline_after_online() {
+        let (url, mut events) = fake_relay(RelayScript {
+            refuse: false,
+            busy: false,
+        })
+        .await;
+        let keys = Keys::generate();
+        let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let run = watch_until(&client, None, None, async {
+            let _ = stopped.await;
+        });
+        tokio::pin!(run);
+        let online = tokio::select! {
+            result = &mut run => panic!("ended early: {:?}", result.err()),
+            event = tokio::time::timeout(Duration::from_secs(4), events.recv()) => {
+                event.expect("online once subscribed").unwrap()
+            }
+        };
+        assert_presence(&online, "online", &keys);
+        stop.send(()).unwrap();
+        let (result, offline) = tokio::join!(
+            run,
+            tokio::time::timeout(Duration::from_secs(4), events.recv())
+        );
+        assert!(result.is_ok());
+        assert_presence(
+            &offline.expect("offline on stop").unwrap(),
+            "offline",
+            &keys,
+        );
     }
 
     #[test]
