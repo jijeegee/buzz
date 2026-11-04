@@ -753,7 +753,8 @@ async fn add_member_inner(
 /// lock could deadlock against ourselves on a small pool. That is safe because
 /// `agent_owner_pubkey` is immutable — [`crate::user::set_agent_owner`] only
 /// updates it when it `IS NULL` (first-mint-wins), so its value cannot change
-/// under us and needs no serialization.
+/// under us and needs no serialization. The paired owner is read there too, for
+/// the same reason; a racing revoke only decides whether this removal wins.
 pub async fn remove_member(
     pool: &PgPool,
     community_id: CommunityId,
@@ -770,6 +771,10 @@ pub async fn remove_member(
         false
     } else {
         crate::user::is_agent_owner(pool, community_id, pubkey, actor_pubkey).await?
+            || super::groups::paired_agent_owner(pool, pubkey, false)
+                .await?
+                .as_deref()
+                == Some(actor_pubkey)
     };
 
     let connection = crate::observability::acquire_writer(
