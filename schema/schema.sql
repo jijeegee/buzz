@@ -2181,7 +2181,8 @@ CREATE TABLE key_registry (
     role           TEXT NOT NULL CHECK (role IN ('agent', 'external')),
     host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
-    revoked_at     TIMESTAMPTZ
+    revoked_at     TIMESTAMPTZ,
+    runtime        TEXT CHECK (char_length(runtime) BETWEEN 1 AND 64)
 );
 CREATE INDEX key_registry_principal ON key_registry (principal_id);
 CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_device_id IS NOT NULL;

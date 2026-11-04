@@ -59,6 +59,20 @@ pub struct DeviceRecord {
     pub platform: String,
     /// Last login or refresh on this device.
     pub last_seen_at: DateTime<Utc>,
+    /// For an external device: the account's live login device with the same
+    /// device key, the same computer.
+    pub login_device_id: Option<Uuid>,
+    /// For an external device: the agents connected on it, oldest first.
+    pub agents: Vec<HostedAgent>,
+}
+
+/// An external agent connected on a device.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct HostedAgent {
+    /// The agent's key (hex).
+    pub pubkey: String,
+    /// What the agent is, as its connector named it when pairing.
+    pub runtime: Option<String>,
 }
 
 /// Outcome of presenting a refresh token.
@@ -615,19 +629,34 @@ async fn expire_open_pairings(
     Ok(())
 }
 
-pub(super) async fn list_devices(
-    pool: &PgPool,
+/// `principal`'s live devices, or just `only`, with what is known about them.
+async fn live_devices(
+    tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
     principal: &PrincipalId,
+    only: Option<Uuid>,
 ) -> Result<Vec<DeviceRecord>> {
-    let mut tx = begin(pool).await?;
     let rows = sqlx::query(
-        "SELECT id, name, platform, last_seen_at FROM devices \
-         WHERE principal_id = $1 AND revoked_at IS NULL ORDER BY created_at",
+        "SELECT d.id, d.name, d.platform, d.last_seen_at, \
+                (SELECT l.id FROM devices l \
+                  WHERE d.kind = 'external' AND l.kind = 'login' \
+                    AND l.principal_id = d.principal_id \
+                    AND l.device_pubkey = d.device_pubkey \
+                    AND l.revoked_at IS NULL) AS login_device_id, \
+                (SELECT COALESCE(json_agg(json_build_object( \
+                            'pubkey', encode(r.pubkey, 'hex'), 'runtime', r.runtime) \
+                            ORDER BY r.created_at), '[]') \
+                   FROM key_registry r \
+                  WHERE r.host_device_id = d.id AND r.role = 'external' \
+                    AND r.revoked_at IS NULL) AS agents \
+           FROM devices d \
+          WHERE d.principal_id = $1 AND d.revoked_at IS NULL \
+            AND ($2::uuid IS NULL OR d.id = $2) \
+          ORDER BY d.created_at",
     )
     .bind(principal.as_bytes().as_slice())
-    .fetch_all(&mut *tx)
+    .bind(only)
+    .fetch_all(&mut **tx)
     .await?;
-    tx.commit().await?;
     rows.iter()
         .map(|row| {
             Ok(DeviceRecord {
@@ -635,9 +664,23 @@ pub(super) async fn list_devices(
                 name: row.try_get("name")?,
                 platform: row.try_get("platform")?,
                 last_seen_at: row.try_get("last_seen_at")?,
+                login_device_id: row.try_get("login_device_id")?,
+                agents: row
+                    .try_get::<sqlx::types::Json<Vec<HostedAgent>>, _>("agents")?
+                    .0,
             })
         })
         .collect()
+}
+
+pub(super) async fn list_devices(
+    pool: &PgPool,
+    principal: &PrincipalId,
+) -> Result<Vec<DeviceRecord>> {
+    let mut tx = begin(pool).await?;
+    let devices = live_devices(&mut tx, principal, None).await?;
+    tx.commit().await?;
+    Ok(devices)
 }
 
 /// Rename live `device_id` (owned by `principal`). Returns `None` when the
@@ -649,26 +692,20 @@ pub(super) async fn rename_device(
     name: &str,
 ) -> Result<Option<DeviceRecord>> {
     let mut tx = begin(pool).await?;
-    let row = sqlx::query(
+    sqlx::query(
         "UPDATE devices SET name = $3 \
-         WHERE id = $1 AND principal_id = $2 AND revoked_at IS NULL \
-         RETURNING id, name, platform, last_seen_at",
+         WHERE id = $1 AND principal_id = $2 AND revoked_at IS NULL",
     )
     .bind(device_id)
     .bind(principal.as_bytes().as_slice())
     .bind(name)
-    .fetch_optional(&mut *tx)
+    .execute(&mut *tx)
     .await?;
+    let device = live_devices(&mut tx, principal, Some(device_id))
+        .await?
+        .pop();
     tx.commit().await?;
-    row.map(|row| {
-        Ok(DeviceRecord {
-            id: row.try_get("id")?,
-            name: row.try_get("name")?,
-            platform: row.try_get("platform")?,
-            last_seen_at: row.try_get("last_seen_at")?,
-        })
-    })
-    .transpose()
+    Ok(device)
 }
 
 impl crate::Db {

@@ -172,7 +172,14 @@ async fn a_claimed_code_connects_the_agent_on_its_computer_only() {
     // disconnects the agent.
     let (status, body) = call(&inst, &pc, "GET", "/auth/devices", None).await;
     assert_eq!(status, 200, "{body}");
-    assert!(body.to_string().contains(&external_device.to_string()));
+    let row = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|device| device["id"] == external_device.to_string())
+        .unwrap();
+    assert_eq!(row["agents"][0]["pubkey"], agent.keys.public_key().to_hex());
+    assert_eq!(row["login_device_id"], Value::Null);
     let path = format!("/auth/devices/{external_device}");
     assert_eq!(call(&inst, &pc, "DELETE", &path, None).await.0, 204);
     assert!(!admitted(&inst, &agent.keys, &agent.device).await);

@@ -37,6 +37,8 @@ struct ClaimShape {
     device_key_kind: Option<String>,
     #[serde(default)]
     device_name: Option<String>,
+    #[serde(default)]
+    runtime: Option<String>,
 }
 
 #[derive(Clone)]
@@ -130,6 +132,7 @@ fn request<'a>(relay_url: &'a str, keys: Option<Keys>) -> PairRequest<'a> {
         code: CODE,
         agent_name: Some("Hermes"),
         device_name: "studio mac",
+        runtime: Some("Hermes"),
         agent_keys: keys,
     }
 }
@@ -142,6 +145,7 @@ fn pairing_at(relay: &str, name: &str, at: i64, secret: bool) -> Pairing {
         agent_pubkey: keys.public_key().to_hex(),
         agent_name: Some(name.into()),
         device_name: "pc".into(),
+        runtime: None,
         state: "connected".into(),
         pairing_id: None,
         device_id: None,
@@ -257,7 +261,10 @@ fn a_claim_signed_for_one_code_fails_for_another() {
     let dir = tempfile::tempdir().unwrap();
     let (_, device) = file_signer(&dir);
     let agent = Keys::generate();
-    let body = claim_body(CODE, &agent, &device, "pc").unwrap();
+    let body = claim_body(CODE, &agent, &device, "pc", Some("Hermes")).unwrap();
+    assert_eq!(body["runtime"], "Hermes");
+    let plain = claim_body(CODE, &agent, &device, "pc", None).unwrap();
+    assert!(plain.get("runtime").is_none());
     let verify = |code: &str| {
         verify_pair_claim(
             code,
@@ -584,4 +591,10 @@ fn the_default_profile_stays_on_each_owners_previous_agent() {
         expected
     );
     assert!(previous_agents(vec![new.clone()], &new).is_empty());
+    // Another kind of agent is never who a Hermes profile acted as.
+    let other = Pairing {
+        runtime: Some("Other".into()),
+        ..owned("other", 9, "owner")
+    };
+    assert!(previous_agents(vec![other], &new).is_empty());
 }

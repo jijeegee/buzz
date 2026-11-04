@@ -61,7 +61,9 @@ pub use principal::{
 };
 pub use provider_tokens::ProviderRevokeTokenRecord;
 pub use purge::{PurgeCounts, PurgeOutcome};
-pub use session::{DeviceKey, DeviceKeyRotation, DeviceRecord, LoginSession, RefreshOutcome};
+pub use session::{
+    DeviceKey, DeviceKeyRotation, DeviceRecord, HostedAgent, LoginSession, RefreshOutcome,
+};
 
 /// Maximum live (non-revoked) devices per principal.
 pub const MAX_DEVICES_PER_PRINCIPAL: i64 = 50;

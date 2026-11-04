@@ -66,6 +66,8 @@ struct ClaimRequest {
     device_key_kind: Option<String>,
     #[serde(default)]
     device_name: Option<String>,
+    #[serde(default)]
+    runtime: Option<String>,
 }
 
 fn conflict(code: &str, message: &str) -> Response {
@@ -203,7 +205,10 @@ pub(super) async fn claim(
     if !matches!(key_kind, "hardware" | "software") {
         return bad_request("device_key_kind must be hardware or software");
     }
-    if let Some(name) = &request.device_name {
+    for name in [&request.device_name, &request.runtime]
+        .into_iter()
+        .flatten()
+    {
         if let Err(response) = super::validate_device_name(name) {
             return response;
         }
@@ -236,6 +241,7 @@ pub(super) async fn claim(
             device_pubkey: device.as_bytes(),
             device_key_kind: key_kind,
             device_name: request.device_name.as_deref(),
+            runtime: request.runtime.as_deref(),
         })
         .await
     {
