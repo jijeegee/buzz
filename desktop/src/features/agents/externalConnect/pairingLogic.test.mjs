@@ -4,8 +4,11 @@ import test from "node:test";
 import {
   connectedClaim,
   formatCountdown,
+  agentRuntime,
   groupExternalAgents,
   mergeRemembered,
+  nestExternalDevices,
+  withoutDisconnected,
   parseRemembered,
   pairingDeadline,
   secondsLeft,
@@ -258,19 +261,98 @@ test("groups: external computers only, with known agents, remembered past a day"
     {
       deviceId: "d1",
       deviceName: "office-laptop",
+      hostDeviceId: "d1",
       // The relay's claim time fills in a remembered entry without one.
       agents: [{ pubkey: AGENT, connectedAt: "2026-10-23T05:32:00Z" }],
+      listed: false,
     },
     {
       deviceId: "d2",
       deviceName: "mac-mini",
+      hostDeviceId: "d2",
       agents: [{ pubkey: OTHER_AGENT, connectedAt: "2026-10-01T00:00:00Z" }],
+      listed: false,
     },
   ]);
   assert.deepEqual(
     groupExternalAgents(devices.slice(0, 1), [connected], remembered),
     [],
   );
+});
+
+test("one computer: an external device goes under its signed-in device", () => {
+  const pc = { id: "pc", name: "studio", platform: "desktop" };
+  const phone = { id: "phone", name: "phone", platform: "mobile" };
+  const linked = {
+    id: "x1",
+    name: "host",
+    platform: "external",
+    loginDeviceId: "pc",
+    agents: [{ pubkey: AGENT, runtime: null }],
+  };
+  // Nothing to list under the computer: its Disconnect needs its own row.
+  const empty = {
+    id: "x4",
+    name: "empty",
+    platform: "external",
+    loginDeviceId: "pc",
+  };
+  const alone = { id: "x2", name: "server", platform: "external" };
+  // Signed out elsewhere: the link names a device this list doesn't have.
+  const stale = {
+    id: "x3",
+    name: "old",
+    platform: "external",
+    loginDeviceId: "gone",
+  };
+  const devices = [pc, phone, linked, alone, stale, empty];
+  assert.deepEqual(nestExternalDevices(devices), [
+    { device: pc, externals: [linked] },
+    { device: phone, externals: [] },
+    { device: alone, externals: [alone] },
+    { device: stale, externals: [stale] },
+    { device: empty, externals: [empty] },
+  ]);
+  const [group] = groupExternalAgents(devices, [], []);
+  assert.equal(group.deviceId, "x1");
+  assert.equal(group.deviceName, "studio");
+  assert.equal(group.hostDeviceId, "pc");
+});
+
+test("agents: the relay's list decides, remembered entries add the time", () => {
+  const device = {
+    id: "d1",
+    name: "pc",
+    platform: "external",
+    agents: [{ pubkey: AGENT, runtime: "Hermes" }],
+  };
+  // OTHER_AGENT was disconnected here: this app still remembers it.
+  const remembered = [
+    { agentPubkey: AGENT, deviceId: "d1", connectedAt: "2026-10-23T05:32:00Z" },
+    { agentPubkey: OTHER_AGENT, deviceId: "d1", connectedAt: null },
+  ];
+  assert.deepEqual(groupExternalAgents([device], [], remembered)[0].agents, [
+    { pubkey: AGENT, connectedAt: "2026-10-23T05:32:00Z" },
+  ]);
+  assert.deepEqual(groupExternalAgents([device], [], [])[0].agents, [
+    { pubkey: AGENT, connectedAt: null },
+  ]);
+  assert.equal(groupExternalAgents([device], [], [])[0].listed, true);
+  assert.deepEqual(withoutDisconnected(remembered, [device]), [remembered[0]]);
+  // A device the relay lists nobody on says nothing about them.
+  assert.deepEqual(
+    withoutDisconnected(remembered, [{ ...device, agents: [] }]),
+    remembered,
+  );
+});
+
+test("runtime: the relay's, else Hermes when this app connected it", () => {
+  const hermes = new Set([AGENT]);
+  const agent = (runtime) => ({ pubkey: AGENT, runtime });
+  assert.equal(agentRuntime(agent("Other"), hermes), "Other");
+  assert.equal(agentRuntime(agent(null), hermes), "Hermes");
+  assert.equal(agentRuntime(agent(null), new Set()), null);
+  assert.equal(agentRuntime(agent("  "), new Set()), null);
 });
 
 test("remembered: merged once per agent and computer, disconnected ones dropped", () => {

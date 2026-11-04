@@ -79,3 +79,11 @@ export function connectHermes(profile: string): Promise<HermesPairingRun> {
 export function disconnectExternalDevice(deviceId: string): Promise<void> {
   return invokeTauri<void>("disconnect_external_device", { deviceId });
 }
+
+/** Take one agent off a paired computer. Its last agent takes the computer. */
+export function disconnectExternalAgent(
+  deviceId: string,
+  pubkey: string,
+): Promise<void> {
+  return invokeTauri<void>("disconnect_external_agent", { deviceId, pubkey });
+}

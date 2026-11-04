@@ -53,13 +53,19 @@ import {
   newSignInDeviceId,
   newSignInDeviceName,
 } from "@/features/accounts/newSignIn/newSignInHighlight";
-import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
+import {
+  EXTERNAL_PLATFORM,
+  nestExternalDevices,
+} from "@/features/agents/externalConnect/pairingLogic";
 import {
   refreshExternalAgents,
   useExternalAgentGroups,
 } from "@/features/agents/externalConnect/useExternalAgents";
-import { disconnectExternalDevice } from "@/shared/api/agentPairing";
-import { AccountDeviceRow } from "./AccountDeviceRow";
+import {
+  disconnectExternalAgent,
+  disconnectExternalDevice,
+} from "@/shared/api/agentPairing";
+import { AccountDeviceRow, ExternalAgentRow } from "./AccountDeviceRow";
 import { SettingsConfirmDialog } from "./SettingsConfirmDialog";
 import { SettingsOptionGroup, SettingsOptionRow } from "./SettingsOptionGroup";
 
@@ -597,6 +603,12 @@ function SignedInDevices({
   const closeConfirm = (open: boolean) => {
     if (!open) setConfirming(null);
   };
+  const [disconnecting, setDisconnecting] = React.useState<{
+    deviceId: string;
+    /** `null`: a computer the relay lists no agent on. */
+    pubkey: string | null;
+    name: string;
+  } | null>(null);
   const loadDevices = React.useCallback(async () => {
     try {
       setDevices(await listAuthDevices());
@@ -611,7 +623,7 @@ function SignedInDevices({
 
   const disabled = busy !== null;
   const queryClient = useQueryClient();
-  const hermesDevices = useExternalAgentGroups().hermesDeviceIds;
+  const { hermesPubkeys } = useExternalAgentGroups();
   // Reached from a "New sign-in" notice: mark that device, found by name
   // once when the list loads and then kept by id. Seeing this view uses the
   // notice up; leaving it clears the mark.
@@ -642,40 +654,48 @@ function SignedInDevices({
               aria-labelledby="account-devices-heading"
               className="mt-2 space-y-2"
             >
-              {devices.map((device) => (
-                <AccountDeviceRow
-                  device={device}
-                  disabled={disabled}
-                  hermes={
-                    device.platform === EXTERNAL_PLATFORM &&
-                    hermesDevices.has(device.id)
-                  }
-                  isNew={device.id === newDeviceId}
-                  key={device.id}
-                  onChanged={loadDevices}
-                  onSignOut={() =>
-                    device.platform === EXTERNAL_PLATFORM
-                      ? void run(
-                          "settings.device.disconnectFailed",
-                          async () => {
-                            try {
-                              await disconnectExternalDevice(device.id);
-                            } finally {
-                              refreshExternalAgents(queryClient);
-                            }
-                            await loadDevices();
-                          },
-                        )
-                      : void run(
-                          "settings.device.signOutDeviceFailed",
-                          async () => {
-                            await revokeAuthDevice(device.id);
-                            await loadDevices();
-                          },
-                        )
-                  }
-                  run={run}
-                />
+              {nestExternalDevices(devices).map(({ device, externals }) => (
+                <React.Fragment key={device.id}>
+                  <AccountDeviceRow
+                    device={device}
+                    disabled={disabled}
+                    isNew={device.id === newDeviceId}
+                    onChanged={loadDevices}
+                    onSignOut={() =>
+                      device.platform === EXTERNAL_PLATFORM
+                        ? setDisconnecting({
+                            deviceId: device.id,
+                            pubkey: null,
+                            name: device.name,
+                          })
+                        : void run(
+                            "settings.device.signOutDeviceFailed",
+                            async () => {
+                              await revokeAuthDevice(device.id);
+                              await loadDevices();
+                            },
+                          )
+                    }
+                    run={run}
+                  />
+                  {externals.flatMap((external) =>
+                    (external.agents ?? []).map((agent) => (
+                      <ExternalAgentRow
+                        agent={agent}
+                        disabled={disabled}
+                        hermesPubkeys={hermesPubkeys}
+                        key={agent.pubkey}
+                        onDisconnect={(name) =>
+                          setDisconnecting({
+                            deviceId: external.id,
+                            pubkey: agent.pubkey,
+                            name,
+                          })
+                        }
+                      />
+                    )),
+                  )}
+                </React.Fragment>
               ))}
             </ul>
           )}
@@ -695,6 +715,36 @@ function SignedInDevices({
           {t("settings.device.signOutOthers")}
         </Button>
       </SettingsOptionRow>
+      <SettingsConfirmDialog
+        confirmLabel={t("settings.device.disconnect")}
+        description={t("agents.external.disconnectAgentDescription", {
+          name: disconnecting?.name ?? "",
+        })}
+        destructive
+        onConfirm={() => {
+          const target = disconnecting;
+          if (!target) return;
+          void run("settings.device.disconnectFailed", async () => {
+            try {
+              await (target.pubkey
+                ? disconnectExternalAgent(target.deviceId, target.pubkey)
+                : disconnectExternalDevice(target.deviceId));
+            } finally {
+              // Also on failure: it may be gone already.
+              refreshExternalAgents(queryClient);
+              await loadDevices();
+            }
+          });
+        }}
+        onOpenChange={(open) => {
+          if (!open) setDisconnecting(null);
+        }}
+        open={disconnecting !== null}
+        testId="account-disconnect-external-dialog"
+        title={t("agents.external.disconnectAgentTitle", {
+          name: disconnecting?.name ?? "",
+        })}
+      />
       <SettingsConfirmDialog
         confirmLabel={t("settings.device.signOutOthers")}
         description={t("settings.device.signOutOthersDescription")}

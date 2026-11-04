@@ -729,6 +729,7 @@ pub fn run() {
             auth::pairing::get_hermes_status,
             auth::pairing::connect_hermes,
             auth::pairing::disconnect_external_device,
+            auth::pairing::disconnect_external_agent,
             auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,

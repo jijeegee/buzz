@@ -15,7 +15,8 @@
 //!   would die with that command's job.
 //!   Offered only when Hermes, a `kuzz` with `--hermes` and the plugin files
 //!   are all on this computer ([`hermes_installer`]).
-//! - [`disconnect_external_device`] signs a paired computer out.
+//! - [`disconnect_external_device`] signs a paired computer out;
+//!   [`disconnect_external_agent`] takes one agent off it.
 //!
 //! Codes, commands and keys are never logged.
 
@@ -151,6 +152,28 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
     api::revoke_device(&state.http_client, &origin, &session.access, &device_id)
         .await
         .map_err(api_error)
+}
+
+/// Take one agent off a paired computer
+/// (`DELETE /auth/devices/{id}/agents/{pubkey}`).
+#[tauri::command]
+pub async fn disconnect_external_agent(
+    app: AppHandle,
+    device_id: String,
+    pubkey: String,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    let session = super::commands::fresh_session(&state, &origin).await?;
+    api::disconnect_agent(
+        &state.http_client,
+        &origin,
+        &session.access,
+        &device_id,
+        &pubkey,
+    )
+    .await
+    .map_err(api_error)
 }
 
 /// Whether Hermes is installed here and whether it can be connected.

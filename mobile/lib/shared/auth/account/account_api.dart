@@ -144,6 +144,16 @@ String _pathPubkey(String pubkey) {
   return normalized;
 }
 
+/// An agent connected on an external device.
+class AccountDeviceAgent {
+  const AccountDeviceAgent({required this.pubkey, this.runtime});
+
+  final String pubkey;
+
+  /// What it runs on (`Hermes`), when the connection said.
+  final String? runtime;
+}
+
 /// One signed-in device (`GET /auth/devices`).
 class AccountDevice {
   const AccountDevice({
@@ -152,6 +162,8 @@ class AccountDevice {
     required this.platform,
     required this.current,
     this.lastSeenAt,
+    this.loginDeviceId,
+    this.agents = const [],
   });
 
   factory AccountDevice.fromJson(Map<String, Object?> json) {
@@ -162,6 +174,8 @@ class AccountDevice {
     final name = json['name'];
     final platform = json['platform'];
     final lastSeen = json['last_seen_at'];
+    final loginDevice = json['login_device_id'];
+    final agents = json['agents'];
     return AccountDevice(
       id: id,
       name: name is String && name.isNotEmpty
@@ -170,18 +184,40 @@ class AccountDevice {
       platform: platform is String ? platform : '',
       current: json['current'] == true,
       lastSeenAt: lastSeen is String ? DateTime.tryParse(lastSeen) : null,
+      loginDeviceId: loginDevice is String ? loginDevice : null,
+      agents: [
+        if (agents is List)
+          for (final agent in agents)
+            if (agent is Map && agent['pubkey'] is String)
+              AccountDeviceAgent(
+                pubkey: agent['pubkey'] as String,
+                runtime: switch (agent['runtime']) {
+                  final String runtime when runtime.trim().isNotEmpty =>
+                    runtime.trim(),
+                  _ => null,
+                },
+              ),
+      ],
     );
   }
 
   final String id;
   final String name;
 
-  /// `desktop`, `mobile`, `web` or `cli`.
+  /// `desktop`, `mobile`, `web`, `cli` or `external`.
   final String platform;
 
   /// Whether this is the device making the request.
   final bool current;
   final DateTime? lastSeenAt;
+
+  /// An external device's computer, when signed in there.
+  final String? loginDeviceId;
+
+  /// The agents connected on an external device.
+  final List<AccountDeviceAgent> agents;
+
+  bool get isExternal => platform == 'external';
 }
 
 /// The account endpoints of one token relay, authenticated with the
@@ -337,6 +373,14 @@ class AccountApi {
   /// Sign [deviceId] out remotely (revokes its session).
   Future<void> revokeDevice(String deviceId) =>
       _send('DELETE', '/auth/devices/${Uri.encodeComponent(deviceId)}');
+
+  /// Take agent [pubkey] off external device [deviceId]. Its last agent takes
+  /// the device with it.
+  Future<void> disconnectAgent(String deviceId, String pubkey) => _send(
+    'DELETE',
+    '/auth/devices/${Uri.encodeComponent(deviceId)}'
+        '/agents/${Uri.encodeComponent(pubkey)}',
+  );
 
   /// Rename [deviceId] (any of this account's devices).
   Future<AccountDevice> renameDevice(String deviceId, String name) async {

@@ -1,3 +1,4 @@
+import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
 import type { AuthDevice } from "@/shared/api/tokenAuth";
 
 /** The device name of the "New sign-in" notice the owner followed. */
@@ -28,7 +29,13 @@ export function newSignInDeviceId(
   if (!name) return null;
   for (let index = devices.length - 1; index >= 0; index -= 1) {
     const device = devices[index];
-    if (!device.current && device.name.trim() === name) return device.id;
+    if (
+      !device.current &&
+      device.platform !== EXTERNAL_PLATFORM &&
+      device.name.trim() === name
+    ) {
+      return device.id;
+    }
   }
   return null;
 }

@@ -158,6 +158,20 @@ pub(crate) struct DeviceInfo {
     pub last_seen_at: Option<String>,
     #[serde(default)]
     pub current: bool,
+    /// An external device's computer, when signed in there.
+    #[serde(default)]
+    pub login_device_id: Option<String>,
+    /// The agents connected on an external device.
+    #[serde(default)]
+    pub agents: Vec<HostedAgentInfo>,
+}
+
+/// One agent of [`DeviceInfo::agents`].
+#[derive(Debug, Clone, Deserialize, serde::Serialize)]
+pub(crate) struct HostedAgentInfo {
+    pub pubkey: String,
+    #[serde(default)]
+    pub runtime: Option<String>,
 }
 
 /// `GET /auth/me`.
@@ -849,6 +863,33 @@ pub(crate) async fn revoke_device(
         client,
         reqwest::Method::DELETE,
         format!("{origin}/auth/devices/{device_id}"),
+        access,
+        None,
+    )
+    .await
+}
+
+/// `DELETE /auth/devices/{id}/agents/{pubkey}`.
+pub(crate) async fn disconnect_agent(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    device_id: &str,
+    pubkey: &str,
+) -> Result<(), ApiError> {
+    let invalid = |what: &str| ApiError {
+        status: None,
+        code: None,
+        message: format!("invalid {what}"),
+    };
+    let device_id = uuid::Uuid::parse_str(device_id).map_err(|_| invalid("device id"))?;
+    if pubkey.len() != 64 || !pubkey.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return Err(invalid("agent key"));
+    }
+    call(
+        client,
+        reqwest::Method::DELETE,
+        format!("{origin}/auth/devices/{device_id}/agents/{pubkey}"),
         access,
         None,
     )

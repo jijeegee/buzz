@@ -10,6 +10,7 @@ import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
 import '../../shared/l10n/l10n.dart';
+import '../../shared/mentions/agent_identity_provider.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
@@ -18,8 +19,9 @@ import '../../shared/widgets/modal_presentation.dart';
 import 'account_actions.dart';
 
 /// Settings › Devices & security for a token relay, as on desktop: the
-/// signed-in devices — rename, pick each one's robot, sign one out —
-/// signing out every other device, and disconnecting every agent.
+/// signed-in devices — rename, pick each one's robot, sign one out — the
+/// external agents under the computer they run on, signing out every other
+/// device, and disconnecting every agent.
 class DevicesPage extends HookConsumerWidget {
   const DevicesPage({super.key, required this.origin, this.agents = true});
 
@@ -63,7 +65,27 @@ class DevicesPage extends HookConsumerWidget {
       return true;
     }
 
+    Future<void> disconnect(
+      String name,
+      Future<void> Function(AccountApi) act,
+    ) async {
+      final ok = await confirmDestructive(
+        context,
+        title: context.l10n.settingsDevicesDisconnectTitle(name),
+        body: context.l10n.settingsDevicesDisconnectBody(name),
+        action: context.l10n.settingsDevicesDisconnect,
+      );
+      if (!ok) return;
+      // On failure too: it may be gone already.
+      if (!await run(act) && context.mounted) {
+        ref.invalidate(accountDevicesProvider(origin));
+      }
+    }
+
     Future<void> signOutDevice(AccountDevice device) async {
+      if (device.isExternal) {
+        return disconnect(device.name, (api) => api.revokeDevice(device.id));
+      }
       final ok = await confirmDestructive(
         context,
         title: context.l10n.settingsDevicesSignOutDeviceTitle(device.name),
@@ -147,7 +169,7 @@ class DevicesPage extends HookConsumerWidget {
               AppListCard(
                 label: context.l10n.settingsDevicesSignedIn,
                 children: [
-                  for (final device in list)
+                  for (final (device, externals) in _nestExternal(list)) ...[
                     _DeviceRow(
                       device: device,
                       onRename: busy.value
@@ -160,6 +182,23 @@ class DevicesPage extends HookConsumerWidget {
                           ? null
                           : () => unawaited(signOutDevice(device)),
                     ),
+                    for (final external in externals)
+                      for (final agent in external.agents)
+                        _ExternalAgentRow(
+                          agent: agent,
+                          onDisconnect: busy.value
+                              ? null
+                              : (name) => unawaited(
+                                  disconnect(
+                                    name,
+                                    (api) => api.disconnectAgent(
+                                      external.id,
+                                      agent.pubkey,
+                                    ),
+                                  ),
+                                ),
+                        ),
+                  ],
                 ],
               )
             else if (devices.hasError)
@@ -208,6 +247,86 @@ class DevicesPage extends HookConsumerWidget {
               ],
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// Each computer once, with the external devices whose agents run there:
+/// those of the signed-in device on it, else its own.
+List<(AccountDevice, List<AccountDevice>)> _nestExternal(
+  List<AccountDevice> devices,
+) {
+  AccountDevice? hostOf(AccountDevice device) {
+    // Without agents to list it needs its own row, for its Disconnect.
+    if (!device.isExternal || device.agents.isEmpty) return null;
+    for (final other in devices) {
+      if (other.id == device.loginDeviceId) return other;
+    }
+    return null;
+  }
+
+  return [
+    for (final device in devices)
+      if (hostOf(device) == null)
+        (
+          device,
+          [
+            for (final other in devices)
+              if (other.isExternal &&
+                  (other.id == device.id || hostOf(other)?.id == device.id))
+                other,
+          ],
+        ),
+  ];
+}
+
+/// One external agent, under the row of the computer it runs on.
+class _ExternalAgentRow extends ConsumerWidget {
+  const _ExternalAgentRow({required this.agent, required this.onDisconnect});
+
+  final AccountDeviceAgent agent;
+
+  /// Gets the agent's name.
+  final ValueChanged<String>? onDisconnect;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final runtime = agent.runtime;
+    final label = runtime == null
+        ? context.l10n.settingsDevicesExternalAgent
+        : context.l10n.settingsDevicesExternalAgentRuntime(runtime);
+    final known = ref.watch(
+      agentDirectoryDisplayNamesProvider.select(
+        (names) => names[agent.pubkey.toLowerCase()],
+      ),
+    );
+    final name = known ?? runtime ?? label;
+    final callback = onDisconnect;
+    return AppListRowRaw(
+      key: Key('agent-row-${agent.pubkey}'),
+      leading: Icon(
+        LucideIcons.bot,
+        size: 24,
+        color: context.colors.onSurfaceVariant,
+      ),
+      title: Text(label, style: context.textTheme.bodyLarge),
+      subtitle: known == null || known == runtime
+          ? null
+          : Text(
+              known,
+              style: context.textTheme.bodySmall?.copyWith(
+                color: context.colors.onSurfaceVariant,
+              ),
+            ),
+      trailing: TextButton(
+        key: Key('agent-disconnect-${agent.pubkey}'),
+        onPressed: callback == null ? null : () => callback(name),
+        child: Semantics(
+          label: context.l10n.settingsDevicesDisconnectLabel(name),
+          excludeSemantics: true,
+          child: Text(context.l10n.settingsDevicesDisconnect),
         ),
       ),
     );
@@ -277,7 +396,8 @@ class _DeviceRow extends ConsumerWidget {
             tooltip: context.l10n.settingsDevicesRenameTooltip(device.name),
             icon: const Icon(LucideIcons.pencil, size: 18),
           ),
-          if (!device.current)
+          // An external device's agents have their own rows.
+          if (!device.current && !device.isExternal)
             TextButton(
               key: Key('device-sign-out-${device.id}'),
               onPressed: onSignOut,
@@ -285,6 +405,16 @@ class _DeviceRow extends ConsumerWidget {
                 label: context.l10n.settingsDevicesSignOutLabel(device.name),
                 excludeSemantics: true,
                 child: Text(context.l10n.settingsDevicesSignOut),
+              ),
+            )
+          else if (device.isExternal && device.agents.isEmpty)
+            TextButton(
+              key: Key('device-disconnect-${device.id}'),
+              onPressed: onSignOut,
+              child: Semantics(
+                label: context.l10n.settingsDevicesDisconnectLabel(device.name),
+                excludeSemantics: true,
+                child: Text(context.l10n.settingsDevicesDisconnect),
               ),
             ),
         ],
@@ -298,6 +428,7 @@ class _DeviceRow extends ConsumerWidget {
         'desktop' => l10n.settingsDevicesPlatformDesktop,
         'web' => l10n.settingsDevicesPlatformWeb,
         'cli' => 'CLI',
+        'external' => l10n.settingsDevicesExternalAgent,
         _ => platform,
       };
 

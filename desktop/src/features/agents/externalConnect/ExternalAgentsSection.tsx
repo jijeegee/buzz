@@ -9,9 +9,11 @@ import { useUserProfileQuery } from "@/features/profile/hooks";
 import {
   connectHermes,
   type HermesProfile,
+  disconnectExternalAgent,
   disconnectExternalDevice,
   listAgentPairings,
 } from "@/shared/api/agentPairing";
+import { sameDevice } from "@/shared/api/ownerDevices";
 import { useT } from "@/shared/i18n";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import {
@@ -52,21 +54,35 @@ import {
 
 /**
  * My agents: the account's paired computers (`kuzz pair`), each with the
- * agents connected on it and a Disconnect that signs that computer out
- * after a confirm. Renders nothing when there are none.
+ * agents connected on it, each with a Disconnect after a confirm. A computer
+ * whose agent this app has not seen disconnects whole. Renders nothing when
+ * there are none.
  */
 export function ExternalAgentsSection({
   robot,
+  hostDeviceId,
+  otherHosts,
 }: {
   /** The device robot for a computer's heading. */
   robot: (deviceId: string) => React.ReactNode;
+  /** Only this computer's agents, as tiles under the caller's heading. */
+  hostDeviceId?: string;
+  /** Without `hostDeviceId`: computers the caller shows them under. */
+  otherHosts?: readonly string[];
 }) {
   const t = useT();
   const queryClient = useQueryClient();
-  const { groups, hermesPubkeys } = useExternalAgentGroups();
-  const [confirming, setConfirming] = React.useState<ExternalAgentGroup | null>(
-    null,
+  const { groups: allGroups, hermesPubkeys } = useExternalAgentGroups();
+  const groups = allGroups.filter((group) =>
+    hostDeviceId === undefined
+      ? !otherHosts?.some((host) => sameDevice(host, group.hostDeviceId))
+      : sameDevice(hostDeviceId, group.hostDeviceId),
   );
+  const [confirming, setConfirming] = React.useState<{
+    group: ExternalAgentGroup;
+    /** `null`: the whole computer. */
+    agent: { pubkey: string; name: string } | null;
+  } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [adding, setAdding] = React.useState<ExternalChannelAgent | null>(null);
   const pubkeys = React.useMemo(
@@ -78,13 +94,20 @@ export function ExternalAgentsSection({
     enabled: pubkeys.length > 0,
   });
 
-  async function disconnect(group: ExternalAgentGroup) {
+  async function disconnect({ group, agent }: NonNullable<typeof confirming>) {
     setBusy(true);
     try {
-      await disconnectExternalDevice(group.deviceId);
-      toast.success(
-        t("agents.external.disconnected", { device: group.deviceName }),
-      );
+      if (agent) {
+        await disconnectExternalAgent(group.deviceId, agent.pubkey);
+        toast.success(
+          t("agents.external.agentDisconnected", { name: agent.name }),
+        );
+      } else {
+        await disconnectExternalDevice(group.deviceId);
+        toast.success(
+          t("agents.external.disconnected", { device: group.deviceName }),
+        );
+      }
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -107,13 +130,15 @@ export function ExternalAgentsSection({
           data-testid={`agents-external-device-${group.deviceId}`}
           key={group.deviceId}
         >
-          <DeviceHeading
-            detail={t("agents.external.agentCount", {
-              count: group.agents.length,
-            })}
-            robot={robot(group.deviceId)}
-            title={group.deviceName}
-          />
+          {hostDeviceId === undefined ? (
+            <DeviceHeading
+              detail={t("agents.external.agentCount", {
+                count: group.agents.length,
+              })}
+              robot={robot(group.hostDeviceId)}
+              title={group.deviceName}
+            />
+          ) : null}
           <div className={AGENT_TILE_GRID_CLASS}>
             {(group.agents.length > 0 ? group.agents : [null]).map((agent) => (
               <ExternalAgentTile
@@ -124,7 +149,15 @@ export function ExternalAgentsSection({
                 hermesPubkeys={hermesPubkeys}
                 key={agent?.pubkey ?? "unknown"}
                 onAddToChannel={setAdding}
-                onDisconnect={() => setConfirming(group)}
+                onDisconnect={(name) =>
+                  setConfirming({
+                    group,
+                    agent:
+                      agent && group.listed
+                        ? { pubkey: agent.pubkey, name }
+                        : null,
+                  })
+                }
               />
             ))}
           </div>
@@ -139,14 +172,22 @@ export function ExternalAgentsSection({
         <AlertDialogContent data-testid="external-agent-disconnect-dialog">
           <AlertDialogHeader>
             <AlertDialogTitle>
-              {t("agents.external.disconnectTitle", {
-                device: confirming?.deviceName ?? "",
-              })}
+              {confirming?.agent
+                ? t("agents.external.disconnectAgentTitle", {
+                    name: confirming.agent.name,
+                  })
+                : t("agents.external.disconnectTitle", {
+                    device: confirming?.group.deviceName ?? "",
+                  })}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              {t("agents.external.disconnectDescription", {
-                device: confirming?.deviceName ?? "",
-              })}
+              {confirming?.agent
+                ? t("agents.external.disconnectAgentDescription", {
+                    name: confirming.agent.name,
+                  })
+                : t("agents.external.disconnectDescription", {
+                    device: confirming?.group.deviceName ?? "",
+                  })}
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
@@ -154,9 +195,9 @@ export function ExternalAgentsSection({
             <Button
               data-testid="external-agent-disconnect-confirm"
               onClick={() => {
-                const group = confirming;
+                const target = confirming;
                 setConfirming(null);
-                if (group) void disconnect(group);
+                if (target) void disconnect(target);
               }}
               type="button"
               variant="destructive"
@@ -203,7 +244,8 @@ function ExternalAgentTile({
   getAvailability: AgentAvailabilityReader;
   hermesPubkeys: ReadonlySet<string>;
   onAddToChannel: (agent: ExternalChannelAgent) => void;
-  onDisconnect: () => void;
+  /** `name`: the agent's name. */
+  onDisconnect: (name: string) => void;
 }) {
   const t = useT();
   const pubkey = agent?.pubkey ?? null;
@@ -241,7 +283,7 @@ function ExternalAgentTile({
             className="text-destructive hover:text-destructive"
             data-testid={`external-agent-disconnect-${pubkey ?? deviceName}`}
             disabled={busy}
-            onClick={onDisconnect}
+            onClick={() => onDisconnect(name)}
             size="xs"
             variant="outline"
           >
@@ -255,7 +297,7 @@ function ExternalAgentTile({
       openLabel={t("agents.external.disconnectNamed", { name })}
       status={status}
       subtitle={deviceName}
-      onOpen={onDisconnect}
+      onOpen={() => onDisconnect(name)}
     />
   );
 }

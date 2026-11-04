@@ -1,5 +1,5 @@
 import type { AgentPairing, HermesProfile } from "@/shared/api/agentPairing";
-import type { AuthDevice } from "@/shared/api/tokenAuth";
+import type { AuthDevice, AuthDeviceAgent } from "@/shared/api/tokenAuth";
 
 /** How often the connect screen asks whether the code was used. */
 export const PAIRING_POLL_MS = 2_000;
@@ -135,9 +135,15 @@ export type ExternalAgent = {
 };
 
 export type ExternalAgentGroup = {
+  /** The external device. */
   deviceId: string;
+  /** The computer's name: its signed-in device's, when there is one. */
   deviceName: string;
+  /** The signed-in device on this computer, else `deviceId`. */
+  hostDeviceId: string;
   agents: ExternalAgent[];
+  /** The relay lists `agents`, so each can be disconnected alone. */
+  listed: boolean;
 };
 
 /** The connected claims in `pairings`, as remembered entries. */
@@ -196,22 +202,103 @@ export function groupExternalAgents(
   return devices
     .filter((device) => device.platform === EXTERNAL_PLATFORM)
     .map((device) => {
-      const agents = new Map<string, ExternalAgent>();
+      const host = loginDeviceOf(device, devices);
+      // The relay's list decides who is connected; remembered entries add
+      // the time, and stand in only when the relay lists none.
+      const listed = (device.agents ?? []).map(({ pubkey }) =>
+        pubkey.toLowerCase(),
+      );
+      const agents = new Map<string, ExternalAgent>(
+        listed.map((pubkey) => [pubkey, { pubkey, connectedAt: null }]),
+      );
       for (const entry of entries) {
-        if (entry.deviceId !== device.id || agents.has(entry.agentPubkey)) {
-          continue;
+        if (entry.deviceId !== device.id) continue;
+        const agent = agents.get(entry.agentPubkey);
+        if (agent) {
+          agent.connectedAt ??= entry.connectedAt;
+        } else if (listed.length === 0) {
+          agents.set(entry.agentPubkey, {
+            pubkey: entry.agentPubkey,
+            connectedAt: entry.connectedAt,
+          });
         }
-        agents.set(entry.agentPubkey, {
-          pubkey: entry.agentPubkey,
-          connectedAt: entry.connectedAt,
-        });
       }
       return {
         deviceId: device.id,
-        deviceName: device.name,
+        deviceName: host?.name ?? device.name,
+        hostDeviceId: host?.id ?? device.id,
         agents: [...agents.values()],
+        listed: listed.length > 0,
       };
     });
+}
+
+/** The listed signed-in device on the same computer as `device`, if any. */
+function loginDeviceOf(
+  device: AuthDevice,
+  devices: readonly AuthDevice[],
+): AuthDevice | undefined {
+  if (device.platform !== EXTERNAL_PLATFORM || !device.loginDeviceId) {
+    return undefined;
+  }
+  return devices.find((other) => other.id === device.loginDeviceId);
+}
+
+/**
+ * The device list with each computer once, and under it the external devices
+ * whose agents run there: their signed-in device's, else their own row.
+ */
+export function nestExternalDevices(
+  devices: readonly AuthDevice[],
+): { device: AuthDevice; externals: AuthDevice[] }[] {
+  // Without agents to list it needs its own row, for its Disconnect.
+  const hostOf = (device: AuthDevice) =>
+    device.agents?.length ? loginDeviceOf(device, devices) : undefined;
+  const rows = new Map<string, { device: AuthDevice; externals: AuthDevice[] }>(
+    devices
+      .filter((device) => !hostOf(device))
+      .map((device) => [device.id, { device, externals: [] }]),
+  );
+  for (const device of devices) {
+    const host = hostOf(device);
+    if (host) {
+      rows.get(host.id)?.externals.push(device);
+    } else if (device.platform === EXTERNAL_PLATFORM) {
+      rows.get(device.id)?.externals.push(device);
+    }
+  }
+  return [...rows.values()];
+}
+
+/**
+ * What an external agent runs on. `hermesPubkeys`: Hermes agents this app
+ * connected, for connections older than the relay's runtimes.
+ */
+export function agentRuntime(
+  agent: AuthDeviceAgent,
+  hermesPubkeys: ReadonlySet<string>,
+): string | null {
+  const runtime = agent.runtime?.trim();
+  if (runtime) return runtime;
+  return hermesPubkeys.has(agent.pubkey.toLowerCase()) ? "Hermes" : null;
+}
+
+/** `remembered` without agents the relay no longer lists on their device. */
+export function withoutDisconnected(
+  remembered: readonly RememberedPairing[],
+  devices: readonly AuthDevice[],
+): RememberedPairing[] {
+  const listed = new Map(
+    devices
+      .filter((device) => device.agents?.length)
+      .map((device) => [
+        device.id,
+        new Set(device.agents?.map(({ pubkey }) => pubkey.toLowerCase())),
+      ]),
+  );
+  return remembered.filter(
+    (entry) => listed.get(entry.deviceId)?.has(entry.agentPubkey) ?? true,
+  );
 }
 
 const HEX64 = /^[0-9a-f]{64}$/;

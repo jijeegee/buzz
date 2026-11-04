@@ -25,6 +25,7 @@ import {
   mergeRemembered,
   parseRemembered,
   type RememberedPairing,
+  withoutDisconnected,
 } from "./pairingLogic";
 
 const AVAILABLE_KEY = ["external-connect-available"] as const;
@@ -226,8 +227,13 @@ export function useExternalAgentGroups(): {
     [hermesEntries],
   );
   const hermesDeviceIds = React.useMemo(
-    () => new Set(hermesEntries.map((entry) => entry.deviceId)),
-    [hermesEntries],
+    () =>
+      new Set(
+        withoutDisconnected(hermesEntries, devices.data ?? []).map(
+          (entry) => entry.deviceId,
+        ),
+      ),
+    [devices.data, hermesEntries],
   );
   return {
     groups,

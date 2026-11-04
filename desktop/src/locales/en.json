@@ -11347,9 +11347,13 @@
   "@settings.device.signOut": {
     "description": "Settings > Devices, button that signs out one device. Short."
   },
-  "settings.device.hermesOn": "Hermes on {device}",
-  "@settings.device.hermesOn": {
-    "description": "Settings > Devices: name of the row for the Hermes agent connected on a computer; {device} is the computer name. Hermes is a product name."
+  "settings.device.externalAgent": "External Agents",
+  "@settings.device.externalAgent": {
+    "description": "Settings > Devices: row under a computer for one external agent connected on it."
+  },
+  "settings.device.externalAgentRuntime": "External Agents - {runtime}",
+  "@settings.device.externalAgentRuntime": {
+    "description": "Settings > Devices: row under a computer for one external agent connected on it; {runtime} is a product name such as Hermes."
   },
   "settings.device.disconnect": "Disconnect",
   "@settings.device.disconnect": {
@@ -24582,6 +24586,18 @@
   "agents.external.disconnected": "{device} is disconnected.",
   "@agents.external.disconnected": {
     "description": "Toast after disconnecting another computer's agents. {device} is that computer's name."
+  },
+  "agents.external.disconnectAgentTitle": "Disconnect {name}?",
+  "@agents.external.disconnectAgentTitle": {
+    "description": "Confirmation title for disconnecting one external agent; {name} is the agent's name."
+  },
+  "agents.external.disconnectAgentDescription": "{name} stops working with your account. To use it again, connect it with a new code.",
+  "@agents.external.disconnectAgentDescription": {
+    "description": "Confirmation text for disconnecting one external agent; {name} is the agent's name."
+  },
+  "agents.external.agentDisconnected": "{name} is disconnected.",
+  "@agents.external.agentDisconnected": {
+    "description": "Toast after disconnecting one external agent; {name} is the agent's name."
   },
   "agents.external.disconnectFailed": "Couldn't disconnect. Try again.",
   "@agents.external.disconnectFailed": {
