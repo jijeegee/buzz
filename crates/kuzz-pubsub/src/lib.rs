@@ -73,6 +73,9 @@ pub struct ChannelEvent {
     pub topic: EventTopic,
     /// The Nostr event payload.
     pub event: nostr::Event,
+    /// The channel's order number for this event, when the publishing relay
+    /// knew it and sent the sequence envelope; `None` otherwise.
+    pub channel_sequence: Option<i64>,
 }
 
 /// Configuration for the pub/sub subsystem.
@@ -82,6 +85,9 @@ pub struct PubSubConfig {
     pub redis_url: String,
     /// Delay before unsubscribing after the last local interest is released.
     pub unsubscribe_debounce: Duration,
+    /// Publish known channel sequences in the `{"v":1,...}` envelope
+    /// (`KUZZ_PUBSUB_SEQ_ENVELOPE`). Off: bare event JSON only.
+    pub seq_envelope: bool,
 }
 
 impl PubSubConfig {
@@ -93,12 +99,19 @@ impl PubSubConfig {
         Self {
             redis_url: redis_url.into(),
             unsubscribe_debounce: Self::DEFAULT_UNSUBSCRIBE_DEBOUNCE,
+            seq_envelope: false,
         }
     }
 
     /// Override the unsubscribe debounce delay.
     pub fn with_unsubscribe_debounce(mut self, debounce: Duration) -> Self {
         self.unsubscribe_debounce = debounce;
+        self
+    }
+
+    /// Turn the channel-sequence envelope on or off for published events.
+    pub fn with_seq_envelope(mut self, seq_envelope: bool) -> Self {
+        self.seq_envelope = seq_envelope;
         self
     }
 }
@@ -110,6 +123,8 @@ pub struct PubSubManager {
     redis_url: String,
     /// Delay before unsubscribing after the last local interest is released.
     unsubscribe_debounce: Duration,
+    /// Whether published events with a known sequence use the envelope.
+    seq_envelope: bool,
     /// Local desired topic refcounts; source of truth across Redis reconnects.
     desired_topics: subscriber::DesiredTopics,
     subscription_tx: mpsc::Sender<subscriber::SubscriptionCommand>,
@@ -143,6 +158,7 @@ impl PubSubManager {
             pool,
             redis_url: config.redis_url,
             unsubscribe_debounce: config.unsubscribe_debounce,
+            seq_envelope: config.seq_envelope,
             desired_topics: Arc::new(Mutex::new(HashMap::new())),
             subscription_tx,
             subscription_rx: Mutex::new(Some(subscription_rx)),
@@ -407,7 +423,29 @@ impl PubSubManager {
         topic: EventTopic,
         event: &nostr::Event,
     ) -> Result<i64, PubSubError> {
-        publisher::publish_event(&self.pool, ctx, topic, event).await
+        self.publish_event_with_sequence(ctx, topic, event, None)
+            .await
+    }
+
+    /// Publish an event with its channel order number, when known. The
+    /// number travels only when the sequence envelope is enabled; see
+    /// [`publisher::encode_event_payload`].
+    pub async fn publish_event_with_sequence(
+        &self,
+        ctx: &TenantContext,
+        topic: EventTopic,
+        event: &nostr::Event,
+        channel_sequence: Option<i64>,
+    ) -> Result<i64, PubSubError> {
+        publisher::publish_event(
+            &self.pool,
+            ctx,
+            topic,
+            event,
+            channel_sequence,
+            self.seq_envelope,
+        )
+        .await
     }
 
     /// Set presence with 180s TTL. Call on connect and every 60s heartbeat.
@@ -514,6 +552,46 @@ mod tests {
         assert_eq!(received.community_id, ctx.community());
         assert_eq!(received.topic, EventTopic::Channel(channel_id));
         assert_eq!(received.event.id, event_id);
+        assert_eq!(received.channel_sequence, None);
+    }
+
+    #[tokio::test]
+    #[ignore = "requires Redis"]
+    async fn test_sequence_envelope_roundtrip() {
+        let manager = Arc::new(
+            PubSubManager::with_config(
+                PubSubConfig::new("redis://127.0.0.1:6379").with_seq_envelope(true),
+                make_test_pool(),
+            )
+            .await
+            .expect("Failed to create PubSubManager"),
+        );
+        let mut rx = manager.subscribe_local();
+
+        let manager_clone = manager.clone();
+        tokio::spawn(async move { manager_clone.run_subscriber().await });
+        tokio::time::sleep(tokio::time::Duration::from_millis(200)).await;
+
+        let ctx = ctx(0xaaaa, "a.example");
+        let topic = EventTopic::Channel(Uuid::new_v4());
+        let event = EventBuilder::new(Kind::TextNote, "hello envelope")
+            .tags([])
+            .sign_with_keys(&Keys::generate())
+            .expect("signing failed");
+
+        manager.retain_topic(&ctx, topic).await;
+        tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        manager
+            .publish_event_with_sequence(&ctx, topic, &event, Some(9))
+            .await
+            .expect("publish failed");
+
+        let received = tokio::time::timeout(tokio::time::Duration::from_secs(2), rx.recv())
+            .await
+            .expect("timeout")
+            .expect("channel closed");
+        assert_eq!(received.event.id, event.id);
+        assert_eq!(received.channel_sequence, Some(9));
     }
 
     #[tokio::test]
@@ -705,7 +783,10 @@ mod tests {
             PubSubConfig::DEFAULT_UNSUBSCRIBE_DEBOUNCE
         );
 
+        assert!(!config.seq_envelope, "sequence envelope defaults to off");
+
         let config = config.with_unsubscribe_debounce(Duration::from_millis(42));
         assert_eq!(config.unsubscribe_debounce, Duration::from_millis(42));
+        assert!(config.with_seq_envelope(true).seq_envelope);
     }
 }

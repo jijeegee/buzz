@@ -5,9 +5,9 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::StreamExt;
-use nostr::JsonUtil;
 use tokio::sync::{broadcast, mpsc, Mutex};
 
+use crate::publisher::decode_event_payload;
 use crate::topic::EventTopicKey;
 use crate::ChannelEvent;
 
@@ -145,8 +145,8 @@ async fn connect_and_subscribe(
                     }
                 };
 
-                let event = match nostr::Event::from_json(&payload) {
-                    Ok(e) => e,
+                let (event, channel_sequence) = match decode_event_payload(&payload) {
+                    Ok(decoded) => decoded,
                     Err(e) => {
                         tracing::warn!("Failed to deserialize event from pub/sub: {e}");
                         continue;
@@ -157,6 +157,7 @@ async fn connect_and_subscribe(
                     community_id: topic_key.community_id,
                     topic: topic_key.topic,
                     event,
+                    channel_sequence,
                 };
 
                 if let Err(_e) = broadcast_tx.send(channel_event) {

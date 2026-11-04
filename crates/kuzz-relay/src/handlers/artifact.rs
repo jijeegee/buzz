@@ -74,10 +74,11 @@ async fn publish(state: &Arc<AppState>, tenant: &TenantContext, stored: &StoredE
     state.mark_local_event(tenant.community(), &stored.event.id);
     if let Err(e) = state
         .pubsub
-        .publish_event(
+        .publish_event_with_sequence(
             tenant,
             kuzz_pubsub::EventTopic::Channel(channel),
             &stored.event,
+            stored.channel_sequence,
         )
         .await
     {

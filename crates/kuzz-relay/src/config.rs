@@ -327,6 +327,14 @@ pub struct Config {
     /// rollback for migration 0068.
     pub chat_state_writes: bool,
 
+    /// Redis sequence envelope (`KUZZ_PUBSUB_SEQ_ENVELOPE`, default off).
+    ///
+    /// On: channel events with a known order number are published to Redis
+    /// as `{"v":1,"event":{...},"channel_sequence":N}`. Off: bare event JSON,
+    /// as before. Every relay reads both, so turn it on only after all pods
+    /// run a build that reads the envelope.
+    pub pubsub_seq_envelope: bool,
+
     /// Optional override for ephemeral channel TTL (in seconds).
     /// When set, any channel created with a TTL tag will use this value instead
     /// of the client-provided one. Useful for testing ephemeral expiry quickly.
@@ -1207,6 +1215,7 @@ impl Config {
         let age_attestation_required = parse_optional_bool("KUZZ_AGE_ATTESTATION_REQUIRED")?;
         let audit_enabled = parse_bool("KUZZ_AUDIT_ENABLED", true)?;
         let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
+        let pubsub_seq_envelope = parse_bool("KUZZ_PUBSUB_SEQ_ENVELOPE", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
             && !age_attestation_required
@@ -1438,6 +1447,7 @@ impl Config {
             media_uploads_per_minute,
             audit_enabled,
             chat_state_writes,
+            pubsub_seq_envelope,
             ephemeral_ttl_override,
             git_repo_path,
             git_pack_cache_path,
@@ -1681,6 +1691,10 @@ mod tests {
         assert!(
             !config.chat_state_writes,
             "chat-state writes must default to off"
+        );
+        assert!(
+            !config.pubsub_seq_envelope,
+            "Redis sequence envelope must default to off"
         );
         assert!(config.slow_client_grace_limit > 0);
         assert!(

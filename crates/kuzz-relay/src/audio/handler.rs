@@ -3401,7 +3401,12 @@ async fn commit_participant_join(
 
         if let Err(e) = state
             .pubsub
-            .publish_event(tenant, EventTopic::Channel(parent_channel_id), &event)
+            .publish_event_with_sequence(
+                tenant,
+                EventTopic::Channel(parent_channel_id),
+                &event,
+                stored.channel_sequence,
+            )
             .await
         {
             state
@@ -3603,7 +3608,12 @@ async fn emit_participant_event(
     // 4. Cross-node broadcast via Redis pub/sub.
     if let Err(e) = state
         .pubsub
-        .publish_event(tenant, EventTopic::Channel(parent_channel_id), &event)
+        .publish_event_with_sequence(
+            tenant,
+            EventTopic::Channel(parent_channel_id),
+            &event,
+            stored.channel_sequence,
+        )
         .await
     {
         state
