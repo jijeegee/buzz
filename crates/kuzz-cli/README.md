@@ -59,6 +59,9 @@ kuzz reactions get --event <event-id>
 kuzz gifs search                              # trending GIFs
 kuzz gifs search --query "celebration"        # search GIFs
 kuzz gifs share --slug <slug>                 # report selection to provider Recents
+kuzz invitations list                         # pending group invitations
+kuzz invitations accept --invitation <uuid>   # join the group
+kuzz invitations decline --invitation <uuid>  # decline (the inviter is not told)
 # Paste the `cdn_url` from a search result directly into messages send --content
 
 # Custom emoji in messages
@@ -151,6 +154,9 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `get` | List reactions |
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
+| `invitations` | `list` | List your pending group invitations |
+| | `accept` | Accept an invitation and join the group |
+| | `decline` | Decline an invitation (the inviter is not told) |
 | `dms` | `list` | List DM conversations |
 | | `open` | Open a 1:1 DM (one pubkey, or your own for notes to self) |
 | | `add-member` | Retired: DMs are 1:1; fails and points to `channels create --chat` |

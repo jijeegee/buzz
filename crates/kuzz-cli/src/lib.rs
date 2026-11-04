@@ -349,6 +349,9 @@ once), key_in_use, device_limit, rate_limited.",
     /// Search and share GIFs via the relay's KLIPY proxy
     #[command(subcommand)]
     Gifs(GifsCmd),
+    /// List, accept, and decline group invitations sent to you
+    #[command(subcommand)]
+    Invitations(InvitationsCmd),
     /// List, open, and manage direct messages
     #[command(subcommand)]
     Dms(DmsCmd),
@@ -1252,6 +1255,27 @@ pub enum GifsCmd {
         /// Provider GIF slug from a search result
         #[arg(long)]
         slug: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum InvitationsCmd {
+    /// List your pending group invitations, newest first.
+    ///
+    /// Invitations are not pushed to you, so check here when someone says they
+    /// invited you.
+    List,
+    /// Accept an invitation and join the group
+    Accept {
+        /// Invitation id from `kuzz invitations list`
+        #[arg(long)]
+        invitation: String,
+    },
+    /// Decline an invitation (the inviter is not told)
+    Decline {
+        /// Invitation id from `kuzz invitations list`
+        #[arg(long)]
+        invitation: String,
     },
 }
 
@@ -2860,6 +2884,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
+        Cmd::Invitations(sub) => commands::invitations::dispatch(sub, &client).await,
         Cmd::Dms(sub) => commands::dms::dispatch(sub, &client).await,
         Cmd::Users(sub) => commands::users::dispatch(sub, &client, &cli.format).await,
         Cmd::Workflows(sub) => commands::workflows::dispatch(sub, &client).await,
@@ -3180,6 +3205,7 @@ mod tests {
             "feed",
             "gifs",
             "goals",
+            "invitations",
             "issues",
             "media",
             "mem",
