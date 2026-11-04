@@ -54,6 +54,7 @@ import 'package:kuzz/features/channels/message_action_backdrop_state.dart';
 import 'package:kuzz/features/channels/message_actions.dart';
 import 'package:kuzz/features/channels/mobile_huddle_controller.dart';
 import 'package:kuzz/features/channels/reaction_row.dart';
+import 'package:kuzz/features/channels/direct_thread_page.dart';
 import 'package:kuzz/features/channels/thread_detail_page.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
 import 'package:kuzz/features/channels/thread_root_provider.dart';
