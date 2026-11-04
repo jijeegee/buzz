@@ -62,7 +62,8 @@ pub use principal::{
 pub use provider_tokens::ProviderRevokeTokenRecord;
 pub use purge::{PurgeCounts, PurgeOutcome};
 pub use session::{
-    DeviceKey, DeviceKeyRotation, DeviceRecord, HostedAgent, LoginSession, RefreshOutcome,
+    AgentDisconnect, DeviceKey, DeviceKeyRotation, DeviceRecord, HostedAgent, LoginSession,
+    RefreshOutcome,
 };
 
 /// Maximum live (non-revoked) devices per principal.

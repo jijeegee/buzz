@@ -66,6 +66,14 @@ pub struct DeviceRecord {
     pub agents: Vec<HostedAgent>,
 }
 
+/// What [`Db::disconnect_external_agent`](crate::Db) did.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AgentDisconnect {
+    /// It was the device's last agent: the device was revoked too, and these
+    /// tokens with it.
+    pub device_revoked: Option<Vec<[u8; 32]>>,
+}
+
 /// An external agent connected on a device.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct HostedAgent {
@@ -462,9 +470,20 @@ pub(super) async fn revoke_device(
     if owned.is_none() {
         return Ok(None);
     }
+    let revoked = revoke_device_in(&mut tx, device_id, reason).await?;
+    tx.commit().await?;
+    Ok(Some(revoked))
+}
+
+/// [`revoke_device`]'s work, with the owner locked.
+async fn revoke_device_in(
+    tx: &mut sqlx::Transaction<'static, sqlx::Postgres>,
+    device_id: Uuid,
+    reason: RevokeReason,
+) -> Result<Vec<[u8; 32]>> {
     sqlx::query("UPDATE devices SET revoked_at = COALESCE(revoked_at, now()) WHERE id = $1")
         .bind(device_id)
-        .execute(&mut *tx)
+        .execute(&mut **tx)
         .await?;
     let sessions: Vec<Uuid> = sqlx::query_scalar(
         "UPDATE sessions SET revoked_at = now(), revoked_reason = $2 \
@@ -472,10 +491,10 @@ pub(super) async fn revoke_device(
     )
     .bind(device_id)
     .bind(reason.as_str())
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
-    let mut revoked = revoke_session_tokens(&mut tx, &sessions, reason).await?;
-    expire_open_pairings(&mut tx, &[device_id]).await?;
+    let mut revoked = revoke_session_tokens(tx, &sessions, reason).await?;
+    expire_open_pairings(tx, &[device_id]).await?;
     let bot_rows: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE access_tokens SET revoked_at = now(), revoked_reason = 'device_revoked' \
          WHERE kind = 'bot' AND revoked_at IS NULL AND bot_id IN \
@@ -483,11 +502,53 @@ pub(super) async fn revoke_device(
          RETURNING token_hash",
     )
     .bind(device_id)
-    .fetch_all(&mut *tx)
+    .fetch_all(&mut **tx)
     .await?;
     revoked.extend(hashes_from_rows(bot_rows)?);
+    Ok(revoked)
+}
+
+/// Take external agent `agent` off `principal`'s device `device_id`: its key
+/// is refused from now on, and pairing it again rebinds it. Returns
+/// `None` when the agent isn't on that device. The last agent takes the
+/// device with it, in one step: pairing is serialized by the owner lock, so no
+/// new agent lands on a device about to go. Then returns the revoked tokens.
+pub(super) async fn disconnect_external_agent(
+    pool: &PgPool,
+    principal: &PrincipalId,
+    device_id: Uuid,
+    agent: &[u8; 32],
+) -> Result<Option<AgentDisconnect>> {
+    let mut tx = begin(pool).await?;
+    super::lock_subject(&mut tx, principal).await?;
+    let unbound = sqlx::query(
+        "UPDATE key_registry SET host_device_id = NULL \
+         WHERE pubkey = $1 AND principal_id = $2 AND host_device_id = $3 \
+           AND role = 'external' AND revoked_at IS NULL",
+    )
+    .bind(agent.as_slice())
+    .bind(principal.as_bytes().as_slice())
+    .bind(device_id)
+    .execute(&mut *tx)
+    .await?
+    .rows_affected();
+    if unbound == 0 {
+        return Ok(None);
+    }
+    let left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM key_registry \
+         WHERE host_device_id = $1 AND role = 'external' AND revoked_at IS NULL",
+    )
+    .bind(device_id)
+    .fetch_one(&mut *tx)
+    .await?;
+    let device_revoked = if left == 0 {
+        Some(revoke_device_in(&mut tx, device_id, RevokeReason::DeviceRevoked).await?)
+    } else {
+        None
+    };
     tx.commit().await?;
-    Ok(Some(revoked))
+    Ok(Some(AgentDisconnect { device_revoked }))
 }
 
 /// Revoke one session of `principal` and its tokens. The device, its key,
@@ -814,6 +875,18 @@ impl crate::Db {
         reason: super::RevokeReason,
     ) -> Result<Option<Vec<[u8; 32]>>> {
         revoke_device(&self.pool, principal, device_id, reason).await
+    }
+
+    /// Take one external agent off a device of `principal`; see
+    /// [`disconnect_external_agent`].
+    #[datastore_span(name = "disconnect_external_agent", system = "postgresql")]
+    pub async fn disconnect_external_agent(
+        &self,
+        principal: &PrincipalId,
+        device_id: Uuid,
+        agent: &[u8; 32],
+    ) -> Result<Option<AgentDisconnect>> {
+        disconnect_external_agent(&self.pool, principal, device_id, agent).await
     }
 
     /// Revoke one session of `principal` and its tokens; the device stays.

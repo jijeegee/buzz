@@ -85,6 +85,10 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             "/auth/devices/{id}",
             delete(session::revoke_device).patch(session::rename_device),
         )
+        .route(
+            "/auth/devices/{id}/agents/{pubkey}",
+            delete(session::disconnect_agent),
+        )
         .route("/auth/sessions/revoke-others", post(session::revoke_others))
         .route("/auth/sessions/end", post(session::end_session))
         .route("/auth/device/rotate", post(session::rotate_device_key))

@@ -419,6 +419,42 @@ pub(super) async fn revoke_device(
     }
 }
 
+/// `DELETE /auth/devices/{id}/agents/{pubkey}`: disconnect one external agent
+/// of a computer; the others stay. The last one takes the computer's external
+/// device with it, like `DELETE /auth/devices/{id}`.
+pub(super) async fn disconnect_agent(
+    State(state): State<Arc<AppState>>,
+    Path((device_id, pubkey)): Path<(Uuid, String)>,
+    headers: HeaderMap,
+) -> Response {
+    let binding = match authenticate_user_session(&state, &headers).await {
+        Ok(binding) => binding,
+        Err(response) => return response,
+    };
+    let Ok(agent) = nostr::PublicKey::from_hex(&pubkey) else {
+        return not_found("agent not found");
+    };
+    let agent = agent.to_bytes();
+    match state
+        .db
+        .disconnect_external_agent(&binding.principal, device_id, &agent)
+        .await
+    {
+        Ok(Some(done)) => {
+            let reason = RevokeReason::DeviceRevoked.as_str();
+            publish_key_revocation(&state, &[], &[agent], reason).await;
+            if let Some(revoked) = done.device_revoked {
+                publish_revocations(&state, &revoked, reason, None).await;
+                publish_key_revocation(&state, &[device_id], &[], reason).await;
+            }
+            tracing::info!(principal = %binding.principal, device = %device_id, "auth.agent_disconnected");
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(None) => not_found("agent not found"),
+        Err(error) => internal("disconnect_external_agent", &error),
+    }
+}
+
 /// `POST /auth/sessions/revoke-others` — human sessions only (bots untouched).
 pub(super) async fn revoke_others(
     State(state): State<Arc<AppState>>,

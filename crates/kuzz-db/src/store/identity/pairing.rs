@@ -136,8 +136,9 @@ enum KeyUse {
     Free,
     /// An agent bound to `owner` by the 0080 backfill, with no host or copy.
     Unbound,
-    /// An external key of `owner` whose computer was disconnected (its
-    /// device revoked or gone): pairing it again rebinds it.
+    /// An external key of `owner` that was disconnected, alone or with its
+    /// computer (no host, or its device revoked or gone): pairing it again
+    /// rebinds it.
     Disconnected,
     /// An account key, a registered key, or a key some profile attests to
     /// another owner.
