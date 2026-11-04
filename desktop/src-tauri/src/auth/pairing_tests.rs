@@ -33,7 +33,7 @@ fn default_home() -> PathBuf {
 
 #[test]
 fn hermes_pairing_runs_exactly_this_argv() {
-    let args = hermes_pair_args("wss://gateway.kuzz.app", "7QKF-M2XD-9RTB");
+    let args = hermes_pair_args("wss://gateway.kuzz.app", "7QKF-M2XD-9RTB", None);
     let expected: Vec<OsString> = [
         "pair",
         "--hermes",
@@ -86,13 +86,16 @@ fn no_hermes_without_folders_or_with_relative_paths() {
 #[test]
 fn hermes_flag_is_read_from_pair_help() {
     assert!(lists_hermes_flag(
-        "Usage: kuzz pair <CODE>\n      --hermes  Then install the Hermes plugin\n      --no-restart  With --hermes"
+        "Usage: kuzz pair <CODE>\n      --hermes  Then install the Hermes plugin\n      --no-restart  With --hermes\n      --hermes-home <DIR>  The profile"
     ));
     assert!(lists_hermes_flag(
+        "Usage: kuzz pair [--hermes] [--no-restart] [--hermes-home=DIR] <CODE>"
+    ));
+    // An older kuzz.
+    assert!(!lists_hermes_flag("Usage: kuzz pair [--hermes] <CODE>"));
+    assert!(!lists_hermes_flag(
         "Usage: kuzz pair [--hermes] [--no-restart] <CODE>"
     ));
-    // An older kuzz without --no-restart.
-    assert!(!lists_hermes_flag("Usage: kuzz pair [--hermes] <CODE>"));
     assert!(!lists_hermes_flag(
         "Usage: kuzz pair <CODE>\n  --hermes-home <DIR>"
     ));
@@ -136,4 +139,145 @@ fn a_restarted_gateway_gets_no_kuzz_settings() {
     for name in ["PATH", "HERMES_HOME", "XKUZZ_A"] {
         assert!(!is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
     }
+}
+
+#[test]
+fn a_named_profile_is_passed_by_its_folder() {
+    let home = PathBuf::from(HOME).join("profiles").join("work");
+    let args = hermes_pair_args("wss://r", "CODE", Some(&home));
+    let expected: Vec<OsString> = [
+        OsString::from("pair"),
+        "--hermes".into(),
+        "--no-restart".into(),
+        "--hermes-home".into(),
+        home.clone().into(),
+        "--relay".into(),
+        "wss://r".into(),
+        "CODE".into(),
+    ]
+    .into_iter()
+    .collect();
+    assert_eq!(args, expected);
+}
+
+#[test]
+fn only_profiles_a_person_made_are_offered() {
+    for name in [
+        "work",
+        "exttest",
+        "a_b-1",
+        "kuzz-short",
+        "buzz-2911eff5fdf2613",
+    ] {
+        assert!(is_person_profile(name), "{name}");
+    }
+    for name in [
+        "default",
+        "kuzz-2911eff5fdf2613a",
+        "buzz-36cbc1babbc441c6",
+        ".deleted",
+        "-x",
+        "Work",
+        "",
+    ] {
+        assert!(!is_person_profile(name), "{name}");
+    }
+}
+
+#[test]
+fn profiles_are_read_each_with_its_own_pin_and_owner() {
+    let root = tempfile::tempdir().unwrap();
+    let (pin, owner) = ("a".repeat(64), "B".repeat(64));
+    let profile = |name: &str, env: Option<String>| {
+        let home = root.path().join("profiles").join(name);
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::write(home.join("config.yaml"), b"").unwrap();
+        if let Some(env) = env {
+            std::fs::write(home.join(".env"), env).unwrap();
+        }
+    };
+    profile(
+        "work",
+        Some(format!(
+            "# c\nexport KUZZ_PAIRED_AGENT='{pin}'\nOTHER=1\nKUZZ_OWNER_PUBKEY={owner}\n"
+        )),
+    );
+    profile("home", None);
+    profile("kuzz-2911eff5fdf2613a", None);
+    std::fs::create_dir_all(root.path().join("profiles").join("no-config")).unwrap();
+    std::fs::write(root.path().join(".env"), "KUZZ_PAIRED_AGENT=nope\n").unwrap();
+
+    let views = hermes_profiles(root.path());
+    let names: Vec<&str> = views.iter().map(|view| view.name.as_str()).collect();
+    assert_eq!(names, ["default", "home", "work"]);
+    assert!(views[0].is_default);
+    assert_eq!(views[0].paired_agent, None);
+    assert_eq!(views[2].paired_agent.as_deref(), Some(pin.as_str()));
+    assert_eq!(views[2].owner, Some(owner.to_ascii_lowercase()));
+    assert_eq!(hermes_profile_target(root.path(), "default"), Some(None));
+    assert_eq!(
+        hermes_profile_target(root.path(), "work"),
+        Some(Some(root.path().join("profiles").join("work")))
+    );
+    assert_eq!(
+        hermes_profile_target(root.path(), "kuzz-2911eff5fdf2613a"),
+        None
+    );
+    // Not served by the host: left out.
+    profile("own-gateway", None);
+    std::fs::write(
+        root.path().join("profiles/own-gateway/config.yaml"),
+        b"gateway:\n  standalone: true\n",
+    )
+    .unwrap();
+    profile("stopped", None);
+    std::fs::write(root.path().join("profiles/stopped/gateway.parked"), b"").unwrap();
+    profile("gone", None);
+    std::fs::create_dir_all(root.path().join("profiles/.deleted/gone")).unwrap();
+    assert_eq!(hermes_profiles(root.path()).len(), 3);
+    assert_eq!(hermes_profile_target(root.path(), "../x"), None);
+}
+
+#[test]
+fn a_shared_bot_token_blocks_named_profiles_only() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("profiles").join("work");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.yaml"), b"").unwrap();
+    let state = |reason: &str| {
+        std::fs::write(
+            root.path().join("gateway_state.json"),
+            serde_json::json!({ "multiplex_standalone_reason": reason }).to_string(),
+        )
+        .unwrap();
+    };
+    state("Profiles 'default' and 'work' both hold the same telegram credential");
+    let views = hermes_profiles(root.path());
+    assert_eq!(views[0].blocked_reason, None);
+    assert!(views[1].blocked_reason.is_some());
+    assert_eq!(hermes_profile_target(root.path(), "work"), None);
+    assert_eq!(hermes_profile_target(root.path(), "default"), Some(None));
+    // Any other reason blocks too.
+    state("Profile 'work' runs its own gateway");
+    assert_eq!(hermes_profile_target(root.path(), "work"), None);
+    // Cleared by the restart after Connect.
+    state("only one profile exists (nothing to multiplex)");
+    assert!(hermes_profile_target(root.path(), "work").is_some());
+}
+
+#[test]
+fn a_profile_env_saved_with_a_bom_or_odd_bytes_is_still_read() {
+    let root = tempfile::tempdir().unwrap();
+    let home = root.path().join("profiles").join("work");
+    std::fs::create_dir_all(&home).unwrap();
+    std::fs::write(home.join("config.yaml"), b"").unwrap();
+    let pin = "a".repeat(64);
+    let mut env = "\u{feff}KUZZ_PAIRED_AGENT=".as_bytes().to_vec();
+    env.extend_from_slice(pin.as_bytes());
+    env.extend_from_slice(b"\nNOTE=\xff\n");
+    std::fs::write(home.join(".env"), env).unwrap();
+    assert_eq!(
+        hermes_profiles(root.path())[1].paired_agent.as_deref(),
+        Some(pin.as_str())
+    );
 }

@@ -551,4 +551,37 @@ fn no_restart_goes_with_hermes_only() {
     };
     assert!(hermes && no_restart);
     assert!(crate::parse_args(["kuzz", "pair", "--no-restart", CODE]).is_err());
+    assert!(crate::parse_args(["kuzz", "pair", "--hermes-home", "x", CODE]).is_err());
+    let cli = crate::parse_args(["kuzz", "pair", "--hermes", "--hermes-home", "x", CODE])
+        .expect("parses");
+    let crate::Cmd::Pair { hermes_home, .. } = cli.command else {
+        panic!("pair");
+    };
+    assert_eq!(hermes_home, Some(std::path::PathBuf::from("x")));
+}
+
+#[test]
+fn the_default_profile_stays_on_each_owners_previous_agent() {
+    let owned = |name: &str, at: i64, owner: &str| Pairing {
+        owner: Some(owner.to_owned()),
+        ..pairing_at("https://relay.example", name, at, true)
+    };
+    let new = owned("new", 30, "me");
+    let older = owned("older", 10, "me");
+    let newer = owned("newer", 20, "me");
+    let other_account = owned("other", 25, "them");
+    let mut elsewhere = owned("elsewhere", 40, "me");
+    elsewhere.relay = "https://other.example".into();
+    let expected = vec![
+        format!("me={}", newer.agent_pubkey),
+        format!("them={}", other_account.agent_pubkey),
+    ];
+    assert_eq!(
+        previous_agents(
+            vec![older, newer, other_account, elsewhere, new.clone()],
+            &new
+        ),
+        expected
+    );
+    assert!(previous_agents(vec![new.clone()], &new).is_empty());
 }

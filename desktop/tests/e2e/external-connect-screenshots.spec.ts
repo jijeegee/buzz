@@ -140,6 +140,17 @@ async function installExternalConnectBridge(page: Page) {
               return {
                 found: state.hermesFound,
                 canConnect: state.hermesFound,
+                profiles: state.hermesFound
+                  ? [
+                      {
+                        name: "default",
+                        isDefault: true,
+                        pairedAgent: null,
+                        owner: null,
+                        blockedReason: null,
+                      },
+                    ]
+                  : [],
               };
             case "get_user_profile": {
               // The external agent's own kind:0 profile.

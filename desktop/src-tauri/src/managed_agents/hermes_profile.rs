@@ -275,17 +275,61 @@ fn seed_profile_env(profile: &HermesProfile) -> Result<(), String> {
     })
 }
 
-/// Whether a `.env` key belongs to Kuzz rather than to the agent's Hermes:
-/// any `KUZZ_*` key, every reserved launch key, and `HERMES_HOME`.
+/// What makes a Hermes channel connect as a bot (Hermes's
+/// `credential_env_keys`, without Buzz's). A managed agent has no gateway,
+/// and a copied one stops the Hermes gateway from serving profiles together
+/// (one bot, two profiles).
+const CHANNEL_TOKEN_KEYS: [&str; 33] = [
+    "BLUEBUBBLES_PASSWORD",
+    "DINGTALK_CLIENT_ID",
+    "DINGTALK_CLIENT_SECRET",
+    "DISCORD_BOT_TOKEN",
+    "EMAIL_PASSWORD",
+    "FEISHU_APP_ID",
+    "FEISHU_APP_SECRET",
+    "GOOGLE_CHAT_SERVICE_ACCOUNT_JSON",
+    "HASS_TOKEN",
+    "LINE_CHANNEL_ACCESS_TOKEN",
+    "LINE_CHANNEL_SECRET",
+    "MATRIX_ACCESS_TOKEN",
+    "MATRIX_PASSWORD",
+    "MATTERMOST_TOKEN",
+    "PHOTON_PROJECT_ID",
+    "PHOTON_PROJECT_SECRET",
+    "QQ_APP_ID",
+    "QQ_CLIENT_SECRET",
+    "SLACK_APP_TOKEN",
+    "SLACK_BOT_TOKEN",
+    "TEAMS_CLIENT_ID",
+    "TEAMS_CLIENT_SECRET",
+    "TELEGRAM_BOT_TOKEN",
+    "TWILIO_ACCOUNT_SID",
+    "TWILIO_AUTH_TOKEN",
+    "WECOM_BOT_ID",
+    "WECOM_CALLBACK_CORP_SECRET",
+    "WECOM_SECRET",
+    "WEIXIN_TOKEN",
+    "WHATSAPP_CLOUD_ACCESS_TOKEN",
+    "YUANBAO_APP_ID",
+    "YUANBAO_APP_KEY",
+    "YUANBAO_APP_SECRET",
+];
+
+/// Whether a `.env` key must not be copied into a managed agent's profile:
+/// any `KUZZ_*`/`BUZZ_*` key, every reserved launch key, `HERMES_HOME`, and
+/// channel bot tokens.
 fn is_kuzz_owned_env_key(key: &str) -> bool {
-    key.to_ascii_uppercase().starts_with("KUZZ_")
+    let upper = key.to_ascii_uppercase();
+    upper.starts_with("KUZZ_")
+        || upper.starts_with("BUZZ_")
         || key.eq_ignore_ascii_case(HERMES_HOME_ENV_VAR)
+        || CHANNEL_TOKEN_KEYS.contains(&upper.as_str())
         || super::is_reserved_env_key(key)
 }
 
 /// The key of a dotenv assignment line (`KEY=value` or `export KEY=value`),
 /// or `None` for blanks, comments, and lines without `=`.
-fn env_line_key(line: &str) -> Option<&str> {
+pub(crate) fn env_line_key(line: &str) -> Option<&str> {
     let line = line.trim_start();
     if line.starts_with('#') {
         return None;

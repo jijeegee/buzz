@@ -10,6 +10,7 @@ import {
   pairingDeadline,
   secondsLeft,
   startPairingPoll,
+  hermesRows,
 } from "./pairingLogic.ts";
 
 const AGENT = "a".repeat(64);
@@ -313,4 +314,80 @@ test("remembered: a Hermes card connection stays marked Hermes", () => {
   );
   // A disconnected Hermes computer is forgotten with it.
   assert.deepEqual(mergeRemembered([hermes], [], new Set(["d9"])), []);
+});
+
+const hermesProfile = (name, fields = {}) => ({
+  name,
+  isDefault: name === "default",
+  pairedAgent: null,
+  owner: null,
+  blockedReason: null,
+  ...fields,
+});
+const hermesStates = (profiles, owner, connected = [], device = false) =>
+  hermesRows(profiles, owner, new Set(connected), device).map(
+    (row) => row.state,
+  );
+
+test("hermes rows: a profile is connected when its pinned agent is", () => {
+  const pinned = { pairedAgent: "a1", owner: "me" };
+  assert.deepEqual(
+    hermesStates([hermesProfile("work", pinned)], "me", ["a1"]),
+    ["connected"],
+  );
+  // Disconnected since: connect again.
+  assert.deepEqual(hermesStates([hermesProfile("work", pinned)], "me"), [
+    "connect",
+  ]);
+});
+
+test("hermes rows: a default profile from before pins counts as connected", () => {
+  const old = [hermesProfile("default", { owner: "me" })];
+  assert.deepEqual(hermesStates(old, "me", [], true), ["connected"]);
+  // Disconnected since: it can connect again.
+  assert.deepEqual(hermesStates(old, "me"), ["connect"]);
+  assert.deepEqual(
+    hermesStates([hermesProfile("work", { owner: "me" })], "me"),
+    ["connect"],
+  );
+});
+
+test("hermes rows: another account's profile says so", () => {
+  assert.deepEqual(
+    hermesStates([hermesProfile("work", { owner: "other" })], "me"),
+    ["otherAccount"],
+  );
+});
+
+test("hermes rows: a pinned profile Hermes won't serve is blocked", () => {
+  assert.deepEqual(
+    hermesStates(
+      [hermesProfile("work", { pairedAgent: "a", blockedReason: "no" })],
+      "me",
+      ["a"],
+    ),
+    ["blocked"],
+  );
+});
+
+test("hermes rows: a copied profile with the same pin can connect", () => {
+  const pinned = { pairedAgent: "a1", owner: "me" };
+  assert.deepEqual(
+    hermesStates(
+      [hermesProfile("one", pinned), hermesProfile("two", pinned)],
+      "me",
+      ["a1"],
+    ),
+    ["connected", "connect"],
+  );
+});
+
+test("hermes rows: blocked profiles show Hermes's reason, not Connect", () => {
+  assert.deepEqual(
+    hermesStates(
+      [hermesProfile("work", { blockedReason: "same token" })],
+      "me",
+    ),
+    ["blocked"],
+  );
 });

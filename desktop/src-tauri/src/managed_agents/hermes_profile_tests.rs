@@ -812,3 +812,11 @@ fn moving_to_a_bot_pubkey_keeps_the_profile() {
     assert_eq!(move_profile_dir(&old, &new), Ok(false));
     assert!(old.dir.exists());
 }
+
+#[test]
+fn seeding_leaves_out_bot_tokens_and_buzz_settings() {
+    let kept = strip_kuzz_owned_env(
+        "TELEGRAM_BOT_TOKEN=1:a\nexport discord_bot_token=b\nBUZZ_HOME_CHANNEL=c\nOPENROUTER_API_KEY=keep\n",
+    );
+    assert_eq!(kept, "OPENROUTER_API_KEY=keep\n");
+}

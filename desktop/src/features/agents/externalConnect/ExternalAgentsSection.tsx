@@ -8,6 +8,7 @@ import { useAgentAvailabilityLookup } from "@/features/agents/lib/useAgentAvaila
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import {
   connectHermes,
+  type HermesProfile,
   disconnectExternalDevice,
   listAgentPairings,
 } from "@/shared/api/agentPairing";
@@ -37,6 +38,7 @@ import {
   connectedClaim,
   type ExternalAgent,
   type ExternalAgentGroup,
+  hermesRows,
 } from "./pairingLogic";
 import {
   formatConnectedAt,
@@ -261,8 +263,8 @@ function ExternalAgentTile({
 /**
  * "Hermes found on this computer": shown when Hermes is installed here, the
  * bundled `kuzz` offers `pair --hermes` with its plugin files, the device
- * list has loaded, and no Hermes agent this card connected is still
- * connected. Connect makes a code, has `kuzz pair --hermes` claim it and
+ * list has loaded, and some Hermes profile isn't connected yet; one row per
+ * profile. Connect makes a code, has `kuzz pair --hermes` claim it and
  * install the plugin, then reads the pairing list for the result.
  */
 export function HermesFoundCard() {
@@ -270,31 +272,47 @@ export function HermesFoundCard() {
   const queryClient = useQueryClient();
   const available = useExternalConnectAvailable();
   const hermes = useHermesStatusQuery(available);
-  const { groups, devicesLoaded, hermesDeviceIds, owner } =
+  const { groups, devicesLoaded, hermesDeviceIds, owner, pairingsLoaded } =
     useExternalAgentGroups();
-  const [connecting, setConnecting] = React.useState(false);
+  const [connecting, setConnecting] = React.useState<string | null>(null);
+  const rows = React.useMemo(
+    () =>
+      hermesRows(
+        hermes.data?.profiles ?? [],
+        owner,
+        new Set(
+          groups.flatMap((group) =>
+            group.agents.map((agent) => agent.pubkey.toLowerCase()),
+          ),
+        ),
+        groups.some((group) => hermesDeviceIds.has(group.deviceId)),
+      ),
+    [groups, hermes.data?.profiles, hermesDeviceIds, owner],
+  );
 
-  const connected = groups.some((group) => hermesDeviceIds.has(group.deviceId));
   if (
     !available ||
     !hermes.data?.found ||
     !hermes.data.canConnect ||
     !devicesLoaded ||
-    connected
+    !pairingsLoaded ||
+    !owner ||
+    rows.every((row) => row.state === "connected")
   ) {
     return null;
   }
 
-  async function connect() {
-    setConnecting(true);
+  async function connect(profile: HermesProfile) {
+    setConnecting(profile.name);
     try {
-      const run = await connectHermes();
+      const run = await connectHermes(profile.name);
       const claim = connectedClaim(await listAgentPairings(), run.pairingId);
       if (!claim) throw new Error(t("agents.external.hermesFailed"));
       rememberConnection(owner, claim, { hermes: true });
+      if (!run.finished) throw new Error(t("agents.external.hermesFailed"));
       toast.success(
         t("agents.external.connectedToast", {
-          agent: "Hermes",
+          agent: hermesLabel(profile),
           device: claim.deviceName ?? t("agents.external.thisComputer"),
         }),
       );
@@ -305,38 +323,72 @@ export function HermesFoundCard() {
           : t("agents.external.hermesFailed"),
       );
     } finally {
-      setConnecting(false);
-      refreshExternalAgents(queryClient);
+      await refreshExternalAgents(queryClient);
+      setConnecting(null);
     }
   }
 
+  const single = rows.length === 1;
   return (
     <div
-      className="flex min-w-0 items-center gap-3 rounded-xl border border-border/70 bg-muted/30 px-4 py-3"
+      className="min-w-0 space-y-3 rounded-xl border border-border/70 bg-muted/30 px-4 py-3"
       data-testid="hermes-found-card"
     >
-      <ProfileAvatar
-        avatarUrl={null}
-        className="h-9 w-9 shrink-0 text-xs shadow-none"
-        iconClassName="h-4 w-4"
-        label="Hermes"
-        mediaVariant="small"
-        shape="circle"
-      />
-      <p className="min-w-0 flex-1 truncate text-sm font-medium">
-        {t("agents.external.hermesFound")}
-      </p>
-      <Button
-        data-testid="hermes-connect"
-        disabled={connecting}
-        onClick={() => void connect()}
-        size="sm"
-        type="button"
-      >
-        {connecting
-          ? t("agents.external.hermesConnecting")
-          : t("agents.external.hermesConnect")}
-      </Button>
+      {single ? null : (
+        <p className="truncate text-sm font-medium">
+          {t("agents.external.hermesFound")}
+        </p>
+      )}
+      {rows.map(({ profile, state }) => (
+        <div
+          className="flex min-w-0 items-center gap-3"
+          data-testid={`hermes-profile-${profile.name}`}
+          key={profile.name}
+        >
+          <ProfileAvatar
+            avatarUrl={null}
+            className="h-9 w-9 shrink-0 text-xs shadow-none"
+            iconClassName="h-4 w-4"
+            label={hermesLabel(profile)}
+            mediaVariant="small"
+            shape="circle"
+          />
+          <div className="min-w-0 flex-1">
+            <p className="truncate text-sm font-medium">
+              {single ? t("agents.external.hermesFound") : hermesLabel(profile)}
+            </p>
+            {state === "blocked" || state === "otherAccount" ? (
+              <p className="break-words text-xs text-muted-foreground">
+                {state === "blocked"
+                  ? `${profile.blockedReason} ${t("agents.external.hermesBlockedHint")}`
+                  : t("agents.external.hermesOtherAccount")}
+              </p>
+            ) : null}
+          </div>
+          {state === "connected" ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t("agents.external.hermesConnected")}
+            </span>
+          ) : state === "connect" || state === "otherAccount" ? (
+            <Button
+              data-testid={`hermes-connect-${profile.name}`}
+              disabled={connecting !== null}
+              onClick={() => void connect(profile)}
+              size="sm"
+              type="button"
+            >
+              {connecting === profile.name
+                ? t("agents.external.hermesConnecting")
+                : t("agents.external.hermesConnect")}
+            </Button>
+          ) : null}
+        </div>
+      ))}
     </div>
   );
+}
+
+/** A profile's name on screen; the default profile is just "Hermes". */
+function hermesLabel(profile: HermesProfile): string {
+  return profile.isDefault ? "Hermes" : profile.name;
 }

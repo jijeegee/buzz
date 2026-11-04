@@ -591,16 +591,25 @@ fn find_python() -> Option<&'static str> {
 }
 
 /// `kuzz pair --hermes` options.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone)]
 pub(crate) struct HermesInstall {
     /// Let the installer restart the Hermes gateway (false: the caller does).
     pub restart: bool,
+    /// The Hermes profile to connect (`None`: Hermes's default home).
+    pub home: Option<PathBuf>,
 }
 
 /// After a pairing: install the Hermes plugin for `owner` acting as
-/// `agent`, or say how. Everything goes to stderr (stdout holds the pairing
-/// result).
-fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
+/// `agent`, or say how. Returns whether it was installed. `default_agents`
+/// (`owner=agent`) is who the default profile acted as before this pairing,
+/// when a named profile is connected. Everything goes to stderr (stdout holds
+/// the pairing result).
+fn install_hermes(
+    owner: Option<&str>,
+    agent: &str,
+    default_agents: &[String],
+    options: HermesInstall,
+) -> bool {
     let owner_arg = owner.unwrap_or("<owner pubkey>");
     let installer = find_hermes_installer();
     let manual = format!(
@@ -609,12 +618,15 @@ fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
             .as_deref()
             .map_or_else(|| HERMES_INSTALLER.to_owned(), |p| p.display().to_string())
     );
-    let home = hermes_home().filter(|home| home.is_dir());
+    let home = options
+        .home
+        .or_else(hermes_home)
+        .filter(|home| home.is_dir());
     let (Some(installer), Some(home), Some(python), Some(owner)) =
         (installer, home, find_python(), owner)
     else {
         eprintln!("{manual}");
-        return;
+        return false;
     };
     let mut command = std::process::Command::new(python);
     command
@@ -625,6 +637,9 @@ fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
         .arg(agent)
         .arg("--hermes-home")
         .arg(&home);
+    for default_agent in default_agents {
+        command.arg("--default-agent").arg(default_agent);
+    }
     if !options.restart {
         command.arg("--no-restart");
     }
@@ -637,9 +652,42 @@ fn install_hermes(owner: Option<&str>, agent: &str, options: HermesInstall) {
             if !output.status.success() {
                 eprintln!("warning: the Hermes plugin installer failed. {manual}");
             }
+            output.status.success()
         }
-        Err(error) => eprintln!("warning: could not run the Hermes installer ({error}). {manual}"),
+        Err(error) => {
+            eprintln!("warning: could not run the Hermes installer ({error}). {manual}");
+            false
+        }
     }
+}
+
+/// Who a default Hermes profile acted as before `new` was paired, as
+/// `owner=agent`: each owner's most recent other agent, as
+/// [`PairingStore::for_relay`] picks. The profile's owner may not be `new`'s.
+fn previous_agents(pairings: Vec<Pairing>, new: &Pairing) -> Vec<String> {
+    let mut latest: std::collections::BTreeMap<String, Pairing> = Default::default();
+    for pairing in pairings {
+        let Some(owner) = pairing.owner.clone() else {
+            continue;
+        };
+        if pairing.relay != new.relay
+            || pairing.agent_pubkey == new.agent_pubkey
+            || pairing.agent_secret.is_none()
+        {
+            continue;
+        }
+        let rank = |pairing: &Pairing| (pairing.state == STATE_CONNECTED, pairing.paired_at);
+        if latest
+            .get(&owner)
+            .is_none_or(|best| rank(best) < rank(&pairing))
+        {
+            latest.insert(owner, pairing);
+        }
+    }
+    latest
+        .into_iter()
+        .map(|(owner, pairing)| format!("{owner}={}", pairing.agent_pubkey))
+        .collect()
 }
 
 /// This OS user's device key, created when there is none (like a login).
@@ -792,7 +840,24 @@ pub(crate) async fn cmd_pair(
         })
     );
     if let Some(options) = hermes {
-        install_hermes(pairing.owner.as_deref(), &pairing.agent_pubkey, options);
+        let named_profile = options.home.is_some();
+        let default_agents = if named_profile {
+            previous_agents(store.list(), &pairing)
+        } else {
+            Vec::new()
+        };
+        let installed = install_hermes(
+            pairing.owner.as_deref(),
+            &pairing.agent_pubkey,
+            &default_agents,
+            options,
+        );
+        // Unpinned, this agent would become the default profile's too.
+        if named_profile && !installed {
+            return Err(CliError::Other(
+                "the Hermes profile could not be set up".into(),
+            ));
+        }
     }
     Ok(())
 }

@@ -93,19 +93,19 @@ export function useHermesStatusQuery(enabled: boolean) {
     queryKey: HERMES_KEY,
     queryFn: getHermesStatus,
     retry: false,
+    // A profile made in Hermes shows up the next time this screen opens.
+    refetchOnMount: "always",
     staleTime: 60_000,
   });
 }
 
 /** Refresh everything the external agent list shows. */
 export function refreshExternalAgents(queryClient: QueryClient) {
-  for (const queryKey of [
-    AGENT_PAIRINGS_KEY,
-    AUTH_DEVICES_QUERY_KEY,
-    HERMES_KEY,
-  ]) {
-    void queryClient.invalidateQueries({ queryKey });
-  }
+  return Promise.all(
+    [AGENT_PAIRINGS_KEY, AUTH_DEVICES_QUERY_KEY, HERMES_KEY].map((queryKey) =>
+      queryClient.invalidateQueries({ queryKey }),
+    ),
+  );
 }
 
 function storageKey(owner: string) {
@@ -171,6 +171,7 @@ export function useExternalAgentGroups(): {
   owner: string;
   /** The device list loaded (it holds this computer). */
   devicesLoaded: boolean;
+  pairingsLoaded: boolean;
 } {
   const available = useExternalConnectAvailable();
   const owner = useIdentityQuery().data?.pubkey?.toLowerCase() ?? "";
@@ -228,7 +229,14 @@ export function useExternalAgentGroups(): {
     () => new Set(hermesEntries.map((entry) => entry.deviceId)),
     [hermesEntries],
   );
-  return { groups, hermesPubkeys, hermesDeviceIds, owner, devicesLoaded };
+  return {
+    groups,
+    hermesPubkeys,
+    hermesDeviceIds,
+    owner,
+    devicesLoaded,
+    pairingsLoaded: pairings.isFetched,
+  };
 }
 
 /** An external agent's name: its profile, "Hermes", or a fallback. */
