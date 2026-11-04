@@ -55,6 +55,9 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   List<NostrEvent>? _storedHead;
   Future<List<NostrEvent>>? _pendingRelayWindow;
   ({int createdAt, String id})? _paintedAnchor;
+
+  /// The relay's pages around that row replaced the rows shown.
+  bool _openedAroundAnchor = false;
   int? _paintedContiguousFrom = 0;
   bool _followingStoredHead = false;
 
@@ -169,6 +172,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   @override
   AsyncValue<List<NostrEvent>> build() {
     final sessionState = ref.watch(relaySessionProvider);
+    // A rebuild runs for someone: it clears the callbacks below, so no resume
+    // follows a room rebuilt on coming back. A read closing its own listen
+    // cancels again.
+    _hasListeners = true;
     ref.onCancel(() {
       _hasListeners = false;
       _deletionOwnerQueue.pause();
@@ -180,9 +187,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       Future.microtask(_deletionOwnerQueue.resume);
       Future.microtask(_showStoreIfChanged);
     });
-    // A room that went dirty while nobody listened rebuilds instead of
-    // resuming, so only this and the check below see it come back.
-    ref.onAddListener(() => _hasListeners = true);
     ref.onDispose(() {
       _initVersion++;
       _deletionOwnerQueue.pause();

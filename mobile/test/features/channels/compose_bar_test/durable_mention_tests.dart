@@ -220,4 +220,97 @@ void durableMentionTests() {
       await tester.pump(const Duration(milliseconds: 250));
     });
   }
+
+  group('a thread head that moves', () {
+    final key = 'channel-1:new-head';
+    ComposeDraftsNotifier drafts(WidgetTester tester) =>
+        ProviderScope.containerOf(
+          tester.element(find.byType(ComposeBar)),
+        ).read(composeDraftsProvider.notifier);
+    String composed(WidgetTester tester) =>
+        tester.widget<TextField>(find.byType(TextField)).controller!.text;
+
+    testWidgets('onto a held draft keeps both through the next keystroke', (
+      tester,
+    ) async {
+      final keys = nostr.Keys.generate();
+      Widget build({required String head, String? movedFrom}) =>
+          _buildComposeBar(
+            threadHeadId: head,
+            movedFromHeadId: movedFrom,
+            uploadService: _testUploadService(keys.nsec),
+            relayConfig: () => _SwitchableRelayConfigNotifier(
+              RelayConfig(baseUrl: 'http://localhost:3000', nsec: keys.nsec),
+            ),
+            channels: [_makeCurrentChannel()],
+            onSend: (_, _, {mediaTags = const []}) async {},
+          );
+      await tester.pumpWidget(build(head: 'old-head'));
+      await _expandComposer(tester);
+      await tester.enterText(find.byType(TextField), 'typed');
+      await tester.pumpAndSettle();
+      drafts(tester).save(
+        key: key,
+        channelId: 'channel-1',
+        threadHeadId: 'new-head',
+        text: 'held',
+      );
+
+      await tester.pumpWidget(build(head: 'new-head', movedFrom: 'old-head'));
+      await tester.pumpAndSettle();
+      expect(composed(tester), 'held\n\ntyped');
+
+      await tester.enterText(find.byType(TextField), 'held\n\ntyped!');
+      await tester.pumpAndSettle();
+      expect(drafts(tester).draftFor(key)!.text, 'held\n\ntyped!');
+      expect(drafts(tester).draftFor('channel-1:old-head'), isNull);
+    });
+
+    testWidgets('with nothing typed takes the held draft and its people', (
+      tester,
+    ) async {
+      final keys = nostr.Keys.generate();
+      final scout = 'a' * 64;
+      List<String>? sent;
+      Widget build({required String head, String? movedFrom}) =>
+          _buildComposeBar(
+            threadHeadId: head,
+            movedFromHeadId: movedFrom,
+            uploadService: _testUploadService(keys.nsec),
+            relayConfig: () => _SwitchableRelayConfigNotifier(
+              RelayConfig(baseUrl: 'http://localhost:3000', nsec: keys.nsec),
+            ),
+            channels: [_makeCurrentChannel()],
+            members: [
+              ChannelMember(
+                pubkey: scout,
+                displayName: 'Scout',
+                role: 'member',
+                joinedAt: DateTime(2025),
+              ),
+            ],
+            onSend: (_, mentions, {mediaTags = const []}) async {
+              sent = mentions;
+            },
+          );
+      await tester.pumpWidget(build(head: 'old-head'));
+      await tester.pumpAndSettle();
+      drafts(tester).save(
+        key: key,
+        channelId: 'channel-1',
+        threadHeadId: 'new-head',
+        text: '@Scout hello',
+        mentionKeys: {'Scout': scout},
+      );
+
+      await tester.pumpWidget(build(head: 'new-head', movedFrom: 'old-head'));
+      await tester.pumpAndSettle();
+      await tester.tap(find.text('@Scout hello'));
+      await tester.pumpAndSettle();
+      expect(composed(tester), '@Scout hello');
+      await tester.tap(find.byIcon(LucideIcons.arrowUp));
+      await tester.pumpAndSettle();
+      expect(sent, [scout]);
+    });
+  });
 }

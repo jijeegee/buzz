@@ -216,4 +216,71 @@ void main() {
       'first identity draft',
     );
   });
+
+  group('move', () {
+    Future<ComposeDraftsNotifier> seeded() async {
+      SharedPreferences.setMockInitialValues({});
+      final container = await containerWithPrefs();
+      addTearDown(container.dispose);
+      return container.read(composeDraftsProvider.notifier);
+    }
+
+    void seed(
+      ComposeDraftsNotifier drafts,
+      String key,
+      String text, [
+      Map<String, String> mentionKeys = const {},
+    ]) => drafts.save(
+      key: key,
+      channelId: 'ch1',
+      threadHeadId: key,
+      text: text,
+      mentionKeys: mentionKeys,
+    );
+
+    test('onto a free key moves the draft', () async {
+      final drafts = await seeded();
+      seed(drafts, 'from', 'typed', {'Ann': 'a'});
+
+      expect(drafts.move(from: 'from', to: 'to', threadHeadId: 'to'), isNull);
+
+      expect(drafts.draftFor('from'), isNull);
+      expect(drafts.draftFor('to')!.text, 'typed');
+      expect(drafts.draftFor('to')!.mentionKeys, {'Ann': 'a'});
+    });
+
+    test('onto a held draft keeps both, the held text first', () async {
+      final drafts = await seeded();
+      seed(drafts, 'to', 'held', {'Ann': 'a'});
+      seed(drafts, 'from', 'typed', {'Bob': 'b'});
+
+      final joined = drafts.move(from: 'from', to: 'to', threadHeadId: 'to');
+
+      expect(joined!.text, 'held\n\ntyped');
+      expect(joined.mentionKeys, {'Ann': 'a', 'Bob': 'b'});
+      expect(drafts.draftFor('to')!.text, 'held\n\ntyped');
+      expect(drafts.draftFor('from'), isNull);
+    });
+
+    test('one label for two people taints the joined record', () async {
+      final drafts = await seeded();
+      seed(drafts, 'to', 'held', {'Ann': 'a'});
+      seed(drafts, 'from', 'typed', {'ann': 'b'});
+
+      final joined = drafts.move(from: 'from', to: 'to', threadHeadId: 'to');
+
+      expect(joined!.mentionKeys[''], '');
+    });
+
+    test('the same text twice is kept once', () async {
+      final drafts = await seeded();
+      seed(drafts, 'to', 'same');
+      seed(drafts, 'from', 'same');
+
+      expect(drafts.move(from: 'from', to: 'to', threadHeadId: 'to'), isNull);
+
+      expect(drafts.draftFor('to')!.text, 'same');
+      expect(drafts.draftFor('from'), isNull);
+    });
+  });
 }

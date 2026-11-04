@@ -10,7 +10,6 @@ Widget _trackActiveThreadScrollPosition(
   },
 );
 
-/// Whether [message] sorts after [other] in the thread's timeline order.
 /// [events] the window does not rule out, with the stored replies past its
 /// relay cut, which it does not hold.
 List<NostrEvent> _uncoveredThreadEvents(
@@ -27,6 +26,7 @@ List<NostrEvent> _uncoveredThreadEvents(
   ];
 }
 
+/// Whether [message] sorts after [other] in the thread's timeline order.
 bool _isNewerThan(TimelineMessage message, TimelineMessage other) {
   final order = message.createdAt.compareTo(other.createdAt);
   return order != 0 ? order > 0 : message.id.compareTo(other.id) > 0;

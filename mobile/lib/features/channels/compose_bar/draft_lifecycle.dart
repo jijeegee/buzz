@@ -102,28 +102,12 @@ void _useComposeDraftLifecycle({
   final lastDraftIdentity = useRef<String?>(null);
   useEffect(() {
     final identity = '$draftIdentity\u0000$draftKey';
-    if (movedFromKey != null &&
-        lastDraftIdentity.value == '$draftIdentity\u0000$movedFromKey') {
-      // The same composer under a new key: nothing here is another draft's.
-      lastDraftIdentity.value = identity;
-      scheduleMicrotask(() {
-        if (!ref.context.mounted) return;
-        ref
-            .read(composeDraftsProvider.notifier)
-            .move(from: movedFromKey, to: draftKey, threadHeadId: threadHeadId);
-      });
-    }
-    final shouldHydrate = lastDraftIdentity.value != identity;
-    final identityChanged =
-        lastDraftIdentity.value != null && lastDraftIdentity.value != identity;
-    lastDraftIdentity.value = identity;
-    final saved = ref.read(composeDraftsProvider.notifier).draftFor(draftKey);
-    if (shouldHydrate) {
+    void bindSaved(ComposeDraft? draft) {
       mentionMap.value
         ..clear()
         ..addAll({
           for (final entry
-              in (saved?.mentionKeys ?? <String, String>{}).entries)
+              in (draft?.mentionKeys ?? <String, String>{}).entries)
             entry.key: MentionCandidate(
               pubkey: entry.value,
               displayName: entry.key,
@@ -131,6 +115,28 @@ void _useComposeDraftLifecycle({
             ),
         });
     }
+
+    if (movedFromKey != null &&
+        lastDraftIdentity.value == '$draftIdentity\u0000$movedFromKey') {
+      // The same composer under a new key: nothing here is another draft's.
+      lastDraftIdentity.value = identity;
+      scheduleMicrotask(() {
+        if (!ref.context.mounted) return;
+        final joined = ref
+            .read(composeDraftsProvider.notifier)
+            .move(from: movedFromKey, to: draftKey, threadHeadId: threadHeadId);
+        if (joined != null && identical(currentOwner.value, owner)) {
+          bindSaved(joined);
+          controller.text = joined.text;
+        }
+      });
+    }
+    final shouldHydrate = lastDraftIdentity.value != identity;
+    final identityChanged =
+        lastDraftIdentity.value != null && lastDraftIdentity.value != identity;
+    lastDraftIdentity.value = identity;
+    final saved = ref.read(composeDraftsProvider.notifier).draftFor(draftKey);
+    if (shouldHydrate) bindSaved(saved);
     if (identityChanged) {
       draftRevision.value += 1;
       onDraftIdentityChanged();
@@ -147,6 +153,7 @@ void _useComposeDraftLifecycle({
       unawaited(_deleteOwnedAttachments(staleAttachments));
       controller.text = saved?.text ?? '';
     } else if (saved != null && controller.text.isEmpty) {
+      bindSaved(saved);
       controller.text = saved.text;
     }
 

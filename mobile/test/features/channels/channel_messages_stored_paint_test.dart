@@ -590,6 +590,48 @@ void main() {
     expect(notifier.isInMiddleWindow, isTrue);
   });
 
+  test(
+    'opening at a row the relay deleted leaves no saved row it lacks',
+    () async {
+      final rows = [for (var n = 1; n <= 200; n++) _row(n)];
+      final deleted = rows[20];
+      final alsoDeleted = rows[55];
+      final session = _Session(
+        rows.where((row) => row != deleted && row != alsoDeleted).toList(),
+        connected: false,
+      );
+      final container = _container(session, saved: rows.sublist(0, 60));
+      container.listen(channelMessagesProvider(_channelId), (_, _) {});
+      await _settle();
+      expect(_shown(container), contains(alsoDeleted.id));
+      final notifier = container.read(
+        channelMessagesProvider(_channelId).notifier,
+      );
+      expect(notifier.openOnRowsAtHand(at(deleted), unread: true), isTrue);
+
+      session.connect();
+      session.headGate.complete();
+      await _settle();
+      expect(_shown(container), isNot(contains(deleted.id)));
+      expect(_shown(container), isNot(contains(alsoDeleted.id)));
+      expect(_shown(container), contains(rows[21].id));
+    },
+  );
+
+  test('a reconnect does not jump to a row opened at long before', () async {
+    final room = await _keptRoom();
+    final row = fixtureRow(_channelId, 7, room.rows[30].createdAt);
+    room.store.push(row);
+    room.bump();
+    await _settle();
+    expect(await room.notifier.openAtRow(at(row), unread: true), isTrue);
+
+    await room.relayAgain();
+    expect(room.notifier.isInMiddleWindow, isFalse);
+    expect(_shown(room.container).last, room.rows.last.id);
+    expect(_shown(room.container), isNot(contains(row.id)));
+  });
+
   group('a store read after the relay answered', () {
     test('adds a pushed row fetched since the ask', () async {
       final room = await _keptRoom();
@@ -1125,6 +1167,54 @@ void main() {
     shown.value = true;
     await pump();
     expect(store.paints, 2);
+    expect(_shown(container).last, row.id);
+  });
+
+  testWidgets('a room invalidated while paused reads the store again', (
+    tester,
+  ) async {
+    final rows = [for (var n = 1; n <= 60; n++) _row(n)];
+    final session = _Session(rows)..headGate.complete();
+    final store = _Store(rows.toList());
+    final container = _storeContainer(session, store);
+    final shown = ValueNotifier(true);
+    addTearDown(shown.dispose);
+    Future<void> pump() async {
+      for (var i = 0; i < 8; i++) {
+        await tester.pump();
+      }
+    }
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: ValueListenableBuilder<bool>(
+          valueListenable: shown,
+          builder: (_, value, child) =>
+              TickerMode(enabled: value, child: child!),
+          child: Consumer(
+            builder: (_, ref, _) {
+              ref.watch(channelMessagesProvider(_channelId));
+              return const SizedBox();
+            },
+          ),
+        ),
+      ),
+    );
+    await pump();
+
+    shown.value = false;
+    await pump();
+    container.invalidate(channelMessagesProvider(_channelId));
+    await pump();
+    shown.value = true;
+    await pump();
+    expect(_shown(container).last, rows.last.id);
+
+    final row = _rowAfter(rows.last);
+    store.push(row);
+    container.read(pushInboxRevisionProvider.notifier).bump();
+    await pump();
     expect(_shown(container).last, row.id);
   });
 

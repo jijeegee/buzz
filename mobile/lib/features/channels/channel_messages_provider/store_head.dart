@@ -91,6 +91,9 @@ extension _StoreHead on ChannelMessagesNotifier {
   ) async {
     final historyVersion = ++_threadQuerySerial;
     final history = await _fetchNewestHistory(session);
+    // The window around a row replaces what was shown, a deleted row included.
+    final replaced = _openedAroundAnchor;
+    _openedAroundAnchor = false;
     if (history == null || !_isCurrentInit(initVersion)) return;
     // Only relay rows confirm a send; the window's live overlay also holds
     // the unconfirmed local rows themselves.
@@ -114,8 +117,9 @@ extension _StoreHead on ChannelMessagesNotifier {
     if (fromRelay) _foldedRelayRows(_relayAskedAt, relayRows);
     _cachedHeadIds = const {};
     final existing = [
-      for (final event in _shownMessages ?? const <NostrEvent>[])
-        if (!dropped.contains(event.id)) event,
+      if (!replaced)
+        for (final event in _shownMessages ?? const <NostrEvent>[])
+          if (!dropped.contains(event.id)) event,
     ];
     final existingIds = existing.map((event) => event.id).toSet();
     final merged = _withDeepLinkEvents([

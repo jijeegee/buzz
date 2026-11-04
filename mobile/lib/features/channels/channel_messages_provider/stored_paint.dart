@@ -345,7 +345,11 @@ extension _StoredPaint on ChannelMessagesNotifier {
     // lacks the row (_openAroundPaintedAnchor).
     if ((painted || _storeOnlyIds.contains(id)) &&
         (unread || _storePushedAt.containsKey(id))) {
-      _paintedAnchor = (createdAt: createdAt, id: id);
+      // Only for the relay answer on its way: in a kept room none may come
+      // until a reconnect, long after the reader left this row.
+      if (painted || _initInFlight) {
+        _paintedAnchor = (createdAt: createdAt, id: id);
+      }
       return true;
     }
     final from = painted ? _paintedContiguousFrom : 0;
@@ -386,6 +390,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
       if (!_summaryMounted || !_isCurrentInit(initVersion)) return false;
       _usingChannelWindow = true;
       _foldPagesAround(around.pages, around.version, anchor.id, around.askedAt);
+      _openedAroundAnchor = true;
       return true;
     } catch (error) {
       debugPrint(
