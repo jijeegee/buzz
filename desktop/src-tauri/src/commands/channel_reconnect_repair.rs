@@ -1,11 +1,13 @@
-use tauri::State;
+use tauri::{AppHandle, State};
 
-use crate::{app_state::AppState, relay::query_relay};
+use crate::{
+    app_state::AppState,
+    message_store::{record, SYNC_KINDS},
+};
 
 const MAX_REPAIR_PAGE_LIMIT: u32 = 500;
-const CHANNEL_REPAIR_KINDS: [u32; 15] = [
-    5, 7, 9, 9005, 40001, 40002, 40003, 40008, 40099, 45001, 45003, 48100, 48101, 48102, 48103,
-];
+/// Every synced kind, so a complete repair proves the room (`all` coverage).
+const CHANNEL_REPAIR_KINDS: [u32; 21] = SYNC_KINDS;
 
 fn build_channel_reconnect_repair_filter(
     channel_id: &str,
@@ -43,7 +45,8 @@ fn build_channel_reconnect_repair_filter(
     Ok(serde_json::Value::Object(filter))
 }
 
-/// Fetch one lossless keyset page for reconnect repair using a fixed channel-event filter.
+/// Fetch one lossless keyset page for reconnect repair using a fixed
+/// channel-event filter, and store it with what it proves.
 #[tauri::command]
 pub async fn get_channel_reconnect_repair(
     channel_id: String,
@@ -51,6 +54,7 @@ pub async fn get_channel_reconnect_repair(
     limit: u32,
     until: Option<u64>,
     before_id: Option<String>,
+    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<serde_json::Value>, String> {
     let filter = build_channel_reconnect_repair_filter(
@@ -60,11 +64,19 @@ pub async fn get_channel_reconnect_repair(
         until,
         before_id.as_deref(),
     )?;
-    Ok(query_relay(&state, &[filter])
-        .await?
+    let (events, recorder) = record::query(&app, &state, &[filter]).await?;
+    let events: Vec<serde_json::Value> = events
         .iter()
         .filter_map(|event| serde_json::to_value(event).ok())
-        .collect())
+        .collect();
+    let request = record::RepairRequest {
+        since,
+        limit,
+        until,
+        before_id: before_id.as_deref(),
+    };
+    recorder.repair(&channel_id, &events, request);
+    Ok(events)
 }
 
 #[cfg(test)]

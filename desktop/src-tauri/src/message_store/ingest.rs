@@ -1,6 +1,7 @@
-//! Write paths. Rust is the only writer: fetch commands and the socket tap
-//! (wired in the write-path change) insert events; only fetches whose
-//! request bounds are known claim coverage. The webview has no insert command.
+//! Write paths. Rust is the only writer: fetch commands ([`super::record`])
+//! and the socket tap ([`super::live`]) insert events; only fetches whose
+//! request bounds are known, and live segments, claim coverage. The webview
+//! has no insert command.
 
 use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use serde_json::Value;
@@ -142,7 +143,6 @@ fn insert_event(
 
 /// Stores relay events (insert-only; never a coverage claim). Returns how
 /// many were new. `fallback_channel` is the room a fetch asked for.
-#[cfg_attr(not(test), allow(dead_code))] // Wired by the write-path change.
 pub(crate) fn insert_events(
     conn: &mut Connection,
     fallback_channel: Option<&str>,
@@ -183,7 +183,6 @@ pub(crate) fn insert_events(
 }
 
 /// Records the newest socket frame time (live segments close at it after a crash).
-#[cfg_attr(not(test), allow(dead_code))] // Wired by the write-path change.
 pub(crate) fn note_frame(conn: &Connection, at: i64) -> Result<(), String> {
     conn.execute(
         "INSERT INTO meta(key, value) VALUES('last_frame_at', ?1)
@@ -307,7 +306,6 @@ pub(crate) fn claim_room(
 }
 
 /// Adds what one completed thread fetch proves.
-#[cfg_attr(not(test), allow(dead_code))] // Wired by the write-path change.
 pub(crate) fn claim_thread(
     conn: &mut Connection,
     root_id: &str,
@@ -354,53 +352,74 @@ pub(crate) fn begin_live(
     Ok(segment_id)
 }
 
-/// Closes open segments (of `ws_id`, or all) at `closed_at`: each room gains
-/// an `all` range `[since, closed_at]`.
+/// Closes one open segment at `closed_at`: each of its rooms gains an `all`
+/// range `[since, closed_at]`. A closed or unknown segment is left alone.
+pub(crate) fn close_segment(
+    conn: &mut Connection,
+    segment_id: i64,
+    closed_at: i64,
+) -> Result<(), String> {
+    let since: Option<i64> = conn
+        .query_row(
+            "SELECT started_at FROM live_segment WHERE id=?1 AND closed_at IS NULL",
+            [segment_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(db("read live segment"))?;
+    let Some(since) = since else {
+        return Ok(());
+    };
+    let channel_ids: Vec<String> = {
+        let mut statement = conn
+            .prepare("SELECT channel_id FROM live_segment_room WHERE segment_id=?1")
+            .map_err(db("prepare live rooms"))?;
+        let rows = statement
+            .query_map([segment_id], |row| row.get(0))
+            .map_err(db("read live rooms"))?;
+        rows.collect::<Result<_, _>>()
+            .map_err(db("read live room"))?
+    };
+    let claim = Claim {
+        lo: Some(super::coverage::Cursor {
+            created_at: since,
+            event_id: TIME_FLOOR_ID.to_string(),
+        }),
+        lo_is_start: false,
+        hi: Upper::At(closed_at),
+    };
+    for channel_id in &channel_ids {
+        claim_room(conn, channel_id, Class::All, &claim)?;
+    }
+    conn.execute(
+        "UPDATE live_segment SET closed_at=?2 WHERE id=?1",
+        params![segment_id, closed_at.max(since)],
+    )
+    .map_err(db("close live segment"))?;
+    Ok(())
+}
+
+/// Closes open segments (of `ws_id`, or all) at `closed_at`.
 pub(crate) fn close_live(
     conn: &mut Connection,
     ws_id: Option<i64>,
     closed_at: i64,
 ) -> Result<(), String> {
-    let segments: Vec<(i64, i64)> = {
+    let segments: Vec<i64> = {
         let mut statement = conn
             .prepare(
-                "SELECT id, started_at FROM live_segment
+                "SELECT id FROM live_segment
                  WHERE closed_at IS NULL AND (?1 IS NULL OR ws_id=?1)",
             )
             .map_err(db("prepare open segments"))?;
         let rows = statement
-            .query_map([ws_id], |row| Ok((row.get(0)?, row.get(1)?)))
+            .query_map([ws_id], |row| row.get(0))
             .map_err(db("read open segments"))?;
         rows.collect::<Result<_, _>>()
             .map_err(db("read open segment"))?
     };
-    for (segment_id, since) in segments {
-        let channel_ids: Vec<String> = {
-            let mut statement = conn
-                .prepare("SELECT channel_id FROM live_segment_room WHERE segment_id=?1")
-                .map_err(db("prepare live rooms"))?;
-            let rows = statement
-                .query_map([segment_id], |row| row.get(0))
-                .map_err(db("read live rooms"))?;
-            rows.collect::<Result<_, _>>()
-                .map_err(db("read live room"))?
-        };
-        let claim = Claim {
-            lo: Some(super::coverage::Cursor {
-                created_at: since,
-                event_id: TIME_FLOOR_ID.to_string(),
-            }),
-            lo_is_start: false,
-            hi: Upper::At(closed_at),
-        };
-        for channel_id in &channel_ids {
-            claim_room(conn, channel_id, Class::All, &claim)?;
-        }
-        conn.execute(
-            "UPDATE live_segment SET closed_at=?2 WHERE id=?1",
-            params![segment_id, closed_at.max(since)],
-        )
-        .map_err(db("close live segment"))?;
+    for segment_id in segments {
+        close_segment(conn, segment_id, closed_at)?;
     }
     Ok(())
 }

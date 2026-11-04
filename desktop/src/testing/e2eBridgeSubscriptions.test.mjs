@@ -66,3 +66,64 @@ test("legacy readiness and explicit global queries retain their semantics", () =
     true,
   );
 });
+
+test("mock store tap stores room events and proves live rooms until close", async () => {
+  const { createMockStoreTap } = await import("./e2eBridgeSubscriptions.ts");
+  const { createMockMessageStore, MOCK_SYNC_KINDS } = await import(
+    "./e2eMessageStore.ts"
+  );
+  const room = "270f6caf-0feb-4055-93f3-cdbeb567ff28";
+  const id = (n) => n.toString(16).padStart(2, "0").repeat(32);
+  const store = createMockMessageStore(null).scope({
+    pubkey: id(1),
+    relayUrl: "ws://localhost:3000",
+  });
+  let clock = 500;
+  const tap = createMockStoreTap(store, 3, MOCK_SYNC_KINDS, () => clock);
+  const event = (n, tags) =>
+    JSON.stringify([
+      "EVENT",
+      "live-1",
+      {
+        id: id(n),
+        pubkey: id(2),
+        created_at: 400 + n,
+        kind: 9,
+        tags,
+        content: "",
+        sig: "",
+      },
+    ]);
+  tap.outgoing(
+    JSON.stringify([
+      "REQ",
+      "live-1",
+      {
+        kinds: [...MOCK_SYNC_KINDS, 39005],
+        "#h": [room],
+        since: 100,
+        limit: 1000,
+      },
+    ]),
+  );
+  tap.incoming(event(1, [["h", room]]));
+  tap.incoming(event(2, [["p", id(3)]]));
+  tap.incoming(JSON.stringify(["EOSE", "live-1"]));
+  // Open segment: nothing is proven until it closes.
+  assert.equal(store.coverage(room).provenThrough, null);
+  clock = 600;
+  tap.incoming(event(3, [["h", room]]));
+  tap.finish();
+  const coverage = store.coverage(room);
+  assert.equal(coverage.provenThrough, 600);
+  assert.deepEqual(
+    coverage.ranges
+      .filter((range) => range.class === "all")
+      .map((range) => [range.loAt, range.hiAt]),
+    [[100, 600]],
+  );
+  assert.deepEqual(
+    store.readWindow(room, null, 10).rows.map((row) => row.id),
+    [id(3), id(1)],
+  );
+});

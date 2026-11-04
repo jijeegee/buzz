@@ -40,6 +40,7 @@ mod models;
 mod native_relay_client;
 mod native_websocket;
 mod native_websocket_batch;
+mod native_websocket_store_tap;
 mod nostr_bind;
 pub mod nostr_convert;
 mod observed_unread;

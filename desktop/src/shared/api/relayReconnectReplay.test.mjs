@@ -14,7 +14,10 @@ import {
   REPLAY_BATCH_SIZE,
   shouldPageReconnectReplay,
 } from "./relayReconnectReplay.ts";
-import { buildChannelFilter } from "./relayChannelFilters.ts";
+import {
+  buildChannelFilter,
+  buildChannelLiveFilter,
+} from "./relayChannelFilters.ts";
 import {
   flushEvents,
   markReconnectLiveEose,
@@ -96,14 +99,6 @@ function replayFilter(filter, since, until) {
   return buildReconnectReplayFilter(filter, since, until);
 }
 
-function numericList(source, pattern) {
-  const match = source.match(pattern);
-  assert.ok(match, `expected source list to match ${pattern}`);
-  return [...match[1].matchAll(/\b\d[\d_]*\b/g)].map((value) =>
-    Number(value[0].replaceAll("_", "")),
-  );
-}
-
 test("channel replay lookback stays coupled to relay and DB source constants", async () => {
   const [ingest, fence] = await Promise.all([
     readFile("../crates/kuzz-relay/src/handlers/ingest.rs", "utf8"),
@@ -127,26 +122,25 @@ test("channel replay lookback stays coupled to relay and DB source constants", a
 });
 
 test("native and E2E repair kinds stay coupled to the live channel filter", async () => {
-  const [rustCommand, e2eBridge] = await Promise.all([
+  // Repair refetches exactly what a live room subscription delivers: every
+  // synced kind. Native and mock both use their SYNC_KINDS list, which
+  // `kinds.test.mjs` checks against the shared fixture.
+  const [rustCommand, e2eBridge, shared] = await Promise.all([
     readFile("src-tauri/src/commands/channel_reconnect_repair.rs", "utf8"),
     readFile("src/testing/e2eBridge.ts", "utf8"),
+    readFile("src-tauri/testdata/sync_kinds.json", "utf8").then(JSON.parse),
   ]);
-  const expectedKinds = [...buildChannelFilter("channel-1", 50).kinds].sort(
+  const expectedKinds = [...buildChannelLiveFilter("channel-1").kinds].sort(
     (left, right) => left - right,
   );
-  assert.deepEqual(
-    numericList(
-      rustCommand,
-      /const CHANNEL_REPAIR_KINDS: \[u32; \d+\] = \[([\s\S]*?)\];/,
-    ).sort((left, right) => left - right),
-    expectedKinds,
+  assert.deepEqual(shared.kinds, expectedKinds);
+  assert.match(
+    rustCommand,
+    /const CHANNEL_REPAIR_KINDS: \[u32; \d+\] = SYNC_KINDS;/,
   );
-  assert.deepEqual(
-    numericList(
-      e2eBridge,
-      /function handleGetChannelReconnectRepair[\s\S]*?const kinds = new Set\(\[([\s\S]*?)\]\);/,
-    ).sort((left, right) => left - right),
-    expectedKinds,
+  assert.match(
+    e2eBridge,
+    /function handleGetChannelReconnectRepair[\s\S]*?const kinds = new Set<number>\(MOCK_SYNC_KINDS\);/,
   );
 });
 

@@ -39,8 +39,18 @@ import { getAudioMediaLoadSchedulerSnapshot } from "@/features/messages/lib/audi
 import { mockSearchHitMatches } from "./e2eBridgeSearch.ts";
 import { selectMockHistory } from "./e2eBridgeHistory.ts";
 import { handleGoalsMockCommand } from "./e2eBridgeGoals.ts";
-import { handleMessageStoreMockCommand } from "./e2eMessageStore.ts";
 import {
+  handleMessageStoreMockCommand,
+  MOCK_SYNC_KINDS,
+  mockMessageStoreScope,
+} from "./e2eMessageStore.ts";
+import {
+  recordMockRepair,
+  recordMockThreadPages,
+  recordMockWindow,
+} from "./e2eMessageStoreRecord.ts";
+import {
+  createMockStoreTap,
   createMockSubscription,
   hasMockSubscription,
 } from "./e2eBridgeSubscriptions.ts";
@@ -1134,6 +1144,7 @@ type MockFilter = {
 type MockSocket = {
   handler: WsHandler;
   subscriptions: Map<string, MockSubscription>;
+  storeTap?: ReturnType<typeof createMockStoreTap>;
 };
 
 function createMockRelayMembershipEvent(): RelayEvent {
@@ -6066,10 +6077,8 @@ async function handleGetChannelReconnectRepair(
   },
   config: E2eConfig | undefined,
 ): Promise<RelayEvent[]> {
-  const kinds = new Set([
-    5, 7, 9, 9005, 40001, 40002, 40003, 40008, 40099, 45001, 45003, 48100,
-    48101, 48102, 48103,
-  ]);
+  // Every synced kind, like `CHANNEL_REPAIR_KINDS`.
+  const kinds = new Set<number>(MOCK_SYNC_KINDS);
   const filter: Record<string, unknown> = {
     "#h": [args.channelId],
     kinds: [...kinds],
@@ -11216,7 +11225,56 @@ async function connectRealSocket(args: { url?: string; onMessage: unknown }) {
   });
 }
 
-async function connectMockSocket(args: { onMessage: unknown }) {
+/** Scope of the signed-in mock account on the configured relay. */
+function mockStoreScope(config: E2eConfig | undefined) {
+  return {
+    pubkey: getActiveIdentity(config)?.pubkey ?? MOCK_IDENTITY_PUBKEY,
+    relayUrl: getRelayWsUrl(config),
+  };
+}
+
+const mockOrigin = (url: string) =>
+  url
+    .trim()
+    .replace(/\/+$/, "")
+    .replace(/^wss:\/\//i, "https://")
+    .replace(/^ws:\/\//i, "http://")
+    .toLowerCase();
+
+/** Mirror of `writer_for_connect`: a store tap only for a scope naming this
+ * server and the signed-in account. */
+function mockSocketStoreTap(
+  wsId: number,
+  url: string | undefined,
+  config: { storeScope?: { pubkey?: string; relayUrl?: string } } | undefined,
+) {
+  const scope = config?.storeScope;
+  const signedIn = mockStoreScope(getConfig()).pubkey;
+  if (
+    !scope?.pubkey ||
+    !scope.relayUrl ||
+    !url ||
+    mockOrigin(scope.relayUrl) !== mockOrigin(url) ||
+    scope.pubkey.trim().toLowerCase() !== signedIn.toLowerCase()
+  ) {
+    return undefined;
+  }
+  try {
+    const store = mockMessageStoreScope({
+      pubkey: scope.pubkey,
+      relayUrl: scope.relayUrl,
+    });
+    return createMockStoreTap(store, wsId, MOCK_SYNC_KINDS);
+  } catch {
+    return undefined;
+  }
+}
+
+async function connectMockSocket(args: {
+  url?: string;
+  onMessage: unknown;
+  config?: { storeScope?: { pubkey?: string; relayUrl?: string } };
+}) {
   relayWebsocketConnectAttemptStarts.push(Date.now());
   if (mockWebsocketUnavailable) {
     throw new Error("mock relay unavailable");
@@ -11231,11 +11289,26 @@ async function connectMockSocket(args: { onMessage: unknown }) {
   }
 
   const wsId = nextSocketId++;
-  const handler = resolveHandler(args.onMessage);
+  const appHandler = resolveHandler(args.onMessage);
+  const storeTap = mockSocketStoreTap(wsId, args.url, args.config);
+  // Frame delivery: the store sees each frame before the app does.
+  const handler: WsHandler = storeTap
+    ? (message) => {
+        const frame = message as { type?: string; data?: unknown };
+        storeTap.incoming(
+          frame.type === "Text" && typeof frame.data === "string"
+            ? frame.data
+            : null,
+        );
+        if (frame.type === "Close") storeTap.finish();
+        appHandler(message);
+      }
+    : appHandler;
 
   mockSockets.set(wsId, {
     handler,
     subscriptions: new Map(),
+    storeTap,
   });
 
   if (getConfig()?.mock?.websocketAuthBeforeConnectResolves) {
@@ -11301,6 +11374,7 @@ function sendToMockSocket(args: {
   if (args.message.type !== "Text" || !args.message.data) {
     return;
   }
+  socket.storeTap?.outgoing(args.message.data);
 
   const [type, ...rest] = JSON.parse(args.message.data) as [
     string,
@@ -14956,21 +15030,34 @@ export function maybeInstallE2eTauriMocks() {
           payload as Parameters<typeof handleGetChannelMessagesBefore>[0],
           activeConfig,
         );
-      case "get_channel_reconnect_repair":
-        return handleGetChannelReconnectRepair(
-          payload as Parameters<typeof handleGetChannelReconnectRepair>[0],
+      // Fetch writes (`message_store/record.rs`): each read is stored in the
+      // scope it was made for, with what its request and bounds prove.
+      case "get_channel_reconnect_repair": {
+        const args = payload as Parameters<
+          typeof handleGetChannelReconnectRepair
+        >[0];
+        const scope = mockStoreScope(activeConfig);
+        const events = await handleGetChannelReconnectRepair(
+          args,
           activeConfig,
         );
-      case "get_channel_window":
-        return handleGetChannelWindow(
-          payload as Parameters<typeof handleGetChannelWindow>[0],
-          activeConfig,
-        );
-      case "get_thread_windows":
-        return handleGetThreadWindows(
-          payload as Parameters<typeof handleGetThreadWindows>[0],
-          activeConfig,
-        );
+        recordMockRepair(scope, args.channelId, events, args);
+        return events;
+      }
+      case "get_channel_window": {
+        const args = payload as Parameters<typeof handleGetChannelWindow>[0];
+        const scope = mockStoreScope(activeConfig);
+        const events = await handleGetChannelWindow(args, activeConfig);
+        recordMockWindow(scope, args.channelId, events, args.cursor ?? null);
+        return events;
+      }
+      case "get_thread_windows": {
+        const args = payload as Parameters<typeof handleGetThreadWindows>[0];
+        const scope = mockStoreScope(activeConfig);
+        const pages = await handleGetThreadWindows(args, activeConfig);
+        recordMockThreadPages(scope, pages, args.threads);
+        return pages;
+      }
       case "get_channel_windows": {
         // Batched newest windows: each channel's events are exactly what
         // `get_channel_window` returns for it, bounds event included.
@@ -14978,15 +15065,15 @@ export function maybeInstallE2eTauriMocks() {
           channelIds: string[];
           limitRows?: number | null;
         };
+        const scope = mockStoreScope(activeConfig);
         const windows = [];
         for (const channelId of args.channelIds) {
-          windows.push({
-            channel_id: channelId,
-            events: await handleGetChannelWindow(
-              { channelId, limitRows: args.limitRows, cursor: null },
-              activeConfig,
-            ),
-          });
+          const events = await handleGetChannelWindow(
+            { channelId, limitRows: args.limitRows, cursor: null },
+            activeConfig,
+          );
+          recordMockWindow(scope, channelId, events, null);
+          windows.push({ channel_id: channelId, events });
         }
         return windows;
       }
