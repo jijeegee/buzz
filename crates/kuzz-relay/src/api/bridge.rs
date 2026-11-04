@@ -388,6 +388,43 @@ pub(crate) async fn admit_bridge_key(
     .map_err(crate::identity::admission::KeyRefused::http_error)
 }
 
+/// The proven caller of a bodyless `GET`: a message token, or a NIP-98 key
+/// held to the bridge's quota, replay and device checks. `path` includes the
+/// query string.
+pub(crate) async fn admit_get_caller(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    headers: &HeaderMap,
+    path: &str,
+) -> Result<nostr::PublicKey, axum::response::Response> {
+    use axum::response::IntoResponse as _;
+    if let Some(pubkey) = verify_bridge_bearer(state, headers, tenant).await? {
+        enforce_http_admission(state, tenant, &pubkey)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        return Ok(pubkey);
+    }
+    let url = nip98_expected_url(&state.config.relay_url, tenant, path);
+    // A real NIP-98 event only: the dev X-Pubkey fallback carries no device.
+    let admission = admit_nip_fi_http_on_state(state, headers, || {
+        verify_bridge_auth(headers, "GET", &url, None, true)
+            .map(|auth| Nip98Proof::new(auth.pubkey, auth.event_id_bytes))
+            .map_err(IntoResponse::into_response)
+    })?;
+    let pubkey = *admission.proven_pubkey();
+    let event_id_bytes = admission.into_extra();
+    enforce_http_admission(state, tenant, &pubkey)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    check_nip98_replay(state, tenant, event_id_bytes)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    admit_bridge_key(state, headers, &pubkey)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    Ok(pubkey)
+}
+
 /// Construct the NIP-98 `u`-tag expected URL for a request bound to `tenant`.
 ///
 /// Conformance row 44 obligation: "NIP-98 `u` URL host must match

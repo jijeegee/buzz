@@ -740,3 +740,182 @@ async fn status_names_log_mode_on_a_wrong_host_refusal() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body["admission"], "log");
 }
+
+/// Records `agent` as `who`'s paired agent hosted on `who`'s device.
+async fn pair_agent(inst: &Instance, who: &Owner, agent: &nostr::Keys) {
+    sqlx::query(
+        "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
+         SELECT $1, principal_id, 'external', id FROM devices WHERE id = $2",
+    )
+    .bind(agent.public_key().to_bytes().as_slice())
+    .bind(who.device_id)
+    .execute(inst.state.db.pool())
+    .await
+    .unwrap();
+}
+
+/// Makes `agent` an agent of `owner` in `users`, as a NIP-OA connect does.
+async fn users_owner(inst: &Instance, agent: &nostr::Keys, owner: &nostr::Keys) {
+    let community: uuid::Uuid = sqlx::query_scalar("SELECT id FROM communities WHERE host = $1")
+        .bind(&inst.host)
+        .fetch_one(inst.state.db.pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users (community_id, pubkey) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(community)
+        .bind(owner.public_key().to_bytes().as_slice())
+        .execute(inst.state.db.pool())
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users (community_id, pubkey, agent_owner_pubkey) VALUES ($1, $2, $3)")
+        .bind(community)
+        .bind(agent.public_key().to_bytes().as_slice())
+        .bind(owner.public_key().to_bytes().as_slice())
+        .execute(inst.state.db.pool())
+        .await
+        .unwrap();
+}
+
+fn same_owner_path(keys: &[&nostr::Keys]) -> String {
+    let keys: Vec<String> = keys.iter().map(|key| key.public_key().to_hex()).collect();
+    format!("/agents/same-owner?pubkeys={}", keys.join(","))
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn same_owner_answers_for_every_pairing_of_agents() {
+    let inst = agents_instance(DeviceAdmissionMode::Enforce).await;
+    let (pc, subject) = owner(&inst).await;
+    let (other, _) = owner(&inst).await;
+    let hermes = nostr::Keys::generate();
+    let second_hermes = nostr::Keys::generate();
+    let app_agent = nostr::Keys::generate();
+    let their_hermes = nostr::Keys::generate();
+    let their_app_agent = nostr::Keys::generate();
+    let unknown = nostr::Keys::generate();
+    pair_agent(&inst, &pc, &hermes).await;
+    pair_agent(&inst, &pc, &second_hermes).await;
+    pair_agent(&inst, &other, &their_hermes).await;
+    users_owner(&inst, &app_agent, &pc.keys).await;
+    users_owner(&inst, &their_app_agent, &other.keys).await;
+    assert_eq!(register(&inst, &pc, &app_agent, false).await.0, 200);
+
+    let everyone = [
+        &pc.keys,
+        &hermes,
+        &second_hermes,
+        &app_agent,
+        &other.keys,
+        &their_hermes,
+        &their_app_agent,
+        &unknown,
+    ];
+    let mine = json!({"keys": [
+        pc.keys.public_key().to_hex(),
+        hermes.public_key().to_hex(),
+        second_hermes.public_key().to_hex(),
+        app_agent.public_key().to_hex(),
+    ]});
+    // Hermes to Hermes and Hermes to app agent.
+    let (status, body) = status_call(&inst, &hermes, &pc.device, &same_owner_path(&everyone)).await;
+    assert_eq!((status, &body), (200, &mine));
+    // App agent to Hermes.
+    let (status, body) =
+        status_call(&inst, &app_agent, &pc.device, &same_owner_path(&everyone)).await;
+    assert_eq!((status, &body), (200, &mine));
+    // Another owner's agent sees only its own side.
+    let (status, body) = status_call(
+        &inst,
+        &their_hermes,
+        &other.device,
+        &same_owner_path(&everyone),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(
+        body,
+        json!({"keys": [
+            other.keys.public_key().to_hex(),
+            their_hermes.public_key().to_hex(),
+            their_app_agent.public_key().to_hex(),
+        ]})
+    );
+    // A key that is nobody's owns only itself.
+    let (status, body) =
+        status_call(&inst, &unknown, &pc.device, &same_owner_path(&everyone)).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(body, json!({"keys": [unknown.public_key().to_hex()]}));
+
+    // A disconnected agent is out. (A different path: the same request within
+    // a second is a NIP-98 replay.)
+    let pool = inst.state.db.pool();
+    sqlx::query("UPDATE key_registry SET host_device_id = NULL WHERE pubkey = $1")
+        .bind(second_hermes.public_key().to_bytes().as_slice())
+        .execute(pool)
+        .await
+        .unwrap();
+    let (status, body) =
+        status_call(&inst, &hermes, &pc.device, &same_owner_path(&everyone[1..])).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(!body["keys"]
+        .as_array()
+        .unwrap()
+        .contains(&json!(second_hermes.public_key().to_hex())));
+
+    // So is one on a revoked computer, even asked by the owner's other agent.
+    let laptop = other_device(&inst, &pc, &subject).await;
+    let third_hermes = nostr::Keys::generate();
+    pair_agent(&inst, &laptop, &third_hermes).await;
+    let path = same_owner_path(&[&third_hermes]);
+    let (_, body) = status_call(&inst, &hermes, &pc.device, &path).await;
+    assert_eq!(body["keys"].as_array().unwrap().len(), 1);
+    sqlx::query("UPDATE devices SET revoked_at = now() WHERE id = $1")
+        .bind(laptop.device_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    let path = same_owner_path(&[&unknown, &third_hermes]);
+    let (_, body) = status_call(&inst, &hermes, &pc.device, &path).await;
+    assert_eq!(body, json!({"keys": []}));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn same_owner_takes_bot_tokens_and_drops_deleted_bots() {
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .expect("pg");
+    let host = community(&pool).await;
+    let inst = instance(&host).await;
+    let owner = new_user(&inst).await;
+    let stranger = new_user(&inst).await;
+    let first = create_bot(&inst, &owner, "this_device").await;
+    let second = create_bot(&inst, &owner, "this_device").await;
+    let theirs = create_bot(&inst, &stranger, "this_device").await;
+    let token = bot_token(&inst, &owner, &first).await;
+
+    let ask = || async {
+        let response = inst
+            .get(&format!(
+                "/agents/same-owner?pubkeys={first},{second},{theirs}"
+            ))
+            .bearer_auth(&token)
+            .send()
+            .await
+            .expect("send");
+        (
+            response.status().as_u16(),
+            response.json::<Value>().await.unwrap_or(Value::Null),
+        )
+    };
+    assert_eq!(ask().await, (200, json!({"keys": [first, second]})));
+
+    let response = inst
+        .delete(&format!("/auth/bots/{second}"))
+        .bearer_auth(&owner.access)
+        .send()
+        .await
+        .expect("delete");
+    assert!(response.status().is_success());
+    assert_eq!(ask().await, (200, json!({"keys": [first]})));
+}

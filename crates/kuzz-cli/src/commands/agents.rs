@@ -164,6 +164,16 @@ pub async fn dispatch(command: AgentsCmd, client: &KuzzClient) -> Result<(), Cli
         }
 
         AgentsCmd::Archived => cmd_archived(client).await,
+        AgentsCmd::SameOwner { pubkeys } => {
+            let mut keys = Vec::with_capacity(pubkeys.len());
+            for pubkey in &pubkeys {
+                validate_hex64(pubkey)?;
+                keys.push(pubkey.to_ascii_lowercase());
+            }
+            let path = format!("/agents/same-owner?pubkeys={}", keys.join(","));
+            println!("{}", client.get_authed(&path).await?);
+            Ok(())
+        }
     }
 }
 

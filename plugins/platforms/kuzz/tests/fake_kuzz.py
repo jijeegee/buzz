@@ -11,6 +11,8 @@ FAKE_KUZZ_OWNER     when set, the CLI is paired: keyless `auth whoami` reports t
 FAKE_KUZZ_DMS       JSON for `dms list` (default [])
 FAKE_KUZZ_DM_ID     dm_id `dms open` returns (default dm-1; "" fails the call)
 FAKE_KUZZ_CHANNEL_NAME  name returned by `channels get`
+FAKE_KUZZ_SAME_OWNER    JSON list of keys `agents same-owner` knows; unset fails the call
+FAKE_KUZZ_SAME_OWNER_DELAY  seconds that call takes
 """
 
 import json
@@ -71,6 +73,14 @@ def main():
             return rc
         count = sum(1 for _ in open(STATE / "calls.jsonl", encoding="utf-8"))
         print(json.dumps({"event_id": f"{count:064x}", "accepted": True, "message": ""}))
+        return 0
+    if args[:2] == ["agents", "same-owner"]:
+        time.sleep(float(os.environ.get("FAKE_KUZZ_SAME_OWNER_DELAY", "0")))
+        known = os.environ.get("FAKE_KUZZ_SAME_OWNER")
+        if known is None:
+            sys.stderr.write(json.dumps({"error": "network", "message": "unreachable"}) + "\n")
+            return 2
+        print(json.dumps({"keys": [key for key in json.loads(known) if key in args[3].split(",")]}))
         return 0
     if args[:2] == ["auth", "whoami"]:
         owner = os.environ.get("FAKE_KUZZ_OWNER", "")

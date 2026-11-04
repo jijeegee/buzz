@@ -496,6 +496,15 @@ pub enum AgentsCmd {
         #[arg(long, value_enum)]
         respond_to: Option<RespondToArg>,
     },
+    /// Show which of the given keys are your owner or your owner's agents
+    #[command(after_help = "Prints {\"keys\": [...]}; any other key is left out.\n\n\
+Example:\n  \
+kuzz agents same-owner --pubkeys <HEX>,<HEX>")]
+    SameOwner {
+        /// Comma-separated pubkeys (hex)
+        #[arg(long, required = true, value_delimiter = ',')]
+        pubkeys: Vec<String>,
+    },
     /// Submit a NIP-IA archive request for an identity (kind 9035)
     #[command(
         after_help = "Auth flow: when target != signer, the CLI fetches the target's kind:0 and \
@@ -3396,6 +3405,7 @@ mod tests {
                 "archived",
                 "draft-create",
                 "draft-update",
+                "same-owner",
                 "unarchive"
             ]
         );
@@ -3545,7 +3555,7 @@ mod tests {
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
-            ("agents", 5),
+            ("agents", 6),
             ("auth", 7),
             ("canvas", 4),
             ("channels", 16),
