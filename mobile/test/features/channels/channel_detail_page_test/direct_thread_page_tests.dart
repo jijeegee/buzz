@@ -865,30 +865,60 @@ void directThreadPageTests() {
     });
 
     testWidgets('a drain brings a reply not found at first', (tester) async {
+      useTallView(tester);
+      final all = [for (var n = 100; n < 900; n++) _openAtReply(n)];
+      final target = findRichText('row 110');
       NostrEvent? stored;
+      await tester.pumpWidget(
+        harness(
+          link(messageId: fixtureId(110)),
+          session: _ThreadWindowRelaySession(all),
+          relayInfo: RelayInfo(supportedExtensions: {newerWindowExtension}),
+          overrides: [
+            rootLookup(
+              stored: (id) async => id == fixtureId(110) && stored != null
+                  ? (event: stored!, deleted: false)
+                  : null,
+              relay: () async => const [],
+            ),
+          ],
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(shownPage(tester).initialMessageCreatedAt, isNull);
+      expect(shownPage(tester).awaitsLinkedReply, isFalse);
+      expect(listVisible(tester), isTrue);
+      expect(target, findsNothing);
+
+      stored = all[10];
+      ProviderScope.containerOf(
+        tester.element(find.byType(ThreadDetailPage)),
+      ).read(pushInboxRevisionProvider.notifier).bump();
+      await tester.pumpAndSettle();
+
+      expect(shownPage(tester).initialMessageCreatedAt, all[10].createdAt);
+      expect(target, findsOneWidget);
+    });
+
+    testWidgets("a reply among the room's rows needs no lookup", (
+      tester,
+    ) async {
       await tester.pumpWidget(
         harness(
           link(messageId: fixtureId(105)),
           session: _SilentRelaySession(),
+          messagesNotifier: _FakeMessagesNotifier([replies[5]]),
           overrides: [
             rootLookup(
-              stored: (id) async =>
-                  stored == null ? null : (event: stored, deleted: false),
-              relay: () async => const [],
+              stored: (_) =>
+                  Completer<({NostrEvent event, bool deleted})?>().future,
             ),
             storedReplies(() async => const []),
           ],
         ),
       );
-      await tester.pump();
-      await tester.pump();
-      expect(shownPage(tester).initialMessageCreatedAt, isNull);
-      expect(shownPage(tester).awaitsLinkedReply, isFalse);
-
-      stored = replies[5];
-      ProviderScope.containerOf(
-        tester.element(find.byType(ThreadDetailPage)),
-      ).read(pushInboxRevisionProvider.notifier).bump();
       await tester.pump();
       await tester.pump();
 
@@ -965,7 +995,8 @@ void directThreadPageTests() {
           ],
         ),
       );
-      await tester.pumpAndSettle();
+      await tester.pump();
+      await tester.pump();
 
       final page = tester.widget<DirectThreadPage>(
         find.byType(DirectThreadPage),

@@ -14,6 +14,13 @@ class _SilentRelaySession extends _IdentityUpdateRelaySession {
       state = const SessionState(status: SessionStatus.connected);
 }
 
+/// A session with no connection from the start.
+class _OfflineRelaySession extends _SilentRelaySession {
+  @override
+  SessionState build() =>
+      const SessionState(status: SessionStatus.reconnecting);
+}
+
 /// Serves the thread window and drops/reconnects on demand.
 class _ReconnectingWindowSession extends _ThreadWindowRelaySession {
   _ReconnectingWindowSession(super.replies);
@@ -564,26 +571,30 @@ void threadOpenRootTests() {
         pubkey: 'bob',
         content: 'Channel chatter',
       );
-      final session = _SilentRelaySession();
       await tester.pumpWidget(
         _buildTestable(
           messages: [chatter],
           messagesNotifier: _PendingHeadMessagesNotifier([
             chatter,
           ], Completer<void>().future),
-          relaySessionNotifier: session,
+          relaySessionNotifier: _OfflineRelaySession(),
           initialThreadRootId: _openAtRootId,
           overrides: [
-            rootSources(relay: () => Completer<List<NostrEvent>>().future),
+            rootSources(
+              stored: () async => (event: _openAtRoot, deleted: false),
+              relay: () => Completer<List<NostrEvent>>().future,
+            ),
+            storedReplies(replies),
           ],
         ),
       );
-      session.drop();
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      await tester.pump();
       await tester.pump();
 
-      expect(find.byType(ThreadDetailPage), findsOneWidget);
       expect(find.byType(ChannelDetailPage), findsNothing);
       expect(find.text('Channel chatter'), findsNothing);
+      expect(findRichText('row 109'), findsOneWidget);
     });
   });
 }

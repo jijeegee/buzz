@@ -138,8 +138,8 @@ class DirectThreadPage extends HookConsumerWidget {
     final room =
         ref.watch(channelsProvider.select(selectChannel(channel.id))) ??
         channel;
-    // Created before the thread query, which settles own pending replies
-    // through it only when it exists.
+    // Created before the linked lookup, which reads the room's rows only when
+    // it exists.
     ref.read(channelMessagesProvider(channel.id).notifier);
     final messageId = this.messageId;
     final linked = messageId == null
