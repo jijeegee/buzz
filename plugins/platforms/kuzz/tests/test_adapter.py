@@ -48,7 +48,8 @@ class _Ctx:
 @unittest.skipIf(BuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
 class AdapterTest(unittest.TestCase):
     def setUp(self):
-        self._home = tempfile.TemporaryDirectory()
+        # Hermes may still be writing gateway_state.json right after a disconnect.
+        self._home = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self._home.cleanup)
 
     @staticmethod
@@ -239,6 +240,171 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(fake.calls("auth", "whoami")[0]["env"], [], "the paired probe must run without keys")
             log = (fake.dir / "calls.jsonl").read_text(encoding="utf-8")
             self.assertNotIn(SECRET, log)
+
+    def _sender_run(self, fake, adapter, lines, *, settle=None):
+        """Feed ``lines`` to a connected adapter; ``settle`` runs before the lookups finish."""
+
+        async def scenario():
+            self.assertTrue(await adapter.connect())
+            for line in lines:
+                await adapter._on_message(parse_watch_line(json.dumps(line)))
+            if settle:
+                await settle()
+            while adapter._admissions:
+                await asyncio.sleep(0.01)
+            await adapter.disconnect()
+
+        asyncio.run(scenario())
+
+    def test_owners_other_agents_are_heard_like_the_owner(self):
+        sibling, other = "d" * 64, "e" * 64
+        lines = [
+            watch_line(1, author=sibling, content="@Hermes first", mentions=[AGENT]),
+            watch_line(2, author=sibling, content="@Hermes second", mentions=[AGENT]),
+            watch_line(3, author=sibling, channel=DM, content="dm"),
+            watch_line(4, author=sibling, content="not for us"),
+            watch_line(5, author=OWNER, content="@Hermes hi", mentions=[AGENT]),
+            watch_line(6, author=other, content="@Hermes hello", mentions=[AGENT]),
+            watch_line(7, author=other, content="@Hermes again", mentions=[AGENT]),
+        ]
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling]) as fake:
+            adapter = self._adapter()
+            events = self._capture(adapter)
+            self._sender_run(fake, adapter, lines)
+            self.assertTrue(adapter.authorization_is_upstream)
+            by_text = {e.text: e.source.is_bot for e in events}
+            self.assertEqual(by_text, {"first": True, "second": True, "dm": True, "hi": False})
+            # A lookup per sender at a time, none for a message that is not for us or from the owner.
+            lookups = [call["args"][3] for call in fake.calls("agents", "same-owner")]
+            self.assertEqual(lookups.count(sibling), 1)
+            self.assertEqual(lookups.count(other), 1)
+            self.assertNotIn(OWNER, lookups)
+
+    def test_answers_are_remembered_for_a_while(self):
+        sibling, other = "d" * 64, "e" * 64
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling]) as fake:
+            adapter = self._adapter()
+            events = self._capture(adapter)
+
+            async def say(n, author):
+                await adapter._on_message(parse_watch_line(json.dumps(
+                    watch_line(n, author=author, content=f"m{n}", mentions=[AGENT]))))
+                while adapter._admissions:
+                    await asyncio.sleep(0.01)
+
+            def expire(author, seconds):
+                same, until = adapter._same_owner_answers[author]
+                adapter._same_owner_answers[author] = (same, until - seconds)
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                await say(1, sibling)
+                await say(2, sibling)
+                await say(3, other)
+                await say(4, other)
+                self.assertEqual(len(fake.calls("agents", "same-owner")), 2)
+                expire(other, 50)
+                await say(5, other)
+                self.assertEqual(len(fake.calls("agents", "same-owner")), 2)
+                expire(other, 20)
+                expire(sibling, 290)
+                await say(6, other)
+                await say(7, sibling)
+                self.assertEqual(len(fake.calls("agents", "same-owner")), 3)
+                expire(sibling, 20)
+                await say(8, sibling)
+                self.assertEqual(len(fake.calls("agents", "same-owner")), 4)
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.assertEqual([e.text for e in events], ["m1", "m2", "m7", "m8"])
+
+    def test_a_failed_lookup_denies_and_is_not_remembered(self):
+        sibling = "d" * 64
+        lines = [watch_line(1, author=sibling, content="@Hermes hi", mentions=[AGENT])]
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER) as fake:  # the call fails
+            adapter = self._adapter()
+            events = self._capture(adapter)
+            self._sender_run(fake, adapter, lines)
+            self.assertEqual(events, [])
+            self.assertEqual(len(adapter._same_owner_answers), 0)
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling],
+                        FAKE_KUZZ_SAME_OWNER_DELAY="5") as fake:  # the call is too slow
+            adapter = self._adapter()
+            events = self._capture(adapter)
+            with mock.patch.object(adapter_module, "_SAME_OWNER_TIMEOUT_SECS", 0.3):
+                self._sender_run(fake, adapter, lines)
+            self.assertEqual(events, [])
+            self.assertEqual(len(adapter._same_owner_answers), 0)
+
+    def test_a_slow_lookup_does_not_hold_back_the_owner(self):
+        sibling = "d" * 64
+        lines = [
+            watch_line(1, author=sibling, content="@Hermes slow", mentions=[AGENT]),
+            watch_line(2, author=OWNER, content="@Hermes fast", mentions=[AGENT]),
+        ]
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling],
+                        FAKE_KUZZ_SAME_OWNER_DELAY="0.5") as fake:
+            adapter = self._adapter()
+            events = self._capture(adapter)
+
+            async def settle():
+                self.assertEqual([e.text for e in events], ["fast"])
+
+            self._sender_run(fake, adapter, lines, settle=settle)
+            self.assertEqual([e.text for e in events], ["fast", "slow"])
+
+    def test_disconnect_leaves_an_unanswered_message_for_the_replay(self):
+        sibling = "d" * 64
+        line = watch_line(1, author=sibling, content="@Hermes hi", mentions=[AGENT])
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling],
+                        FAKE_KUZZ_SAME_OWNER_DELAY="5"):
+            adapter = self._adapter()
+            events = self._capture(adapter)
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                await adapter._on_message(parse_watch_line(json.dumps(line)))
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.assertEqual(events, [])
+            self.assertFalse(adapter._admissions)
+            self.assertNotIn(event_id(1), adapter._channel(CHANNEL)["seen"])
+
+    def test_disconnect_after_delivery_keeps_the_message_seen(self):
+        sibling = "d" * 64
+        line = watch_line(1, author=sibling, content="@Hermes hi", mentions=[AGENT])
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling]):
+            adapter = self._adapter()
+            events = self._capture(adapter)
+
+            async def slow_reaction(*_):
+                await asyncio.sleep(5)
+
+            adapter.send_reaction = slow_reaction
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                await adapter._on_message(parse_watch_line(json.dumps(line)))
+                while not events:
+                    await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.assertEqual(len(events), 1)
+            self.assertIn(event_id(1), adapter._channel(CHANNEL)["seen"])
+
+    def test_reaction_only_sender_still_gets_the_seen_reaction(self):
+        lines = [watch_line(1, author=STRANGER, content="@Hermes hi", mentions=[AGENT])]
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[],
+                        BUZZ_REACTION_ONLY_USERS=STRANGER) as fake:
+            adapter = self._adapter()
+            events = self._capture(adapter)
+            self._sender_run(fake, adapter, lines)
+            self.assertEqual(events, [])
+            self.assertTrue(any("react" in " ".join(call["args"]) for call in fake.calls()))
 
     def test_owner_override_and_owner_identity_refused(self):
         for whoami_owner in (OWNER, "null"):  # "null": paired, but the relay has not named the owner yet

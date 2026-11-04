@@ -424,21 +424,116 @@ pub(crate) async fn status_one(
     status(&state, &headers, &uri, std::slice::from_ref(&pubkey)).await
 }
 
+/// The `pubkeys` query parameter, split on commas.
+fn pubkeys_param(uri: &Uri) -> Option<Vec<String>> {
+    uri.query().and_then(|query| {
+        url::form_urlencoded::parse(query.as_bytes())
+            .find(|(name, _)| name == "pubkeys")
+            .map(|(_, value)| value.split(',').map(str::to_owned).collect())
+    })
+}
+
+/// Canonical keys without repeats, at most [`MAX_STATUS_KEYS`].
+#[allow(clippy::result_large_err)]
+fn parse_keys(requested: &[String]) -> Result<Vec<[u8; 32]>, Response> {
+    let mut pubkeys: Vec<[u8; 32]> = Vec::with_capacity(requested.len());
+    for raw in requested {
+        match nostr::PublicKey::from_hex(raw) {
+            Ok(key) if key.to_hex() == *raw => {
+                if !pubkeys.contains(&key.to_bytes()) {
+                    pubkeys.push(key.to_bytes());
+                }
+            }
+            _ => {
+                return Err(bad_request(
+                    "pubkeys must be canonical lowercase public keys",
+                ))
+            }
+        }
+    }
+    if pubkeys.is_empty() || pubkeys.len() > MAX_STATUS_KEYS {
+        return Err(bad_request(&format!("ask about 1-{MAX_STATUS_KEYS} keys")));
+    }
+    Ok(pubkeys)
+}
+
 /// `GET /agents/status?pubkeys=<hex>,<hex>`.
 pub(crate) async fn status_many(
     State(state): State<Arc<AppState>>,
     uri: Uri,
     headers: HeaderMap,
 ) -> Response {
-    let requested = uri.query().and_then(|query| {
-        url::form_urlencoded::parse(query.as_bytes())
-            .find(|(name, _)| name == "pubkeys")
-            .map(|(_, value)| value.split(',').map(str::to_owned).collect::<Vec<_>>())
-    });
-    match requested {
+    match pubkeys_param(&uri) {
         Some(pubkeys) => status(&state, &headers, &uri, &pubkeys).await,
         None => bad_request("pubkeys is required"),
     }
+}
+
+/// `GET /agents/same-owner?pubkeys=<hex>,<hex>`: which of the keys are the
+/// caller's owner or the owner's agents, as `{"keys": [<hex>]}`. Any other key
+/// is left out, whether it has another owner or none. An agent listens to
+/// these keys as it does to its owner. Works for bearer tokens and NIP-98 keys
+/// in every admission mode; a caller with no owner counts as its own owner.
+pub(crate) async fn same_owner(
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    let Some(requested) = pubkeys_param(&uri) else {
+        return bad_request("pubkeys is required");
+    };
+    let pubkeys = match parse_keys(&requested) {
+        Ok(pubkeys) => pubkeys,
+        Err(response) => return response,
+    };
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await else {
+        return super::not_found("no community is configured for this host");
+    };
+    let path = uri
+        .path_and_query()
+        .map_or_else(|| uri.path(), |pq| pq.as_str());
+    let caller = match crate::api::bridge::admit_get_caller(&state, &tenant, &headers, path).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    if let Err(response) = rate_limit(
+        &state,
+        &format!("agents:same-owner:{}", caller.to_hex()),
+        60,
+        120,
+    )
+    .await
+    {
+        return response;
+    }
+    let caller = caller.to_bytes();
+    let mut lookup = pubkeys.clone();
+    if !lookup.contains(&caller) {
+        lookup.push(caller);
+    }
+    let owners = match state.db.key_owners(tenant.community(), &lookup).await {
+        Ok(owners) => owners,
+        Err(_) => return super::unavailable(),
+    };
+    let my_owner = owners
+        .iter()
+        .find(|(key, _)| *key == caller)
+        .map_or(caller.as_slice(), |(_, owner)| owner.as_slice());
+    let keys: Vec<String> = pubkeys
+        .iter()
+        .filter(|key| {
+            key.as_slice() == my_owner
+                || owners
+                    .iter()
+                    .any(|(owned, owner)| owned == *key && owner.as_slice() == my_owner)
+        })
+        .map(hex::encode)
+        .collect();
+    axum::Json(json!({"keys": keys})).into_response()
 }
 
 /// The NIP-98 event of a request whose `Authorization` already verified.
@@ -470,20 +565,10 @@ async fn status(
     uri: &Uri,
     requested: &[String],
 ) -> Response {
-    let mut pubkeys: Vec<[u8; 32]> = Vec::with_capacity(requested.len());
-    for raw in requested {
-        match nostr::PublicKey::from_hex(raw) {
-            Ok(key) if key.to_hex() == *raw => {
-                if !pubkeys.contains(&key.to_bytes()) {
-                    pubkeys.push(key.to_bytes());
-                }
-            }
-            _ => return bad_request("pubkeys must be canonical lowercase public keys"),
-        }
-    }
-    if pubkeys.is_empty() || pubkeys.len() > MAX_STATUS_KEYS {
-        return bad_request(&format!("ask about 1-{MAX_STATUS_KEYS} keys"));
-    }
+    let pubkeys = match parse_keys(requested) {
+        Ok(pubkeys) => pubkeys,
+        Err(response) => return response,
+    };
 
     let raw_host = headers
         .get(axum::http::header::HOST)

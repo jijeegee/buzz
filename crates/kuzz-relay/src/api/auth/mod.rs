@@ -49,7 +49,10 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::identity::{verify_access_token, verify_session_token, TokenRejection};
 use crate::state::AppState;
 
-pub(crate) use agents::{status_many as agent_status_many, status_one as agent_status_one};
+pub(crate) use agents::{
+    same_owner as agent_same_owner, status_many as agent_status_many,
+    status_one as agent_status_one,
+};
 
 /// Bound on `/auth/*` request bodies.
 const AUTH_BODY_LIMIT: usize = 16 * 1024;

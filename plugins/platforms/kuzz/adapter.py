@@ -89,6 +89,10 @@ _MAX_CATCH_UP_SECS = 86400
 _DM_REFRESH_SECS = 60.0
 # Hermes gives connect 30s.
 CONNECT_UPDATE_HOLD = 20.0
+# `kuzz agents same-owner`: its time limit and how long an answer is remembered.
+_SAME_OWNER_TIMEOUT_SECS = 3.0
+_SAME_OWNER_HIT_SECS = 300.0
+_SAME_OWNER_MISS_SECS = 60.0
 _CURSOR_SAVE_SECS = 5.0
 # `kuzz messages edit` takes the text as an argument (no stdin); stay under the Windows limit.
 _EDIT_ARG_LIMIT = 24000
@@ -301,6 +305,10 @@ class BuzzAdapter(BasePlatformAdapter):
         self._dm_channels: Set[str] = set()
         self._dm_checked_at = 0.0
         self._channel_names: Dict[str, str] = {}
+        # sender -> (shares our owner, valid until, monotonic); failed lookups are not kept.
+        self._same_owner_answers = _Bounded(_ID_CAP)
+        self._same_owner_lookups: Dict[str, asyncio.Task] = {}
+        self._admissions: Set[asyncio.Task] = set()
         self._sync_allowlist()
 
     @property
@@ -315,6 +323,11 @@ class BuzzAdapter(BasePlatformAdapter):
     @property
     def owner(self) -> Optional[str]:
         return self._identity.owner if self._identity else None
+
+    @property
+    def authorization_is_upstream(self) -> bool:
+        """``_handle`` admits every sender, the owner's other agents included, which no allowlist can name."""
+        return True
 
     @property
     def allowed_pubkeys(self) -> Set[str]:
@@ -396,6 +409,11 @@ class BuzzAdapter(BasePlatformAdapter):
                 await asyncio.wait_for(task, timeout=10)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
+        # After the watch: its last lines may have started admissions. A cancelled one is replayed.
+        pending = (*self._admissions, *self._same_owner_lookups.values())
+        for waiting in pending:
+            waiting.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
         self._save_cursors()
         self._release_lock()
 
@@ -589,11 +607,71 @@ class BuzzAdapter(BasePlatformAdapter):
             return
         is_dm = await self._is_dm(msg.channel)
         state["chat_type"] = "dm" if is_dm else "group"
-        if msg.author not in self.allowed_pubkeys:
-            if msg.author in self._reaction_only and self._mentions_me(msg):
-                await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)
-            logger.debug("Buzz: ignored a message from a sender who is not allowed (%s…)", msg.author[:8])
+        if msg.author in self.allowed_pubkeys:
+            await self._deliver(msg, state, is_dm)
             return
+        if not self._is_addressed(msg, is_dm):
+            return
+        same_owner = self._known_same_owner(msg.author)
+        if same_owner is None:
+            # A CLI call: the read loop goes on, or one slow lookup would hold back the owner's messages.
+            task = asyncio.ensure_future(self._admit(msg, state, is_dm))
+            self._admissions.add(task)
+            task.add_done_callback(self._admissions.discard)
+        elif same_owner:
+            await self._deliver(msg, state, is_dm)
+        else:
+            await self._refuse(msg)
+
+    async def _admit(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
+        try:
+            try:
+                same_owner = await self._same_owner(msg.author)
+            except asyncio.CancelledError:
+                # Not answered yet, so the replay brings it back. After this point it must not.
+                state["seen"].pop(msg.id, None)
+                raise
+            if same_owner:
+                await self._deliver(msg, state, is_dm)
+            else:
+                await self._refuse(msg)
+        except Exception:
+            logger.exception("Buzz: could not admit %s", msg.id[:12])
+
+    async def _refuse(self, msg: WatchMessage) -> None:
+        if msg.author in self._reaction_only and self._mentions_me(msg):
+            await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)
+        logger.debug("Buzz: ignored a message from a sender who is not allowed (%s…)", msg.author[:8])
+
+    def _known_same_owner(self, author: str) -> Optional[bool]:
+        answer = self._same_owner_answers.get(author)
+        return answer[0] if answer and time.monotonic() < answer[1] else None
+
+    async def _same_owner(self, author: str) -> bool:
+        """Whether the relay says ``author`` shares our owner. A burst from one sender shares a lookup."""
+        lookup = self._same_owner_lookups.get(author)
+        if lookup is None:
+            lookup = asyncio.ensure_future(self._lookup_same_owner(author))
+            self._same_owner_lookups[author] = lookup
+            lookup.add_done_callback(lambda _: self._same_owner_lookups.pop(author, None))
+        return await lookup
+
+    async def _lookup_same_owner(self, author: str) -> bool:
+        args = ["agents", "same-owner", "--pubkeys", author]
+        try:
+            rc, out, err = await kuzz_cli.run_cli(self._cli, args, timeout=_SAME_OWNER_TIMEOUT_SECS, env=self._env())
+        except OSError:
+            return False
+        keys = _json_dict(out).get("keys") if rc == 0 else None
+        if not isinstance(keys, list):
+            logger.debug("Buzz: same-owner lookup failed: %s", kuzz_cli.cli_error_message(err, rc))
+            return False
+        same_owner = author in keys
+        keep = _SAME_OWNER_HIT_SECS if same_owner else _SAME_OWNER_MISS_SECS
+        self._same_owner_answers.put(author, (same_owner, time.monotonic() + keep))
+        return same_owner
+
+    async def _deliver(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
         if not self._is_addressed(msg, is_dm) or not self._message_handler:
             return
         user_name = msg.author_name or msg.author[:8]
@@ -604,6 +682,7 @@ class BuzzAdapter(BasePlatformAdapter):
             user_id=msg.author,
             user_name=user_name,
             thread_id=msg.thread_root,
+            is_bot=msg.author != self.owner,  # Hermes' loop guard counts these: agents can answer each other
             message_id=msg.id,
         )
         event = MessageEvent(
