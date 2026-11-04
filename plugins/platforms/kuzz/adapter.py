@@ -87,6 +87,8 @@ _REPLAY_SLACK_SECS = 60
 # Longest catch-up after a restart (`kuzz messages watch --since`).
 _MAX_CATCH_UP_SECS = 86400
 _DM_REFRESH_SECS = 60.0
+# Hermes gives connect 30s.
+CONNECT_UPDATE_HOLD = 20.0
 _CURSOR_SAVE_SECS = 5.0
 # `kuzz messages edit` takes the text as an argument (no stdin); stay under the Windows limit.
 _EDIT_ARG_LIMIT = 24000
@@ -338,6 +340,11 @@ class BuzzAdapter(BasePlatformAdapter):
     async def connect(self, *, is_reconnect: bool = False) -> bool:
         if self._supervisor is not None:
             await self.disconnect()
+        if not await kuzz_cli.hold_for_update(limit=CONNECT_UPDATE_HOLD):
+            # kuzz.exe may be half written. Hermes retries a retryable failure in the background.
+            logger.info("Buzz: an app update is still running; connecting later")
+            self._set_fatal_error("update_running", "Kuzz is updating.", retryable=True)
+            return False
         cli_path = _cli_path(self._extra)
         if not cli_path:
             return self._fail("cli_missing", "The kuzz CLI was not found. Install Kuzz or set KUZZ_CLI_PATH.")

@@ -258,6 +258,18 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(adapter.fatal_error_code, "wrong_identity")
             self.assertEqual(fake.calls("messages", "watch"), [])
 
+    def test_connect_during_an_update_fails_retryably(self):
+        with mock.patch.dict("os.environ", {"LOCALAPPDATA": self._home.name}):
+            signal = Path(self._home.name) / "kuzz" / "update-pause"
+            signal.parent.mkdir()
+            signal.touch()
+            with FakeKuzz(FAKE_KUZZ_SELF=AGENT, FAKE_KUZZ_OWNER=OWNER) as fake:
+                with mock.patch.object(adapter_module, "CONNECT_UPDATE_HOLD", 0.0):
+                    adapter = self._adapter()
+                    self.assertFalse(asyncio.run(adapter.connect()))
+                self.assertEqual(fake.calls(), [])
+            self.assertTrue(adapter.fatal_error_retryable)
+
     def test_not_paired_and_no_key_fails_closed(self):
         with self._fake([{"rc": 0}], BUZZ_RELAY_URL="wss://relay.example") as fake:
             adapter = self._adapter()
