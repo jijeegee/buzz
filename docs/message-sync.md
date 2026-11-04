@@ -845,8 +845,9 @@ thread closes, and the next open counts as first again), the client reads the
 thread's newest replies from the store and draws them while the relay is
 asked ([Painting from the store](#painting-from-the-store)). As with rooms,
 the relay's page then folds in, from the same single request. On desktop, a load that must include a linked reply skips
-the store (its walk to the reply pages the relay anyway); mobile opens linked
-replies with a separate relay window (`openAt`). Later loads and older pages always ask
+the store (its walk to the reply pages the relay anyway); mobile lands on a
+linked reply among the replies it holds first, and otherwise asks a separate
+relay window (`openAt`). Later loads and older pages always ask
 the relay. Cases: `test-fixtures/message-store-thread-head.json`.
 
 - **Rows:** replies of the thread-window kinds (9, 40002) whose root is the
@@ -883,6 +884,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
   replaces a stored copy. The root fills only the top bubble, agent pins and
   the thread menu; until it is found a thin row shows the thread name there.
+  That row replaces the loading text whenever replies are drawn; loading
+  shows only once the store has answered with no replies.
 - **Asked again:** a failed, timed-out or empty answer is unresolved. A
   failed request while connected is retried after 2, 5 and 15 s; after that,
   and for an empty answer, the relay is asked again each time the session
@@ -903,11 +906,18 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   not needed to send. A room built from the Chats row (channel list not yet
   loaded) stands in for display only: the composer shows a loading line until
   the listed room or its details arrive ([Launch snapshots](#launch-snapshots)).
-- **Other entry points** (notifications, goals, search, drafts) still open
-  through the channel route's thread placeholder; once its by-id fetch
-  settles without the root (failed, timed out, empty), or at once while the
-  session is reconnecting after a drop, it hands the thread off by id instead of showing the channel. A late read state that reruns the
-  fetch does not count the replaced run. Forum rooms keep the channel route.
+- **Other entry points** (notifications, Inbox, goals, search, drafts) open
+  the same thread page directly (mobile `threadOrRoomPage`). Forum rooms keep
+  the channel route.
+- **Linked reply:** a link names the reply's parent, which is not always the
+  root, while replies are read by their root. The linked reply (the room's
+  rows, the store, the relay) gives the root. A nested parent stays the head
+  and the replies read from the root. A parent the reader cannot get moves
+  the page to the root in place, on the same route. A reply not found at
+  first is asked for again after a push inbox drain and on reconnect, and the
+  list opens at it when it arrives.
+- **Room read:** opening a thread this way does not mark its room read, as
+  with a Chats thread row.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
   the socket is down or before AUTH is held and sent on connect (its timeout
   still runs from when it was asked), not dropped.
@@ -1133,9 +1143,11 @@ older rows it should no longer see. Cases:
 
 ### Push inbox
 
-Stage B of push content on the device (iPhone first). The notification
-extension (NSE) saves the verified events it fetched for a push; the app
-takes them into this store and its lists without waiting for the socket.
+Stage B of push content on the device. The notification extension (NSE)
+on iPhone, or the background message handler on Android
+(`push_fcm_background.dart`), saves the verified events it fetched for a
+push; the app takes them into this store and its lists without waiting for
+the socket.
 Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
 
 - **Token:** each push-enabled, signed-in community has a random inbox
@@ -1882,7 +1894,9 @@ that position.
   at most about 1.2 s, the 1 s read state wait included (also when the
   target's time is not known yet); then the replies at hand show at the
   newest, and a position found later moves the list once, only if the reader
-  has not scrolled meanwhile.
+  has not scrolled meanwhile. A list with no replies is never hidden, and a
+  linked reply that arrives later (a push inbox drain, the relay) still opens
+  there.
 - **Where positions are kept:** per server and account. Desktop keys them by
   the relay's `https://host[:port]` origin (the store files' server identity)
   and account; a record from before this moves once to the first server the
