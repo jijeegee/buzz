@@ -1,4 +1,5 @@
 import 'package:flutter/widgets.dart';
+import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/push/push_inbox_events.dart';
@@ -103,7 +104,7 @@ final linkedReplyProvider = FutureProvider.autoDispose
 /// A thread as a route of its own, opened by id from anywhere: nothing here
 /// waits for the head, the room's timeline or the relay
 /// (docs/message-sync.md#opening-a-thread-from-its-root-id).
-class DirectThreadPage extends ConsumerWidget {
+class DirectThreadPage extends HookConsumerWidget {
   /// The room as the opener knows it; the listed room replaces it.
   final Channel channel;
   final String threadId;
@@ -150,23 +151,28 @@ class DirectThreadPage extends ConsumerWidget {
     final (:parentId, :rootId) =
         reply?.threadReference ?? (parentId: null, rootId: null);
     final nested = parentId == threadId && rootId != null && rootId != threadId;
+    // The move happens once, in place: replies are read by the root on both
+    // sides of it, so only the head changes and nothing opens again.
+    final parentMissing = useRef(false);
+    parentMissing.value =
+        parentMissing.value ||
+        (nested &&
+            ref
+                .watch(
+                  threadRootProvider(
+                    ThreadRepliesArgs(channelId: channel.id, rootId: threadId),
+                  ),
+                )
+                .missing);
     final head = linkedThreadHead(
       threadId: threadId,
       linked: reply,
-      parentMissing:
-          nested &&
-          ref
-              .watch(
-                threadRootProvider(
-                  ThreadRepliesArgs(channelId: channel.id, rootId: threadId),
-                ),
-              )
-              .missing,
+      parentMissing: parentMissing.value,
     );
     return ThreadDetailPage(
-      key: ValueKey(head.headId),
       headId: head.headId,
       rootId: head.rootId,
+      movedFromHeadId: head.headId == threadId ? null : threadId,
       rootHint: rootHint,
       initialThreadName: threadName,
       standInChannel: standIn ? channel : null,

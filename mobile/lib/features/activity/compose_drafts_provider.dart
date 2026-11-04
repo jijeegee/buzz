@@ -160,6 +160,24 @@ class ComposeDraftsNotifier extends Notifier<List<ComposeDraft>> {
     _persist(next.length > _maxDrafts ? next.sublist(0, _maxDrafts) : next);
   }
 
+  /// Moves the draft at [from] to [to], for a thread whose head changed.
+  void move({
+    required String from,
+    required String to,
+    required String? threadHeadId,
+  }) {
+    final draft = draftFor(from);
+    if (draft == null) return;
+    save(
+      key: to,
+      channelId: draft.channelId,
+      threadHeadId: threadHeadId,
+      text: draft.text,
+      mentionKeys: draft.mentionKeys,
+    );
+    remove(from);
+  }
+
   void remove(String key) {
     if (!state.any((d) => d.key == key)) return;
     _persist([...state.where((d) => d.key != key)]);

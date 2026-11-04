@@ -113,6 +113,10 @@ class ThreadDetailPage extends HookConsumerWidget {
   /// queried and sent by root.
   final String? rootId;
 
+  /// The head this page moved from in place (a linked reply's hidden parent):
+  /// its replies hang off the head, and the composer stays as it was.
+  final String? movedFromHeadId;
+
   /// The root as the opening row carried it, drawn until it is resolved.
   final NostrEvent? rootHint;
 
@@ -150,6 +154,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     this.threadHead,
     String? headId,
     this.rootId,
+    this.movedFromHeadId,
     this.rootHint,
     this.initialThreadName,
     this.standInChannel,
@@ -214,7 +219,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     final sendMessage = ref.read(sendMessageProvider);
     final quoteScope = ComposerQuoteScope(
       channelId: channelId,
-      threadHeadId: threadHead.id,
+      threadHeadId: movedFromHeadId ?? threadHead.id,
     );
     // Captured per build so a send carries the quote shown when it started.
     final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
@@ -329,9 +334,10 @@ class ThreadDetailPage extends HookConsumerWidget {
     for (final msg in allMsgs) {
       var pid = msg.parentId;
       if (pid == null) continue;
-      if (headIsStandIn &&
-          msg.rootId == threadHead.id &&
-          !loadedIds.contains(pid)) {
+      if (pid == movedFromHeadId ||
+          (headIsStandIn &&
+              msg.rootId == threadHead.id &&
+              !loadedIds.contains(pid))) {
         pid = threadHead.id;
       }
       childrenByParent.putIfAbsent(pid, () => []).add(msg);
@@ -1538,6 +1544,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                               restoreComposerFocus.value = restoreFocus,
                           hintText: context.l10n.threadComposerHint,
                           threadHeadId: threadHead.id,
+                          movedFromHeadId: movedFromHeadId,
                           rootId: effectiveRootId,
                           threadRootTags: resolvedHead.missing
                               ? _standInRootTags(allReplies)

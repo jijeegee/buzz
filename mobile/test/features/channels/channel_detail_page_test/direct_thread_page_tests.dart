@@ -721,6 +721,149 @@ void directThreadPageTests() {
       expect(navigator.canPop(), isFalse);
     });
 
+    group('A hidden parent found late', () {
+      final composerText = find.descendant(
+        of: find.byType(ComposeBar),
+        matching: find.byType(EditableText),
+      );
+      String typed(WidgetTester tester) =>
+          tester.widget<EditableText>(composerText).controller.text;
+
+      Future<void> type(WidgetTester tester, String text) async {
+        await tester.tap(find.text('Reply in thread…').hitTestable());
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 300));
+        await tester.enterText(composerText, text);
+        await tester.pump();
+      }
+
+      Future<({NostrEvent event, bool deleted})?> storedParts(String id) async {
+        final event = id == nested.id
+            ? nested
+            : id == _openAtRootId
+            ? _openAtRoot
+            : null;
+        return event == null ? null : (event: event, deleted: false);
+      }
+
+      testWidgets('keeps the page, the text and the rows', (tester) async {
+        final lookup = Completer<List<NostrEvent>>();
+        final send = _RecordingSend();
+        await tester.pumpWidget(
+          harness(
+            link(threadId: parent, messageId: nested.id),
+            session: _SilentRelaySession(),
+            overrides: [
+              rootLookup(stored: storedParts, relay: () => lookup.future),
+              storedByRoot([nested]),
+              sendMessageProvider.overrideWithValue(send),
+            ],
+          ),
+        );
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(shownPage(tester).headId, parent);
+        final page = tester.element(find.byType(ThreadDetailPage));
+        final container = ProviderScope.containerOf(page);
+        await type(tester, 'half a thought');
+        container
+            .read(
+              composerQuoteProvider(
+                const ComposerQuoteScope(
+                  channelId: _channelId,
+                  threadHeadId: parent,
+                ),
+              ).notifier,
+            )
+            .quote(
+              QuoteTarget(
+                eventId: nested.id,
+                authorPubkey: nested.pubkey,
+                author: 'Carol',
+                excerpt: 'A quoted line',
+              ),
+            );
+        await tester.pump();
+        expect(find.byType(ComposerQuoteChip), findsOneWidget);
+
+        lookup.complete(const []);
+        for (var frame = 0; frame < 10; frame++) {
+          await tester.pump(const Duration(milliseconds: 16));
+          expect(find.text('Nested reply'), findsWidgets, reason: '$frame');
+          expect(listVisible(tester), isTrue, reason: '$frame');
+        }
+
+        expect(shownPage(tester).headId, _openAtRootId);
+        expect(tester.element(find.byType(ThreadDetailPage)), same(page));
+        expect(typed(tester), 'half a thought');
+        final chip = tester.widget<ComposerQuoteChip>(
+          find.byType(ComposerQuoteChip),
+        );
+        expect(container.read(composerQuoteProvider(chip.scope)), isNotNull);
+        final drafts = container.read(composeDraftsProvider.notifier);
+        expect(
+          drafts.textFor(
+            composeDraftKey(_channelId, threadHeadId: _openAtRootId),
+          ),
+          'half a thought',
+        );
+        expect(
+          drafts.textFor(composeDraftKey(_channelId, threadHeadId: parent)),
+          isNull,
+        );
+
+        await tester
+            .widget<ComposeBar>(find.byType(ComposeBar))
+            .onSend('half a thought', const []);
+        expect(send.calls, [
+          (parentEventId: _openAtRootId, rootEventId: _openAtRootId),
+        ]);
+      });
+
+      testWidgets('a parent back after a reconnect leaves the page there', (
+        tester,
+      ) async {
+        final session = _SilentRelaySession();
+        var answer = const <NostrEvent>[];
+        await tester.pumpWidget(
+          harness(
+            link(threadId: parent, messageId: nested.id),
+            session: session,
+            overrides: [
+              rootLookup(stored: storedParts, relay: () async => answer),
+              storedByRoot([nested]),
+            ],
+          ),
+        );
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        expect(shownPage(tester).headId, _openAtRootId);
+        await type(tester, 'still here');
+
+        answer = [
+          _textMsg(
+            id: parent,
+            pubkey: 'bob',
+            content: 'The parent',
+            extraTags: [
+              ['e', _openAtRootId, '', 'reply'],
+            ],
+          ),
+        ];
+        session.drop();
+        await tester.pump();
+        session.comeBack();
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+
+        expect(shownPage(tester).headId, _openAtRootId);
+        expect(typed(tester), 'still here');
+      });
+    });
+
     testWidgets('a drain brings a reply not found at first', (tester) async {
       NostrEvent? stored;
       await tester.pumpWidget(

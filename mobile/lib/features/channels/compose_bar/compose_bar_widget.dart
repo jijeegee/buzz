@@ -17,6 +17,10 @@ class ComposeBar extends HookConsumerWidget {
 
   /// Optional thread IDs for thread-scoped typing indicators.
   final String? threadHeadId;
+
+  /// The thread head this composer moved from in place: what is typed stays,
+  /// and its draft follows to [threadHeadId].
+  final String? movedFromHeadId;
   final String? rootId;
 
   /// Persists the draft under this key instead of the channel or thread key,
@@ -36,6 +40,7 @@ class ComposeBar extends HookConsumerWidget {
     this.channelName = '',
     this.hintText,
     this.threadHeadId,
+    this.movedFromHeadId,
     this.rootId,
     this.draftKey,
     this.threadRootTags = const [],
@@ -112,6 +117,9 @@ class ComposeBar extends HookConsumerWidget {
       ref: ref,
       controller: controller,
       draftKey: draftKey,
+      movedFromKey: movedFromHeadId == null
+          ? null
+          : composeDraftKey(channelId, threadHeadId: movedFromHeadId),
       channelId: channelId,
       threadHeadId: threadHeadId,
       draftIdentity: draftIdentity,
