@@ -755,6 +755,11 @@ closed). It is the read a first open makes, with one answer:
   yet confirmed. Nothing is written, and those rows confirm no send, vouch for
   no gap and do not join the saved head cache.
 
+A thread does the same: while its page is open or as it is reopened, it reads
+the store, a drain reads it again, and a thread holding a window (a retained one
+included) shows the stored replies past that window's cut. The relay page keeps
+holding only what the relay sent, so its next page removes the rest.
+
 The **relay cut** is what the last relay window that landed ruled on: the later
 of when that window was asked for and its newest row. Every relay window moves
 it, and it never moves back; a certain window from the store sets none. A
@@ -873,7 +878,8 @@ window state, mobile's thread window; both are released some time after the
 thread closes, and the next open counts as first again), the client reads the
 thread's newest replies from the store and draws them while the relay is
 asked ([Painting from the store](#painting-from-the-store)). As with rooms,
-the relay's page then folds in, from the same single request. On desktop, a load that must include a linked reply skips
+the relay's page then folds in, from the same single request, and on mobile
+the store is [read again](#reading-the-store-again) after that. On desktop, a load that must include a linked reply skips
 the store (its walk to the reply pages the relay anyway); mobile lands on a
 linked reply among the replies it holds first, and otherwise asks a separate
 relay window (`openAt`). Later loads and older pages always ask
@@ -1247,7 +1253,7 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   stored replies newer than its newest; older stored ones may be deleted on
   the relay), read the store again; the thread's first-load flag stays off
   for that re-read. A room nobody watched reads it as someone comes back. A
-  room holding the relay's window adds the rows past the relay cut
+  room or thread holding the relay's window adds the rows past the relay cut
   ([Reading the store again](#reading-the-store-again)). A store read that
   answers after a later one drew is ignored, and the cached head never draws
   over a store paint.

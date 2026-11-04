@@ -8,6 +8,7 @@ import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
+import 'package:kuzz/features/channels/relay_cut.dart';
 
 class _FakeRelaySession extends RelaySessionNotifier {
   int queryCount = 0;
@@ -128,6 +129,51 @@ void main() {
       );
     },
   );
+
+  test('a relay page sets the cut; a page from the store does not', () async {
+    final session = _FakeRelaySession()
+      ..threadWindow = [_reply('newer', 3), _reply('kept', 1), _threadBounds()];
+    final container = ProviderContainer(
+      overrides: [
+        relaySessionProvider.overrideWith(() => session),
+        storedThreadHeadProvider.overrideWithValue(
+          (_, _) async => [_reply('kept', 1), _threadBounds()],
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+    final asked = relayAskTime();
+    final window = container.read(threadWindowProvider(args).notifier);
+    container.listen(threadRepliesProvider(args), (_, _) {});
+    await container.read(threadRepliesProvider(args).future);
+    expect(window.relayCut, isNull);
+
+    for (var i = 0; i < 5; i++) {
+      await Future<void>.delayed(Duration.zero);
+    }
+    await container.read(threadRepliesProvider(args).future);
+    // The answer to the request sent with the store check, timed from then.
+    expect(window.relayCut!.askedAt, greaterThanOrEqualTo(asked));
+    expect(window.relayCut!.askedAt, lessThanOrEqualTo(relayAskTime()));
+    expect(window.relayCut!.newest, 3);
+  });
+
+  test('a complete scan sets the cut', () async {
+    final session = _FakeRelaySession()..replies = [_reply('only', 7)];
+    final container = ProviderContainer(
+      overrides: [
+        relaySessionProvider.overrideWith(() => session),
+        storedThreadHeadProvider.overrideWithValue((_, _) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    final asked = relayAskTime();
+    container.listen(threadRepliesProvider(args), (_, _) {});
+    await container.read(threadRepliesProvider(args).future);
+    final cut = container.read(threadWindowProvider(args).notifier).relayCut!;
+    expect(cut.newest, 7);
+    expect(cut.askedAt, greaterThanOrEqualTo(asked));
+  });
 
   test('complete scan includes a legal 80-deep reply chain', () async {
     final session = _FakeRelaySession()

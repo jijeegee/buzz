@@ -8,6 +8,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/push/push_inbox_events.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_preload.dart';
+import 'relay_cut.dart';
 import 'timeline_message.dart';
 import 'thread_replies_provider.dart';
 import 'thread_window.dart';
@@ -24,12 +25,21 @@ final paintableThreadHeadProvider = Provider<StoredThreadHeadReader>(
       ),
 );
 
+/// A device store read of a thread: its replies, and when those only the
+/// push inbox wrote were fetched.
+typedef StoredThreadReplies = ({
+  List<NostrEvent> events,
+  Map<String, int?> pushedAt,
+});
+
+const StoredThreadReplies _noStoredReplies = (events: [], pushedAt: {});
+
 /// A thread's newest replies as the device store holds them, empty when it
 /// holds none. Not yet confirmed: the thread's relay page replaces them
 /// (docs/message-sync.md#opening-a-thread-from-the-store). Read again after
 /// a push inbox drain wrote to the store.
 final storedThreadRepliesProvider = FutureProvider.autoDispose
-    .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) async {
+    .family<StoredThreadReplies, ThreadRepliesArgs>((ref, args) async {
       ref.watch(pushInboxRevisionProvider);
       final session = ref.read(relaySessionProvider.notifier);
       try {
@@ -37,17 +47,47 @@ final storedThreadRepliesProvider = FutureProvider.autoDispose
           session,
           args,
         );
-        if (events == null) return const [];
-        return parseThreadWindowPage(
-              events,
-              channelId: args.channelId,
-              rootId: args.rootId,
-            )?.events ??
-            const [];
+        if (events == null) return _noStoredReplies;
+        final page = parseThreadWindowPage(
+          events,
+          channelId: args.channelId,
+          rootId: args.rootId,
+        );
+        if (page == null) return _noStoredReplies;
+        return (
+          events: page.events,
+          pushedAt: storedPushedAt(events, threadWindowBoundsKind),
+        );
       } catch (error) {
         debugPrint('[ThreadReplies] stored replies unavailable: $error');
+        return _noStoredReplies;
+      }
+    });
+
+/// Stored replies past the relay cut of a thread already holding a window,
+/// the same rule as a room's (docs/message-sync.md#reading-the-store-again).
+/// While newer pages remain they would sit past replies not loaded.
+final storedNewerRepliesProvider = Provider.autoDispose
+    .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
+      final window = ref.watch(threadWindowProvider(args));
+      final stored = ref.watch(storedThreadRepliesProvider(args)).value;
+      if (window == null || stored == null || window.state.hasNewer) {
         return const [];
       }
+      final cut = ref.read(threadWindowProvider(args).notifier).relayCut;
+      final held = {for (final reply in window.events) reply.id};
+      final covered = window.state.newestCovered?.createdAt ?? 0;
+      return [
+        for (final reply in stored.events)
+          if (!held.contains(reply.id) &&
+              isPastRelayCut(
+                cut,
+                createdAt: reply.createdAt,
+                fetchedAt: stored.pushedAt[reply.id],
+                newestHeld: covered,
+              ))
+            reply,
+      ];
     });
 
 /// Replies to draw while a thread's own query is out: the inbox preload's,
@@ -58,7 +98,8 @@ final savedThreadRepliesProvider = Provider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
       final preloaded = ref.watch(preloadedThreadRepliesProvider(args));
       final stored =
-          ref.watch(storedThreadRepliesProvider(args)).value ?? const [];
+          ref.watch(storedThreadRepliesProvider(args)).value?.events ??
+          const [];
       if (preloaded.isEmpty) return stored;
       final newest = preloaded.map((reply) => reply.createdAt).reduce(max);
       final newer = [

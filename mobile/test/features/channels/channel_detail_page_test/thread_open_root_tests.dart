@@ -149,6 +149,63 @@ void threadOpenRootTests() {
       return tester.widget<Opacity>(reveal).opacity > 0;
     }
 
+    testWidgets('a thread on screen shows a pushed reply past its relay page', (
+      tester,
+    ) async {
+      final pushed = _openAtReply(110);
+      var inStore = replies;
+      List<NostrEvent> read() => [
+        for (final event in serveThreadWindow(
+          _channelId,
+          _openAtRootId,
+          inStore,
+          NostrFilter(kinds: const [], limit: 50),
+        ))
+          if (event.kind == threadWindowBoundsKind)
+            NostrEvent(
+              id: event.id,
+              pubkey: event.pubkey,
+              createdAt: event.createdAt,
+              kind: event.kind,
+              tags: event.tags,
+              content: jsonEncode({
+                ...jsonDecode(event.content) as Map<String, dynamic>,
+                'pushed_at': {
+                  pushed.id: DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60,
+                },
+              }),
+              sig: '',
+            )
+          else
+            event,
+      ];
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(replies),
+          overrides: [
+            rootSources(relay: () => Completer<List<NostrEvent>>().future),
+            paintableThreadHeadProvider.overrideWithValue(
+              (_, _) async => read(),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(findRichText('row 109'), findsOneWidget);
+      expect(findRichText('row 110'), findsNothing);
+
+      inStore = [...replies, pushed];
+      ProviderScope.containerOf(
+        tester.element(find.byType(ThreadDetailPage)),
+      ).read(pushInboxRevisionProvider.notifier).bump();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(findRichText('row 110'), findsOneWidget);
+    });
+
     testWidgets('shows stored replies at once while the relay never answers', (
       tester,
     ) async {

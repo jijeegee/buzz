@@ -256,14 +256,12 @@ class ThreadDetailPage extends HookConsumerWidget {
     // Replies after the loaded ones remain on the relay: the window was opened
     // at a reply and has not paged up to the newest one yet.
     final windowHasNewer = windowState?.hasNewer ?? false;
-    final liveThreadEvents = windowState == null
-        ? liveChannelEvents
-        : [
-            for (final event in liveChannelEvents)
-              if (event.id == threadHead.id ||
-                  !isCoveredByThreadWindow(event, windowState))
-                event,
-          ];
+    final liveThreadEvents = _uncoveredThreadEvents(
+      liveChannelEvents,
+      windowState,
+      threadHead.id,
+      ref.watch(storedNewerRepliesProvider(repliesArgs)),
+    );
     final fetchedReplies = replyEvents == null
         ? null
         : formatTimeline(
