@@ -4,6 +4,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/l10n/l10n.dart';
 import '../channels/channel_detail_page.dart';
 import '../channels/channels_provider.dart';
+import '../channels/direct_thread_page.dart';
 import 'goal_links.dart';
 
 /// Leave the goals page and open a goal's [target] in [channelId]: a thread,
@@ -39,12 +40,10 @@ void openGoalLink(
   }
   final navigator = Navigator.of(context);
   final route = MaterialPageRoute<void>(
-    builder: (_) => ChannelDetailPage(
+    builder: (_) => threadOrRoomPage(
       channel: channel,
-      initialMessageId: target.messageId,
-      initialThreadRootId: target.threadRootId,
-      initialThreadRouteBehavior:
-          InitialThreadRouteBehavior.replaceCurrentRoute,
+      threadId: target.threadRootId,
+      messageId: target.messageId,
       highlightInitialMessage: target.threadRootId == null,
     ),
   );

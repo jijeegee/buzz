@@ -114,23 +114,12 @@ class AgentConversationsList extends HookConsumerWidget {
         );
         await Navigator.of(context).push(
           MaterialPageRoute<void>(
-            builder: (_) => switch (row.rootId) {
-              final rootId? when row.isThread && !channel.isForum =>
-                threadPageForRow(
-                  row,
-                  rootId,
-                  channel: channel,
-                  standIn: false,
-                  ownerView: ownerView,
-                ),
-              final rootId => ChannelDetailPage(
-                channel: channel,
-                ownerView: ownerView,
-                initialThreadRootId: row.isThread ? rootId : null,
-                initialThreadRouteBehavior:
-                    InitialThreadRouteBehavior.replaceCurrentRoute,
-              ),
-            },
+            builder: (_) => pageForChatRow(
+              row,
+              channel: channel,
+              standIn: false,
+              ownerView: ownerView,
+            ),
           ),
         );
       }

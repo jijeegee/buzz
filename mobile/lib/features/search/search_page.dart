@@ -21,6 +21,7 @@ import '../channels/channel_detail_page.dart';
 import '../channels/channel_identity_names_provider.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../channels/direct_thread_page.dart';
 import '../channels/group_avatar.dart';
 import '../channels/group_chat/chat_grid_avatar.dart';
 import '../channels/group_chat/chat_title.dart';

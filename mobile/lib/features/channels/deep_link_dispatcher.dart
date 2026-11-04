@@ -11,8 +11,8 @@ import '../groups/group_preview.dart';
 import '../invites/invite_join_provider.dart';
 import '../invites/invite_join_sheet.dart';
 import 'channel.dart';
-import 'channel_detail_page.dart';
 import 'channels_provider.dart';
+import 'direct_thread_page.dart';
 import '../chats/chat_list_provider.dart';
 import '../chats/chat_row_channel.dart';
 
@@ -20,7 +20,7 @@ import '../chats/chat_row_channel.dart';
 ///
 /// Wraps the authenticated home subtree. Whenever a parsed link is parked in
 /// [pendingDeepLinkProvider] and the channel list is available, this pushes
-/// the target [ChannelDetailPage] on the enclosing [Navigator]. A room the
+/// the target page ([threadOrRoomPage]) on the enclosing [Navigator]. A room the
 /// channel list (saved or the relay's) or a Chats row knows opens at once;
 /// other links are held (not dropped) until the relay's list arrives, and
 /// only a room missing from it is reported as not found.
@@ -140,8 +140,9 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
     // The listed room, else the room its Chats row describes (when the
     // Chats list is already up; it is not started here): either opens at
     // once, before the relay's channel list.
+    final listed = channels?.where((c) => c.id == channelId).firstOrNull;
     final channel =
-        channels?.where((c) => c.id == channelId).firstOrNull ??
+        listed ??
         (ref.exists(chatListProvider)
             ? channelFromChatRows(
                 ref.read(chatListProvider).value?.rows ?? const [],
@@ -166,25 +167,26 @@ class _DeepLinkDispatcherState extends ConsumerState<DeepLinkDispatcher> {
     }
     if (!context.mounted) return;
 
-    _pushChannel(channel, link);
+    _pushChannel(channel, link, standIn: listed == null);
     ref.read(pendingDeepLinkProvider.notifier).consume();
   }
 
-  void _pushChannel(Channel channel, KuzzDeepLink link) {
+  void _pushChannel(
+    Channel channel,
+    KuzzDeepLink link, {
+    bool standIn = false,
+  }) {
     Navigator.of(context).push(
       MaterialPageRoute<void>(
         builder: (_) =>
             widget.destinationBuilder?.call(channel, link) ??
-            ChannelDetailPage(
+            // A notification for a thread reply opens the thread itself;
+            // Back returns to where the app was, not to the channel.
+            threadOrRoomPage(
               channel: channel,
-              initialMessageId: link is MessageDeepLink ? link.messageId : null,
-              initialThreadRootId: link is MessageDeepLink
-                  ? link.threadRootId
-                  : null,
-              // A notification for a thread reply opens the thread itself;
-              // Back returns to where the app was, not to the channel.
-              initialThreadRouteBehavior:
-                  InitialThreadRouteBehavior.replaceCurrentRoute,
+              threadId: link is MessageDeepLink ? link.threadRootId : null,
+              messageId: link is MessageDeepLink ? link.messageId : null,
+              standIn: standIn,
             ),
       ),
     );

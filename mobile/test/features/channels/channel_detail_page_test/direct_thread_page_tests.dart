@@ -1,5 +1,15 @@
 part of '../channel_detail_page_test.dart';
 
+/// Holds one link, as a notification parks it.
+class _ParkedLinkNotifier extends PendingDeepLinkNotifier {
+  _ParkedLinkNotifier(this.link);
+
+  final KuzzDeepLink link;
+
+  @override
+  KuzzDeepLink? build() => link;
+}
+
 /// A silent relay that notes the root of each thread query.
 class _ThreadQueryRecordingSession extends _SilentRelaySession {
   final rootsAsked = <String>[];
@@ -489,7 +499,7 @@ void directThreadPageTests() {
           overrides: [
             rootLookup(
               stored: (id) async =>
-                  stored == null ? null : (event: stored!, deleted: false),
+                  stored == null ? null : (event: stored, deleted: false),
               relay: () async => const [],
             ),
             storedReplies(() async => const []),
@@ -557,6 +567,100 @@ void directThreadPageTests() {
       await tester.pump();
 
       expect(shownPage(tester).initialMessageCreatedAt, isNull);
+    });
+
+    testWidgets('the dispatcher opens a listed room\'s thread at once', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        harness(
+          const DeepLinkDispatcher(child: Scaffold(body: SizedBox())),
+          session: _SilentRelaySession(),
+          overrides: [
+            pendingDeepLinkProvider.overrideWith(
+              () => _ParkedLinkNotifier(
+                MessageDeepLink(
+                  channelId: _channelId,
+                  messageId: fixtureId(105),
+                  threadRootId: _openAtRootId,
+                ),
+              ),
+            ),
+            rootLookup(),
+            storedReplies(() async => replies),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      final page = tester.widget<DirectThreadPage>(
+        find.byType(DirectThreadPage),
+      );
+      expect(page.messageId, fixtureId(105));
+      expect(page.standIn, isFalse);
+      expect(find.byType(ChannelDetailPage), findsNothing);
+    });
+
+    testWidgets('a room known from a Chats row holds the composer', (
+      tester,
+    ) async {
+      await tester.pumpWidget(
+        _buildTestable(
+          messages: const [],
+          relaySessionNotifier: _SilentRelaySession(),
+          huddleCurrentPubkey: 'self',
+          channelsNotifier: _FakeChannelsNotifier(const []),
+          channelDetails: Completer<ChannelDetails>().future,
+          overrides: [
+            chatListProvider.overrideWithValue(
+              const AsyncData(
+                ChatListState(
+                  rows: [
+                    ChatListRow(
+                      isThread: false,
+                      key: 'room',
+                      at: 1000,
+                      atUs: 1000000000,
+                      channelId: _channelId,
+                      channelType: 'stream',
+                      channelName: 'general',
+                    ),
+                  ],
+                  next: null,
+                ),
+              ),
+            ),
+            pendingDeepLinkProvider.overrideWith(
+              () => _ParkedLinkNotifier(
+                MessageDeepLink(
+                  channelId: _channelId,
+                  messageId: fixtureId(105),
+                  threadRootId: _openAtRootId,
+                ),
+              ),
+            ),
+            rootLookup(),
+            storedReplies(() async => const []),
+          ],
+          home: DeepLinkDispatcher(
+            child: Consumer(
+              builder: (_, ref, _) {
+                ref.watch(chatListProvider);
+                return const Scaffold(body: SizedBox());
+              },
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+
+      final page = tester.widget<DirectThreadPage>(
+        find.byType(DirectThreadPage),
+      );
+      expect(page.standIn, isTrue);
+      expect(find.byType(ComposeBar), findsNothing);
     });
 
     testWidgets('own pending replies settle by a link', (tester) async {
