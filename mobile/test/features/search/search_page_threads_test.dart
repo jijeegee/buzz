@@ -44,7 +44,19 @@ final _searchTeam = Channel(
 
 const _threadRoot = 'root-1';
 
-const _threadRow = ChatListRow(
+final _threadRootEvent = NostrEvent(
+  id: _threadRoot,
+  pubkey: 'b' * 64,
+  createdAt: 150,
+  kind: EventKind.streamMessageV2,
+  tags: const [
+    ['h', 'general'],
+  ],
+  content: 'the root',
+  sig: '',
+);
+
+final _threadRow = ChatListRow(
   isThread: true,
   key: _threadRoot,
   at: 200,
@@ -54,6 +66,7 @@ const _threadRow = ChatListRow(
   channelName: 'general',
   rootId: _threadRoot,
   threadName: '채널 검색 및 초대',
+  root: _threadRootEvent,
 );
 
 final _rows = [
@@ -348,6 +361,8 @@ void main() {
     expect(page.channel.id, 'general');
     expect(page.threadId, _threadRoot);
     expect(page.messageId, isNull);
+    expect(page.rootHint, same(_threadRootEvent));
+    expect(page.threadName, _threadRow.threadName);
   });
 
   testWidgets('tapping a message in a thread opens it in the thread', (

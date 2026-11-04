@@ -18,11 +18,13 @@ void _openChatResult(BuildContext context, SearchChatResult result) {
           : channelFromId(result.channelId).copyWith(name: result.channelName));
   Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => threadOrRoomPage(
-        channel: channel,
-        threadId: result.thread?.rootId,
-        standIn: result.channel == null,
-      ),
+      builder: (_) => row != null
+          ? pageForChatRow(
+              row,
+              channel: channel,
+              standIn: result.channel == null,
+            )
+          : threadOrRoomPage(channel: channel, standIn: result.channel == null),
     ),
   );
 }
