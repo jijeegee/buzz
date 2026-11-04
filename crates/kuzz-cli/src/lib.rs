@@ -221,6 +221,40 @@ pub enum OnOff {
     Off,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ChannelHistory {
+    #[value(name = "all")]
+    All,
+    #[value(name = "since_join")]
+    SinceJoin,
+}
+
+impl ChannelHistory {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::SinceJoin => "since_join",
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum GroupInvitePolicy {
+    #[value(name = "members")]
+    Members,
+    #[value(name = "admins")]
+    Admins,
+}
+
+impl GroupInvitePolicy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Members => "members",
+            Self::Admins => "admins",
+        }
+    }
+}
+
 #[derive(Clone, clap::ValueEnum)]
 pub enum PresenceStatus {
     #[value(name = "online")]
@@ -349,6 +383,9 @@ once), key_in_use, device_limit, rate_limited.",
     /// Search and share GIFs via the relay's KLIPY proxy
     #[command(subcommand)]
     Gifs(GifsCmd),
+    /// Find groups and manage their public address and invite links
+    #[command(subcommand)]
+    Groups(GroupsCmd),
     /// List, accept, and decline group invitations sent to you
     #[command(subcommand)]
     Invitations(InvitationsCmd),
@@ -836,9 +873,10 @@ pub enum ChannelsCmd {
         #[arg(long = "member", value_name = "PUBKEY")]
         members: Vec<String>,
     },
-    /// Update channel name, description, visibility, ephemeral TTL, or goals
+    /// Update channel name, description, visibility, ephemeral TTL, goals,
+    /// photo, or what new members can read
     #[command(
-        after_help = "Examples:\n  kuzz channels update --channel <uuid> --name general\n  kuzz channels update --channel <uuid> --visibility open\n  kuzz channels update --channel <uuid> --visibility private\n  kuzz channels update --channel <uuid> --goals off"
+        after_help = "Examples:\n  kuzz channels update --channel <uuid> --name general\n  kuzz channels update --channel <uuid> --visibility open\n  kuzz channels update --channel <uuid> --visibility private\n  kuzz channels update --channel <uuid> --goals off\n  kuzz channels update --channel <uuid> --picture <url-from-kuzz-upload>\n  kuzz channels update --channel <uuid> --history since_join"
     )]
     Update {
         /// Channel UUID
@@ -864,6 +902,28 @@ pub enum ChannelsCmd {
         /// DM participant). Off hides the goal tree and blocks goal edits.
         #[arg(long, value_enum)]
         goals: Option<OnOff>,
+        /// Set the channel photo (owner/admin; not group chats) to a URL from
+        /// `kuzz upload`. Use on its own, without other update flags.
+        #[arg(
+            long,
+            value_name = "URL",
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals", "no_picture", "history"]
+        )]
+        picture: Option<String>,
+        /// Remove the channel photo (owner/admin; not group chats). Use on its own.
+        #[arg(
+            long,
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals", "history"]
+        )]
+        no_picture: bool,
+        /// What new members can read: all earlier messages, or only those since
+        /// they joined (owner/admin; not group chats or DMs). Use on its own.
+        #[arg(
+            long,
+            value_enum,
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals"]
+        )]
+        history: Option<ChannelHistory>,
     },
     /// Set the channel topic
     Topic {
@@ -1255,6 +1315,67 @@ pub enum GifsCmd {
         /// Provider GIF slug from a search result
         #[arg(long)]
         slug: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GroupsCmd {
+    /// Search open groups by name, description, or public address
+    Search {
+        /// Search text (2-64 characters)
+        #[arg(long)]
+        query: String,
+    },
+    /// Show a group. Private groups need membership; --handle finds open groups only
+    Get {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "handle", conflicts_with = "handle")]
+        channel: Option<String>,
+        /// Public address, with or without the leading @
+        #[arg(long)]
+        handle: Option<String>,
+    },
+    /// Set or clear a group's public address (open groups, owner/admin)
+    Handle {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// New address: 3-32 of a-z, 0-9, and _
+        #[arg(long, required_unless_present = "clear", conflicts_with = "clear")]
+        set: Option<String>,
+        /// Remove the public address
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Show a group's invite link, or replace it with --reset.
+    ///
+    /// Showing also creates a link if the group has none, and replaces one
+    /// whose creator can no longer share it.
+    InviteLink {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Replace the link (owner/admin). The old link stops working.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Show or set who may share the invite link (owner/admin sets)
+    InvitePolicy {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Who may share it
+        #[arg(long, value_enum)]
+        set: Option<GroupInvitePolicy>,
+    },
+    /// Preview a group from an invite link, code, or @handle without joining.
+    ///
+    /// Joining by link is for people. Agents join when a member adds them or
+    /// through `kuzz invitations accept`.
+    Preview {
+        /// Invite link, code, or @handle
+        #[arg(long)]
+        link: String,
     },
 }
 
@@ -2884,6 +3005,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
+        Cmd::Groups(sub) => commands::groups::dispatch(sub, &client).await,
         Cmd::Invitations(sub) => commands::invitations::dispatch(sub, &client).await,
         Cmd::Dms(sub) => commands::dms::dispatch(sub, &client).await,
         Cmd::Users(sub) => commands::users::dispatch(sub, &client, &cli.format).await,
@@ -3205,6 +3327,7 @@ mod tests {
             "feed",
             "gifs",
             "goals",
+            "groups",
             "invitations",
             "issues",
             "media",

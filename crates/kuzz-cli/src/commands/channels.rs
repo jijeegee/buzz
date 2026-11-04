@@ -1639,7 +1639,7 @@ fn validate_update_channel_fields(
         && goals.is_none()
     {
         return Err(CliError::Usage(
-            "at least one field required (--name, --description, --visibility, --ttl, --no-ttl, --goals)"
+            "at least one field required (--name, --description, --visibility, --ttl, --no-ttl, --goals, --picture, --no-picture, --history)"
                 .into(),
         ));
     }
@@ -1677,6 +1677,38 @@ pub async fn cmd_update_channel(
         goals,
     )
     .map_err(|e| CliError::Other(format!("build_update_channel failed: {e}")))?;
+
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&resp));
+    Ok(())
+}
+
+pub async fn cmd_set_channel_picture(
+    client: &KuzzClient,
+    channel_id: &str,
+    picture: Option<&str>,
+) -> Result<(), CliError> {
+    let channel_uuid = parse_uuid(channel_id)?;
+
+    let builder = kuzz_sdk::build_set_channel_picture(channel_uuid, picture)
+        .map_err(|e| CliError::Usage(format!("invalid picture: {e}")))?;
+
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&resp));
+    Ok(())
+}
+
+pub async fn cmd_set_channel_history(
+    client: &KuzzClient,
+    channel_id: &str,
+    history: &str,
+) -> Result<(), CliError> {
+    let channel_uuid = parse_uuid(channel_id)?;
+
+    let builder = kuzz_sdk::build_set_channel_history(channel_uuid, history)
+        .map_err(|e| CliError::Other(format!("build_set_channel_history failed: {e}")))?;
 
     let event = client.sign_event(builder)?;
     let resp = client.submit_event(event).await?;
@@ -1990,7 +2022,16 @@ pub async fn dispatch(
             ttl,
             no_ttl,
             goals,
+            picture,
+            no_picture,
+            history,
         } => {
+            if picture.is_some() || no_picture {
+                return cmd_set_channel_picture(client, &channel, picture.as_deref()).await;
+            }
+            if let Some(history) = history {
+                return cmd_set_channel_history(client, &channel, history.as_str()).await;
+            }
             let visibility = visibility.as_ref().map(|v| v.to_string());
             cmd_update_channel(
                 client,

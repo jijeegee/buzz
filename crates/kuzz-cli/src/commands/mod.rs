@@ -7,6 +7,7 @@ pub mod emoji;
 pub mod feed;
 pub mod gifs;
 pub mod goals;
+pub mod groups;
 pub mod invitations;
 pub mod issues;
 pub mod mem;

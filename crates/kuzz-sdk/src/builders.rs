@@ -921,6 +921,24 @@ pub fn build_set_channel_picture(
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
 
+/// Build a NIP-29 edit-metadata event that sets whether new members see
+/// earlier messages (kind 9002): `"all"` or `"since_join"`.
+pub fn build_set_channel_history(
+    channel_id: Uuid,
+    history: &str,
+) -> Result<EventBuilder, SdkError> {
+    if history != "all" && history != "since_join" {
+        return Err(SdkError::InvalidTag(
+            "history must be \"all\" or \"since_join\"".into(),
+        ));
+    }
+    let tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["history", history])?,
+    ];
+    Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
+}
+
 /// Build a NIP-29 edit-metadata event for topic (kind 9002).
 pub fn build_set_topic(channel_id: Uuid, topic: &str) -> Result<EventBuilder, SdkError> {
     let tags = vec![
@@ -3692,6 +3710,15 @@ mod tests {
         let ev = sign(build_set_topic(cid, "Rust async patterns").unwrap());
         assert_eq!(ev.kind.as_u16(), 9002);
         assert!(has_tag(&ev, "topic", "Rust async patterns"));
+    }
+
+    #[test]
+    fn set_channel_history_accepts_only_relay_values() {
+        let cid = Uuid::new_v4();
+        let ev = sign(build_set_channel_history(cid, "since_join").unwrap());
+        assert_eq!(ev.kind.as_u16(), 9002);
+        assert!(has_tag(&ev, "history", "since_join"));
+        assert!(build_set_channel_history(cid, "since-join").is_err());
     }
 
     #[test]
