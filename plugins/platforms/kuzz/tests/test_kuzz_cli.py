@@ -226,6 +226,168 @@ class SupervisorTest(unittest.TestCase):
         self.assertLess(stop_secs, 10)
 
 
+class UpdatePauseTest(unittest.TestCase):
+    """The installer's signal file: ``%LOCALAPPDATA%\\kuzz\\update-pause``."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for patch in (
+            mock.patch.dict(os.environ, {"LOCALAPPDATA": tmp.name}),
+            mock.patch.object(kuzz_cli, "UPDATE_PAUSE_POLL", 0.02),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.signal = Path(tmp.name) / "kuzz" / "update-pause"
+
+    def _pause(self, age=0.0):
+        self.signal.parent.mkdir(exist_ok=True)
+        self.signal.touch()
+        stamp = time.time() - age
+        os.utime(self.signal, (stamp, stamp))
+
+    def _supervise(self, fake, script):
+        """Run a supervisor beside ``script(received, sup)``, then stop it."""
+        received = []
+
+        async def on_message(msg):
+            received.append(msg)
+
+        async def main():
+            sup = WatchSupervisor(fake.cli, on_message, min_backoff=30, pause_poll=0.02)
+            task = asyncio.ensure_future(sup.run())
+            await asyncio.wait_for(script(received, sup), 20)
+            await sup.stop()
+            await asyncio.wait_for(task, 20)
+            return sup
+
+        return run(main()), received
+
+    @staticmethod
+    async def _until(condition):
+        while not condition():
+            await asyncio.sleep(0.02)
+
+    def test_signal_counts_only_while_fresh(self):
+        self.assertFalse(kuzz_cli.update_paused())
+        self._pause()
+        self.assertTrue(kuzz_cli.update_paused())
+        self._pause(age=kuzz_cli.UPDATE_PAUSE_MAX_AGE + 1)
+        self.assertFalse(kuzz_cli.update_paused())
+
+    def test_no_local_data_means_no_pause(self):
+        with mock.patch.dict(os.environ):
+            del os.environ["LOCALAPPDATA"]
+            self.assertIsNone(kuzz_cli.update_pause_file())
+            self.assertFalse(kuzz_cli.update_paused())
+
+    def test_pause_ends_the_watch_and_resume_skips_the_backoff(self):
+        runs = [{"lines": [watch_line(1)], "hang": True}, {"lines": [watch_line(2)], "hang": True}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+
+            async def script(received, sup):
+                await self._until(lambda: received)
+                self._pause()
+                await self._until(lambda: sup._ended_for_update and sup._proc is None)
+                await asyncio.sleep(0.1)
+                self.assertEqual(len(fake.calls("messages", "watch")), 1)  # held, not restarted
+                self.signal.unlink()
+                await self._until(lambda: len(received) == 2)
+
+            sup, received = self._supervise(fake, script)
+        self.assertEqual([m.id for m in received], [event_id(1), event_id(2)])
+        self.assertEqual(sup.restarts, 0)
+        self.assertIsNone(sup.parked)
+
+    def test_watch_does_not_start_during_a_pause(self):
+        self._pause()
+        with FakeKuzz(FAKE_KUZZ_WATCH=[{"lines": [watch_line(1)], "hang": True}]) as fake:
+
+            async def script(received, sup):
+                await asyncio.sleep(0.2)
+                self.assertEqual(fake.calls("messages", "watch"), [])
+                self.signal.unlink()
+                await self._until(lambda: received)
+
+            sup, _ = self._supervise(fake, script)
+        self.assertEqual(sup.restarts, 0)
+
+    def test_stop_ends_a_held_watch(self):
+        self._pause()
+        with FakeKuzz() as fake:
+
+            async def script(received, sup):
+                await asyncio.sleep(0.05)
+
+            self._supervise(fake, script)
+            self.assertEqual(fake.calls("messages", "watch"), [])
+
+    def test_stale_signal_does_not_stop_the_watch(self):
+        self._pause(age=kuzz_cli.UPDATE_PAUSE_MAX_AGE + 1)
+        with FakeKuzz(FAKE_KUZZ_WATCH=[{"lines": [watch_line(1)], "hang": True}]) as fake:
+
+            async def script(received, sup):
+                await self._until(lambda: received)
+                await asyncio.sleep(0.1)
+
+            sup, _ = self._supervise(fake, script)
+            self.assertEqual(len(fake.calls("messages", "watch")), 1)
+        self.assertFalse(sup._ended_for_update)
+
+    def test_send_waits_for_the_pause_to_end(self):
+        self._pause()
+        with FakeKuzz() as fake:
+
+            async def main():
+                send = asyncio.ensure_future(kuzz_cli.send_message(fake.cli, CHANNEL, "later"))
+                await asyncio.sleep(0.1)
+                self.assertFalse(send.done())
+                self.assertEqual(fake.calls("messages", "send"), [])
+                self.signal.unlink()
+                return await asyncio.wait_for(send, 20)
+
+            outcome = run(main())
+            self.assertIsNotNone(outcome.event_id)
+            self.assertEqual(fake.calls("messages", "send")[0]["stdin"], "later")
+
+    def test_send_retries_when_the_file_is_replaced_under_a_pause(self):
+        real = asyncio.create_subprocess_exec
+        attempts = []
+
+        async def spawn(*args, **kwargs):
+            attempts.append(args)
+            if len(attempts) == 1:
+                self._pause()
+                raise PermissionError("kuzz.exe is being replaced")
+            return await real(*args, **kwargs)
+
+        with FakeKuzz() as fake:
+
+            async def main():
+                with mock.patch.object(kuzz_cli.asyncio, "create_subprocess_exec", spawn):
+                    send = asyncio.ensure_future(kuzz_cli.send_message(fake.cli, CHANNEL, "later"))
+                    await self._until(lambda: attempts)
+                    await asyncio.sleep(0.1)
+                    self.assertEqual(len(attempts), 1)
+                    self.signal.unlink()
+                    return await asyncio.wait_for(send, 20)
+
+            outcome = run(main())
+        self.assertIsNotNone(outcome.event_id)
+        self.assertEqual(len(attempts), 2)
+
+    def test_a_spawn_error_without_a_pause_is_reported(self):
+        outcome = run(kuzz_cli.send_message([str(self.signal.parent / "missing.exe")], CHANNEL, "x"))
+        self.assertIsNone(outcome.event_id)
+        self.assertIn("could not start kuzz", outcome.error)
+
+    def test_hold_gives_up_at_its_limit(self):
+        self._pause()
+        self.assertFalse(run(kuzz_cli.hold_for_update(limit=0.05)))
+        self.signal.unlink()
+        self.assertTrue(run(kuzz_cli.hold_for_update(limit=0.05)))
+
+
 class CliPathTest(unittest.TestCase):
     def test_configured_path_decides_alone(self):
         with FakeKuzz() as fake:
