@@ -13,11 +13,16 @@
          entitlements: only valid with the embedded provisioning profile, so
          this file is used only through tauri.macos-signed.conf.json. -->
     <key>com.apple.application-identifier</key>
-    <string>BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e</string>
+    <string>BQ75Y6QK8F.app.kuzz.app</string>
     <key>com.apple.developer.team-identifier</key>
     <string>BQ75Y6QK8F</string>
+    <!-- First group wins for newly created keys; the demo group follows so a
+         Mac that already holds a Secure Enclave key under the old app id keeps
+         using it instead of enrolling as a new device. The profile grants
+         `BQ75Y6QK8F.*`, so both are covered. -->
     <key>keychain-access-groups</key>
     <array>
+        <string>BQ75Y6QK8F.app.kuzz.app</string>
         <string>BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e</string>
     </array>
 </dict>

@@ -63,7 +63,24 @@ if [[ "$SECURE_ENCLAVE" == 1 ]]; then
       exit 1
     }
   done
-  echo "Verified Secure Enclave signing on $EXECUTABLE_PATH"
+  # Presence is not enough: entitlements left over from another app id sign
+  # fine but open no keychain group at run time, which is how the 0.6.19
+  # official-id build shipped a bundle the device key could not use. Require
+  # the group that matches this bundle.
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+  TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$ENTITLEMENTS")"
+  EXPECTED_GROUP="$TEAM_ID.$BUNDLE_ID"
+  APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$ENTITLEMENTS")"
+  [[ "$APP_IDENTIFIER" == "$EXPECTED_GROUP" ]] || {
+    echo "application-identifier $APP_IDENTIFIER does not match the bundle ($EXPECTED_GROUP): $EXECUTABLE_PATH" >&2
+    exit 1
+  }
+  /usr/libexec/PlistBuddy -c 'Print :keychain-access-groups' "$ENTITLEMENTS" \
+    | grep -qx "    $EXPECTED_GROUP" || {
+    echo "keychain-access-groups does not include $EXPECTED_GROUP: $EXECUTABLE_PATH" >&2
+    exit 1
+  }
+  echo "Verified Secure Enclave signing on $EXECUTABLE_PATH ($EXPECTED_GROUP)"
 fi
 
 # Sidecars must not carry restricted entitlements: without a provisioning

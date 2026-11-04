@@ -57,20 +57,25 @@ To get `hardware` on macOS:
 
 1. Sign with the Developer ID Application (G2) certificate of team
    `BQ75Y6QK8F`.
-2. Download the `MAC_APP_DIRECT` provisioning profile for
-   `app.kuzz.app.demo.preview-88ecaf8be554431e` with the keychain sharing
-   capability and put it at
+2. Download the `MAC_APP_DIRECT` provisioning profile for `app.kuzz.app`
+   (`Kuzz Mac Official DeveloperID`) with the keychain sharing capability and
+   put it at
    `desktop/src-tauri/profiles/kuzz-developer-id.provisionprofile`
    (gitignored; never commit it).
-3. Build with the signed overlay, **only when that profile exists**:
+3. Build with the signed overlay. For a **release** build the profile is
+   required -- a missing profile must fail the build, never fall back:
 
    ```sh
-   extra=()
-   if [ -f desktop/src-tauri/profiles/kuzz-developer-id.provisionprofile ]; then
-     extra=(--config src-tauri/tauri.macos-signed.conf.json)
-   fi
-   cd desktop && pnpm tauri build "${extra[@]}" ...   # plus the usual --config files
+   test -f desktop/src-tauri/profiles/kuzz-developer-id.provisionprofile \
+     || { echo "release build needs the Developer ID profile" >&2; exit 1; }
+   cd desktop && pnpm tauri build --config src-tauri/tauri.macos-signed.conf.json ...
    ```
+
+   Only a local throwaway build may omit the overlay (it then gets a software
+   key). Shipping that silently is what broke the 0.6.19 official-id Mac build:
+   it was built with the plain `Entitlements.plist`, so the app had no keychain
+   access group, could not open the existing Secure Enclave key, and every
+   session was refused with `no_device`.
 
    `desktop/src-tauri/tauri.macos-signed.conf.json` is a JSON merge patch on
    `tauri.conf.json`:
@@ -94,17 +99,20 @@ To get `hardware` on macOS:
 
    ```xml
    <key>com.apple.application-identifier</key>
-   <string>BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e</string>
+   <string>BQ75Y6QK8F.app.kuzz.app</string>
    <key>com.apple.developer.team-identifier</key>
    <string>BQ75Y6QK8F</string>
    <key>keychain-access-groups</key>
    <array>
+       <string>BQ75Y6QK8F.app.kuzz.app</string>
        <string>BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e</string>
    </array>
    ```
 
-   Without the profile the build uses the plain `Entitlements.plist` and
-   behaves exactly as before (software key). Never add these keys to
+   The second group is the identifier earlier Mac builds shipped under. The
+   profile grants `BQ75Y6QK8F.*`, so listing both lets a Mac that already has a
+   Secure Enclave key keep it instead of enrolling as a new device. Never add
+   these keys to
    `Entitlements.plist` itself: a restricted entitlement without a matching
    profile stops the app launching. A pipeline that re-signs the bundle
    itself (for example `signed-macos-canary.yml`, which copies
