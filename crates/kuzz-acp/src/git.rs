@@ -1,11 +1,16 @@
 //! Harness-owned, ephemeral Git identity, credentials and signing for every runtime.
+use fs2::FileExt;
 use nostr::ToBech32;
+use std::fs::File;
 use std::path::Path;
+use std::time::Duration;
 use tempfile::TempDir;
 use zeroize::Zeroizing;
 
 /// Keep this guard alive until the adapter pool has shut down.
 pub(crate) struct GitEnvironment {
+    // Declared before `_dir`: Windows cannot delete the file while it is open.
+    _owner: File,
     _dir: TempDir,
     pub(crate) env: Vec<(String, String)>,
 }
@@ -36,8 +41,11 @@ impl GitEnvironment {
     ) -> anyhow::Result<Self> {
         let agent = GitIdentityMode::from_value(std::env::var_os(GIT_IDENTITY_ENV).as_deref())?
             == GitIdentityMode::Agent;
-        let dir = tempfile::Builder::new().prefix("kuzz-acp-git-").tempdir()?;
+        sweep_stale_dirs(&std::env::temp_dir(), STARTUP_GRACE);
+        let dir = tempfile::Builder::new().prefix(DIR_PREFIX).tempdir()?;
         set_owner_only(dir.path())?;
+        let owner = File::create(dir.path().join(OWNER_LOCK))?;
+        owner.try_lock_exclusive()?;
         let public_key = identity.public_key();
         let keyfile_path = match identity.secret_keys("git signing") {
             Ok(keys) => {
@@ -134,7 +142,11 @@ impl GitEnvironment {
             GIT_IDENTITY_ENV.into(),
             if agent { "agent" } else { "user" }.into(),
         ));
-        Ok(Self { _dir: dir, env })
+        Ok(Self {
+            _owner: owner,
+            _dir: dir,
+            env,
+        })
     }
 }
 
@@ -427,6 +439,43 @@ pub(crate) fn is_managed_env(name: &str) -> bool {
         )
 }
 
+const DIR_PREFIX: &str = "kuzz-acp-git-";
+/// Held for the life of the runner; the OS releases it even on a hard kill.
+const OWNER_LOCK: &str = ".owner.lock";
+/// Agents start together; leave a sibling room to take its lock after creating its directory.
+const STARTUP_GRACE: Duration = Duration::from_secs(60);
+
+/// A killed runner never drops its `TempDir`, which leaves its keyfile behind.
+/// Delete what earlier runners left. Failures only delay this to the next start.
+fn sweep_stale_dirs(temp: &Path, grace: Duration) {
+    let Ok(entries) = std::fs::read_dir(temp) else {
+        return;
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ours = entry.file_name().to_string_lossy().starts_with(DIR_PREFIX);
+        if ours && entry.file_type().is_ok_and(|kind| kind.is_dir()) && is_stale(&path, grace) {
+            let _ = std::fs::remove_file(path.join(".nostr-key"));
+            let _ = std::fs::remove_dir_all(&path);
+        }
+    }
+}
+
+/// A directory without a regular [`OWNER_LOCK`] file cannot prove its owner is
+/// dead (builds before the lock leave none), so it stays.
+fn is_stale(dir: &Path, grace: Duration) -> bool {
+    let young = std::fs::metadata(dir)
+        .and_then(|metadata| metadata.modified())
+        .ok()
+        .and_then(|modified| modified.elapsed().ok())
+        .is_none_or(|age| age < grace);
+    let lock = dir.join(OWNER_LOCK);
+    if young || !std::fs::symlink_metadata(&lock).is_ok_and(|metadata| metadata.is_file()) {
+        return false;
+    }
+    File::open(lock).is_ok_and(|lock| lock.try_lock_exclusive().is_ok())
+}
+
 #[cfg(unix)]
 fn set_owner_only(path: &Path) -> std::io::Result<()> {
     use std::os::unix::fs::PermissionsExt;
@@ -451,6 +500,51 @@ fn symlink(src: &Path, dst: &Path) -> std::io::Result<()> {
     // a .exe extension or PATH lookup (via PATHEXT) won't treat it as runnable.
     let dst = dst.with_extension("exe");
     std::fs::copy(src, dst).map(|_| ())
+}
+
+#[cfg(test)]
+mod stale_dir_tests {
+    use super::{is_stale, sweep_stale_dirs, DIR_PREFIX, OWNER_LOCK};
+    use fs2::FileExt;
+    use std::fs::File;
+    use std::time::Duration;
+
+    const LONG: Duration = Duration::from_secs(3600);
+
+    #[test]
+    fn sweep_removes_dead_owner_and_keeps_live_owner_and_other_dirs() {
+        let temp = tempfile::tempdir().unwrap();
+        let dead = temp.path().join(format!("{DIR_PREFIX}dead"));
+        let live = temp.path().join(format!("{DIR_PREFIX}live"));
+        let other = temp.path().join("other");
+        for dir in [&dead, &live, &other] {
+            std::fs::create_dir(dir).unwrap();
+            File::create(dir.join(OWNER_LOCK)).unwrap();
+            std::fs::write(dir.join(".nostr-key"), "key").unwrap();
+        }
+        let owner = File::open(live.join(OWNER_LOCK)).unwrap();
+        owner.lock_exclusive().unwrap();
+
+        sweep_stale_dirs(temp.path(), Duration::ZERO);
+
+        assert!(!dead.exists());
+        assert!(live.join(".nostr-key").exists());
+        assert!(other.exists());
+    }
+
+    #[test]
+    fn dir_without_a_lock_file_is_never_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(!is_stale(dir.path(), Duration::ZERO));
+    }
+
+    #[test]
+    fn dir_inside_the_startup_grace_is_never_stale() {
+        let dir = tempfile::tempdir().unwrap();
+        File::create(dir.path().join(OWNER_LOCK)).unwrap();
+        assert!(!is_stale(dir.path(), LONG));
+        assert!(is_stale(dir.path(), Duration::ZERO));
+    }
 }
 
 #[cfg(test)]

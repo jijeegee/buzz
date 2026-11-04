@@ -27,6 +27,7 @@ git-credential-kuzz = { path = "../git-credential-kuzz" }
 kuzz-token-broker = { workspace = true }
 git-sign-nostr = { path = "../git-sign-nostr" }
 tempfile = "3"
+fs2 = "0.4"
 zeroize = { workspace = true }
 
 # Nostr
