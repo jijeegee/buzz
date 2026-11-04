@@ -48,9 +48,9 @@ Values for the Kuzz release build:
 
 | What | Value |
 |------|-------|
-| Bundle id | `app.kuzz.app.demo.preview-88ecaf8be554431e` |
+| Bundle id | `app.kuzz.app` |
 | Team ID | `BQ75Y6QK8F` |
-| Keychain access group | `BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e` |
+| Keychain access group | `BQ75Y6QK8F.app.kuzz.app`, then `BQ75Y6QK8F.app.kuzz.app.demo.preview-88ecaf8be554431e` |
 | Profile | `MAC_APP_DIRECT` (Developer ID), Developer ID Application G2 certificate |
 
 To get `hardware` on macOS:
