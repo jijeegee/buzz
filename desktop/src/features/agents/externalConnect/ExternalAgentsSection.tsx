@@ -312,7 +312,7 @@ export function HermesFoundCard() {
       if (!run.finished) throw new Error(t("agents.external.hermesFailed"));
       toast.success(
         t("agents.external.connectedToast", {
-          agent: hermesLabel(profile),
+          agent: profile.displayName,
           device: claim.deviceName ?? t("agents.external.thisComputer"),
         }),
       );
@@ -349,13 +349,13 @@ export function HermesFoundCard() {
             avatarUrl={null}
             className="h-9 w-9 shrink-0 text-xs shadow-none"
             iconClassName="h-4 w-4"
-            label={hermesLabel(profile)}
+            label={profile.displayName}
             mediaVariant="small"
             shape="circle"
           />
           <div className="min-w-0 flex-1">
             <p className="truncate text-sm font-medium">
-              {single ? t("agents.external.hermesFound") : hermesLabel(profile)}
+              {single ? t("agents.external.hermesFound") : profile.displayName}
             </p>
             {state === "blocked" || state === "otherAccount" ? (
               <p className="break-words text-xs text-muted-foreground">
@@ -386,9 +386,4 @@ export function HermesFoundCard() {
       ))}
     </div>
   );
-}
-
-/** A profile's name on screen; the default profile is just "Hermes". */
-function hermesLabel(profile: HermesProfile): string {
-  return profile.isDefault ? "Hermes" : profile.name;
 }

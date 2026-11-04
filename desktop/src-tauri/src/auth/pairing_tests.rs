@@ -33,11 +33,12 @@ fn default_home() -> PathBuf {
 
 #[test]
 fn hermes_pairing_runs_exactly_this_argv() {
-    let args = hermes_pair_args("wss://gateway.kuzz.app", "7QKF-M2XD-9RTB", None);
+    let args = hermes_pair_args("wss://gateway.kuzz.app", "7QKF-M2XD-9RTB", "Hermes", None);
     let expected: Vec<OsString> = [
         "pair",
         "--hermes",
         "--no-restart",
+        "--name=Hermes",
         "--relay",
         "wss://gateway.kuzz.app",
         "7QKF-M2XD-9RTB",
@@ -144,11 +145,12 @@ fn a_restarted_gateway_gets_no_kuzz_settings() {
 #[test]
 fn a_named_profile_is_passed_by_its_folder() {
     let home = PathBuf::from(HOME).join("profiles").join("work");
-    let args = hermes_pair_args("wss://r", "CODE", Some(&home));
+    let args = hermes_pair_args("wss://r", "CODE", "Work", Some(&home));
     let expected: Vec<OsString> = [
         OsString::from("pair"),
         "--hermes".into(),
         "--no-restart".into(),
+        "--name=Work".into(),
         "--hermes-home".into(),
         home.clone().into(),
         "--relay".into(),
@@ -280,4 +282,24 @@ fn a_profile_env_saved_with_a_bom_or_odd_bytes_is_still_read() {
         hermes_profiles(root.path())[1].paired_agent.as_deref(),
         Some(pin.as_str())
     );
+}
+
+#[test]
+fn a_profile_is_named_by_hermes_then_by_its_folder() {
+    let home = tempfile::tempdir().unwrap();
+    assert_eq!(hermes_display_name(home.path(), "default"), "Hermes");
+    assert_eq!(hermes_display_name(home.path(), "work"), "work");
+    let yaml = |text: &str| std::fs::write(home.path().join("profile.yaml"), text).unwrap();
+    yaml("description: x\n");
+    assert_eq!(hermes_display_name(home.path(), "work"), "work");
+    yaml("display_name: '  헤르홈 '\n");
+    assert_eq!(hermes_display_name(home.path(), "work"), "헤르홈");
+    assert_eq!(hermes_display_name(home.path(), "default"), "헤르홈");
+    // What `kuzz pair --name` would refuse falls back.
+    yaml(&format!("display_name: {}\n", "x".repeat(65)));
+    assert_eq!(hermes_display_name(home.path(), "work"), "work");
+    yaml("display_name: \"a\\nb\"\n");
+    assert_eq!(hermes_display_name(home.path(), "work"), "work");
+    yaml("display_name: 12\n: broken");
+    assert_eq!(hermes_display_name(home.path(), "work"), "work");
 }

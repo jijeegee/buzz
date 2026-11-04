@@ -144,6 +144,7 @@ async function installExternalConnectBridge(page: Page) {
                   ? [
                       {
                         name: "default",
+                        displayName: "Hermes",
                         isDefault: true,
                         pairedAgent: null,
                         owner: null,

@@ -42,6 +42,7 @@ export type HermesStatus = {
 /** A Hermes profile a person can connect (`name` is `default` or its folder). */
 export type HermesProfile = {
   name: string;
+  displayName: string;
   isDefault: boolean;
   pairedAgent: string | null;
   owner: string | null;
