@@ -464,6 +464,75 @@ async fn an_external_device_names_its_computer_and_agents() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn one_agent_disconnects_and_pairs_again() {
+    let db = database().await;
+    let (owner_id, _, pc, pc_key) = owner(&db).await;
+    let (first, second) = (agent_key(), agent_key());
+    let (_, code) = start(&db, &owner_id, pc).await;
+    let device = connect(&db, &code, &first, &pc_key).await;
+    let (_, code) = start(&db, &owner_id, pc).await;
+    connect(&db, &code, &second, &pc_key).await;
+    let admitted = |agent: [u8; 32]| {
+        let db = db.clone();
+        async move {
+            matches!(
+                db.key_admission(&agent, Some(&pc_key)).await.unwrap(),
+                KeyAdmission::Admitted { .. }
+            )
+        }
+    };
+    assert!(admitted(first).await);
+
+    // Wrong device or stranger: nothing happens.
+    assert_eq!(
+        db.disconnect_external_agent(&owner_id, pc, &first)
+            .await
+            .unwrap(),
+        None
+    );
+    let (stranger, ..) = owner(&db).await;
+    assert_eq!(
+        db.disconnect_external_agent(&stranger, device, &first)
+            .await
+            .unwrap(),
+        None
+    );
+    assert!(admitted(first).await);
+
+    assert_eq!(
+        db.disconnect_external_agent(&owner_id, device, &first)
+            .await
+            .unwrap(),
+        Some(AgentDisconnect {
+            device_revoked: None
+        })
+    );
+    assert!(!admitted(first).await);
+    assert!(admitted(second).await);
+
+    // Pairing it again rebinds the same key to the same device.
+    let (_, code) = start(&db, &owner_id, pc).await;
+    assert_eq!(connect(&db, &code, &first, &pc_key).await, device);
+    assert!(admitted(first).await);
+
+    // The last one goes with the device.
+    db.disconnect_external_agent(&owner_id, device, &second)
+        .await
+        .unwrap();
+    let last = db
+        .disconnect_external_agent(&owner_id, device, &first)
+        .await
+        .unwrap()
+        .unwrap();
+    assert!(last.device_revoked.is_some());
+    assert_eq!(
+        device_row(&db, device).await,
+        ("external".into(), "external".into(), true)
+    );
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn open_pairings_are_capped_per_owner() {
     let db = database().await;
     let (owner, _, pc, _) = owner(&db).await;

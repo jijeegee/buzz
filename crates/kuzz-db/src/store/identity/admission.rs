@@ -6,7 +6,7 @@
 //! - Kuzz agent key (`key_registry` role `agent`, principal = owner): only on
 //!   its host device, while the owner has a live login session there;
 //! - external agent key (role `external`): only on its own paired device
-//!   until that device is revoked; no login is needed;
+//!   until it or that device is disconnected; no login is needed;
 //! - a registry row without a host device (an agent bound to its owner by
 //!   the 0080 backfill but not yet registered from a device, or one whose
 //!   host row was deleted) is usable nowhere until it is registered.

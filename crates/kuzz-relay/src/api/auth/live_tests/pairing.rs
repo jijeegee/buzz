@@ -180,9 +180,19 @@ async fn a_claimed_code_connects_the_agent_on_its_computer_only() {
         .unwrap();
     assert_eq!(row["agents"][0]["pubkey"], agent.keys.public_key().to_hex());
     assert_eq!(row["login_device_id"], Value::Null);
-    let path = format!("/auth/devices/{external_device}");
+    // Its only agent going takes the computer off the list too.
+    let (stranger, _) = owner(&inst).await;
+    let path = format!(
+        "/auth/devices/{external_device}/agents/{}",
+        agent.keys.public_key().to_hex()
+    );
+    assert_eq!(call(&inst, &stranger, "DELETE", &path, None).await.0, 404);
+    assert!(admitted(&inst, &agent.keys, &agent.device).await);
     assert_eq!(call(&inst, &pc, "DELETE", &path, None).await.0, 204);
     assert!(!admitted(&inst, &agent.keys, &agent.device).await);
+    let (status, body) = call(&inst, &pc, "GET", "/auth/devices", None).await;
+    assert_eq!(status, 200, "{body}");
+    assert!(!body.to_string().contains(&external_device.to_string()));
 }
 
 #[tokio::test]
