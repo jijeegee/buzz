@@ -877,7 +877,7 @@ void directThreadPageTests() {
           overrides: [
             rootLookup(
               stored: (id) async => id == fixtureId(110) && stored != null
-                  ? (event: stored!, deleted: false)
+                  ? (event: stored, deleted: false)
                   : null,
               relay: () async => const [],
             ),
