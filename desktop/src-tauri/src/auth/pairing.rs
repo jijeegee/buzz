@@ -67,6 +67,8 @@ pub struct PairingStartView {
 pub struct HermesProfileView {
     /// `default`, or the profile's folder name.
     name: String,
+    /// The name its agent gets ([`hermes_display_name`]).
+    display_name: String,
     is_default: bool,
     /// The agent this profile acts as (`KUZZ_PAIRED_AGENT` in its `.env`).
     paired_agent: Option<String>,
@@ -177,10 +179,11 @@ pub async fn get_hermes_status() -> HermesStatus {
 /// caller reads the pairing list for the result.
 #[tauri::command]
 pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPairingRun, String> {
-    let (kuzz, target) = tokio::task::spawn_blocking(move || {
+    let (kuzz, target, name) = tokio::task::spawn_blocking(move || {
         let root = hermes_home()?;
         let target = hermes_profile_target(&root, &profile)?;
-        Some((hermes_installer()?, target))
+        let name = hermes_display_name(target.as_deref().unwrap_or(&root), &profile);
+        Some((hermes_installer()?, target, name))
     })
     .await
     .ok()
@@ -201,7 +204,7 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     let code = Zeroizing::new(started.code.to_string());
     let finished = tokio::task::spawn_blocking(move || {
         let mut pair = std::process::Command::new(&kuzz);
-        pair.args(hermes_pair_args(&relay, &code, target.as_deref()));
+        pair.args(hermes_pair_args(&relay, &code, &name, target.as_deref()));
         for name in CLEARED_ENV {
             pair.env_remove(name);
         }
@@ -223,8 +226,15 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
 /// The `kuzz` argv for a Hermes pairing (no shell). Pure. `--no-restart`:
 /// the app restarts the gateway after the pair command ends.
 /// `profile_home`: a named profile's folder (`None`: the default profile).
-fn hermes_pair_args(relay: &str, code: &str, profile_home: Option<&Path>) -> Vec<OsString> {
-    let mut args: Vec<OsString> = ["pair", "--hermes", "--no-restart"]
+fn hermes_pair_args(
+    relay: &str,
+    code: &str,
+    name: &str,
+    profile_home: Option<&Path>,
+) -> Vec<OsString> {
+    // One argument: a name may start with a dash.
+    let name = format!("--name={name}");
+    let mut args: Vec<OsString> = ["pair", "--hermes", "--no-restart", &name]
         .into_iter()
         .map(OsString::from)
         .collect();
@@ -270,11 +280,29 @@ fn profile_view(
     let env = env.trim_start_matches('\u{feff}');
     HermesProfileView {
         name: name.to_owned(),
+        display_name: hermes_display_name(home, name),
         is_default,
         paired_agent: env_pubkey(env, "KUZZ_PAIRED_AGENT"),
         owner: env_pubkey(env, "KUZZ_OWNER_PUBKEY"),
         blocked_reason,
     }
+}
+
+/// What Hermes calls this profile: `display_name` in its `profile.yaml`, else
+/// the profile's name ("Hermes" for the default one).
+fn hermes_display_name(home: &Path, profile: &str) -> String {
+    let own = std::fs::read_to_string(home.join("profile.yaml"))
+        .ok()
+        .and_then(|yaml| serde_yaml::from_str::<serde_yaml::Value>(&yaml).ok())
+        .and_then(|yaml| Some(yaml.get("display_name")?.as_str()?.trim().to_owned()))
+        // `kuzz pair --name` refuses anything else.
+        .filter(|name| {
+            (1..=64).contains(&name.chars().count()) && !name.chars().any(char::is_control)
+        });
+    own.unwrap_or_else(|| match profile {
+        DEFAULT_PROFILE => "Hermes".to_owned(),
+        name => name.to_owned(),
+    })
 }
 
 /// A profile folder the host gateway would serve: it has a config, and it

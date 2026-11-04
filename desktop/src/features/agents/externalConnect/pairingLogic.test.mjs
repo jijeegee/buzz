@@ -318,6 +318,7 @@ test("remembered: a Hermes card connection stays marked Hermes", () => {
 
 const hermesProfile = (name, fields = {}) => ({
   name,
+  displayName: name,
   isDefault: name === "default",
   pairedAgent: null,
   owner: null,
