@@ -122,7 +122,6 @@ part 'channel_detail_page/huddle_reactions.dart';
 part 'channel_detail_page/message_bubble.dart';
 part 'channel_detail_page/banners.dart';
 part 'channel_detail_page/app_bar.dart';
-part 'channel_detail_page/direct_thread.dart';
 part 'channel_detail_page/open_target.dart';
 
 /// Fetch deep-link targets that may be outside the loaded channel window.
@@ -280,15 +279,6 @@ bool _isOneToOneAgentDm(Channel channel, Set<String> agentPubkeys) {
       participants.any(agentPubkeys.contains);
 }
 
-/// Controls how a hydrated initial thread is added to the navigation stack.
-enum InitialThreadRouteBehavior {
-  /// Keep the channel route beneath the thread.
-  push,
-
-  /// Replace the temporary channel route so Back returns to its origin.
-  replaceCurrentRoute,
-}
-
 /// Channel pages on screen or under other routes, oldest first.
 final _openChannelPages = <BuildContext>{};
 
@@ -307,10 +297,6 @@ ModalRoute<Object?>? openChannelRoute(String channelId) {
 class ChannelDetailPage extends HookConsumerWidget {
   final Channel channel;
   final String? initialMessageId;
-  final String? initialThreadRootId;
-
-  /// How the automatically opened initial thread affects the route stack.
-  final InitialThreadRouteBehavior initialThreadRouteBehavior;
 
   /// Briefly highlight [initialMessageId] on the main timeline after the
   /// jump (goal message links).
@@ -324,8 +310,6 @@ class ChannelDetailPage extends HookConsumerWidget {
     super.key,
     required this.channel,
     this.initialMessageId,
-    this.initialThreadRootId,
-    this.initialThreadRouteBehavior = InitialThreadRouteBehavior.push,
     this.highlightInitialMessage = false,
     this.ownerView,
   });
@@ -350,12 +334,6 @@ class ChannelDetailPage extends HookConsumerWidget {
     final messagesState = ref.watch(channelMessagesProvider(channel.id));
     // Whether the rows saved on the device were looked up yet.
     final savedChecked = ref.watch(channelSavedRowsCheckedProvider(channel.id));
-    final opensThreadDirectly =
-        initialThreadRootId != null &&
-        !channel.isForum &&
-        initialThreadRouteBehavior ==
-            InitialThreadRouteBehavior.replaceCurrentRoute;
-    final didOpenDirectThread = useRef(false);
     final deepLinkLoads = useState(0);
     final huddleLifecycle =
         ref.watch(huddleLifecycleProvider(channel.id)).value ?? const [];
@@ -676,14 +654,11 @@ class ChannelDetailPage extends HookConsumerWidget {
     // the newest row. The list waits for that window (and up to a second for
     // the read state) rather than drawing the newest rows first.
     final readDecided = useReadStateDecided(
-      waits:
-          !channel.isForum &&
-          initialThreadRootId == null &&
-          initialMessageId == null,
+      waits: !channel.isForum && initialMessageId == null,
       isReady: readState.isReady || readState.pubkey == null,
     );
     final openTarget = useMemoized(
-      () => !readDecided || channel.isForum || initialThreadRootId != null
+      () => !readDecided || channel.isForum
           ? null
           : initialMessageId != null
           ? _OpenTarget(ids: {initialMessageId!}, isUnread: false)
@@ -793,13 +768,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         );
         // Rows at hand that reach the target open there on the first frame;
         // only a target beyond them waits for the relay's pages around it.
-        opening =
-            messagesNotifier.openOnRowsAtHand(anchor, unread: target.isUnread)
-            ? Future.value(true)
-            : messagesNotifier.openAt(
-                createdAt: anchor.createdAt,
-                eventId: anchor.id,
-              );
+        opening = messagesNotifier.openAtRow(anchor, unread: target.isUnread);
       }
       didStartOpening.value = true;
       unawaited(
@@ -832,7 +801,6 @@ class ChannelDetailPage extends HookConsumerWidget {
         if (channel.isForum) return null;
         final eventIds = {
           ?initialMessageId,
-          ?initialThreadRootId,
           ?initialOldestOrdinaryUnreadMessageId,
           ...initialForcedUnreadMessageIds,
         };
@@ -852,102 +820,10 @@ class ChannelDetailPage extends HookConsumerWidget {
       [
         channel.id,
         initialMessageId,
-        initialThreadRootId,
         initialOldestOrdinaryUnreadMessageId,
         initialForcedUnreadMessageIds,
       ],
     );
-
-    final directThreadEvents = messagesState.value ?? const <NostrEvent>[];
-    final directThreadHead = opensThreadDirectly
-        ? directThreadEvents
-                  .where((event) => event.id == initialThreadRootId)
-                  .firstOrNull ??
-              ref
-                  .read(channelMessagesProvider(channel.id).notifier)
-                  .deepLinkEvent(initialThreadRootId!)
-        : null;
-    // A head that does not come back may be a reply hidden from this reader
-    // (joined after it): the thread opens at the root the linked message
-    // names instead.
-    final directThreadTarget =
-        opensThreadDirectly &&
-            directThreadHead == null &&
-            initialMessageId != null
-        ? directThreadEvents
-                  .where((event) => event.id == initialMessageId)
-                  .firstOrNull ??
-              ref
-                  .read(channelMessagesProvider(channel.id).notifier)
-                  .deepLinkEvent(initialMessageId!)
-        : null;
-    final directThreadReference = directThreadTarget?.threadReference;
-    final directThreadHeadId =
-        directThreadReference != null &&
-            directThreadReference.parentId == initialThreadRootId
-        ? directThreadReference.rootId ?? initialThreadRootId
-        : initialThreadRootId;
-
-    // Start the thread's newest replies alongside its head instead of after
-    // the thread page mounts, so opening it costs one relay round trip. The
-    // thread page watches the same query and picks up the in-flight result.
-    useEffect(() {
-      final rootId = directThreadHeadId;
-      if (channel.isForum || rootId == null) return null;
-      final subscription = ref.listenManual(
-        threadRepliesProvider(
-          ThreadRepliesArgs(channelId: channel.id, rootId: rootId),
-        ),
-        (_, _) {},
-      );
-      return subscription.close;
-    }, [channel.id, directThreadHeadId]);
-
-    // A thread opened straight from a draft, goal or notification never shows
-    // the channel: this placeholder swaps itself for the thread once the head
-    // is known (timeline, or fetched by id above), or once that fetch settled
-    // without it, or at once while reconnecting: the thread then finds its
-    // head by id itself.
-    useEffect(() {
-      final rootId = initialThreadRootId;
-      final head = directThreadHead;
-      if (!opensThreadDirectly || didOpenDirectThread.value) return null;
-      // A dropped connection; a first connect still waits for the fetch.
-      final offline = sessionStatus == SessionStatus.reconnecting;
-      if (head == null && deepLinkLoads.value == 0 && !offline) return null;
-      didOpenDirectThread.value = true;
-      final events = directThreadEvents;
-      final messages = formatTimeline([
-        if (head != null) ...[
-          ...events,
-          if (!events.any((event) => event.id == rootId)) head,
-        ],
-      ], currentPubkey: currentPubkey);
-      final threadHead = messages.where((m) => m.id == rootId).firstOrNull;
-      final headId = directThreadHeadId;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
-          return;
-        }
-        Navigator.of(context).pushReplacement(
-          _DirectThreadRoute(
-            builder: (_) => ThreadDetailPage(
-              threadHead: threadHead,
-              headId: headId,
-              allMessages: messages,
-              channelId: channel.id,
-              currentPubkey: currentPubkey,
-              isMember: resolvedChannel.isMember,
-              isArchived: resolvedChannel.isArchived,
-              initialMessageId: initialMessageId,
-              channelBelow: false,
-              ownerView: ownerView,
-            ),
-          ),
-        );
-      });
-      return null;
-    }, [directThreadHead, deepLinkLoads.value, sessionStatus]);
 
     useEffect(() {
       // The owner view reads someone else's chat: nothing is marked read.
@@ -963,13 +839,6 @@ class ChannelDetailPage extends HookConsumerWidget {
             .clearObservedUnreadCoveredByRead(channel.id, readTimestamp);
       });
     }, [channel.id, readState.isReady, readTimestamp]);
-
-    if (opensThreadDirectly) {
-      return _DirectThreadPlaceholder(
-        channelId: channel.id,
-        rootId: initialThreadRootId!,
-      );
-    }
 
     final scaffold = FrostedScaffold(
       resizeToAvoidBottomInset:
@@ -1244,9 +1113,6 @@ class ChannelDetailPage extends HookConsumerWidget {
                                       entries: entries,
                                       allMessages: messages,
                                       initialMessageId: initialMessageId,
-                                      initialThreadRootId: initialThreadRootId,
-                                      initialThreadRouteBehavior:
-                                          initialThreadRouteBehavior,
                                       highlightInitialMessage:
                                           highlightInitialMessage,
                                       initialOrdinaryUnreadMessageIds:

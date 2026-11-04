@@ -11,6 +11,7 @@ import 'package:kuzz/features/activity/inbox_summary_provider.dart';
 import 'package:kuzz/features/activity/reminders_provider.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/channel_detail_page.dart';
+import 'package:kuzz/features/channels/direct_thread_page.dart';
 import 'package:kuzz/features/channels/channel_management_provider.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/message_content.dart';
@@ -805,15 +806,18 @@ void main() {
       await tester.tap(find.text(rowText));
       await tester.pumpAndSettle();
 
-      final page = tester.widget<ChannelDetailPage>(
-        find.byType(ChannelDetailPage),
-      );
       // No message anchor: the room (or thread) opens at its newest message.
-      expect(page.initialMessageId, isNull);
       if (isThread) {
-        expect(page.initialThreadRootId, isNotNull);
+        final page = tester.widget<DirectThreadPage>(
+          find.byType(DirectThreadPage),
+        );
+        expect(page.messageId, isNull);
       } else {
-        expect(page.initialThreadRootId, isNull);
+        final page = tester.widget<ChannelDetailPage>(
+          find.byType(ChannelDetailPage),
+        );
+        expect(page.initialMessageId, isNull);
+        expect(find.byType(DirectThreadPage), findsNothing);
       }
     });
   }
@@ -950,16 +954,10 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('inbox-row-reply-event')));
     await tester.pumpAndSettle();
 
-    final page = tester.widget<ChannelDetailPage>(
-      find.byType(ChannelDetailPage),
-    );
+    final page = tester.widget<DirectThreadPage>(find.byType(DirectThreadPage));
     expect(page.channel.id, 'ch1');
-    expect(page.initialThreadRootId, 'parent-reply');
-    expect(page.initialMessageId, 'reply-event');
-    expect(
-      page.initialThreadRouteBehavior,
-      InitialThreadRouteBehavior.replaceCurrentRoute,
-    );
+    expect(page.threadId, 'parent-reply');
+    expect(page.messageId, 'reply-event');
   });
 
   testWidgets('thread filter matches grouped thread replies', (tester) async {

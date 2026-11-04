@@ -14,6 +14,13 @@ class _SilentRelaySession extends _IdentityUpdateRelaySession {
       state = const SessionState(status: SessionStatus.connected);
 }
 
+/// A session with no connection from the start.
+class _OfflineRelaySession extends _SilentRelaySession {
+  @override
+  SessionState build() =>
+      const SessionState(status: SessionStatus.reconnecting);
+}
+
 /// Serves the thread window and drops/reconnects on demand.
 class _ReconnectingWindowSession extends _ThreadWindowRelaySession {
   _ReconnectingWindowSession(super.replies);
@@ -148,6 +155,63 @@ void threadOpenRootTests() {
       if (reveal.evaluate().isEmpty) return false;
       return tester.widget<Opacity>(reveal).opacity > 0;
     }
+
+    testWidgets('a thread on screen shows a pushed reply past its relay page', (
+      tester,
+    ) async {
+      final pushed = _openAtReply(110);
+      var inStore = replies;
+      List<NostrEvent> read() => [
+        for (final event in serveThreadWindow(
+          _channelId,
+          _openAtRootId,
+          inStore,
+          NostrFilter(kinds: const [], limit: 50),
+        ))
+          if (event.kind == threadWindowBoundsKind)
+            NostrEvent(
+              id: event.id,
+              pubkey: event.pubkey,
+              createdAt: event.createdAt,
+              kind: event.kind,
+              tags: event.tags,
+              content: jsonEncode({
+                ...jsonDecode(event.content) as Map<String, dynamic>,
+                'pushed_at': {
+                  pushed.id: DateTime.now().millisecondsSinceEpoch ~/ 1000 + 60,
+                },
+              }),
+              sig: '',
+            )
+          else
+            event,
+      ];
+      await tester.pumpWidget(
+        byId(
+          _ThreadWindowRelaySession(replies),
+          overrides: [
+            rootSources(relay: () => Completer<List<NostrEvent>>().future),
+            paintableThreadHeadProvider.overrideWithValue(
+              (_, _) async => read(),
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(findRichText('row 109'), findsOneWidget);
+      expect(findRichText('row 110'), findsNothing);
+
+      inStore = [...replies, pushed];
+      ProviderScope.containerOf(
+        tester.element(find.byType(ThreadDetailPage)),
+      ).read(pushInboxRevisionProvider.notifier).bump();
+      await tester.pump();
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 100));
+      expect(findRichText('row 110'), findsOneWidget);
+    });
 
     testWidgets('shows stored replies at once while the relay never answers', (
       tester,
@@ -319,8 +383,6 @@ void threadOpenRootTests() {
           ], Future<void>.value()),
           initialMessageId: 'target',
           initialThreadRootId: 'hidden-parent',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
           threadReplies: {
             _openAtRootId: [target],
           },
@@ -503,88 +565,36 @@ void threadOpenRootTests() {
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('a direct thread hands off at once while reconnecting', (
-      tester,
-    ) async {
+    testWidgets('a link opens the thread while disconnected', (tester) async {
       final chatter = _textMsg(
         id: 'chatter',
         pubkey: 'bob',
         content: 'Channel chatter',
       );
-      final session = _SilentRelaySession();
       await tester.pumpWidget(
         _buildTestable(
           messages: [chatter],
           messagesNotifier: _PendingHeadMessagesNotifier([
             chatter,
           ], Completer<void>().future),
-          relaySessionNotifier: session,
+          relaySessionNotifier: _OfflineRelaySession(),
           initialThreadRootId: _openAtRootId,
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
           overrides: [
-            rootSources(relay: () => Completer<List<NostrEvent>>().future),
-          ],
-        ),
-      );
-      session.drop();
-      await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
-
-      expect(find.byType(ThreadDetailPage), findsOneWidget);
-      expect(find.text('Channel chatter'), findsNothing);
-    });
-
-    testWidgets('a late read state never bounces a direct thread', (
-      tester,
-    ) async {
-      final chatter = _textMsg(
-        id: 'chatter',
-        pubkey: 'bob',
-        content: 'Channel chatter',
-      );
-      final readState = _LateReadStateNotifier(
-        const ReadStateState(
-          isReady: false,
-          pubkey: 'self',
-          contexts: {},
-          version: 0,
-        ),
-      );
-      await tester.pumpWidget(
-        _buildTestable(
-          messages: [chatter],
-          messagesNotifier: _PendingHeadMessagesNotifier([
-            chatter,
-          ], Future<void>.error(TimeoutException('head'))..ignore()),
-          readStateNotifier: readState,
-          initialThreadRootId: _openAtRootId,
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
-          overrides: [
-            rootSources(relay: () => Completer<List<NostrEvent>>().future),
-          ],
-        ),
-      );
-      for (var frame = 0; frame < 20; frame++) {
-        if (frame == 3) {
-          readState.becomeReady(
-            const ReadStateState(
-              isReady: true,
-              pubkey: 'self',
-              contexts: {_channelId: 5000},
-              version: 1,
+            rootSources(
+              stored: () async => (event: _openAtRoot, deleted: false),
+              relay: () => Completer<List<NostrEvent>>().future,
             ),
-          );
-        }
-        await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text('Channel chatter'), findsNothing);
-      }
-      await tester.pumpAndSettle();
-
+            storedReplies(replies),
+          ],
+        ),
+      );
       expect(find.byType(ThreadDetailPage), findsOneWidget);
+      await tester.pump();
+      await tester.pump();
+
+      expect(find.byType(ChannelDetailPage), findsNothing);
       expect(find.text('Channel chatter'), findsNothing);
+      expect(findRichText('row 109'), findsOneWidget);
     });
   });
 }

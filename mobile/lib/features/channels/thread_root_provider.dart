@@ -12,7 +12,12 @@ import 'thread_replies_provider.dart';
 /// without it: the root only fills the top bubble, agent pins and the menu.
 @immutable
 class ThreadRoot {
-  const ThreadRoot({this.event, this.deleted = false, this.missing = false});
+  const ThreadRoot({
+    this.event,
+    this.deleted = false,
+    this.missing = false,
+    this.failed = false,
+  });
 
   /// The root as found so far: on the timeline, in the store, then from the
   /// relay, whose copy replaces a stored one.
@@ -26,6 +31,9 @@ class ThreadRoot {
   /// known: it is hidden from this reader (joined after it in a room whose
   /// history starts at joining) or gone. Asked again after a reconnect.
   final bool missing;
+
+  /// The last relay request failed: nothing is known and nothing proven.
+  final bool failed;
 }
 
 /// What one relay answer for a root says. Cases:
@@ -206,6 +214,12 @@ class ThreadRootNotifier extends Notifier<ThreadRoot> {
     }
     if (!ref.mounted) return;
     if (answer == null) {
+      state = ThreadRoot(
+        event: state.event,
+        deleted: state.deleted,
+        missing: state.missing,
+        failed: true,
+      );
       _scheduleRetry();
       return;
     }

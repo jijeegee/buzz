@@ -383,4 +383,141 @@ void main() {
       expect(reopenNewerChannelWindowEdge(head), same(head));
     });
   });
+
+  group('store rows', () {
+    final rows = _rows(40);
+    final store = ChannelWindowStore(
+      pages: [_fetch(rows.sublist(0, 30), null)],
+      liveThreadSummaries: const {},
+      liveOverlay: const [],
+      liveAux: const [],
+    );
+    // A row of the store, past what the relay has answered with.
+    final stored = foldStoredChannelRows(store, [rows[35]]);
+
+    List<String> shown(ChannelWindowStore window) => [
+      for (final event in flattenChannelWindowEvents(window)) event.id,
+    ];
+
+    test(
+      'a fold shows rows, once, and leaves a window with nothing to add',
+      () {
+        expect(shown(stored), contains(rows[35].id));
+        expect(stored.storeRows, hasLength(1));
+        expect(
+          identical(foldStoredChannelRows(stored, [rows[35]]), stored),
+          true,
+        );
+        expect(
+          identical(foldStoredChannelRows(stored, [rows[29]]), stored),
+          true,
+        );
+      },
+    );
+
+    test(
+      'a row older than the window while older pages remain is left out',
+      () {
+        // The window holds the newest 7 of 30: rows 24 to 30.
+        expect(
+          identical(foldStoredChannelRows(stored, [rows[2]]), stored),
+          true,
+        );
+      },
+    );
+
+    test('every relay fold toward the present drops them', () {
+      expect(
+        replaceNewestChannelWindow(stored, _fetch(rows, null)).storeRows,
+        isEmpty,
+      );
+      final anchor = _anchor(rows[10].createdAt, rows[10].id);
+      final older = _fetch(rows, anchor);
+      final newer = _fetch(rows, anchor, direction: WindowPageDirection.newer);
+      final middle = openMiddleChannelWindow(stored, older, newer);
+      expect(middle.storeRows, isEmpty);
+
+      final again = foldStoredChannelRows(middle, [rows[35]]);
+      expect(again.storeRows, hasLength(1));
+      final next = _fetch(
+        rows,
+        again.newerCursor,
+        direction: WindowPageDirection.newer,
+      );
+      expect(appendNewerChannelWindow(again, next).storeRows, isEmpty);
+    });
+
+    test('an older page keeps them, less any it holds', () {
+      final tail = store.pages.last.nextCursor;
+      final page = _fetch(rows.sublist(0, 30), tail);
+      expect(appendOlderChannelWindow(stored, page).storeRows, hasLength(1));
+      final holding = foldStoredChannelRows(
+        ChannelWindowStore(
+          pages: [
+            ChannelWindowPage(
+              startCursor: null,
+              rows: store.pages.first.rows,
+              aux: const [],
+              nextCursor: tail,
+              hasMore: true,
+            ),
+          ],
+          liveThreadSummaries: const {},
+          liveOverlay: const [],
+          liveAux: const [],
+        ),
+        [page.rows.first.event],
+      );
+      // Past the oldest loaded row, so the fold above placed nothing.
+      expect(holding.storeRows, isEmpty);
+      final withRow = holding.copyWith(storeRows: [page.rows.first.event]);
+      expect(appendOlderChannelWindow(withRow, page).storeRows, isEmpty);
+    });
+
+    test('live rows carry them, and a live copy of one takes its place', () {
+      final anchor = _anchor(rows[10].createdAt, rows[10].id);
+      final held = foldStoredChannelRows(
+        openMiddleChannelWindow(
+          store,
+          _fetch(rows, anchor),
+          _fetch(rows, anchor, direction: WindowPageDirection.newer),
+        ),
+        [rows[35]],
+      );
+      expect(held.hasNewer, isTrue);
+      expect(
+        mergeLiveChannelWindowEvent(
+          held,
+          rows[38],
+          isTimelineRow: true,
+        ).storeRows,
+        hasLength(1),
+      );
+
+      final live = mergeLiveChannelWindowEvent(
+        stored,
+        rows[35],
+        isTimelineRow: true,
+      );
+      expect(live.storeRows, isEmpty);
+      expect(live.liveOverlay.single.id, rows[35].id);
+    });
+
+    test('reopening a middle window edge keeps them until its page', () {
+      final anchor = _anchor(rows[10].createdAt, rows[10].id);
+      final atPresent = openMiddleChannelWindow(
+        store,
+        _fetch(rows, anchor, limit: 40),
+        _fetch(rows, anchor, direction: WindowPageDirection.newer, limit: 40),
+      );
+      expect(atPresent.hasNewer, isFalse);
+      final folded = foldStoredChannelRows(atPresent, [
+        fixtureRow(_ch, 16, 2000),
+      ]);
+      final reopened = reopenNewerChannelWindowEdge(folded);
+      expect(reopened.hasNewer, isTrue);
+      expect(reopened.storeRows, hasLength(1));
+      expect(shown(reopened), contains(folded.storeRows.single.id));
+    });
+  });
 }

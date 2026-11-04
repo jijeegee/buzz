@@ -4,8 +4,6 @@ class _MessageList extends HookConsumerWidget {
   final List<MainTimelineEntry> entries;
   final List<TimelineMessage> allMessages;
   final String? initialMessageId;
-  final String? initialThreadRootId;
-  final InitialThreadRouteBehavior initialThreadRouteBehavior;
   final bool highlightInitialMessage;
   final Set<String> initialOrdinaryUnreadMessageIds;
   final String? initialOldestOrdinaryUnreadMessageId;
@@ -38,8 +36,6 @@ class _MessageList extends HookConsumerWidget {
     required this.entries,
     required this.allMessages,
     required this.initialMessageId,
-    required this.initialThreadRootId,
-    required this.initialThreadRouteBehavior,
     this.highlightInitialMessage = false,
     required this.initialOrdinaryUnreadMessageIds,
     required this.initialOldestOrdinaryUnreadMessageId,
@@ -85,9 +81,7 @@ class _MessageList extends HookConsumerWidget {
     final distanceFromLatest = useRef(0.0);
     final hasUnseenLatestEntry = useRef(false);
     final followsLatest = useState(
-      openedAt == null &&
-          initialMessageId == null &&
-          initialThreadRootId == null,
+      openedAt == null && initialMessageId == null,
     );
     final isAutoScrolling = useRef(false);
     final isUserScrolling = useRef(false);
@@ -179,7 +173,6 @@ class _MessageList extends HookConsumerWidget {
     final latestEntryId = entries.isEmpty ? null : entries.last.message.id;
     final previousLatestEntryId = useRef<String?>(null);
     final observedLocalSendIds = useRef(localSendAnimations.keys.toSet());
-    final didOpenInitialThread = useRef(false);
     final didJumpToInitialMessage = useRef(false);
     final landingHighlightId = useState<String?>(null);
     useEffect(() {
@@ -195,8 +188,7 @@ class _MessageList extends HookConsumerWidget {
     final oldestUnreadMessageId = useState<String?>(null);
     final unreadBoundaryLoadFailed = useState(false);
     final unreadBoundaryFetchCount = useRef(0);
-    final hasUnreadDeepLink =
-        initialMessageId != null || initialThreadRootId != null;
+    final hasUnreadDeepLink = initialMessageId != null;
     final dayTimestampByReversedIndex = <int, int>{};
     final dayStartByReversedIndex = <int, int>{};
     final dayHeaderTimestampByReversedIndex = <int, int>{};
@@ -858,47 +850,8 @@ class _MessageList extends HookConsumerWidget {
     }, [appView, itemScrollController]);
 
     useEffect(() {
-      if (initialThreadRootId == null || didOpenInitialThread.value) {
-        return null;
-      }
-      final threadHead = allMessages
-          .where((message) => message.id == initialThreadRootId)
-          .firstOrNull;
-      if (threadHead == null) return null;
-      didOpenInitialThread.value = true;
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        if (!context.mounted || ModalRoute.of(context)?.isCurrent != true) {
-          return;
-        }
-        final route = MaterialPageRoute<void>(
-          builder: (_) => ThreadDetailPage(
-            ownerView: OwnerViewScope.maybeOf(context),
-            threadHead: threadHead,
-            allMessages: allMessages,
-            channelId: channelId,
-            currentPubkey: currentPubkey,
-            isMember: isMember,
-            isArchived: isArchived,
-            initialMessageId: initialMessageId,
-            channelBelow:
-                initialThreadRouteBehavior == InitialThreadRouteBehavior.push,
-          ),
-        );
-        final navigator = Navigator.of(context);
-        switch (initialThreadRouteBehavior) {
-          case InitialThreadRouteBehavior.push:
-            navigator.push(route);
-          case InitialThreadRouteBehavior.replaceCurrentRoute:
-            navigator.pushReplacement(route);
-        }
-      });
-      return null;
-    }, [initialThreadRootId, allMessages, initialThreadRouteBehavior]);
-
-    useEffect(() {
       final targetIndex = reversedIndexOf(initialMessageId);
       if (openedAt != null ||
-          initialThreadRootId != null ||
           targetIndex == null ||
           didJumpToInitialMessage.value) {
         return null;
@@ -915,7 +868,7 @@ class _MessageList extends HookConsumerWidget {
         }
       });
       return null;
-    }, [initialMessageId, initialThreadRootId, entries.length, openedAt]);
+    }, [initialMessageId, entries.length, openedAt]);
 
     useEffect(() {
       final previous = previousLatestEntryId.value;

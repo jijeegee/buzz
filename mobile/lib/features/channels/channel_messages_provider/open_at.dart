@@ -24,7 +24,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
         eventId: eventId,
       );
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
-      _foldPagesAround(pages.pages, pages.version, eventId);
+      _foldPagesAround(pages.pages, pages.version, eventId, pages.askedAt);
       _windowGeneration++;
       _publishWindow(pages.pages.expand((page) => page.rows));
       return true;
@@ -37,7 +37,8 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
   }
 
   /// The relay's page each way around a message.
-  Future<({List<ChannelWindowPage> pages, int version})> _fetchPagesAround(
+  Future<({List<ChannelWindowPage> pages, int version, int askedAt})>
+  _fetchPagesAround(
     RelaySessionNotifier session, {
     required int createdAt,
     String? eventId,
@@ -48,11 +49,12 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       eventId: anchor.eventId,
     );
     final version = ++_threadQuerySerial;
+    final askedAt = relayAskTime();
     final pages = await Future.wait([
       _fetchWindowPage(session, cursor),
       _fetchWindowPage(session, cursor, direction: WindowPageDirection.newer),
     ]);
-    return (pages: pages, version: version);
+    return (pages: pages, version: version, askedAt: askedAt);
   }
 
   /// Makes [pages] (from [_fetchPagesAround]) the window, in place of the
@@ -61,6 +63,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     List<ChannelWindowPage> pages,
     int version,
     String? anchorId,
+    int askedAt,
   ) {
     _windowStore = openMiddleChannelWindow(
       _windowStore,
@@ -68,6 +71,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       pages[1],
       anchorId: anchorId,
     );
+    _foldedRelayPages(askedAt, pages);
     _cachedHeadIds = const {};
     _pruneOffWindowReplies();
     for (final page in pages) {
@@ -111,6 +115,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     _loadingNewer = true;
     try {
       final pageVersion = ++_threadQuerySerial;
+      final askedAt = relayAskTime();
       final page = await _fetchWindowPage(
         session,
         cursor,
@@ -118,6 +123,7 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
       );
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
       _windowStore = appendNewerChannelWindow(_windowStore, page);
+      _foldedRelayPages(askedAt, [page]);
       _reconcilePageSummaries(page, pageVersion);
       _publishWindow(page.rows);
       return true;
@@ -143,10 +149,12 @@ extension _OpenAtWindow on ChannelMessagesNotifier {
     final session = _summarySession;
     try {
       final pageVersion = ++_threadQuerySerial;
+      final askedAt = relayAskTime();
       final response = await session.queryRelay([_channelWindowFilter(null)]);
       final page = parseChannelWindowResponse(response, channelId, null);
       if (!_isCurrentWindowOp(initVersion, opVersion)) return false;
       _windowStore = replaceNewestChannelWindow(_windowStore, page);
+      _foldedRelayPages(askedAt, [page]);
       _windowGeneration++;
       _persistHead(response);
       _pruneOffWindowReplies();

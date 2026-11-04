@@ -256,23 +256,8 @@ class ChatsPage extends HookConsumerWidget {
       unawaited(HapticFeedback.selectionClick());
       await Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => switch (row.rootId) {
-            // A thread opens on its root id alone, never the channel
-            // (docs/message-sync.md#opening-a-thread-from-its-root-id).
-            final rootId? when row.isThread && !channel.isForum =>
-              threadPageForRow(
-                row,
-                rootId,
-                channel: channel,
-                standIn: listed == null,
-              ),
-            final rootId => ChannelDetailPage(
-              channel: channel,
-              initialThreadRootId: row.isThread ? rootId : null,
-              initialThreadRouteBehavior:
-                  InitialThreadRouteBehavior.replaceCurrentRoute,
-            ),
-          },
+          builder: (_) =>
+              pageForChatRow(row, channel: channel, standIn: listed == null),
         ),
       );
     }

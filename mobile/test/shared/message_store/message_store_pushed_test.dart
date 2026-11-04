@@ -395,6 +395,86 @@ void main() {
     expect([for (final row in certainRows.rows) row['id']], ['a1']);
   });
 
+  test(
+    'paints say when each pushed row was fetched, the first fetch',
+    () async {
+      Map<String, dynamic> reply(String id, int at) => {
+        ...event(id, 'r', at),
+        'tags': [
+          ['h', 'r'],
+          ['e', 'root', '', 'reply'],
+        ],
+      };
+      Map<dynamic, dynamic> boundsOf(
+        List<Map<String, dynamic>> events,
+        int kind,
+      ) =>
+          jsonDecode(
+                events.singleWhere((e) => e['kind'] == kind)['content']
+                    as String,
+              )
+              as Map;
+      await applyList({'r'});
+      store.submit(lease, [event('root', 'r', 5)]);
+      await store.flushed();
+      await store.submitPushed(lease, [
+        event('p1', 'r', 20),
+        reply('p2', 21),
+      ], fetchedAt: 700);
+      await store.submitPushed(lease, [event('p1', 'r', 20)], fetchedAt: 900);
+
+      final room = await store.paintableRoomHead(
+        lease,
+        room: 'r',
+        kinds: const [9],
+        limit: 50,
+      );
+      expect(boundsOf(room!, 39006)['pushed_at'], {'p1': 700});
+      final thread = await store.paintableThreadHead(
+        lease,
+        room: 'r',
+        root: 'root',
+        kinds: const [9],
+        limit: 50,
+      );
+      expect(boundsOf(thread!, 39007)['pushed_at'], {'p2': 700});
+    },
+  );
+
+  test('a file of an older build gains fetched_at, its rows without', () async {
+    final path = await store.pathOf(lease);
+    final old = await databaseFactoryFfi.openDatabase(
+      path,
+      options: OpenDatabaseOptions(
+        version: messageStoreSchemaVersion,
+        singleInstance: false,
+        onCreate: (db, _) =>
+            db.execute('CREATE TABLE pushed_rows(id TEXT PRIMARY KEY)'),
+      ),
+    );
+    await old.close();
+
+    await applyList({'r'});
+    await store.submitPushed(lease, [event('p1', 'r', 20)], fetchedAt: 800);
+    await store.submitPushed(lease, [event('p2', 'r', 21)], fetchedAt: 800);
+    await withDb(
+      (db) => db.rawUpdate(
+        "UPDATE pushed_rows SET fetched_at = NULL WHERE id = 'p1'",
+      ),
+    );
+    final painted = await store.paintableRoomHead(
+      lease,
+      room: 'r',
+      kinds: const [9],
+      limit: 50,
+    );
+    final bounds = painted!.singleWhere((e) => e['kind'] == 39006);
+    expect((jsonDecode(bounds['content'] as String) as Map)['pushed_at'], {
+      'p1': null,
+      'p2': 800,
+    });
+  });
+
   test('a stored root reads by id, pushed or deleted', () async {
     await applyList({'r'});
     store.submit(lease, [

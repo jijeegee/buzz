@@ -109,6 +109,14 @@ class ThreadDetailPage extends HookConsumerWidget {
   final TimelineMessage? threadHead;
   final String? _headId;
 
+  /// The root's id when the head is a reply not found yet: replies are
+  /// queried and sent by root.
+  final String? rootId;
+
+  /// The head this page moved from in place (a linked reply's hidden parent):
+  /// its replies hang off the head, and the composer stays as it was.
+  final String? movedFromHeadId;
+
   /// The root as the opening row carried it, drawn until it is resolved.
   final NostrEvent? rootHint;
 
@@ -123,6 +131,15 @@ class ThreadDetailPage extends HookConsumerWidget {
   final bool isArchived;
   final String? initialMessageId;
 
+  /// When [initialMessageId] was sent, if known: a reply not held opens there.
+  final int? initialMessageCreatedAt;
+
+  /// [initialMessageCreatedAt] may still come: the opening waits for it.
+  final bool awaitsLinkedReply;
+
+  /// The head may be a reply (a draft's): the composer waits for its root.
+  final bool headMayBeNested;
+
   /// The group page is the route right under this one, so the header's
   /// group button pops back to it. False when the thread replaced the group
   /// page (opened from Chats) or sits on another thread.
@@ -136,6 +153,8 @@ class ThreadDetailPage extends HookConsumerWidget {
     super.key,
     this.threadHead,
     String? headId,
+    this.rootId,
+    this.movedFromHeadId,
     this.rootHint,
     this.initialThreadName,
     this.standInChannel,
@@ -145,6 +164,9 @@ class ThreadDetailPage extends HookConsumerWidget {
     required bool isMember,
     required this.isArchived,
     this.initialMessageId,
+    this.initialMessageCreatedAt,
+    this.awaitsLinkedReply = false,
+    this.headMayBeNested = false,
     this.channelBelow = true,
     this.ownerView,
   }) : assert(threadHead != null || headId != null),
@@ -197,7 +219,7 @@ class ThreadDetailPage extends HookConsumerWidget {
     final sendMessage = ref.read(sendMessageProvider);
     final quoteScope = ComposerQuoteScope(
       channelId: channelId,
-      threadHeadId: threadHead.id,
+      threadHeadId: movedFromHeadId ?? threadHead.id,
     );
     // Captured per build so a send carries the quote shown when it started.
     final pendingQuote = ref.watch(composerQuoteProvider(quoteScope));
@@ -239,14 +261,12 @@ class ThreadDetailPage extends HookConsumerWidget {
     // Replies after the loaded ones remain on the relay: the window was opened
     // at a reply and has not paged up to the newest one yet.
     final windowHasNewer = windowState?.hasNewer ?? false;
-    final liveThreadEvents = windowState == null
-        ? liveChannelEvents
-        : [
-            for (final event in liveChannelEvents)
-              if (event.id == threadHead.id ||
-                  !isCoveredByThreadWindow(event, windowState))
-                event,
-          ];
+    final liveThreadEvents = _uncoveredThreadEvents(
+      liveChannelEvents,
+      windowState,
+      threadHead.id,
+      ref.watch(storedNewerRepliesProvider(repliesArgs)),
+    );
     final fetchedReplies = replyEvents == null
         ? null
         : formatTimeline(
@@ -314,9 +334,10 @@ class ThreadDetailPage extends HookConsumerWidget {
     for (final msg in allMsgs) {
       var pid = msg.parentId;
       if (pid == null) continue;
-      if (headIsStandIn &&
-          msg.rootId == threadHead.id &&
-          !loadedIds.contains(pid)) {
+      if (pid == movedFromHeadId ||
+          (headIsStandIn &&
+              msg.rootId == threadHead.id &&
+              !loadedIds.contains(pid))) {
         pid = threadHead.id;
       }
       childrenByParent.putIfAbsent(pid, () => []).add(msg);
@@ -370,7 +391,12 @@ class ThreadDetailPage extends HookConsumerWidget {
           ? _ThreadOpenPhase.opening
           : _ThreadOpenPhase.none,
     );
-    final supportsOpenAt = useState<bool?>(null);
+    // Null while not known (offline): watched, as a thread query that finds
+    // it unknown asks again.
+    final supportsOpenAt = ref
+        .watch(relayInfoProvider)
+        .value
+        ?.supports(newerWindowExtension);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
     final openedCreatedAt = useRef<int?>(null);
@@ -389,25 +415,12 @@ class ThreadDetailPage extends HookConsumerWidget {
     bool stillOpening() =>
         openPhase.value == _ThreadOpenPhase.opening ||
         (openCapped.value && openPhase.value == _ThreadOpenPhase.none);
-    // Without newer pages there is no window to open at: show the replies
-    // now rather than after the reply is found.
-    useEffect(() {
-      if (openTarget == null || !stillOpening()) return null;
-      unawaited(
-        ref
-            .read(relayInfoProvider.future)
-            .then((info) => info?.supports(newerWindowExtension) ?? false)
-            .catchError((Object _) => false)
-            .then((supported) {
-              if (!context.mounted) return;
-              supportsOpenAt.value = supported;
-              if (!supported && openPhase.value == _ThreadOpenPhase.opening) {
-                openPhase.value = _ThreadOpenPhase.none;
-              }
-            }),
-      );
-      return null;
-    }, [readDecided]);
+    final openTargetHeld = _holdsOpenTarget(allReplies, openTarget);
+    final gaveUpOnLinkedReply = _useLateLinkedReply(
+      initialMessageCreatedAt,
+      didStartOpening: didStartOpening,
+      capped: openCapped,
+    );
     useEffect(
       () {
         if (!stillOpening() || didStartOpening.value || !readDecided) {
@@ -420,9 +433,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         final target = openTarget;
         if (target == null && !windowHasNewer) {
           didStartOpening.value = true;
-          scheduleMicrotask(() {
-            if (context.mounted) openPhase.value = _ThreadOpenPhase.none;
-          });
+          _endOpenAfterBuild(context, openPhase);
           return null;
         }
         if (target == null) {
@@ -440,7 +451,15 @@ class ThreadDetailPage extends HookConsumerWidget {
           );
           return null;
         }
-        if (savedLoading) return null;
+        // A root in doubt would open the window of the wrong thread.
+        if (savedLoading || resolvedHead.unconfirmed) return null;
+        // Without newer pages there is no window to open at, and its newest
+        // page would replace held replies: the replies show now and the
+        // older pages are walked to the reply.
+        if (supportsOpenAt == false) {
+          _endOpenAfterBuild(context, openPhase);
+          return null;
+        }
         // Held replies reaching the target open there at once.
         final unread = target.isUnread;
         if (heldReplyToOpenAt(allReplies, target.id, unread: unread)
@@ -454,9 +473,12 @@ class ThreadDetailPage extends HookConsumerWidget {
           openAroundSavedReply(windowNotifier, aroundSaved, held, context);
           return null;
         }
-        if (supportsOpenAt.value != true) return null;
+        // Not known yet (offline): the cap shows the replies at hand, and the
+        // reply still opens once it is known.
+        if (supportsOpenAt == null) return null;
         final createdAt =
             target.createdAt ??
+            initialMessageCreatedAt ??
             [...allMsgs, ...allMessages]
                 .where((message) => message.id == target.id)
                 .firstOrNull
@@ -464,9 +486,12 @@ class ThreadDetailPage extends HookConsumerWidget {
         if (createdAt == null) {
           // Wait for the replies before giving up on a linked reply; the
           // newest replies then page back to it as before.
-          if (!canUseMessagesForInitialTarget) return null;
+          if (!canUseMessagesForInitialTarget || awaitsLinkedReply) {
+            return null;
+          }
           didStartOpening.value = true;
-          openPhase.value = _ThreadOpenPhase.none;
+          gaveUpOnLinkedReply.value = initialMessageId != null;
+          _endOpenAfterBuild(context, openPhase);
           return null;
         }
         didStartOpening.value = true;
@@ -494,11 +519,15 @@ class ThreadDetailPage extends HookConsumerWidget {
         return null;
       },
       [
-        supportsOpenAt.value,
+        supportsOpenAt,
         canUseMessagesForInitialTarget,
         relayRepliesAvailable,
         readDecided,
         savedLoading,
+        resolvedHead.unconfirmed,
+        openTargetHeld,
+        initialMessageCreatedAt,
+        awaitsLinkedReply,
       ],
     );
     // The window shows once the thread query is in too; a query that failed
@@ -511,7 +540,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         return null;
       }
       if (!relayRepliesAvailable) {
-        openPhase.value = _ThreadOpenPhase.none;
+        _endOpenAfterBuild(context, openPhase);
         return null;
       }
       listGeneration.value += 1;
@@ -1182,35 +1211,11 @@ class ThreadDetailPage extends HookConsumerWidget {
       ],
     );
 
-    useEffect(
-      () {
-        final targetIndex = initialHighlightTargetIndex.value;
-        if (targetIndex == null || initialTargetReadyForHighlight.value) {
-          return null;
-        }
-        var completionScheduled = false;
-        void markReadyAfterTargetLayout() {
-          if (completionScheduled ||
-              !itemPositionsListener.itemPositions.value.any(
-                (position) => position.index == targetIndex,
-              )) {
-            return;
-          }
-          completionScheduled = true;
-          WidgetsBinding.instance.addPostFrameCallback((_) {
-            if (context.mounted) initialTargetReadyForHighlight.value = true;
-          });
-        }
-
-        itemPositionsListener.itemPositions.addListener(
-          markReadyAfterTargetLayout,
-        );
-        markReadyAfterTargetLayout();
-        return () => itemPositionsListener.itemPositions.removeListener(
-          markReadyAfterTargetLayout,
-        );
-      },
-      [initialHighlightTargetIndex.value, initialTargetReadyForHighlight.value],
+    _useHighlightTargetLayout(
+      context,
+      itemPositionsListener,
+      initialHighlightTargetIndex.value,
+      initialTargetReadyForHighlight,
     );
 
     final visibleReplyReadKey = replies
@@ -1269,24 +1274,7 @@ class ThreadDetailPage extends HookConsumerWidget {
       composerDockHeight.value = height;
     }
 
-    useEffect(() {
-      final observer = ImeMetricsSettleObserver(
-        onMetricsSettled: () {
-          listViewport.reportAfterLayout();
-          if (!usesFixedAndroidImeViewport) return;
-          final nextInset =
-              appView.viewInsets.bottom / appView.devicePixelRatio;
-          if ((settledImeBottomInset.value - nextInset).abs() >= 0.5) {
-            settledImeBottomInset.value = nextInset;
-          }
-        },
-      );
-      WidgetsBinding.instance.addObserver(observer);
-      return () {
-        WidgetsBinding.instance.removeObserver(observer);
-        observer.dispose();
-      };
-    }, [appView, itemScrollController]);
+    _useSettledImeInset(listViewport, settledImeBottomInset);
 
     final (:channel, :composerWaits) = _watchThreadChannel(ref, this);
     // A thread in a one-to-one DM with someone I blocked: the Unblock bar
@@ -1415,9 +1403,10 @@ class ThreadDetailPage extends HookConsumerWidget {
                 // Out of sight while the list settles where it opens.
                 child: Opacity(
                   key: const ValueKey('thread-open-reveal'),
-                  opacity: isOpenHidden ? 0 : 1,
+                  // With nothing to settle, the loading row stays in sight.
+                  opacity: isOpenHidden && replies.isNotEmpty ? 0 : 1,
                   child: IgnorePointer(
-                    ignoring: isOpenHidden,
+                    ignoring: isOpenHidden && replies.isNotEmpty,
                     child: NotificationListener<ScrollNotification>(
                       onNotification: (notification) {
                         if (notification.depth != 0) return false;
@@ -1457,6 +1446,8 @@ class ThreadDetailPage extends HookConsumerWidget {
                           showsHead: showsHead,
                           headIsDeleted: liveDeletionHidesHead,
                           head: liveHead,
+                          threadTitle: title,
+                          savedLoading: savedLoading,
                           headPendingLabel:
                               (resolvedHead.resolving ||
                                       resolvedHead.missing) &&
@@ -1542,7 +1533,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                       ),
                       if (blockedCounterpart != null)
                         BlockedDmBar(pubkey: blockedCounterpart)
-                      else if (composerWaits)
+                      else if (composerWaits || resolvedHead.unconfirmed)
                         _ThreadRootPendingRow(label: context.l10n.loadingLabel)
                       else ...[
                         ComposerQuoteChip(scope: quoteScope),
@@ -1553,6 +1544,7 @@ class ThreadDetailPage extends HookConsumerWidget {
                               restoreComposerFocus.value = restoreFocus,
                           hintText: context.l10n.threadComposerHint,
                           threadHeadId: threadHead.id,
+                          movedFromHeadId: movedFromHeadId,
                           rootId: effectiveRootId,
                           threadRootTags: resolvedHead.missing
                               ? _standInRootTags(allReplies)

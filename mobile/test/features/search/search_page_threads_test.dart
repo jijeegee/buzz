@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel.dart';
-import 'package:kuzz/features/channels/channel_detail_page.dart';
+import 'package:kuzz/features/channels/direct_thread_page.dart';
 import 'package:kuzz/features/channels/channels_provider.dart';
 import 'package:kuzz/features/channels/group_avatar.dart';
 import 'package:kuzz/features/channels/thread_name_provider.dart';
@@ -44,7 +44,19 @@ final _searchTeam = Channel(
 
 const _threadRoot = 'root-1';
 
-const _threadRow = ChatListRow(
+final _threadRootEvent = NostrEvent(
+  id: _threadRoot,
+  pubkey: 'b' * 64,
+  createdAt: 150,
+  kind: EventKind.streamMessageV2,
+  tags: const [
+    ['h', 'general'],
+  ],
+  content: 'the root',
+  sig: '',
+);
+
+final _threadRow = ChatListRow(
   isThread: true,
   key: _threadRoot,
   at: 200,
@@ -54,6 +66,7 @@ const _threadRow = ChatListRow(
   channelName: 'general',
   rootId: _threadRoot,
   threadName: '채널 검색 및 초대',
+  root: _threadRootEvent,
 );
 
 final _rows = [
@@ -321,7 +334,7 @@ void main() {
   });
 
   /// Taps [rowKey] and returns the page it opens, without building it.
-  Future<ChannelDetailPage> tapAndCapture(
+  Future<DirectThreadPage> tapAndCapture(
     WidgetTester tester,
     String rowKey,
   ) async {
@@ -337,7 +350,7 @@ void main() {
     final context = tester.element(find.byType(SearchPage));
     await tester.tap(find.byKey(ValueKey(rowKey)));
     final route = observer.pushed.single as MaterialPageRoute<void>;
-    final page = route.builder(context) as ChannelDetailPage;
+    final page = route.builder(context) as DirectThreadPage;
     // Leave before the pushed page builds.
     Navigator.of(context).pop();
     return page;
@@ -346,20 +359,18 @@ void main() {
   testWidgets('tapping a thread opens the thread', (tester) async {
     final page = await tapAndCapture(tester, 'search-thread-row-$_threadRoot');
     expect(page.channel.id, 'general');
-    expect(page.initialThreadRootId, _threadRoot);
-    expect(
-      page.initialThreadRouteBehavior,
-      InitialThreadRouteBehavior.replaceCurrentRoute,
-    );
-    expect(page.initialMessageId, isNull);
+    expect(page.threadId, _threadRoot);
+    expect(page.messageId, isNull);
+    expect(page.rootHint, same(_threadRootEvent));
+    expect(page.threadName, _threadRow.threadName);
   });
 
   testWidgets('tapping a message in a thread opens it in the thread', (
     tester,
   ) async {
     final page = await tapAndCapture(tester, 'search-message-row-in-thread');
-    expect(page.initialThreadRootId, _threadRoot);
-    expect(page.initialMessageId, 'in-thread');
+    expect(page.threadId, _threadRoot);
+    expect(page.messageId, 'in-thread');
   });
 }
 

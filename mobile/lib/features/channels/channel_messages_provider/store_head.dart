@@ -91,26 +91,35 @@ extension _StoreHead on ChannelMessagesNotifier {
   ) async {
     final historyVersion = ++_threadQuerySerial;
     final history = await _fetchNewestHistory(session);
+    // The window around a row replaces what was shown, a deleted row included.
+    final replaced = _openedAroundAnchor;
+    _openedAroundAnchor = false;
     if (history == null || !_isCurrentInit(initVersion)) return;
     // Only relay rows confirm a send; the window's live overlay also holds
     // the unconfirmed local rows themselves.
-    _confirmLocalMessages(
-      _usingChannelWindow
-          ? [
-              for (final page in _windowStore.allPages)
-                for (final row in page.rows) row.event.id,
-            ]
-          : history.map((event) => event.id),
-    );
+    final relayRows = _usingChannelWindow
+        ? [
+            for (final page in _windowStore.allPages)
+              for (final row in page.rows) row.event,
+          ]
+        : history;
+    _confirmLocalMessages(relayRows.map((event) => event.id));
 
     // The relay page is authoritative: drop cached and stored rows it no
     // longer has (e.g. deleted while the app was closed), keeping live
-    // arrivals.
-    final dropped = {..._cachedHeadIds, ...storedIds};
+    // arrivals. A certain window from the store rules on nothing.
+    final fromRelay = _storedHead == null;
+    final dropped = {
+      ..._cachedHeadIds,
+      ...storedIds,
+      if (fromRelay) ..._storeOnlyIds,
+    };
+    if (fromRelay) _foldedRelayRows(_relayAskedAt, relayRows);
     _cachedHeadIds = const {};
     final existing = [
-      for (final event in _shownMessages ?? const <NostrEvent>[])
-        if (!dropped.contains(event.id)) event,
+      if (!replaced)
+        for (final event in _shownMessages ?? const <NostrEvent>[])
+          if (!dropped.contains(event.id)) event,
     ];
     final existingIds = existing.map((event) => event.id).toSet();
     final merged = _withDeepLinkEvents([
@@ -137,6 +146,7 @@ extension _StoreHead on ChannelMessagesNotifier {
     if (pending != null) return pending;
     final initVersion = _initVersion;
     final filter = _channelWindowFilter(null);
+    _relayAskedAt = relayAskTime();
     // Records the room's head span when its live REQ stays live
     // (docs/message-sync.md#head-spans).
     final relay = session.queryRelayWithStoreHeads([filter]);

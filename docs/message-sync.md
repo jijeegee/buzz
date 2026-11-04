@@ -741,6 +741,39 @@ the relay at the same time; neither waits for the other.
 Cases: `test-fixtures/message-store-paint-first.json` (`paint`). Desktop:
 `storeRoomHead.ts`, `threadWindowCache.ts`; mobile: to follow.
 
+#### Reading the store again
+
+The relay is the record, the store is the device's copy, and the screen shows
+the store. So on mobile, a room reads the store again the same way however it
+got here: after a [push inbox](#push-inbox) drain wrote to it while someone
+watches, and when someone comes back to a room that was not watched while it
+changed (a listener resuming, or a rebuild of a room that went dirty while
+closed). It is the read a first open makes, with one answer:
+
+- **Saved rows still shown** are drawn over, as a first paint.
+- **Rows held from the relay stay,** and gain the rows past the relay cut, not
+  yet confirmed. Nothing is written, and those rows confirm no send, vouch for
+  no gap and do not join the saved head cache.
+
+A thread does the same: while its page is open or as it is reopened, it reads
+the store, a drain reads it again, and a thread holding a window (a retained one
+included) shows the stored replies past that window's cut. The relay page keeps
+holding only what the relay sent, so its next page removes the rest.
+
+The **relay cut** is what the last relay window that landed ruled on: the later
+of when that window was asked for and its newest row. Every relay window moves
+it, and it never moves back; a certain window from the store sets none. A
+pushed row is past the cut when it was fetched at or after the ask, both on this
+device's clock, so a sender's clock does not matter. Any other row, or a pushed
+row of an older build (no fetch time), is past it when its `created_at` is later
+than the cut. With no cut yet, rows newer than the window's newest join.
+
+The next relay window removes the rows it does not hold (and the reply counts
+that came with them), unless they arrived live meanwhile. A row deleted on the
+relay is not brought back: rows the relay already ruled on are behind the cut.
+Rows wait while newer pages are still to load, since they would sit past rows
+not loaded.
+
 ### Opening a room from the store
 
 On a room's first fetch, the client reads the room's newest window from the
@@ -751,7 +784,8 @@ run has not yet fetched from the store or the relay, the background
 preload's requests included (a room the preload left to the store is not
 fetched; see [Store-first preload](#store-first-preload)). Desktop tracks this per query cache (a community switch starts a
 new one); mobile per room notifier, which lives for the run, and for the
-preload per account and server. A stored window only draws the first frame: once that fetch has
+preload per account and server. A stored window draws the first frame, and on
+mobile the store is [read again](#reading-the-store-again) after that: once that fetch has
 settled, the relay's answer to the request sent with it (one request; on
 desktop, the refresh after the room's live subscription joins it) replaces the stored rows (stored rows inside its span that the relay no longer has are dropped; older rows that join it stay, see [Opening at a position](#opening-at-a-position); live arrivals stay).
 A painted window is not certain, so this request is always sent (stage 5
@@ -844,9 +878,11 @@ window state, mobile's thread window; both are released some time after the
 thread closes, and the next open counts as first again), the client reads the
 thread's newest replies from the store and draws them while the relay is
 asked ([Painting from the store](#painting-from-the-store)). As with rooms,
-the relay's page then folds in, from the same single request. On desktop, a load that must include a linked reply skips
-the store (its walk to the reply pages the relay anyway); mobile opens linked
-replies with a separate relay window (`openAt`). Later loads and older pages always ask
+the relay's page then folds in, from the same single request, and on mobile
+the store is [read again](#reading-the-store-again) after that. On desktop, a load that must include a linked reply skips
+the store (its walk to the reply pages the relay anyway); mobile lands on a
+linked reply among the replies it holds first, and otherwise asks a separate
+relay window (`openAt`). Later loads and older pages always ask
 the relay. Cases: `test-fixtures/message-store-thread-head.json`.
 
 - **Rows:** replies of the thread-window kinds (9, 40002) whose root is the
@@ -883,6 +919,8 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   id, and a deletion tagging it (`#h` room, `#e` root). A relay answer
   replaces a stored copy. The root fills only the top bubble, agent pins and
   the thread menu; until it is found a thin row shows the thread name there.
+  That row replaces the loading text whenever replies are drawn; loading
+  shows only once the store has answered with no replies.
 - **Asked again:** a failed, timed-out or empty answer is unresolved. A
   failed request while connected is retried after 2, 5 and 15 s; after that,
   and for an empty answer, the relay is asked again each time the session
@@ -903,11 +941,21 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   not needed to send. A room built from the Chats row (channel list not yet
   loaded) stands in for display only: the composer shows a loading line until
   the listed room or its details arrive ([Launch snapshots](#launch-snapshots)).
-- **Other entry points** (notifications, goals, search, drafts) still open
-  through the channel route's thread placeholder; once its by-id fetch
-  settles without the root (failed, timed out, empty), or at once while the
-  session is reconnecting after a drop, it hands the thread off by id instead of showing the channel. A late read state that reruns the
-  fetch does not count the replaced run. Forum rooms keep the channel route.
+- **Other entry points** (notifications, Inbox, goals, search, drafts) open
+  the same thread page directly (mobile `threadOrRoomPage`). Forum rooms keep
+  the channel route.
+- **Linked reply:** a link names the reply's parent, which is not always the
+  root, while replies are read by their root. The linked reply (the room's
+  rows, the store, the relay) gives the root. A nested parent stays the head
+  and the replies read from the root. A parent the reader cannot get moves
+  the page to the root in place, on the same route, once: the replies are the
+  same read, so nothing opens again and the parent's replies hang off the
+  root. The composer keeps its text and quote and its draft moves to the
+  root, so a later send carries the root. A reply not found at first is asked
+  for again after a push inbox drain and on reconnect, and the list opens at
+  it when it arrives.
+- **Room read:** opening a thread this way does not mark its room read, as
+  with a Chats thread row.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
   the socket is down or before AUTH is held and sent on connect (its timeout
   still runs from when it was asked), not dropped.
@@ -1133,9 +1181,11 @@ older rows it should no longer see. Cases:
 
 ### Push inbox
 
-Stage B of push content on the device (iPhone first). The notification
-extension (NSE) saves the verified events it fetched for a push; the app
-takes them into this store and its lists without waiting for the socket.
+Stage B of push content on the device. The notification extension (NSE)
+on iPhone, or the background message handler on Android
+(`push_fcm_background.dart`), saves the verified events it fetched for a
+push; the app takes them into this store and its lists without waiting for
+the socket.
 Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
 
 - **Token:** each push-enabled, signed-in community has a random inbox
@@ -1199,13 +1249,17 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   `descendant_count`; a root without a summary gets one). That count is
   paint only: the `summaries` table, the saved head cache and coverage
   stay the relay's. A thread paint draws pushed replies the same way.
-  After a drain that wrote at least one file, an open or opening room
-  that someone watches and whose relay window has not landed, and a
-  thread's saved replies (the inbox preload's plus the stored replies
-  newer than its newest; older stored ones may be deleted on the relay),
-  read the store again; the thread's first-load flag stays off for that
-  re-read. A store read that answers after a later one drew is ignored,
-  and the cached head never draws over a store paint.
+  `pushed_rows.fetched_at` keeps when each was first fetched (device clock;
+  null for rows of older builds), and a paint's bounds carry it as
+  `pushed_at`. After a drain that wrote at least one file, a room that
+  someone watches, and a thread's saved replies (the inbox preload's plus the
+  stored replies newer than its newest; older stored ones may be deleted on
+  the relay), read the store again; the thread's first-load flag stays off
+  for that re-read. A room nobody watched reads it as someone comes back. A
+  room or thread holding the relay's window adds the rows past the relay cut
+  ([Reading the store again](#reading-the-store-again)). A store read that
+  answers after a later one drew is ignored, and the cached head never draws
+  over a store paint.
 - **Folds:** only the events the store accepted, and only for rooms the
   channel list shows as listed (member, not archived, not a hidden DM; the
   list already leaves hidden DMs out), taken once the saved channel list
@@ -1285,12 +1339,16 @@ Cases: `test-fixtures/push-inbox.json` (Swift and Dart tests read it).
   recorded then). Desktop and mobile behave the same.
 - **Pushed rows after a deletion (N5):** a row deleted on the relay after
   the NSE fetched it shows in the lists until catch-up replaces them or the
-  relay keeps a deletion record. Rooms not in the kept list get no pushed
-  rows.
-- **Pushed rows in a room:** a room draws them only once the relay's copy
-  arrives (there is no gap marker to draw them above the covered head). A
-  mobile thread draws them in its store paint until the relay's page
-  replaces them ([Opening a thread from its root id](#opening-a-thread-from-its-root-id)).
+  relay keeps a deletion record, and in a room or thread until the next relay
+  page. Rooms not in the kept list get no pushed rows.
+- **Stored rows past the relay cut:** a row with no fetch time compares its
+  `created_at` with this device's clock, so the cut is approximate: a sender
+  clock behind real time keeps a row back until the relay answers, and a slow
+  device clock can briefly show a deleted one. A row dropped by a window asked
+  before it was fetched comes back on the next store read, or live.
+- **Reply counts past the cut** cover roots in the store's newest window only.
+  Until the relay answers, the newer last reply wins and the count is the
+  higher of the two.
 - **Push inbox trust (N7):** the app checks a pushed event's shape, not its
   signature: it relies on the NSE's verification and on the App Group's
   file protection.
@@ -1842,6 +1900,12 @@ A room opens at, in order: a linked message, the first unread message, where
 the reader left it, the newest message. The list is drawn once, already at
 that position.
 
+- **An unread or pushed row not yet confirmed (mobile):** a room with such a
+  row among its saved rows opens there at once, gap or not. The relay fills
+  what lies above it, or the window around it when its newest page lacks the
+  row. Until the relay's window lands, rows that fill in above are not marked
+  unread. A kept room first takes the [store read](#reading-the-store-again) it
+  is owed, then opens the same way.
 - **Decided on the rows held, on the first frame:** stored rows (a paint, a
   head cache) and the device's read markers decide at once when they reach
   back to the read marker: the first unread row among them, else the
@@ -1882,7 +1946,11 @@ that position.
   at most about 1.2 s, the 1 s read state wait included (also when the
   target's time is not known yet); then the replies at hand show at the
   newest, and a position found later moves the list once, only if the reader
-  has not scrolled meanwhile.
+  has not scrolled meanwhile. A list with no replies is never hidden, and a
+  linked reply that arrives later (a push inbox drain, the relay) still opens
+  there. Opening at a reply needs the relay's thread windows: while that is
+  not known (offline) the target waits and opens once it is, and a relay
+  without them shows the replies and walks older pages to the reply.
 - **Where positions are kept:** per server and account. Desktop keys them by
   the relay's `https://host[:port]` origin (the store files' server identity)
   and account; a record from before this moves once to the first server the

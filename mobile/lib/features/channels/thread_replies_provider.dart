@@ -8,6 +8,7 @@ import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
 import 'pending_local_messages_provider.dart';
+import 'relay_cut.dart';
 import 'thread_window.dart';
 import 'window_anchor.dart';
 
@@ -207,6 +208,10 @@ final threadRepliesProvider = FutureProvider.autoDispose
             rootId: args.rootId,
           );
           if (page != null) {
+            // A certain window from the store rules on nothing.
+            if (!response.stored) {
+              window.noteRelayRows(response.askedAt, page.events);
+            }
             final folded = window.foldNewest(page);
             if (queryVersion != null) {
               channelMessages?.failThreadQuery(args.rootId, queryVersion);
@@ -243,8 +248,10 @@ final threadRepliesProvider = FutureProvider.autoDispose
       window.storedPage = null;
       window.pendingRelayPage = null;
       try {
+        final askedAt = relayAskTime();
         final replies = await fetchCompleteThreadReplies(session, args);
         // A complete scan holds the whole thread: nothing older to page.
+        window.noteRelayRows(askedAt, replies);
         window.replaceComplete(replies);
         // Explicit markers also settle unacknowledged local sends, whose
         // absence cannot prove deletion even in an insertion-complete scan.
@@ -330,7 +337,9 @@ typedef StoredThreadHeadReader =
 /// every later load, the relay's. [stored] says which. The relay request goes
 /// out at once rather than after the store check, which may wait for the
 /// writer; when the store wins, the same request answers the next load.
-Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
+/// [askedAt] is when the relay request went out.
+Future<({List<NostrEvent> events, bool stored, int askedAt})>
+_openThreadWindowResponse(
   RelaySessionNotifier session,
   ThreadRepliesArgs args,
   ThreadWindowNotifier window,
@@ -338,11 +347,17 @@ Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
 ) async {
   final pending = window.pendingRelayPage;
   window.pendingRelayPage = null;
-  if (pending != null) return (events: await pending, stored: false);
+  if (pending != null) {
+    final askedAt = window.pendingRelayAskedAt;
+    return (events: await pending, stored: false, askedAt: askedAt);
+  }
+  final askedAt = relayAskTime();
   final relay = session.queryRelayWithStoreHeads([
     threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
   ]);
-  if (window.hasLoaded) return (events: await relay, stored: false);
+  if (window.hasLoaded) {
+    return (events: await relay, stored: false, askedAt: askedAt);
+  }
   final stored = readStore(
     session,
     args,
@@ -352,9 +367,12 @@ Future<({List<NostrEvent> events, bool stored})> _openThreadWindowResponse(
     stored.then((events) => events != null),
   ]);
   final events = storeFirst ? await stored : null;
-  if (events == null) return (events: await relay, stored: false);
+  if (events == null) {
+    return (events: await relay, stored: false, askedAt: askedAt);
+  }
   window.pendingRelayPage = relay;
-  return (events: events, stored: true);
+  window.pendingRelayAskedAt = askedAt;
+  return (events: events, stored: true, askedAt: askedAt);
 }
 
 /// The replies one thread holds in newest-first windows, and how far back
@@ -380,6 +398,16 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   /// The relay request sent alongside the store check that opened this
   /// thread, until the next load takes its answer.
   Future<List<NostrEvent>>? pendingRelayPage;
+  int pendingRelayAskedAt = 0;
+
+  /// What the last relay page that landed ruled on
+  /// (docs/message-sync.md#reading-the-store-again). Moves before the page
+  /// folds, so whoever watches the window sees the two together.
+  RelayCut? get relayCut => _relayCut;
+  RelayCut? _relayCut;
+
+  void noteRelayRows(int askedAt, Iterable<NostrEvent> rows) =>
+      _relayCut = movedRelayCut(_relayCut, askedAt: askedAt, rows: rows);
 
   @override
   ThreadWindow? build() => null;
@@ -430,6 +458,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       eventId: anchor.eventId,
     );
     try {
+      final askedAt = relayAskTime();
       final pages = await Future.wait([
         for (final direction in WindowPageDirection.values)
           _fetchPage(cursor, direction),
@@ -439,6 +468,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       final older = pages[0];
       final newer = pages[1];
       if (older == null || newer == null) return false;
+      noteRelayRows(askedAt, [...older.events, ...newer.events]);
       state = mergeMiddleThreadPages(state, older, newer);
       return true;
     } catch (_) {
@@ -457,10 +487,12 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     if (cursor == null) return false;
     _loadingNewer = true;
     try {
+      final askedAt = relayAskTime();
       final page = await _fetchPage(cursor, WindowPageDirection.newer);
       if (!ref.mounted || page == null) return false;
       // openAt or jumpToLatest may have replaced the window meanwhile.
       if (state?.state.newerCursor != cursor) return false;
+      noteRelayRows(askedAt, page.events);
       state = mergeNewerThreadPage(state, page);
       return true;
     } finally {
@@ -473,10 +505,12 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   Future<bool> jumpToLatest() async {
     if (!hasNewer) return false;
     final generation = ++_windowGeneration;
+    final askedAt = relayAskTime();
     final page = await _fetchPage(null, WindowPageDirection.older);
     if (!ref.mounted || page == null || generation != _windowGeneration) {
       return false;
     }
+    noteRelayRows(askedAt, page.events);
     state = restartThreadWindowAtNewest(state, page);
     return true;
   }

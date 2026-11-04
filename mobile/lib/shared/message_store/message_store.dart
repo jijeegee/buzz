@@ -756,6 +756,7 @@ class MessageStore {
           for (final statement in _schema) {
             await db.execute(statement);
           }
+          await purge.ensurePushedFetchedAt(db);
           await spans.dropStaleCoverage(db);
         },
         onDowngrade: (db, from, to) =>

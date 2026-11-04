@@ -123,6 +123,12 @@ class ChannelWindowStore {
   final List<NostrEvent> liveOverlay;
   final List<NostrEvent> liveAux;
 
+  /// Rows only the device store holds, past the relay cut: shown as not yet
+  /// confirmed, and gone with the next relay page unless it holds them
+  /// (docs/message-sync.md#reading-the-store-again). Unlike [liveOverlay],
+  /// no relay fold carries them over.
+  final List<NostrEvent> storeRows;
+
   /// Thread summaries that arrived over the live socket, keyed by root event id.
   ///
   /// Kept beside the pages rather than folded into [ChannelWindowRow.thread]
@@ -141,6 +147,7 @@ class ChannelWindowStore {
     this.hasNewer = false,
     this.newerCursor,
     this.heldLive = const [],
+    this.storeRows = const [],
   });
 
   const ChannelWindowStore.empty()
@@ -151,6 +158,7 @@ class ChannelWindowStore {
       hasNewer = false,
       newerCursor = null,
       heldLive = const [],
+      storeRows = const [],
       liveOverlay = const [],
       liveAux = const [],
       liveThreadSummaries = const {};
@@ -168,6 +176,7 @@ class ChannelWindowStore {
     List<NostrEvent>? liveAux,
     Map<String, ChannelWindowLiveThreadSummary>? liveThreadSummaries,
     List<NostrEvent>? heldLive,
+    List<NostrEvent>? storeRows,
   }) => ChannelWindowStore(
     pages: pages ?? this.pages,
     liveOverlay: liveOverlay ?? this.liveOverlay,
@@ -179,6 +188,7 @@ class ChannelWindowStore {
     hasNewer: hasNewer,
     newerCursor: newerCursor,
     heldLive: heldLive ?? this.heldLive,
+    storeRows: storeRows ?? this.storeRows,
   );
 }
 
@@ -393,6 +403,9 @@ ChannelWindowStore appendOlderChannelWindow(
     liveOverlay: current.liveOverlay
         .where((event) => !pageIds.contains(event.id))
         .toList(),
+    storeRows: current.storeRows
+        .where((event) => !pageIds.contains(event.id))
+        .toList(),
     // A live recount can arrive while this older page is in flight. Keep it
     // when it is fresher than the page's embedded snapshot, just as a newest
     // page replacement does.
@@ -520,6 +533,8 @@ ChannelWindowStore reopenNewerChannelWindowEdge(ChannelWindowStore current) {
         ? current.anchorCursor
         : ChannelPageCursor.of(newerRows.last.event),
     heldLive: current.heldLive,
+    // Shown, and no relay page came: the page this edge asks for decides.
+    storeRows: current.storeRows,
     liveOverlay: current.liveOverlay,
     liveAux: current.liveAux,
     liveThreadSummaries: current.liveThreadSummaries,
@@ -665,6 +680,7 @@ ChannelWindowStore mergeLiveChannelWindowEvent(
       hasNewer: current.hasNewer,
       newerCursor: current.newerCursor,
       heldLive: _sortedLive([...current.heldLive, event]),
+      storeRows: current.storeRows,
       liveOverlay: current.liveOverlay,
       liveAux: current.liveAux,
       liveThreadSummaries: current.liveThreadSummaries,
@@ -686,11 +702,50 @@ ChannelWindowStore mergeLiveChannelWindowEvent(
           .toList()
         ..add(event)
         ..sort(_compareRelayOrder);
-  return current.copyWith(liveOverlay: overlay);
+  return current.copyWith(
+    liveOverlay: overlay,
+    // Delivered live, so no longer only the store's.
+    storeRows: current.storeRows
+        .where((candidate) => candidate.id != event.id)
+        .toList(),
+  );
+}
+
+/// Adds [rows] from the device store to [current] as not yet confirmed.
+/// Rows it already holds stay as they are, and a row older than the oldest
+/// loaded one while older pages remain cannot be placed.
+ChannelWindowStore foldStoredChannelRows(
+  ChannelWindowStore current,
+  Iterable<NostrEvent> rows,
+) {
+  final known = {
+    for (final page in current.allPages)
+      for (final row in page.rows) row.event.id,
+    for (final event in current.liveOverlay) event.id,
+    for (final event in current.heldLive) event.id,
+    for (final event in current.storeRows) event.id,
+  };
+  final tail = current.pages.lastOrNull;
+  final oldest = tail?.rows.lastOrNull?.event;
+  final added = [
+    for (final row in rows)
+      if (known.add(row.id) &&
+          !(tail != null &&
+              tail.hasMore &&
+              oldest != null &&
+              _compareRelayOrder(row, oldest) >= 0))
+        row,
+  ];
+  if (added.isEmpty) return current;
+  return current.copyWith(
+    storeRows: _sortedLive([...current.storeRows, ...added]),
+  );
 }
 
 List<NostrEvent> flattenChannelWindowEvents(ChannelWindowStore store) {
-  final byId = <String, NostrEvent>{};
+  final byId = <String, NostrEvent>{
+    for (final event in store.storeRows) event.id: event,
+  };
   for (final page in store.allPages) {
     for (final row in page.rows) {
       byId[row.event.id] = row.event;

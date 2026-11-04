@@ -27,6 +27,7 @@ import '../channels/channel_detail_page.dart';
 import '../channels/channel_identity_names_provider.dart';
 import '../channels/channel_management_provider.dart';
 import '../channels/channels_provider.dart';
+import '../channels/direct_thread_page.dart';
 import '../channels/channel_names/channel_names_provider.dart';
 import '../channels/group_chat/chat_grid_avatar.dart';
 import '../channels/group_chat/chat_title.dart';
@@ -295,12 +296,10 @@ class ActivityPage extends HookConsumerWidget {
       if (!context.mounted) return;
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ChannelDetailPage(
+          builder: (_) => threadOrRoomPage(
             channel: resolvedChannel,
-            initialMessageId: initialMessageId,
-            initialThreadRootId: threadRootId,
-            initialThreadRouteBehavior:
-                InitialThreadRouteBehavior.replaceCurrentRoute,
+            threadId: threadRootId,
+            messageId: initialMessageId,
           ),
         ),
       );
@@ -316,11 +315,10 @@ class ActivityPage extends HookConsumerWidget {
       }
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => ChannelDetailPage(
+          builder: (_) => threadOrRoomPage(
             channel: channel,
-            initialThreadRootId: draft.threadHeadId,
-            initialThreadRouteBehavior:
-                InitialThreadRouteBehavior.replaceCurrentRoute,
+            threadId: draft.threadHeadId,
+            headMayBeNested: true,
           ),
         ),
       );

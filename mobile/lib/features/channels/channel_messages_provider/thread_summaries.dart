@@ -17,6 +17,31 @@ extension _ThreadSummaryState on ChannelMessagesNotifier {
     }
   }
 
+  /// [base] with the store's reply counts past the relay cut: newer by
+  /// `lastReplyAt`, and never lower than what is known.
+  Map<String, ChannelWindowThreadSummary> _withStoreSummaries(
+    Map<String, ChannelWindowThreadSummary> base,
+  ) {
+    if (_storeSummaries.isEmpty) return base;
+    final merged = {...base};
+    for (final MapEntry(key: root, value: stored) in _storeSummaries.entries) {
+      final known = merged[root];
+      if (known == null) {
+        merged[root] = stored;
+      } else if ((stored.lastReplyAt ?? 0) > (known.lastReplyAt ?? 0)) {
+        merged[root] = ChannelWindowThreadSummary(
+          replyCount: max(stored.replyCount, known.replyCount),
+          descendantCount: max(stored.descendantCount, known.descendantCount),
+          lastReplyAt: stored.lastReplyAt,
+          participantPubkeys: stored.participantPubkeys,
+          isLowerBound: known.isLowerBound,
+          isCountPending: known.isCountPending,
+        );
+      }
+    }
+    return merged;
+  }
+
   Iterable<NostrEvent> get _cachedThreadEvents => [
     ..._windowStore.liveOverlay,
     if (!_usingChannelWindow) ...?_lastKnownMessages,

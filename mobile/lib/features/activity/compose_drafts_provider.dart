@@ -160,6 +160,57 @@ class ComposeDraftsNotifier extends Notifier<List<ComposeDraft>> {
     _persist(next.length > _maxDrafts ? next.sublist(0, _maxDrafts) : next);
   }
 
+  /// Moves the draft at [from] to [to], for a thread whose head changed. A
+  /// different draft already at [to] loses nothing: [from]'s text is appended
+  /// below it and their mention bindings joined. Returns that joined draft,
+  /// which a composer showing [from] must take up, or its next keystroke saves
+  /// over it; null when nothing was joined.
+  ComposeDraft? move({
+    required String from,
+    required String to,
+    required String? threadHeadId,
+  }) {
+    final draft = draftFor(from);
+    if (draft == null) return null;
+    final held = draftFor(to);
+    if (held?.text == draft.text) {
+      remove(from);
+      return null;
+    }
+    save(
+      key: to,
+      channelId: draft.channelId,
+      threadHeadId: threadHeadId,
+      text: held == null ? draft.text : '${held.text}\n\n${draft.text}',
+      mentionKeys: held == null
+          ? draft.mentionKeys
+          : _joinedBindings(held.mentionKeys, draft.mentionKeys),
+    );
+    remove(from);
+    return held == null ? null : draftFor(to);
+  }
+
+  /// [first] and [second]; one label bound to two people taints the record,
+  /// which send refuses, rather than address either by a guess.
+  static Map<String, String> _joinedBindings(
+    Map<String, String> first,
+    Map<String, String> second,
+  ) {
+    final joined = {...first};
+    final bound = {
+      for (final entry in first.entries) entry.key.toLowerCase(): entry.value,
+    };
+    for (final entry in second.entries) {
+      final other = bound[entry.key.toLowerCase()];
+      if (other == null) {
+        joined[entry.key] = entry.value;
+      } else if (other != entry.value) {
+        joined[''] = '';
+      }
+    }
+    return joined;
+  }
+
   void remove(String key) {
     if (!state.any((d) => d.key == key)) return;
     _persist([...state.where((d) => d.key != key)]);

@@ -16,16 +16,15 @@ void _openChatResult(BuildContext context, SearchChatResult result) {
       (row != null
           ? channelFromChatRow(row)
           : channelFromId(result.channelId).copyWith(name: result.channelName));
-  final rootId = result.thread?.rootId;
   Navigator.of(context).push(
     MaterialPageRoute<void>(
-      builder: (_) => ChannelDetailPage(
-        channel: channel,
-        initialThreadRootId: rootId,
-        initialThreadRouteBehavior: rootId == null
-            ? InitialThreadRouteBehavior.push
-            : InitialThreadRouteBehavior.replaceCurrentRoute,
-      ),
+      builder: (_) => row != null
+          ? pageForChatRow(
+              row,
+              channel: channel,
+              standIn: result.channel == null,
+            )
+          : threadOrRoomPage(channel: channel, standIn: result.channel == null),
     ),
   );
 }
@@ -634,12 +633,10 @@ class _MessageTile extends ConsumerWidget {
         isArchived: channel.isArchived,
       );
     } else if (thread != null) {
-      page = ChannelDetailPage(
+      page = threadOrRoomPage(
         channel: channel,
-        initialMessageId: hit.eventId,
-        initialThreadRootId: thread.parentId ?? thread.rootId,
-        initialThreadRouteBehavior:
-            InitialThreadRouteBehavior.replaceCurrentRoute,
+        threadId: thread.parentId ?? thread.rootId,
+        messageId: hit.eventId,
       );
     } else {
       page = ChannelDetailPage(

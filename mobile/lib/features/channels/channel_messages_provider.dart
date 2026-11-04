@@ -1,5 +1,6 @@
 import 'dart:async';
 import 'dart:convert';
+import 'dart:math' show max;
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
@@ -14,6 +15,7 @@ import 'room_live_router.dart';
 import 'local_send_store.dart';
 import 'pending_local_messages_provider.dart';
 import 'channel_window.dart';
+import 'relay_cut.dart';
 import 'thread_replies_provider.dart';
 import 'thread_summary_refresh_queue.dart';
 import 'thread_reply_ownership.dart';
@@ -53,12 +55,30 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   List<NostrEvent>? _storedHead;
   Future<List<NostrEvent>>? _pendingRelayWindow;
   ({int createdAt, String id})? _paintedAnchor;
+
+  /// The relay's pages around that row replaced the rows shown.
+  bool _openedAroundAnchor = false;
   int? _paintedContiguousFrom = 0;
   bool _followingStoredHead = false;
 
   /// Store paint reads started, and the latest one drawn (0: none).
   int _storeReads = 0;
   int _paintedStoreRead = 0;
+
+  /// The push inbox revision last read, and the read itself.
+  int _seenStoreRevision = -1;
+  Future<void>? _storeRead;
+
+  /// When the relay request out now went, and what the last that landed
+  /// ruled on (docs/message-sync.md#reading-the-store-again).
+  int _relayAskedAt = 0;
+  RelayCut? _relayCut;
+
+  /// Rows shown only from the store, past the cut; their reply counts; and
+  /// the pushed rows of the last store read, with when each was fetched.
+  final Set<String> _storeOnlyIds = {};
+  final Map<String, ChannelWindowThreadSummary> _storeSummaries = {};
+  Map<String, int?> _storePushedAt = const {};
   Completer<void>? _storedHeadShown;
   ChannelWindowStore _windowStore = const ChannelWindowStore.empty();
   final Set<String> _liveSummaryRootsDuringInitialWindowQuery = {};
@@ -125,7 +145,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool get hasLoadedMessages => _lastKnownMessages != null;
 
   Map<String, ChannelWindowThreadSummary> get threadSummaries => {
-    for (final entry in _baseThreadSummaries.entries)
+    for (final entry in _withStoreSummaries(_baseThreadSummaries).entries)
       entry.key: _deletionSummaryUncertainty.containsKey(entry.key)
           ? ChannelWindowThreadSummary(
               replyCount: entry.value.replyCount,
@@ -152,6 +172,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   @override
   AsyncValue<List<NostrEvent>> build() {
     final sessionState = ref.watch(relaySessionProvider);
+    // A rebuild runs for someone: it clears the callbacks below, so no resume
+    // follows a room rebuilt on coming back. A read closing its own listen
+    // cancels again.
+    _hasListeners = true;
     ref.onCancel(() {
       _hasListeners = false;
       _deletionOwnerQueue.pause();
@@ -161,6 +185,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _hasListeners = true;
       Future.microtask(_summaryRefreshes.resume);
       Future.microtask(_deletionOwnerQueue.resume);
+      Future.microtask(_showStoreIfChanged);
     });
     ref.onDispose(() {
       _initVersion++;
@@ -171,9 +196,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     // [me] is this build's signer; a switch rebuilds and restores its own.
     final me = ref.watch(myPubkeyProvider);
     _scopeToAccount();
-    // A push inbox drain wrote to the store: a store paint still drawn
-    // reads it again.
+    // A push inbox drain wrote to the store: every room someone watches
+    // reads it again, and one nobody did as it comes back.
     ref.listen(pushInboxRevisionProvider, (_, _) => _repaintStored());
+    Future.microtask(_showStoreIfChanged);
 
     Future.microtask(() => restoreLocalSends(ref, this, me));
     final localSends = splitLocalSendsBySigner(
@@ -206,7 +232,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       // top-level rows. Keep known replies as summary evidence, including
       // their deletion markers so a reset cannot resurrect a deleted reply.
       for (final event in _lastKnownMessages ?? const <NostrEvent>[]) {
-        if (event.threadReference.parentId != null ||
+        // Rows only saved are not evidence: the overlay would keep them.
+        if ((event.threadReference.parentId != null &&
+                !_storeOnlyIds.contains(event.id) &&
+                !_cachedHeadIds.contains(event.id)) ||
             event.kind == EventKind.deletion ||
             event.kind == EventKind.nip29DeleteEvent) {
           _mergeWindowEventIntoStore(event);
@@ -239,7 +268,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     _initInFlight = true;
     _followingStoredHead = false;
     _pendingRelayWindow = null;
-    _paintedAnchor = null;
     _clearSubscription();
     try {
       final session = ref.read(relaySessionProvider.notifier);
@@ -306,8 +334,16 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         page,
         retainLiveSummaryRootIds: _liveSummaryRootsDuringInitialWindowQuery,
       );
-      // Only the relay's window is persisted, not the store's.
-      if (_storedHead == null) _persistHead(response);
+      // Only the relay's window is persisted, not the store's, which rules
+      // on nothing: rows shown past the cut stay.
+      if (_storedHead == null) {
+        _persistHead(response);
+      } else {
+        _windowStore = foldStoredChannelRows(_windowStore, [
+          for (final event in _lastKnownMessages ?? const <NostrEvent>[])
+            if (_storeOnlyIds.contains(event.id)) event,
+        ]);
+      }
       _liveSummaryRootsDuringInitialWindowQuery.clear();
       _pruneOffWindowReplies();
       _usingChannelWindow = true;
@@ -331,6 +367,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         liveAux: _windowStore.liveAux,
         liveThreadSummaries: _windowStore.liveThreadSummaries,
       );
+      _relayAskedAt = relayAskTime();
       final history = await session.fetchHistory(
         NostrFilters.messages(channelId),
       );
@@ -413,6 +450,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     int? summaryVersion,
   }) {
     final before = _lastKnownMessages ?? const <NostrEvent>[];
+    _storeOnlyIds.remove(event.id);
     _replyOwnership.record([event]);
     // Update the thread independently of the selected channel-history path.
     // The websocket fallback does not merge through the window store.
@@ -985,15 +1023,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   /// pages reach the present.
   bool get isInMiddleWindow => _windowStore.isMiddle;
 
-  /// Whether the rows shown reach [row] (saved, from the relay or live; not
-  /// only a link target held beside them), so the room opens there without
-  /// the relay's pages. Saved rows must run without a gap from it; a first
-  /// [unread] row also needs an older row shown, or no older history.
-  bool openOnRowsAtHand(
-    ({String id, int createdAt}) row, {
-    bool unread = false,
-  }) => _openOnRowsAtHand(row.id, createdAt: row.createdAt, unread: unread);
-
   /// Whether rows newer than the loaded ones remain to page in with
   /// [fetchNewer]. Live main-timeline rows wait meanwhile instead of showing
   /// past the gap; [heldLiveCount] says how many.
@@ -1042,8 +1071,10 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
 
     final existing = state.value ?? const <NostrEvent>[];
     for (final event in existing) {
-      // Cached rows may have been deleted since; fetch those from the relay.
-      if (ids.contains(event.id) && !_cachedHeadIds.contains(event.id)) {
+      // Saved rows may have been deleted since; fetch those from the relay.
+      if (ids.contains(event.id) &&
+          !_cachedHeadIds.contains(event.id) &&
+          !_storeOnlyIds.contains(event.id)) {
         _deepLinkEvents[event.id] = event;
       }
     }
@@ -1111,6 +1142,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
         final pageVersion = ++_threadQuerySerial;
         final page = await _fetchWindowPage(session, cursor);
         _windowStore = appendOlderChannelWindow(_windowStore, page);
+        _storeOnlyIds.removeAll(page.rows.map((row) => row.event.id));
         _reconcilePageSummaries(page, pageVersion);
         _reachedOldest = !channelWindowHasMore(_windowStore);
         final flattened = _withDeepLinkEvents(

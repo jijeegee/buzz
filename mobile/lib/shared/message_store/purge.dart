@@ -29,10 +29,20 @@ const roomMarksSchema = [
   // pushed row fetched before then is from the membership it ended
   // (docs/message-sync.md#push-inbox).
   'CREATE TABLE IF NOT EXISTS room_forgot(room TEXT PRIMARY KEY, at INTEGER NOT NULL)',
-  // Rows only the push inbox wrote: no room or thread draws them until the
-  // relay's copy arrives.
-  'CREATE TABLE IF NOT EXISTS pushed_rows(id TEXT PRIMARY KEY)',
+  // Rows only the push inbox wrote: no certain window holds them until the
+  // relay's copy arrives. `fetched_at` is when (this device's clock, unix
+  // seconds) they were first fetched, null for a row of an older build
+  // (docs/message-sync.md#reading-the-store-again).
+  'CREATE TABLE IF NOT EXISTS pushed_rows(id TEXT PRIMARY KEY, fetched_at INTEGER)',
 ];
+
+/// Adds `fetched_at` to a file an older build created. The schema version
+/// stays: an older build keeps opening the file and writes the column null.
+Future<void> ensurePushedFetchedAt(DatabaseExecutor db) async {
+  final columns = await db.rawQuery('PRAGMA table_info(pushed_rows)');
+  if (columns.any((column) => column['name'] == 'fetched_at')) return;
+  await db.execute('ALTER TABLE pushed_rows ADD COLUMN fetched_at INTEGER');
+}
 
 /// Rooms forgotten per transaction; between chunks other work runs, so a
 /// long purge does not hold the writer.
