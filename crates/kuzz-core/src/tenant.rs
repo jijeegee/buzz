@@ -301,6 +301,59 @@ fn canonical_service_url_with(aliases: Option<&ServiceAliases>, signed: &str) ->
     )
 }
 
+/// Env var with the service URL (`wss://<service>`) that clients sign with
+/// when they connect through another address of the same service (a region
+/// host or an old domain). Unset means the connect address is the service.
+pub const SERVICE_URL_ENV: &str = "KUZZ_SERVICE_URL";
+
+/// The service URL from [`SERVICE_URL_ENV`], read once per process.
+pub fn service_url_from_env() -> Option<&'static str> {
+    static SERVICE_URL: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    SERVICE_URL
+        .get_or_init(|| {
+            std::env::var(SERVICE_URL_ENV)
+                .ok()
+                .map(|url| url.trim().to_string())
+                .filter(|url| !url_authority_range(url).is_empty())
+        })
+        .as_deref()
+}
+
+/// The URL a client signs (NIP-42 `relay`, NIP-98 `u`): `url` with its
+/// authority (`host[:port]`) replaced by the service URL's. Scheme, path and
+/// query stay byte-for-byte, so the relay sees the service name whichever
+/// address the request went to. Without a service URL, or when either URL has
+/// no authority, `url` is returned unchanged.
+#[must_use]
+pub fn service_signed_url(url: &str, service_url: Option<&str>) -> String {
+    let Some(service_url) = service_url else {
+        return url.to_string();
+    };
+    let target = url_authority_range(url);
+    let service = url_authority_range(service_url);
+    if target.is_empty() || service.is_empty() {
+        return url.to_string();
+    }
+    format!(
+        "{}{}{}",
+        &url[..target.start],
+        &service_url[service],
+        &url[target.end..]
+    )
+}
+
+/// Byte range of the authority in `scheme://authority/rest`; empty when the
+/// URL has no `://` or no authority.
+fn url_authority_range(url: &str) -> std::ops::Range<usize> {
+    let Some(start) = url.find("://").map(|i| i + 3) else {
+        return 0..0;
+    };
+    let end = url[start..]
+        .find(['/', '?', '#'])
+        .map_or(url.len(), |i| start + i);
+    start..end
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -329,6 +382,33 @@ mod tests {
         assert_eq!(
             canonical_service_url_with(None, "wss://kr.chat.example"),
             "wss://kr.chat.example"
+        );
+    }
+
+    #[test]
+    fn signed_url_swaps_only_the_authority() {
+        let service = Some("wss://chat.example");
+        assert_eq!(
+            service_signed_url("https://kr.chat.example/query?x=1", service),
+            "https://chat.example/query?x=1"
+        );
+        assert_eq!(
+            service_signed_url("wss://kr.chat.example:8443", service),
+            "wss://chat.example"
+        );
+        assert_eq!(
+            service_signed_url("ws://127.0.0.1:3000/", Some("ws://localhost:3000")),
+            "ws://localhost:3000/"
+        );
+        // No service URL, or nothing to swap: unchanged.
+        assert_eq!(
+            service_signed_url("https://kr.chat.example/x", None),
+            "https://kr.chat.example/x"
+        );
+        assert_eq!(service_signed_url("not a url", service), "not a url");
+        assert_eq!(
+            service_signed_url("https://kr.chat.example/x", Some("chat.example")),
+            "https://kr.chat.example/x"
         );
     }
 

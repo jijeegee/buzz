@@ -90,6 +90,9 @@ fn sign_nip98(
     url: &str,
     body: Option<&[u8]>,
 ) -> Result<String, CliError> {
+    // Sign the service name even when the request goes to another address.
+    let url =
+        &kuzz_core::tenant::service_signed_url(url, kuzz_core::tenant::service_url_from_env());
     let mut tags = vec![
         Tag::parse(["u", url]).map_err(|e| CliError::Other(format!("tag error: {e}")))?,
         Tag::parse(["method", method]).map_err(|e| CliError::Other(format!("tag error: {e}")))?,
@@ -113,7 +116,10 @@ fn sign_nip98(
 }
 
 fn relay_server_tag(relay_url: &str) -> Option<String> {
-    let authority = kuzz_core::tenant::relay_url_authority(relay_url);
+    let authority = kuzz_core::tenant::relay_url_authority(&kuzz_core::tenant::service_signed_url(
+        relay_url,
+        kuzz_core::tenant::service_url_from_env(),
+    ));
     if authority.is_empty() {
         None
     } else {
