@@ -761,8 +761,13 @@ public final class KuzzPushPresentationCacheStore: @unchecked Sendable {
 
 /// Stable, privacy-preserving identifiers used only after the NSE resolves an event.
 public enum KuzzPushPresentationIdentity {
-  public static func conversation(communityID: String, channelID: String) -> String {
-    scoped(namespace: "conversation", values: [communityID, channelID])
+  /// A thread is its own conversation, like its own Chats row.
+  public static func conversation(
+    communityID: String, channelID: String, threadHeadID: String? = nil
+  ) -> String {
+    scoped(
+      namespace: "conversation",
+      values: [communityID, channelID] + (threadHeadID.map { [$0] } ?? []))
   }
 
   public static func sender(communityID: String, pubkey: String) -> String {

@@ -50,6 +50,15 @@ public struct KuzzPushNavigationTarget: Codable, Equatable, Sendable {
     return parent
   }
 
+  /// The head of the thread a reply belongs to, which keys its Chats row and
+  /// name: the `root` tag, else the `reply` parent.
+  public static func threadHeadID(tags: [[String]]) -> String? {
+    guard let parent = threadRootID(tags: tags) else { return nil }
+    let root = tags.first { $0.count >= 4 && $0[0] == "e" && $0[3] == "root" }?[1]
+    if let root, isEventID(root) { return root }
+    return parent
+  }
+
   static func isEventID(_ value: String) -> Bool {
     value.utf8.count == 64
       && value.utf8.allSatisfy { (48...57).contains($0) || (97...102).contains($0) }

@@ -243,6 +243,203 @@ void main() {
     expect(notice.subtitle, isNull);
   });
 
+  group('room titles', () {
+    final relayKeys = nostr.Keys.generate();
+    final bob = nostr.Keys.generate();
+    const roomId = '11111111-1111-4111-8111-111111111111';
+
+    Map<String, dynamic> metadata(List<List<String>> tags) => signed(
+      relayKeys,
+      kind: 39000,
+      at: nowSeconds - 100,
+      extraTags: [
+        ['d', roomId],
+        ...tags,
+      ],
+    );
+
+    Future<AndroidPushNotice> notice(
+      Map<String, dynamic> message, {
+      List<Map<String, dynamic>> rows = const [],
+      Map<String, dynamic>? roster,
+    }) async {
+      final profile = signed(
+        alice,
+        kind: 0,
+        at: nowSeconds - 50,
+        content: jsonEncode({'name': 'Alice'}),
+      );
+      final bobProfile = signed(
+        bob,
+        kind: 0,
+        at: nowSeconds - 50,
+        content: jsonEncode({'name': 'Bob'}),
+      );
+      final mock = relay((filters) {
+        final kinds = (filters.first as Map)['kinds'].toString();
+        if (kinds == '[0]') {
+          return (filters.first as Map)['authors'].contains(alice.public)
+              ? [profile]
+              : [bobProfile];
+        }
+        if (kinds == '[39000]') return rows;
+        if (kinds == '[39002]') return [?roster];
+        return [message];
+      });
+      return (await wake(mock.client).run())!;
+    }
+
+    test('a group is titled by its name', () async {
+      final result = await notice(
+        signed(alice, at: nowSeconds - 5),
+        rows: [
+          metadata([
+            ['name', 'Kuzz'],
+            ['t', 'stream'],
+          ]),
+        ],
+      );
+      expect(result.conversationTitle, 'Kuzz');
+      expect(result.title, 'Alice');
+      expect(result.threadHeadId, isNull);
+    });
+
+    test('a 1:1 DM has no room title', () async {
+      final result = await notice(
+        signed(alice, at: nowSeconds - 5),
+        rows: [
+          metadata([
+            ['name', 'DM'],
+            ['t', 'dm'],
+            ['p', alice.public],
+          ]),
+        ],
+      );
+      expect(result.conversationTitle, isNull);
+      expect(result.title, 'Alice');
+    });
+
+    test('an unknown room falls back to the sender', () async {
+      final result = await notice(signed(alice, at: nowSeconds - 5));
+      expect(result.conversationTitle, isNull);
+      expect(result.title, 'Alice');
+    });
+
+    test('a group DM is titled by its other members', () async {
+      final result = await notice(
+        signed(alice, at: nowSeconds - 5),
+        rows: [
+          metadata([
+            ['name', 'Group DM (3)'],
+            ['t', 'dm'],
+            ['p', alice.public],
+            ['p', bob.public],
+          ]),
+        ],
+      );
+      expect(result.conversationTitle, 'Alice, Bob');
+    });
+
+    test('an unnamed group chat reads its roster', () async {
+      final result = await notice(
+        signed(alice, at: nowSeconds - 5),
+        rows: [
+          metadata([
+            ['t', 'stream'],
+            ['group_chat'],
+          ]),
+        ],
+        roster: signed(
+          relayKeys,
+          kind: 39002,
+          at: nowSeconds - 100,
+          extraTags: [
+            ['d', roomId],
+            ['p', bob.public, '', 'member'],
+            ['p', alice.public, '', 'member'],
+          ],
+        ),
+      );
+      expect(result.conversationTitle, 'Bob, Alice');
+    });
+
+    test('a nested reply is titled by the thread head', () async {
+      final head = signed(alice, at: nowSeconds - 90, content: 'Launch plan');
+      final parent = 'b' * 64;
+      final message = signed(
+        alice,
+        at: nowSeconds - 5,
+        extraTags: [
+          ['e', head['id'] as String, '', 'root'],
+          ['e', parent, '', 'reply'],
+        ],
+      );
+      final group = metadata([
+        ['name', 'Kuzz'],
+      ]);
+      final unnamed = await notice(message, rows: [group, head]);
+      expect(unnamed.conversationTitle, 'Kuzz > Launch plan');
+      expect(unnamed.threadHeadId, head['id']);
+      expect(unnamed.threadRootId, parent);
+
+      final hiddenRoot = await notice(message, rows: [group]);
+      expect(hiddenRoot.conversationTitle, 'Kuzz > hello');
+
+      final named = await notice(
+        message,
+        rows: [
+          group,
+          head,
+          signed(
+            alice,
+            kind: 40009,
+            at: nowSeconds - 20,
+            content: 'Launch',
+            extraTags: [
+              ['e', head['id'] as String],
+            ],
+          ),
+        ],
+      );
+      expect(named.conversationTitle, 'Kuzz > Launch');
+    });
+
+    test('a huge thread root does not lose the room name', () async {
+      final mock = relay((filters) {
+        final kinds = (filters.first as Map)['kinds'].toString();
+        if (kinds == '[39000]') {
+          return [
+            metadata([
+              ['name', 'Kuzz'],
+            ]),
+            signed(alice, at: nowSeconds - 90, content: 'x' * (300 * 1024)),
+          ];
+        }
+        return kinds == '[0]'
+            ? <Object>[]
+            : [signed(alice, at: nowSeconds - 5)];
+      });
+      final result = await wake(mock.client).run();
+      expect(result!.conversationTitle, 'Kuzz');
+    });
+
+    test('notice arguments carry the room title and thread head', () {
+      final head = 'a' * 64;
+      final arguments = AndroidPushNotice.message(
+        title: 'Alice',
+        body: 'hi',
+        conversationTitle: 'Kuzz > Plan',
+        eventId: 'e',
+        communityId: 'c',
+        channelId: roomId,
+        threadRootId: head,
+        threadHeadId: head,
+      ).toChannelArguments(lookupAppLocalizations(const Locale('en')));
+      expect(arguments['conversationTitle'], 'Kuzz > Plan');
+      expect(arguments['threadHeadId'], head);
+    });
+  });
+
   test(
     'a thread reply notice opens its thread, a broadcast the room',
     () async {

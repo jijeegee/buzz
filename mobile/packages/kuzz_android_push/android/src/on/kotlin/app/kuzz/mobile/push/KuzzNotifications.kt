@@ -17,9 +17,9 @@ import androidx.core.content.ContextCompat
 /**
  * Message notifications the wake engine posts, and their tap payload.
  *
- * Like KakaoTalk: one notification per room (thread replies included), whose
- * expanded view lists the room's last few messages and whose tap opens the
- * newest one. Rooms share one group with a summary.
+ * Like KakaoTalk: one notification per Chats row (a room, or a thread of it),
+ * titled like that row, whose expanded view lists its last few messages and
+ * whose tap opens the newest one. All share one group with a summary.
  */
 object KuzzNotifications {
     private const val CHANNEL_ID = "kuzz_messages"
@@ -37,17 +37,20 @@ object KuzzNotifications {
     /** Every message the room notification shows: "eventId createdAt thread?". */
     private const val EXTRA_LINES = "app.kuzz.mobile.push.lines"
 
-    /** The notification id of a room; 0 stays the generic notice's. */
-    fun roomId(communityId: String, channelId: String): Int {
-        val id = "$communityId\n$channelId".hashCode() and 0x7fffffff
+    /** The notification id of a room or its thread; 0 stays the generic notice's. */
+    fun roomId(communityId: String, channelId: String, threadHeadId: String? = null): Int {
+        val key = "$communityId\n$channelId" + (threadHeadId?.let { "\n$it" } ?: "")
+        val id = key.hashCode() and 0x7fffffff
         return if (id == 0 || id == SUMMARY_ID) 2 else id
     }
 
     /**
      * `args`: id (int, generic notices), channelName (localized), title, body,
      * subtitle?, eventId?, communityId?, channelId? (all three or none open a
-     * room), threadRootId? (with them, opens that thread instead), createdAt?
-     * (seconds, lets the app remove the notification once it is read).
+     * room), threadRootId? (with them, opens that thread instead), threadHeadId?
+     * (its own notification), conversationTitle? (the room; without it `title`,
+     * the sender, titles the notification), createdAt? (seconds, lets the app
+     * remove the notification once it is read).
      */
     fun show(context: Context, args: Map<String, Any?>) {
         if (Build.VERSION.SDK_INT >= 33 &&
@@ -69,7 +72,11 @@ object KuzzNotifications {
         val communityId = args["communityId"] as? String
         val roomId = args["channelId"] as? String
         val room = eventId != null && communityId != null && roomId != null
-        val id = if (room) roomId(communityId!!, roomId!!) else (args["id"] as? Number)?.toInt() ?: 0
+        val id = if (room) {
+            roomId(communityId!!, roomId!!, args["threadHeadId"] as? String)
+        } else {
+            (args["id"] as? Number)?.toInt() ?: 0
+        }
         val createdAt = (args["createdAt"] as? Number)?.toLong()
         val launch = context.packageManager.getLaunchIntentForPackage(context.packageName)
             ?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP)
@@ -106,7 +113,15 @@ object KuzzNotifications {
                 EXTRA_LINES,
                 ArrayList(previousLines.takeLast(MAX_LINES - 1) + line),
             )
-            builder.setStyle(roomStyle(previous, title, body, createdAt))
+            val style = roomStyle(
+                previous,
+                args["conversationTitle"] as? String,
+                title,
+                body,
+                createdAt,
+            )
+            builder.setStyle(style)
+                .setContentTitle(style.conversationTitle ?: title)
                 .addExtras(extras)
                 .setGroup(GROUP)
             createdAt?.let { builder.setWhen(it * 1000) }
@@ -147,15 +162,15 @@ object KuzzNotifications {
     /** The room's earlier lines (newest last, at most [MAX_LINES]) plus this one. */
     private fun roomStyle(
         previous: android.app.Notification?,
+        conversationTitle: String?,
         sender: String,
         body: String,
         createdAt: Long?,
     ): NotificationCompat.MessagingStyle {
         val style = NotificationCompat.MessagingStyle(Person.Builder().setName("You").build())
-        val earlier = previous
+        val earlierStyle = previous
             ?.let { NotificationCompat.MessagingStyle.extractMessagingStyleFromNotification(it) }
-            ?.messages
-            .orEmpty()
+        val earlier = earlierStyle?.messages.orEmpty()
         for (message in earlier.takeLast(MAX_LINES - 1)) style.addMessage(message)
         style.addMessage(
             NotificationCompat.MessagingStyle.Message(
@@ -164,7 +179,9 @@ object KuzzNotifications {
                 Person.Builder().setName(sender).build(),
             ),
         )
-        style.isGroupConversation = true
+        // A failed room lookup keeps the title the notification already has.
+        style.conversationTitle = conversationTitle ?: earlierStyle?.conversationTitle
+        style.isGroupConversation = style.conversationTitle != null
         return style
     }
 
