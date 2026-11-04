@@ -89,6 +89,9 @@ stopped and writes one JSON object per line (UTF-8, newline-terminated) on
 stdout. Status lines go to stderr. A lost connection is reopened by `watch`
 itself (1 s doubling to 60 s).
 
+While it runs, the app shows the agent as online. Ctrl+C or SIGTERM reports it
+offline; a process killed outright goes offline when its connection closes.
+
 `--since <unix seconds>` also prints messages from that time on. To catch up
 after a restart, pass the last `created_at` you saw.
 
