@@ -63,7 +63,54 @@ if [[ "$SECURE_ENCLAVE" == 1 ]]; then
       exit 1
     }
   done
-  echo "Verified Secure Enclave signing on $EXECUTABLE_PATH"
+  # Presence is not enough: the 0.6.19 official-id build carried no restricted
+  # entitlements and no profile at all, signed cleanly, and then could not open
+  # the device key at run time. Check the values, not just the keys.
+  BUNDLE_ID="$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$INFO_PLIST")"
+  TEAM_ID="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.developer.team-identifier' "$ENTITLEMENTS")"
+  EXPECTED_GROUP="$TEAM_ID.$BUNDLE_ID"
+  APP_IDENTIFIER="$(/usr/libexec/PlistBuddy -c 'Print :com.apple.application-identifier' "$ENTITLEMENTS")"
+  [[ "$APP_IDENTIFIER" == "$EXPECTED_GROUP" ]] || {
+    echo "application-identifier $APP_IDENTIFIER does not match the bundle ($EXPECTED_GROUP): $EXECUTABLE_PATH" >&2
+    exit 1
+  }
+  # Capture before matching: `PlistBuddy | grep -q` would exit on the first
+  # match, PlistBuddy would die of SIGPIPE, and pipefail would report a failure
+  # that never happened. The name is not GROUPS: bash keeps the caller's
+  # supplementary group ids there, so that assignment silently does not stick.
+  ACCESS_GROUPS="$(/usr/libexec/PlistBuddy -c 'Print :keychain-access-groups' "$ENTITLEMENTS")"
+  printf '%s\n' "$ACCESS_GROUPS" | grep -Fqx "    $EXPECTED_GROUP" || {
+    echo "keychain-access-groups does not include $EXPECTED_GROUP: $EXECUTABLE_PATH" >&2
+    exit 1
+  }
+  # Migration-era requirement: Macs that ran an earlier build hold their Secure
+  # Enclave key under the demo group. Dropping it would silently enroll them as
+  # new devices, so the group has to stay listed.
+  LEGACY_GROUP="$TEAM_ID.app.kuzz.app.demo.preview-88ecaf8be554431e"
+  if [[ "$EXPECTED_GROUP" != "$LEGACY_GROUP" ]]; then
+    printf '%s\n' "$ACCESS_GROUPS" | grep -Fqx "    $LEGACY_GROUP" || {
+      echo "keychain-access-groups does not include the earlier group $LEGACY_GROUP: $EXECUTABLE_PATH" >&2
+      exit 1
+    }
+  fi
+  # The embedded profile has to belong to this app id too: a leftover profile
+  # for another id embeds and notarizes fine, but macOS then refuses the
+  # restricted entitlements and no keychain group opens.
+  PROFILE_PLIST="$(mktemp -t kuzz-profile)"
+  security cms -D -i "$APP_PATH/Contents/embedded.provisionprofile" \
+    -o "$PROFILE_PLIST" 2>/dev/null || {
+    echo "Could not read embedded.provisionprofile: $APP_PATH" >&2
+    rm -f "$PROFILE_PLIST"
+    exit 1
+  }
+  PROFILE_APP_ID="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.application-identifier' "$PROFILE_PLIST" 2>/dev/null || true)"
+  PROFILE_NAME="$(/usr/libexec/PlistBuddy -c 'Print :Name' "$PROFILE_PLIST" 2>/dev/null || true)"
+  rm -f "$PROFILE_PLIST"
+  [[ "$PROFILE_APP_ID" == "$EXPECTED_GROUP" ]] || {
+    echo "embedded.provisionprofile is for $PROFILE_APP_ID, not $EXPECTED_GROUP (profile: ${PROFILE_NAME:-unknown}): $APP_PATH" >&2
+    exit 1
+  }
+  echo "Verified Secure Enclave signing on $EXECUTABLE_PATH ($EXPECTED_GROUP)"
 fi
 
 # Sidecars must not carry restricted entitlements: without a provisioning
