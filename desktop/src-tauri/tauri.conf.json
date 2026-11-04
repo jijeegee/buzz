@@ -16,7 +16,7 @@
   "app": {
     "windows": [
       {
-        "title": "",
+        "title": "Kuzz",
         "width": 900,
         "height": 650,
         "maximized": true,
