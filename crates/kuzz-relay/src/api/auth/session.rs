@@ -327,6 +327,8 @@ fn device_json(
         "platform": device.platform,
         "last_seen_at": device.last_seen_at,
         "current": Some(device.id) == current,
+        "login_device_id": device.login_device_id,
+        "agents": device.agents,
     })
 }
 

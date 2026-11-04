@@ -102,6 +102,8 @@ pub struct PairingClaim<'a> {
     pub device_key_kind: &'a str,
     /// A name for the computer, shown to the owner.
     pub device_name: Option<&'a str>,
+    /// What the agent is (`Hermes`), shown to the owner.
+    pub runtime: Option<&'a str>,
 }
 
 /// What [`Db::claim_pairing`] did. Only `Connected` writes.
@@ -356,14 +358,15 @@ impl Db {
         };
         let bound = match key {
             KeyUse::Free => sqlx::query(
-                "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
-                 VALUES ($1, $2, 'external', $3) ON CONFLICT (pubkey) DO NOTHING",
+                "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id, runtime) \
+                 VALUES ($1, $2, 'external', $3, $4) ON CONFLICT (pubkey) DO NOTHING",
             )
             .bind(claim.agent_pubkey.as_slice())
             .bind(owner_bytes.as_slice())
-            .bind(device_id),
+            .bind(device_id)
+            .bind(claim.runtime),
             KeyUse::Disconnected => sqlx::query(
-                "UPDATE key_registry SET host_device_id = $3 \
+                "UPDATE key_registry SET host_device_id = $3, runtime = COALESCE($4, runtime) \
                  WHERE pubkey = $1 AND principal_id = $2 AND role = 'external' \
                    AND revoked_at IS NULL \
                    AND NOT EXISTS (SELECT 1 FROM devices h \
@@ -372,15 +375,17 @@ impl Db {
             )
             .bind(claim.agent_pubkey.as_slice())
             .bind(owner_bytes.as_slice())
-            .bind(device_id),
+            .bind(device_id)
+            .bind(claim.runtime),
             _ => sqlx::query(
-                "UPDATE key_registry SET role = 'external', host_device_id = $3 \
+                "UPDATE key_registry SET role = 'external', host_device_id = $3, runtime = $4 \
                  WHERE pubkey = $1 AND principal_id = $2 AND role = 'agent' \
                    AND host_device_id IS NULL AND revoked_at IS NULL",
             )
             .bind(claim.agent_pubkey.as_slice())
             .bind(owner_bytes.as_slice())
-            .bind(device_id),
+            .bind(device_id)
+            .bind(claim.runtime),
         }
         .execute(&mut *tx)
         .await?

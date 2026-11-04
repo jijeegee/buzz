@@ -87,6 +87,7 @@ async fn claim(db: &Db, code_hash: &[u8; 32], agent: &[u8; 32], device: &[u8; 33
         device_pubkey: device,
         device_key_kind: "software",
         device_name: Some("studio mac"),
+        runtime: Some("Hermes"),
     })
     .await
     .unwrap()
@@ -385,6 +386,80 @@ async fn a_login_never_revives_or_reuses_an_external_device() {
         .map(|device| device.platform)
         .collect();
     assert_eq!(platforms.iter().filter(|p| *p == "external").count(), 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn an_external_device_names_its_computer_and_agents() {
+    let db = database().await;
+    let (owner, _, pc, pc_key) = owner(&db).await;
+    let external_of = |devices: Vec<crate::identity::DeviceRecord>| {
+        devices
+            .into_iter()
+            .find(|device| device.platform == "external")
+            .unwrap()
+    };
+    // The app's computer pairs two agents, one saying what it is.
+    let hermes = agent_key();
+    let (_, code) = start(&db, &owner, pc).await;
+    connect(&db, &code, &hermes, &pc_key).await;
+    let plain = agent_key();
+    let (_, code) = start(&db, &owner, pc).await;
+    let unnamed = db
+        .claim_pairing(&PairingClaim {
+            code_hash: &code,
+            agent_pubkey: &plain,
+            device_pubkey: &pc_key,
+            device_key_kind: "software",
+            device_name: None,
+            runtime: None,
+        })
+        .await
+        .unwrap();
+    assert!(matches!(unnamed, ClaimPairing::Connected { .. }));
+
+    let external = external_of(db.list_devices(&owner).await.unwrap());
+    assert_eq!(external.login_device_id, Some(pc));
+    assert_eq!(
+        external.agents,
+        vec![
+            crate::identity::HostedAgent {
+                pubkey: hex::encode(hermes),
+                runtime: Some("Hermes".into()),
+            },
+            crate::identity::HostedAgent {
+                pubkey: hex::encode(plain),
+                runtime: None,
+            },
+        ]
+    );
+    // Renaming answers with the same record.
+    let renamed = db
+        .rename_device(&owner, external.id, "office")
+        .await
+        .unwrap()
+        .unwrap();
+    assert_eq!(renamed.login_device_id, Some(pc));
+    assert_eq!(renamed.agents, external.agents);
+
+    // The login rows themselves name nothing.
+    let login = db
+        .list_devices(&owner)
+        .await
+        .unwrap()
+        .into_iter()
+        .find(|device| device.id == pc)
+        .unwrap();
+    assert_eq!(login.login_device_id, None);
+    assert!(login.agents.is_empty());
+
+    // Signed out on that computer: the external device stands alone.
+    db.revoke_device(&owner, pc, RevokeReason::Logout)
+        .await
+        .unwrap();
+    let external = external_of(db.list_devices(&owner).await.unwrap());
+    assert_eq!(external.login_device_id, None);
+    assert_eq!(external.agents.len(), 2);
 }
 
 #[tokio::test]

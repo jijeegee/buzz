@@ -306,6 +306,9 @@ once), key_in_use, device_limit, rate_limited.",
         /// This computer's name as the owner sees it (default: host name)
         #[arg(long)]
         device_name: Option<String>,
+        /// What the agent is, as the owner sees it (--hermes: Hermes)
+        #[arg(long, conflicts_with = "hermes")]
+        runtime: Option<String>,
         /// Then install the Hermes plugin for the owner (needs Python and a
         /// Hermes home; otherwise prints the manual step)
         #[arg(long)]
@@ -2768,6 +2771,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         pair_relay,
         name,
         device_name,
+        runtime,
         hermes,
         no_restart,
         hermes_home,
@@ -2779,6 +2783,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             &code,
             name,
             device_name,
+            runtime,
             cli.private_key,
             hermes.then_some(pairing::HermesInstall {
                 restart: !no_restart,

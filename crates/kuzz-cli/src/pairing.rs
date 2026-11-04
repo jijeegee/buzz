@@ -73,6 +73,9 @@ pub struct Pairing {
     pub agent_name: Option<String>,
     /// This computer's name as the owner sees it.
     pub device_name: String,
+    /// What the agent is (`--runtime`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub runtime: Option<String>,
     /// `connected`, or `pending` while the claim's answer is unknown.
     pub state: String,
     /// Relay pairing id (connected only).
@@ -284,6 +287,7 @@ pub(crate) fn claim_body(
     agent: &Keys,
     device: &DeviceKey,
     device_name: &str,
+    runtime: Option<&str>,
 ) -> Result<Value, CliError> {
     use nostr::hashes::{sha256::Hash as Sha256Hash, Hash as _};
 
@@ -299,7 +303,7 @@ pub(crate) fn claim_body(
     let device_signature = device
         .sign(message.as_bytes())
         .map_err(|e| CliError::Other(format!("device key could not sign: {e}")))?;
-    Ok(json!({
+    let mut body = json!({
         "code": code,
         "agent_pubkey": agent_hex,
         "agent_signature": agent_signature,
@@ -307,7 +311,11 @@ pub(crate) fn claim_body(
         "device_signature": hex::encode(device_signature),
         "device_key_kind": device.kind().as_wire(),
         "device_name": device_name,
-    }))
+    });
+    if let Some(runtime) = runtime {
+        body["runtime"] = json!(runtime);
+    }
+    Ok(body)
 }
 
 /// A refused claim as a clear CLI error.
@@ -400,6 +408,7 @@ pub(crate) struct PairRequest<'a> {
     pub code: &'a str,
     pub agent_name: Option<&'a str>,
     pub device_name: &'a str,
+    pub runtime: Option<&'a str>,
     /// The agent's own key (`--private-key`/`KUZZ_PRIVATE_KEY`), if any.
     pub agent_keys: Option<Keys>,
 }
@@ -424,6 +433,7 @@ pub(crate) async fn pair(
         agent_pubkey: keys.public_key().to_hex(),
         agent_name: request.agent_name.map(str::to_owned),
         device_name: request.device_name.to_owned(),
+        runtime: request.runtime.map(str::to_owned),
         state: STATE_PENDING.to_owned(),
         pairing_id: None,
         device_id: None,
@@ -432,15 +442,18 @@ pub(crate) async fn pair(
         agent_secret: generated.then(|| keys.secret_key().to_secret_hex()),
     };
     let body = {
-        let (code, keys, device, name) = (
+        let (code, keys, device, name, runtime) = (
             request.code.to_owned(),
             keys.clone(),
             device.clone(),
             request.device_name.to_owned(),
+            request.runtime.map(str::to_owned),
         );
-        tokio::task::spawn_blocking(move || claim_body(&code, &keys, &device, &name))
-            .await
-            .map_err(|e| CliError::Other(format!("signing task failed: {e}")))??
+        tokio::task::spawn_blocking(move || {
+            claim_body(&code, &keys, &device, &name, runtime.as_deref())
+        })
+        .await
+        .map_err(|e| CliError::Other(format!("signing task failed: {e}")))??
     };
     store.save(&pairing)?;
     let http = crate::client::build_http()?;
@@ -590,6 +603,9 @@ fn find_python() -> Option<&'static str> {
     })
 }
 
+/// What `kuzz pair --hermes` calls the agent.
+const HERMES_RUNTIME: &str = "Hermes";
+
 /// `kuzz pair --hermes` options.
 #[derive(Debug, Clone)]
 pub(crate) struct HermesInstall {
@@ -662,8 +678,9 @@ fn install_hermes(
 }
 
 /// Who a default Hermes profile acted as before `new` was paired, as
-/// `owner=agent`: each owner's most recent other agent, as
-/// [`PairingStore::for_relay`] picks. The profile's owner may not be `new`'s.
+/// `owner=agent`: each owner's most recent other Hermes agent, as
+/// [`PairingStore::for_relay`] picks (pairings from before `runtime` count as
+/// Hermes). The profile's owner may not be `new`'s.
 fn previous_agents(pairings: Vec<Pairing>, new: &Pairing) -> Vec<String> {
     let mut latest: std::collections::BTreeMap<String, Pairing> = Default::default();
     for pairing in pairings {
@@ -673,6 +690,10 @@ fn previous_agents(pairings: Vec<Pairing>, new: &Pairing) -> Vec<String> {
         if pairing.relay != new.relay
             || pairing.agent_pubkey == new.agent_pubkey
             || pairing.agent_secret.is_none()
+            || pairing
+                .runtime
+                .as_deref()
+                .is_some_and(|r| r != HERMES_RUNTIME)
         {
             continue;
         }
@@ -758,6 +779,7 @@ pub(crate) async fn cmd_pair(
     code: &str,
     agent_name: Option<String>,
     device_name: Option<String>,
+    runtime: Option<String>,
     private_key: Option<String>,
     hermes: Option<HermesInstall>,
 ) -> Result<(), CliError> {
@@ -781,6 +803,10 @@ pub(crate) async fn cmd_pair(
         .map(|name| name.trim().to_owned())
         .unwrap_or_else(default_pair_device_name);
     validate_name("--device-name", &device_name)?;
+    let runtime = runtime.or_else(|| hermes.as_ref().map(|_| HERMES_RUNTIME.to_owned()));
+    if let Some(runtime) = &runtime {
+        validate_name("--runtime", runtime)?;
+    }
     let agent_keys = match private_key {
         Some(secret) => {
             let secret = Zeroizing::new(secret);
@@ -801,6 +827,7 @@ pub(crate) async fn cmd_pair(
             code,
             agent_name: agent_name.as_deref(),
             device_name: &device_name,
+            runtime: runtime.as_deref(),
             agent_keys,
         },
         &device,
