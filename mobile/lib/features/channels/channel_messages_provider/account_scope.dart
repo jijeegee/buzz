@@ -48,6 +48,13 @@ extension _AccountScope on ChannelMessagesNotifier {
     _paintedAnchor = null;
     _paintedContiguousFrom = 0;
     _paintedStoreRead = 0;
+    _seenStoreRevision = -1;
+    _storeRead = null;
+    _relayAskedAt = 0;
+    _relayCut = null;
+    _storeOnlyIds.clear();
+    _storeSummaries.clear();
+    _storePushedAt = const {};
     _followingStoredHead = false;
     final shown = _storedHeadShown;
     _storedHeadShown = null;

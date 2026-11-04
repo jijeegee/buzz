@@ -25,6 +25,7 @@ class StoredRoomHead {
     required this.aux,
     required this.summaries,
     required this.nextCursor,
+    this.pushedAt = const {},
   });
 
   /// Every event of the window is known stored and the room's live REQ is
@@ -36,6 +37,10 @@ class StoredRoomHead {
 
   /// `(created_at, id)` of the oldest row.
   final (int, String)? nextCursor;
+
+  /// The rows only the push inbox wrote, and when each was fetched
+  /// ([readPushedAt]); a paint only.
+  final Map<String, int?> pushedAt;
 
   /// The window in the shape of a relay channel-window response: rows,
   /// overlays, summaries and one `39006` bounds event for [room]'s head.
@@ -66,6 +71,7 @@ class StoredRoomHead {
               ? null
               : {'created_at': cursor.$1, 'id': cursor.$2},
           if (contiguous != null) 'contiguous_from': contiguous.from,
+          if (pushedAt.isNotEmpty) 'pushed_at': pushedAt,
         }),
       },
     ];
@@ -95,6 +101,22 @@ Future<Set<String>> storedDeletedIds(
       if (removal['kind'] == 9005 ||
           removal['pubkey'] == authors[removal['target']])
         removal['target']! as String,
+  };
+}
+
+/// Those of [ids] only the push inbox wrote, with when each was fetched
+/// (null: by an older build). One query.
+Future<Map<String, int?>> readPushedAt(
+  DatabaseExecutor db,
+  List<String> ids,
+) async {
+  if (ids.isEmpty) return const {};
+  final rows = await db.rawQuery(
+    'SELECT id, fetched_at FROM pushed_rows WHERE id IN (${_marks(ids.length)})',
+    ids,
+  );
+  return {
+    for (final row in rows) row['id']! as String: row['fetched_at'] as int?,
   };
 }
 
@@ -310,6 +332,7 @@ Future<StoredRoomHead> readRoomHead(
     aux: aux,
     summaries: summaries,
     nextCursor: nextCursor,
+    pushedAt: includePushed ? await readPushedAt(db, rowIds) : const {},
   );
 }
 

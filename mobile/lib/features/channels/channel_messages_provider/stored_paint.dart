@@ -37,6 +37,25 @@ class ChannelSavedRowsChecked extends Notifier<bool> {
 /// the relay's window: they are shown as not yet confirmed, and the relay's
 /// window replaces them when it lands
 /// (docs/message-sync.md#opening-a-room-from-the-store).
+extension ChannelRowOpening on ChannelMessagesNotifier {
+  /// Whether the rows shown reach [row] (saved, from the relay or live; not
+  /// only a link target held beside them), so the room opens there without
+  /// the relay's pages. An [unread] or pushed row the relay has yet to answer
+  /// for opens where it is. Other saved rows must run without a gap from it;
+  /// a first [unread] row also needs an older row shown, or no older history.
+  bool openOnRowsAtHand(
+    ({String id, int createdAt}) row, {
+    bool unread = false,
+  }) => _openOnRowsAtHand(row.id, createdAt: row.createdAt, unread: unread);
+
+  /// Opens at [row]: on the rows at hand once a store read owed to this
+  /// visit is in, else with [openAt].
+  Future<bool> openAtRow(
+    ({String id, int createdAt}) row, {
+    bool unread = false,
+  }) => _openAtRow(row.id, createdAt: row.createdAt, unread: unread);
+}
+
 extension _StoredPaint on ChannelMessagesNotifier {
   /// Looks up the device store and the head cache at once. Whichever answers
   /// first draws; the store's window then replaces a cached head drawn
@@ -45,6 +64,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
     final filter = _channelWindowFilter(null);
     final session = _summarySession;
     final read = ++_storeReads;
+    _seenStoreRevision = _read(pushInboxRevisionProvider);
     final stored = _read(paintableRoomHeadProvider)(session, channelId, filter)
         .catchError((Object error) {
           debugPrint(
@@ -81,35 +101,139 @@ extension _StoredPaint on ChannelMessagesNotifier {
     }
   }
 
-  /// Reads the device store again after a push inbox drain wrote to it
-  /// (docs/message-sync.md#push-inbox), while the saved rows are still
-  /// shown: [_paintSaved] keeps the relay's window and live rows.
+  /// The read a room owes when someone comes back to it: the store changed
+  /// since it last looked, and nobody was there to read it.
+  void _showStoreIfChanged() {
+    if (!_summaryMounted || !_hasListeners) return;
+    if (_read(pushInboxRevisionProvider) != _seenStoreRevision) {
+      _repaintStored();
+    }
+  }
+
+  /// Reads the device store again after a push inbox drain wrote to it, the
+  /// same read a first open makes
+  /// (docs/message-sync.md#reading-the-store-again): saved rows still shown
+  /// are drawn over, and rows held from the relay gain what lies past its
+  /// cut.
   void _repaintStored() {
     final scope = _readHeadScope();
-    if (!_hasListeners ||
-        !_headRestoreStarted ||
-        _relayHistoryArrived ||
-        scope == null) {
-      return;
-    }
+    if (!_hasListeners || !_headRestoreStarted || scope == null) return;
     final read = ++_storeReads;
+    _seenStoreRevision = _read(pushInboxRevisionProvider);
     final filter = _channelWindowFilter(null);
     final stored = _read(paintableRoomHeadProvider)(
       _summarySession,
       channelId,
       filter,
     );
-    unawaited(
-      stored.then((events) => _paintStored(scope, events, read)).catchError((
-        Object error,
-      ) {
-        debugPrint(
-          '[ChannelMessagesNotifier] stored rows not redrawn for $channelId: $error',
-        );
-        return false;
-      }),
-    );
+    final reading = stored
+        .then((events) {
+          if (!_paintStored(scope, events, read)) {
+            _foldStoredRows(scope, events, read);
+          }
+        })
+        .catchError((Object error) {
+          debugPrint(
+            '[ChannelMessagesNotifier] stored rows not redrawn for $channelId: $error',
+          );
+        });
+    _storeRead = reading;
+    unawaited(reading);
   }
+
+  /// Adds the rows of a store read that lie past the relay cut, and their
+  /// reply counts. They show as not yet confirmed: nothing is written, and
+  /// a store read confirms no send and vouches for no gap. While newer pages
+  /// remain they would sit past rows not loaded, so they wait for those.
+  void _foldStoredRows(
+    ChannelHeadScope scope,
+    List<NostrEvent>? events,
+    int read,
+  ) {
+    if (events == null ||
+        !_summaryMounted ||
+        read < _paintedStoreRead ||
+        _windowStore.hasNewer ||
+        _readHeadScope() != scope) {
+      return;
+    }
+    final page = parseChannelWindowResponse(events, channelId, null);
+    _paintedStoreRead = read;
+    _storePushedAt = storedPushedAt(events, EventKind.channelWindowBounds);
+    final shown = _lastKnownMessages ?? const <NostrEvent>[];
+    final shownIds = {for (final event in shown) event.id};
+    final windowRows = [
+      for (final held in _windowStore.allPages)
+        for (final row in held.rows) row.event,
+    ];
+    var newestHeld = 0;
+    for (final event in windowRows.isEmpty ? shown : windowRows) {
+      if (event.createdAt > newestHeld) newestHeld = event.createdAt;
+    }
+    final rows = [
+      for (final row in page.rows)
+        if (!shownIds.contains(row.event.id) &&
+            !_processedDeletionTargets.contains(row.event.id) &&
+            isPastRelayCut(
+              _relayCut,
+              createdAt: row.event.createdAt,
+              fetchedAt: _storePushedAt[row.event.id],
+              newestHeld: newestHeld,
+            ))
+          row.event,
+    ];
+    final counted = _noteStoreSummaries(page);
+    if (rows.isEmpty && !counted) return;
+    if (_usingChannelWindow) {
+      _windowStore = foldStoredChannelRows(_windowStore, rows);
+      _storeOnlyIds.addAll(_windowStore.storeRows.map((event) => event.id));
+      _lastKnownMessages = _withDeepLinkEvents(
+        flattenChannelWindowEvents(_windowStore),
+      );
+    } else {
+      _storeOnlyIds.addAll(rows.map((event) => event.id));
+      _lastKnownMessages = _withDeepLinkEvents(
+        rows.fold(shown, ChannelMessagesNotifier._mergeEvent),
+      );
+    }
+    _publishSummaryChange();
+  }
+
+  /// Keeps [page]'s reply counts past the relay cut, a paint's only: they
+  /// count pushed replies by `created_at`, so one deleted on the relay does
+  /// not come back with a later read. Returns whether any changed.
+  bool _noteStoreSummaries(ChannelWindowPage page) {
+    var changed = false;
+    for (final row in page.rows) {
+      final summary = row.thread;
+      final lastReplyAt = summary?.lastReplyAt;
+      if (summary == null ||
+          lastReplyAt == null ||
+          !isPastRelayCut(_relayCut, createdAt: lastReplyAt, newestHeld: 0)) {
+        continue;
+      }
+      final root = row.event.id;
+      if (_storeSummaries[root]?.lastReplyAt == lastReplyAt) continue;
+      _storeSummaries[root] = summary;
+      changed = true;
+    }
+    return changed;
+  }
+
+  /// A relay window landed: it ruled on everything up to its cut, so the
+  /// rows and counts shown only from the store go, unless they are in it.
+  void _foldedRelayRows(int askedAt, Iterable<NostrEvent> rows) {
+    _relayCut = movedRelayCut(_relayCut, askedAt: askedAt, rows: rows);
+    _storeOnlyIds.clear();
+    _storeSummaries.clear();
+    _paintedAnchor = null;
+  }
+
+  void _foldedRelayPages(int askedAt, List<ChannelWindowPage> pages) =>
+      _foldedRelayRows(askedAt, [
+        for (final page in pages)
+          for (final row in page.rows) row.event,
+      ]);
 
   /// Draws the store's window from read [read] unless a later read already
   /// drew: reads can answer out of order.
@@ -139,6 +263,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
     }
     final page = parseChannelWindowResponse(events, channelId, null);
     if (page.rows.isEmpty) return false;
+    _storePushedAt = storedPushedAt(events, EventKind.channelWindowBounds);
     _windowStore = replaceNewestChannelWindow(_windowStore, page);
     final messages = flattenChannelWindowEvents(_windowStore);
     // Live arrivals and own sends are not saved rows: the relay keeps them.
@@ -178,6 +303,21 @@ extension _StoredPaint on ChannelMessagesNotifier {
     return 0;
   }
 
+  Future<bool> _openAtRow(
+    String id, {
+    required int createdAt,
+    required bool unread,
+  }) async {
+    bool atHand() =>
+        _openOnRowsAtHand(id, createdAt: createdAt, unread: unread);
+    if (atHand()) return true;
+    // A kept room reads the store as it comes back: the row may be in it.
+    _showStoreIfChanged();
+    await _storeRead;
+    if (!_summaryMounted) return false;
+    return atHand() || await _openAt(createdAt: createdAt, eventId: id);
+  }
+
   bool _openOnRowsAtHand(
     String id, {
     required int createdAt,
@@ -188,15 +328,26 @@ extension _StoredPaint on ChannelMessagesNotifier {
     final rows = [
       for (final page in _windowStore.allPages)
         for (final row in page.rows) row.event,
+      ..._windowStore.storeRows,
       for (final event in _windowStore.liveOverlay)
         if (event.threadReference.parentId == null) event,
       // Saved rows shown while a reconnect waits for the relay's window.
       if (_windowStore.allPages.isEmpty)
         for (final event in _lastKnownMessages ?? const <NostrEvent>[])
-          if (_cachedHeadIds.contains(event.id)) event,
+          if (_cachedHeadIds.contains(event.id) ||
+              _storeOnlyIds.contains(event.id))
+            event,
     ];
     final target = rows.where((event) => event.id == id).firstOrNull;
     if (target == null) return false;
+    // An unread or pushed row the relay has yet to answer for opens where it
+    // is: the relay fills any gap above it, around it if its newest page
+    // lacks the row (_openAroundPaintedAnchor).
+    if ((painted || _storeOnlyIds.contains(id)) &&
+        (unread || _storePushedAt.containsKey(id))) {
+      _paintedAnchor = (createdAt: createdAt, id: id);
+      return true;
+    }
     final from = painted ? _paintedContiguousFrom : 0;
     if (from == null || target.createdAt < from) return false;
     final reaches =
@@ -234,7 +385,7 @@ extension _StoredPaint on ChannelMessagesNotifier {
       );
       if (!_summaryMounted || !_isCurrentInit(initVersion)) return false;
       _usingChannelWindow = true;
-      _foldPagesAround(around.pages, around.version, anchor.id);
+      _foldPagesAround(around.pages, around.version, anchor.id, around.askedAt);
       return true;
     } catch (error) {
       debugPrint(

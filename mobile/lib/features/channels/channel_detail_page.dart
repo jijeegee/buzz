@@ -768,13 +768,7 @@ class ChannelDetailPage extends HookConsumerWidget {
         );
         // Rows at hand that reach the target open there on the first frame;
         // only a target beyond them waits for the relay's pages around it.
-        opening =
-            messagesNotifier.openOnRowsAtHand(anchor, unread: target.isUnread)
-            ? Future.value(true)
-            : messagesNotifier.openAt(
-                createdAt: anchor.createdAt,
-                eventId: anchor.id,
-              );
+        opening = messagesNotifier.openAtRow(anchor, unread: target.isUnread);
       }
       didStartOpening.value = true;
       unawaited(

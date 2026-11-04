@@ -19,6 +19,7 @@ class StoredThreadHead {
     required this.rows,
     required this.hasMore,
     required this.nextCursor,
+    this.pushedAt = const {},
   });
 
   /// Every reply of the window is known stored and the room's live REQ is
@@ -33,6 +34,10 @@ class StoredThreadHead {
 
   /// `(created_at, id)` of the oldest reply, when [hasMore].
   final (int, String)? nextCursor;
+
+  /// The replies only the push inbox wrote, and when each was fetched
+  /// ([readPushedAt]); a paint only.
+  final Map<String, int?> pushedAt;
 
   /// The window in the shape of a relay thread-window response: the rows
   /// and one `39007` bounds event for [room]'s thread [root].
@@ -57,6 +62,7 @@ class StoredThreadHead {
           'next_cursor': cursor == null
               ? null
               : {'created_at': cursor.$1, 'id': cursor.$2},
+          if (pushedAt.isNotEmpty) 'pushed_at': pushedAt,
         }),
       },
     ];
@@ -176,5 +182,8 @@ Future<StoredThreadHead> readThreadHead(
     rows: rows,
     hasMore: hasMore,
     nextCursor: hasMore ? oldest : null,
+    pushedAt: includePushed
+        ? await readPushedAt(db, [for (final row in rows) row['id']! as String])
+        : const {},
   );
 }

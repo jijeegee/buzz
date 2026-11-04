@@ -87,11 +87,12 @@ extension _Pushed on MessageStore {
         for (final row in rows) {
           final room = row.room!;
           if (!allowed(room)) continue;
-          // Before the row: a relay copy already stored is not marked.
+          // Before the row: a relay copy already stored is not marked. A
+          // row fetched again keeps its first fetch.
           batch.rawInsert(
-            'INSERT OR IGNORE INTO pushed_rows(id) SELECT ? '
+            'INSERT OR IGNORE INTO pushed_rows(id, fetched_at) SELECT ?, ? '
             'WHERE NOT EXISTS (SELECT 1 FROM events WHERE id = ?)',
-            [row.id, row.id],
+            [row.id, op.fetchedAt, row.id],
           );
           known.note(room);
           _write(batch, row);
