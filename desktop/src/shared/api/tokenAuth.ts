@@ -65,12 +65,19 @@ export type SignupPrompt = {
   avatarUrl: string | null;
 };
 
+/** An agent connected on an external device. */
+export type AuthDeviceAgent = { pubkey: string; runtime: string | null };
+
 export type AuthDevice = {
   id: string;
   name: string;
   platform: string;
   lastSeenAt: string | null;
   current: boolean;
+  /** An external device's computer, when signed in there. */
+  loginDeviceId?: string | null;
+  /** The agents connected on an external device. */
+  agents?: AuthDeviceAgent[];
 };
 
 /** Tauri event emitted when a community's sign-in state changes. */

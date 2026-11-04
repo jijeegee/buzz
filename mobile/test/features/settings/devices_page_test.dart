@@ -16,8 +16,10 @@ late FakeOwnDeviceSession _session;
 Future<TokenSettingsHarness> _pumpDevices(
   WidgetTester tester, {
   bool agents = true,
+  List<Map<String, Object?>> moreDevices = const [],
 }) async {
   final h = TokenSettingsHarness();
+  h.account.devices.addAll(moreDevices);
   h.server.refreshResponses.add(
     (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
   );
@@ -176,6 +178,40 @@ void main() {
     expect(h.account.calls('GET', '/auth/devices'), hasLength(2));
     expect(find.text('Work laptop'), findsNothing);
     expect(find.text('Old browser'), findsOneWidget);
+  });
+
+  testWidgets('external agents sit under their computer, each disconnects', (
+    tester,
+  ) async {
+    const agent = 'ab';
+    final h = await _pumpDevices(
+      tester,
+      moreDevices: [
+        {
+          'id': 'device-4',
+          'name': 'host',
+          'platform': 'external',
+          'current': false,
+          'login_device_id': 'device-2',
+          'agents': [
+            {'pubkey': agent, 'runtime': 'Hermes'},
+          ],
+        },
+      ],
+    );
+
+    // One computer, one row: the agent is under it, not a sign-out.
+    expect(find.text('host'), findsNothing);
+    expect(find.text('External Agents - Hermes'), findsOneWidget);
+    expect(find.byKey(const Key('device-sign-out-device-4')), findsNothing);
+
+    await _tapAndConfirm(tester, const Key('agent-disconnect-ab'));
+
+    expect(
+      h.account.calls('DELETE', '/auth/devices/device-4/agents/ab'),
+      hasLength(1),
+    );
+    expect(h.account.calls('DELETE', '/auth/devices/device-4'), isEmpty);
   });
 
   testWidgets('renaming a device saves the trimmed name and refreshes', (

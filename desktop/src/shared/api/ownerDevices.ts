@@ -41,6 +41,15 @@ export function normalizeDeviceId(value: string | null | undefined) {
   return typeof value === "string" ? value.trim().toLowerCase() : "";
 }
 
+/** Whether two device ids name one device. */
+export function sameDevice(
+  a: string | null | undefined,
+  b: string | null | undefined,
+): boolean {
+  const id = normalizeDeviceId(a);
+  return id.length > 0 && id === normalizeDeviceId(b);
+}
+
 function deviceIdOf(event: RelayEvent): string | null {
   const deviceId = normalizeDeviceId(
     event.tags.find((tag) => tag[0] === "d")?.[1],

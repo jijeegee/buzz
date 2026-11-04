@@ -867,6 +867,50 @@
   "@settingsDevicesSignOutDeviceBody": {
     "description": "Devices page, body of the confirmation dialog for signing out one device."
   },
+  "settingsDevicesExternalAgent": "External Agents",
+  "@settingsDevicesExternalAgent": {
+    "description": "Devices page: row under a computer for one external agent connected on it."
+  },
+  "settingsDevicesExternalAgentRuntime": "External Agents - {runtime}",
+  "@settingsDevicesExternalAgentRuntime": {
+    "description": "Devices page: row under a computer for one external agent connected on it; {runtime} is a product name such as Hermes.",
+    "placeholders": {
+      "runtime": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesDisconnect": "Disconnect",
+  "@settingsDevicesDisconnect": {
+    "description": "Devices page, button on an external agent's row and in its confirmation dialog. Short."
+  },
+  "settingsDevicesDisconnectLabel": "Disconnect {name}",
+  "@settingsDevicesDisconnectLabel": {
+    "description": "Devices page, screen reader label of the Disconnect button; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesDisconnectTitle": "Disconnect {name}?",
+  "@settingsDevicesDisconnectTitle": {
+    "description": "Devices page, title of the confirmation dialog for disconnecting one external agent; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsDevicesDisconnectBody": "{name} stops working with your account. To use it again, connect it with a new code.",
+  "@settingsDevicesDisconnectBody": {
+    "description": "Devices page, text of the confirmation dialog for disconnecting one external agent; {name} is the agent's name.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
   "settingsDevicesSignOut": "Sign out",
   "@settingsDevicesSignOut": {
     "description": "Devices page, button on a device row and in its confirmation dialog that signs that device out. Short."

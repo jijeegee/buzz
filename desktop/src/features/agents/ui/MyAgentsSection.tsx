@@ -26,10 +26,11 @@ import {
   ExternalAgentsSection,
   HermesFoundCard,
 } from "@/features/agents/externalConnect/ExternalAgentsSection";
+import { useExternalAgentGroups } from "@/features/agents/externalConnect/useExternalAgents";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
 import { useIdentityQuery } from "@/shared/api/hooks";
-import { normalizeDeviceId } from "@/shared/api/ownerDevices";
+import { normalizeDeviceId, sameDevice } from "@/shared/api/ownerDevices";
 import type { AgentPersona, ManagedAgent } from "@/shared/api/types";
 import {
   useAuthDeviceLabels,
@@ -86,6 +87,10 @@ type MyAgentsSectionProps = {
 };
 
 /** The robot of one of the owner's devices, with their picked override. */
+function externalRobot(deviceId: string) {
+  return <DeviceRobot deviceId={deviceId} />;
+}
+
 export function DeviceRobot({ deviceId }: { deviceId: string | null }) {
   const { robotOverrides } = useOwnerDevices(deviceId !== null);
   if (!deviceId) return null;
@@ -133,6 +138,7 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
       [remoteAgents],
     ),
   );
+  const { groups: externalGroups } = useExternalAgentGroups();
   const remoteGroups = React.useMemo(
     () =>
       groupRemoteAgentsByDevice(
@@ -188,21 +194,40 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
 
   if (isAgentsLoading) return <TilesSkeleton />;
 
+  const hereExternal = currentDevice
+    ? externalGroups.filter((group) =>
+        sameDevice(group.hostDeviceId, currentDevice.id),
+      )
+    : [];
+  const externalCount = (deviceId: string | undefined) =>
+    externalGroups
+      .filter((group) => sameDevice(group.hostDeviceId, deviceId))
+      .reduce((count, group) => count + group.agents.length, 0);
+  const hereCount = localAgents.length + externalCount(currentDevice?.id);
+
   return (
     <section className="space-y-6" data-testid="agents-my-agents">
       <HermesFoundCard />
       <div className="space-y-3" data-testid="agents-device-this">
         <DeviceHeading
-          detail={[currentDevice?.name, agentCountLabel(localAgents.length)]
+          detail={[currentDevice?.name, agentCountLabel(hereCount)]
             .filter(Boolean)
             .join(" · ")}
           robot={<DeviceRobot deviceId={currentDevice?.id ?? null} />}
           title={t("agents.list.thisDevice")}
         />
+        {hereExternal.length > 0 && currentDevice ? (
+          <ExternalAgentsSection
+            hostDeviceId={currentDevice.id}
+            robot={externalRobot}
+          />
+        ) : null}
         {localAgents.length === 0 ? (
-          <p className="text-sm text-muted-foreground">
-            {t("agents.myAgents.emptyHere")}
-          </p>
+          hereExternal.length > 0 ? null : (
+            <p className="text-sm text-muted-foreground">
+              {t("agents.myAgents.emptyHere")}
+            </p>
+          )
         ) : (
           <div className={AGENT_TILE_GRID_CLASS}>
             {localAgents.map((agent) => (
@@ -231,7 +256,9 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
             key={group.deviceId}
           >
             <DeviceHeading
-              detail={agentCountLabel(group.agents.length)}
+              detail={agentCountLabel(
+                group.agents.length + externalCount(group.deviceId),
+              )}
               robot={<DeviceRobot deviceId={group.deviceId} />}
               title={group.name || t("agents.list.anotherDevice")}
             />
@@ -253,12 +280,20 @@ export function MyAgentsSection(props: MyAgentsSectionProps) {
                 />
               ))}
             </div>
+            <ExternalAgentsSection
+              hostDeviceId={group.deviceId}
+              robot={externalRobot}
+            />
           </div>
         ))
       )}
 
       <ExternalAgentsSection
-        robot={(deviceId) => <DeviceRobot deviceId={deviceId} />}
+        otherHosts={[
+          ...(currentDevice ? [currentDevice.id] : []),
+          ...remoteGroups.map((group) => group.deviceId),
+        ]}
+        robot={externalRobot}
       />
 
       <MyTeams agents={teamAgents} />

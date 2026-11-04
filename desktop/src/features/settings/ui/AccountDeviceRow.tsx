@@ -3,9 +3,17 @@ import { useQueryClient } from "@tanstack/react-query";
 import { Pencil } from "lucide-react";
 
 import { useIdentityQuery } from "@/shared/api/hooks";
-import { EXTERNAL_PLATFORM } from "@/features/agents/externalConnect/pairingLogic";
+import {
+  agentRuntime,
+  EXTERNAL_PLATFORM,
+} from "@/features/agents/externalConnect/pairingLogic";
+import { useExternalAgentName } from "@/features/agents/externalConnect/useExternalAgents";
 import { normalizeDeviceId } from "@/shared/api/ownerDevices";
-import { type AuthDevice, renameAuthDevice } from "@/shared/api/tokenAuth";
+import {
+  type AuthDevice,
+  type AuthDeviceAgent,
+  renameAuthDevice,
+} from "@/shared/api/tokenAuth";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { applyAuthDeviceRename } from "@/shared/api/useAuthDeviceNames";
 import {
@@ -23,15 +31,13 @@ const DEVICE_NAME_MAX = 64;
 /**
  * One signed-in device: its robot (the owner can pick another), a renamable
  * name, and (for other devices) a remote sign-out. A computer paired for an
- * external agent reads "Disconnect" instead, and "Hermes on <device>" when
- * this app connected Hermes there. `run` serializes actions and reports
- * their errors.
+ * external agent reads "Disconnect" instead, and has none while its agents
+ * have their own rows. `run` serializes actions and reports their errors.
  */
 export function AccountDeviceRow({
   device,
   disabled,
   isNew = false,
-  hermes = false,
   run,
   onChanged,
   onSignOut,
@@ -41,8 +47,6 @@ export function AccountDeviceRow({
   disabled: boolean;
   /** The device a "New sign-in" notice was about. */
   isNew?: boolean;
-  /** The Hermes agent this app connected is on this device. */
-  hermes?: boolean;
   /** `label` is the message shown if the action fails without its own error. */
   run: (label: MessageKey, action: () => Promise<unknown>) => Promise<void>;
   onChanged: () => Promise<void>;
@@ -61,9 +65,11 @@ export function AccountDeviceRow({
   const [draft, setDraft] = React.useState<string | null>(null);
   const trimmed = draft?.trim() ?? "";
   const external = device.platform === EXTERNAL_PLATFORM;
-  const label = hermes
-    ? t("settings.device.hermesOn", { device: device.name })
-    : device.name;
+  const label = device.name;
+  const noAction =
+    device.current ||
+    draft !== null ||
+    (external && (device.agents?.length ?? 0) > 0);
 
   const save = () => {
     if (draft === null) return;
@@ -181,7 +187,7 @@ export function AccountDeviceRow({
           </form>
         )}
       </span>
-      {device.current || draft !== null ? null : (
+      {noAction ? null : (
         <Button
           aria-label={t(
             external
@@ -201,6 +207,49 @@ export function AccountDeviceRow({
           )}
         </Button>
       )}
+    </li>
+  );
+}
+
+/** One external agent, under the row of the computer it runs on. */
+export function ExternalAgentRow({
+  agent,
+  disabled,
+  hermesPubkeys,
+  onDisconnect,
+}: {
+  agent: AuthDeviceAgent;
+  disabled: boolean;
+  hermesPubkeys: ReadonlySet<string>;
+  /** `name`: the agent's name. */
+  onDisconnect: (name: string) => void;
+}) {
+  const t = useT();
+  const name = useExternalAgentName(agent.pubkey, hermesPubkeys);
+  const runtime = agentRuntime(agent, hermesPubkeys);
+  const label = runtime
+    ? t("settings.device.externalAgentRuntime", { runtime })
+    : t("settings.device.externalAgent");
+  const named = name !== runtime && name !== t("agents.external.agentFallback");
+  return (
+    <li className="flex items-center justify-between gap-3 pl-8">
+      <span className="min-w-0 truncate text-sm">
+        {label}
+        {named ? (
+          <span className="text-muted-foreground/70"> {name}</span>
+        ) : null}
+      </span>
+      <Button
+        aria-label={t("settings.device.disconnectNamed", { name })}
+        data-testid={`agent-disconnect-${agent.pubkey}`}
+        disabled={disabled}
+        onClick={() => onDisconnect(name)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        {t("settings.device.disconnect")}
+      </Button>
     </li>
   );
 }

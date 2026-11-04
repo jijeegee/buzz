@@ -39,6 +39,7 @@ import { useUserProfileQuery } from "@/features/profile/hooks";
 import { AgentBadgeIcon } from "@/features/profile/ui/AgentBadgeIcon";
 import { ProfileAvatar } from "@/features/profile/ui/ProfileAvatar";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { sameDevice } from "@/shared/api/ownerDevices";
 import type { AgentPersona, Channel, ManagedAgent } from "@/shared/api/types";
 import {
   useAuthDeviceLabels,
@@ -182,7 +183,7 @@ export function AgentsSidebarList({
       (deviceId) => deviceLabels.get(deviceRobotTag(deviceId) ?? "")?.name,
       (agent) => agent.name ?? personaOf(agent)?.displayName ?? "",
     );
-    return [
+    const listed: AgentListSection[] = [
       {
         key: "local",
         title: t("agents.list.thisDevice"),
@@ -215,33 +216,42 @@ export function AgentsSidebarList({
           }),
         }),
       ),
-      // Agents connected from paired computers, one group per computer.
-      ...externalGroups.map(
-        (group): AgentListSection => ({
+    ];
+    // Agents connected from paired computers, under their computer.
+    for (const group of externalGroups) {
+      const items = group.agents.map((agent): AgentListItem => {
+        const availability = getRemoteAvailability(agent.pubkey);
+        const pubkey = agent.pubkey.toLowerCase();
+        return {
+          avatarUrl: null,
+          external: true,
+          fallbackName: hermesPubkeys.has(pubkey)
+            ? "Hermes"
+            : t("agents.external.agentFallback"),
+          hostName: group.deviceName,
+          key: `external:${pubkey}`,
+          managed: null,
+          name: "",
+          pubkey,
+          running: availability === "online" || availability === "away",
+          statusUnknown: availability === undefined,
+        };
+      });
+      const section = listed.find(({ deviceId }) =>
+        sameDevice(deviceId, group.hostDeviceId),
+      );
+      if (section) {
+        section.items = [...section.items, ...items];
+      } else {
+        listed.push({
           key: `external-${group.deviceId}`,
           title: group.deviceName,
-          deviceId: group.deviceId,
-          items: group.agents.map((agent): AgentListItem => {
-            const availability = getRemoteAvailability(agent.pubkey);
-            const pubkey = agent.pubkey.toLowerCase();
-            return {
-              avatarUrl: null,
-              external: true,
-              fallbackName: hermesPubkeys.has(pubkey)
-                ? "Hermes"
-                : t("agents.external.agentFallback"),
-              hostName: group.deviceName,
-              key: `external:${pubkey}`,
-              managed: null,
-              name: "",
-              pubkey,
-              running: availability === "online" || availability === "away",
-              statusUnknown: availability === undefined,
-            };
-          }),
-        }),
-      ),
-    ];
+          deviceId: group.hostDeviceId,
+          items,
+        });
+      }
+    }
+    return listed;
   }, [
     currentDeviceId,
     deviceLabels,
