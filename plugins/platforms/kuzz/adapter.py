@@ -625,13 +625,16 @@ class BuzzAdapter(BasePlatformAdapter):
 
     async def _admit(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
         try:
-            if await self._same_owner(msg.author):
+            try:
+                same_owner = await self._same_owner(msg.author)
+            except asyncio.CancelledError:
+                # Not answered yet, so the replay brings it back. After this point it must not.
+                state["seen"].pop(msg.id, None)
+                raise
+            if same_owner:
                 await self._deliver(msg, state, is_dm)
             else:
                 await self._refuse(msg)
-        except asyncio.CancelledError:
-            state["seen"].pop(msg.id, None)
-            raise
         except Exception:
             logger.exception("Buzz: could not admit %s", msg.id[:12])
 

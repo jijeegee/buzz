@@ -718,8 +718,8 @@ impl Db {
                                   LEFT JOIN devices d ON d.id = r.host_device_id \
                                  WHERE r.pubkey = k.key \
                                    AND (r.revoked_at IS NOT NULL \
-                                        OR (r.role = 'external' \
-                                            AND (d.id IS NULL OR d.revoked_at IS NOT NULL)))) \
+                                        OR d.revoked_at IS NOT NULL \
+                                        OR (r.role = 'external' AND d.id IS NULL))) \
              ) o WHERE o.owner IS NOT NULL",
         )
         .bind(community_id.as_uuid())

@@ -372,6 +372,30 @@ class AdapterTest(unittest.TestCase):
             self.assertFalse(adapter._admissions)
             self.assertNotIn(event_id(1), adapter._channel(CHANNEL)["seen"])
 
+    def test_disconnect_after_delivery_keeps_the_message_seen(self):
+        sibling = "d" * 64
+        line = watch_line(1, author=sibling, content="@Hermes hi", mentions=[AGENT])
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[sibling]):
+            adapter = self._adapter()
+            events = self._capture(adapter)
+
+            async def slow_reaction(*_):
+                await asyncio.sleep(5)
+
+            adapter.send_reaction = slow_reaction
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                await adapter._on_message(parse_watch_line(json.dumps(line)))
+                while not events:
+                    await asyncio.sleep(0.01)
+                await asyncio.sleep(0)
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.assertEqual(len(events), 1)
+            self.assertIn(event_id(1), adapter._channel(CHANNEL)["seen"])
+
     def test_reaction_only_sender_still_gets_the_seen_reaction(self):
         lines = [watch_line(1, author=STRANGER, content="@Hermes hi", mentions=[AGENT])]
         with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[],
