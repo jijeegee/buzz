@@ -948,9 +948,12 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   root, while replies are read by their root. The linked reply (the room's
   rows, the store, the relay) gives the root. A nested parent stays the head
   and the replies read from the root. A parent the reader cannot get moves
-  the page to the root in place, on the same route. A reply not found at
-  first is asked for again after a push inbox drain and on reconnect, and the
-  list opens at it when it arrives.
+  the page to the root in place, on the same route, once: the replies are the
+  same read, so nothing opens again and the parent's replies hang off the
+  root. The composer keeps its text and quote and its draft moves to the
+  root, so a later send carries the root. A reply not found at first is asked
+  for again after a push inbox drain and on reconnect, and the list opens at
+  it when it arrives.
 - **Room read:** opening a thread this way does not mark its room read, as
   with a Chats thread row.
 - **History REQs wait for the socket:** a WebSocket history REQ made while
@@ -1945,7 +1948,9 @@ that position.
   newest, and a position found later moves the list once, only if the reader
   has not scrolled meanwhile. A list with no replies is never hidden, and a
   linked reply that arrives later (a push inbox drain, the relay) still opens
-  there.
+  there. Opening at a reply needs the relay's thread windows: while that is
+  not known (offline) the target waits and opens once it is, and a relay
+  without them shows the replies and walks older pages to the reply.
 - **Where positions are kept:** per server and account. Desktop keys them by
   the relay's `https://host[:port]` origin (the store files' server identity)
   and account; a record from before this moves once to the first server the
