@@ -66,6 +66,17 @@ _ThreadOpenTarget? _threadOpenTarget({
   );
 }
 
+/// Ends a hidden opening from an effect. Effects run during build, where a
+/// new phase brings no rebuild and the list stays hidden past the cap.
+void _endOpenAfterBuild(
+  BuildContext context,
+  ValueNotifier<_ThreadOpenPhase> phase,
+) => scheduleMicrotask(() {
+  if (context.mounted && phase.value == _ThreadOpenPhase.opening) {
+    phase.value = _ThreadOpenPhase.none;
+  }
+});
+
 /// Whether [replies] already reach [target].
 bool _holdsOpenTarget(
   List<TimelineMessage> replies,

@@ -13307,6 +13307,7 @@ void main() {
         await tester.pumpWidget(
           _buildTestable(
             messages: [rootEvent],
+            relayInfo: const RelayInfo(),
             threadReplies: {'thread-root': newest},
             threadWindows: {
               'thread-root': (args) => window = _FakeThreadWindowNotifier(

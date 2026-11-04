@@ -5,8 +5,8 @@ part of '../thread_detail_page.dart';
 /// else a stand-in carrying only the id while it is [resolving] or [missing]
 /// (the relay answered without it). Nothing on the page waits for it.
 /// [unconfirmed] while its root is still in doubt: only a
-/// [ThreadDetailPage.headMayBeNested] head, until the lookup found it, came
-/// back without it, or failed.
+/// [ThreadDetailPage.headMayBeNested] head, until the lookup found it (drawn
+/// or not), came back without it, proved it deleted, or failed.
 ({
   TimelineMessage head,
   bool resolving,
@@ -51,7 +51,11 @@ _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
     missing: head == null && root.missing,
     deleted: root.deleted,
     unconfirmed:
-        page.headMayBeNested && head == null && !root.missing && !root.failed,
+        page.headMayBeNested &&
+        event == null &&
+        !root.missing &&
+        !root.failed &&
+        !root.deleted,
   );
 }
 

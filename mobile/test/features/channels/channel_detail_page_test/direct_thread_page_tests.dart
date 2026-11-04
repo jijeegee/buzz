@@ -267,6 +267,237 @@ void directThreadPageTests() {
 
       expect(find.byType(ComposeBar), findsOneWidget);
     });
+
+    for (final (name, stored) in [
+      ('deleted', null),
+      (
+        'not drawn',
+        NostrEvent(
+          id: _openAtRootId,
+          pubkey: 'bob',
+          createdAt: 1000,
+          kind: EventKind.reaction,
+          tags: const [
+            ['h', _channelId],
+          ],
+          content: '+',
+          sig: '',
+        ),
+      ),
+    ]) {
+      testWidgets('a draft head $name never holds the composer', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          harness(
+            threadPage(headMayBeNested: true),
+            session: _SilentRelaySession(),
+            overrides: [
+              rootLookup(
+                stored: (_) async =>
+                    stored == null ? null : (event: stored, deleted: false),
+                relay: () async => [
+                  if (stored == null)
+                    NostrEvent(
+                      id: 'removal',
+                      pubkey: 'relay',
+                      createdAt: 2000,
+                      kind: EventKind.nip29DeleteEvent,
+                      tags: [
+                        const ['h', _channelId],
+                        ['e', _openAtRootId],
+                      ],
+                      content: '',
+                      sig: '',
+                    )
+                  else
+                    stored,
+                ],
+              ),
+              storedReplies(() async => const []),
+            ],
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump();
+
+        expect(find.byType(ComposeBar), findsOneWidget);
+      });
+    }
+
+    for (final (name, relay) in [
+      ('not known', null),
+      ('without windows', const RelayInfo()),
+    ]) {
+      testWidgets('a relay $name still shows the replies at hand', (
+        tester,
+      ) async {
+        await tester.pumpWidget(
+          harness(
+            threadOrRoomPage(
+              channel: _testChannel,
+              threadId: _openAtRootId,
+              messageId: 'not-stored',
+            ),
+            session: _SilentRelaySession(),
+            relayInfo: relay,
+            overrides: [rootLookup(), storedReplies(() async => replies)],
+          ),
+        );
+        for (var frame = 0; frame < 5; frame++) {
+          await tester.pump(const Duration(milliseconds: 20));
+        }
+        await tester.pump(const Duration(seconds: 2));
+        await tester.pump();
+
+        expect(listVisible(tester), isTrue);
+        expect(findRichText('row 159'), findsOneWidget);
+      });
+    }
+
+    testWidgets('a relay check answering last shows the replies at once', (
+      tester,
+    ) async {
+      final info = Completer<RelayInfo>();
+      await tester.pumpWidget(
+        harness(
+          threadOrRoomPage(
+            channel: _testChannel,
+            threadId: _openAtRootId,
+            messageId: 'not-stored',
+          ),
+          session: _SilentRelaySession(),
+          overrides: [
+            relayInfoFetcherProvider.overrideWithValue((_) => info.future),
+            rootLookup(),
+            storedReplies(() async => replies),
+          ],
+        ),
+      );
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(listVisible(tester), isFalse);
+
+      info.complete(const RelayInfo());
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(listVisible(tester), isTrue);
+    });
+
+    testWidgets('a reply stored late opens once the relay is known', (
+      tester,
+    ) async {
+      useTallView(tester);
+      final all = [for (var n = 100; n < 900; n++) _openAtReply(n)];
+      final target = findRichText('row 110');
+      RelayInfo? info;
+      NostrEvent? stored;
+      await tester.pumpWidget(
+        harness(
+          threadOrRoomPage(
+            channel: _testChannel,
+            threadId: _openAtRootId,
+            messageId: fixtureId(110),
+          ),
+          session: _ThreadWindowRelaySession(all),
+          overrides: [
+            relayInfoFetcherProvider.overrideWithValue((_) async {
+              if (info == null) throw TimeoutException('offline');
+              return info;
+            }),
+            rootLookup(
+              stored: (id) async => id == fixtureId(110) && stored != null
+                  ? (event: stored, deleted: false)
+                  : null,
+              relay: () async => const [],
+            ),
+          ],
+        ),
+      );
+      await tester.pump(const Duration(milliseconds: 100));
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump();
+      expect(listVisible(tester), isTrue);
+      expect(target, findsNothing);
+
+      final container = ProviderScope.containerOf(
+        tester.element(find.byType(ThreadDetailPage)),
+      );
+      stored = all[10];
+      container.read(pushInboxRevisionProvider.notifier).bump();
+      await tester.pump();
+      await tester.pump();
+      expect(target, findsNothing);
+
+      info = RelayInfo(supportedExtensions: {newerWindowExtension});
+      container.invalidate(relayInfoProvider);
+      await tester.pumpAndSettle();
+
+      expect(target, findsOneWidget);
+    });
+
+    testWidgets('a draft head opens its saved place on its root\'s window', (
+      tester,
+    ) async {
+      const parentId = 'draft-parent';
+      final parent = _textMsg(
+        id: parentId,
+        pubkey: 'bob',
+        content: 'Draft parent',
+        createdAt: 1050,
+        extraTags: [
+          ['e', _openAtRootId, '', 'root'],
+          ['e', _openAtRootId, '', 'reply'],
+        ],
+      );
+      final positions = RoomPositionStore(
+        _testPrefs,
+        relay: 'http://localhost:3000',
+        pubkey: 'self',
+      );
+      positions.record(
+        threadRoomKey(_channelId, parentId),
+        RoomPositionReading.at(id: fixtureId(105), createdAt: 1105, edge: 0.5),
+      );
+      final lookup = Completer<List<NostrEvent>>();
+      final session = _ThreadQueryRecordingSession();
+      await tester.pumpWidget(
+        harness(
+          threadOrRoomPage(
+            channel: _testChannel,
+            threadId: parentId,
+            headMayBeNested: true,
+          ),
+          session: session,
+          relayInfo: windowRelay,
+          overrides: [
+            roomPositionStoreProvider.overrideWithValue(positions),
+            rootLookup(relay: () => lookup.future),
+            storedReplies(() async => const []),
+          ],
+        ),
+      );
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+      expect(session.rootsAsked.where((id) => id == parentId), hasLength(1));
+
+      lookup.complete([parent]);
+      for (var frame = 0; frame < 5; frame++) {
+        await tester.pump(const Duration(milliseconds: 20));
+      }
+
+      expect(session.rootsAsked.where((id) => id == parentId), hasLength(1));
+      expect(
+        // Its newest page, then a page each way around the saved reply.
+        session.rootsAsked.where((id) => id == _openAtRootId),
+        hasLength(3),
+      );
+    });
   });
 
   group('A linked reply beyond the walked pages', () {

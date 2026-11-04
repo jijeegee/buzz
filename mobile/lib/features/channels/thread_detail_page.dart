@@ -385,7 +385,12 @@ class ThreadDetailPage extends HookConsumerWidget {
           ? _ThreadOpenPhase.opening
           : _ThreadOpenPhase.none,
     );
-    final supportsOpenAt = useState<bool?>(null);
+    // Null while not known (offline): watched, as a thread query that finds
+    // it unknown asks again.
+    final supportsOpenAt = ref
+        .watch(relayInfoProvider)
+        .value
+        ?.supports(newerWindowExtension);
     final openedWindow = useState(false);
     final didStartOpening = useRef(false);
     final openedCreatedAt = useRef<int?>(null);
@@ -404,25 +409,6 @@ class ThreadDetailPage extends HookConsumerWidget {
     bool stillOpening() =>
         openPhase.value == _ThreadOpenPhase.opening ||
         (openCapped.value && openPhase.value == _ThreadOpenPhase.none);
-    useEffect(() {
-      if (openTarget == null || !stillOpening()) return null;
-      unawaited(
-        ref
-            .read(relayInfoProvider.future)
-            .then((info) => info?.supports(newerWindowExtension))
-            .catchError((Object _) => null)
-            .then((supported) {
-              if (!context.mounted) return;
-              supportsOpenAt.value = supported ?? false;
-              // Not known (offline): held replies may still open at the reply.
-              if (supported == false &&
-                  openPhase.value == _ThreadOpenPhase.opening) {
-                openPhase.value = _ThreadOpenPhase.none;
-              }
-            }),
-      );
-      return null;
-    }, [readDecided]);
     final openTargetHeld = _holdsOpenTarget(allReplies, openTarget);
     final gaveUpOnLinkedReply = _useLateLinkedReply(
       initialMessageCreatedAt,
@@ -441,9 +427,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         final target = openTarget;
         if (target == null && !windowHasNewer) {
           didStartOpening.value = true;
-          scheduleMicrotask(() {
-            if (context.mounted) openPhase.value = _ThreadOpenPhase.none;
-          });
+          _endOpenAfterBuild(context, openPhase);
           return null;
         }
         if (target == null) {
@@ -461,7 +445,15 @@ class ThreadDetailPage extends HookConsumerWidget {
           );
           return null;
         }
-        if (savedLoading) return null;
+        // A root in doubt would open the window of the wrong thread.
+        if (savedLoading || resolvedHead.unconfirmed) return null;
+        // Without newer pages there is no window to open at, and its newest
+        // page would replace held replies: the replies show now and the
+        // older pages are walked to the reply.
+        if (supportsOpenAt == false) {
+          _endOpenAfterBuild(context, openPhase);
+          return null;
+        }
         // Held replies reaching the target open there at once.
         final unread = target.isUnread;
         if (heldReplyToOpenAt(allReplies, target.id, unread: unread)
@@ -475,14 +467,9 @@ class ThreadDetailPage extends HookConsumerWidget {
           openAroundSavedReply(windowNotifier, aroundSaved, held, context);
           return null;
         }
-        // Without newer pages there is no window to open at: show the replies
-        // now rather than after the reply is found.
-        if (supportsOpenAt.value != true) {
-          if (supportsOpenAt.value == false) {
-            openPhase.value = _ThreadOpenPhase.none;
-          }
-          return null;
-        }
+        // Not known yet (offline): the cap shows the replies at hand, and the
+        // reply still opens once it is known.
+        if (supportsOpenAt == null) return null;
         final createdAt =
             target.createdAt ??
             initialMessageCreatedAt ??
@@ -498,7 +485,7 @@ class ThreadDetailPage extends HookConsumerWidget {
           }
           didStartOpening.value = true;
           gaveUpOnLinkedReply.value = initialMessageId != null;
-          openPhase.value = _ThreadOpenPhase.none;
+          _endOpenAfterBuild(context, openPhase);
           return null;
         }
         didStartOpening.value = true;
@@ -526,11 +513,12 @@ class ThreadDetailPage extends HookConsumerWidget {
         return null;
       },
       [
-        supportsOpenAt.value,
+        supportsOpenAt,
         canUseMessagesForInitialTarget,
         relayRepliesAvailable,
         readDecided,
         savedLoading,
+        resolvedHead.unconfirmed,
         openTargetHeld,
         initialMessageCreatedAt,
         awaitsLinkedReply,
@@ -546,7 +534,7 @@ class ThreadDetailPage extends HookConsumerWidget {
         return null;
       }
       if (!relayRepliesAvailable) {
-        openPhase.value = _ThreadOpenPhase.none;
+        _endOpenAfterBuild(context, openPhase);
         return null;
       }
       listGeneration.value += 1;
