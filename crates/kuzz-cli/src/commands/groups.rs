@@ -60,6 +60,9 @@ fn parse_group_link(input: &str) -> Option<GroupLink> {
     let Some((scheme, rest)) = text.split_once("://") else {
         return link_from_segment(text);
     };
+    if rest.contains(['?', '#']) || rest.contains(char::is_whitespace) {
+        return None;
+    }
     let scheme = scheme.to_ascii_lowercase();
     let parts: Vec<&str> = rest.trim_end_matches('/').split('/').collect();
     match (scheme.as_str(), parts.as_slice()) {
@@ -194,6 +197,7 @@ mod tests {
     fn links_elsewhere_are_refused() {
         for bad in [
             "short",
+            "https://gateway.kuzz.app?x/g/@team_1",
             "https://gateway.kuzz.app/x/@team_1",
             "https://user@evil.example/g/@team_1",
             "ftp://gateway.kuzz.app/g/@team_1",
