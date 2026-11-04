@@ -33,7 +33,7 @@ void main() {
   });
 
   for (final buildNumber in ['432', '', '2147483647']) {
-    testWidgets('shows version with build number "$buildNumber"', (
+    testWidgets('shows only the version with build number "$buildNumber"', (
       tester,
     ) async {
       tester.view.physicalSize = const Size(320, 700);
@@ -79,10 +79,7 @@ void main() {
         300,
         scrollable: find.byType(Scrollable).first,
       );
-      expect(
-        find.text(buildNumber.isEmpty ? 'v0.16.0' : 'v0.16.0 ($buildNumber)'),
-        findsOneWidget,
-      );
+      expect(find.text('v0.16.0'), findsOneWidget);
       expect(tester.takeException(), isNull);
     });
   }
