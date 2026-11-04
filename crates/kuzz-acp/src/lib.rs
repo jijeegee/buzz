@@ -8569,10 +8569,12 @@ mod owner_cache_tests {
         server.abort();
 
         let cache = OwnerCache::new(Some("a".repeat(64)));
-        let (rest, server) = super::author_gate_tests::nip11_scripted_server(
-            std::collections::VecDeque::from([Err(()), Err(())]),
-        )
-        .await;
+        let (rest, server) =
+            super::author_gate_tests::nip11_scripted_server(std::collections::VecDeque::from([
+                Err(()),
+                Err(()),
+            ]))
+            .await;
         assert!(!is_owner_or_sibling(&author, &cache, &rest).await);
         assert_eq!(cache.is_known_sibling(&author), None);
         server.abort();

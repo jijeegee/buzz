@@ -846,8 +846,8 @@ async fn same_owner_answers_for_every_pairing_of_agents() {
     assert_eq!(status, 200, "{body}");
     assert_eq!(body, json!({"keys": [unknown.public_key().to_hex()]}));
 
-    // A disconnected agent is out. (A different path: the same request within
-    // a second is a NIP-98 replay.)
+    // A disconnected agent is out. (A different path: this helper signs no
+    // nonce, so the same request within a second is a NIP-98 replay.)
     let pool = inst.state.db.pool();
     sqlx::query("UPDATE key_registry SET host_device_id = NULL WHERE pubkey = $1")
         .bind(second_hermes.public_key().to_bytes().as_slice())
@@ -861,6 +861,46 @@ async fn same_owner_answers_for_every_pairing_of_agents() {
         .as_array()
         .unwrap()
         .contains(&json!(second_hermes.public_key().to_hex())));
+
+    // A removed app agent is out too, though `users` still names its owner.
+    sqlx::query("UPDATE key_registry SET revoked_at = now() WHERE pubkey = $1")
+        .bind(app_agent.public_key().to_bytes().as_slice())
+        .execute(pool)
+        .await
+        .unwrap();
+    let path = same_owner_path(&[&app_agent]);
+    let (_, body) = status_call(&inst, &hermes, &pc.device, &path).await;
+    assert_eq!(body, json!({"keys": []}));
+
+    // A connected bot's `users` owner is the account id, not the account key.
+    let account: Vec<u8> = sqlx::query_scalar("SELECT principal_id FROM devices WHERE id = $1")
+        .bind(pc.device_id)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    assert_ne!(account, pc.keys.public_key().to_bytes().to_vec());
+    let bot = nostr::Keys::generate();
+    let community: uuid::Uuid = sqlx::query_scalar("SELECT id FROM communities WHERE host = $1")
+        .bind(&inst.host)
+        .fetch_one(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users (community_id, pubkey) VALUES ($1, $2) ON CONFLICT DO NOTHING")
+        .bind(community)
+        .bind(&account)
+        .execute(pool)
+        .await
+        .unwrap();
+    sqlx::query("INSERT INTO users (community_id, pubkey, agent_owner_pubkey) VALUES ($1, $2, $3)")
+        .bind(community)
+        .bind(bot.public_key().to_bytes().as_slice())
+        .bind(&account)
+        .execute(pool)
+        .await
+        .unwrap();
+    let path = same_owner_path(&[&bot]);
+    let (_, body) = status_call(&inst, &hermes, &pc.device, &path).await;
+    assert_eq!(body, json!({"keys": [bot.public_key().to_hex()]}));
 
     // So is one on a revoked computer, even asked by the owner's other agent.
     let laptop = other_device(&inst, &pc, &subject).await;

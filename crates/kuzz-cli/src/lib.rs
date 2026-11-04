@@ -497,9 +497,11 @@ pub enum AgentsCmd {
         respond_to: Option<RespondToArg>,
     },
     /// Show which of the given keys are your owner or your owner's agents
-    #[command(after_help = "Prints {\"keys\": [...]}; any other key is left out.\n\n\
+    #[command(
+        after_help = "Prints {\"keys\": [...]}; any other key is left out.\n\n\
 Example:\n  \
-kuzz agents same-owner --pubkeys <HEX>,<HEX>")]
+kuzz agents same-owner --pubkeys <HEX>,<HEX>"
+    )]
     SameOwner {
         /// Comma-separated pubkeys (hex)
         #[arg(long, required = true, value_delimiter = ',')]

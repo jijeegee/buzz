@@ -400,8 +400,6 @@ class BuzzAdapter(BasePlatformAdapter):
 
     async def disconnect(self) -> None:
         self._mark_disconnected()
-        for pending in (*self._admissions, *self._same_owner_lookups.values()):
-            pending.cancel()
         supervisor, task = self._supervisor, self._watch_task
         self._supervisor = self._watch_task = None
         if supervisor is not None:
@@ -411,6 +409,11 @@ class BuzzAdapter(BasePlatformAdapter):
                 await asyncio.wait_for(task, timeout=10)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
+        # After the watch: its last lines may have started admissions. A cancelled one is replayed.
+        pending = (*self._admissions, *self._same_owner_lookups.values())
+        for waiting in pending:
+            waiting.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
         self._save_cursors()
         self._release_lock()
 
@@ -626,6 +629,9 @@ class BuzzAdapter(BasePlatformAdapter):
                 await self._deliver(msg, state, is_dm)
             else:
                 await self._refuse(msg)
+        except asyncio.CancelledError:
+            state["seen"].pop(msg.id, None)
+            raise
         except Exception:
             logger.exception("Buzz: could not admit %s", msg.id[:12])
 
@@ -639,8 +645,7 @@ class BuzzAdapter(BasePlatformAdapter):
         return answer[0] if answer and time.monotonic() < answer[1] else None
 
     async def _same_owner(self, author: str) -> bool:
-        """Whether the relay says ``author`` shares our owner. Senders in a burst share one lookup,
-        also because the relay refuses a repeat of the same signed request within a second."""
+        """Whether the relay says ``author`` shares our owner. A burst from one sender shares a lookup."""
         lookup = self._same_owner_lookups.get(author)
         if lookup is None:
             lookup = asyncio.ensure_future(self._lookup_same_owner(author))
