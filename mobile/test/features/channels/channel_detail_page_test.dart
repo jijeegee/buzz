@@ -282,8 +282,6 @@ Widget _buildTestable({
   String? canvasContent,
   String? initialMessageId,
   String? initialThreadRootId,
-  InitialThreadRouteBehavior initialThreadRouteBehavior =
-      InitialThreadRouteBehavior.push,
   Map<String, List<NostrEvent>> threadReplies = const {},
   Map<String, Future<List<NostrEvent>>> pendingThreadReplies = const {},
   Future<ChannelDetails>? channelDetails,
@@ -494,11 +492,10 @@ Widget _buildTestable({
       navigatorObservers: navigatorObservers,
       home:
           home ??
-          ChannelDetailPage(
+          threadOrRoomPage(
             channel: resolvedChannel,
-            initialMessageId: initialMessageId,
-            initialThreadRootId: initialThreadRootId,
-            initialThreadRouteBehavior: initialThreadRouteBehavior,
+            threadId: initialThreadRootId,
+            messageId: initialMessageId,
           ),
     ),
   );
@@ -11954,49 +11951,33 @@ void main() {
       expect(threadPage.headId, 'parent');
       expect(threadPage.initialMessageId, 'target');
 
-      final highlighted = tester.widget<DecoratedBox>(
-        find.byKey(const ValueKey('thread-message-target')),
-      );
-      final decoration = highlighted.decoration as BoxDecoration;
-      final initialHighlight = decoration.color!;
+      Color targetColor() =>
+          (tester
+                      .widget<DecoratedBox>(
+                        find.byKey(const ValueKey('thread-message-target')),
+                      )
+                      .decoration
+                  as BoxDecoration)
+              .color!;
+
+      // The page is on screen at once: the highlight fades in from there.
+      for (var frame = 0; frame < 8; frame++) {
+        await tester.pump(const Duration(milliseconds: 100));
+      }
+      final initialHighlight = targetColor();
       expect(initialHighlight, isNot(Colors.transparent));
       expect(initialHighlight.a, closeTo(0.12, 0.001));
 
-      await tester.pump(const Duration(milliseconds: 2999));
-      final heldDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find.byKey(const ValueKey('thread-message-target')),
-                  )
-                  .decoration
-              as BoxDecoration;
-      expect(heldDecoration.color, initialHighlight);
+      await tester.pump(const Duration(seconds: 2));
+      expect(targetColor(), initialHighlight);
 
-      await tester.pump(const Duration(milliseconds: 1));
-      await tester.pump(const Duration(milliseconds: 150));
-
-      final fadingDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find.byKey(const ValueKey('thread-message-target')),
-                  )
-                  .decoration
-              as BoxDecoration;
-      expect(fadingDecoration.color!.a, greaterThan(0));
-      expect(fadingDecoration.color!.a, lessThan(initialHighlight.a));
-
-      await tester.pump(const Duration(milliseconds: 150));
-      final dismissedDecoration =
-          tester
-                  .widget<DecoratedBox>(
-                    find.byKey(const ValueKey('thread-message-target')),
-                  )
-                  .decoration
-              as BoxDecoration;
-      expect(dismissedDecoration.color, Colors.transparent);
+      await tester.pump(const Duration(seconds: 2));
+      await tester.pump(const Duration(milliseconds: 400));
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(targetColor(), Colors.transparent);
     });
 
-    testWidgets('starts the initial thread replies before its head arrives', (
+    testWidgets('a linked thread asks for its replies before its head', (
       tester,
     ) async {
       final root = _textMsg(
@@ -12021,8 +12002,6 @@ void main() {
           messages: const [],
           messagesNotifier: messagesNotifier,
           initialThreadRootId: 'root',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
           threadReplyLoaders: {
             'root': () async {
               replyQueries++;
@@ -12033,7 +12012,7 @@ void main() {
       );
       await tester.pump();
 
-      expect(find.byType(ThreadDetailPage), findsNothing);
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
       expect(replyQueries, 1);
 
       messagesNotifier.setMessages([root]);
@@ -12115,17 +12094,16 @@ void main() {
           messages: [chatter],
           messagesNotifier: messagesNotifier,
           initialThreadRootId: 'root',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
         ),
       );
       await tester.pump();
 
+      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.byType(ChannelDetailPage), findsNothing);
       expect(
-        find.byKey(const ValueKey('direct-thread-placeholder')),
+        find.byKey(const ValueKey('thread-app-bar-title')),
         findsOneWidget,
       );
-      expect(find.text('Thread'), findsOneWidget);
       expect(find.text('Channel chatter'), findsNothing);
 
       messagesNotifier.setMessages([chatter, root]);
@@ -12136,7 +12114,7 @@ void main() {
       expect(find.byType(ChannelDetailPage), findsNothing);
     });
 
-    testWidgets('hands a thread whose head is missing to the thread by id', (
+    testWidgets('a thread whose head is missing opens by its id', (
       tester,
     ) async {
       final chatter = _textMsg(
@@ -12152,16 +12130,10 @@ void main() {
             chatter,
           ], Future<void>.value()),
           initialThreadRootId: 'deleted-root',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
         ),
       );
       await tester.pumpAndSettle();
 
-      expect(
-        find.byKey(const ValueKey('direct-thread-placeholder')),
-        findsNothing,
-      );
       expect(find.text('Channel chatter'), findsNothing);
       final threadPage = tester.widget<ThreadDetailPage>(
         find.byType(ThreadDetailPage),
@@ -12170,45 +12142,7 @@ void main() {
       expect(threadPage.threadHead, isNull);
     });
 
-    testWidgets('does not replace a newer route after delayed hydration', (
-      tester,
-    ) async {
-      final root = _textMsg(
-        id: 'root',
-        pubkey: 'alice',
-        content: 'Thread root',
-      );
-      final messagesNotifier = _FakeMessagesNotifier(const []);
-
-      await tester.pumpWidget(
-        _buildTestable(
-          messages: const [],
-          messagesNotifier: messagesNotifier,
-          initialThreadRootId: 'root',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      final navigator = Navigator.of(
-        tester.element(find.byType(ChannelDetailPage)),
-      );
-      messagesNotifier.setMessages([root]);
-      navigator.push(
-        MaterialPageRoute<void>(
-          builder: (_) => const Scaffold(body: Text('New destination')),
-        ),
-      );
-      await tester.pumpAndSettle();
-
-      expect(find.text('New destination'), findsOneWidget);
-      expect(find.byType(ThreadDetailPage), findsNothing);
-    });
-
-    testWidgets('replaces a temporary channel route for an initial thread', (
-      tester,
-    ) async {
+    testWidgets('Back from a linked thread leaves its room', (tester) async {
       final root = _textMsg(
         id: 'root',
         pubkey: 'alice',
@@ -12242,12 +12176,10 @@ void main() {
                 child: TextButton(
                   onPressed: () => Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => ChannelDetailPage(
+                      builder: (_) => threadOrRoomPage(
                         channel: _testChannel,
-                        initialMessageId: 'target',
-                        initialThreadRootId: 'root',
-                        initialThreadRouteBehavior:
-                            InitialThreadRouteBehavior.replaceCurrentRoute,
+                        threadId: 'root',
+                        messageId: 'target',
                       ),
                     ),
                   ),

@@ -319,8 +319,6 @@ void threadOpenRootTests() {
           ], Future<void>.value()),
           initialMessageId: 'target',
           initialThreadRootId: 'hidden-parent',
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
           threadReplies: {
             _openAtRootId: [target],
           },
@@ -503,9 +501,7 @@ void threadOpenRootTests() {
       expect(find.byType(TextField), findsNothing);
     });
 
-    testWidgets('a direct thread hands off at once while reconnecting', (
-      tester,
-    ) async {
+    testWidgets('a link opens the thread while disconnected', (tester) async {
       final chatter = _textMsg(
         id: 'chatter',
         pubkey: 'bob',
@@ -520,8 +516,6 @@ void threadOpenRootTests() {
           ], Completer<void>().future),
           relaySessionNotifier: session,
           initialThreadRootId: _openAtRootId,
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
           overrides: [
             rootSources(relay: () => Completer<List<NostrEvent>>().future),
           ],
@@ -529,61 +523,9 @@ void threadOpenRootTests() {
       );
       session.drop();
       await tester.pump();
-      await tester.pump();
-      await tester.pump(const Duration(milliseconds: 500));
 
       expect(find.byType(ThreadDetailPage), findsOneWidget);
-      expect(find.text('Channel chatter'), findsNothing);
-    });
-
-    testWidgets('a late read state never bounces a direct thread', (
-      tester,
-    ) async {
-      final chatter = _textMsg(
-        id: 'chatter',
-        pubkey: 'bob',
-        content: 'Channel chatter',
-      );
-      final readState = _LateReadStateNotifier(
-        const ReadStateState(
-          isReady: false,
-          pubkey: 'self',
-          contexts: {},
-          version: 0,
-        ),
-      );
-      await tester.pumpWidget(
-        _buildTestable(
-          messages: [chatter],
-          messagesNotifier: _PendingHeadMessagesNotifier([
-            chatter,
-          ], Future<void>.error(TimeoutException('head'))..ignore()),
-          readStateNotifier: readState,
-          initialThreadRootId: _openAtRootId,
-          initialThreadRouteBehavior:
-              InitialThreadRouteBehavior.replaceCurrentRoute,
-          overrides: [
-            rootSources(relay: () => Completer<List<NostrEvent>>().future),
-          ],
-        ),
-      );
-      for (var frame = 0; frame < 20; frame++) {
-        if (frame == 3) {
-          readState.becomeReady(
-            const ReadStateState(
-              isReady: true,
-              pubkey: 'self',
-              contexts: {_channelId: 5000},
-              version: 1,
-            ),
-          );
-        }
-        await tester.pump(const Duration(milliseconds: 100));
-        expect(find.text('Channel chatter'), findsNothing);
-      }
-      await tester.pumpAndSettle();
-
-      expect(find.byType(ThreadDetailPage), findsOneWidget);
+      expect(find.byType(ChannelDetailPage), findsNothing);
       expect(find.text('Channel chatter'), findsNothing);
     });
   });

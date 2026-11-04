@@ -683,6 +683,34 @@ void directThreadPageTests() {
       expect(messages.asked, greaterThan(0));
     });
 
+    for (final thread in [true, false]) {
+      testWidgets('opening ${thread ? 'a thread leaves' : 'a room marks'} '
+          'the room read state', (tester) async {
+        final readState = _SynchronousReadStateNotifier(
+          const ReadStateState(
+            isReady: true,
+            pubkey: 'self',
+            contexts: {},
+            version: 0,
+          ),
+        );
+        await tester.pumpWidget(
+          _buildTestable(
+            messages: [_openAtRoot],
+            readStateNotifier: readState,
+            initialThreadRootId: thread ? _openAtRootId : null,
+            relaySessionNotifier: _SilentRelaySession(),
+            overrides: [rootLookup(), storedReplies(() async => const [])],
+          ),
+        );
+        await tester.pump();
+        await tester.pump();
+        await tester.pump(const Duration(milliseconds: 100));
+
+        expect(readState.markedContexts.containsKey(_channelId), !thread);
+      });
+    }
+
     testWidgets('Back returns to where the app was', (tester) async {
       await tester.pumpWidget(
         harness(
