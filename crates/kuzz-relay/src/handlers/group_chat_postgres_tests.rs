@@ -678,6 +678,181 @@ async fn people_sharing_a_room_are_added_directly() {
     );
 }
 
+/// Records `agent` as paired by `owner` on a live computer, as `claim_pairing`
+/// does. `users` names no owner.
+async fn pair(state: &AppState, owner: &Keys, agent: &Keys) {
+    let pool = state.db.pool();
+    // One account per owner: the owner's key doubles as its id here.
+    let account = owner.public_key().to_bytes().to_vec();
+    sqlx::query(
+        "INSERT INTO principals (id, kind, identity_mode, display_name) \
+         VALUES ($1, 'user', 'key_backup', 'owner') ON CONFLICT DO NOTHING",
+    )
+    .bind(&account)
+    .execute(pool)
+    .await
+    .expect("principal");
+    sqlx::query(
+        "INSERT INTO account_key_backups (account_id, pubkey, version, key_id, nonce, ciphertext) \
+         VALUES ($1, $2, 2, 'k1', $3, $4) ON CONFLICT DO NOTHING",
+    )
+    .bind(&account)
+    .bind(owner.public_key().to_bytes().as_slice())
+    .bind([0u8; 12].as_slice())
+    .bind([0u8; 48].as_slice())
+    .execute(pool)
+    .await
+    .expect("key backup");
+    let device: Uuid = sqlx::query_scalar(
+        "INSERT INTO devices (principal_id, name, platform, device_pubkey, device_key_kind) \
+         VALUES ($1, 'pc', 'desktop', $2, 'software') RETURNING id",
+    )
+    .bind(&account)
+    .bind(
+        [
+            [2u8].as_slice(),
+            Keys::generate().public_key().to_bytes().as_slice(),
+        ]
+        .concat(),
+    )
+    .fetch_one(pool)
+    .await
+    .expect("device");
+    sqlx::query(
+        "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
+         VALUES ($1, $2, 'external', $3)",
+    )
+    .bind(agent.public_key().to_bytes().as_slice())
+    .bind(&account)
+    .bind(device)
+    .execute(pool)
+    .await
+    .expect("registry");
+}
+
+/// What `kuzz_db` does when the owner disconnects the agent.
+async fn disconnect(state: &AppState, agent: &Keys) {
+    sqlx::query("UPDATE key_registry SET host_device_id = NULL WHERE pubkey = $1")
+        .bind(agent.public_key().to_bytes().as_slice())
+        .execute(state.db.pool())
+        .await
+        .expect("disconnect");
+}
+
+fn put(keys: &Keys, channel: Uuid, target: &Keys, role: Option<&str>) -> Event {
+    let mut tags = vec![
+        tag(&["h", &channel.to_string()]),
+        tag(&["p", &target.public_key().to_hex()]),
+    ];
+    if let Some(role) = role {
+        tags.push(tag(&["role", role]));
+    }
+    sign(keys, 9000, "", tags)
+}
+
+/// The owner adds their paired agent at once, to a new group chat, an
+/// existing one and a private group, as a bot in group chats. Anyone else
+/// still sends an invitation, and so does the owner once it is disconnected.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn owner_adds_a_paired_agent_directly_and_others_still_invite() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, stranger, agent) = (Keys::generate(), Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &stranger, &agent]).await;
+    pair(&state, &owner, &agent).await;
+
+    let (id, created) = create_chat(&state, &tenant, &owner, &[&agent]).await;
+    assert!(created.expect("chat").accepted);
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, id).await, &agent).as_deref(),
+        Some("bot")
+    );
+
+    let (id, created) = create_chat(&state, &tenant, &owner, &[]).await;
+    assert!(created.expect("empty chat").accepted);
+    let added = send(
+        &state,
+        &tenant,
+        &owner,
+        put(&owner, id, &agent, Some("bot")),
+    )
+    .await
+    .expect("add to chat");
+    assert!(added.accepted, "{}", added.message);
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, id).await, &agent).as_deref(),
+        Some("bot")
+    );
+
+    let group = state
+        .db
+        .create_channel(
+            tenant.community(),
+            "paired",
+            kuzz_db::channel::ChannelType::Stream,
+            kuzz_db::channel::ChannelVisibility::Private,
+            None,
+            owner.public_key().as_bytes(),
+            None,
+        )
+        .await
+        .expect("group")
+        .id;
+    let added = send(
+        &state,
+        &tenant,
+        &owner,
+        put(&owner, group, &agent, Some("bot")),
+    )
+    .await
+    .expect("add to group");
+    assert!(added.accepted, "{}", added.message);
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, group).await, &agent).as_deref(),
+        Some("bot")
+    );
+
+    // Someone else's add stays an invitation.
+    let (id, created) = create_chat(&state, &tenant, &stranger, &[&agent]).await;
+    assert_eq!(created.expect("their chat").message, "invite-sent:1");
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, id).await, &agent),
+        None
+    );
+
+    // Disconnected: the owner invites like anyone (sharing no room with it),
+    // and can still remove an agent already in a chat.
+    let gone = Keys::generate();
+    ensure_users(&state, &tenant, &[&gone]).await;
+    pair(&state, &owner, &gone).await;
+    disconnect(&state, &gone).await;
+    let (id, created) = create_chat(&state, &tenant, &owner, &[&gone]).await;
+    assert_eq!(created.expect("late chat").message, "invite-sent:1");
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, id).await, &gone),
+        None
+    );
+    let (joined, created) = create_chat(&state, &tenant, &owner, &[&agent]).await;
+    assert!(created.expect("chat").accepted);
+    disconnect(&state, &agent).await;
+    let remove = sign(
+        &owner,
+        9001,
+        "",
+        vec![
+            tag(&["h", &joined.to_string()]),
+            tag(&["p", &agent.public_key().to_hex()]),
+        ],
+    );
+    let removed = send(&state, &tenant, &owner, remove).await.expect("remove");
+    assert!(removed.accepted, "{}", removed.message);
+    assert_eq!(
+        role_of(&active_members(&state, &tenant, joined).await, &agent),
+        None
+    );
+}
+
 /// A private group hides earlier messages from a later member: quoting one
 /// is refused until the owner lets new members see earlier messages (kind
 /// 9002 `history`), which a plain member may not do. Group chats have no

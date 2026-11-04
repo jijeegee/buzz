@@ -519,6 +519,21 @@ pub(crate) async fn is_friend_of(
     }))
 }
 
+/// Whether `actor` owns the agent `target`, by `users` or by pairing. A paired
+/// agent stays removable by its owner after being disconnected.
+async fn owns_agent(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<bool> {
+    Ok(state
+        .db
+        .is_agent_owner(tenant.community(), target, actor)
+        .await?
+        || state.db.paired_agent_owner(target, false).await?.as_deref() == Some(actor))
+}
+
 /// Group invite policy and the target's "who can add me" setting for a
 /// third-party add of a person who is not yet a member. Refused adds by a
 /// member become a pending invitation and fail with [`InvitationSent`]; when
@@ -664,7 +679,14 @@ pub async fn validate_admin_event(
             // GROUP_CHAT_MAX_MEMBERS (re-checked under the lock in add_member).
             if channel.group_chat {
                 let target_is_agent =
-                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?;
+                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?
+                        || super::group_chat::owner_adds_paired_agent(
+                            tenant,
+                            state,
+                            &actor_bytes,
+                            &target_pubkey,
+                        )
+                        .await?;
                 channel_authz::decide_group_chat_role(requested_role, target_is_agent)?;
                 let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
                 if !already_member
@@ -694,10 +716,19 @@ pub async fn validate_admin_event(
                         .db
                         .get_agent_channel_policy(tenant.community(), &target_pubkey)
                         .await?;
+                    let paired_by_actor = super::group_chat::owner_adds_paired_agent(
+                        tenant,
+                        state,
+                        &actor_bytes,
+                        &target_pubkey,
+                    )
+                    .await?;
                     if let Some((policy, owner)) = &agent_policy {
                         channel_authz::decide_channel_add_policy(
                             policy,
-                            owner.as_deref(),
+                            owner
+                                .as_deref()
+                                .or(paired_by_actor.then_some(actor_bytes.as_slice())),
                             &actor_bytes,
                         )?;
                     }
@@ -709,9 +740,10 @@ pub async fn validate_admin_event(
                     let is_group = matches!(channel.channel_type.as_str(), "stream" | "forum");
                     let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
                     if is_group && !already_member {
-                        let target_is_agent = agent_policy
-                            .as_ref()
-                            .is_some_and(|(_, owner)| owner.is_some())
+                        let target_is_agent = paired_by_actor
+                            || agent_policy
+                                .as_ref()
+                                .is_some_and(|(_, owner)| owner.is_some())
                             || state.db.is_bot_principal(&target_pubkey).await?;
                         if !target_is_agent {
                             check_person_add(
@@ -751,11 +783,7 @@ pub async fn validate_admin_event(
                 match decision {
                     RemoveOtherDecision::Allow => Ok(()),
                     RemoveOtherDecision::CheckAgentOwner => {
-                        if state
-                            .db
-                            .is_agent_owner(tenant.community(), &target_pubkey, &actor_bytes)
-                            .await?
-                        {
+                        if owns_agent(tenant, state, &target_pubkey, &actor_bytes).await? {
                             Ok(())
                         } else {
                             Err(ChannelAuthzError::ActorNotAuthorized.into())
@@ -766,10 +794,7 @@ pub async fn validate_admin_event(
                     // read-only owner view); elsewhere you must be in the channel.
                     RemoveOtherDecision::Deny
                         if (channel.channel_type == "dm" || channel.group_chat)
-                            && state
-                                .db
-                                .is_agent_owner(tenant.community(), &target_pubkey, &actor_bytes)
-                                .await? =>
+                            && owns_agent(tenant, state, &target_pubkey, &actor_bytes).await? =>
                     {
                         Ok(())
                     }
@@ -1900,7 +1925,14 @@ async fn handle_put_user(
         // Group chats: people are members, agents bots.
         _ if group_chat => channel_authz::decide_group_chat_role(
             requested,
-            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?,
+            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?
+                || super::group_chat::owner_adds_paired_agent(
+                    tenant,
+                    state,
+                    event.pubkey.as_bytes(),
+                    &target_pubkey,
+                )
+                .await?,
         )?,
         Some(role) => role,
         None => state

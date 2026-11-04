@@ -234,6 +234,23 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
     matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23505"))
 }
 
+/// The account key of the person who paired `agent` (`kuzz pair`), which
+/// `users` does not record. With `connected_only`, none once the agent or its
+/// computer was disconnected (no host, or its device revoked).
+pub(crate) async fn paired_agent_owner(
+    pool: &sqlx::PgPool,
+    agent: &[u8],
+    connected_only: bool,
+) -> Result<Option<Vec<u8>>> {
+    Ok(sqlx::query_scalar(
+        "SELECT b.pubkey FROM key_registry r            JOIN account_key_backups b ON b.account_id = r.principal_id           WHERE r.pubkey = $1 AND r.role = 'external' AND r.revoked_at IS NULL             AND (NOT $2 OR EXISTS (SELECT 1 FROM devices h                                     WHERE h.id = r.host_device_id                                       AND h.revoked_at IS NULL))",
+    )
+    .bind(agent)
+    .bind(connected_only)
+    .fetch_optional(pool)
+    .await?)
+}
+
 impl Db {
     /// Live open groups whose name, description or address contains `text`
     /// (case-insensitive). Exact name/address matches first, then larger
@@ -679,6 +696,16 @@ impl Db {
         .bind(pubkey)
         .fetch_one(&self.pool)
         .await?)
+    }
+
+    /// See [`paired_agent_owner`].
+    #[datastore_span(name = "paired_agent_owner", system = "postgresql")]
+    pub async fn paired_agent_owner(
+        &self,
+        agent: &[u8],
+        connected_only: bool,
+    ) -> Result<Option<Vec<u8>>> {
+        paired_agent_owner(&self.pool, agent, connected_only).await
     }
 
     /// Whether `blocker` blocks `blocked`.
