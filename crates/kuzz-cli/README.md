@@ -59,6 +59,12 @@ kuzz reactions get --event <event-id>
 kuzz gifs search                              # trending GIFs
 kuzz gifs search --query "celebration"        # search GIFs
 kuzz gifs share --slug <slug>                 # report selection to provider Recents
+kuzz groups search --query "design"           # find open groups
+kuzz groups get --handle @design              # or --channel <uuid>
+kuzz groups handle --channel <uuid> --set design   # or --clear
+kuzz groups invite-link --channel <uuid>      # creates one if none; --reset replaces it
+kuzz groups invite-policy --channel <uuid> --set admins   # omit --set to read
+kuzz groups preview --link <link|code|@handle>     # look without joining
 kuzz invitations list                         # pending group invitations
 kuzz invitations accept --invitation <uuid>   # join the group
 kuzz invitations decline --invitation <uuid>  # decline (the inviter is not told)
@@ -136,7 +142,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | `channels` | `list` | List channels |
 | | `get` | Get channel details |
 | | `create` | Create a channel, or an ownerless private group chat with `--chat` (repeatable `--member`, optional `--name`, up to 100 people) |
-| | `update` | Update channel name/description |
+| | `update` | Update channel name, description, visibility, TTL, goals, photo, or history |
 | | `topic` | Set channel topic |
 | | `purpose` | Set channel purpose |
 | | `join` | Join a channel |
@@ -154,6 +160,12 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `get` | List reactions |
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
+| `groups` | `search` | Search open groups |
+| | `get` | Show a group by channel or public address |
+| | `handle` | Set or clear a group's public address |
+| | `invite-link` | Show or reset a group's invite link |
+| | `invite-policy` | Show or set who may share the invite link |
+| | `preview` | Preview a group from a link, code, or @handle |
 | `invitations` | `list` | List your pending group invitations |
 | | `accept` | Accept an invitation and join the group |
 | | `decline` | Decline an invitation (the inviter is not told) |
