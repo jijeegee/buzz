@@ -1163,3 +1163,58 @@ test("membership: a rejoin of a room still in the EOSE catch-up gets its span on
   await flush();
   assert.deepEqual(recorded, [[["room-a"], L + 10, L + 10]]);
 });
+
+const reaction = (id, target, createdAt, kind = 7) => ({
+  id,
+  kind,
+  pubkey: "a".repeat(64),
+  created_at: createdAt,
+  tags: [["e", target]],
+  content: "",
+});
+
+async function repairGap(rows, rooms = { "room-a": 1, "room-b": 1 }) {
+  const roomIds = Object.keys(rooms);
+  const h = harness({
+    resume: Object.fromEntries(roomIds.map((room) => [room, L - 100])),
+    pages: (request) => (request.since === L - 1865 ? rows : []),
+  });
+  h.bundle.setMemberRooms(roomIds);
+  const opened = [];
+  void h.bundle.listenRoom("room-a", (event) => opened.push(event.id));
+  await flush();
+  await h.start("live", rooms);
+  await reconnect(h, "live", rooms, L + 600);
+  return opened;
+}
+
+test("repair: a reaction and its removal reach the room with their target, in a many-room batch", async () => {
+  // Pages come newest first.
+  const opened = await repairGap([
+    reaction("unreact", "react", L + 302, 5),
+    reaction("react", "gap", L + 301),
+    roomEvent("gap", "room-a", L + 300),
+  ]);
+  assert.deepEqual(opened, ["gap", "react", "unreact"]);
+});
+
+test("repair: a one-room batch names the room of a reaction on an unknown row", async () => {
+  const opened = await repairGap([reaction("react", "older", L + 301)], {
+    "room-a": 1,
+  });
+  assert.deepEqual(opened, ["react"]);
+});
+
+test("repair: a reaction on an unknown row in a many-room batch reaches no room", async () => {
+  const opened = await repairGap([reaction("react", "older", L + 301)]);
+  assert.deepEqual(opened, []);
+});
+
+test("a frame with no room to go to is counted", async () => {
+  const h = harness({ resume: { "room-a": L - 100 } });
+  h.bundle.setMemberRooms(["room-a"]);
+  await flush();
+  const subId = await h.start("live", { "room-a": 1 });
+  h.session.event(subId, reaction("react", "unknown", L + 1));
+  assert.equal(h.session.report.counters.streamNoRoom, 1);
+});

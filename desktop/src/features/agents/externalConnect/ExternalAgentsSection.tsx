@@ -36,6 +36,7 @@ import {
   type AgentTileStatus,
   DeviceHeading,
 } from "../ui/AgentTile";
+import { EditExternalAccessDialog } from "./EditExternalAccessDialog";
 import {
   connectedClaim,
   type ExternalAgent,
@@ -72,7 +73,7 @@ export function ExternalAgentsSection({
 }) {
   const t = useT();
   const queryClient = useQueryClient();
-  const { groups: allGroups, hermesPubkeys } = useExternalAgentGroups();
+  const { groups: allGroups, hermesPubkeys, owner } = useExternalAgentGroups();
   const groups = allGroups.filter((group) =>
     hostDeviceId === undefined
       ? !otherHosts?.some((host) => sameDevice(host, group.hostDeviceId))
@@ -85,6 +86,10 @@ export function ExternalAgentsSection({
   } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [adding, setAdding] = React.useState<ExternalChannelAgent | null>(null);
+  const [editingAccess, setEditingAccess] = React.useState<{
+    pubkey: string;
+    name: string;
+  } | null>(null);
   const pubkeys = React.useMemo(
     () => groups.flatMap((group) => group.agents.map((agent) => agent.pubkey)),
     [groups],
@@ -149,6 +154,7 @@ export function ExternalAgentsSection({
                 hermesPubkeys={hermesPubkeys}
                 key={agent?.pubkey ?? "unknown"}
                 onAddToChannel={setAdding}
+                onEditAccess={setEditingAccess}
                 onDisconnect={(name) =>
                   setConfirming({
                     group,
@@ -207,6 +213,15 @@ export function ExternalAgentsSection({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {editingAccess && owner ? (
+        <EditExternalAccessDialog
+          agent={editingAccess}
+          currentPubkey={owner}
+          onOpenChange={(open) => {
+            if (!open) setEditingAccess(null);
+          }}
+        />
+      ) : null}
       {adding ? (
         <AddAgentToChannelDialog
           agent={adding}
@@ -236,6 +251,7 @@ function ExternalAgentTile({
   hermesPubkeys,
   onAddToChannel,
   onDisconnect,
+  onEditAccess,
 }: {
   /** `null`: a paired computer whose agent this app has not seen. */
   agent: ExternalAgent | null;
@@ -246,6 +262,7 @@ function ExternalAgentTile({
   onAddToChannel: (agent: ExternalChannelAgent) => void;
   /** `name`: the agent's name. */
   onDisconnect: (name: string) => void;
+  onEditAccess: (agent: { pubkey: string; name: string }) => void;
 }) {
   const t = useT();
   const pubkey = agent?.pubkey ?? null;
@@ -277,6 +294,16 @@ function ExternalAgentTile({
               variant="outline"
             >
               {t("agents.myAgents.addToGroup")}
+            </Button>
+          ) : null}
+          {pubkey ? (
+            <Button
+              data-testid={`external-agent-access-${pubkey}`}
+              onClick={() => onEditAccess({ pubkey, name })}
+              size="xs"
+              variant="outline"
+            >
+              {t("channels.respondTo.title")}
             </Button>
           ) : null}
           <Button

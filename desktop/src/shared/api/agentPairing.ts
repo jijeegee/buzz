@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import type { RespondToMode } from "@/shared/api/types";
 
 /**
  * External agent pairing (device-bound keys, PR C2). The app shows a one-use,
@@ -73,6 +74,35 @@ export function getHermesStatus(): Promise<HermesStatus> {
 
 export function connectHermes(profile: string): Promise<HermesPairingRun> {
   return invokeTauri<HermesPairingRun>("connect_hermes", { profile });
+}
+
+/** Who a paired agent answers. */
+export type ExternalAgentAccess = {
+  respondTo: RespondToMode;
+  respondToAllowlist: string[];
+};
+
+export function getExternalAgentAccess(
+  pubkey: string,
+): Promise<ExternalAgentAccess> {
+  return invokeTauri<ExternalAgentAccess>("get_external_agent_access", {
+    pubkey,
+  });
+}
+
+/** Resolves once the relay accepted the owner-signed setting. */
+export function setExternalAgentAccess(
+  pubkey: string,
+  name: string,
+  respondTo: RespondToMode,
+  allowlist: string[],
+): Promise<void> {
+  return invokeTauri<void>("set_external_agent_access", {
+    pubkey,
+    name,
+    respondTo,
+    allowlist,
+  });
 }
 
 /** Sign a paired computer out. */

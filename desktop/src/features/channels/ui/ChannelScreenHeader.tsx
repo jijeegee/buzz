@@ -278,7 +278,7 @@ export function ChannelScreenHeader({
               testId="chat-header-agent-provenance"
             />
           ) : null}
-          {!isGroupDm && activeDmParticipant?.isAgent ? (
+          {!isGroupDm && activeDmParticipant ? (
             <AgentViewTabs
               active="chat"
               agentName={activeChannelTitle}

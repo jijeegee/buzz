@@ -84,9 +84,9 @@ pub(crate) struct LiveSettingsInputs<'a> {
     pub user_env: &'a BTreeMap<String, String>,
     /// The bound team's instructions (`effective_team_instructions`).
     pub team_instructions: Option<&'a str>,
-    /// The desktop-wide task thread trigger list (`task-threads.json`).
+    /// The owner's task thread trigger list (`task-threads.json`).
     pub task_threads: &'a str,
-    /// The desktop-wide new-session history budget (`context-history.json`).
+    /// The owner's new-session history budget (`context-history.json`).
     pub context_history: &'a str,
     pub session_policy: AcpSessionPolicy,
     pub routing_role: RoutingRole,
@@ -325,9 +325,7 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
     let records = super::storage::load_managed_agents_without_keys(app)?;
     let personas = super::personas::load_personas_readonly(app)?;
     let teams = super::teams::load_teams_readonly(&super::teams::teams_store_path(app)?)?;
-    let global = super::global_config::load_global_agent_config(app)?;
-    let task_threads = super::task_threads::current_task_threads_env(app);
-    let context_history = super::context_history::current_context_history_env(app);
+    let agent_configs = super::AgentConfigsByOwner::load(app, &records);
     let mut failures = Vec::new();
     for (pubkey, launch) in targets {
         let Some(record) = records
@@ -336,11 +334,15 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         else {
             continue;
         };
+        let owner = super::visible_owner_hex(app, record);
+        let task_threads = super::task_threads::current_task_threads_env(app, owner.as_deref());
+        let context_history =
+            super::context_history::current_context_history_env(app, owner.as_deref());
         let settings = current_live_settings(
             record,
             &personas,
             &teams,
-            &global,
+            agent_configs.for_record(record),
             &task_threads,
             &context_history,
             launch.session_policy,

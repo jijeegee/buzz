@@ -6,9 +6,10 @@ import {
 } from "@/features/agents/hooks";
 import { useIsArchivedPredicate } from "@/features/identity-archive/hooks";
 import type { ChannelMember } from "@/shared/api/types";
+import { useAuthDevicesQuery } from "@/shared/api/useAuthDeviceNames";
 import { normalizePubkey } from "@/shared/lib/pubkey";
 
-import { compareMembersByRole } from "./memberUtils";
+import { compareMembersByRole, ownAgentPubkeys } from "./memberUtils";
 
 export function useClassifiedMembers(
   members: ChannelMember[],
@@ -16,6 +17,7 @@ export function useClassifiedMembers(
 ) {
   const managedAgentsQuery = useManagedAgentsQuery();
   const relayAgentsQuery = useRelayAgentsQuery();
+  const devices = useAuthDevicesQuery().data;
   const isArchived = useIsArchivedPredicate();
 
   const managedAgents = managedAgentsQuery.data ?? [];
@@ -28,6 +30,10 @@ export function useClassifiedMembers(
   const relayAgentPubkeys = React.useMemo(
     () => new Set(relayAgents.map((agent) => normalizePubkey(agent.pubkey))),
     [relayAgents],
+  );
+  const ownAgents = React.useMemo(
+    () => ownAgentPubkeys(managedAgents, relayAgents, devices, currentPubkey),
+    [currentPubkey, devices, managedAgents, relayAgents],
   );
 
   const isBot = React.useCallback(
@@ -44,9 +50,9 @@ export function useClassifiedMembers(
 
   const isMyBot = React.useCallback(
     (member: ChannelMember) => {
-      return managedAgentPubkeys.has(normalizePubkey(member.pubkey));
+      return ownAgents.has(normalizePubkey(member.pubkey));
     },
-    [managedAgentPubkeys],
+    [ownAgents],
   );
 
   // Archived wins over bot: a zombie agent should fold into "Archived", not

@@ -10,8 +10,6 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import { threadRepliesKey } from "@/features/messages/lib/messageQueryKeys";
 import {
-  forgetPaintCoverage,
-  notePaintCoverage,
   storeScope,
   threadPaintKey,
 } from "@/features/messages/lib/paintCoverage";
@@ -80,15 +78,14 @@ export function setStoreThreadHeadDeps(next: Partial<StoreThreadHeadDeps>) {
 }
 
 /**
- * The thread's stored newest page to paint, with from when its room is held
- * without a gap, or `null` when none.
+ * The thread's stored newest page to paint, or `null` when none.
  */
 export async function paintedThreadPage(
   queryClient: QueryClient,
   channelId: string,
   rootId: string,
   limit: number,
-): Promise<{ page: ThreadWindowPage; completeFrom: number | null } | null> {
+): Promise<{ page: ThreadWindowPage } | null> {
   const paint = await deps.threadPaint(queryClient, channelId, rootId, limit);
   const page = paint?.window;
   if (!page || !Array.isArray(page.events) || page.events.length === 0) {
@@ -107,7 +104,6 @@ export async function paintedThreadPage(
           }
         : null,
     },
-    completeFrom: paint.complete_from ?? null,
   };
 }
 
@@ -178,11 +174,9 @@ export function notePaintedThread(
   channelId: string,
   rootId: string,
   relay: PendingPage | null,
-  completeFrom: number | null,
 ) {
   setConfirmed(queryClient, channelId, rootId, false);
   if (!relay) return;
-  notePaintCoverage(threadPaintKey(channelId, rootId), completeFrom);
   let pending = pendingRelays.get(queryClient);
   if (!pending) {
     pending = new Map();
@@ -197,7 +191,6 @@ export function noteThreadConfirmed(
   channelId: string,
   rootId: string,
 ) {
-  forgetPaintCoverage(threadPaintKey(channelId, rootId));
   setConfirmed(queryClient, channelId, rootId, true);
 }
 
@@ -260,6 +253,4 @@ export async function refreshThreadAfterStore(
     console.error("Failed to refresh a thread opened from the store", error);
   }
   takePendingThreadRelay(queryClient, channelId, rootId);
-  // Settled either way: the replies held decide from here.
-  forgetPaintCoverage(threadPaintKey(channelId, rootId));
 }
