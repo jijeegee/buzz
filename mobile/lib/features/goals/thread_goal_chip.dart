@@ -8,7 +8,7 @@ import 'goal_provider.dart';
 import 'thread_goals_page.dart';
 
 /// Thread app bar goals button, the same one the channel app bar shows.
-/// Tapping opens [ThreadGoalsPage]: the whole tree, with this thread's goal
+/// Tapping opens [ThreadGoalsPage]: the active goals, with this thread's goal
 /// branch editable, or the list to link one.
 class ThreadGoalsButton extends ConsumerWidget {
   const ThreadGoalsButton({

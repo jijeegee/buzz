@@ -7,14 +7,14 @@ import 'nostr_models.dart';
 import 'relay_provider.dart';
 import 'relay_session.dart';
 
-/// Goal tree heads (kuzz-core `KIND_GOAL_TREE`).
-const roomLiveGoalTreeKind = 40111;
+/// Goal edits (kuzz-core `KIND_GOAL_OPS`).
+const roomLiveGoalOpsKind = 40111;
 
 /// The kinds an open room's own live REQ carries, one filter each, always all
 /// of them: a listener coming or going never re-sends the REQ. Shared with
 /// desktop through `test-fixtures/room-live-request.json`
 /// (docs/message-sync.md#open-room-req).
-const roomLiveRequestKinds = [EventKind.typingIndicator, roomLiveGoalTreeKind];
+const roomLiveRequestKinds = [EventKind.typingIndicator, roomLiveGoalOpsKind];
 
 /// The open-room REQ's filters for [roomId]: live only, one per kind.
 List<NostrFilter> roomLiveRequestFilters(String roomId) => [
@@ -55,7 +55,7 @@ class _Entry {
   bool gone = false;
 }
 
-/// One live REQ per open room for the room's typing indicators and goal tree,
+/// One live REQ per open room for the room's typing indicators and goal edits,
 /// shared by every listener of that room ([roomLiveRequestKinds]). Mirrors
 /// desktop's `RoomLiveRegistry`:
 ///

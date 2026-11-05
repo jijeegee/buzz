@@ -68,11 +68,11 @@ void main() {
     final typing = <String>[];
     final goals = <String>[];
     registry.listen(room, 20002, (e) => typing.add(e.id));
-    registry.listen(room, roomLiveGoalTreeKind, (e) => goals.add(e.id));
+    registry.listen(room, roomLiveGoalOpsKind, (e) => goals.add(e.id));
     await _flush();
     expect(reqs, hasLength(1));
     reqs.single.onEvent(_event(20002, 't'));
-    reqs.single.onEvent(_event(40110, 'g'));
+    reqs.single.onEvent(_event(roomLiveGoalOpsKind, 'g'));
     expect(typing, ['t'.padLeft(64, '0')]);
     expect(goals, ['g'.padLeft(64, '0')]);
   });
@@ -89,7 +89,7 @@ void main() {
 
   test('the last listener leaving closes the REQ a microtask later', () async {
     final stopA = registry.listen(room, 20002, (_) {});
-    final stopB = registry.listen(room, roomLiveGoalTreeKind, (_) {});
+    final stopB = registry.listen(room, roomLiveGoalOpsKind, (_) {});
     await _flush();
     stopA();
     await _flush();
@@ -113,12 +113,7 @@ void main() {
 
   test('resync calls onResync once per listener', () async {
     var goals = 0;
-    registry.listen(
-      room,
-      roomLiveGoalTreeKind,
-      (_) {},
-      onResync: () => goals++,
-    );
+    registry.listen(room, roomLiveGoalOpsKind, (_) {}, onResync: () => goals++);
     registry.listen(room, 20002, (_) {});
     await _flush();
     registry.resync();

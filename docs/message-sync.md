@@ -512,7 +512,7 @@ in the commit.
 
 The REQs behind them: the community bundle, the room bundle (one per 128
 rooms), the account bundles (authored and addressed), and per open room its
-typing + goal-tree REQ. The pinned counts are for a relay without the
+typing + goal-edit REQ. The pinned counts are for a relay without the
 [user stream](#user-stream) (the e2e mock). With it, `shadow` adds one REQ
 (the stream) next to the chunks (`idleStreamShadow`), and `live`/`gated`
 replace the member chunks with it (`idleStreamLive`).
