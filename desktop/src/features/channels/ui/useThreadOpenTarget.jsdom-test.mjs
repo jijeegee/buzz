@@ -221,6 +221,29 @@ test("opening at a first unread reply forgets the old spot", () => {
   }
 });
 
+test("older pages wait for the relay: stored replies draw first and stay drawn while it seeks", async () => {
+  window.localStorage.clear();
+  const fetchOlder = () => new Promise(() => {});
+  const view = mount({
+    replies: replies("r2", "r3"),
+    firstUnreadReplyId: "r2",
+    repliesConfirmed: false,
+    hasOlderReplies: true,
+    fetchOlder,
+  });
+  try {
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().targetId, "r2");
+    await act(async () => {
+      view.update({ firstUnreadReplyId: "r2", repliesConfirmed: true });
+    });
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().targetId, "r2");
+  } finally {
+    view.unmount();
+  }
+});
+
 test("stored replies decide at once; the relay's replies move the open unless the reader scrolled", () => {
   for (const scrolled of [false, true]) {
     window.localStorage.clear();

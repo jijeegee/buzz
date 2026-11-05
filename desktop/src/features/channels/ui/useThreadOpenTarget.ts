@@ -5,14 +5,7 @@ import {
   readingPositionStore,
 } from "@/features/channels/readingPositionStore";
 import { useAppShell } from "@/app/AppShellContext";
-import {
-  reanchorTarget,
-  threadPaintDecides,
-} from "@/features/channels/lib/openAnchorDecision";
-import {
-  paintCoverage,
-  threadPaintKey,
-} from "@/features/messages/lib/paintCoverage";
+import { reanchorTarget } from "@/features/channels/lib/openAnchorDecision";
 import type { MainTimelineEntry } from "@/features/messages/lib/threadPanel";
 
 import {
@@ -55,6 +48,8 @@ type ThreadOpenPlan = {
    * once it has, moving if the reader has not scrolled.
    */
   provisional: boolean;
+  /** Its stored replies are on screen: a later seek keeps them there. */
+  drawn: boolean;
 };
 
 type UseThreadOpenTargetOptions = {
@@ -82,9 +77,9 @@ type UseThreadOpenTargetOptions = {
  * (the caller's own target), else the first unread reply, else where the
  * reader left it, else the newest reply. A reply in an older page is fetched
  * first, with a room's limits; until then the thread reports `isResolving` so
- * nothing is drawn elsewhere first. Stored replies decide at once, but
- * provisionally: once the relay's replies are in, the open moves if the reader
- * has not scrolled (docs/message-sync.md#opening-at-a-position).
+ * nothing is drawn elsewhere first. Stored replies decide at once, holes and
+ * all, but provisionally: once the relay's replies are in, the open moves if
+ * the reader has not scrolled (docs/message-sync.md#opening-at-a-position).
  */
 export function useThreadOpenTarget({
   channelId,
@@ -124,6 +119,7 @@ export function useThreadOpenTarget({
       keepsRemembered: false,
       keptOnOpen: false,
       provisional: false,
+      drawn: false,
     };
   }
   const plan = planRef.current;
@@ -181,22 +177,6 @@ export function useThreadOpenTarget({
     } else {
       decision = { targetId: null, topPx: null, keeps: missed };
     }
-    const firstUnreadIndex =
-      firstUnread === null
-        ? -1
-        : replies.findIndex((reply) => reply.message.id === firstUnread);
-    const paintDecides = threadPaintDecides(
-      channelId && rootId
-        ? paintCoverage(threadPaintKey(channelId, rootId))
-        : undefined,
-      firstUnreadIndex < 0 || opensElsewhere
-        ? null
-        : replies[firstUnreadIndex].message.createdAt,
-      firstUnreadIndex > 0
-        ? replies[firstUnreadIndex - 1].message.createdAt
-        : null,
-      hasOlderReplies,
-    );
     if (rechecking) {
       if (isReadStateSettled) plan.provisional = false;
       const next = reanchorTarget(
@@ -223,17 +203,25 @@ export function useThreadOpenTarget({
         plan.provisional = false;
         needsOlder = true;
       }
-    } else if (!repliesConfirmed && !paintDecides) {
-      // Stored replies with a hole before the first unread one: an earlier
-      // unread reply may be missing, so the relay's replies decide.
-    } else if (decision === "seek") {
+    } else if (decision === "seek" && repliesConfirmed) {
       needsOlder = true;
     } else {
+      // Older pages are the relay's: until it has answered, the stored
+      // replies are drawn and its answer decides whether to seek.
+      const open =
+        decision === "seek"
+          ? {
+              targetId: firstUnread,
+              topPx: firstUnread === null ? null : UNREAD_REPLY_TOP_PX,
+              keeps: firstUnread === null,
+            }
+          : decision;
       plan.decided = true;
+      plan.drawn = true;
       plan.provisional = !repliesConfirmed || !isReadStateSettled;
-      plan.targetId = decision.targetId;
-      plan.topPx = decision.targetId === null ? null : decision.topPx;
-      plan.keptOnOpen = decision.keeps && plan.remembered !== null;
+      plan.targetId = open.targetId;
+      plan.topPx = open.targetId === null ? null : open.topPx;
+      plan.keptOnOpen = open.keeps && plan.remembered !== null;
       plan.keepsRemembered = plan.keptOnOpen;
     }
   }
@@ -306,11 +294,12 @@ export function useThreadOpenTarget({
     [plan],
   );
 
-  const active = plan?.decided === true && !plan.released;
+  const active = plan?.drawn === true && !plan.released;
   return {
     targetId: active ? plan.targetId : null,
     topPx: active ? plan.topPx : null,
-    isResolving: plan !== null && !plan.decided && !opensElsewhere,
+    isResolving:
+      plan !== null && !plan.decided && !plan.drawn && !opensElsewhere,
     release,
     savePosition,
   };

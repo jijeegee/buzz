@@ -1912,10 +1912,7 @@ that position.
   remembered row if held, else the newest. A store paint decides only when
   it has no gap back to the read marker: its `complete_from` is at or
   before the marker, or no painted row is unread, or the room was never
-  read. For a thread the reply before the first unread one stands in for
-  the marker; when the first unread reply is the oldest loaded, the paint
-  decides only if older replies can be paged or `complete_from` is 0 (whole
-  history). Otherwise an earlier unread row may be missing, and the open
+  read. Otherwise an earlier unread row may be missing, and the open
   waits for the relay's window. Only when every held row is
   unread and older history exists, or the remembered row is older than
   them, is the relay asked for older pages first (below); that is the only
@@ -1936,13 +1933,18 @@ that position.
   page, or a scroll of the message list more than 0.75 s after the open
   (earlier scrolls are the list placing itself). This resets on each new
   room or thread. If the reader moved, it stays. Threads follow the same
-  rule against the relay's replies. Cases:
+  rule against the relay's replies, and a thread's stored replies always
+  decide on the first frame, holes included: the relay's page fills them and
+  moves the open if needed. Cases:
   `test-fixtures/message-store-paint-first.json` (`anchor`, `reanchor`).
 - **Threads:** the same order: a linked reply, the first unread reply (near
   the top), where the reader left the thread, the newest reply. The reading
   position is kept per thread under `<channel id>/<root id>`. Desktop pages
-  back for a reply in an older page (the same limits as a room) before the
-  replies are drawn. Mobile keeps a thread's list hidden while it opens for
+  back for a reply in an older page (the same limits as a room) once the
+  relay has answered, with the stored replies still drawn; replies not yet
+  held wait for that. A room opened with its thread sends its relay request
+  after the thread's, at most 2 s later, and the thread's first rows draw
+  ahead of the room's. Mobile keeps a thread's list hidden while it opens for
   at most about 1.2 s, the 1 s read state wait included (also when the
   target's time is not known yet); then the replies at hand show at the
   newest, and a position found later moves the list once, only if the reader

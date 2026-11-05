@@ -176,7 +176,10 @@ type MessageThreadPanelProps = ThreadPanelLayoutProps & {
   onAutoSubmitComplete?: () => void;
 };
 
-const EMPTY_THREAD_REPLIES: MainTimelineEntry[] = [];
+const EMPTY_OWNED_REPLIES: {
+  threadHeadId: string | null;
+  replies: MainTimelineEntry[];
+} = { threadHeadId: null, replies: [] };
 /**
  * Lifts the whole thread panel (header, replies, composer) one layer above the
  * channel timeline: a brighter canvas plus a shadow falling onto the channel.
@@ -364,10 +367,21 @@ export function MessageThreadPanel({
         }
       : null;
 
-  const deferredThreadReplies = React.useDeferredValue(
-    threadReplies,
-    EMPTY_THREAD_REPLIES,
+  // A thread's first rows are urgent, ahead of the room's deferred list; later
+  // updates to them defer as usual.
+  const ownedReplies = React.useMemo(
+    () => ({ threadHeadId, replies: threadReplies }),
+    [threadHeadId, threadReplies],
   );
+  const deferredOwnedReplies = React.useDeferredValue(
+    ownedReplies,
+    EMPTY_OWNED_REPLIES,
+  );
+  const deferredThreadReplies =
+    deferredOwnedReplies.threadHeadId === threadHeadId &&
+    deferredOwnedReplies.replies.length > 0
+      ? deferredOwnedReplies.replies
+      : threadReplies;
   const isRepliesPending = deferredThreadReplies !== threadReplies;
   const scrollTargetIsVisibleReply = React.useMemo(
     () =>

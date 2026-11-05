@@ -6,6 +6,7 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { storeBeforeRelay } from "@/features/messages/lib/paintFirst";
+import { noteThreadRequest } from "@/features/messages/lib/threadFirst";
 import {
   compareThreadRelayPage,
   notePaintedThread,
@@ -221,6 +222,7 @@ export async function loadNewestThreadReplies(
       ? undefined
       : takePendingThreadRelay(queryClient, channelId, rootId)) ??
     fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
+  noteThreadRequest(channelId, relay);
   const race = first
     ? await storeBeforeRelay(
         paintedThreadPage(queryClient, channelId, rootId, limitRows),
