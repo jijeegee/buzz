@@ -1110,6 +1110,17 @@ const MAX_CONTACTS: usize = 10_000;
 pub fn build_contact_list(
     contacts: &[(&str, Option<&str>, Option<&str>)],
 ) -> Result<EventBuilder, SdkError> {
+    build_contact_list_keeping(contacts, "", &[])
+}
+
+/// [`build_contact_list`] carrying over what the previous list held besides
+/// its `p` tags, so editing one friend does not wipe it. `p` entries in
+/// `other_tags` are ignored.
+pub fn build_contact_list_keeping(
+    contacts: &[(&str, Option<&str>, Option<&str>)],
+    content: &str,
+    other_tags: &[Vec<String>],
+) -> Result<EventBuilder, SdkError> {
     if contacts.len() > MAX_CONTACTS {
         return Err(SdkError::InvalidInput(format!(
             "contact list exceeds maximum of {} contacts (got {})",
@@ -1153,7 +1164,10 @@ pub fn build_contact_list(
             petname.unwrap_or(""),
         ])?);
     }
-    Ok(EventBuilder::new(Kind::Custom(3), "").tags(tags))
+    for other in other_tags.iter().filter(|t| t.first().is_some_and(|n| n != "p")) {
+        tags.push(tag(&other.iter().map(String::as_str).collect::<Vec<_>>())?);
+    }
+    Ok(EventBuilder::new(Kind::Custom(3), content).tags(tags))
 }
 
 /// Extract the channel UUID from an event's `h` tag.
@@ -3934,6 +3948,20 @@ mod tests {
         assert_eq!(event.kind, Kind::Custom(1));
         assert_eq!(event.content, "");
         assert!(event.tags.is_empty());
+    }
+
+    #[test]
+    fn build_contact_list_keeping_carries_content_and_other_tags() {
+        let pk = "a".repeat(64);
+        let other = vec![
+            vec!["t".to_string(), "kuzz".to_string()],
+            vec!["p".to_string(), "b".repeat(64)],
+            vec![],
+        ];
+        let ev = sign(build_contact_list_keeping(&[(&pk, None, None)], "{}", &other).unwrap());
+        assert_eq!(ev.content, "{}");
+        assert!(has_tag(&ev, "t", "kuzz"));
+        assert_eq!(ev.tags.len(), 2);
     }
 
     #[test]

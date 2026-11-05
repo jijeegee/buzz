@@ -23,6 +23,7 @@ use clap::Subcommand;
 use kuzz_core::goal_tree::{GoalStatus, GoalTree};
 
 use crate::client::KuzzClient;
+use crate::commands::inbox::{cmd_thread_follow, cmd_thread_search};
 use crate::commands::messages::{
     fetch_event, send_message, set_thread_name, thread_ref_from_event, SendMessageParams,
 };
@@ -97,6 +98,27 @@ pub enum ThreadsCmd {
         #[arg(long, value_name = "ROOT_ID")]
         thread: String,
     },
+    /// Follow a thread so it shows in your inbox
+    Follow {
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+    },
+    /// Stop following a thread
+    Unfollow {
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+    },
+    /// Search threads by name in your rooms, closed and quiet ones included
+    Search {
+        /// Text to find in the thread name (1-100 characters)
+        #[arg(long)]
+        query: String,
+        /// Maximum number of results (default 20)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=50))]
+        limit: Option<u32>,
+    },
 }
 
 pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliError> {
@@ -121,6 +143,9 @@ pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliErr
             close(client, &channel, &thread, &summary, requester, goal_done).await
         }
         ThreadsCmd::Reopen { channel, thread } => reopen(client, &channel, &thread).await,
+        ThreadsCmd::Follow { thread } => cmd_thread_follow(client, &thread, "followed").await,
+        ThreadsCmd::Unfollow { thread } => cmd_thread_follow(client, &thread, "unfollowed").await,
+        ThreadsCmd::Search { query, limit } => cmd_thread_search(client, &query, limit).await,
     }
 }
 

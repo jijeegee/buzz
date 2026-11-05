@@ -59,6 +59,13 @@ kuzz reactions get --event <event-id>
 kuzz gifs search                              # trending GIFs
 kuzz gifs search --query "celebration"        # search GIFs
 kuzz gifs share --slug <slug>                 # report selection to provider Recents
+kuzz inbox --unread                           # chats with unread messages
+kuzz messages mark-read --channel <uuid>      # or --thread <root>; --event for a position
+kuzz messages mark-unread --channel <uuid>
+kuzz messages mark-all-read
+kuzz threads follow --thread <root>           # unfollow to stop
+kuzz threads search --query "launch"          # by thread name
+kuzz friends add --as-self --person <hex|npub>   # list, remove; --as-self is required
 kuzz groups search --query "design"           # find open groups
 kuzz groups get --handle @design              # or --channel <uuid>
 kuzz groups handle --channel <uuid> --set design   # or --clear
@@ -160,6 +167,10 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `get` | List reactions |
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
+| `inbox` | | Your chats with unread counts and the latest message |
+| `friends` | `list` | List your own friends |
+| | `add` | Add a friend, or rename one |
+| | `remove` | Remove a friend |
 | `groups` | `search` | Search open groups |
 | | `get` | Show a group by channel or public address |
 | | `handle` | Set or clear a group's public address |
@@ -186,6 +197,9 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `runs` | Get workflow run history |
 | | `approve` | Approve/deny a workflow step |
 | `feed` | `get` | Get your activity feed |
+| `threads` | `follow` | Follow a thread |
+| | `unfollow` | Stop following a thread |
+| | `search` | Search threads by name |
 | `social` | `publish` | Publish a NIP-01 note |
 | | `set-contacts` | Set NIP-02 contact list |
 | | `event` | Get a Nostr event |

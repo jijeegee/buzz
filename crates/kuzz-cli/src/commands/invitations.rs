@@ -5,7 +5,7 @@
 //! list` is how an agent finds it.
 
 use crate::client::KuzzClient;
-use crate::error::CliError;
+use crate::error::{classify_relay, CliError};
 use crate::validate::validate_uuid;
 use crate::InvitationsCmd;
 
@@ -24,7 +24,8 @@ async fn cmd_respond(client: &KuzzClient, id: &str, action: &str) -> Result<(), 
     let path = response_path(id, action)?;
     let resp = client
         .post_json_once_authed(&path, &serde_json::json!({}))
-        .await?;
+        .await
+        .map_err(classify_relay)?;
     println!("{resp}");
     Ok(())
 }
