@@ -1,4 +1,4 @@
-import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
+import type { GoalNode, GoalStatus, GoalTree } from "@/shared/api/tauriGoals";
 import { type MessageKey, t } from "@/shared/i18n";
 
 export type OutlineRow = { layer: number; node: GoalNode };
@@ -7,10 +7,16 @@ export function goalRoot(tree: GoalTree): GoalNode | null {
   return tree.nodes.find((node) => node.parent === null) ?? null;
 }
 
+/** Plan goals first, thread goals below them. */
 export function goalChildren(tree: GoalTree, id: string): GoalNode[] {
   return tree.nodes
     .filter((node) => node.parent === id)
-    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
+    .sort(
+      (a, b) =>
+        Number(a.is_thread) - Number(b.is_thread) ||
+        a.order - b.order ||
+        a.id.localeCompare(b.id),
+    );
 }
 
 /** Depth-first display order with layers (root = layer 1). */
@@ -39,21 +45,40 @@ export function goalPath(tree: GoalTree, id: string): GoalNode[] {
   return path;
 }
 
-/** `done`/`total` over all descendants of `id`. */
-export function goalProgress(
-  tree: GoalTree,
-  id: string,
-): { done: number; total: number } {
-  let done = 0;
-  let total = 0;
-  const stack = goalChildren(tree, id);
-  while (stack.length > 0) {
-    const node = stack.pop() as GoalNode;
-    total += 1;
-    if (node.status === "done") done += 1;
-    stack.push(...goalChildren(tree, node.id));
+/** A goal with no thread link, here or above; it shows unfolded. */
+export function isPlanGoal(tree: GoalTree, id: string): boolean {
+  return !goalPath(tree, id).some((node) => node.is_thread);
+}
+
+/**
+ * Several reads as one tree. A goal in more than one shows the last, and
+ * stays selected if any read selected it: a later page brings it back as the
+ * parent of what it selected.
+ */
+export function mergeGoalTrees(trees: GoalTree[]): GoalTree {
+  const byId = new Map<string, GoalNode>();
+  for (const node of trees.flatMap((tree) => tree.nodes)) {
+    const matched = node.matched || byId.get(node.id)?.matched === true;
+    byId.set(node.id, { ...node, matched });
   }
-  return { done, total };
+  return { nodes: [...byId.values()] };
+}
+
+/**
+ * The selected goals a list shows at its top level, in order. Layer 1 keeps
+ * to its card: a row would offer to remove the whole room.
+ */
+export function goalListTops(tree: GoalTree): GoalNode[] {
+  return tree.nodes
+    .filter(
+      (node) =>
+        node.matched &&
+        node.parent !== null &&
+        !goalPath(tree, node.id)
+          .slice(1, -1)
+          .some((above) => above.matched),
+    )
+    .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
 }
 
 /**
@@ -72,7 +97,7 @@ export function goalForThread(
   threadRootId: string,
 ): GoalNode | null {
   const thread = threadRootId.toLowerCase();
-  return tree.nodes.find((node) => node.threads?.includes(thread)) ?? null;
+  return tree.nodes.find((node) => node.links.includes(thread)) ?? null;
 }
 
 /** Ids of `id` and everything below it. */
@@ -87,6 +112,18 @@ export function goalSubtreeIds(tree: GoalTree, id: string): Set<string> {
     }
   }
   return ids;
+}
+
+/** Finishing this goal deletes the tasks below it (the relay's rule). */
+export function finishDeletesTasks(node: GoalNode, next: GoalStatus): boolean {
+  const running = node.status === "open" || node.status === "in_progress";
+  const finishing = next === "done" || next === "dropped";
+  return (
+    running &&
+    finishing &&
+    node.is_thread &&
+    (node.progress.total > 0 || node.open_children > 0)
+  );
 }
 
 /** Message keys of the status names; translate where shown. */
@@ -132,10 +169,9 @@ export function threadGoalAccess(
 
 /**
  * Where a goal may be linked from a message's menu. In a thread the message
- * may link only the thread's goal and its sub-goals, or any goal while the
- * thread has none (the thread's own picker rule); on the main timeline it
- * may link layer 2 and below. New goals may be added under any goal whose
- * child would be linkable.
+ * may link only the thread's goal and its sub-goals, or layer 2 and below
+ * while the thread has none, as may a main-timeline message. New goals may
+ * be added under any goal whose child would be linkable.
  */
 export type GoalLinkScope = {
   canAddUnder: (id: string) => boolean;
@@ -156,7 +192,7 @@ export function messageGoalLinkScope(
   }
   return {
     canAddUnder: () => true,
-    canLink: (_id, layer) => threadRootId !== null || layer >= 2,
+    canLink: (_id, layer) => layer >= 2,
   };
 }
 

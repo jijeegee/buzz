@@ -40,9 +40,8 @@ typedef GoalLinkScope = ({
 });
 
 /// In a thread a message may link only the thread's goal and its sub-goals,
-/// or any goal while the thread has none (the thread's own picker rule); on
-/// the main timeline it may link layer 2 and below. New goals may be added
-/// under any goal whose child would be linkable.
+/// otherwise any goal from layer 2 down: layer 1 takes no links. New goals may
+/// be added under any goal whose child would be linkable.
 GoalLinkScope messageGoalLinkScope(GoalTree tree, String? threadRootId) {
   final threadGoal = threadRootId == null ? null : tree.forThread(threadRootId);
   if (threadGoal != null) {
@@ -52,10 +51,7 @@ GoalLinkScope messageGoalLinkScope(GoalTree tree, String? threadRootId) {
       canAddUnder: editable.contains,
     );
   }
-  return (
-    canLink: (_, layer) => threadRootId != null || layer >= 2,
-    canAddUnder: (_) => true,
-  );
+  return (canLink: (_, layer) => layer >= 2, canAddUnder: (_) => true);
 }
 
 /// Classify [ids] by reading each event: a reply names its thread root; a
@@ -156,6 +152,6 @@ final goalLinkKindsProvider = FutureProvider.autoDispose
 ) => (
   channelId: channelId,
   ids: ({
-    for (final node in tree.nodes) ...node.threads,
+    for (final node in tree.nodes) ...node.links,
   }.toList()..sort()).join(','),
 );

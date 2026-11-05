@@ -14,7 +14,7 @@ import {
 } from "@/shared/ui/dialog";
 import { DropdownMenuItem } from "@/shared/ui/dropdown-menu";
 import { goalForThread, goalRoot, messageGoalLinkScope } from "../goalTree";
-import { useApplyGoalOpMutation, useGoalTreeQuery } from "../hooks";
+import { useApplyGoalOpMutation, useThreadGoalTree } from "../hooks";
 import type { Apply } from "./GoalRows";
 import { GoalLinkPicker } from "./ThreadGoalPanelView";
 
@@ -57,7 +57,12 @@ export function LinkMessageToGoalDialog({
   onClose: () => void;
 }) {
   const t = useT();
-  const tree = useGoalTreeQuery(channelId).data?.tree;
+  const threadRootId = getThreadReference(message.tags ?? []).rootId;
+  const ids = React.useMemo(
+    () => (threadRootId ? [message.id, threadRootId] : [message.id]),
+    [message.id, threadRootId],
+  );
+  const tree = useThreadGoalTree(channelId, ids);
   const applyGoalOp = useApplyGoalOpMutation(channelId).mutateAsync;
   // The picker closes before the edit lands, so failures surface as toasts.
   const apply = React.useCallback<Apply>(
@@ -72,7 +77,6 @@ export function LinkMessageToGoalDialog({
       }),
     [applyGoalOp],
   );
-  const threadRootId = getThreadReference(message.tags ?? []).rootId;
 
   return (
     <Dialog onOpenChange={(open) => !open && onClose()} open>

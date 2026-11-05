@@ -9571,6 +9571,14 @@
   "@goals.statusButton.statusLabel": {
     "description": "Goal tree, screen-reader label of a read-only goal status circle. {status} is a status name like To do."
   },
+  "goals.statusButton.finishTitle": "Finish this goal?",
+  "@goals.statusButton.finishTitle": {
+    "description": "Goal tree, title of the confirmation before finishing a thread goal that has tasks. Short."
+  },
+  "goals.statusButton.finishBody": "The tasks under it are deleted. This cannot be undone.",
+  "@goals.statusButton.finishBody": {
+    "description": "Goal tree, confirmation before finishing a thread goal: finishing deletes the small tasks under it."
+  },
   "goals.statusButton.changeLabel": "Status: {status}. Change to {next}",
   "@goals.statusButton.changeLabel": {
     "description": "Goal tree, screen-reader label of the goal status button. {status} is the current status, {next} the status a click sets."
@@ -9623,13 +9631,9 @@
   "@goals.row.remove": {
     "description": "Goal tree, screen-reader label of the trash button on a goal."
   },
-  "goals.row.removeConfirmWithChildren": "{count, plural, other {Remove this goal and its # sub-goals? History keeps them.}}",
-  "@goals.row.removeConfirmWithChildren": {
-    "description": "Goal tree, inline confirmation before removing a goal that has sub-goals. # is the number of sub-goals (always 1 or more). History = the goal tree's revision history."
-  },
-  "goals.row.removeConfirm": "Remove this goal? History keeps it.",
+  "goals.row.removeConfirm": "Remove this goal and everything under it?",
   "@goals.row.removeConfirm": {
-    "description": "Goal tree, inline confirmation before removing a goal without sub-goals. History = the goal tree's revision history."
+    "description": "Goal tree, inline confirmation before removing a goal. Removal cannot be undone."
   },
   "goals.row.editTitleLabel": "Goal",
   "@goals.row.editTitleLabel": {
@@ -9639,13 +9643,37 @@
   "@goals.panel.loading": {
     "description": "Goals panel, shown while the goal tree loads."
   },
+  "goals.panel.topGoals": "{count} top-level goals",
+  "@goals.panel.topGoals": {
+    "description": "Goals panel, notice when many goals sit directly under the conversation's top goal. Not a limit. {count} is always above 7."
+  },
+  "goals.section.quiet": "Quiet",
+  "@goals.section.quiet": {
+    "description": "Goals panel, heading of the folded list of unfinished goals nobody touched for a long time. Short."
+  },
+  "goals.section.done": "Done",
+  "@goals.section.done": {
+    "description": "Goals panel, heading of the folded list of finished goals. Short."
+  },
+  "goals.section.showMore": "Show more",
+  "@goals.section.showMore": {
+    "description": "Goals panel, button that loads the next page of a folded list. Short."
+  },
+  "goals.section.dropAll": "Drop all",
+  "@goals.section.dropAll": {
+    "description": "Goals panel, button that gives up every quiet goal at once. Short."
+  },
+  "goals.section.dropAllConfirm": "Drop all quiet goals? Tasks among them are deleted.",
+  "@goals.section.dropAllConfirm": {
+    "description": "Goals panel, inline confirmation before giving up every quiet goal. Tasks = sub-goals inside a thread's goal."
+  },
   "goals.panel.history": "History",
   "@goals.panel.history": {
-    "description": "Goals panel, button that shows past revisions of the goal tree. Short."
+    "description": "Goals panel, button that shows past edits of the goals. Short."
   },
   "goals.panel.hideHistory": "Hide history",
   "@goals.panel.hideHistory": {
-    "description": "Goals panel, button that hides the revision history. Short."
+    "description": "Goals panel, button that hides the edit history. Short."
   },
   "goals.rootCard.heading": "Layer 1 goal",
   "@goals.rootCard.heading": {
@@ -9673,19 +9701,43 @@
   },
   "goals.history.loading": "Loading history…",
   "@goals.history.loading": {
-    "description": "Goals panel, shown while the revision history loads."
+    "description": "Goals panel, shown while the edit history loads."
   },
-  "goals.history.revision": "{time} · {author} · {goals} goals",
-  "@goals.history.revision": {
-    "description": "Goals panel history, one revision line. {time} is a date and time, {author} the person who made it, {goals} the number of goals in it (or ?)."
+  "goals.history.edit": "{time} · {author} · {edits}",
+  "@goals.history.edit": {
+    "description": "Goals panel history, one edit line. {time} is a date and time, {author} the person who made it, {edits} a comma-separated list of what they did."
   },
-  "goals.history.current": "Current",
-  "@goals.history.current": {
-    "description": "Goals panel history, marker on the newest revision. Short."
+  "goals.history.setRoot": "Set top goal",
+  "@goals.history.setRoot": {
+    "description": "Goals panel history, what an edit did. Short."
   },
-  "goals.history.restore": "Restore",
-  "@goals.history.restore": {
-    "description": "Goals panel history, button that brings back an older revision. Short."
+  "goals.history.add": "Added",
+  "@goals.history.add": {
+    "description": "Goals panel history, what an edit did: added a goal. Short."
+  },
+  "goals.history.update": "Edited",
+  "@goals.history.update": {
+    "description": "Goals panel history, what an edit did: changed a goal. Short."
+  },
+  "goals.history.move": "Moved",
+  "@goals.history.move": {
+    "description": "Goals panel history, what an edit did: moved a goal. Short."
+  },
+  "goals.history.remove": "Removed",
+  "@goals.history.remove": {
+    "description": "Goals panel history, what an edit did: removed a goal. Short."
+  },
+  "goals.history.link": "Linked",
+  "@goals.history.link": {
+    "description": "Goals panel history, what an edit did: linked a thread to a goal. Short."
+  },
+  "goals.history.unlink": "Unlinked",
+  "@goals.history.unlink": {
+    "description": "Goals panel history, what an edit did: unlinked a thread from a goal. Short."
+  },
+  "goals.history.dropQuiet": "Dropped quiet goals",
+  "@goals.history.dropQuiet": {
+    "description": "Goals panel history, what an edit did: gave up every quiet goal. Short."
   },
   "goals.layer0.agentTitle": "Agent goal",
   "@goals.layer0.agentTitle": {

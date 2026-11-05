@@ -797,7 +797,17 @@ impl Db {
                 focus
             }
         };
-        let mut wanted: HashSet<String> = HashSet::with_capacity(matched.len());
+        let mut wanted: HashSet<String> = HashSet::with_capacity(matched.len() + 1);
+        if matches!(
+            selection,
+            GoalSelection::View {
+                view: GoalView::Active,
+                after: None
+            }
+        ) {
+            // Every room with goals has layer 1 on its board, finished or not.
+            wanted.extend(graph.root().map(str::to_owned));
+        }
         for id in &matched {
             if wanted.insert(id.clone()) {
                 wanted.extend(graph.ancestors(id));

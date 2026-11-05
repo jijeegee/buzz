@@ -55,7 +55,7 @@ void main() {
     expect(requests.closed, 0);
   });
 
-  test('goal chips share the REQ, re-read on a new head, and leaving the '
+  test('goal chips share the REQ, re-read on a new edit, and leaving the '
       'room closes it even after the goals page read the tree', () async {
     final c = container();
     final typing = c.listen(channelTypingProvider(room), (_, _) {});
@@ -66,9 +66,9 @@ void main() {
     expect(requests.opened, hasLength(1), reason: 'one REQ for both kinds');
     final readsBefore = session.queries;
 
-    requests.emit(_event(roomLiveGoalTreeKind));
+    requests.emit(_event(roomLiveGoalOpsKind));
     await c.read(goalTreeProvider(room).future);
-    expect(session.queries, readsBefore + 1, reason: 'a new head re-reads');
+    expect(session.queries, readsBefore + 1, reason: 'a new edit re-reads');
 
     typing.close();
     goalsLive.close();
@@ -87,7 +87,7 @@ NostrEvent _event(int kind) => NostrEvent(
   tags: [
     ['h', '11111111-1111-4111-8111-111111111111'],
   ],
-  content: kind == roomLiveGoalTreeKind ? '{}' : '',
+  content: kind == roomLiveGoalOpsKind ? '{}' : '',
   sig: 'sig',
 );
 
@@ -127,11 +127,11 @@ class _Session extends RelaySessionNotifier {
   void setStatus(SessionStatus status) => state = SessionState(status: status);
 
   @override
-  Future<List<NostrEvent>> queryRelay(
-    List<NostrFilter> filters, {
+  Future<Object?> queryRelayJson(
+    List<Map<String, dynamic>> filters, {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     queries++;
-    return const [];
+    return const <String, dynamic>{};
   }
 }

@@ -18,6 +18,15 @@ import type {
 } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
 import { useT } from "@/shared/i18n";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
@@ -26,11 +35,11 @@ import {
   type GoalAccess,
   type GoalLinkInfo,
   type GoalLinkTarget,
+  finishDeletesTasks,
   goalChildren,
   goalLinkView,
-  goalProgress,
-  goalSubtreeIds,
   goalTitleError,
+  isPlanGoal,
 } from "../goalTree";
 
 /**
@@ -47,7 +56,7 @@ const STATUS_DOT: Record<GoalStatus, string> = {
   dropped: "border-muted-foreground/40 bg-muted-foreground/30",
 };
 
-/** One edit, or several applied as a single revision. */
+/** One edit, or several applied as a single event. */
 export type Apply = (op: GoalOp | GoalOp[]) => Promise<unknown>;
 
 /**
@@ -74,6 +83,7 @@ export function GoalStatusButton({
   readOnly?: boolean;
 }) {
   const t = useT();
+  const [confirming, setConfirming] = React.useState(false);
   const status = node.status;
   const statusLabel = t(GOAL_STATUS_LABEL[status]);
   if (readOnly) {
@@ -91,20 +101,50 @@ export function GoalStatusButton({
   }
   const nextStatus =
     STATUS_ORDER[(STATUS_ORDER.indexOf(status) + 1) % STATUS_ORDER.length];
+  const setNext = () =>
+    runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }));
   return (
-    <button
-      aria-label={t("goals.statusButton.changeLabel", {
-        status: statusLabel,
-        next: t(GOAL_STATUS_LABEL[nextStatus]),
-      })}
-      className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
-      data-testid={`goal-status-${node.id}`}
-      onClick={() =>
-        runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }))
-      }
-      title={statusLabel}
-      type="button"
-    />
+    <>
+      <button
+        aria-label={t("goals.statusButton.changeLabel", {
+          status: statusLabel,
+          next: t(GOAL_STATUS_LABEL[nextStatus]),
+        })}
+        className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
+        data-testid={`goal-status-${node.id}`}
+        onClick={() =>
+          finishDeletesTasks(node, nextStatus) ? setConfirming(true) : setNext()
+        }
+        title={statusLabel}
+        type="button"
+      />
+      <AlertDialog onOpenChange={setConfirming} open={confirming}>
+        <AlertDialogContent data-testid={`goal-finish-dialog-${node.id}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("goals.statusButton.finishTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("goals.statusButton.finishBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <Button
+              data-testid={`goal-finish-confirm-${node.id}`}
+              onClick={() => {
+                setConfirming(false);
+                setNext();
+              }}
+              type="button"
+              variant="destructive"
+            >
+              {t(GOAL_STATUS_LABEL[nextStatus])}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -281,14 +321,13 @@ export function GoalRow({
   const scope = access?.(node.id) ?? "edit";
   const editable = scope === "focus" || scope === "edit";
   const [expanded, setExpanded] = React.useState(
-    scope === "focus" || scope === "path" || layer < 3,
+    scope === "focus" || scope === "path" || isPlanGoal(tree, node.id),
   );
   const [editing, setEditing] = React.useState(false);
   const [noteOpen, setNoteOpen] = React.useState(false);
   const [confirmingRemove, setConfirmingRemove] = React.useState(false);
-  const { done, total } = goalProgress(tree, node.id);
+  const { done, total } = node.progress;
   const status = node.status;
-  const subtreeSize = goalSubtreeIds(tree, node.id).size - 1;
 
   return (
     <div data-goal-access={scope} data-testid={`goal-row-${node.id}`}>
@@ -300,7 +339,7 @@ export function GoalRow({
             expanded ? t("goals.row.collapse") : t("goals.row.expand")
           }
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground disabled:opacity-0"
-          disabled={children.length === 0}
+          disabled={children.length === 0 && !editable}
           onClick={() => setExpanded((value) => !value)}
           type="button"
         >
@@ -326,10 +365,10 @@ export function GoalRow({
                 {done}/{total}
               </span>
             ) : null}
-            {(node.assignees ?? []).map((pubkey) => (
+            {node.assignees.map((pubkey) => (
               <span key={pubkey}>@{nameOf(pubkey)}</span>
             ))}
-            {(node.threads ?? []).map((thread) => {
+            {node.links.map((thread) => {
               const isCurrent = thread === currentThreadId;
               const { label, target } = goalLinkView(
                 thread,
@@ -415,11 +454,7 @@ export function GoalRow({
       {editable && confirmingRemove ? (
         <div className="ml-6 flex items-center gap-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs">
           <span className="flex-1 text-destructive">
-            {subtreeSize > 0
-              ? t("goals.row.removeConfirmWithChildren", {
-                  count: subtreeSize,
-                })
-              : t("goals.row.removeConfirm")}
+            {t("goals.row.removeConfirm")}
           </span>
           <Button
             onClick={() => setConfirmingRemove(false)}
@@ -432,13 +467,9 @@ export function GoalRow({
           <Button
             data-testid={`goal-remove-confirm-${node.id}`}
             onClick={() =>
-              runGoalEdit(
-                apply({
-                  op: "remove",
-                  id: node.id,
-                  recursive: subtreeSize > 0,
-                }),
-              )
+              // Quiet and finished sub-goals are not in this list, so only
+              // the relay knows what is below.
+              runGoalEdit(apply({ op: "remove", id: node.id, recursive: true }))
             }
             size="sm"
             type="button"
@@ -452,7 +483,7 @@ export function GoalRow({
       {editable && editing ? (
         <div className="ml-6 rounded-xl border border-border/60 p-3">
           <GoalEditor
-            initialNote={node.note ?? ""}
+            initialNote={node.note}
             initialTitle={node.title}
             onCancel={() => setEditing(false)}
             onSave={async (title, note) => {
