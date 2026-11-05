@@ -1,12 +1,12 @@
-//! `kuzz goals` — read and edit a channel's or DM's goal tree (kind 40110).
+//! `kuzz goals` — read and edit a channel's or DM's goals.
 //!
-//! Every edit is read-modify-write against the live head with an
-//! `expected-revision` precondition. On a conflict the command re-reads the
-//! head and re-applies the same edit, so concurrent editors never silently
-//! drop each other's changes.
+//! Edits go to the relay as kind 40111 ops, which it applies to the stored
+//! goals, so there is nothing to compose against and nothing to retry. Reads
+//! are `{"goals":1}` queries; finished and quiet goals only come with `--all`.
 
-use kuzz_core::goal_tree::{new_node_id, GoalNode, GoalOp, GoalStatus, GoalTree};
-use kuzz_core::kind::KIND_GOAL_TREE;
+use kuzz_core::goal_store::{GoalOps, GoalOutcome, GoalRead, GoalReadRow};
+use kuzz_core::goal_tree::{new_node_id, GoalOp, GoalStatus};
+use kuzz_core::kind::KIND_GOAL_OPS;
 use serde_json::{json, Value};
 
 use crate::client::KuzzClient;
@@ -14,64 +14,42 @@ use crate::error::CliError;
 use crate::validate::{parse_uuid, read_or_stdin, validate_hex64};
 use crate::GoalsCmd;
 
-/// Attempts at a conflicting write before giving up.
-const MAX_WRITE_ATTEMPTS: usize = 4;
-
-pub(crate) struct Head {
-    id: String,
-    created_at: u64,
-    pubkey: String,
-    pub(crate) tree: GoalTree,
-}
-
-fn parse_head(event: &Value) -> Result<Head, CliError> {
-    let field = |name: &str| event.get(name).and_then(Value::as_str).unwrap_or_default();
-    let tree = GoalTree::parse(field("content"))
-        .map_err(|e| CliError::Other(format!("goal tree head is unreadable: {e}")))?;
-    Ok(Head {
-        id: field("id").to_string(),
-        created_at: event.get("created_at").and_then(Value::as_u64).unwrap_or(0),
-        pubkey: field("pubkey").to_string(),
-        tree,
-    })
-}
-
-async fn query_events(client: &KuzzClient, filter: Value) -> Result<Vec<Value>, CliError> {
+async fn read(client: &KuzzClient, filter: Value) -> Result<GoalRead, CliError> {
     let resp = client.query(&filter).await?;
     serde_json::from_str(&resp)
-        .map_err(|e| CliError::Other(format!("malformed relay response querying goal tree: {e}")))
+        .map_err(|e| CliError::Other(format!("malformed relay response reading goals: {e}")))
 }
 
-/// The live head. `strong` pins the read to the writer pool so a write is
-/// always composed against the newest head.
-pub(crate) async fn fetch_head(
+/// One whole list.
+async fn read_view(client: &KuzzClient, channel: &str, view: &str) -> Result<GoalRead, CliError> {
+    let filter = json!({ "goals": 1, "channel": channel, "view": view });
+    let mut all = read(client, filter.clone()).await?;
+    while let Some(cursor) = all.next.take() {
+        let mut filter = filter.clone();
+        filter["cursor"] = json!(cursor);
+        all.absorb(read(client, filter).await?);
+    }
+    Ok(all)
+}
+
+/// What a thread works on: its goal, if linked, with the goal's context.
+pub(crate) async fn read_thread(
     client: &KuzzClient,
     channel: &str,
-    strong: bool,
-) -> Result<Option<Head>, CliError> {
-    let mut filter = json!({ "kinds": [KIND_GOAL_TREE], "#h": [channel], "limit": 1 });
-    if strong {
-        filter["consistency"] = json!("strong");
-    }
-    query_events(client, filter)
-        .await?
-        .first()
-        .map(parse_head)
-        .transpose()
+    thread: &str,
+) -> Result<GoalRead, CliError> {
+    let filter = json!({ "goals": 1, "channel": channel, "threads": [thread] });
+    read(client, filter).await
 }
 
-async fn event_exists(client: &KuzzClient, channel: &str, id: &str) -> Result<bool, CliError> {
-    let filter = json!({
-        "ids": [id], "kinds": [KIND_GOAL_TREE], "#h": [channel], "limit": 1,
-        "consistency": "strong",
-    });
-    Ok(!query_events(client, filter).await?.is_empty())
-}
-
-pub(crate) enum Edit {
-    /// Operations applied in order and published as one revision.
-    Ops(Vec<GoalOp>),
-    Replace(GoalTree),
+/// These goals with their context. An unknown id reads as nothing.
+async fn read_nodes(
+    client: &KuzzClient,
+    channel: &str,
+    ids: &[&str],
+) -> Result<GoalRead, CliError> {
+    let filter = json!({ "goals": 1, "channel": channel, "nodes": ids });
+    read(client, filter).await
 }
 
 pub(crate) fn status_op(id: &str, status: GoalStatus) -> GoalOp {
@@ -89,15 +67,19 @@ pub(crate) fn status_note_op(id: &str, status: GoalStatus, note: Option<String>)
     }
 }
 
-/// What finishing `id` means for the tree around it: sub-goals still open,
-/// and whether every sibling under its parent is now finished. The parent is
-/// never completed automatically; people decide that.
-pub(crate) fn done_report(tree: &GoalTree, id: &str) -> Value {
-    let unfinished = |n: &GoalNode| matches!(n.status, GoalStatus::Open | GoalStatus::InProgress);
-    let open_sub_goals = tree
+fn unfinished(row: &GoalReadRow) -> bool {
+    matches!(row.status, GoalStatus::Open | GoalStatus::InProgress)
+}
+
+/// What finishing `id` means for the goals around it: sub-goals still active,
+/// and whether nothing active is left under its parent. `read` is a read of
+/// `id` and its parent after the write; `id` is gone from it if it was
+/// deleted. The parent is never completed automatically; people decide that.
+fn done_report(read: &GoalRead, id: &str, parent: Option<&str>) -> Value {
+    let open_sub_goals = read
         .subtree(id)
         .iter()
-        .filter(|(_, n)| n.id != id && unfinished(n))
+        .filter(|(_, r)| r.id != id && unfinished(r) && !r.inactive)
         .count();
     let mut out = json!({});
     if open_sub_goals > 0 {
@@ -106,11 +88,9 @@ pub(crate) fn done_report(tree: &GoalTree, id: &str) -> Value {
             "goal {id} is done but {open_sub_goals} of its sub-goals are still open"
         ));
     }
-    let parent = tree.node(id).and_then(|n| n.parent.clone());
-    if let Some(parent) = parent {
-        let siblings = tree.children(&parent);
-        if siblings.iter().all(|n| !unfinished(n)) && tree.node(&parent).is_some_and(unfinished) {
-            out["parent_all_done"] = json!(parent);
+    if let Some(parent) = parent.and_then(|p| read.row(p)) {
+        if unfinished(parent) && parent.open_children == 0 {
+            out["parent_all_done"] = json!(parent.id);
         }
     }
     out
@@ -131,11 +111,23 @@ pub(crate) async fn update_goal(
         } => Some(id.clone()),
         _ => None,
     };
-    let (mut out, tree) = write_tree(client, channel, Edit::Ops(vec![op])).await?;
-    if let Some(id) = done {
-        if let (Some(out), Value::Object(report)) = (out.as_object_mut(), done_report(&tree, &id)) {
-            out.extend(report);
+    let (mut out, outcome) = write(client, channel, vec![op]).await?;
+    let Some(id) = done else {
+        return Ok(out);
+    };
+    let mut ids = vec![id.as_str()];
+    ids.extend(outcome.parent.as_deref());
+    // The edit is saved by now, so a failed read only loses the report.
+    match read_nodes(client, channel, &ids).await {
+        Ok(read) => {
+            if let (Some(out), Value::Object(report)) = (
+                out.as_object_mut(),
+                done_report(&read, &id, outcome.parent.as_deref()),
+            ) {
+                out.extend(report);
+            }
         }
+        Err(e) => out["report_error"] = json!(e.to_string()),
     }
     Ok(out)
 }
@@ -147,111 +139,99 @@ fn add_ops(add: GoalOp, thread: Option<String>) -> Vec<GoalOp> {
         return vec![add];
     };
     let id = id.clone();
-    // Linking starts the goal (`GoalTree::apply`), so no separate status op.
+    // Linking starts the goal, so no separate status op.
     match thread {
         Some(thread) => vec![add, GoalOp::Link { id, thread }],
         None => vec![add],
     }
 }
 
-fn is_goal_conflict(err: &CliError) -> bool {
-    matches!(err, CliError::Relay { status: 409, body } if body.contains("conflict: goal tree"))
+/// The relay's answer to a goal edit. A retry of a stored event answers
+/// `duplicate:`, with nothing to report.
+fn parse_outcome(ack: &str) -> GoalOutcome {
+    serde_json::from_str::<Value>(ack)
+        .ok()
+        .and_then(|ack| serde_json::from_str(ack.get("message")?.as_str()?).ok())
+        .unwrap_or_default()
 }
 
-/// Apply `edit` to the live head and publish it, re-applying after conflicts.
+/// What the writer sees of an edit. Missing ids are the writer's cue: a wrong
+/// id must not read as a finished goal.
+fn write_json(event_id: &str, outcome: &GoalOutcome) -> Value {
+    let mut out = json!({ "event_id": event_id, "accepted": true });
+    if !outcome.deleted.is_empty() {
+        out["deleted"] = json!(outcome.deleted);
+    }
+    if !outcome.missing.is_empty() {
+        out["missing"] = json!(outcome.missing);
+        out["warning"] = json!(format!(
+            "no goal with id {}; nothing changed for it",
+            outcome.missing.join(", ")
+        ));
+    }
+    out
+}
+
+/// Send one edit; the ops apply in order, all or none.
 pub(crate) async fn write(
     client: &KuzzClient,
     channel: &str,
-    edit: Edit,
-) -> Result<Value, CliError> {
-    write_tree(client, channel, edit).await.map(|(out, _)| out)
+    ops: Vec<GoalOp>,
+) -> Result<(Value, GoalOutcome), CliError> {
+    let builder =
+        kuzz_sdk::build_goal_ops(parse_uuid(channel)?, &ops).map_err(crate::validate::sdk_err)?;
+    let event = client.sign_event(builder)?;
+    let event_id = event.id.to_hex();
+    let outcome = parse_outcome(&client.submit_event(event).await?);
+    Ok((write_json(&event_id, &outcome), outcome))
 }
 
-/// [`write`], also returning the tree as published.
-pub(crate) async fn write_tree(
-    client: &KuzzClient,
-    channel: &str,
-    edit: Edit,
-) -> Result<(Value, GoalTree), CliError> {
-    let channel_uuid = parse_uuid(channel)?;
-    let editor = client.pubkey().to_hex();
-    for _ in 0..MAX_WRITE_ATTEMPTS {
-        let head = fetch_head(client, channel, true).await?;
-        let (revision, head_created_at, mut tree) = match head {
-            Some(h) => (h.id, Some(h.created_at), h.tree),
-            None => ("none".to_string(), None, GoalTree::empty()),
-        };
-        match &edit {
-            Edit::Replace(replacement) => tree = replacement.clone(),
-            Edit::Ops(ops) => {
-                let now = chrono::Utc::now().timestamp().max(0) as u64;
-                for op in ops {
-                    tree.apply(op, &editor, now)
-                        .map_err(|e| CliError::Usage(e.to_string()))?;
-                }
-            }
-        }
-        let builder =
-            kuzz_sdk::build_set_goal_tree(channel_uuid, &tree, &revision, head_created_at)
-                .map_err(crate::validate::sdk_err)?;
-        let event = client.sign_event(builder)?;
-        let event_id = event.id.to_hex();
-        match client.submit_event(event).await {
-            Ok(_) => return Ok((json!({ "event_id": event_id, "accepted": true }), tree)),
-            // A lost response can surface the retry of our own stored write as
-            // a conflict; only re-apply when our event is really absent.
-            Err(e) if is_goal_conflict(&e) => {
-                if event_exists(client, channel, &event_id).await? {
-                    return Ok((json!({ "event_id": event_id, "accepted": true }), tree));
-                }
-            }
-            Err(e) => return Err(e),
-        }
-    }
-    Err(CliError::Conflict(
-        "the goal tree kept changing while saving; run the command again".into(),
-    ))
+/// [`write`] when the outcome only needs printing.
+async fn write_print(client: &KuzzClient, channel: &str, ops: Vec<GoalOp>) -> Result<(), CliError> {
+    print(&write(client, channel, ops).await?.0);
+    Ok(())
 }
 
-fn node_json(tree: &GoalTree, layer: usize, node: &GoalNode) -> Value {
-    let (done, total) = tree.progress(&node.id);
+fn row_json(layer: usize, row: &GoalReadRow) -> Value {
     json!({
-        "id": node.id,
+        "id": row.id,
         "layer": layer,
-        "parent": node.parent,
-        "title": node.title,
-        "note": node.note,
-        "status": node.status.as_str(),
-        "assignees": node.assignees,
-        "threads": node.threads,
-        "progress": { "done": done, "total": total },
-        "updated_by": node.updated_by,
-        "updated_at": node.updated_at,
+        "parent": row.parent,
+        "title": row.title,
+        "note": row.note,
+        "status": row.status.as_str(),
+        "inactive": row.inactive,
+        "assignees": row.assignees,
+        "threads": row.links,
+        "progress": row.progress,
+        "updated_by": row.updated_by,
+        "updated_at": row.updated_at,
     })
 }
 
-/// A goal's working context: the path above it, its subtree, and the other
-/// goals on its layer (to avoid overlap and spot gaps).
-fn focus_json(tree: &GoalTree, id: &str) -> Result<Value, CliError> {
-    let layer = tree
-        .layer(id)
-        .ok_or_else(|| CliError::NotFound(format!("goal {id} not found")))?;
-    let path: Vec<Value> = tree
-        .path(id)
+/// A goal's working context: the path above it, its open sub-goals, and the
+/// active goals beside it (to avoid overlap and spot gaps).
+fn focus_json(read: &GoalRead, id: &str) -> Result<Value, CliError> {
+    let path = read.path(id);
+    let layer = path.len();
+    if layer == 0 {
+        return Err(CliError::NotFound(format!("goal {id} not found")));
+    }
+    let path: Vec<Value> = path
         .iter()
         .enumerate()
-        .map(|(i, n)| node_json(tree, i + 1, n))
+        .map(|(i, r)| row_json(i + 1, r))
         .collect();
-    let subtree: Vec<Value> = tree
+    let subtree: Vec<Value> = read
         .subtree(id)
         .iter()
-        .map(|(l, n)| node_json(tree, *l, n))
+        .map(|(l, r)| row_json(*l, r))
         .collect();
-    let same_layer: Vec<Value> = tree
-        .layer_nodes(layer)
+    let same_layer: Vec<Value> = read
+        .outline()
         .iter()
-        .filter(|n| n.id != id)
-        .map(|n| node_json(tree, layer, n))
+        .filter(|(l, r)| *l == layer && r.id != id)
+        .map(|(l, r)| row_json(*l, r))
         .collect();
     Ok(
         json!({ "goal_id": id, "layer": layer, "path": path, "subtree": subtree, "same_layer": same_layer }),
@@ -286,32 +266,34 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
             channel,
             node,
             thread,
+            all,
         } => {
             parse_uuid(&channel)?;
-            let head = fetch_head(client, &channel, false).await?;
-            let Some(head) = head else {
-                print(&json!({ "channel": channel, "revision": null, "outline": [] }));
-                return Ok(());
-            };
-            let tree = &head.tree;
             if let Some(thread) = &thread {
                 validate_hex64(thread)?;
             }
-            let this_thread_goal = thread
-                .as_deref()
-                .and_then(|t| tree.node_for_thread(t))
-                .map(|n| n.id.clone());
+            let mut goals = read_view(client, &channel, "active").await?;
+            if all {
+                goals.absorb(read_view(client, &channel, "inactive").await?);
+                goals.absorb(read_view(client, &channel, "done").await?);
+            }
+            let this_thread_goal = match &thread {
+                Some(thread) => read_thread(client, &channel, thread)
+                    .await?
+                    .threads
+                    .into_iter()
+                    .find_map(|t| t.goal),
+                None => None,
+            };
             let focus_id = node.or_else(|| this_thread_goal.clone());
-            let outline: Vec<Value> = tree
+            let outline: Vec<Value> = goals
                 .outline()
                 .iter()
-                .map(|(l, n)| node_json(tree, *l, n))
+                .map(|(l, r)| row_json(*l, r))
                 .collect();
             let mut out = json!({
                 "channel": channel,
-                "revision": head.id,
-                "updated_at": head.created_at,
-                "updated_by": head.pubkey,
+                "counts": goals.counts,
                 "outline": outline,
             });
             if thread.is_some() {
@@ -319,7 +301,8 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                 out["this_thread_goal"] = json!(this_thread_goal);
             }
             if let Some(id) = focus_id {
-                out["focus"] = focus_json(tree, &id)?;
+                let context = read_nodes(client, &channel, &[&id]).await?;
+                out["focus"] = focus_json(&context, &id)?;
             }
             print(&out);
         }
@@ -333,7 +316,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                 title,
                 note: optional_text(note)?,
             };
-            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
+            write_print(client, &channel, vec![op]).await?;
         }
         GoalsCmd::Add {
             channel,
@@ -357,7 +340,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                     .map(|a| parse_pubkey(a))
                     .collect::<Result<_, _>>()?,
             };
-            let mut out = write(client, &channel, Edit::Ops(add_ops(op, thread))).await?;
+            let (mut out, _) = write(client, &channel, add_ops(op, thread)).await?;
             out["goal_id"] = json!(id);
             print(&out);
         }
@@ -409,7 +392,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                 parent,
                 order,
             };
-            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
+            write_print(client, &channel, vec![op]).await?;
         }
         GoalsCmd::Remove {
             channel,
@@ -420,7 +403,7 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                 id: node,
                 recursive,
             };
-            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
+            write_print(client, &channel, vec![op]).await?;
         }
         GoalsCmd::Link {
             channel,
@@ -435,47 +418,39 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
                 .ok_or_else(|| CliError::Usage("pass --thread or --message".into()))?;
             validate_hex64(&thread)?;
             let op = GoalOp::Link { id: node, thread };
-            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
+            write_print(client, &channel, vec![op]).await?;
         }
         GoalsCmd::Unlink { channel, thread } => {
             validate_hex64(&thread)?;
             let op = GoalOp::Unlink { thread };
-            print(&write(client, &channel, Edit::Ops(vec![op])).await?);
+            write_print(client, &channel, vec![op]).await?;
         }
         GoalsCmd::History { channel, limit } => {
             parse_uuid(&channel)?;
             let filter = json!({
-                "kinds": [KIND_GOAL_TREE], "#h": [channel], "limit": limit.clamp(1, 200),
+                "kinds": [KIND_GOAL_OPS], "#h": [channel], "limit": limit.clamp(1, 200),
             });
-            let revisions: Vec<Value> = query_events(client, filter)
-                .await?
+            let resp = client.query(&filter).await?;
+            let events: Vec<Value> = serde_json::from_str(&resp).map_err(|e| {
+                CliError::Other(format!("malformed relay response listing goal edits: {e}"))
+            })?;
+            let edits: Vec<Value> = events
                 .iter()
                 .map(|event| {
-                    let nodes = parse_head(event).map(|h| h.tree.nodes.len()).ok();
+                    let ops = event
+                        .get("content")
+                        .and_then(Value::as_str)
+                        .and_then(|c| serde_json::from_str::<GoalOps>(c).ok())
+                        .map(|c| c.ops);
                     json!({
-                        "revision": event.get("id"),
+                        "event_id": event.get("id"),
                         "created_at": event.get("created_at"),
                         "author": event.get("pubkey"),
-                        "goals": nodes,
+                        "ops": ops,
                     })
                 })
                 .collect();
-            print(&json!({ "channel": channel, "revisions": revisions }));
-        }
-        GoalsCmd::Restore { channel, revision } => {
-            parse_uuid(&channel)?;
-            validate_hex64(&revision)?;
-            let filter = json!({
-                "ids": [revision], "kinds": [KIND_GOAL_TREE], "#h": [channel], "limit": 1,
-            });
-            let events = query_events(client, filter).await?;
-            let old = events.first().ok_or_else(|| {
-                CliError::NotFound(format!(
-                    "revision {revision} not found for channel {channel}"
-                ))
-            })?;
-            let tree = parse_head(old)?.tree;
-            print(&write(client, &channel, Edit::Replace(tree)).await?);
+            print(&json!({ "channel": channel, "edits": edits }));
         }
     }
     Ok(())
@@ -484,48 +459,46 @@ pub async fn dispatch(cmd: GoalsCmd, client: &KuzzClient) -> Result<(), CliError
 #[cfg(test)]
 mod tests {
     use super::*;
+    use kuzz_core::goal_store::{GoalProgress, GoalReadRow};
 
     const ED: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 
-    fn tree() -> GoalTree {
-        let mut tree = GoalTree::empty();
-        let ops = [
-            GoalOp::SetRoot {
-                id: "r".into(),
-                title: "Root".into(),
-                note: None,
-            },
-            GoalOp::Add {
-                id: "a".into(),
-                parent: "r".into(),
-                title: "A".into(),
-                note: None,
-                assignees: vec![],
-            },
-            GoalOp::Add {
-                id: "b".into(),
-                parent: "r".into(),
-                title: "B".into(),
-                note: None,
-                assignees: vec![],
-            },
-            GoalOp::Add {
-                id: "a1".into(),
-                parent: "a".into(),
-                title: "A1".into(),
-                note: None,
-                assignees: vec![],
-            },
-        ];
-        for op in &ops {
-            tree.apply(op, ED, 1).unwrap();
+    fn row(id: &str, parent: Option<&str>, status: GoalStatus) -> GoalReadRow {
+        GoalReadRow {
+            id: id.into(),
+            parent: parent.map(Into::into),
+            title: id.into(),
+            note: String::new(),
+            status,
+            order: 0,
+            assignees: vec![],
+            links: vec![],
+            updated_by: None,
+            updated_at: 0,
+            matched: true,
+            inactive: false,
+            is_thread: false,
+            progress: GoalProgress::default(),
+            open_children: 0,
         }
-        tree
+    }
+
+    fn goals(rows: Vec<GoalReadRow>) -> GoalRead {
+        GoalRead {
+            rows,
+            ..GoalRead::default()
+        }
     }
 
     #[test]
     fn focus_includes_path_subtree_and_same_layer() {
-        let focus = focus_json(&tree(), "a").unwrap();
+        let read = goals(vec![
+            row("r", None, GoalStatus::Open),
+            row("a", Some("r"), GoalStatus::Open),
+            row("b", Some("r"), GoalStatus::Open),
+            row("a1", Some("a"), GoalStatus::Open),
+        ]);
+        let focus = focus_json(&read, "a").unwrap();
         let ids = |key: &str| -> Vec<String> {
             focus[key]
                 .as_array()
@@ -538,11 +511,14 @@ mod tests {
         assert_eq!(ids("subtree"), ["a", "a1"]);
         assert_eq!(ids("same_layer"), ["b"]);
         assert_eq!(focus["layer"], 2);
+        assert!(matches!(
+            focus_json(&read, "gone"),
+            Err(CliError::NotFound(_))
+        ));
     }
 
     #[test]
-    fn add_with_thread_links_and_starts_in_one_write() {
-        let thread = "e".repeat(64);
+    fn add_with_thread_is_one_write() {
         let add = GoalOp::Add {
             id: "n".into(),
             parent: "a".into(),
@@ -551,45 +527,63 @@ mod tests {
             assignees: vec![],
         };
         assert_eq!(add_ops(add.clone(), None).len(), 1);
+        let thread = "e".repeat(64);
         let ops = add_ops(add, Some(thread.clone()));
         assert_eq!(ops.len(), 2);
-        let mut tree = tree();
-        for op in &ops {
-            tree.apply(op, ED, 2).unwrap();
-        }
-        let node = tree.node_for_thread(&thread).unwrap();
         assert_eq!(
-            (node.id.as_str(), node.status),
-            ("n", GoalStatus::InProgress)
+            ops[1],
+            GoalOp::Link {
+                id: "n".into(),
+                thread
+            }
         );
     }
 
     #[test]
-    fn done_reports_open_sub_goals_and_finished_siblings_without_closing_the_parent() {
-        let mut tree = tree();
-        // a has an open sub-goal a1; b is still open.
-        tree.apply(&status_op("a", GoalStatus::Done), ED, 2)
-            .unwrap();
-        let report = done_report(&tree, "a");
-        assert_eq!(report["open_sub_goals"], 1);
+    fn done_reports_open_sub_goals_and_a_finished_level_without_closing_the_parent() {
+        let mut quiet = row("a2", Some("a"), GoalStatus::Open);
+        quiet.inactive = true;
+        let read = goals(vec![
+            row("r", None, GoalStatus::Open),
+            row("a", Some("r"), GoalStatus::Done),
+            row("a1", Some("a"), GoalStatus::Open),
+            quiet,
+        ]);
+        let report = done_report(&read, "a", Some("r"));
+        assert_eq!(report["open_sub_goals"], 1, "the quiet one does not count");
         assert!(report["warning"].as_str().unwrap().contains("still open"));
-        assert!(report.get("parent_all_done").is_none());
-
-        tree.apply(&status_op("b", GoalStatus::Done), ED, 3)
-            .unwrap();
-        let report = done_report(&tree, "b");
         assert_eq!(report["parent_all_done"], "r");
-        assert!(report.get("open_sub_goals").is_none());
+
+        let mut busy = row("r", None, GoalStatus::Open);
+        busy.open_children = 1;
+        let report = done_report(&goals(vec![busy]), "gone", Some("r"));
         assert_eq!(
-            tree.node("r").unwrap().status,
-            GoalStatus::Open,
-            "parent untouched"
+            report,
+            json!({}),
+            "a deleted goal has no sub-goals to report"
         );
 
-        tree.apply(&status_op("a1", GoalStatus::Done), ED, 4)
-            .unwrap();
-        let report = done_report(&tree, "a1");
-        assert_eq!(report["parent_all_done"], json!(null), "a is already done");
+        let finished = goals(vec![row("r", None, GoalStatus::Done)]);
+        assert_eq!(done_report(&finished, "gone", Some("r")), json!({}));
+    }
+
+    #[test]
+    fn the_relay_outcome_reaches_the_writer() {
+        let ack = json!({
+            "event_id": "e", "accepted": true,
+            "message": r#"{"parent":"p","deleted":["t"],"missing":["x"]}"#,
+        })
+        .to_string();
+        let outcome = parse_outcome(&ack);
+        assert_eq!(outcome.parent.as_deref(), Some("p"));
+        let out = write_json("e", &outcome);
+        assert_eq!(out["deleted"], json!(["t"]));
+        assert_eq!(out["missing"], json!(["x"]));
+        assert!(out["warning"].as_str().unwrap().contains('x'));
+
+        let replay = json!({ "accepted": true, "message": "duplicate:" }).to_string();
+        let out = write_json("e", &parse_outcome(&replay));
+        assert_eq!(out, json!({ "event_id": "e", "accepted": true }));
     }
 
     #[test]
@@ -605,20 +599,6 @@ mod tests {
                 remove_assignees: vec![],
             }
         );
-    }
-
-    #[test]
-    fn conflict_detection_matches_goal_tree_only() {
-        let goal = CliError::Relay {
-            status: 409,
-            body: "conflict: goal tree changed since it was loaded".into(),
-        };
-        let canvas = CliError::Relay {
-            status: 409,
-            body: "conflict: canvas changed since it was loaded".into(),
-        };
-        assert!(is_goal_conflict(&goal));
-        assert!(!is_goal_conflict(&canvas));
     }
 
     #[test]

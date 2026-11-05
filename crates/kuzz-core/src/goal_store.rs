@@ -13,7 +13,11 @@
 
 use std::collections::{HashMap, HashSet};
 
-use crate::goal_tree::{is_lower_hex_64, valid_id, validate_title, GoalStatus, GoalTreeError};
+use serde::{Deserialize, Serialize};
+
+use crate::goal_tree::{
+    is_lower_hex_64, valid_id, validate_title, GoalOp, GoalStatus, GoalTreeError,
+};
 use crate::goal_tree::{MAX_ASSIGNEES, MAX_DEPTH, MAX_NOTE_CHARS};
 
 /// A goal with no activity for this long is inactive: agents stop reading it
@@ -480,6 +484,183 @@ pub fn validate_move(graph: &GoalGraph, id: &str, parent: &str) -> Result<(), Go
     Ok(())
 }
 
+/// Content of a kind 40111 event.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalOps {
+    /// Applied in order; all or none.
+    pub ops: Vec<GoalOp>,
+}
+
+/// What one event did.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalOutcome {
+    /// Nearest surviving parent of the last goal the event finished, if any.
+    pub parent: Option<String>,
+    /// Goals deleted, in deletion order.
+    pub deleted: Vec<String>,
+    /// Finish or remove targets that do not exist. Retries land here, and so
+    /// do wrong ids, so writers warn about these.
+    pub missing: Vec<String>,
+}
+
+/// A position in a goal list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalCursor {
+    /// Sort key of the last row.
+    pub order: i64,
+    /// Id of the last row.
+    pub id: String,
+}
+
+/// Goals in each list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalCounts {
+    /// Unfinished with recent activity.
+    pub active: usize,
+    /// Unfinished and quiet.
+    pub inactive: usize,
+    /// Done or dropped.
+    pub done: usize,
+}
+
+/// Done and total goals that count below a goal.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalProgress {
+    /// Finished.
+    pub done: usize,
+    /// All that count.
+    pub total: usize,
+}
+
+/// One goal as a `{"goals":1}` read returns it.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalReadRow {
+    /// Goal id.
+    pub id: String,
+    /// Parent id; `None` only for layer 1.
+    pub parent: Option<String>,
+    /// One-line goal.
+    pub title: String,
+    /// Key information.
+    pub note: String,
+    /// Progress state.
+    pub status: GoalStatus,
+    /// Sort key among siblings.
+    pub order: i64,
+    /// Assigned pubkeys (lowercase hex).
+    pub assignees: Vec<String>,
+    /// Linked thread and message ids (lowercase hex).
+    pub links: Vec<String>,
+    /// Last editor.
+    pub updated_by: Option<String>,
+    /// Unix seconds of the last edit.
+    pub updated_at: i64,
+    /// Selected, as opposed to being here as a parent of one that was.
+    pub matched: bool,
+    /// No activity for the inactive window.
+    pub inactive: bool,
+    /// A linked thread has replies.
+    pub is_thread: bool,
+    /// Goals below that count.
+    pub progress: GoalProgress,
+    /// Active goals directly below.
+    pub open_children: usize,
+}
+
+/// A thread in a thread read, with its goal if it has one.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalReadThread {
+    /// Thread root event id.
+    pub thread: String,
+    /// The linked goal.
+    pub goal: Option<String>,
+}
+
+/// A `{"goals":1}` read: selected rows with the goals above them.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalRead {
+    /// List sizes for the whole conversation.
+    pub counts: GoalCounts,
+    /// Selected rows and their parents.
+    pub rows: Vec<GoalReadRow>,
+    /// For a thread read: each thread with its goal.
+    pub threads: Vec<GoalReadThread>,
+    /// Pass back to read the next page.
+    pub next: Option<GoalCursor>,
+}
+
+impl GoalRead {
+    /// Add another read's rows; a goal in both stays once, matched if either
+    /// read selected it.
+    pub fn absorb(&mut self, other: GoalRead) {
+        for row in other.rows {
+            match self.rows.iter_mut().find(|r| r.id == row.id) {
+                Some(seen) => seen.matched |= row.matched,
+                None => self.rows.push(row),
+            }
+        }
+        self.threads.extend(other.threads);
+        self.next = other.next;
+    }
+
+    /// The goal with this id, if this read has it.
+    pub fn row(&self, id: &str) -> Option<&GoalReadRow> {
+        self.rows.iter().find(|r| r.id == id)
+    }
+
+    /// From layer 1 down to the goal.
+    pub fn path(&self, id: &str) -> Vec<&GoalReadRow> {
+        let mut path = Vec::new();
+        let mut at = self.row(id);
+        while let Some(row) = at {
+            path.push(row);
+            at = row.parent.as_deref().and_then(|p| self.row(p));
+        }
+        path.reverse();
+        path
+    }
+
+    fn children(&self, id: Option<&str>) -> Vec<&GoalReadRow> {
+        let mut rows: Vec<&GoalReadRow> = self
+            .rows
+            .iter()
+            .filter(|r| r.parent.as_deref() == id)
+            .collect();
+        rows.sort_by(|a, b| (a.order, &a.id).cmp(&(b.order, &b.id)));
+        rows
+    }
+
+    fn walk<'a>(
+        &'a self,
+        row: &'a GoalReadRow,
+        layer: usize,
+        out: &mut Vec<(usize, &'a GoalReadRow)>,
+    ) {
+        out.push((layer, row));
+        for child in self.children(Some(&row.id)) {
+            self.walk(child, layer + 1, out);
+        }
+    }
+
+    /// The goal and what this read has below it, with layers, parents first.
+    pub fn subtree(&self, id: &str) -> Vec<(usize, &GoalReadRow)> {
+        let mut out = Vec::new();
+        if let Some(row) = self.row(id) {
+            self.walk(row, self.path(id).len(), &mut out);
+        }
+        out
+    }
+
+    /// Every row with its layer, parents first.
+    pub fn outline(&self) -> Vec<(usize, &GoalReadRow)> {
+        let mut out = Vec::new();
+        for root in self.children(None) {
+            self.walk(root, 1, &mut out);
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -820,5 +1001,54 @@ mod tests {
         assert!(validate_fields(Some("ok"), Some("note"), &["a".repeat(64)]).is_ok());
         assert!(validate_id("g_1").is_ok());
         assert!(validate_id("").is_err());
+    }
+
+    fn read_row(id: &str, parent: Option<&str>, order: i64) -> GoalReadRow {
+        GoalReadRow {
+            id: id.into(),
+            parent: parent.map(Into::into),
+            title: id.into(),
+            note: String::new(),
+            status: GoalStatus::Open,
+            order,
+            assignees: Vec::new(),
+            links: Vec::new(),
+            updated_by: None,
+            updated_at: 0,
+            matched: false,
+            inactive: false,
+            is_thread: false,
+            progress: GoalProgress::default(),
+            open_children: 0,
+        }
+    }
+
+    #[test]
+    fn a_read_gives_paths_outlines_and_merges_pages() {
+        let mut read = GoalRead {
+            rows: vec![
+                read_row("b", Some("r"), 3),
+                read_row("r", None, 1),
+                read_row("a", Some("r"), 2),
+            ],
+            ..GoalRead::default()
+        };
+        let mut matched = read_row("a", Some("r"), 2);
+        matched.matched = true;
+        read.absorb(GoalRead {
+            rows: vec![matched, read_row("a1", Some("a"), 4)],
+            ..GoalRead::default()
+        });
+        let outline: Vec<(usize, &str)> = read
+            .outline()
+            .into_iter()
+            .map(|(l, r)| (l, r.id.as_str()))
+            .collect();
+        assert_eq!(outline, [(1, "r"), (2, "a"), (3, "a1"), (2, "b")]);
+        let path: Vec<&str> = read.path("a1").iter().map(|r| r.id.as_str()).collect();
+        assert_eq!(path, ["r", "a", "a1"]);
+        assert_eq!(read.subtree("a").len(), 2);
+        assert!(read.row("a").unwrap().matched);
+        assert!(read.path("gone").is_empty());
     }
 }

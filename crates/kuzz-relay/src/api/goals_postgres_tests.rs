@@ -351,6 +351,8 @@ async fn a_node_read_gives_the_goal_and_its_context() {
         )
         .await;
     assert_eq!(status, StatusCode::OK, "{body}");
+    serde_json::from_value::<kuzz_core::goal_store::GoalRead>(body.clone())
+        .expect("clients read this shape");
     let mut ids: Vec<&str> = body["rows"]
         .as_array()
         .unwrap()
