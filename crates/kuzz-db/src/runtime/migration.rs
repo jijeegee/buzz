@@ -747,7 +747,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 89);
+        assert_eq!(migrations.len(), 91);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql

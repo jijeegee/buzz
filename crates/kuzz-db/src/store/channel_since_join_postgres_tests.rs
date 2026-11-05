@@ -1365,6 +1365,171 @@ async fn an_agents_owner_outside_the_chat_sees_what_the_agent_sees() {
     assert_eq!(f.read(Some(&agent_owner)).await, (vec![], 0));
 }
 
+/// Pairs `agent` to `owner`'s account, connected through a new device.
+async fn pair(pool: &PgPool, owner: &Keys, agent: &Keys) {
+    let account = owner.public_key().to_bytes().to_vec();
+    sqlx::query(
+        "INSERT INTO principals (id, kind, identity_mode, display_name) \
+         VALUES ($1, 'user', 'key_backup', 'owner') ON CONFLICT DO NOTHING",
+    )
+    .bind(&account)
+    .execute(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO account_key_backups (account_id, pubkey, version, key_id, nonce, ciphertext) \
+         VALUES ($1, $2, 1, 'k1', $3, $4) ON CONFLICT DO NOTHING",
+    )
+    .bind(&account)
+    .bind(&account)
+    .bind([0u8; 12].as_slice())
+    .bind([0u8; 48].as_slice())
+    .execute(pool)
+    .await
+    .unwrap();
+    let device_key = [
+        [2u8].as_slice(),
+        Keys::generate().public_key().to_bytes().as_slice(),
+    ]
+    .concat();
+    let device: Uuid = sqlx::query_scalar(
+        "INSERT INTO devices (principal_id, name, platform, device_pubkey, device_key_kind) \
+         VALUES ($1, 'pc', 'desktop', $2, 'software') RETURNING id",
+    )
+    .bind(&account)
+    .bind(device_key)
+    .fetch_one(pool)
+    .await
+    .unwrap();
+    sqlx::query(
+        "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
+         VALUES ($1, $2, 'external', $3)",
+    )
+    .bind(agent.public_key().to_bytes().as_slice())
+    .bind(&account)
+    .bind(device)
+    .execute(pool)
+    .await
+    .unwrap();
+}
+
+/// The owner of a paired agent reads what the agent reads, also once it is
+/// disconnected. The fixture's member has no `users` row, as after a pairing
+/// whose name publish failed. Mutations: drop either `paired_agents_of` -> RED.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_paired_agents_owner_sees_what_the_agent_sees() {
+    use crate::Db;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let db = Db::from_pool(f.pool.clone());
+    let (owner, stranger) = (Keys::generate(), Keys::generate());
+    pair(&f.pool, &owner, &f.member).await;
+    let agent = f.member.public_key().to_bytes();
+    let reader = owner.public_key().to_bytes();
+    let can_read = |who: Vec<u8>| {
+        let db = db.clone();
+        let (scope, channel) = (f.scope, f.channel);
+        async move {
+            db.can_read_via_owned_agent(scope, channel, &who)
+                .await
+                .unwrap()
+        }
+    };
+
+    f.send("before the agent joined").await;
+    f.join().await;
+    let after = f.send("after the agent joined").await;
+
+    // A regular private room stays closed to the owner.
+    assert!(!can_read(reader.to_vec()).await);
+    f.set("UPDATE channels SET channel_type = 'dm' WHERE community_id = $1 AND id = $2")
+        .await;
+    assert!(can_read(reader.to_vec()).await);
+    f.set("UPDATE channels SET channel_type = 'stream' WHERE community_id = $1 AND id = $2")
+        .await;
+    f.set("UPDATE channels SET group_chat = true WHERE community_id = $1 AND id = $2")
+        .await;
+    assert!(can_read(reader.to_vec()).await);
+    assert!(!can_read(stranger.public_key().to_bytes().to_vec()).await);
+    assert_eq!(f.read(Some(&owner)).await, (vec![after.clone()], 1));
+    assert_eq!(f.read(Some(&stranger)).await, (vec![], 0));
+
+    let sha = "c".repeat(64);
+    let id = nostr::EventId::from_hex(&after)
+        .unwrap()
+        .to_bytes()
+        .to_vec();
+    let at: chrono::DateTime<chrono::Utc> =
+        sqlx::query_scalar("SELECT created_at FROM events WHERE community_id = $1 AND id = $2")
+            .bind(f.scope.as_uuid())
+            .bind(&id)
+            .fetch_one(&f.pool)
+            .await
+            .unwrap();
+    db.record_media_references(
+        f.scope,
+        &id,
+        at,
+        Some(f.channel),
+        std::slice::from_ref(&sha),
+    )
+    .await
+    .unwrap();
+    let hashes = [sha.clone()];
+    assert_eq!(
+        db.media_hashes_readable_by(f.scope, &reader, &hashes)
+            .await
+            .unwrap(),
+        hashes
+    );
+    assert!(db
+        .media_hashes_readable_by(f.scope, &stranger.public_key().to_bytes(), &hashes)
+        .await
+        .unwrap()
+        .is_empty());
+
+    // A key registered under the account but not paired gives no read.
+    sqlx::query("UPDATE key_registry SET role = 'agent' WHERE pubkey = $1")
+        .bind(agent.as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(!can_read(reader.to_vec()).await);
+    sqlx::query("UPDATE key_registry SET role = 'external' WHERE pubkey = $1")
+        .bind(agent.as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+
+    // A disconnected agent is still theirs.
+    sqlx::query("UPDATE key_registry SET host_device_id = NULL WHERE pubkey = $1")
+        .bind(agent.as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert_eq!(f.read(Some(&owner)).await, (vec![after], 1));
+
+    // An account purge revokes the key; so does any other end of the pairing.
+    sqlx::query("UPDATE key_registry SET revoked_at = now() WHERE pubkey = $1")
+        .bind(agent.as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    assert!(!can_read(reader.to_vec()).await);
+    assert_eq!(f.read(Some(&owner)).await, (vec![], 0));
+
+    // Once the agent leaves, the owner is an outsider again.
+    sqlx::query("UPDATE key_registry SET revoked_at = NULL WHERE pubkey = $1")
+        .bind(agent.as_slice())
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    f.leave().await;
+    assert!(!can_read(reader.to_vec()).await);
+    assert_eq!(f.read(Some(&owner)).await, (vec![], 0));
+}
+
 /// A kind:9 message through the real ingest writer with chat state: a reply
 /// to `root` when given, mentioning `mentions` with `p` tags.
 async fn post_with_chat_state(
