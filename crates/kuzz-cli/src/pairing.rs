@@ -685,9 +685,14 @@ fn install_hermes(
     for default_agent in default_agents {
         command.arg("--default-agent").arg(default_agent);
     }
-    // This binary, not one found later: the macOS app's plugin root holds none.
+    // The macOS app's plugin root holds no `kuzz` for the installer to find.
     if let Ok(exe) = std::env::current_exe() {
-        command.arg("--cli-path").arg(exe);
+        if exe
+            .parent()
+            .is_some_and(|dir| dir.ends_with("Contents/MacOS"))
+        {
+            command.arg("--cli-path").arg(exe);
+        }
     }
     if !options.restart {
         command.arg("--no-restart");

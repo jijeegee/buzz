@@ -293,8 +293,8 @@ hermes gateway restart
    `$HERMES_HOME/plugins/kuzz/`. Nothing else is needed at run time. An
    existing folder there is moved to `$HERMES_HOME/plugin-backups/kuzz-<UTC
    time>/` first, not deleted.
-2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path` (`kuzz pair`
-   passes itself), else the
+2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path` (the macOS app
+   passes its own), else the
    `kuzz` in the installer's own root, else `kuzz` on `PATH` or the desktop
    app's copy. It also sets `KUZZ_OWNER_PUBKEY` when `--owner` is
    given. Every line that sets one of these keys is updated, and the file

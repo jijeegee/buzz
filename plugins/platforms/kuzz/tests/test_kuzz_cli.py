@@ -632,6 +632,15 @@ class RefreshTest(unittest.TestCase):
             result = self.install.refresh(self.root)
         self.assertEqual((result["failed"], result["updated"]), ([str(self.root)], [str(work)]))
 
+    def test_a_home_that_keeps_failing_restarts_nothing(self):
+        self.connector(self.root)
+        self.gateway()
+        with mock.patch.object(self.install, "copy_plugin", side_effect=OSError("in use")):
+            for pid in (10, 11):
+                self.gateway(pid=pid)
+                self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "none")
+        self.restart.assert_not_called()
+
     def test_a_failed_rename_puts_the_old_connector_back(self):
         folder = self.connector(self.root)
         real = Path.rename

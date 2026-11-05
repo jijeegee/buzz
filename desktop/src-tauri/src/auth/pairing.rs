@@ -440,7 +440,9 @@ fn hermes_profile_target(root: &Path, profile: &str) -> Option<Option<PathBuf>> 
 /// plugin and home channel, and leave it running: outside any job of this
 /// app, no pipes, no window, without Kuzz settings or secrets in its env
 /// (Hermes reads them from its own `.env`). Hermes refuses while it has
-/// live work; the owner then restarts it later. Only the exit is logged.
+/// live work; the owner then restarts it later. `-p default`: a sticky
+/// `hermes profile use` would otherwise bounce only that profile. Only the
+/// exit is logged.
 fn restart_hermes_gateway() {
     let Some(home) = hermes_home() else {
         return;
@@ -451,7 +453,7 @@ fn restart_hermes_gateway() {
     };
     let mut restart = std::process::Command::new(hermes);
     restart
-        .args(["gateway", "restart", "--detach"])
+        .args(["-p", "default", "gateway", "restart", "--detach"])
         .env("HERMES_HOME", &home)
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::null())
