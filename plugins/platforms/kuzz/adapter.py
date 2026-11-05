@@ -233,7 +233,9 @@ class KuzzAdapter(BasePlatformAdapter):
         self.channels: Set[str] = set(_csv(_setting(("KUZZ_CHANNELS",), self._extra, "channels", [])))
         self.home_channel = str(_setting(("KUZZ_HOME_CHANNEL",), self._extra, "home_channel", "") or "").strip()
         self.require_mention = _flag(_setting(("KUZZ_REQUIRE_MENTION",), self._extra, "require_mention"), True)
-        self._limit_to = _pubkeys(_csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", [])))
+        limit_to = _csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
+        # Set but with no valid key, it limits to nobody: a typo must not open the agent.
+        self._limit_to: Optional[Set[str]] = _pubkeys(limit_to) if limit_to else None
         self._reaction_only = _pubkeys(_csv(_setting(("KUZZ_REACTION_ONLY_USERS",), self._extra, "reaction_only_users", [])))
         self._identity: Optional[Identity] = None
         self._cli: List[str] = []
@@ -259,6 +261,7 @@ class KuzzAdapter(BasePlatformAdapter):
         self._access = WatchAccess()
         # channel -> its type; failed lookups are not kept.
         self._channel_types = _Bounded(_ID_CAP)
+        self._channel_type_lookups: Dict[str, asyncio.Task] = {}
         self._sync_allowlist()
 
     @property
@@ -356,7 +359,7 @@ class KuzzAdapter(BasePlatformAdapter):
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
         # After the watch: its last lines may have started admissions. A cancelled one is replayed.
-        pending = (*self._admissions, *self._same_owner_lookups.values())
+        pending = (*self._admissions, *self._same_owner_lookups.values(), *self._channel_type_lookups.values())
         for waiting in pending:
             waiting.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
@@ -603,7 +606,7 @@ class KuzzAdapter(BasePlatformAdapter):
         admitted = access.mode == "anyone" or (access.mode == "allowlist" and msg.author in access.allowlist)
         return (
             admitted
-            and (not self._limit_to or msg.author in self._limit_to)
+            and (self._limit_to is None or msg.author in self._limit_to)
             and self._mentions_me(msg)
             and msg.created_at >= time.time() - _OTHERS_MAX_AGE_SECS
             and _CAN_LIMIT_CONTROL
@@ -611,18 +614,28 @@ class KuzzAdapter(BasePlatformAdapter):
 
     async def _in_open_channel(self, msg: WatchMessage) -> bool:
         """A stream or forum, by the relay. No answer counts as no: a DM stays closed to other people."""
-        channel_type = self._channel_types.get(msg.channel)
+        channel = msg.channel
+        channel_type = self._channel_types.get(channel)
         if channel_type is None:
-            args = ["channels", "get", "--channel", msg.channel]
-            try:
-                rc, out, _err = await kuzz_cli.run_cli(self._cli, args, timeout=_CHANNEL_TYPE_TIMEOUT_SECS, env=self._env())
-            except OSError:
-                return False
-            channel_type = _json_dict(out).get("channel_type") if rc == 0 else None
-            if not isinstance(channel_type, str) or not channel_type:
-                return False
-            self._channel_types.put(msg.channel, channel_type)
+            lookup = self._channel_type_lookups.get(channel)
+            if lookup is None:
+                lookup = asyncio.ensure_future(self._lookup_channel_type(channel))
+                self._channel_type_lookups[channel] = lookup
+                lookup.add_done_callback(lambda _: self._channel_type_lookups.pop(channel, None))
+            channel_type = await lookup
         return channel_type in _OPEN_CHANNEL_TYPES
+
+    async def _lookup_channel_type(self, channel: str) -> Optional[str]:
+        args = ["channels", "get", "--channel", channel]
+        try:
+            rc, out, _err = await kuzz_cli.run_cli(self._cli, args, timeout=_CHANNEL_TYPE_TIMEOUT_SECS, env=self._env())
+        except OSError:
+            return None
+        channel_type = _json_dict(out).get("channel_type") if rc == 0 else None
+        if not isinstance(channel_type, str) or not channel_type:
+            return None
+        self._channel_types.put(channel, channel_type)
+        return channel_type
 
     async def _refuse(self, msg: WatchMessage) -> None:
         if msg.author in self._reaction_only and self._mentions_me(msg):

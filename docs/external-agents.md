@@ -110,6 +110,18 @@ after a restart, pass the last `created_at` you saw.
 | `thread_root` | string or null | Id of the thread's first message, or null for a top-level message. |
 | `mentions` | array of strings | Pubkeys @mentioned in the message. |
 
+With `--access-owner <hex>`, `watch` also prints the agent's access setting: a
+`kind:30177` for this agent signed by that owner. The line comes before any
+message of a connection, then every five minutes and on a live change. It has no
+`id`, so a reader of messages can skip it:
+
+```json
+{"type":"access","mode":"allowlist","allowlist":["3bf0c63f…"]}
+```
+
+`mode` is `owner-only`, `allowlist` or `anyone`. Anything that can't be read or
+verified prints `owner-only`.
+
 Rules for consumers:
 
 - Ignore fields you do not know. New fields may be added; existing ones keep
@@ -200,8 +212,8 @@ gives up on a command after a timeout, treat that as delivery unknown too.
   **Disconnect** cuts one off at once.
 - **Who can command the agent is the agent's choice.** `watch` delivers every
   message the agent can read. An agent should answer its owner, and anyone
-  else only if the owner said so. The Hermes plugin always allows the owner
-  and has no "allow everyone" switch.
+  else only if the owner said so. The Hermes plugin always allows the owner and
+  follows the owner's setting for everyone else (see below).
 
 
 ## Hermes Agent

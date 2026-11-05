@@ -390,9 +390,8 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(len(events), 1)
             self.assertIn(event_id(1), adapter._channel(CHANNEL)["seen"])
 
-    def _heard(self, access, lines, *, during=None, **env):
-        """The events delivered from ``lines`` under ``access``, each line new unless it says otherwise.
-        ``during`` runs while the lookups are in flight."""
+    def _heard(self, access, lines, *, prepare=None, **env):
+        """The events delivered from ``lines`` under ``access``. ``prepare`` gets the connected adapter."""
         now = int(time.time())
         # Each run starts clean, or the cursor of the one before would drop these same ids.
         Path(self._home.name, "kuzz", "channel-cursors.json").unlink(missing_ok=True)
@@ -404,12 +403,12 @@ class AdapterTest(unittest.TestCase):
             async def scenario():
                 self.assertTrue(await adapter.connect())
                 adapter._on_access(kuzz_cli.parse_access_line(json.dumps({"type": "access", **access})))
+                if prepare:
+                    prepare(adapter)
                 for line in lines:
                     while adapter._admissions:
                         await asyncio.sleep(0.01)
                     await adapter._on_message(parse_watch_line(json.dumps({"created_at": now, **line})))
-                if during:
-                    during(adapter)
                 while adapter._admissions:
                     await asyncio.sleep(0.01)
                 await adapter.disconnect()
@@ -428,6 +427,9 @@ class AdapterTest(unittest.TestCase):
 
         adapter._on_watch_start = keep
         return reset
+
+    def _said_now(self, n):
+        return {**self._said(n), "created_at": int(time.time())}
 
     @staticmethod
     def _said(n, author=STRANGER, **overrides):
@@ -478,6 +480,22 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual(self._heard({"mode": "allowlist", "allowlist": []}, [self._said(1, LISTED)],
                                      KUZZ_ALLOWED_USERS=LISTED), [])
 
+    def test_allowed_users_with_only_typos_lets_nobody_in(self):
+        self.assertEqual(self._heard(ANYONE, [self._said(1)], KUZZ_ALLOWED_USERS="npub1typo"), [])
+
+    def test_a_burst_shares_one_channel_type_lookup(self):
+        def burst(adapter):
+            first = adapter._on_message
+
+            async def together(msg):
+                await first(msg)
+                await first(parse_watch_line(json.dumps(self._said_now(2))))
+
+            adapter._on_message = together
+
+        self.assertEqual(len(self._heard(ANYONE, [self._said(1)], prepare=burst)), 2)
+        self.assertEqual(sum(call["args"][:2] == ["channels", "get"] for call in self.calls), 1)
+
     def test_a_late_message_from_other_people_is_dropped(self):
         late = int(time.time()) - adapter_module._OTHERS_MAX_AGE_SECS - 30
         lines = [{**self._said(1), "created_at": late}, {**self._said(2, OWNER), "created_at": late},
@@ -485,10 +503,14 @@ class AdapterTest(unittest.TestCase):
         self.assertEqual({e.text for e in self._heard(ANYONE, lines)}, {"m2", "m3"})
 
     def test_narrowing_during_a_lookup_wins(self):
-        def narrow(adapter):
-            adapter._on_access(kuzz_cli.WatchAccess())
+        def narrow_in_the_lookup(adapter):
+            async def lookup(_msg):
+                adapter._on_access(kuzz_cli.WatchAccess())
+                return True
 
-        self.assertEqual(self._heard(ANYONE, [self._said(1)], during=narrow, FAKE_KUZZ_SAME_OWNER_DELAY="0.3"), [])
+            adapter._in_open_channel = lookup
+
+        self.assertEqual(self._heard(ANYONE, [self._said(1)], prepare=narrow_in_the_lookup), [])
 
     def test_a_setting_applies_live_and_a_new_watch_starts_owner_only(self):
         async def scenario(adapter, events, watch_start):

@@ -246,7 +246,9 @@ impl AccessWatch {
     fn on_event(&mut self, event: &nostr::Event, me: &str) -> Option<Value> {
         let created_at = event.created_at.as_secs();
         let access = match Access::from_event(event, &self.owner, me) {
-            Some(_) if created_at < self.newest => self.current.clone(),
+            Some(_) if created_at < self.newest => {
+                self.seen.clone().unwrap_or_else(|| self.current.clone())
+            }
             Some(access) => {
                 self.newest = created_at;
                 access
@@ -556,6 +558,7 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch, presence_every: 
         let mut members_ready = false;
         let mut last_frame = Instant::now();
         let mut members_at = Instant::now();
+        let mut access_at = Instant::now();
         let mut ping_sent: Option<Instant> = None;
         // Set once subscribed: online means messages are being received.
         let mut presence_at: Option<Instant> = None;
@@ -570,10 +573,13 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch, presence_every: 
             }
             if members_ready && members_at.elapsed() > MEMBERS_REFRESH {
                 send(&mut conn, &members_req(&watch.me)).await?;
+                members_at = Instant::now();
+            }
+            if subscribed && access_at.elapsed() > MEMBERS_REFRESH {
                 if let Some(access) = watch.access.as_mut() {
                     send(&mut conn, &access.begin_read(&watch.me)).await?;
                 }
-                members_at = Instant::now();
+                access_at = Instant::now();
             }
             let message = match conn.next_event(TICK).await {
                 Ok(message) => message,
@@ -1302,6 +1308,13 @@ mod tests {
         assert_eq!(access.on_event(&newer, ALICE), None);
         assert_eq!(access.finish_read()["mode"], "owner-only");
 
+        // A change during a read survives the old copy the read then returns.
+        access.current = Access::Anyone;
+        access.begin_read(ALICE);
+        access.on_event(&at(r#"{"respond_to":"owner-only"}"#, 35), ALICE);
+        access.on_event(&newer, ALICE);
+        assert_eq!(access.finish_read()["mode"], "owner-only");
+
         // A bad event never widens.
         access.current = Access::Anyone;
         let forged = setting(&Keys::generate(), ALICE, r#"{"respond_to":"anyone"}"#, 40);
@@ -1326,8 +1339,8 @@ mod tests {
         assert!(!access.read_overdue());
     }
 
-    /// A relay that answers the access REQ with `answer` and reports every
-    /// REQ's subscription id.
+    /// A relay that answers the access REQ with `answer` ("" = silence) and
+    /// reports every REQ's subscription id.
     async fn access_relay(answer: &'static str) -> (String, mpsc::UnboundedReceiver<String>) {
         let (reqs, received) = mpsc::unbounded_channel();
         let app = axum::Router::new().route(
@@ -1359,7 +1372,7 @@ mod tests {
                 }
                 Some("REQ") => {
                     let _ = reqs.send(value[1].as_str().unwrap().to_owned());
-                    if value[1] == ACCESS_SUB {
+                    if value[1] == ACCESS_SUB && !answer.is_empty() {
                         let reply = json!([answer, ACCESS_SUB, "no"]);
                         let _ = socket.send(frame(reply)).await;
                     }
@@ -1371,7 +1384,7 @@ mod tests {
 
     #[tokio::test]
     async fn the_access_read_comes_before_messages_on_every_connection() {
-        for answer in ["EOSE", "CLOSED"] {
+        for answer in ["EOSE", "CLOSED", ""] {
             let (url, mut reqs) = access_relay(answer).await;
             let keys = Keys::generate();
             let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
@@ -1390,8 +1403,8 @@ mod tests {
             while order.len() < 3 {
                 tokio::select! {
                     _ = &mut run => panic!("the connection ended"),
-                    req = tokio::time::timeout(Duration::from_secs(4), reqs.recv()) => {
-                        order.push(req.expect("the watch goes on after {answer}").unwrap());
+                    req = tokio::time::timeout(ACCESS_READ_LIMIT + 2 * TICK, reqs.recv()) => {
+                        order.push(req.expect("the watch goes on").unwrap());
                     }
                 }
             }
