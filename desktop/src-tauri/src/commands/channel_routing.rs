@@ -14,7 +14,7 @@ use tauri::{AppHandle, Manager};
 use crate::{
     app_state::AppState,
     managed_agents::{
-        account_settings::active_settings_owner,
+        account_settings::{active_settings_owner, require_settings_owner},
         channel_routing::{
             lead_rules, load_active_channel_routing, load_deployed_roles, observe_remote,
             observed_routing_state, plan_routing_transition, routing_role_for,
@@ -153,12 +153,14 @@ pub async fn get_channel_routing(app: AppHandle) -> Result<ChannelRoutingStatus,
 pub async fn set_channel_routing(
     mode: ChannelRoutingMode,
     agent_pubkey: Option<String>,
+    owner: String,
     app: AppHandle,
 ) -> Result<ChannelRoutingStatus, String> {
     if !mode.is_selectable() {
         return Err("That channel routing mode isn't available yet.".to_string());
     }
     tokio::task::spawn_blocking(move || {
+        require_settings_owner(&app, &owner)?;
         if mode == ChannelRoutingMode::DesktopRouter {
             if let Some(reason) = super::router_not_ready(&app)? {
                 return Err(format!(
@@ -168,8 +170,6 @@ pub async fn set_channel_routing(
             }
         }
         with_routing_store(&app, |records, runtimes| {
-            // One account for the star and the mode, whatever happens meanwhile.
-            let me = active_settings_owner(&app)?;
             if matches!(mode, ChannelRoutingMode::Host | ChannelRoutingMode::Lead) {
                 let pubkey = agent_pubkey
                     .as_deref()
@@ -192,7 +192,7 @@ pub async fn set_channel_routing(
                     }
                 }
                 let changed = set_default_ai(records, Some(pubkey), |record| {
-                    owned_by_viewer(visible_owner_hex(&app, record).as_deref(), Some(&me))
+                    owned_by_viewer(visible_owner_hex(&app, record).as_deref(), Some(&owner))
                 })?;
                 if !changed.is_empty() {
                     let now = now_iso();
@@ -202,7 +202,7 @@ pub async fn set_channel_routing(
                     save_managed_agents(&app, records)?;
                 }
             }
-            save_channel_routing(&app, &me, mode)?;
+            save_channel_routing(&app, &owner, mode)?;
             // Residue only: a leftover file is inert and the launch sweep
             // retries, so a failed sweep must not fail the saved switch.
             if let Err(error) = lead_rules::sweep_stale_lead_rules(&app, runtimes) {

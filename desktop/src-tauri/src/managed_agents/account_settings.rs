@@ -49,6 +49,24 @@ pub(crate) fn active_settings_owner<R: tauri::Runtime>(
     state.current_identity_pubkey().map(|key| key.to_hex())
 }
 
+fn require_owner(active: Result<String, String>, owner: &str) -> Result<(), String> {
+    if active?.eq_ignore_ascii_case(owner) {
+        Ok(())
+    } else {
+        Err("The account changed. Reopen this screen and try again.".to_string())
+    }
+}
+
+/// A save from a screen names the account that screen showed. It is refused
+/// once another account is active: the values were chosen for `owner`, and the
+/// write goes to `owner`'s folder whatever happens after this check.
+pub(crate) fn require_settings_owner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner: &str,
+) -> Result<(), String> {
+    require_owner(active_settings_owner(app), owner)
+}
+
 /// A sign-in on this computer: the next start checks whether this account's
 /// agents are set up here. Written before the sign-in can reload the window.
 pub(crate) fn mark_agent_setup_pending<R: tauri::Runtime>(
@@ -86,6 +104,14 @@ mod tests {
     use super::*;
 
     const OWNER: &str = "AB00000000000000000000000000000000000000000000000000000000000000";
+
+    #[test]
+    fn a_save_is_refused_unless_its_account_is_active() {
+        let lower = OWNER.to_ascii_lowercase();
+        assert!(require_owner(Ok(lower), OWNER).is_ok());
+        assert!(require_owner(Ok("b".repeat(64)), OWNER).is_err());
+        assert!(require_owner(Err("blocked".to_string()), OWNER).is_err());
+    }
 
     #[test]
     fn each_owner_gets_one_lowercase_folder() {

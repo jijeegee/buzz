@@ -248,6 +248,7 @@ pub async fn set_task_model(
     task_id: String,
     provider: Option<String>,
     model: Option<String>,
+    owner: String,
     app: AppHandle,
 ) -> Result<Vec<TaskModelStatus>, String> {
     let task_id = KNOWN_TASK_IDS
@@ -275,7 +276,8 @@ pub async fn set_task_model(
     }
     let setting = TaskModelSetting { provider, model };
     tokio::task::spawn_blocking(move || {
-        let saved = save_task_model(&app, task_id, setting)?;
+        crate::managed_agents::account_settings::require_settings_owner(&app, &owner)?;
+        let saved = save_task_model(&app, &owner, task_id, setting)?;
         task_model_statuses(&app, &saved)
     })
     .await

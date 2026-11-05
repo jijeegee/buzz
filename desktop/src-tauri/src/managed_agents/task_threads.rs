@@ -156,10 +156,10 @@ pub(crate) fn load_task_threads_at(path: &Path) -> Result<TaskThreadsSetting, St
 
 pub fn save_task_threads<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     setting: &TaskThreadsSetting,
 ) -> Result<(), String> {
-    let owner = active_settings_owner(app)?;
-    save_task_threads_at(&task_threads_path(app, &owner)?, setting)?;
+    save_task_threads_at(&task_threads_path(app, owner_hex)?, setting)?;
     // Running agents pick the change up from their live settings files.
     super::live_settings::schedule_live_settings_sync(app);
     Ok(())

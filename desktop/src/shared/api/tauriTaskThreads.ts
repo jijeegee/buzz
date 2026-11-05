@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import { requireOwner } from "@/shared/api/tauriGlobalAgentConfig";
 
 /** A situation in which an agent may open a task thread without being asked. */
 export type TaskThreadTrigger =
@@ -28,6 +29,10 @@ export async function getTaskThreads(): Promise<TaskThreadsSetting> {
 
 export async function setTaskThreads(
   setting: TaskThreadsSetting,
+  owner: string | null | undefined,
 ): Promise<TaskThreadsSetting> {
-  return invokeTauri<TaskThreadsSetting>("set_task_threads", { setting });
+  return invokeTauri<TaskThreadsSetting>("set_task_threads", {
+    setting,
+    owner: requireOwner(owner),
+  });
 }
