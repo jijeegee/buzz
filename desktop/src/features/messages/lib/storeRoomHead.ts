@@ -22,6 +22,7 @@ import {
   storeOpensEnabled,
 } from "@/features/messages/lib/storedWindows";
 import { refreshChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
+import { afterThreadRequest } from "@/features/messages/lib/threadFirst";
 import { sendRoomWindow } from "@/features/messages/lib/windowLiveToken";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import { invokeTauri } from "@/shared/api/tauri";
@@ -143,9 +144,10 @@ async function paintWindow(queryClient: QueryClient, channelId: string) {
 /** Sends the room's relay window request. */
 function startRelay(queryClient: QueryClient, channelId: string) {
   noteStart(queryClient, channelId);
-  return sendRoomWindow(queryClient, channelId, () =>
-    deps.relayWindow(channelId),
-  );
+  return sendRoomWindow(queryClient, channelId, async () => {
+    await afterThreadRequest(queryClient, channelId);
+    return deps.relayWindow(channelId);
+  });
 }
 
 /**

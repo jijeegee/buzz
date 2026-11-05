@@ -24,6 +24,7 @@ import type {
   UpdateManagedAgentInput,
 } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
+import { isWelcomeTeamOwed, setWelcomeTeamOwed } from "./welcome";
 
 export const WELCOME_GUIDE_AGENT_NAME = "Fizz";
 export const WELCOME_GUIDE_PERSONA_ID = "builtin:fizz";
@@ -384,6 +385,12 @@ async function provisionWelcomeTeam(
       !pickWelcomeTeamStarterAgentForRelay(existingAgents, starter, relayUrl),
   ).map((starter) => starter.personaId);
   if (
+    missingPersonaIds.length > 0 &&
+    !isWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl)
+  ) {
+    throw new WelcomeTeamElsewhereError();
+  }
+  if (
     await welcomeStarterRunsElsewhere(
       missingPersonaIds,
       existingAgents,
@@ -443,6 +450,7 @@ async function provisionWelcomeTeam(
     }
   }
   await ensureWelcomeTeamMembership(channelId, welcomeAgents);
+  setWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl, false);
   return welcomeAgents;
 }
 

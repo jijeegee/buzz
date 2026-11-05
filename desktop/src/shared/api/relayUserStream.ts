@@ -340,7 +340,13 @@ export class UserStreamSession {
     if (stream.mode === "shadow") {
       const room = this.host.roomOf(event);
       if (room) {
-        stream.comparator?.observe("stream", event.id, room, this.host.nowMs());
+        stream.comparator?.observe(
+          "stream",
+          event.id,
+          room,
+          this.host.nowMs(),
+          event,
+        );
       }
       return;
     }
@@ -351,7 +357,7 @@ export class UserStreamSession {
   chunkEvent(event: RelayEvent, room: string) {
     const comparator = this.current?.comparator;
     if (!comparator) return;
-    comparator.observe("chunk", event.id, room, this.host.nowMs());
+    comparator.observe("chunk", event.id, room, this.host.nowMs(), event);
   }
 
   /** A 44100 for `room` on this connection. */
@@ -495,7 +501,10 @@ export class UserStreamSession {
     const comparator = stream.comparator;
     if (!comparator) return;
     comparator.closed();
-    for (const [key, value] of Object.entries(comparator.counters)) {
+    for (const [key, value] of Object.entries({
+      ...comparator.counters,
+      ...comparator.chunkOnlyDetail,
+    })) {
       this.report.add(key, value);
     }
     stream.comparator = null;

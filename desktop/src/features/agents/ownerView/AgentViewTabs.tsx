@@ -4,20 +4,26 @@ import { toast } from "sonner";
 import { useAppNavigation } from "@/app/navigation/useAppNavigation";
 import { useOpenDmMutation } from "@/features/channels/hooks";
 import { useUserProfileQuery } from "@/features/profile/hooks";
+import { useAuthDevicesQuery } from "@/shared/api/useAuthDeviceNames";
 import { cn } from "@/shared/lib/cn";
+import { isPairedAgent } from "./pairedAgent";
 import { useT } from "@/shared/i18n";
 
 import { useAgentChatList, useOwnerViewBinding } from "./useAgentChatList";
 
-/** The signed-in account owns this agent (the relay's owner record). */
+/**
+ * The signed-in account owns this agent: the relay's owner record, or an
+ * agent paired to one of the account's computers.
+ */
 export function useIsMyAgent(agentPubkey: string | null | undefined) {
   const binding = useOwnerViewBinding();
   const ownerPubkey = useUserProfileQuery(agentPubkey ?? undefined).data
     ?.ownerPubkey;
+  const devices = useAuthDevicesQuery(!!binding && !!agentPubkey).data;
+  if (!binding || !agentPubkey) return false;
   return (
-    !!binding &&
-    !!ownerPubkey &&
-    ownerPubkey.toLowerCase() === binding.ownerPubkey
+    ownerPubkey?.toLowerCase() === binding.ownerPubkey ||
+    isPairedAgent(devices, agentPubkey)
   );
 }
 

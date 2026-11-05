@@ -496,6 +496,47 @@ fn the_hermes_installer_is_looked_for_only_in_install_roots() {
 }
 
 #[test]
+fn the_macos_app_ships_the_plugin_in_resources() {
+    let exe = std::path::Path::new("/Applications/Kuzz.app/Contents/MacOS/kuzz");
+    let roots = hermes_installer_roots(exe);
+    assert_eq!(
+        roots[1],
+        std::path::Path::new("/Applications/Kuzz.app/Contents/Resources")
+    );
+}
+
+#[test]
+fn hermes_root_is_the_default_profile() {
+    let root = std::path::Path::new("/home/me/.hermes");
+    assert_eq!(hermes_root(root), root);
+    assert_eq!(hermes_root(&root.join("profiles").join("work")), root);
+}
+
+#[test]
+fn hermes_connector_is_found_in_a_profile_only() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(!has_hermes_connector(root.path()));
+    let profile = root.path().join("profiles").join("work");
+    std::fs::create_dir_all(profile.join("plugins")).unwrap();
+    assert!(!has_hermes_connector(root.path()));
+    std::fs::create_dir(profile.join("plugins").join("kuzz")).unwrap();
+    assert!(has_hermes_connector(root.path()));
+}
+
+#[test]
+fn hermes_own_python_comes_first() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(python_candidates(root.path()), ["python3", "python", "py"]);
+    let bin = root.path().join("hermes-agent").join("venv").join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("python"), b"").unwrap();
+    assert_eq!(
+        python_candidates(root.path())[0],
+        bin.join("python").into_os_string()
+    );
+}
+
+#[test]
 fn pair_needs_a_named_relay_never_the_localhost_default() {
     let default = "http://localhost:3000";
     let error = pair_relay(None, default, true).expect_err("no relay");

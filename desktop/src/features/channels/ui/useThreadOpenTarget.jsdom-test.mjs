@@ -70,7 +70,7 @@ test("opens at the first unread reply, near the top", () => {
   }
 });
 
-test("a first unread reply that may be older pages back before opening", async () => {
+test("a first unread reply that may be older draws where it is and pages back", async () => {
   window.localStorage.clear();
   let fetched = 0;
   const view = mount({
@@ -87,8 +87,8 @@ test("a first unread reply that may be older pages back before opening", async (
   try {
     await act(() => Promise.resolve());
     assert.equal(fetched, 1);
-    assert.equal(view.last().isResolving, true);
-    assert.equal(view.last().targetId, null);
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().targetId, "r5");
     view.update({
       replies: replies("r3", "r4", "r5", "r6"),
       firstUnreadReplyId: "r4",
@@ -216,6 +216,103 @@ test("opening at a first unread reply forgets the old spot", () => {
       readingPositionStore.get(SCOPE, threadPositionKey("room", "root")),
       null,
     );
+  } finally {
+    view.unmount();
+  }
+});
+
+test("older pages wait for the relay: stored replies draw first and stay drawn while it seeks", async () => {
+  window.localStorage.clear();
+  let found;
+  const view = mount({
+    replies: replies("r2", "r3"),
+    firstUnreadReplyId: "r2",
+    repliesConfirmed: false,
+    hasOlderReplies: true,
+    fetchOlder: () =>
+      new Promise((resolve) => {
+        found = resolve;
+      }),
+  });
+  try {
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().targetId, "r2");
+    // The list reached the stored target and let go of it.
+    act(() => view.last().release());
+    await act(async () => {
+      view.update({ repliesConfirmed: true });
+    });
+    assert.equal(view.last().isResolving, false);
+    // The seek's target is still taken once it is found.
+    await act(async () => {
+      view.update({
+        replies: replies("r1", "r2", "r3"),
+        firstUnreadReplyId: "r1",
+        hasOlderReplies: false,
+      });
+      found(true);
+    });
+    assert.equal(view.last().isResolving, false);
+    assert.equal(view.last().targetId, "r1");
+  } finally {
+    view.unmount();
+  }
+});
+
+test("the list's own scroll during a seek is not the reader moving", async () => {
+  window.localStorage.clear();
+  const view = mount({
+    replies: replies("r2", "r3"),
+    firstUnreadReplyId: "r2",
+    hasOlderReplies: true,
+    fetchOlder: () => new Promise(() => {}),
+  });
+  try {
+    await act(() => Promise.resolve());
+    const list = document.createElement("div");
+    list.innerHTML = '<div data-message-id="r2"></div>';
+    document.body.append(list);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 60_000;
+    try {
+      act(() => {
+        list.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+      });
+    } finally {
+      Date.now = realNow;
+      list.remove();
+    }
+    view.update({
+      replies: replies("r1", "r2", "r3"),
+      firstUnreadReplyId: "r1",
+      hasOlderReplies: false,
+    });
+    assert.equal(view.last().targetId, "r1");
+  } finally {
+    view.unmount();
+  }
+});
+
+test("a reader who scrolled during a seek stays put", async () => {
+  window.localStorage.clear();
+  const view = mount({
+    replies: replies("r2", "r3"),
+    firstUnreadReplyId: "r2",
+    hasOlderReplies: true,
+    fetchOlder: () => new Promise(() => {}),
+  });
+  try {
+    await act(() => Promise.resolve());
+    assert.equal(view.last().targetId, "r2");
+    act(() => {
+      window.dispatchEvent(new window.WheelEvent("wheel", { deltaY: 40 }));
+    });
+    view.update({
+      replies: replies("r1", "r2", "r3"),
+      firstUnreadReplyId: "r1",
+      hasOlderReplies: false,
+    });
+    assert.equal(view.last().targetId, "r2");
   } finally {
     view.unmount();
   }

@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import { requireOwner } from "@/shared/api/tauriGlobalAgentConfig";
 
 /** What an agent reads when it starts a fresh main-timeline or thread session. */
 export type ContextHistoryMode = "recent" | "budget";
@@ -18,6 +19,10 @@ export async function getContextHistory(): Promise<ContextHistorySetting> {
 
 export async function setContextHistory(
   setting: ContextHistorySetting,
+  owner: string | null | undefined,
 ): Promise<ContextHistorySetting> {
-  return invokeTauri<ContextHistorySetting>("set_context_history", { setting });
+  return invokeTauri<ContextHistorySetting>("set_context_history", {
+    setting,
+    owner: requireOwner(owner),
+  });
 }

@@ -1,8 +1,9 @@
 //! Self-opened task threads: the situations in which an agent may open a task
 //! thread without being asked.
 //!
-//! One desktop-wide setting stored in `<app-data>/agents/task-threads.json`
-//! (`{ "level": "standard", "triggers": [...] }`). It is deliberately not a
+//! One setting per account, stored in
+//! `<app-data>/agents/accounts/<owner-hex>/task-threads.json`
+//! (`{ "level": "standard", "triggers": [...] }`); an agent follows its owner's. It is deliberately not a
 //! `GlobalAgentConfig` field, so changing it never restarts an agent: running
 //! agents read it from their live settings file (`live_settings`) on their
 //! next message. The harness receives the enabled triggers (at launch as
@@ -14,7 +15,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{managed_agents_base_dir, storage::atomic_write_json, AcpSessionPolicy};
+use super::{
+    account_settings::{account_settings_dir, active_settings_owner},
+    storage::atomic_write_json,
+    AcpSessionPolicy,
+};
 
 const TASK_THREADS_FILE: &str = "task-threads.json";
 pub(crate) const TASK_THREADS_ENV_VAR: &str = "KUZZ_ACP_TASK_THREADS";
@@ -123,14 +128,22 @@ pub(crate) fn parse_task_threads(content: Option<&str>) -> TaskThreadsSetting {
     })
 }
 
-fn task_threads_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(managed_agents_base_dir(app)?.join(TASK_THREADS_FILE))
+fn task_threads_path<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<PathBuf, String> {
+    Ok(account_settings_dir(app, owner_hex)?.join(TASK_THREADS_FILE))
 }
 
+/// The active account's setting, for the screens. The default while that
+/// account cannot be used yet.
 pub fn load_task_threads<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<TaskThreadsSetting, String> {
-    load_task_threads_at(&task_threads_path(app)?)
+    match active_settings_owner(app) {
+        Ok(owner) => load_task_threads_at(&task_threads_path(app, &owner)?),
+        Err(_) => Ok(TaskThreadsSetting::default()),
+    }
 }
 
 pub(crate) fn load_task_threads_at(path: &Path) -> Result<TaskThreadsSetting, String> {
@@ -143,9 +156,10 @@ pub(crate) fn load_task_threads_at(path: &Path) -> Result<TaskThreadsSetting, St
 
 pub fn save_task_threads<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     setting: &TaskThreadsSetting,
 ) -> Result<(), String> {
-    save_task_threads_at(&task_threads_path(app)?, setting)?;
+    save_task_threads_at(&task_threads_path(app, owner_hex)?, setting)?;
     // Running agents pick the change up from their live settings files.
     super::live_settings::schedule_live_settings_sync(app);
     Ok(())
@@ -160,10 +174,17 @@ pub(crate) fn save_task_threads_at(
     atomic_write_json(path, &payload)
 }
 
-/// The env value spawn paths apply, read once per launch. A read failure
-/// launches with the default rather than blocking the agent.
-pub(crate) fn current_task_threads_env<R: tauri::Runtime>(app: &AppHandle<R>) -> String {
-    load_task_threads(app)
+/// The env value spawn paths apply for an agent of `owner`, read once per
+/// launch. An unknown owner or a read failure launches with the default rather
+/// than blocking the agent.
+pub(crate) fn current_task_threads_env<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner: Option<&str>,
+) -> String {
+    owner
+        .map_or(Ok(TaskThreadsSetting::default()), |owner| {
+            load_task_threads_at(&task_threads_path(app, owner)?)
+        })
         .unwrap_or_else(|error| {
             eprintln!("kuzz-desktop: {error}; using the default task threads setting");
             TaskThreadsSetting::default()

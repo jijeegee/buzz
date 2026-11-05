@@ -2606,6 +2606,7 @@ test("sends a thread message to its parent channel with a root-thread link", asy
     .click();
   const threadPanel = page.getByTestId("message-thread-panel");
   const threadRootRow = threadPanel.locator(`[data-message-id="${rootId}"]`);
+  await threadRootRow.hover();
   const rootMoreActions = threadRootRow.getByTestId(`more-actions-${rootId}`);
   await rootMoreActions.click({ force: true });
   await expect(page.getByRole("menu")).toBeVisible();
@@ -2617,6 +2618,7 @@ test("sends a thread message to its parent channel with a root-thread link", asy
 
   const ownReplyRow = threadPanel.locator(`[data-message-id="${ownReplyId}"]`);
   await expect(ownReplyRow).toContainText(replySummary);
+  await ownReplyRow.hover();
   await ownReplyRow
     .getByTestId(`more-actions-${ownReplyId}`)
     .click({ force: true });
@@ -3708,6 +3710,7 @@ test("editing a live thread reply uses and focuses the thread composer", async (
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
@@ -3743,6 +3746,7 @@ test("editing a thread root in single-panel view returns to the main composer", 
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
@@ -3781,6 +3785,7 @@ test("editing a thread root in focus mode dismisses the drawer before focusing t
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
@@ -3818,6 +3823,7 @@ test("focus mode preserves an active reply edit, then Escape makes root editing 
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
@@ -3913,6 +3919,7 @@ test("ArrowUp routes a narrow thread root without consuming into a hidden compos
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
@@ -3993,6 +4000,7 @@ test("main ArrowUp ignores closed-thread replies and edits the visible timeline 
     .getByTestId("message-row")
     .last();
   await timelineRoot.hover();
+  await timelineRoot.dispatchEvent("pointerover");
   await timelineRoot
     .getByRole("button", { name: "Reply in thread" })
     .click({ force: true });
