@@ -10,7 +10,7 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
 use kuzz_core::event::StoredEvent;
-use kuzz_core::goal_store::{self, GoalGraph, GoalShape};
+use kuzz_core::goal_store::{self, GoalGraph, GoalShape, GoalView};
 use kuzz_core::goal_tree::{GoalOp, GoalStatus};
 use kuzz_core::CommunityId;
 use nostr::Event;
@@ -52,6 +52,73 @@ pub enum GoalWrite {
     NoEffect(GoalOutcome),
     /// This event was already applied.
     Duplicate,
+}
+
+/// Most rows in one page of a goal list, before their parents are added.
+pub const MAX_GOAL_PAGE: usize = 200;
+/// Most threads in one focus read.
+pub const MAX_GOAL_THREADS: usize = 32;
+
+/// Which goals to read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum GoalSelection {
+    /// One list, in pages. `after` is the `next` of the page before.
+    View {
+        /// The list.
+        view: GoalView,
+        /// Where the last page ended.
+        after: Option<GoalCursor>,
+    },
+    /// What these threads work on.
+    Threads(Vec<[u8; 32]>),
+    /// These goals with their context. An unknown id reads as nothing.
+    Goals(Vec<String>),
+}
+
+/// A position in a goal list.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct GoalCursor {
+    /// Sort key of the last row.
+    pub order: i64,
+    /// Id of the last row.
+    pub id: String,
+}
+
+/// Goals in each list.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+pub struct GoalCounts {
+    /// Unfinished with recent activity.
+    pub active: usize,
+    /// Unfinished and quiet.
+    pub inactive: usize,
+    /// Done or dropped.
+    pub done: usize,
+}
+
+/// The rows of one read, each with the goals above it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GoalPage {
+    /// Selected rows and their parents, in list order.
+    pub rows: Vec<GoalPageRow>,
+    /// List sizes for the whole conversation.
+    pub counts: GoalCounts,
+    /// For a thread read: each thread with its goal, if it has one.
+    pub threads: Vec<([u8; 32], Option<String>)>,
+    /// Pass back to read the next page.
+    pub next: Option<GoalCursor>,
+}
+
+/// One row of a read.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GoalPageRow {
+    /// The goal.
+    pub goal: GoalRow,
+    /// Selected, as opposed to being here as a parent of one that was.
+    pub matched: bool,
+    /// Done and total goals below that count; see [`GoalGraph::progress`].
+    pub progress: (usize, usize),
+    /// Active goals directly below.
+    pub open_children: usize,
 }
 
 /// One goal as read back.
@@ -120,7 +187,7 @@ pub fn parse_goal_ops(content: &str) -> Result<Vec<GoalOp>> {
 }
 
 /// Row columns of the shape query, shared by the writer and the reader.
-const SHAPE_SQL: &str = "SELECT g.id, g.parent_id, g.status, g.updated_at, \
+const SHAPE_SQL: &str = "SELECT g.id, g.parent_id, g.status, g.order_key, g.updated_at, \
         COALESCE(l.has_thread, FALSE) AS has_thread, l.last_reply_at \
      FROM goals g \
      LEFT JOIN ( \
@@ -155,6 +222,7 @@ where
             id: row.try_get("id")?,
             parent: row.try_get("parent_id")?,
             status: parse_status(&status)?,
+            order: row.try_get("order_key")?,
             updated_at: updated_at.timestamp(),
             has_thread: row.try_get("has_thread")?,
             last_reply_at: last_reply_at.map(|t| t.timestamp()),
@@ -226,6 +294,7 @@ impl Apply<'_, '_> {
             id: id.to_owned(),
             parent: parent.map(str::to_owned),
             status: GoalStatus::Open,
+            order,
             updated_at: self.stamp(),
             has_thread: false,
             last_reply_at: None,
@@ -690,19 +759,139 @@ impl Db {
         Ok(GoalWrite::Applied(Box::new(stored), outcome))
     }
 
+    /// Read one list or one set of threads' goals. Rows carry everything a
+    /// client shows, computed here so clients never rebuild the rules. The
+    /// shape is read first and only the chosen rows' text after it, so a list
+    /// costs the same in a room that keeps many old goals.
+    pub async fn read_goals(
+        &self,
+        community: CommunityId,
+        channel: Uuid,
+        selection: &GoalSelection,
+    ) -> Result<GoalPage> {
+        let community_id = *community.as_uuid();
+        let graph = load_shape(&self.pool, community_id, channel).await?;
+        let now = Utc::now().timestamp();
+        let views = graph.views(now);
+        let mut counts = GoalCounts::default();
+        for view in views.values() {
+            match view {
+                GoalView::Active => counts.active += 1,
+                GoalView::Inactive => counts.inactive += 1,
+                GoalView::Done => counts.done += 1,
+            }
+        }
+        let mut threads = Vec::new();
+        let mut next = None;
+        let matched: Vec<String> = match selection {
+            GoalSelection::View { view, after } => {
+                let rows: Vec<&GoalShape> = graph
+                    .sorted()
+                    .into_iter()
+                    .filter(|n| views.get(n.id.as_str()) == Some(view))
+                    .filter(|n| {
+                        after
+                            .as_ref()
+                            .is_none_or(|a| (n.order, n.id.as_str()) > (a.order, a.id.as_str()))
+                    })
+                    .collect();
+                if let Some(last) = rows.get(MAX_GOAL_PAGE.saturating_sub(1)) {
+                    if rows.len() > MAX_GOAL_PAGE {
+                        next = Some(GoalCursor {
+                            order: last.order,
+                            id: last.id.clone(),
+                        });
+                    }
+                }
+                rows.into_iter()
+                    .take(MAX_GOAL_PAGE)
+                    .map(|n| n.id.clone())
+                    .collect()
+            }
+            GoalSelection::Goals(wanted) => {
+                wanted.iter().flat_map(|id| graph.focus(id, now)).collect()
+            }
+            GoalSelection::Threads(wanted) => {
+                let ids: Vec<&[u8]> = wanted.iter().map(<[u8; 32]>::as_slice).collect();
+                let linked: HashMap<Vec<u8>, String> = sqlx::query_as(
+                    "SELECT event_id, goal_id FROM goal_links \
+                     WHERE community_id = $1 AND channel_id = $2 AND event_id = ANY($3)",
+                )
+                .bind(community_id)
+                .bind(channel)
+                .bind(&ids)
+                .fetch_all(&self.pool)
+                .await?
+                .into_iter()
+                .collect();
+                let mut focus = Vec::new();
+                for thread in wanted {
+                    let goal = linked.get(thread.as_slice()).cloned();
+                    if let Some(goal) = &goal {
+                        focus.extend(graph.focus(goal, now));
+                    }
+                    threads.push((*thread, goal));
+                }
+                focus
+            }
+        };
+        let mut wanted: HashSet<String> = HashSet::with_capacity(matched.len());
+        for id in &matched {
+            if wanted.insert(id.clone()) {
+                wanted.extend(graph.ancestors(id));
+            }
+        }
+        let matched: HashSet<String> = matched.into_iter().collect();
+        let ids: Vec<String> = wanted.into_iter().collect();
+        let progress = graph.progress(now);
+        let rows = self
+            .fetch_goal_rows(community_id, channel, &graph, now, Some(&ids))
+            .await?
+            .into_iter()
+            .map(|goal| GoalPageRow {
+                matched: matched.contains(&goal.id),
+                progress: progress.get(goal.id.as_str()).copied().unwrap_or_default(),
+                open_children: graph.open_children(&goal.id, &views),
+                goal,
+            })
+            .collect();
+        Ok(GoalPage {
+            rows,
+            counts,
+            threads,
+            next,
+        })
+    }
+
     /// Every goal of a conversation with its computed state. Links are
     /// lowercase hex. Order: siblings by sort key, ties by id.
     pub async fn list_goals(&self, community: CommunityId, channel: Uuid) -> Result<Vec<GoalRow>> {
         let community_id = *community.as_uuid();
         let graph = load_shape(&self.pool, community_id, channel).await?;
-        let inactive = graph.inactive(Utc::now().timestamp());
+        let now = Utc::now().timestamp();
+        self.fetch_goal_rows(community_id, channel, &graph, now, None)
+            .await
+    }
+
+    async fn fetch_goal_rows(
+        &self,
+        community_id: Uuid,
+        channel: Uuid,
+        graph: &GoalGraph,
+        now: i64,
+        only: Option<&[String]>,
+    ) -> Result<Vec<GoalRow>> {
+        let inactive = graph.inactive(now);
         let mut links: HashMap<String, Vec<String>> = HashMap::new();
         for row in sqlx::query(
             "SELECT goal_id, event_id FROM goal_links \
-             WHERE community_id = $1 AND channel_id = $2 ORDER BY event_id",
+             WHERE community_id = $1 AND channel_id = $2 \
+                AND ($3::text[] IS NULL OR goal_id = ANY($3)) \
+             ORDER BY event_id",
         )
         .bind(community_id)
         .bind(channel)
+        .bind(only)
         .fetch_all(&self.pool)
         .await?
         {
@@ -715,10 +904,13 @@ impl Db {
         let rows = sqlx::query(
             "SELECT id, parent_id, title, note, status, order_key, assignees, updated_by, \
                 updated_at \
-             FROM goals WHERE community_id = $1 AND channel_id = $2 ORDER BY order_key, id",
+             FROM goals WHERE community_id = $1 AND channel_id = $2 \
+                AND ($3::text[] IS NULL OR id = ANY($3)) \
+             ORDER BY order_key, id",
         )
         .bind(community_id)
         .bind(channel)
+        .bind(only)
         .fetch_all(&self.pool)
         .await?;
         let mut goals = Vec::with_capacity(rows.len());

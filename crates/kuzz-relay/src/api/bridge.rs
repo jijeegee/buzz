@@ -4,6 +4,7 @@
 //! authenticated via NIP-98 signed events.
 
 mod chat_state;
+mod goals;
 mod inbox_summary;
 mod read_state_snapshot;
 
@@ -1641,6 +1642,9 @@ async fn query_events_authed(
     if let Some(envelope) = chat_state::requested(&raw_filters) {
         return chat_state::query(state, tenant, &pubkey, &raw_filters, envelope).await;
     }
+    if goals::requested(&raw_filters) {
+        return goals::query(state, tenant, &pubkey, &raw_filters).await;
+    }
     let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
         .iter()
@@ -2160,8 +2164,8 @@ pub(crate) async fn hide_blocked_dm_authors(
         .map_err(|e| db_read_error("block list lookup error", &e))
 }
 
-/// Drop goal trees (kind:40110) of conversations that turned goals off, so
-/// agents that predate the setting stop receiving them too.
+/// Drop goal trees and edits (kinds 40110, 40111) of conversations that turned
+/// goals off, so agents that predate the setting stop receiving them too.
 async fn hide_goal_trees_of_conversations_with_goals_off(
     state: &AppState,
     tenant: &TenantContext,
@@ -3332,6 +3336,9 @@ fn ban_json(b: &kuzz_db::moderation::BanRecord) -> Value {
     })
 }
 
+#[cfg(test)]
+#[path = "goals_postgres_tests.rs"]
+mod goals_postgres_tests;
 #[cfg(test)]
 #[path = "artifact_postgres_tests.rs"]
 mod artifact_postgres_tests;

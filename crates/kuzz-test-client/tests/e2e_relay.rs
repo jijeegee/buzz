@@ -3421,6 +3421,68 @@ async fn write_goal_tree_ws(
     (ok.accepted, ok.message)
 }
 
+/// With `KUZZ_GOAL_STORE` on: a goal edit reaches a live subscriber over WS and
+/// the writer gets the outcome. Skips on a relay with the switch off.
+#[tokio::test]
+#[ignore = "requires running relay"]
+async fn test_goal_edit_reaches_live_subscribers() {
+    let url = relay_url();
+    let owner = Keys::generate();
+    let channel_id = create_test_channel(&owner).await;
+    let mut owner_ws = KuzzTestClient::connect(&url, &owner)
+        .await
+        .expect("connect owner");
+    // A second connection, as another open app of the same member.
+    let mut other_ws = KuzzTestClient::connect(&url, &owner)
+        .await
+        .expect("connect second app");
+    let (on, msg) = set_goals_ws(&mut owner_ws, &channel_id, "on", &owner).await;
+    assert!(on, "turn goals on: {msg}");
+
+    let sid = sub_id("goal-ops-live");
+    let filter = Filter::new()
+        .kind(Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16))
+        .custom_tags(
+            SingleLetterTag::lowercase(Alphabet::H),
+            [channel_id.as_str()],
+        );
+    other_ws
+        .subscribe(&sid, vec![filter])
+        .await
+        .expect("subscribe");
+    other_ws
+        .collect_until_eose(&sid, Duration::from_secs(5))
+        .await
+        .expect("EOSE");
+
+    let content = serde_json::json!({"ops": [{
+        "op": "set_root", "id": "root", "title": "Ship goal rows"
+    }]})
+    .to_string();
+    let event = EventBuilder::new(Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16), content)
+        .tags([Tag::parse(["h", &channel_id]).unwrap()])
+        .sign_with_keys(&owner)
+        .unwrap();
+    let event_id = event.id;
+    let ok = owner_ws.send_event(event).await.expect("send goal ops");
+    if !ok.accepted && ok.message.contains("not on yet") {
+        eprintln!("skipping: KUZZ_GOAL_STORE is off on this relay");
+        return;
+    }
+    assert!(ok.accepted, "goal edit: {}", ok.message);
+    let outcome: serde_json::Value = serde_json::from_str(&ok.message).expect("outcome JSON");
+    assert_eq!(outcome["deleted"], serde_json::json!([]));
+
+    let delivered = other_ws
+        .recv_event(Duration::from_secs(5))
+        .await
+        .expect("live goal edit");
+    match delivered {
+        RelayMessage::Event { event, .. } => assert_eq!(event.id, event_id),
+        other => panic!("expected the goal edit, got {other:?}"),
+    }
+}
+
 /// The conversation's goal tree heads as a member reads them over WS REQ.
 async fn goal_trees_ws(client: &mut KuzzTestClient, channel_id: &str) -> Vec<nostr::Event> {
     let sid = sub_id("goal-tree");

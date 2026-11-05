@@ -29,12 +29,37 @@ pub struct GoalShape {
     pub parent: Option<String>,
     /// Progress state.
     pub status: GoalStatus,
+    /// Sort key among siblings; ties go by id.
+    pub order: i64,
     /// Unix seconds of the last edit.
     pub updated_at: i64,
     /// A linked thread has replies.
     pub has_thread: bool,
     /// Unix seconds of the last reply in linked threads or messages.
     pub last_reply_at: Option<i64>,
+}
+
+/// The list a goal shows in.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum GoalView {
+    /// Unfinished with recent activity.
+    Active,
+    /// Unfinished and quiet for the inactive window.
+    Inactive,
+    /// Done or dropped.
+    Done,
+}
+
+impl GoalView {
+    /// Parse the wire form.
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "active" => Some(Self::Active),
+            "inactive" => Some(Self::Inactive),
+            "done" => Some(Self::Done),
+            _ => None,
+        }
+    }
 }
 
 /// All goals of one conversation.
@@ -106,6 +131,33 @@ impl GoalGraph {
             }
         }
         out
+    }
+
+    /// Parents of a goal, nearest first.
+    pub fn ancestors(&self, id: &str) -> Vec<String> {
+        let mut out = Vec::new();
+        let mut cursor = self.nodes.get(id).and_then(|n| n.parent.as_deref());
+        while let Some(parent) = cursor {
+            out.push(parent.to_owned());
+            cursor = self.nodes.get(parent).and_then(|n| n.parent.as_deref());
+        }
+        out
+    }
+
+    /// All goals, sorted the way lists show them.
+    pub fn sorted(&self) -> Vec<&GoalShape> {
+        let mut rows: Vec<&GoalShape> = self.nodes.values().collect();
+        rows.sort_by(|a, b| (a.order, &a.id).cmp(&(b.order, &b.id)));
+        rows
+    }
+
+    /// Active goals directly below a goal: what still stands between it and
+    /// done. Inactive goals are left out, so an abandoned thread blocks nothing.
+    pub fn open_children(&self, id: &str, views: &HashMap<&str, GoalView>) -> usize {
+        self.children(id)
+            .iter()
+            .filter(|c| views.get(c.as_str()) == Some(&GoalView::Active))
+            .count()
     }
 
     /// Layer of a goal (layer 1 = root).
@@ -268,6 +320,84 @@ impl GoalGraph {
     }
 }
 
+impl GoalGraph {
+    /// The list each goal belongs to right now.
+    pub fn views(&self, now: i64) -> HashMap<&str, GoalView> {
+        let inactive = self.inactive(now);
+        self.nodes
+            .values()
+            .map(|n| {
+                let view = if finished(n.status) {
+                    GoalView::Done
+                } else if inactive.contains(n.id.as_str()) {
+                    GoalView::Inactive
+                } else {
+                    GoalView::Active
+                };
+                (n.id.as_str(), view)
+            })
+            .collect()
+    }
+
+    /// `(done, total)` below each goal that has counted children. Inactive
+    /// goals do not count, so an abandoned thread never holds a parent back.
+    /// Tasks count for thread goals and for what sits below them, not for
+    /// the plan goals above.
+    pub fn progress(&self, now: i64) -> HashMap<&str, (usize, usize)> {
+        let inactive = self.inactive(now);
+        let mut counts: HashMap<&str, (usize, usize)> = HashMap::new();
+        for node in self.nodes.values() {
+            if inactive.contains(node.id.as_str()) {
+                continue;
+            }
+            let task = self.is_task(&node.id);
+            let mut cursor = node.parent.as_deref();
+            while let Some(parent) = cursor {
+                let Some(above) = self.nodes.get(parent) else {
+                    break;
+                };
+                if !task || above.has_thread || self.has_thread_above(parent) {
+                    let slot = counts.entry(above.id.as_str()).or_default();
+                    slot.1 += 1;
+                    slot.0 += usize::from(node.status == GoalStatus::Done);
+                }
+                cursor = above.parent.as_deref();
+            }
+        }
+        counts
+    }
+
+    /// What a thread working on `goal` needs: the goal, its unfinished goals
+    /// below, and the active goals branching off its path. The path itself is
+    /// context, so it is not listed; every goal here is found on purpose.
+    pub fn focus(&self, goal: &str, now: i64) -> Vec<String> {
+        if !self.nodes.contains_key(goal) {
+            return Vec::new();
+        }
+        let views = self.views(now);
+        let mut out = vec![goal.to_owned()];
+        let mut stack: Vec<&str> = self.children(goal).iter().map(String::as_str).collect();
+        while let Some(id) = stack.pop() {
+            if self.nodes.get(id).is_some_and(|n| !finished(n.status)) {
+                out.push(id.to_owned());
+            }
+            stack.extend(self.children(id).iter().map(String::as_str));
+        }
+        let mut on_path = goal.to_owned();
+        for parent in self.ancestors(goal) {
+            out.extend(
+                self.children(&parent)
+                    .iter()
+                    .filter(|c| **c != on_path)
+                    .filter(|c| views.get(c.as_str()) == Some(&GoalView::Active))
+                    .cloned(),
+            );
+            on_path = parent;
+        }
+        out
+    }
+}
+
 /// Done or dropped.
 pub fn finished(status: GoalStatus) -> bool {
     matches!(status, GoalStatus::Done | GoalStatus::Dropped)
@@ -361,6 +491,7 @@ mod tests {
             id: id.into(),
             parent: parent.map(Into::into),
             status: GoalStatus::Open,
+            order: 0,
             updated_at: 0,
             has_thread: false,
             last_reply_at: None,
@@ -537,6 +668,96 @@ mod tests {
         ]);
         let inactive = graph.inactive(90 * DAY);
         assert_eq!(inactive, HashSet::from(["old"]));
+    }
+
+    #[test]
+    fn views_sort_goals_into_three_lists() {
+        let mut fresh = goal("fresh", Some("root"));
+        fresh.updated_at = 90 * DAY;
+        let graph = GoalGraph::new(vec![
+            goal("root", None),
+            goal("old", Some("root")),
+            fresh,
+            done(goal("gone", Some("root"))),
+        ]);
+        let views = graph.views(90 * DAY);
+        assert_eq!(views["root"], GoalView::Active);
+        assert_eq!(views["fresh"], GoalView::Active);
+        assert_eq!(views["old"], GoalView::Inactive);
+        assert_eq!(views["gone"], GoalView::Done);
+    }
+
+    #[test]
+    fn progress_counts_tasks_up_to_thread_goals_only() {
+        let graph = GoalGraph::new(vec![
+            goal("root", None),
+            goal("plan", Some("root")),
+            thread("t", "plan"),
+            done(goal("task", Some("t"))),
+            goal("task2", Some("t")),
+            done(goal("sub", Some("task2"))),
+        ]);
+        let progress = graph.progress(0);
+        assert_eq!(progress["t"], (2, 3));
+        assert_eq!(progress["task2"], (1, 1));
+        assert_eq!(progress["plan"], (0, 1));
+        assert_eq!(progress["root"], (0, 2));
+    }
+
+    #[test]
+    fn open_children_leave_out_finished_and_inactive_goals() {
+        let mut live = goal("live", Some("root"));
+        live.updated_at = 100 * DAY;
+        let graph = GoalGraph::new(vec![
+            goal("root", None),
+            live,
+            goal("quiet", Some("root")),
+            done(goal("gone", Some("root"))),
+        ]);
+        assert_eq!(graph.open_children("root", &graph.views(100 * DAY)), 1);
+    }
+
+    #[test]
+    fn progress_leaves_out_inactive_goals() {
+        let mut live = thread("live", "root");
+        live.updated_at = 100 * DAY;
+        let graph = GoalGraph::new(vec![goal("root", None), live, thread("quiet", "root")]);
+        assert_eq!(graph.progress(100 * DAY)["root"], (0, 1));
+    }
+
+    #[test]
+    fn focus_is_the_goal_its_open_goals_and_active_branches() {
+        let mut quiet = goal("quiet", Some("plan"));
+        quiet.updated_at = 0;
+        let mut rows: Vec<GoalShape> = vec![
+            goal("root", None),
+            goal("plan", Some("root")),
+            thread("t", "plan"),
+            goal("open", Some("t")),
+            done(goal("mid", Some("t"))),
+            goal("below_done", Some("mid")),
+            done(goal("gone", Some("t"))),
+            goal("near", Some("plan")),
+            goal("far", Some("root")),
+            goal("far_child", Some("far")),
+            quiet,
+        ];
+        for row in &mut rows {
+            if row.id != "quiet" {
+                row.updated_at = 90 * DAY;
+            }
+        }
+        let graph = GoalGraph::new(rows);
+        let mut focus = graph.focus("t", 90 * DAY);
+        focus.sort();
+        assert_eq!(focus, ["below_done", "far", "near", "open", "t"]);
+    }
+
+    #[test]
+    fn a_quiet_goal_is_still_its_own_threads_focus() {
+        let graph = GoalGraph::new(vec![goal("root", None), thread("t", "root")]);
+        assert_eq!(graph.focus("t", 400 * DAY), ["t"]);
+        assert!(graph.focus("nope", 0).is_empty());
     }
 
     #[test]

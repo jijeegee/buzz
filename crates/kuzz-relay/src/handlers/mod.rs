@@ -83,3 +83,5 @@ pub fn resolve_ttl(event: &nostr::Event, ephemeral_ttl_override: Option<i32>) ->
 
 /// NIP-AR artifact lifecycle.
 pub mod artifact;
+/// Goal edits (kind 40111).
+pub mod goals;
