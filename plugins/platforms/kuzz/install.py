@@ -1,6 +1,7 @@
 """Install the Kuzz platform plugin into a Hermes home.
 
     python install.py [--owner PUBKEY] [--hermes-home DIR] [--cli-path PATH] [--no-enable]
+    python install.py --refresh [--hermes-home DIR] [--no-restart]
 
 What it does (the same steps `kuzz pair --hermes` and the desktop Hermes card follow):
 1. copies PLUGIN_FILES into <HERMES_HOME>/plugins/kuzz/;
@@ -18,20 +19,27 @@ What it does (the same steps `kuzz pair --hermes` and the desktop Hermes card fo
 
 `kuzz pair --hermes` runs ``python install.py --owner <hex> --agent <hex> --hermes-home <dir>``
 (plus ``--no-restart`` when the app restarts the gateway itself) from its
-install root: the kuzz binary's folder, ``<prefix>/share/kuzz``, or ``<local data>/kuzz``,
-each holding ``plugins/platforms/kuzz/``. The kuzz binary in that root is preferred.
+install root: the kuzz binary's folder, ``<prefix>/share/kuzz``, ``Contents/Resources`` of the
+macOS app (which also passes --cli-path), or ``<local data>/kuzz``, each holding
+``plugins/platforms/kuzz/``. The kuzz binary in that root is preferred.
 To remove it, delete <HERMES_HOME>/plugins/kuzz/. Stdlib only; no keys are read or written.
+
+``--refresh`` (what `kuzz hermes refresh` and the desktop app run after an update) only replaces
+the files of a home that already has the plugin, then restarts a running gateway once it is idle.
+Settings, the pairing and the home channel are left alone. It prints one JSON line on stdout.
 """
 
 from __future__ import annotations
 
 import argparse
+import filecmp
 import json
 import os
 import shutil
 import subprocess
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
@@ -51,6 +59,11 @@ PAIRED_AGENT_ENV = "KUZZ_PAIRED_AGENT"
 CONFIG_TIMEOUT = 30
 DM_TIMEOUT = 20
 RESTART_TIMEOUT = 300
+# Refresh: the gateway that was running when files were replaced, under <root>/kuzz/. From Hermes's
+# state file: start_time drifts between readings, and a heartbeat counts as stale at 120 s.
+PENDING_FILE = "refresh-pending.json"
+START_TIME_DRIFT = 200
+HEARTBEAT_FRESH = 120
 
 sys.path.insert(0, str(HERE))
 from kuzz_cli import STRIPPED_ENV, child_env, find_kuzz, is_runnable, normalize_pubkey, which_program  # noqa: E402  (stdlib-only)
@@ -78,7 +91,7 @@ def back_up(hermes_home: Path, folder: Path) -> Path:
         n += 1
         backup = backups / f"{folder.name}-{stamp}-{n}"
     folder.rename(backup)
-    print(f"Moved the previous {folder} to {backup}")
+    print(f"Moved the previous {folder} to {backup}", file=sys.stderr)
     return backup
 
 
@@ -109,12 +122,16 @@ def copy_plugin(hermes_home: Path) -> Path:
     staging = plugins / f".{INSTALL_DIR}.installing"
     plugins.mkdir(parents=True, exist_ok=True)
     shutil.rmtree(staging, ignore_errors=True)
-    staging.mkdir()
+    staging.mkdir(exist_ok=True)
     for name in PLUGIN_FILES:
         shutil.copy2(HERE / name, staging / name)
-    if target.exists():
-        back_up(hermes_home, target)
-    staging.rename(target)
+    backup = back_up(hermes_home, target) if target.exists() else None
+    try:
+        staging.rename(target)
+    except OSError:
+        if backup:
+            backup.rename(target)
+        raise
     return target
 
 
@@ -306,19 +323,112 @@ def restart_gateway(hermes_home: Path) -> bool:
     """``hermes gateway restart --detach``: loads the plugin now, and starts a stopped gateway.
     Without ``--yes`` it refuses while Hermes has live work (no prompt without a terminal), so a
     running turn or cron job is never cut off; the caller then asks for a manual restart.
-    For a named profile too this is the host gateway: it serves the profiles and loads plugins."""
+    For a named profile too this is the host gateway: it serves the profiles and loads plugins.
+    ``-p default``: a sticky ``hermes profile use`` would otherwise bounce only that profile."""
     hermes = find_hermes(hermes_home)
     if not hermes:
         return False
     try:
         result = subprocess.run(
-            [hermes, "gateway", "restart", "--detach"], env=hermes_env(hermes_root(hermes_home)),
+            [hermes, "-p", "default", "gateway", "restart", "--detach"], env=hermes_env(hermes_root(hermes_home)),
             stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=RESTART_TIMEOUT, check=False,
         )
     except (OSError, subprocess.SubprocessError):
         return False
     return result.returncode == 0
+
+
+def read_json(path: Path) -> dict:
+    """A JSON object from ``path``; {} when missing, unreadable or anything else."""
+    try:
+        value = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return value if isinstance(value, dict) else {}
+
+
+def connector_homes(root: Path) -> List[Path]:
+    """The default profile and named profiles that have the plugin. Refresh never adds it to one."""
+    profiles = sorted(path for path in (root / "profiles").glob("*") if path.is_dir())
+    return [home for home in [root, *profiles] if (home / "plugins" / INSTALL_DIR).is_dir()]
+
+
+def is_current(home: Path) -> bool:
+    target = home / "plugins" / INSTALL_DIR
+    try:
+        return all(filecmp.cmp(HERE / name, target / name, shallow=False) for name in PLUGIN_FILES)
+    except OSError:
+        return False
+
+
+def gateway_alive(record: dict) -> bool:
+    """Hermes's state file names a gateway that has not stopped. ``degraded`` still serves."""
+    return isinstance(record.get("pid"), int) and record.get("gateway_state") not in ("stopped", "startup_failed")
+
+
+def same_gateway(record: dict, pending: dict) -> bool:
+    """The process in ``record`` is the one remembered. Any restart, ours or by hand, changes it."""
+    now, then = record.get("start_time"), pending.get("start_time")
+    close = not isinstance(now, int) or not isinstance(then, int) or abs(now - then) <= START_TIME_DRIFT
+    return record.get("pid") == pending.get("pid") and close
+
+
+def can_restart(record: dict) -> bool:
+    """Serving now, by a fresh heartbeat. A stale one may be asleep or long dead, and
+    `gateway restart` would start it: wait for the next run."""
+    state = record.get("gateway_state")
+    if state != "running" and not (state == "degraded" and record.get("exit_reason") is None):
+        return False
+    try:
+        beat = datetime.fromisoformat(str(record.get("updated_at")))
+        return abs((datetime.now(timezone.utc) - beat).total_seconds()) <= HEARTBEAT_FRESH
+    except (TypeError, ValueError):
+        return False
+
+
+def forget_pending(pending_file: Path) -> None:
+    try:
+        pending_file.unlink()
+    except OSError:
+        pass
+
+
+def refresh(root: Path, restart: bool = True) -> dict:
+    """Replace outdated plugin files under ``root``, then settle the restart they need: ``needed``
+    (``restart`` False: the caller does it), ``done``, ``busy`` or ``none``.
+
+    A gateway that stopped reads the new files when it next starts. A refused restart, or a stale
+    heartbeat, keeps the pending record, so the next run tries again."""
+    result: dict = {"updated": [], "current": [], "failed": [], "restart": "none"}
+    pending_file = root / "kuzz" / PENDING_FILE
+    record = read_json(root / "gateway_state.json")
+    for home in connector_homes(root):
+        if is_current(home):
+            result["current"].append(str(home))
+            continue
+        try:
+            copy_plugin(home)
+            result["updated"].append(str(home))
+            if gateway_alive(record):
+                pending_file.parent.mkdir(parents=True, exist_ok=True)
+                pending_file.write_text(
+                    json.dumps({"pid": record["pid"], "start_time": record.get("start_time")}), encoding="utf-8",
+                )
+        except OSError as exc:
+            print(f"Could not update the Kuzz plugin in {home}: {exc}", file=sys.stderr)
+            result["failed"].append(str(home))
+    pending = read_json(pending_file)
+    if not pending:
+        return result
+    if not gateway_alive(record) or not same_gateway(record, pending):
+        forget_pending(pending_file)
+    elif can_restart(record):
+        if not restart:
+            result["restart"] = "needed"
+        else:
+            result["restart"] = "done" if restart_gateway(root) else "busy"
+    return result
 
 
 def main(argv: Optional[List[str]] = None) -> int:
@@ -331,7 +441,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     parser.add_argument("--cli-path", default=None, help="path to the kuzz CLI (default: kuzz on PATH, then the Kuzz app's copy)")
     parser.add_argument("--no-enable", action="store_true", help="copy files only; do not enable the plugin")
     parser.add_argument("--no-restart", action="store_true", help="do not restart the Hermes gateway")
+    parser.add_argument("--refresh", action="store_true", help="only update the plugin files of homes that have them")
     args = parser.parse_args(argv)
+
+    if args.refresh:
+        result = refresh(hermes_root(args.hermes_home or default_hermes_home()), restart=not args.no_restart)
+        print(json.dumps(result))
+        return 1 if result["failed"] else 0
 
     owner = normalize_pubkey(args.owner) if args.owner else None
     if args.owner and not owner:
