@@ -275,11 +275,13 @@ async fn restore_managed_agents_on_launch<R: tauri::Runtime>(
         // `relay_mesh` bytes never contribute. See `start_local_agent_with_preflight`
         // in `commands/agents.rs` for the identical rationale on the interactive path.
         let personas = load_personas(app).unwrap_or_default();
-        let global = super::load_global_agent_config(app).unwrap_or_default();
+        let agent_configs = super::AgentConfigsByOwner::load(app, &agents_to_start);
         let mut mesh_preflight_failures = std::collections::HashSet::new();
         for record in &agents_to_start {
             let mesh_model_id = super::effective_config::resolve_effective_relay_mesh_model_id(
-                record, &personas, &global,
+                record,
+                &personas,
+                agent_configs.for_record(record),
             );
             if mesh_model_id.is_none() {
                 continue;

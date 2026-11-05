@@ -114,22 +114,3 @@ export function roomPaintDecides(
   if (frontierSeconds === null) return true;
   return completeFrom !== null && completeFrom <= frontierSeconds;
 }
-
-/**
- * The same for a thread's stored replies: the reply before the first
- * unread one (the newest read one) must be at or after `completeFrom`, so
- * nothing between them is missing. A first unread reply that is the oldest
- * loaded one is decided by older pages anyway when there are any; without
- * them only a whole stored history counts.
- */
-export function threadPaintDecides(
-  completeFrom: number | null | undefined,
-  firstUnreadAt: number | null,
-  readBeforeAt: number | null,
-  hasOlderReplies: boolean,
-): boolean {
-  if (completeFrom === undefined || firstUnreadAt === null) return true;
-  if (completeFrom === null) return false;
-  if (readBeforeAt !== null) return completeFrom <= readBeforeAt;
-  return hasOlderReplies || completeFrom === 0;
-}

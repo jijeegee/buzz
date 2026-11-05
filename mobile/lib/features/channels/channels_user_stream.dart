@@ -49,8 +49,15 @@ extension _ChannelsUserStream on ChannelsNotifier {
 
   /// Hooks the stream once per build and remembers [channels]/[fence] for
   /// re-syncs on stream changes.
-  void _attachUserStream(List<Channel> channels, _ChannelRefreshFence fence) {
+  ///
+  /// [carried]: tests stand in for the stream's carried set.
+  void _attachUserStream(
+    List<Channel> channels,
+    _ChannelRefreshFence fence, [
+    Set<String>? carried,
+  ]) {
     var glue = _streamGlues[this];
+    final attachedLate = glue == null;
     if (glue == null) {
       final stream = _lifecycleRef
           .read(relaySessionProvider.notifier)
@@ -63,11 +70,26 @@ extension _ChannelsUserStream on ChannelsNotifier {
         })
         ..stops.add(stream.addListener(() => _onStreamChanged(attached)))
         ..stops.add(stream.addFrameListener(_onStreamFrame));
-      attached.carried = stream.carriedRooms;
+      attached.carried = carried ?? stream.carriedRooms;
     }
     glue
       ..channels = channels
       ..fence = fence;
+    // The stream's EOSE came before this build.
+    if (attachedLate) _noteCarriedRooms(glue, glue.carried);
+  }
+
+  /// The stream carries [grown] on top of what it carried before.
+  void _noteCarriedRooms(_StreamGlue glue, Set<String> grown) {
+    if (glue.carried.isNotEmpty) {
+      glue.reopen = true;
+      _listenMembership(glue);
+    }
+    // The quiet-room backfill waits for the stream EOSE, not the chunks'.
+    final quietReady = grown.where(_quietLiveChannelIds.contains);
+    if (quietReady.isNotEmpty) {
+      _lifecycleRef.read(roomLiveRouterProvider).markRoomsReady(quietReady);
+    }
   }
 
   /// [carried]: tests stand in for the stream's carried set.
@@ -76,15 +98,7 @@ extension _ChannelsUserStream on ChannelsNotifier {
     final before = glue.carried;
     final now = glue.carried = carried ?? glue.stream.carriedRooms;
     if (setEquals(before, now)) return;
-    if (now.isNotEmpty) {
-      glue.reopen = true;
-      _listenMembership(glue);
-    }
-    final router = _lifecycleRef.read(roomLiveRouterProvider);
-    final grown = now.difference(before);
-    // The quiet-room backfill waits for the stream EOSE, not the chunks'.
-    final quietReady = grown.where(_quietLiveChannelIds.contains);
-    if (quietReady.isNotEmpty) router.markRoomsReady(quietReady);
+    _noteCarriedRooms(glue, now.difference(before));
     // The router stops counting rooms the stream no longer carries at once.
     _publishLiveCoverage();
     // An overflow or `lagged` CLOSED: the socket closes within 2 s and the
@@ -149,7 +163,13 @@ extension _ChannelsUserStream on ChannelsNotifier {
     } catch (_) {
       return;
     }
+    // Every frame goes to the router, as on a chunk: reactions and their
+    // removals have no `h`, and an open room may not be listed yet.
+    _lifecycleRef
+        .read(roomLiveRouterProvider)
+        .routeStreamEvent(event, _streamCarried);
     final room = event.channelId;
+    if (room == null) return;
     final route = userStreamRoute(
       room,
       memberRooms: _desiredLiveChannelIds,
@@ -158,14 +178,11 @@ extension _ChannelsUserStream on ChannelsNotifier {
           if (channel.isArchived) channel.id,
       },
     );
-    final quiet = room != null && _quietLiveChannelIds.contains(room);
+    final quiet = _quietLiveChannelIds.contains(room);
     if (route == UserStreamRoute.unknown && !quiet) {
       _streamGlues[this]?.burst?.note(room);
       return;
     }
-    _lifecycleRef
-        .read(roomLiveRouterProvider)
-        .routeBundleEvent(event, _streamCarried);
     if (route != UserStreamRoute.member || !reachesAllRoomListeners(event)) {
       return;
     }
@@ -198,4 +215,29 @@ extension ChannelsUserStreamTesting on ChannelsNotifier {
     final glue = _streamGlues[this];
     if (glue != null) _onStreamChanged(glue, carried);
   }
+
+  /// Tests: a build attaches to a stream already carrying [carried].
+  @visibleForTesting
+  void debugStreamAttachedLate(Set<String> carried) {
+    final glue = _streamGlues[this];
+    final channels = glue?.channels;
+    final fence = glue?.fence;
+    if (channels == null || fence == null) return;
+    _detachUserStream();
+    _attachUserStream(channels, fence, carried);
+  }
+
+  /// Tests: a stored stream frame.
+  @visibleForTesting
+  void debugStreamFrame(NostrEvent event) =>
+      _onStreamFrame(event.toJson(), true);
+
+  /// Tests: the membership listen is open.
+  @visibleForTesting
+  bool get debugStreamListensMembership =>
+      _streamGlues[this]?.membership != null;
+
+  /// Tests: the next connection reopens the stream's rooms on chunks.
+  @visibleForTesting
+  bool get debugStreamReopens => _streamGlues[this]?.reopen ?? false;
 }

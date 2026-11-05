@@ -210,6 +210,7 @@ export type ChannelPaneProps = {
   threadAllMessages: TimelineMessage[];
   threadMessages: MainTimelineEntry[];
   threadMessagesPending?: boolean;
+  threadMessagesFetching?: boolean;
   threadMessagesError?: boolean;
   onRetryThreadReplies?: () => void;
   /** Newest-first threads: older replies remain to be loaded. */

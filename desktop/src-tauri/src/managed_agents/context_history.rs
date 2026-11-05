@@ -1,8 +1,9 @@
 //! New-session history: how much earlier conversation an agent reads when it
 //! starts a fresh session for a channel main timeline or a thread.
 //!
-//! One desktop-wide setting stored in `<app-data>/agents/context-history.json`
-//! (`{ "mode": "budget", "budget": "medium" }`). Like task threads it is
+//! One setting per account, stored in
+//! `<app-data>/agents/accounts/<owner-hex>/context-history.json`
+//! (`{ "mode": "budget", "budget": "medium" }`); an agent follows its owner's. Like task threads it is
 //! deliberately not a `GlobalAgentConfig` field, so changing it never restarts
 //! an agent: running agents read it from their live settings file
 //! (`live_settings`) and apply it to their next new session. The harness
@@ -15,7 +16,11 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{channel_routing::RoutingRole, managed_agents_base_dir, storage::atomic_write_json};
+use super::{
+    account_settings::{account_settings_dir, active_settings_owner},
+    channel_routing::RoutingRole,
+    storage::atomic_write_json,
+};
 
 const CONTEXT_HISTORY_FILE: &str = "context-history.json";
 pub(crate) const CONTEXT_HISTORY_ENV_VAR: &str = "KUZZ_ACP_CONTEXT_HISTORY";
@@ -91,14 +96,22 @@ pub(crate) fn parse_context_history(content: Option<&str>) -> ContextHistorySett
     })
 }
 
-fn context_history_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(managed_agents_base_dir(app)?.join(CONTEXT_HISTORY_FILE))
+fn context_history_path<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<PathBuf, String> {
+    Ok(account_settings_dir(app, owner_hex)?.join(CONTEXT_HISTORY_FILE))
 }
 
+/// The active account's setting, for the screens. The default while that
+/// account cannot be used yet.
 pub fn load_context_history<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<ContextHistorySetting, String> {
-    load_context_history_at(&context_history_path(app)?)
+    match active_settings_owner(app) {
+        Ok(owner) => load_context_history_at(&context_history_path(app, &owner)?),
+        Err(_) => Ok(ContextHistorySetting::default()),
+    }
 }
 
 pub(crate) fn load_context_history_at(path: &Path) -> Result<ContextHistorySetting, String> {
@@ -113,9 +126,10 @@ pub(crate) fn load_context_history_at(path: &Path) -> Result<ContextHistorySetti
 
 pub fn save_context_history<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     setting: &ContextHistorySetting,
 ) -> Result<(), String> {
-    save_context_history_at(&context_history_path(app)?, setting)?;
+    save_context_history_at(&context_history_path(app, owner_hex)?, setting)?;
     // Running agents pick the change up from their live settings files.
     super::live_settings::schedule_live_settings_sync(app);
     Ok(())
@@ -130,10 +144,17 @@ pub(crate) fn save_context_history_at(
     atomic_write_json(path, &payload)
 }
 
-/// The env value spawn paths apply, read once per launch. A read failure
-/// launches with the default rather than blocking the agent.
-pub(crate) fn current_context_history_env<R: tauri::Runtime>(app: &AppHandle<R>) -> String {
-    load_context_history(app)
+/// The env value spawn paths apply for an agent of `owner`, read once per
+/// launch. An unknown owner or a read failure launches with the default rather
+/// than blocking the agent.
+pub(crate) fn current_context_history_env<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner: Option<&str>,
+) -> String {
+    owner
+        .map_or(Ok(ContextHistorySetting::default()), |owner| {
+            load_context_history_at(&context_history_path(app, owner)?)
+        })
         .unwrap_or_else(|error| {
             eprintln!("kuzz-desktop: {error}; using the default context history setting");
             ContextHistorySetting::default()

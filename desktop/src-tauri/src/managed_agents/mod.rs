@@ -10,6 +10,7 @@ pub(crate) use agent_env::{
 };
 mod agent_description;
 pub(crate) use agent_description::{effective_agent_description, record_effective_description};
+pub(crate) mod account_settings;
 #[cfg(all(test, not(target_os = "windows")))]
 pub(crate) mod admission_test_support;
 mod backend;
@@ -103,8 +104,9 @@ pub use env_vars::*;
 pub(crate) use git_bash::git_bash_available;
 pub(crate) use git_bash::{discover_git_bash, GitBashPrerequisite};
 pub(crate) use global_config::{
-    load_global_agent_config, resolve_effective_model_provider, save_global_agent_config,
-    validate_global_config, GlobalAgentConfig,
+    load_active_agent_config, load_agent_config_for_owner, load_agent_config_for_record,
+    resolve_effective_model_provider, save_agent_config_for_owner, validate_global_config,
+    AgentConfigsByOwner, GlobalAgentConfig,
 };
 pub(crate) use managed_node_paths::*;
 pub use nest::*;

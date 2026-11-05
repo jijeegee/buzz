@@ -5,6 +5,7 @@
 
 use tauri::AppHandle;
 
+use crate::managed_agents::account_settings::require_settings_owner;
 use crate::managed_agents::task_threads::{
     load_task_threads, save_task_threads, TaskThreadsSetting,
 };
@@ -19,10 +20,12 @@ pub async fn get_task_threads(app: AppHandle) -> Result<TaskThreadsSetting, Stri
 #[tauri::command]
 pub async fn set_task_threads(
     setting: TaskThreadsSetting,
+    owner: String,
     app: AppHandle,
 ) -> Result<TaskThreadsSetting, String> {
     tokio::task::spawn_blocking(move || {
-        save_task_threads(&app, &setting)?;
+        require_settings_owner(&app, &owner)?;
+        save_task_threads(&app, &owner, &setting)?;
         Ok(setting)
     })
     .await

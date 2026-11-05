@@ -2,7 +2,7 @@
  * Registry of the AI tasks Kuzz itself performs, each of which gets its own
  * provider / model under Settings › Models › Task models.
  *
- * Persistence is Rust-owned: `<app-data>/agents/task-models.json`, one task
+ * Persistence is Rust-owned: `<app-data>/agents/accounts/<owner-hex>/task-models.json`, one task
  * = one `set_task_model` save, read back through `get_task_models` (which
  * also reports readiness from the Providers tab's API keys). Task models are
  * deliberately not `GlobalAgentConfig` fields — saving that record restarts

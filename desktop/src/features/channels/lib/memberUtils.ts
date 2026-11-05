@@ -7,6 +7,32 @@ import {
 } from "@/shared/lib/pubkey";
 import { t } from "@/shared/i18n";
 
+/**
+ * The viewer's own agents: run on this computer, owned on the relay (their
+ * other computers), or paired to one of their devices.
+ */
+export function ownAgentPubkeys(
+  managedAgents: readonly { pubkey: string }[],
+  relayAgents: readonly { pubkey: string; ownerPubkey?: string | null }[],
+  devices:
+    | readonly { agents?: readonly { pubkey: string }[] | null }[]
+    | undefined,
+  currentPubkey: string | undefined,
+): Set<string> {
+  const viewer = normalizePubkey(currentPubkey ?? "");
+  return new Set(
+    [
+      ...managedAgents,
+      ...relayAgents.filter(
+        (agent) =>
+          viewer.length > 0 &&
+          normalizePubkey(agent.ownerPubkey ?? "") === viewer,
+      ),
+      ...(devices ?? []).flatMap((device) => device.agents ?? []),
+    ].map((agent) => normalizePubkey(agent.pubkey)),
+  );
+}
+
 export const roleOrder: Record<ChannelMember["role"], number> = {
   owner: 0,
   admin: 1,

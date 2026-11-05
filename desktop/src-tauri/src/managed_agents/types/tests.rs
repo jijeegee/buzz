@@ -537,7 +537,7 @@ fn set_default_ai_unsets_every_other_record() {
     let mut records = vec![keyed_record("aa"), keyed_record("bb"), keyed_record("cc")];
     records[0].is_default_ai = true;
 
-    let changed = set_default_ai(&mut records, Some("bb")).expect("star bb");
+    let changed = set_default_ai(&mut records, Some("bb"), |_| true).expect("star bb");
 
     assert_eq!(changed, vec!["aa".to_string(), "bb".to_string()]);
     assert_eq!(
@@ -550,11 +550,27 @@ fn set_default_ai_unsets_every_other_record() {
 }
 
 #[test]
+fn set_default_ai_leaves_other_accounts_alone() {
+    let mut records = vec![keyed_record("aa"), keyed_record("bb"), keyed_record("cc")];
+    records[0].is_default_ai = true;
+    let mine = |record: &super::ManagedAgentRecord| record.pubkey != "aa";
+
+    let changed = set_default_ai(&mut records, Some("bb"), mine).expect("star bb");
+
+    assert_eq!(changed, vec!["bb".to_string()]);
+    assert!(records[0].is_default_ai);
+    assert!(records[1].is_default_ai);
+
+    let error = set_default_ai(&mut records, Some("aa"), mine).expect_err("not mine");
+    assert_eq!(error, "agent aa not found");
+}
+
+#[test]
 fn set_default_ai_is_idempotent_for_the_current_default() {
     let mut records = vec![keyed_record("aa"), keyed_record("bb")];
     records[1].is_default_ai = true;
 
-    let changed = set_default_ai(&mut records, Some("bb")).expect("re-star bb");
+    let changed = set_default_ai(&mut records, Some("bb"), |_| true).expect("re-star bb");
 
     assert!(changed.is_empty(), "nothing changed, nothing to stamp");
     assert!(records[1].is_default_ai);
@@ -566,7 +582,7 @@ fn set_default_ai_none_clears_every_record() {
     records[0].is_default_ai = true;
     records[1].is_default_ai = true; // a corrupted store must still be healed
 
-    let changed = set_default_ai(&mut records, None).expect("clear");
+    let changed = set_default_ai(&mut records, None, |_| true).expect("clear");
 
     assert_eq!(changed, vec!["aa".to_string(), "bb".to_string()]);
     assert!(records.iter().all(|record| !record.is_default_ai));
@@ -577,7 +593,7 @@ fn set_default_ai_rejects_keyless_definition_records() {
     let mut records = vec![keyed_record(""), keyed_record("bb")];
     records[1].is_default_ai = true;
 
-    let error = set_default_ai(&mut records, Some("")).expect_err("keyless rejected");
+    let error = set_default_ai(&mut records, Some(""), |_| true).expect_err("keyless rejected");
 
     assert!(
         error.contains("key"),
@@ -594,7 +610,7 @@ fn set_default_ai_rejects_unknown_pubkeys_without_mutating() {
     let mut records = vec![keyed_record("aa")];
     records[0].is_default_ai = true;
 
-    let error = set_default_ai(&mut records, Some("zz")).expect_err("unknown rejected");
+    let error = set_default_ai(&mut records, Some("zz"), |_| true).expect_err("unknown rejected");
 
     assert!(error.contains("zz not found"), "got: {error}");
     assert!(records[0].is_default_ai);
