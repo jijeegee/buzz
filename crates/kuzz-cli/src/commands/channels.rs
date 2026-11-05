@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::DateTime;
 use kuzz_core::kind::{
     KIND_MANAGED_AGENT, KIND_PRESENCE_SNAPSHOT, KIND_PRESENCE_UPDATE, KIND_TEAM,
 };
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,6 +22,7 @@ fn extract_channel_metadata(e: &serde_json::Value) -> serde_json::Value {
         "channel_id": extract_d_tag(e),
         "name": extract_tag_value(e, "name"),
         "description": extract_tag_value(e, "about"),
+        "channel_type": extract_tag_value(e, "t"),
         "created_at": e.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0),
     })
 }

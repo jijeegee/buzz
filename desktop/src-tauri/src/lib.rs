@@ -411,6 +411,7 @@ pub fn run() {
             // unusable (exit 78), within the restart cap. Inert in key mode.
             tauri::async_runtime::spawn(crate::auth::watchdog::run(app_handle.clone()));
             crate::auth::pairing::remove_legacy_hermes_keys(&app_handle);
+            crate::auth::pairing::refresh_hermes_connector(&app_handle);
 
             let (tts_settings, tts_settings_load_error) =
                 huddle::tts_settings::load_for_app(&app_handle);
@@ -730,6 +731,8 @@ pub fn run() {
             auth::pairing::connect_hermes,
             auth::pairing::disconnect_external_device,
             auth::pairing::disconnect_external_agent,
+            auth::external_access::get_external_agent_access,
+            auth::external_access::set_external_agent_access,
             auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,

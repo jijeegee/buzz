@@ -2606,6 +2606,27 @@ fn write_restriction_denial(
     }
 }
 
+/// A paired agent's `kind:30177` is its access setting, which only its owner
+/// may write. Readers check the author themselves; this refuses it clearly.
+/// App agents have no pairing, so they pass as before. A disconnected agent
+/// still has its owner, who can narrow the setting.
+async fn check_paired_agent_setting(state: &AppState, event: &Event) -> Result<(), IngestError> {
+    let Some(agent) = kuzz_db::event::extract_d_tag(event).and_then(|d| hex::decode(d).ok()) else {
+        return Ok(());
+    };
+    let owner = state
+        .db
+        .paired_agent_owner(&agent, false)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+    if owner.is_some_and(|owner| owner != event.pubkey.to_bytes()) {
+        return Err(IngestError::AuthFailed(
+            "restricted: only the agent's owner can set this".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
 /// decision 4), shared by ingest and the WebSocket ephemeral and observer
 /// paths that never reach ingest.
@@ -2919,6 +2940,10 @@ async fn ingest_event_inner(
     // Ban / timeout write-block. Runs before every kind-specific branch below
     // (commands, feedback, reports, moderation) so no write returns ahead of it.
     enforce_write_restriction(state, tenant, kind_u32, auth.pubkey()).await?;
+
+    if kind_u32 == KIND_MANAGED_AGENT {
+        check_paired_agent_setting(state, &event).await?;
+    }
 
     // Command kinds are routed AFTER signature verification, timestamp check,
     // pubkey/auth match, and scope validation — never before.
