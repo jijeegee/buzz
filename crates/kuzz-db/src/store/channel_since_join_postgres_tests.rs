@@ -1721,3 +1721,39 @@ async fn a_mention_changes_nothing_for_members_who_were_there_first() {
     .unwrap();
     assert_eq!(entry, None, "no entry for a member who saw the root");
 }
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_window_at_floor_zero_still_leaves_out_sequence_zero_rows() {
+    use crate::thread::get_channel_window_for_reader;
+    use kuzz_core::thread_window::Direction;
+
+    let f = Fixture::new(ChannelVisibility::Private).await;
+    let kept = f.send("kept").await;
+    let unnumbered = f.send("unnumbered").await;
+    sqlx::query("UPDATE events SET channel_sequence = 0 WHERE community_id = $1 AND id = $2")
+        .bind(f.scope.as_uuid())
+        .bind(id_bytes(&unnumbered))
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let owner = f.owner.public_key().to_bytes();
+    let window = get_channel_window_for_reader(
+        &f.pool,
+        f.scope,
+        f.channel,
+        10,
+        None,
+        None,
+        Direction::Older,
+        Some(owner.as_slice()),
+    )
+    .await
+    .unwrap();
+    let ids: Vec<String> = window
+        .rows
+        .into_iter()
+        .map(|r| r.stored_event.event.id.to_hex())
+        .collect();
+    assert_eq!(ids, [kept]);
+}
