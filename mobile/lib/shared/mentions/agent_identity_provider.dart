@@ -2,9 +2,11 @@ import 'dart:async';
 import 'dart:collection';
 import 'dart:convert';
 
+import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../features/channels/room_live_router.dart';
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/crypto/nip_oa.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/utils/string_utils.dart';
@@ -71,12 +73,43 @@ final agentDirectoryProvider = FutureProvider<List<AgentDirectoryEntry>>((
   return [for (final event in events) AgentDirectoryEntry.fromEvent(event)];
 });
 
-/// Verified NIP-OA owner pubkey per agent pubkey, from the agents' kind:0
-/// profiles. An entry exists only when the `auth` tag verifies — mirrors
-/// desktop's `profile_valid_oa_owner_pubkey`.
+/// Agents paired to this account's computers, which hold no `auth` tag.
+/// Best effort: a list that can't be read adds none, and never errors or
+/// holds up the screens that wait on [agentOwnersProvider].
+Future<Map<String, String>> _pairedAgentOwners(Ref ref) async {
+  final origin = ref.watch(accountOriginProvider);
+  final me = ref.watch(myPubkeyProvider)?.toLowerCase();
+  if (origin == null || me == null) return const {};
+  // A list that arrives after the wait still counts.
+  var late = false;
+  ref.listen(accountDevicesProvider(origin), (_, next) {
+    if (late && next.hasValue) ref.invalidateSelf();
+  });
+  try {
+    final devices = await ref
+        .watch(accountDevicesProvider(origin).future)
+        .timeout(_pairedAgentsTimeout);
+    return {
+      for (final device in devices)
+        for (final agent in device.agents) agent.pubkey.toLowerCase(): me,
+    };
+  } catch (error) {
+    late = error is TimeoutException;
+    debugPrint('[AgentOwners] no device list: $error');
+    return const {};
+  }
+}
+
+const _pairedAgentsTimeout = Duration(seconds: 3);
+
+/// Owner pubkey per agent pubkey: verified NIP-OA from the agents' kind:0
+/// profiles (an entry exists only when the `auth` tag verifies — mirrors
+/// desktop's `profile_valid_oa_owner_pubkey`), and this account's paired
+/// agents.
 final agentOwnersProvider = FutureProvider<Map<String, String>>((ref) async {
+  final paired = _pairedAgentOwners(ref);
   final agents = await ref.watch(agentDirectoryProvider.future);
-  if (agents.isEmpty) return const {};
+  if (agents.isEmpty) return paired;
   final session = ref.read(relaySessionProvider.notifier);
   final events = await session.fetchHistory(
     NostrFilters.profilesBatch([for (final agent in agents) agent.pubkey]),
@@ -86,6 +119,7 @@ final agentOwnersProvider = FutureProvider<Map<String, String>>((ref) async {
     final owner = verifiedOaOwnerPubkey(event.tags, event.pubkey);
     if (owner != null) owners[event.pubkey.toLowerCase()] = owner;
   }
+  owners.addAll(await paired);
   return owners;
 });
 
