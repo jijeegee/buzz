@@ -759,9 +759,9 @@ pub(crate) async fn get_channel_window_on(
 
     if history_reader.is_some() {
         sql.push_str(&format!(
-            " AND e.channel_sequence > channel_history_floor($1, $2, ${param_idx}) \
+            " AND e.channel_sequence > (SELECT channel_history_floor($1, $2, ${param_idx})) \
              AND (e.thread_root_sequence = 0 \
-                  OR e.thread_root_sequence > channel_history_floor($1, $2, ${param_idx}) \
+                  OR e.thread_root_sequence > (SELECT channel_history_floor($1, $2, ${param_idx})) \
                   OR NOT channel_event_hidden($1, $2, e.channel_sequence, \
                                               e.thread_root_sequence, ${param_idx}))"
         ));
@@ -787,7 +787,7 @@ pub(crate) async fn get_channel_window_on(
     // The +1 probe row is the server-internal has_more evidence.
     q = q.bind(limit as i64 + 1);
 
-    let mut db_rows = q.fetch_all(&mut *conn).await?;
+    let mut db_rows = q.persistent(false).fetch_all(&mut *conn).await?;
 
     let has_more = db_rows.len() > limit as usize;
     db_rows.truncate(limit as usize);

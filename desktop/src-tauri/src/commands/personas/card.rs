@@ -32,6 +32,7 @@ use crate::{
     app_state::AppState,
     commands::engrams::get_agent_memory,
     managed_agents::{
+        account_settings::active_settings_owner,
         agent_snapshot::{
             build_snapshot, decode_avatar_data_url, decode_snapshot_png, encode_snapshot_png,
             extract_chunk_payload_png, MemoryLevel,
@@ -39,8 +40,8 @@ use crate::{
         agent_snapshot_envelope::{
             decrypt_envelope, encode_locked_snapshot_png, parse_chunk_payload, ChunkPayload,
         },
-        load_agent_definitions, load_global_agent_config, load_managed_agents, load_personas,
-        save_global_agent_config, validate_global_config,
+        load_active_agent_config, load_agent_config_for_owner, load_agent_definitions,
+        load_managed_agents, load_personas, save_agent_config_for_owner, validate_global_config,
     },
 };
 use base64::{engine::general_purpose::STANDARD, Engine as _};
@@ -472,10 +473,11 @@ pub fn card_mint_save_openai_key(
         .lock()
         .map_err(|e| e.to_string())?;
 
-    let mut config = load_global_agent_config(&app)?;
+    let owner = active_settings_owner(&app)?;
+    let mut config = load_agent_config_for_owner(&app, &owner)?;
     config.env_vars.insert("OPENAI_API_KEY".to_string(), key);
     validate_global_config(&config)?;
-    save_global_agent_config(&app, &config)
+    save_agent_config_for_owner(&app, &owner, &config)
 }
 
 /// Report which env layer resolves the OpenAI key for a card mint of agent
@@ -496,7 +498,7 @@ pub fn card_mint_key_status(
     let definitions = load_agent_definitions(&app)?;
     let (record, _) = resolve_from_lists(&id, &instances, &definitions)?;
 
-    let global = load_global_agent_config(&app).unwrap_or_default();
+    let global = load_active_agent_config(&app).unwrap_or_default();
     let personas = load_personas(&app).unwrap_or_default();
     let persona_env = record
         .persona_id
@@ -554,7 +556,7 @@ pub async fn mint_agent_card(
             resolve_from_lists(&id, &instances, &definitions).map(|(r, d)| (r.clone(), d))?;
         let mut record = record;
         materialize_snapshot_description(&mut record, is_definition, &definitions);
-        let global = load_global_agent_config(&app).unwrap_or_default();
+        let global = load_active_agent_config(&app).unwrap_or_default();
         let personas = load_personas(&app).unwrap_or_default();
         let persona_env = record
             .persona_id

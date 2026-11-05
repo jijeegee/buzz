@@ -1,7 +1,9 @@
 import * as React from "react";
 import { type QueryStatus, useQueryClient } from "@tanstack/react-query";
 
+import { checkAfterSignIn } from "@/features/onboarding/computerSetup";
 import { useIdentityQuery } from "@/shared/api/hooks";
+import { finishAgentSetupPending } from "@/shared/api/tauriGlobalAgentConfig";
 
 const MACHINE_ONBOARDING_COMPLETION_STORAGE_KEY =
   "kuzz-machine-onboarding-complete.v2";
@@ -121,6 +123,10 @@ export function useMachineOnboardingState({
   const [evaluatedPubkey, setEvaluatedPubkey] = React.useState<string | null>(
     null,
   );
+  const [signInCheck, setSignInCheck] = React.useState<{
+    pubkey: string;
+    needsSetup: boolean;
+  } | null>(null);
   const continuingPubkeyRef = React.useRef<string | null>(null);
   const startupPubkeyRef = React.useRef<string | null>(null);
   const [bootedLost, setBootedLost] = React.useState(false);
@@ -141,16 +147,57 @@ export function useMachineOnboardingState({
     if (identityLocked) setBootedLocked(true);
   }, [identityLocked]);
 
+  // Read before the completion flag: a sign-in decides afresh, whatever the
+  // flag or its migration say. Sign-ins inside the flow check there themselves.
+  const signInChecked = signInCheck?.pubkey === currentPubkey;
+  React.useEffect(() => {
+    if (
+      !currentPubkey ||
+      identityQuery.status !== "success" ||
+      identityLost ||
+      signInChecked ||
+      continuingPubkeyRef.current === currentPubkey
+    ) {
+      return;
+    }
+    let cancelled = false;
+    void checkAfterSignIn(currentPubkey).then((result) => {
+      if (cancelled) return;
+      if (result === "set-up") {
+        window.localStorage.setItem(
+          completionKey(
+            MACHINE_ONBOARDING_COMPLETION_STORAGE_KEY,
+            currentPubkey,
+          ),
+          "true",
+        );
+        setCompletedPubkey(currentPubkey);
+      } else if (result === "needs-setup") {
+        clearMachineOnboardingCompletion(currentPubkey);
+        setCompletedPubkey(null);
+      }
+      setSignInCheck({
+        pubkey: currentPubkey,
+        needsSetup: result === "needs-setup",
+      });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [currentPubkey, identityLost, identityQuery.status, signInChecked]);
+
   React.useEffect(() => {
     if (
       !currentPubkey ||
       currentPubkey !== startupPubkeyRef.current ||
       identityQuery.status !== "success" ||
-      identityLost
+      identityLost ||
+      !signInChecked
     ) {
       return;
     }
     if (
+      !signInCheck.needsSetup &&
       migrateMachineOnboardingCompletion(
         currentPubkey,
         activeCommunityPubkey,
@@ -166,6 +213,8 @@ export function useMachineOnboardingState({
     identityLost,
     identityQuery.status,
     isSharedIdentity,
+    signInCheck,
+    signInChecked,
   ]);
 
   const complete = React.useCallback(
@@ -182,6 +231,8 @@ export function useMachineOnboardingState({
       // keeps the stage pinned forever, so Skip/Next appear to do nothing.
       continuingPubkeyRef.current = null;
       setCompletedPubkey(pubkey);
+      setSignInCheck({ pubkey, needsSetup: false });
+      void finishAgentSetupPending(pubkey).catch(() => {});
     },
     [currentPubkey],
   );
@@ -205,10 +256,12 @@ export function useMachineOnboardingState({
   const relaunchRequired =
     ((bootedLost && !identityLost) || (bootedLocked && !identityLocked)) &&
     identityQuery.status === "success";
+  const needsAgentSetup = signInChecked && signInCheck.needsSetup;
   const hasCompletedCurrentPubkey =
-    completedPubkey === currentPubkey ||
-    (!forceMachineOnboarding() &&
-      readMachineOnboardingCompletion(currentPubkey));
+    !needsAgentSetup &&
+    (completedPubkey === currentPubkey ||
+      (!forceMachineOnboarding() &&
+        readMachineOnboardingCompletion(currentPubkey)));
 
   let stage: MachineOnboardingStage;
   if (identityResetFailed && identityQuery.status === "success") {
@@ -227,6 +280,7 @@ export function useMachineOnboardingState({
       identityQuery.fetchStatus === "fetching",
     ) ||
     !currentPubkey ||
+    (!signInChecked && continuingPubkeyRef.current !== currentPubkey) ||
     // Imported identities are published before the flow can advance to setup.
     // Keep that explicitly requested identity switch in onboarding; only the
     // startup identity needs the one-render evaluation gate above.
@@ -251,6 +305,7 @@ export function useMachineOnboardingState({
     continueWithRecoveredIdentity,
     currentPubkey,
     identityLost,
+    needsAgentSetup,
     queryClient,
     reopen,
     stage,

@@ -1,7 +1,8 @@
 //! Settings › Models › Task models: which provider/model each app task (AI
 //! work Kuzz runs on its own behalf) uses.
 //!
-//! Stored alone in `<app-data>/agents/task-models.json`, one entry per task:
+//! Stored per account in `<app-data>/agents/accounts/<owner-hex>/task-models.json`
+//! (the active account's; app tasks run for whoever uses the app), one entry per task:
 //! `{ "message-routing": { "provider": "anthropic", "model": "claude-haiku-4-5" } }`.
 //! A missing entry or field means "automatic" (see
 //! `message_routing::resolve_router_model`). It is deliberately **not** a
@@ -15,7 +16,10 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{managed_agents_base_dir, storage::atomic_write_json};
+use super::{
+    account_settings::{account_settings_dir, active_settings_owner},
+    storage::atomic_write_json,
+};
 
 const TASK_MODELS_FILE: &str = "task-models.json";
 
@@ -46,8 +50,11 @@ impl TaskModelSetting {
 
 pub type TaskModels = BTreeMap<String, TaskModelSetting>;
 
-fn task_models_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(managed_agents_base_dir(app)?.join(TASK_MODELS_FILE))
+fn task_models_path<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<PathBuf, String> {
+    Ok(account_settings_dir(app, owner_hex)?.join(TASK_MODELS_FILE))
 }
 
 /// Parse the stored file. Damaged JSON reads as "all automatic" with a
@@ -64,7 +71,10 @@ pub(crate) fn parse_task_models(content: &str) -> TaskModels {
 }
 
 pub fn load_task_models<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<TaskModels, String> {
-    load_task_models_at(&task_models_path(app)?)
+    match active_settings_owner(app) {
+        Ok(owner) => load_task_models_at(&task_models_path(app, &owner)?),
+        Err(_) => Ok(TaskModels::new()),
+    }
 }
 
 pub(crate) fn load_task_models_at(path: &Path) -> Result<TaskModels, String> {
@@ -103,10 +113,11 @@ pub(crate) fn normalize_choice(
 /// entry.
 pub fn save_task_model<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     task_id: &str,
     setting: TaskModelSetting,
 ) -> Result<TaskModels, String> {
-    save_task_model_at(&task_models_path(app)?, task_id, setting)
+    save_task_model_at(&task_models_path(app, owner_hex)?, task_id, setting)
 }
 
 pub(crate) fn save_task_model_at(

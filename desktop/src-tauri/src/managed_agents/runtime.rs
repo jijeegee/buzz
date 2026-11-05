@@ -75,14 +75,14 @@ mod sweep;
 pub(crate) use sweep::sweep_untracked_bundle_harnesses;
 
 mod process;
+pub(crate) use process::{
+    current_instance_id, process_belongs_to_us, process_has_kuzz_marker, process_is_running,
+    terminate_process, terminate_untracked_pair_runtime, valid_agent_runtime_receipt,
+};
 #[cfg(test)]
 use process::{
     kuzz_marker_entry, name_matches_interpreter, name_matches_known_binary,
     terminate_runtime_receipt_with, valid_agent_runtime_receipt_with,
-};
-pub(crate) use process::{
-    current_instance_id, process_belongs_to_us, process_has_kuzz_marker, process_is_running,
-    terminate_process, terminate_untracked_pair_runtime, valid_agent_runtime_receipt,
 };
 
 mod orphan_sweep;
@@ -598,7 +598,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     let teams = super::load_teams(app).unwrap_or_default();
     // Load global config once; used for runtime_metadata_env_vars (model/provider fallback)
     // and for the env-var merge at spawn time.
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global =
+        crate::managed_agents::load_agent_config_for_owner(app, &record_owner).unwrap_or_default();
 
     // Resolve model/provider/prompt ONCE, here, at the shared spawn boundary —
     // the single source both the env writes below and the spawn-config snapshot
@@ -938,7 +939,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     }
     // Self-opened task threads ride the thread policy, after user env like
     // the policy itself; the snapshot below stamps the same value.
-    let task_threads = super::task_threads::current_task_threads_env(app);
+    let task_threads = super::task_threads::current_task_threads_env(app, owner_hex);
     super::task_threads::apply_task_threads_env(&mut command, acp_session_policy, &task_threads);
     // The channel routing role (saved mode × the record's star, held back
     // while another agent still runs a role it is losing) decides the
@@ -950,14 +951,14 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         record,
         super::channel_routing::routing_role_for(
             record,
-            super::channel_routing::load_channel_routing(app)?,
+            super::channel_routing::load_channel_routing_for_owner(app, owner_hex)?,
             owner_hex,
         ),
         live_routing_roles,
     );
     // New-session history follows the routing role (dispatchers keep their
     // own window); written after user env and stamped into the snapshot below.
-    let context_history = super::context_history::current_context_history_env(app);
+    let context_history = super::context_history::current_context_history_env(app, owner_hex);
     super::context_history::apply_context_history_env(&mut command, routing_role, &context_history);
     super::apply_routing_env(
         &mut command,

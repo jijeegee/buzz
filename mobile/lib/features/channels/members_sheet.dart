@@ -17,6 +17,7 @@ import 'agent_activity/working_bots_provider.dart';
 import 'channel.dart';
 import 'channel_identity_names_provider.dart';
 import 'channel_management_provider.dart';
+import 'leave_with_agents.dart';
 
 class MembersSheet extends HookConsumerWidget {
   final Channel channel;
@@ -48,6 +49,12 @@ class MembersSheet extends HookConsumerWidget {
         currentMember != null &&
         currentMember.isElevated &&
         !channel.isArchived;
+    // An owner may remove their own agents without any channel role.
+    final myAgents = ref.watch(myAgentsInChannelProvider(channel.id));
+    bool canRemoveAsOwner(ChannelMember member) =>
+        currentMember != null &&
+        !channel.isArchived &&
+        myAgents.contains(member.pubkey.toLowerCase());
 
     void openActivity(ChannelMember bot) {
       final navigator = Navigator.of(context);
@@ -108,6 +115,7 @@ class MembersSheet extends HookConsumerWidget {
                     currentPubkey: currentPubkey,
                     profile: userCache[member.pubkey.toLowerCase()],
                     canManage: canManage,
+                    canRemoveAsOwner: canRemoveAsOwner(member),
                     isSelf:
                         member.pubkey.toLowerCase() ==
                         currentPubkey?.toLowerCase(),
@@ -126,6 +134,7 @@ class MembersSheet extends HookConsumerWidget {
                     currentPubkey: currentPubkey,
                     profile: userCache[bot.pubkey.toLowerCase()],
                     canManage: canManage,
+                    canRemoveAsOwner: canRemoveAsOwner(bot),
                     isSelf: false,
                     channelId: channel.id,
                     isWorking: typingBotPubkeys.contains(
@@ -205,6 +214,7 @@ class _MemberTile extends ConsumerWidget {
   final String? currentPubkey;
   final UserProfile? profile;
   final bool canManage;
+  final bool canRemoveAsOwner;
   final bool isSelf;
   final String channelId;
   final bool isWorking;
@@ -217,6 +227,7 @@ class _MemberTile extends ConsumerWidget {
     required this.currentPubkey,
     required this.profile,
     required this.canManage,
+    this.canRemoveAsOwner = false,
     required this.isSelf,
     required this.channelId,
     this.isWorking = false,
@@ -239,7 +250,8 @@ class _MemberTile extends ConsumerWidget {
     final initial = isSelf || hasName
         ? name[0].toUpperCase()
         : (member.pubkey.isNotEmpty ? member.pubkey[0].toUpperCase() : '?');
-    final showManagementActions = canManage && !isSelf && !member.isOwner;
+    final showManagementActions =
+        (canManage || canRemoveAsOwner) && !isSelf && !member.isOwner;
     final showMenu = showManagementActions || onViewActivity != null;
 
     return ListTile(
@@ -314,7 +326,7 @@ class _MemberTile extends ConsumerWidget {
         : ref
               .read(channelIdentityNamesProvider(channelId))
               .labelFor(member.pubkey);
-    final canChangeRole = showManagementActions && !member.isBot;
+    final canChangeRole = canManage && showManagementActions && !member.isBot;
     showKuzzModalBottomSheet<void>(
       context: context,
       title: label,

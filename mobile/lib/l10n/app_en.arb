@@ -4448,6 +4448,68 @@
   "@agentsActions": {
     "description": "Agents tab, tooltip of the … button on an agent. Short."
   },
+  "agentAccessBody": "Choose who can send instructions to {name}.",
+  "@agentAccessBody": {
+    "description": "Paired agent sheet, line above the access options.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentAccessOnlyMe": "Only me",
+  "@agentAccessOnlyMe": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessSelected": "Selected people",
+  "@agentAccessSelected": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessAnyone": "Anyone",
+  "@agentAccessAnyone": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessAlwaysYou": "You can always use this agent.",
+  "@agentAccessAlwaysYou": {
+    "description": "Paired agent sheet, note above the selected people."
+  },
+  "agentAccessSearch": "Search by name",
+  "@agentAccessSearch": {
+    "description": "Paired agent sheet, hint of the people search field."
+  },
+  "agentAccessNoMatches": "No matching users.",
+  "@agentAccessNoMatches": {
+    "description": "Paired agent sheet, the people search found nobody."
+  },
+  "agentAccessRemovePerson": "Remove {name}",
+  "@agentAccessRemovePerson": {
+    "description": "Paired agent sheet, tooltip of the remove button.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentAccessUnnamed": "Unnamed",
+  "@agentAccessUnnamed": {
+    "description": "Paired agent sheet, a person with no display name."
+  },
+  "agentAccessSaveFailed": "Couldn't save. Try again.",
+  "@agentAccessSaveFailed": {
+    "description": "Paired agent sheet, the setting could not be saved."
+  },
+  "agentAccessSave": "Save access",
+  "@agentAccessSave": {
+    "description": "Paired agent sheet, save button. Short."
+  },
+  "agentAccessUnavailable": "This account can't change agent access.",
+  "@agentAccessUnavailable": {
+    "description": "Paired agent sheet, saving is refused for an account without a key."
+  },
+  "agentAccessLoadFailed": "Couldn't load this agent's access.",
+  "@agentAccessLoadFailed": {
+    "description": "Paired agent sheet, the current setting could not be read."
+  },
   "agentsMessage": "Message",
   "@agentsMessage": {
     "description": "Agent sheet, button that opens a direct message with the agent. Short."

@@ -280,6 +280,16 @@ class RoomLiveRouter {
     return roomId;
   }
 
+  /// [routeBundleEvent] for a user-stream frame. Unlike a chunk's, a frame may
+  /// belong to a room outside [carried] (one just joined), so a single carried
+  /// room says nothing about an event with no `h`.
+  String? routeStreamEvent(NostrEvent event, Set<String> carried) {
+    final roomId = _roomOf(event, carried, oneRoomShortcut: false);
+    if (roomId == null) return null;
+    if (!_seen.contains(event.id)) _deliver(event, roomId);
+    return roomId;
+  }
+
   void dispose() {
     _disposed = true;
     for (final room in _rooms.values) {
@@ -327,10 +337,14 @@ class RoomLiveRouter {
     waiter.done.complete();
   }
 
-  String? _roomOf(NostrEvent event, Set<String> chunkRooms) {
+  String? _roomOf(
+    NostrEvent event,
+    Set<String> chunkRooms, {
+    bool oneRoomShortcut = true,
+  }) {
     final tagged = event.channelId;
     if (tagged != null) return tagged;
-    if (chunkRooms.length == 1) return chunkRooms.first;
+    if (oneRoomShortcut && chunkRooms.length == 1) return chunkRooms.first;
     final referenced = [
       for (final tag in event.tags)
         if (tag.length > 1 && tag[0] == 'e') tag[1],

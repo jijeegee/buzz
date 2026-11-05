@@ -1,7 +1,7 @@
 //! Global agent configuration defaults.
 //!
-//! A single `global-agent-config.json` record that applies to ALL managed
-//! agents. For a linked instance, the definition wins over global; for a
+//! One `global-agent-config.json` record per account, applying to all of that
+//! account's managed agents (see [`super::account_settings`]). For a linked instance, the definition wins over global; for a
 //! definition-less (legacy) instance, the record's own fields win over
 //! global. Global is always the lowest user-settable layer.
 //!
@@ -19,7 +19,7 @@
 //!
 //! # Storage
 //!
-//! `<app-data>/agents/global-agent-config.json`, written `0o600` via
+//! `<app-data>/agents/accounts/<owner-hex>/global-agent-config.json`, written `0o600` via
 //! `atomic_write_json_restricted` (same as the agent store).
 
 use std::collections::BTreeMap;
@@ -27,11 +27,13 @@ use std::collections::BTreeMap;
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
+use crate::managed_agents::account_settings::{account_settings_dir, active_settings_owner};
 use crate::managed_agents::env_vars::{
     validate_user_env_keys, DERIVED_PROVIDER_MODEL_ENV_KEYS, MAX_ENV_VALUE_BYTES,
 };
-use crate::managed_agents::storage::{atomic_write_json_restricted, managed_agents_base_dir};
+use crate::managed_agents::storage::atomic_write_json_restricted;
 use crate::managed_agents::types::{AgentDefinition, ManagedAgentRecord};
+use crate::managed_agents::visible_owner_hex;
 
 /// The global agent configuration record.
 ///
@@ -97,7 +99,7 @@ pub struct GlobalAgentConfig {
 /// - Values exceeding [`MAX_ENV_VALUE_BYTES`] are rejected.
 /// - Blank / whitespace-only values are normalized to `None` by
 ///   [`normalize_global_config_fields`], which must be called before
-///   persisting (done inside [`save_global_agent_config`]).
+///   persisting (done inside [`save_agent_config_for_owner`]).
 pub fn validate_global_config(config: &GlobalAgentConfig) -> Result<(), String> {
     // Strip empty values first — they mean "inherit" and must not be stored.
     let non_empty: BTreeMap<String, String> = config
@@ -158,7 +160,7 @@ pub fn validate_global_config(config: &GlobalAgentConfig) -> Result<(), String> 
                 ));
             }
             // Note: blank/whitespace-only values are normalized to None by
-            // normalize_global_config_fields, called from save_global_agent_config.
+            // normalize_global_config_fields, called from save_agent_config_for_owner.
         }
     }
 
@@ -181,7 +183,7 @@ pub fn strip_empty_env_vars(config: &mut GlobalAgentConfig) {
 /// explicitly set to nothing" rather than "inherit"). Normalizing to `None`
 /// preserves the invariant that `Some(s)` always contains a non-blank string.
 ///
-/// Called from [`save_global_agent_config`] so normalization is applied at
+/// Called from [`save_agent_config_for_owner`] so normalization is applied at
 /// every persist boundary.
 pub fn normalize_global_config_fields(config: &mut GlobalAgentConfig) {
     if let Some(v) = &config.provider {
@@ -201,42 +203,121 @@ pub fn normalize_global_config_fields(config: &mut GlobalAgentConfig) {
     }
 }
 
-fn global_config_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<std::path::PathBuf, String> {
-    Ok(managed_agents_base_dir(app)?.join("global-agent-config.json"))
-}
+const CONFIG_FILE: &str = "global-agent-config.json";
 
-/// Load the global agent config from disk.
-///
-/// Returns the default (all-empty) config if the file does not exist yet.
-pub fn load_global_agent_config<R: tauri::Runtime>(
-    app: &AppHandle<R>,
-) -> Result<GlobalAgentConfig, String> {
-    let path = global_config_path(app)?;
+fn load_config_at(path: &std::path::Path) -> Result<GlobalAgentConfig, String> {
     if !path.exists() {
         return Ok(GlobalAgentConfig::default());
     }
-    let content = std::fs::read_to_string(&path)
+    let content = std::fs::read_to_string(path)
         .map_err(|e| format!("failed to read global agent config: {e}"))?;
     serde_json::from_str(&content).map_err(|e| format!("failed to parse global agent config: {e}"))
 }
 
-/// Save the global agent config to disk.
+/// Load `owner_hex`'s agent config.
+///
+/// Returns the default (all-empty) config if the file does not exist yet.
+pub fn load_agent_config_for_owner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<GlobalAgentConfig, String> {
+    load_config_at(&account_settings_dir(app, owner_hex)?.join(CONFIG_FILE))
+}
+
+/// The config of the agent `record`'s owner. An agent with no known owner gets
+/// the default: no account's keys reach it.
+pub fn load_agent_config_for_record<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    record: &ManagedAgentRecord,
+) -> GlobalAgentConfig {
+    visible_owner_hex(app, record)
+        .and_then(|owner| load_agent_config_for_owner(app, &owner).ok())
+        .unwrap_or_default()
+}
+
+/// The active account's config, for the screens. The default while that
+/// account cannot be used yet.
+pub fn load_active_agent_config<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+) -> Result<GlobalAgentConfig, String> {
+    match active_settings_owner(app) {
+        Ok(owner) => load_agent_config_for_owner(app, &owner),
+        Err(_) => Ok(GlobalAgentConfig::default()),
+    }
+}
+
+/// Save `owner_hex`'s agent config.
 ///
 /// Strips empty env values and normalizes blank provider/model to `None`
 /// before writing (empty = "inherit" semantics).
 /// Written `0o600` — same protection as `managed-agents.json`.
-pub fn save_global_agent_config(app: &AppHandle, config: &GlobalAgentConfig) -> Result<(), String> {
+pub fn save_agent_config_for_owner(
+    app: &AppHandle,
+    owner_hex: &str,
+    config: &GlobalAgentConfig,
+) -> Result<(), String> {
     let mut config = config.clone();
     strip_empty_env_vars(&mut config);
     normalize_global_config_fields(&mut config);
 
-    let path = global_config_path(app)?;
+    let path = account_settings_dir(app, owner_hex)?.join(CONFIG_FILE);
     let payload = serde_json::to_vec_pretty(&config)
         .map_err(|e| format!("failed to serialize global agent config: {e}"))?;
     atomic_write_json_restricted(&path, &payload)?;
     // A global prompt env tier can change a running agent's live prompt.
     super::live_settings::schedule_live_settings_sync(app);
     Ok(())
+}
+
+/// Each owner's config for a list of agents, read once, so callers polling
+/// many rows (some under locks) stay off the disk per row.
+pub(crate) struct AgentConfigsByOwner {
+    owner_by_agent: BTreeMap<String, String>,
+    config_by_owner: BTreeMap<String, GlobalAgentConfig>,
+    unowned: GlobalAgentConfig,
+}
+
+impl AgentConfigsByOwner {
+    pub(crate) fn load<R: tauri::Runtime>(
+        app: &AppHandle<R>,
+        records: &[ManagedAgentRecord],
+    ) -> Self {
+        Self::collect(
+            records,
+            |record| visible_owner_hex(app, record),
+            |owner| load_agent_config_for_owner(app, owner).unwrap_or_default(),
+        )
+    }
+
+    fn collect(
+        records: &[ManagedAgentRecord],
+        owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
+        read_config: impl Fn(&str) -> GlobalAgentConfig,
+    ) -> Self {
+        let mut owner_by_agent = BTreeMap::new();
+        let mut config_by_owner = BTreeMap::new();
+        for record in records {
+            let Some(owner) = owner_of(record).map(|owner| owner.to_ascii_lowercase()) else {
+                continue;
+            };
+            if !config_by_owner.contains_key(&owner) {
+                config_by_owner.insert(owner.clone(), read_config(&owner));
+            }
+            owner_by_agent.insert(record.pubkey.to_ascii_lowercase(), owner);
+        }
+        Self {
+            owner_by_agent,
+            config_by_owner,
+            unowned: GlobalAgentConfig::default(),
+        }
+    }
+
+    pub(crate) fn for_record(&self, record: &ManagedAgentRecord) -> &GlobalAgentConfig {
+        self.owner_by_agent
+            .get(&record.pubkey.to_ascii_lowercase())
+            .and_then(|owner| self.config_by_owner.get(owner))
+            .unwrap_or(&self.unowned)
+    }
 }
 
 /// Resolve the effective model and provider for an agent.

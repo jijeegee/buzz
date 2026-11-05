@@ -4,11 +4,12 @@ use tauri::{AppHandle, Emitter, Manager};
 
 use super::{
     agent_readiness, append_log_marker, current_instance_id, find_managed_agent_mut,
-    load_global_agent_config, load_managed_agents, load_personas, managed_agent_runtime_log_path,
-    record_agent_command, resolve_effective_agent_env, save_managed_agents, spawn_agent_child,
-    terminate_process, terminate_untracked_pair_runtime, write_agent_runtime_receipt,
-    AgentReadiness, BackendKind, ManagedAgentPairRuntime, ManagedAgentRuntimeKey,
-    ManagedAgentRuntimeLifecycle, ManagedAgentRuntimeReceipt, ManagedAgentRuntimeStatus,
+    load_agent_config_for_record, load_managed_agents, load_personas,
+    managed_agent_runtime_log_path, record_agent_command, resolve_effective_agent_env,
+    save_managed_agents, spawn_agent_child, terminate_process, terminate_untracked_pair_runtime,
+    write_agent_runtime_receipt, AgentConfigsByOwner, AgentReadiness, BackendKind,
+    ManagedAgentPairRuntime, ManagedAgentRuntimeKey, ManagedAgentRuntimeLifecycle,
+    ManagedAgentRuntimeReceipt, ManagedAgentRuntimeStatus,
 };
 use crate::app_state::AppState;
 
@@ -22,7 +23,7 @@ fn status_for<R: tauri::Runtime>(
     requested_relay_url: Option<String>,
 ) -> ManagedAgentRuntimeStatus {
     let personas = load_personas(app).unwrap_or_default();
-    let global = load_global_agent_config(app).unwrap_or_default();
+    let global = load_agent_config_for_record(app, record);
     status_for_with(
         app,
         record,
@@ -145,7 +146,10 @@ pub async fn list_managed_agent_runtimes(
         // on every status event — load the per-row status inputs once, outside
         // the locks, instead of hitting disk per row while holding them.
         let personas = load_personas(&app).unwrap_or_default();
-        let global = load_global_agent_config(&app).unwrap_or_default();
+        let agent_configs = AgentConfigsByOwner::load(
+            &app,
+            &super::storage::load_managed_agents_without_keys(&app).unwrap_or_default(),
+        );
         let state = app.state::<AppState>();
         let _transition = state
             .managed_agent_runtime_transition
@@ -187,7 +191,7 @@ pub async fn list_managed_agent_runtimes(
                     None,
                     StatusInputs {
                         personas: &personas,
-                        global: &global,
+                        global: agent_configs.for_record(record),
                     },
                 );
                 emit_status(&app, &status);
@@ -206,7 +210,7 @@ pub async fn list_managed_agent_runtimes(
                 None,
                 StatusInputs {
                     personas: &personas,
-                    global: &global,
+                    global: agent_configs.for_record(record),
                 },
             ))
         }));
@@ -657,7 +661,10 @@ pub async fn reconcile_managed_agent_runtimes(
     // restart flows.
     tokio::task::spawn_blocking(move || {
         let personas = load_personas(&app).unwrap_or_default();
-        let global = load_global_agent_config(&app).unwrap_or_default();
+        let agent_configs = AgentConfigsByOwner::load(
+            &app,
+            &super::storage::load_managed_agents_without_keys(&app).unwrap_or_default(),
+        );
         let mut rows = Vec::new();
         for probe in probes {
             match probe {
@@ -685,7 +692,7 @@ pub async fn reconcile_managed_agent_runtimes(
                                 Some(requested),
                                 StatusInputs {
                                     personas: &personas,
-                                    global: &global,
+                                    global: agent_configs.for_record(&record),
                                 },
                             );
                             status.lifecycle = ManagedAgentRuntimeLifecycle::Failed;
@@ -710,7 +717,7 @@ pub async fn reconcile_managed_agent_runtimes(
                                     Some(requested),
                                     StatusInputs {
                                         personas: &personas,
-                                        global: &global,
+                                        global: agent_configs.for_record(&record),
                                     },
                                 );
                                 status.lifecycle = ManagedAgentRuntimeLifecycle::Failed;
@@ -718,7 +725,11 @@ pub async fn reconcile_managed_agent_runtimes(
                                 status
                             }
                             Err(_) => unkeyable_failed_status(
-                                &record, requested, error, &personas, &global,
+                                &record,
+                                requested,
+                                error,
+                                &personas,
+                                agent_configs.for_record(&record),
                             ),
                         };
                     rows.push(status);

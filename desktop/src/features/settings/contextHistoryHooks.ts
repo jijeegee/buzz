@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { managedAgentsQueryKey } from "@/features/agents/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   type ContextHistorySetting,
   getContextHistory,
@@ -19,8 +20,10 @@ export function useContextHistoryQuery() {
 
 export function useSetContextHistoryMutation() {
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
   return useMutation({
-    mutationFn: (setting: ContextHistorySetting) => setContextHistory(setting),
+    mutationFn: (setting: ContextHistorySetting) =>
+      setContextHistory(setting, owner),
     onMutate: async (setting) => {
       await queryClient.cancelQueries({ queryKey: contextHistoryQueryKey });
       const previous = queryClient.getQueryData<ContextHistorySetting>(

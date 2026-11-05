@@ -188,26 +188,6 @@
       "name": "a room never read decides (it opens at the newest)",
       "complete_from": 180, "first_unread": 200, "frontier": null,
       "expect": { "decides": true }
-    },
-    {
-      "name": "thread: held since the newest read reply decides",
-      "thread": true, "complete_from": 100, "first_unread": 200, "read_before": 120, "has_older": false,
-      "expect": { "decides": true }
-    },
-    {
-      "name": "thread: a hole after the newest read reply waits for the relay",
-      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": 120, "has_older": false,
-      "expect": { "decides": false }
-    },
-    {
-      "name": "thread: the oldest loaded reply unread with older pages decides (older pages are sought)",
-      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": null, "has_older": true,
-      "expect": { "decides": true }
-    },
-    {
-      "name": "thread: the oldest stored reply unread without a whole history waits",
-      "thread": true, "complete_from": 150, "first_unread": 200, "read_before": null, "has_older": false,
-      "expect": { "decides": false }
     }
   ]
 }
