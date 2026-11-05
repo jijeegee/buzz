@@ -16,14 +16,22 @@ Future<void> showMessageGoalLink({
   final messenger = ScaffoldMessenger.maybeOf(context);
   final l10n = context.l10n;
   final container = ProviderScope.containerOf(context, listen: false);
+  final read = container.listen(
+    threadGoalTreeProvider(
+      threadGoalsKey(channelId, [messageId, ?threadRootId]),
+    ).future,
+    (_, _) {},
+  );
   final GoalTree tree;
   try {
-    tree = (await container.read(goalTreeProvider(channelId).future)).tree;
+    tree = await read.read();
   } catch (error) {
     messenger?.showSnackBar(
       SnackBar(content: Text(l10n.goalsLoadError('$error'))),
     );
     return;
+  } finally {
+    read.close();
   }
   if (!context.mounted) return;
   if (tree.root == null) {

@@ -2374,9 +2374,7 @@ void main() {
     );
     final container = _buildContainer(session: session);
     addTearDown(container.dispose);
-    int treeReads() => session.queryBatches
-        .where((batch) => batch.any((f) => f.kinds.contains(40110)))
-        .length;
+    int treeReads() => session.goalReads;
 
     await container.read(channelsProvider.future);
     await container.read(goalTreeProvider(_channelA).future);
@@ -2789,6 +2787,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
 
   final List<NostrFilter> historyFilters = [];
   final List<List<NostrFilter>> queryBatches = [];
+  int goalReads = 0;
   Object? messageBatchError;
   Object? latestBatchError;
 
@@ -3077,6 +3076,15 @@ class _FakeRelaySession extends RelaySessionNotifier {
     messageHistoryCount++;
     if (messageHistoryError case final error?) throw error;
     return const [];
+  }
+
+  @override
+  Future<Object?> queryRelayJson(
+    List<Map<String, dynamic>> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    goalReads++;
+    return const <String, dynamic>{};
   }
 
   @override

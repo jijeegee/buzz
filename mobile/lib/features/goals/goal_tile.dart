@@ -6,18 +6,83 @@ import '../../shared/theme/theme.dart';
 import 'goal_links.dart';
 import 'goal_tree.dart';
 
-/// One goal in an outline: status toggle, `L<layer>` title, progress, and
-/// its linked threads and messages. Without [onTap] and [onToggleStatus] it
-/// is read-only; [muted] fades it. Links open through [onOpenLink], even when
-/// read-only; links are icons, and [currentThreadId]'s stays put.
-/// [linkKinds] tells threads from messages; unknown links show as threads.
+/// Whether a goal's sub-goals show; [toggle] is null when it has none.
+typedef GoalFold = ({bool open, VoidCallback? toggle});
+
+/// [tops] and the goals below them, leaving out what folded goals hide. Plan
+/// goals and [unfolded] start open, thread goals closed. Rows come from
+/// [rowBuilder].
+class GoalOutline extends StatefulWidget {
+  const GoalOutline({
+    super.key,
+    required this.tree,
+    required this.tops,
+    required this.rowBuilder,
+    this.unfolded = const {},
+  });
+
+  final GoalTree tree;
+  final List<GoalRow> tops;
+  final Widget Function(GoalRow row, GoalFold fold) rowBuilder;
+  final Set<String> unfolded;
+
+  @override
+  State<GoalOutline> createState() => _GoalOutlineState();
+}
+
+class _GoalOutlineState extends State<GoalOutline> {
+  /// Goals folded or unfolded by hand, away from how they start.
+  final _flipped = <String>{};
+
+  bool _isOpen(String id) {
+    final start = widget.unfolded.contains(id) || widget.tree.isPlanGoal(id);
+    return _flipped.contains(id) ? !start : start;
+  }
+
+  void _flip(String id) => setState(() {
+    if (!_flipped.remove(id)) _flipped.add(id);
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    void walk(GoalRow row) {
+      final id = row.node.id;
+      final children = widget.tree.children(id);
+      final open = _isOpen(id);
+      rows.add(
+        widget.rowBuilder(row, (
+          open: open,
+          toggle: children.isEmpty ? null : () => _flip(id),
+        )),
+      );
+      if (!open || row.layer >= maxGoalDepth) return;
+      for (final child in children) {
+        walk((layer: row.layer + 1, node: child));
+      }
+    }
+
+    widget.tops.forEach(walk);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: rows,
+    );
+  }
+}
+
+/// One goal in an outline: fold button, status toggle, `L<layer>` title,
+/// progress, and its linked threads and messages. Without [onTap] and
+/// [onToggleStatus] it is read-only; [muted] fades it. Links open through
+/// [onOpenLink], even when read-only; links are icons, and
+/// [currentThreadId]'s stays put. [linkKinds] tells threads from messages;
+/// unknown links show as threads.
 class GoalTile extends StatelessWidget {
   const GoalTile({
     super.key,
     required this.layer,
     required this.indent,
     required this.node,
-    required this.progress,
+    required this.fold,
     required this.onTap,
     required this.onToggleStatus,
     this.muted = false,
@@ -31,7 +96,7 @@ class GoalTile extends StatelessWidget {
   /// Nesting depth inside the list it is shown in (0 = flush).
   final int indent;
   final GoalNode node;
-  final ({int done, int total}) progress;
+  final GoalFold fold;
   final VoidCallback? onTap;
   final VoidCallback? onToggleStatus;
   final bool muted;
@@ -43,6 +108,8 @@ class GoalTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final finished =
         node.status == GoalStatus.done || node.status == GoalStatus.dropped;
+    final progress = node.progress;
+    final toggleFold = fold.toggle;
     final tile = InkWell(
       onTap: onTap,
       child: Padding(
@@ -54,6 +121,26 @@ class GoalTile extends StatelessWidget {
         child: Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            SizedBox(
+              width: Grid.sm,
+              child: toggleFold == null
+                  ? null
+                  : IconButton(
+                      key: ValueKey('goal-fold-${node.id}'),
+                      tooltip: fold.open
+                          ? context.l10n.goalsCollapse
+                          : context.l10n.goalsExpand,
+                      padding: EdgeInsets.zero,
+                      visualDensity: VisualDensity.compact,
+                      onPressed: toggleFold,
+                      icon: Icon(
+                        fold.open
+                            ? LucideIcons.chevronDown
+                            : LucideIcons.chevronRight,
+                        size: 16,
+                      ),
+                    ),
+            ),
             IconButton(
               key: ValueKey('goal-status-${node.id}'),
               tooltip: node.status.label(context.l10n),
@@ -80,11 +167,11 @@ class GoalTile extends StatelessWidget {
                         '${progress.done}/${progress.total}',
                         style: context.textTheme.bodySmall,
                       ),
-                    if (node.threads.isNotEmpty)
+                    if (node.links.isNotEmpty)
                       Wrap(
                         spacing: Grid.xs,
                         children: [
-                          for (final thread in node.threads)
+                          for (final thread in node.links)
                             _link(context, thread),
                         ],
                       ),

@@ -22,10 +22,9 @@ class _LinkedGoalBody extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final path = tree.path(goal.id);
     final layer = path.length;
-    final progress = tree.progress(goal.id);
+    final progress = goal.progress;
     final editable = tree.subtreeIds(goal.id);
     final above = {for (final node in path) node.id};
-    final actions = ref.read(goalActionsProvider);
     // Another goal's link replaces this thread; Back stays the channel.
     void onOpenLink(GoalLinkTarget target) => openGoalLink(
       context,
@@ -37,12 +36,12 @@ class _LinkedGoalBody extends ConsumerWidget {
     final linkKinds = ref
         .watch(goalLinkKindsProvider(goalLinkKindsKey(channelId, tree)))
         .value;
-    void toggle(GoalNode node) => runGoalAction(
+    void toggle(GoalNode node) => setGoalStatus(
       context,
-      () => actions.apply(
-        channelId,
-        UpdateGoal(id: node.id, status: node.status.next),
-      ),
+      ref,
+      channelId: channelId,
+      node: node,
+      status: node.status.next,
     );
 
     return ListView(
@@ -62,7 +61,6 @@ class _LinkedGoalBody extends ConsumerWidget {
               context,
               ref,
               channelId: channelId,
-              tree: tree,
               node: goal,
               layer: layer,
             ),
@@ -112,65 +110,41 @@ class _LinkedGoalBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: Grid.xxs),
-        for (final row in tree.outline())
-          if (row.node.id != goal.id)
-            if (editable.contains(row.node.id))
-              GoalTile(
-                key: ValueKey('goal-row-${row.node.id}'),
-                layer: row.layer,
-                indent: row.layer - 1,
-                node: row.node,
-                progress: tree.progress(row.node.id),
-                onTap: () => showGoalActions(
-                  context,
-                  ref,
-                  channelId: channelId,
-                  tree: tree,
-                  node: row.node,
-                  layer: row.layer,
-                ),
-                onToggleStatus: () => toggle(row.node),
-                onOpenLink: onOpenLink,
-                currentThreadId: links.threadRootId,
-                linkKinds: linkKinds,
-              )
-            else
-              GoalTile(
-                key: ValueKey('goal-row-${row.node.id}'),
-                layer: row.layer,
-                indent: row.layer - 1,
-                node: row.node,
-                progress: tree.progress(row.node.id),
-                onTap: null,
-                onToggleStatus: null,
-                muted: !above.contains(row.node.id),
-                onOpenLink: onOpenLink,
-                currentThreadId: links.threadRootId,
-                linkKinds: linkKinds,
-              )
-          else
-            Container(
-              key: ValueKey('goal-row-${row.node.id}'),
+        GoalOutline(
+          tree: tree,
+          tops: tree.outline().take(1).toList(),
+          unfolded: above,
+          rowBuilder: (row, fold) {
+            final id = row.node.id;
+            final canEdit = editable.contains(id);
+            final tile = GoalTile(
+              key: ValueKey('goal-row-$id'),
+              layer: row.layer,
+              indent: row.layer - 1,
+              node: row.node,
+              fold: fold,
+              onTap: canEdit
+                  ? () => showGoalActions(
+                      context,
+                      ref,
+                      channelId: channelId,
+                      node: row.node,
+                      layer: row.layer,
+                    )
+                  : null,
+              onToggleStatus: canEdit ? () => toggle(row.node) : null,
+              muted: !canEdit && !above.contains(id),
+              onOpenLink: onOpenLink,
+              currentThreadId: links.threadRootId,
+              linkKinds: linkKinds,
+            );
+            if (id != goal.id) return tile;
+            return ColoredBox(
               color: context.colors.primary.withValues(alpha: 0.08),
-              child: GoalTile(
-                layer: row.layer,
-                indent: row.layer - 1,
-                node: row.node,
-                progress: progress,
-                onTap: () => showGoalActions(
-                  context,
-                  ref,
-                  channelId: channelId,
-                  tree: tree,
-                  node: goal,
-                  layer: layer,
-                ),
-                onToggleStatus: () => toggle(goal),
-                onOpenLink: onOpenLink,
-                currentThreadId: links.threadRootId,
-                linkKinds: linkKinds,
-              ),
-            ),
+              child: tile,
+            );
+          },
+        ),
         TextButton.icon(
           key: const ValueKey('thread-goal-add'),
           icon: const Icon(LucideIcons.plus, size: 18),

@@ -1,20 +1,12 @@
-import 'dart:convert';
 import 'dart:math';
 
 import '../../shared/l10n/l10n.dart';
 
-/// Goal tree (kind 40110) — mirrors `kuzz_core::goal_tree`.
-///
-/// One document per channel or DM. The root is the conversation's single
-/// layer 1 goal; every other goal hangs below one parent, so a goal's layer
-/// is its depth. The relay validates every write with the same rules.
-const int kindGoalTree = 40110;
-const int goalTreeVersion = 1;
-const int maxGoalNodes = 500;
+/// Goal edits (kind 40111) and the rows the relay reads back. The relay holds
+/// the goals and applies every rule; this is the display model and the ops.
+const int kindGoalOps = 40111;
 const int maxGoalDepth = 128;
 const int maxGoalTitleChars = 200;
-const int maxGoalNoteChars = 4000;
-const int maxGoalContentBytes = 64 * 1024;
 
 enum GoalStatus {
   open('open'),
@@ -49,6 +41,7 @@ enum GoalStatus {
   GoalStatus get next => GoalStatus.values[(index + 1) % values.length];
 }
 
+/// One goal row, with what the relay computed for it.
 class GoalNode {
   const GoalNode({
     required this.id,
@@ -57,10 +50,15 @@ class GoalNode {
     this.note = '',
     this.status = GoalStatus.open,
     this.assignees = const [],
-    this.threads = const [],
+    this.links = const [],
     this.order = 0,
     this.updatedBy,
     this.updatedAt,
+    this.matched = true,
+    this.inactive = false,
+    this.isThread = false,
+    this.progress = (done: 0, total: 0),
+    this.openChildren = 0,
   });
 
   final String id;
@@ -69,58 +67,74 @@ class GoalNode {
   final String note;
   final GoalStatus status;
   final List<String> assignees;
-  final List<String> threads;
+
+  /// Threads and messages linked to this goal.
+  final List<String> links;
   final int order;
   final String? updatedBy;
   final int? updatedAt;
 
-  factory GoalNode.fromJson(Map<String, dynamic> json) => GoalNode(
-    id: json['id'] as String,
-    parent: json['parent'] as String?,
-    title: json['title'] as String,
-    note: (json['note'] as String?) ?? '',
-    status: GoalStatus.parse(json['status'] as String?),
-    assignees: [...?(json['assignees'] as List?)?.cast<String>()],
-    threads: [...?(json['threads'] as List?)?.cast<String>()],
-    order: (json['order'] as num?)?.toInt() ?? 0,
-    updatedBy: json['updated_by'] as String?,
-    updatedAt: (json['updated_at'] as num?)?.toInt(),
-  );
+  /// Selected by the read, not just a goal above one that was.
+  final bool matched;
+  final bool inactive;
 
-  Map<String, dynamic> toJson() => {
-    'id': id,
-    'parent': parent,
-    'title': title,
-    if (note.isNotEmpty) 'note': note,
-    'status': status.wire,
-    if (assignees.isNotEmpty) 'assignees': assignees,
-    if (threads.isNotEmpty) 'threads': threads,
-    'order': order,
-    if (updatedBy != null) 'updated_by': updatedBy,
-    if (updatedAt != null) 'updated_at': updatedAt,
-  };
+  /// Has a link that counts as a thread.
+  final bool isThread;
+  final ({int done, int total}) progress;
+  final int openChildren;
 
-  GoalNode copyWith({
-    String? parent,
-    String? title,
-    String? note,
-    GoalStatus? status,
-    List<String>? threads,
-    int? order,
-    String? updatedBy,
-    int? updatedAt,
-  }) => GoalNode(
+  /// Finishing this goal as [next] deletes the tasks below it (the relay's
+  /// rule).
+  bool finishDeletesTasks(GoalStatus next) {
+    final running =
+        status == GoalStatus.open || status == GoalStatus.inProgress;
+    final finishing = next == GoalStatus.done || next == GoalStatus.dropped;
+    return running &&
+        finishing &&
+        isThread &&
+        (progress.total > 0 || openChildren > 0);
+  }
+
+  GoalNode asMatched() => GoalNode(
     id: id,
-    parent: parent ?? this.parent,
-    title: title ?? this.title,
-    note: note ?? this.note,
-    status: status ?? this.status,
+    parent: parent,
+    title: title,
+    note: note,
+    status: status,
     assignees: assignees,
-    threads: threads ?? this.threads,
-    order: order ?? this.order,
-    updatedBy: updatedBy ?? this.updatedBy,
-    updatedAt: updatedAt ?? this.updatedAt,
+    links: links,
+    order: order,
+    updatedBy: updatedBy,
+    updatedAt: updatedAt,
+    inactive: inactive,
+    isThread: isThread,
+    progress: progress,
+    openChildren: openChildren,
   );
+
+  factory GoalNode.fromJson(Map<String, dynamic> json) {
+    final progress = json['progress'] as Map<String, dynamic>?;
+    return GoalNode(
+      id: json['id'] as String,
+      parent: json['parent'] as String?,
+      title: json['title'] as String,
+      note: (json['note'] as String?) ?? '',
+      status: GoalStatus.parse(json['status'] as String?),
+      assignees: [...?(json['assignees'] as List?)?.cast<String>()],
+      links: [...?(json['links'] as List?)?.cast<String>()],
+      order: (json['order'] as num?)?.toInt() ?? 0,
+      updatedBy: json['updated_by'] as String?,
+      updatedAt: (json['updated_at'] as num?)?.toInt(),
+      matched: (json['matched'] as bool?) ?? true,
+      inactive: (json['inactive'] as bool?) ?? false,
+      isThread: (json['is_thread'] as bool?) ?? false,
+      progress: (
+        done: (progress?['done'] as num?)?.toInt() ?? 0,
+        total: (progress?['total'] as num?)?.toInt() ?? 0,
+      ),
+      openChildren: (json['open_children'] as num?)?.toInt() ?? 0,
+    );
+  }
 }
 
 class GoalTreeException implements Exception {
@@ -139,39 +153,6 @@ class GoalTree {
 
   final List<GoalNode> nodes;
 
-  factory GoalTree.parse(String content) {
-    final Object? decoded;
-    try {
-      decoded = jsonDecode(content);
-    } on FormatException catch (e) {
-      throw GoalTreeException('goal tree is not valid JSON: ${e.message}');
-    }
-    if (decoded is! Map<String, dynamic>) {
-      throw const GoalTreeException('goal tree is not an object');
-    }
-    if (decoded['v'] != goalTreeVersion) {
-      throw GoalTreeException('unsupported goal tree version ${decoded['v']}');
-    }
-    final tree = GoalTree([
-      for (final raw in (decoded['nodes'] as List?) ?? const [])
-        GoalNode.fromJson(raw as Map<String, dynamic>),
-    ]);
-    tree.validate();
-    return tree;
-  }
-
-  String toContent() {
-    validate();
-    final content = jsonEncode({
-      'v': goalTreeVersion,
-      'nodes': [for (final node in nodes) node.toJson()],
-    });
-    if (utf8.encode(content).length > maxGoalContentBytes) {
-      throw GoalTreeException(appL10n.goalsTooLarge);
-    }
-    return content;
-  }
-
   GoalNode? get root {
     for (final node in nodes) {
       if (node.parent == null) return node;
@@ -186,9 +167,12 @@ class GoalTree {
     return null;
   }
 
+  /// Plan goals first, thread goals below them.
   List<GoalNode> children(String id) =>
       nodes.where((node) => node.parent == id).toList()..sort(
-        (a, b) => a.order != b.order
+        (a, b) => a.isThread != b.isThread
+            ? (a.isThread ? 1 : -1)
+            : a.order != b.order
             ? a.order.compareTo(b.order)
             : a.id.compareTo(b.id),
       );
@@ -230,86 +214,84 @@ class GoalTree {
     return ids;
   }
 
-  ({int done, int total}) progress(String id) {
-    final below = subtreeIds(id)..remove(id);
-    final done = below.where((g) => node(g)?.status == GoalStatus.done).length;
-    return (done: done, total: below.length);
-  }
+  /// A goal with no thread link, here or above; it shows unfolded.
+  bool isPlanGoal(String id) => !path(id).any((node) => node.isThread);
+
+  /// The selected goals a list shows at its top level, in order. Layer 1
+  /// keeps to its card: a row would offer to remove the whole room.
+  List<GoalNode> listTops() =>
+      nodes.where((node) {
+        if (!node.matched || node.parent == null) return false;
+        final above = path(node.id);
+        return !above.sublist(1, above.length - 1).any((goal) => goal.matched);
+      }).toList()..sort(
+        (a, b) => a.order != b.order
+            ? a.order.compareTo(b.order)
+            : a.id.compareTo(b.id),
+      );
 
   GoalNode? forThread(String threadRootId) {
     final thread = threadRootId.toLowerCase();
     for (final node in nodes) {
-      if (node.threads.contains(thread)) return node;
+      if (node.links.contains(thread)) return node;
     }
     return null;
   }
+}
 
-  void validate() {
-    if (nodes.length > maxGoalNodes) {
-      throw GoalTreeException(appL10n.goalsTooMany);
-    }
-    final ids = <String>{};
-    final threads = <String>{};
-    var roots = 0;
-    for (final node in nodes) {
-      if (!RegExp(r'^[A-Za-z0-9_-]{1,64}$').hasMatch(node.id)) {
-        throw GoalTreeException('invalid goal id ${node.id}');
-      }
-      if (!ids.add(node.id)) {
-        throw GoalTreeException('duplicate goal id ${node.id}');
-      }
-      final titleError = goalTitleError(node.title);
-      if (titleError != null) throw GoalTreeException(titleError);
-      if (node.note.runes.length > maxGoalNoteChars) {
-        throw GoalTreeException(appL10n.goalsNoteTooLong);
-      }
-      for (final thread in node.threads) {
-        if (!threads.add(thread)) {
-          throw GoalTreeException(appL10n.goalsThreadOneGoal);
-        }
-      }
-      if (node.parent == null) roots++;
-    }
-    if (nodes.isNotEmpty && roots != 1) {
-      throw GoalTreeException(appL10n.goalsOneRoot);
-    }
-    final parents = {for (final node in nodes) node.id: node.parent};
-    for (final node in nodes) {
-      final parent = node.parent;
-      if (parent != null && !parents.containsKey(parent)) {
-        throw GoalTreeException('goal ${node.id} has an unknown parent');
-      }
-      var depth = 1;
-      var cursor = parent;
-      while (cursor != null) {
-        depth++;
-        if (depth > maxGoalDepth) {
-          throw GoalTreeException(appL10n.goalsTooDeep);
-        }
-        cursor = parents[cursor];
-      }
-    }
+/// Goals by list, as the relay counts them.
+typedef GoalCounts = ({int active, int inactive, int done});
+
+/// The lists a room's goals fall into.
+enum GoalView { active, inactive, done }
+
+/// One answer to a goals `/query`.
+class GoalRead {
+  const GoalRead({required this.counts, required this.tree, this.next});
+
+  factory GoalRead.fromJson(Map<String, dynamic> json) {
+    final counts = json['counts'] as Map<String, dynamic>?;
+    return GoalRead(
+      counts: (
+        active: (counts?['active'] as num?)?.toInt() ?? 0,
+        inactive: (counts?['inactive'] as num?)?.toInt() ?? 0,
+        done: (counts?['done'] as num?)?.toInt() ?? 0,
+      ),
+      tree: GoalTree([
+        for (final row in (json['rows'] as List?) ?? const [])
+          GoalNode.fromJson(row as Map<String, dynamic>),
+      ]),
+      next: json['next'],
+    );
   }
 
-  /// Apply one edit and validate the result. Throws without changing
-  /// anything when the edit is not allowed.
-  GoalTree apply(GoalOp op, {required String editor, required int now}) {
-    final next = op._apply(this, editor.toLowerCase(), now);
-    next.validate();
-    return next;
-  }
+  final GoalCounts counts;
+  final GoalTree tree;
 
-  GoalTree _replace(String id, GoalNode Function(GoalNode) update) {
-    if (node(id) == null) throw GoalTreeException('goal $id not found');
-    return GoalTree([
-      for (final node in nodes) node.id == id ? update(node) : node,
-    ]);
-  }
+  /// The cursor of the following page, or null on the last one.
+  final Object? next;
 
-  int _nextOrder(String parent) {
-    final siblings = children(parent);
-    return siblings.isEmpty ? 0 : siblings.last.order + 1;
+  /// This answer with the page after it.
+  GoalRead followedBy(GoalRead page) => GoalRead(
+    counts: page.counts,
+    tree: mergeGoalTrees([tree, page.tree]),
+    next: page.next,
+  );
+}
+
+/// Several reads as one tree. A goal in more than one shows the last, and
+/// stays selected if any read selected it: a later page brings it back as the
+/// parent of what it selected.
+GoalTree mergeGoalTrees(List<GoalTree> trees) {
+  final byId = <String, GoalNode>{};
+  for (final tree in trees) {
+    for (final node in tree.nodes) {
+      byId[node.id] = node.matched || byId[node.id]?.matched != true
+          ? node
+          : node.asMatched();
+    }
   }
+  return GoalTree([...byId.values]);
 }
 
 String? goalTitleError(String title) {
@@ -332,11 +314,10 @@ String newGoalId() {
   return 'g_$hex';
 }
 
-/// One edit; mirrors `kuzz_core::goal_tree::GoalOp`. Writers keep the op so
-/// they can re-apply it to a newer head after a conflict.
+/// One edit; mirrors `kuzz_core::goal_tree::GoalOp`.
 sealed class GoalOp {
   const GoalOp();
-  GoalTree _apply(GoalTree tree, String editor, int now);
+  Map<String, dynamic> toJson();
 }
 
 class SetRootGoal extends GoalOp {
@@ -346,31 +327,12 @@ class SetRootGoal extends GoalOp {
   final String? note;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) {
-    final root = tree.root;
-    if (root != null) {
-      return tree._replace(
-        root.id,
-        (n) => n.copyWith(
-          title: title,
-          note: note,
-          updatedBy: editor,
-          updatedAt: now,
-        ),
-      );
-    }
-    return GoalTree([
-      ...tree.nodes,
-      GoalNode(
-        id: id,
-        parent: null,
-        title: title,
-        note: note ?? '',
-        updatedBy: editor,
-        updatedAt: now,
-      ),
-    ]);
-  }
+  Map<String, dynamic> toJson() => {
+    'op': 'set_root',
+    'id': id,
+    'title': title,
+    if (note != null) 'note': note,
+  };
 }
 
 class AddGoal extends GoalOp {
@@ -386,23 +348,13 @@ class AddGoal extends GoalOp {
   final String? note;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) {
-    if (tree.node(parent) == null) {
-      throw GoalTreeException('goal $parent not found');
-    }
-    return GoalTree([
-      ...tree.nodes,
-      GoalNode(
-        id: id,
-        parent: parent,
-        title: title,
-        note: note ?? '',
-        order: tree._nextOrder(parent),
-        updatedBy: editor,
-        updatedAt: now,
-      ),
-    ]);
-  }
+  Map<String, dynamic> toJson() => {
+    'op': 'add',
+    'id': id,
+    'parent': parent,
+    'title': title,
+    if (note != null) 'note': note,
+  };
 }
 
 class UpdateGoal extends GoalOp {
@@ -413,16 +365,13 @@ class UpdateGoal extends GoalOp {
   final GoalStatus? status;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) => tree._replace(
-    id,
-    (n) => n.copyWith(
-      title: title,
-      note: note,
-      status: status,
-      updatedBy: editor,
-      updatedAt: now,
-    ),
-  );
+  Map<String, dynamic> toJson() => {
+    'op': 'update',
+    'id': id,
+    if (title != null) 'title': title,
+    if (note != null) 'note': note,
+    if (status != null) 'status': status!.wire,
+  };
 }
 
 class RemoveGoal extends GoalOp {
@@ -431,17 +380,11 @@ class RemoveGoal extends GoalOp {
   final bool recursive;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) {
-    if (tree.node(id) == null) throw GoalTreeException('goal $id not found');
-    final doomed = tree.subtreeIds(id);
-    if (doomed.length > 1 && !recursive) {
-      throw GoalTreeException(appL10n.goalsRemoveSubGoalsToo);
-    }
-    return GoalTree([
-      for (final node in tree.nodes)
-        if (!doomed.contains(node.id)) node,
-    ]);
-  }
+  Map<String, dynamic> toJson() => {
+    'op': 'remove',
+    'id': id,
+    'recursive': recursive,
+  };
 }
 
 class LinkThread extends GoalOp {
@@ -450,26 +393,11 @@ class LinkThread extends GoalOp {
   final String thread;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) {
-    final thread = this.thread.toLowerCase();
-    if (tree.node(id) == null) throw GoalTreeException('goal $id not found');
-    return GoalTree([
-      for (final node in tree.nodes)
-        node.id == id
-            ? node.copyWith(
-                threads: [...node.threads.where((t) => t != thread), thread],
-                // Work has started on a goal once a thread is linked to it.
-                status: node.status == GoalStatus.open
-                    ? GoalStatus.inProgress
-                    : null,
-                updatedBy: editor,
-                updatedAt: now,
-              )
-            : node.copyWith(
-                threads: node.threads.where((t) => t != thread).toList(),
-              ),
-    ]);
-  }
+  Map<String, dynamic> toJson() => {
+    'op': 'link',
+    'id': id,
+    'thread': thread.toLowerCase(),
+  };
 }
 
 class UnlinkThread extends GoalOp {
@@ -477,15 +405,16 @@ class UnlinkThread extends GoalOp {
   final String thread;
 
   @override
-  GoalTree _apply(GoalTree tree, String editor, int now) {
-    final thread = this.thread.toLowerCase();
-    return GoalTree([
-      for (final node in tree.nodes)
-        node.threads.contains(thread)
-            ? node.copyWith(
-                threads: node.threads.where((t) => t != thread).toList(),
-              )
-            : node,
-    ]);
-  }
+  Map<String, dynamic> toJson() => {
+    'op': 'unlink',
+    'thread': thread.toLowerCase(),
+  };
+}
+
+/// Gives up every quiet goal at once.
+class DropQuietGoals extends GoalOp {
+  const DropQuietGoals();
+
+  @override
+  Map<String, dynamic> toJson() => {'op': 'drop_inactive'};
 }

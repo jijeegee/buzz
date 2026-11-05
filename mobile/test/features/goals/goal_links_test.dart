@@ -12,19 +12,12 @@ final _reply = 'c3' * 32;
 final _other = 'd4' * 32;
 final _gone = 'e5' * 32;
 
-GoalTree _tree() {
-  var tree = GoalTree.empty;
-  for (final op in <GoalOp>[
-    const SetRootGoal(id: 'root', title: 'Launch'),
-    const AddGoal(id: 'srv', parent: 'root', title: 'Server'),
-    const AddGoal(id: 'cas', parent: 'srv', title: 'CAS writes'),
-    const AddGoal(id: 'ui', parent: 'root', title: 'UI'),
-    LinkThread(id: 'srv', thread: _root),
-  ]) {
-    tree = tree.apply(op, editor: _editor, now: 1);
-  }
-  return tree;
-}
+GoalTree _tree() => GoalTree([
+  const GoalNode(id: 'root', parent: null, title: 'Launch'),
+  GoalNode(id: 'srv', parent: 'root', title: 'Server', links: [_root]),
+  const GoalNode(id: 'cas', parent: 'srv', title: 'CAS writes'),
+  const GoalNode(id: 'ui', parent: 'root', title: 'UI'),
+]);
 
 NostrEvent _event(
   String id,
@@ -48,7 +41,7 @@ List<List<String>> _replyTo(String root) => [
 ];
 
 void main() {
-  test('message scope: thread branch, any goal unlinked, layer 2+ on main', () {
+  test('message scope: thread branch, else layer 2 and below', () {
     final tree = _tree();
     List<String> linkable(GoalLinkScope scope) => [
       for (final row in tree.outline())
@@ -57,7 +50,7 @@ void main() {
     final inLinked = messageGoalLinkScope(tree, _root);
     expect(linkable(inLinked), ['srv', 'cas']);
     expect(inLinked.canAddUnder('ui'), isFalse);
-    expect(linkable(messageGoalLinkScope(tree, _lone)), contains('root'));
+    expect(linkable(messageGoalLinkScope(tree, _lone)), ['srv', 'cas', 'ui']);
     final main = messageGoalLinkScope(tree, null);
     expect(linkable(main), ['srv', 'cas', 'ui']);
     expect(main.canAddUnder('root'), isTrue);

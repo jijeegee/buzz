@@ -1,4 +1,4 @@
-import 'dart:math';
+import 'dart:convert';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
@@ -6,54 +6,101 @@ import '../../shared/l10n/l10n.dart';
 import '../../shared/relay/relay.dart';
 import 'goal_tree.dart';
 
-/// The live head of a conversation's goal tree.
-class GoalTreeHead {
-  const GoalTreeHead({
-    required this.revision,
-    required this.createdAt,
-    required this.tree,
-  });
+/// A conversation's active goals and how many goals each list holds.
+class GoalBoard {
+  const GoalBoard({required this.tree, required this.counts});
 
-  static const none = GoalTreeHead(
-    revision: null,
-    createdAt: null,
-    tree: GoalTree.empty,
-  );
-
-  /// Event id of the head, or null when the conversation has no goals yet.
-  final String? revision;
-  final int? createdAt;
   final GoalTree tree;
+  final GoalCounts counts;
 }
 
-NostrFilter goalTreeFilter(String channelId) => NostrFilter(
-  kinds: const [kindGoalTree],
-  tags: {
-    '#h': [channelId],
-  },
-  limit: 1,
-);
+Map<String, dynamic> goalViewFilter(
+  String channelId,
+  GoalView view, {
+  Object? cursor,
+}) => {'goals': 1, 'channel': channelId, 'view': view.name, 'cursor': ?cursor};
 
-GoalTreeHead _headFrom(List<NostrEvent> events) {
-  if (events.isEmpty) return GoalTreeHead.none;
-  final event = events.first;
-  return GoalTreeHead(
-    revision: event.id,
-    createdAt: event.createdAt,
-    tree: GoalTree.parse(event.content),
-  );
+Map<String, dynamic> goalThreadsFilter(
+  String channelId,
+  List<String> threads,
+) => {'goals': 1, 'channel': channelId, 'threads': threads};
+
+Future<GoalRead> _readGoals(Ref ref, Map<String, dynamic> filter) async {
+  final session = ref.read(relaySessionProvider.notifier);
+  final body = await session.queryRelayJson([filter]);
+  return GoalRead.fromJson(body as Map<String, dynamic>);
 }
 
-final goalTreeProvider = FutureProvider.family<GoalTreeHead, String>((
+final goalTreeProvider = FutureProvider.family<GoalBoard, String>((
   ref,
   channelId,
 ) async {
-  final session = ref.watch(relaySessionProvider.notifier);
-  return _headFrom(await session.queryRelay([goalTreeFilter(channelId)]));
+  ref.watch(relaySessionProvider.notifier);
+  var read = await _readGoals(ref, goalViewFilter(channelId, GoalView.active));
+  for (var cursor = read.next; cursor != null; cursor = read.next) {
+    read = read.followedBy(
+      await _readGoals(
+        ref,
+        goalViewFilter(channelId, GoalView.active, cursor: cursor),
+      ),
+    );
+  }
+  return GoalBoard(tree: read.tree, counts: read.counts);
 });
 
+/// The threads or messages a read asks about: their ids lowercase and
+/// comma-joined, so a record of them keys a provider.
+typedef ThreadGoalsKey = ({String channelId, String threads});
+
+ThreadGoalsKey threadGoalsKey(String channelId, Iterable<String> threads) => (
+  channelId: channelId,
+  threads: threads.map((id) => id.toLowerCase()).join(','),
+);
+
+/// The active goals plus what these threads or messages work on, whatever
+/// list their goals are in. Re-reads with [goalTreeProvider].
+final threadGoalTreeProvider = FutureProvider.autoDispose
+    .family<GoalTree, ThreadGoalsKey>((ref, key) async {
+      final board = await ref.watch(goalTreeProvider(key.channelId).future);
+      final read = await _readGoals(
+        ref,
+        goalThreadsFilter(key.channelId, key.threads.split(',')),
+      );
+      return mergeGoalTrees([board.tree, read.tree]);
+    });
+
+/// A folded list of a conversation.
+typedef GoalListKey = ({String channelId, GoalView view});
+
+/// The pages read of a quiet or done list. Read when the list opens, and
+/// re-read from the first page with [goalTreeProvider].
+class GoalListNotifier extends AsyncNotifier<GoalRead> {
+  GoalListNotifier(this.key);
+  final GoalListKey key;
+
+  @override
+  Future<GoalRead> build() async {
+    await ref.watch(goalTreeProvider(key.channelId).future);
+    return _readGoals(ref, goalViewFilter(key.channelId, key.view));
+  }
+
+  Future<void> loadMore() async {
+    final current = state.value;
+    final cursor = current?.next;
+    if (current == null || cursor == null) return;
+    final page = await _readGoals(
+      ref,
+      goalViewFilter(key.channelId, key.view, cursor: cursor),
+    );
+    state = AsyncData(current.followedBy(page));
+  }
+}
+
+final goalListProvider = AsyncNotifierProvider.autoDispose
+    .family<GoalListNotifier, GoalRead, GoalListKey>(GoalListNotifier.new);
+
 /// Keeps [goalTreeProvider] of [channelId] live while a room or thread screen
-/// shows it: a new head or a reconnect re-reads it. Rides the open-room REQ
+/// shows it: a new edit or a reconnect re-reads it. Rides the open-room REQ
 /// ([RoomLiveRegistry]), so it adds no REQ of its own, and closes with the
 /// last screen.
 final goalTreeLiveProvider = Provider.autoDispose.family<void, String>((
@@ -65,76 +112,38 @@ final goalTreeLiveProvider = Provider.autoDispose.family<void, String>((
       .watch(roomLiveRegistryProvider)
       .listen(
         channelId,
-        roomLiveGoalTreeKind,
+        roomLiveGoalOpsKind,
         (_) => refresh(),
         onResync: refresh,
       );
   ref.onDispose(stop);
 });
 
-/// Tags for a goal tree write: channel scope plus the revision it builds on.
-List<List<String>> buildGoalTreeTags({
-  required String channelId,
-  required String? revision,
-}) => [
-  ['h', channelId],
-  ['expected-revision', revision ?? 'none'],
-];
-
-bool isGoalTreeConflict(Object error) =>
-    error.toString().contains('conflict: goal tree');
-
-/// Writes goal edits with the relay's compare-and-swap: read the head, apply
-/// the ops, publish with `expected-revision`, and on a conflict re-apply the
-/// same ops to the newer head.
+/// Sends goal edits as one event; the relay applies them in order, all or
+/// none, so there is nothing to re-read or retry here.
 class GoalActions {
   GoalActions(this._ref);
   final Ref _ref;
-  static const _maxAttempts = 4;
 
   Future<void> apply(String channelId, GoalOp op) => applyAll(channelId, [op]);
 
-  /// Applies [ops] in order and publishes them as one revision: all or none.
   Future<void> applyAll(String channelId, List<GoalOp> ops) async {
     final relayConfig = _ref.read(relayConfigProvider);
     final session = _ref.read(relaySessionProvider.notifier);
     final signer = SignedEventRelay(session: session, nsec: relayConfig.nsec);
-    final editor = signer.pubkey;
-    if (editor == null) {
+    if (signer.pubkey == null) {
       throw GoalTreeException(appL10n.goalsSignInToEdit);
     }
-    for (var attempt = 0; attempt < _maxAttempts; attempt++) {
-      if (attempt > 0) {
-        // Let a lagging read catch up and spread out colliding writers.
-        await Future<void>.delayed(Duration(milliseconds: 150 << attempt));
-      }
-      final head = _headFrom(
-        await session.queryRelay([goalTreeFilter(channelId)]),
-      );
-      final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
-      var next = head.tree;
-      for (final op in ops) {
-        next = next.apply(op, editor: editor, now: now);
-      }
-      try {
-        await signer.submit(
-          kind: kindGoalTree,
-          content: next.toContent(),
-          tags: buildGoalTreeTags(
-            channelId: channelId,
-            revision: head.revision,
-          ),
-          // Sort strictly ahead of the head we built on.
-          createdAt: max(now, (head.createdAt ?? 0) + 1),
-        );
-        _ref.invalidate(goalTreeProvider(channelId));
-        return;
-      } catch (error) {
-        if (!isGoalTreeConflict(error)) rethrow;
-      }
-    }
+    await signer.submit(
+      kind: kindGoalOps,
+      content: jsonEncode({
+        'ops': [for (final op in ops) op.toJson()],
+      }),
+      tags: [
+        ['h', channelId],
+      ],
+    );
     _ref.invalidate(goalTreeProvider(channelId));
-    throw GoalTreeException(appL10n.goalsSaveConflict);
   }
 }
 

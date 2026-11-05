@@ -3258,15 +3258,6 @@
   "@goalsStatusDropped": {
     "description": "Goal status, tooltip of the status button on a goal. Short."
   },
-  "goalsRemoveWithSubGoals": "Remove with {count} sub-goals",
-  "@goalsRemoveWithSubGoals": {
-    "description": "Goal actions sheet, menu item that removes the goal and its sub-goals. Short.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "goalsRemove": "Remove",
   "@goalsRemove": {
     "description": "Goal actions sheet menu item and remove-goal dialog button. Short."
@@ -3275,18 +3266,54 @@
   "@goalsRemoveConfirmTitle": {
     "description": "Remove-goal confirmation dialog, title."
   },
-  "goalsRemoveConfirmSubGoals": "This also removes its {count} sub-goals. History keeps them.",
-  "@goalsRemoveConfirmSubGoals": {
-    "description": "Remove-goal confirmation dialog, body when the goal has sub-goals.",
+  "goalsRemoveConfirm": "Remove this goal and everything under it?",
+  "@goalsRemoveConfirm": {
+    "description": "Remove-goal confirmation dialog. Removal cannot be undone."
+  },
+  "goalsFinishConfirmTitle": "Finish this goal?",
+  "@goalsFinishConfirmTitle": {
+    "description": "Title of the confirmation before finishing a thread goal that has tasks. Short."
+  },
+  "goalsFinishConfirmBody": "The tasks under it are deleted. This cannot be undone.",
+  "@goalsFinishConfirmBody": {
+    "description": "Confirmation before finishing a thread goal: finishing deletes the small tasks under it."
+  },
+  "goalsTopGoals": "{count} top-level goals",
+  "@goalsTopGoals": {
+    "description": "Goals page, notice when many goals sit directly under the conversation's top goal. Not a limit; goals can still be added.",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
   },
-  "goalsRemoveConfirmBody": "History keeps it.",
-  "@goalsRemoveConfirmBody": {
-    "description": "Remove-goal confirmation dialog, body when the goal has no sub-goals."
+  "goalsSectionQuiet": "Quiet",
+  "@goalsSectionQuiet": {
+    "description": "Goals page, heading of the folded list of unfinished goals nobody touched for a long time. Short."
+  },
+  "goalsSectionDone": "Done",
+  "@goalsSectionDone": {
+    "description": "Goals page, heading of the folded list of finished goals. Short."
+  },
+  "goalsShowMore": "Show more",
+  "@goalsShowMore": {
+    "description": "Goals page, button that reads the next goals of a folded list. Short."
+  },
+  "goalsDropAll": "Drop all",
+  "@goalsDropAll": {
+    "description": "Goals page, button that gives up every goal in the quiet list. Short."
+  },
+  "goalsDropAllConfirm": "Drop all quiet goals? Tasks among them are deleted.",
+  "@goalsDropAllConfirm": {
+    "description": "Confirmation before giving up every goal in the quiet list."
+  },
+  "goalsCollapse": "Hide sub-goals",
+  "@goalsCollapse": {
+    "description": "Goal row, tooltip of the button that folds its sub-goals. Short."
+  },
+  "goalsExpand": "Show sub-goals",
+  "@goalsExpand": {
+    "description": "Goal row, tooltip of the button that unfolds its sub-goals. Short."
   },
   "goalsCancel": "Cancel",
   "@goalsCancel": {
@@ -3311,38 +3338,6 @@
   "goalsSignInToEdit": "Sign in to edit goals.",
   "@goalsSignInToEdit": {
     "description": "Error when editing goals while not signed in."
-  },
-  "goalsSaveConflict": "The goals kept changing while saving. Try again.",
-  "@goalsSaveConflict": {
-    "description": "Error when saving goals failed because others kept editing them."
-  },
-  "goalsTooLarge": "The goals are too large to save.",
-  "@goalsTooLarge": {
-    "description": "Error when the goals of a conversation exceed the size limit."
-  },
-  "goalsTooMany": "Too many goals.",
-  "@goalsTooMany": {
-    "description": "Error when a conversation has more goals than allowed."
-  },
-  "goalsNoteTooLong": "Keep the note shorter.",
-  "@goalsNoteTooLong": {
-    "description": "Error when a goal's note is too long."
-  },
-  "goalsThreadOneGoal": "A thread can work on only one goal.",
-  "@goalsThreadOneGoal": {
-    "description": "Error when linking a thread that is already linked to another goal."
-  },
-  "goalsOneRoot": "There must be exactly one layer 1 goal.",
-  "@goalsOneRoot": {
-    "description": "Error when the goals would not have exactly one top goal."
-  },
-  "goalsTooDeep": "Goals are nested too deeply.",
-  "@goalsTooDeep": {
-    "description": "Error when sub-goals go too many layers deep."
-  },
-  "goalsRemoveSubGoalsToo": "Remove its sub-goals too.",
-  "@goalsRemoveSubGoalsToo": {
-    "description": "Error when removing a goal that still has sub-goals."
   },
   "goalsTitleEmpty": "Write the goal in one sentence.",
   "@goalsTitleEmpty": {
