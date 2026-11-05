@@ -1,4 +1,4 @@
-import type { GoalNode, GoalTree } from "@/shared/api/tauriGoals";
+import type { GoalNode, GoalStatus, GoalTree } from "@/shared/api/tauriGoals";
 import { type MessageKey, t } from "@/shared/i18n";
 
 export type OutlineRow = { layer: number; node: GoalNode };
@@ -50,22 +50,32 @@ export function isPlanGoal(tree: GoalTree, id: string): boolean {
   return !goalPath(tree, id).some((node) => node.is_thread);
 }
 
-/** Several reads as one tree; a goal in more than one shows the last. */
+/**
+ * Several reads as one tree. A goal in more than one shows the last, and
+ * stays selected if any read selected it: a later page brings it back as the
+ * parent of what it selected.
+ */
 export function mergeGoalTrees(trees: GoalTree[]): GoalTree {
-  const byId = new Map(
-    trees.flatMap((tree) => tree.nodes).map((node) => [node.id, node]),
-  );
+  const byId = new Map<string, GoalNode>();
+  for (const node of trees.flatMap((tree) => tree.nodes)) {
+    const matched = node.matched || byId.get(node.id)?.matched === true;
+    byId.set(node.id, { ...node, matched });
+  }
   return { nodes: [...byId.values()] };
 }
 
-/** The selected goals a list shows at its top level, in order. */
+/**
+ * The selected goals a list shows at its top level, in order. Layer 1 keeps
+ * to its card: a row would offer to remove the whole room.
+ */
 export function goalListTops(tree: GoalTree): GoalNode[] {
   return tree.nodes
     .filter(
       (node) =>
         node.matched &&
+        node.parent !== null &&
         !goalPath(tree, node.id)
-          .slice(0, -1)
+          .slice(1, -1)
           .some((above) => above.matched),
     )
     .sort((a, b) => a.order - b.order || a.id.localeCompare(b.id));
@@ -102,6 +112,18 @@ export function goalSubtreeIds(tree: GoalTree, id: string): Set<string> {
     }
   }
   return ids;
+}
+
+/** Finishing this goal deletes the tasks below it (the relay's rule). */
+export function finishDeletesTasks(node: GoalNode, next: GoalStatus): boolean {
+  const running = node.status === "open" || node.status === "in_progress";
+  const finishing = next === "done" || next === "dropped";
+  return (
+    running &&
+    finishing &&
+    node.is_thread &&
+    (node.progress.total > 0 || node.open_children > 0)
+  );
 }
 
 /** Message keys of the status names; translate where shown. */

@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  finishDeletesTasks,
   goalForThread,
   goalLinkView,
   goalOutline,
@@ -169,4 +170,57 @@ test("link view: threads open, messages jump, missing go nowhere", () => {
     label: "Message",
     target: null,
   });
+});
+
+test("a later page does not unselect a goal", () => {
+  const merged = mergeGoalTrees([
+    { nodes: [node("root", null), node("a", "root")] },
+    {
+      nodes: [
+        node("root", null, { matched: false }),
+        node("a", "root", { matched: false }),
+        node("b", "a"),
+      ],
+    },
+  ]);
+  assert.deepEqual(
+    merged.nodes.map((n) => [n.id, n.matched]),
+    [
+      ["root", true],
+      ["a", true],
+      ["b", true],
+    ],
+  );
+  assert.deepEqual(
+    goalListTops(merged).map((n) => n.id),
+    ["a"],
+    "layer 1 stays out of a list and does not hide what is below it",
+  );
+});
+
+test("finishing warns only when it deletes tasks", () => {
+  const progress = { done: 0, total: 2 };
+  const goal = {
+    is_thread: true,
+    status: "in_progress",
+    progress,
+    open_children: 2,
+  };
+  assert.equal(finishDeletesTasks(goal, "done"), true);
+  assert.equal(finishDeletesTasks(goal, "open"), false);
+  assert.equal(
+    finishDeletesTasks({ ...goal, status: "done" }, "dropped"),
+    false,
+  );
+  assert.equal(
+    finishDeletesTasks({ ...goal, is_thread: false }, "done"),
+    false,
+  );
+  assert.equal(
+    finishDeletesTasks(
+      { ...goal, progress: { done: 0, total: 0 }, open_children: 0 },
+      "done",
+    ),
+    false,
+  );
 });

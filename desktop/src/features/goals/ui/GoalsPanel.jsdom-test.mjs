@@ -157,3 +157,41 @@ test("the room has no goals yet: the layer 1 form", async () => {
   const panel = await mount({ active: page([], {}) });
   assert.ok(panel.q("goals-empty"));
 });
+
+test("finishing a thread goal with tasks asks first", async () => {
+  const panel = await mount({
+    active: page(
+      [
+        row("root", null),
+        row("t", "root", {
+          status: "in_progress",
+          is_thread: true,
+          progress: { done: 0, total: 2 },
+          open_children: 2,
+        }),
+      ],
+      { active: 2 },
+    ),
+  });
+  await panel.click(panel.q("goal-status-t"));
+  const edits = () => panel.calls.filter((c) => c.command === "apply_goal_ops");
+  assert.equal(edits().length, 0);
+  await panel.click(
+    document.querySelector("[data-testid='goal-finish-confirm-t']"),
+  );
+  assert.deepEqual(edits()[0].args.ops, [
+    { op: "update", id: "t", status: "done" },
+  ]);
+});
+
+test("a thread goal with nothing listed below it can still take a sub-goal", async () => {
+  const panel = await mount({
+    active: page([row("root", null), row("t", "root", { is_thread: true })], {
+      active: 2,
+    }),
+  });
+  assert.equal(panel.q("goal-add-t"), null);
+  const row_ = panel.q("goal-row-t");
+  await panel.click(row_.querySelector("button"));
+  assert.ok(panel.q("goal-add-t"));
+});

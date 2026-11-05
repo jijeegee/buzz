@@ -9571,6 +9571,14 @@
   "@goals.statusButton.statusLabel": {
     "description": "Goal tree, screen-reader label of a read-only goal status circle. {status} is a status name like To do."
   },
+  "goals.statusButton.finishTitle": "Finish this goal?",
+  "@goals.statusButton.finishTitle": {
+    "description": "Goal tree, title of the confirmation before finishing a thread goal that has tasks. Short."
+  },
+  "goals.statusButton.finishBody": "The tasks under it are deleted. This cannot be undone.",
+  "@goals.statusButton.finishBody": {
+    "description": "Goal tree, confirmation before finishing a thread goal: finishing deletes the small tasks under it."
+  },
   "goals.statusButton.changeLabel": "Status: {status}. Change to {next}",
   "@goals.statusButton.changeLabel": {
     "description": "Goal tree, screen-reader label of the goal status button. {status} is the current status, {next} the status a click sets."

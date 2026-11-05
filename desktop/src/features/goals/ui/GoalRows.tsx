@@ -18,6 +18,15 @@ import type {
 } from "@/shared/api/tauriGoals";
 import { newGoalId } from "@/shared/api/tauriGoals";
 import { useT } from "@/shared/i18n";
+import {
+  AlertDialog,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/shared/ui/alert-dialog";
 import { Button } from "@/shared/ui/button";
 import { Input } from "@/shared/ui/input";
 import { Textarea } from "@/shared/ui/textarea";
@@ -26,6 +35,7 @@ import {
   type GoalAccess,
   type GoalLinkInfo,
   type GoalLinkTarget,
+  finishDeletesTasks,
   goalChildren,
   goalLinkView,
   goalTitleError,
@@ -73,6 +83,7 @@ export function GoalStatusButton({
   readOnly?: boolean;
 }) {
   const t = useT();
+  const [confirming, setConfirming] = React.useState(false);
   const status = node.status;
   const statusLabel = t(GOAL_STATUS_LABEL[status]);
   if (readOnly) {
@@ -90,20 +101,50 @@ export function GoalStatusButton({
   }
   const nextStatus =
     STATUS_ORDER[(STATUS_ORDER.indexOf(status) + 1) % STATUS_ORDER.length];
+  const setNext = () =>
+    runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }));
   return (
-    <button
-      aria-label={t("goals.statusButton.changeLabel", {
-        status: statusLabel,
-        next: t(GOAL_STATUS_LABEL[nextStatus]),
-      })}
-      className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
-      data-testid={`goal-status-${node.id}`}
-      onClick={() =>
-        runGoalEdit(apply({ op: "update", id: node.id, status: nextStatus }))
-      }
-      title={statusLabel}
-      type="button"
-    />
+    <>
+      <button
+        aria-label={t("goals.statusButton.changeLabel", {
+          status: statusLabel,
+          next: t(GOAL_STATUS_LABEL[nextStatus]),
+        })}
+        className={`${className} h-3 w-3 shrink-0 rounded-full border-2 ${STATUS_DOT[status]}`}
+        data-testid={`goal-status-${node.id}`}
+        onClick={() =>
+          finishDeletesTasks(node, nextStatus) ? setConfirming(true) : setNext()
+        }
+        title={statusLabel}
+        type="button"
+      />
+      <AlertDialog onOpenChange={setConfirming} open={confirming}>
+        <AlertDialogContent data-testid={`goal-finish-dialog-${node.id}`}>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {t("goals.statusButton.finishTitle")}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("goals.statusButton.finishBody")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+            <Button
+              data-testid={`goal-finish-confirm-${node.id}`}
+              onClick={() => {
+                setConfirming(false);
+                setNext();
+              }}
+              type="button"
+              variant="destructive"
+            >
+              {t(GOAL_STATUS_LABEL[nextStatus])}
+            </Button>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
   );
 }
 
@@ -298,7 +339,7 @@ export function GoalRow({
             expanded ? t("goals.row.collapse") : t("goals.row.expand")
           }
           className="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center text-muted-foreground disabled:opacity-0"
-          disabled={children.length === 0}
+          disabled={children.length === 0 && !editable}
           onClick={() => setExpanded((value) => !value)}
           type="button"
         >

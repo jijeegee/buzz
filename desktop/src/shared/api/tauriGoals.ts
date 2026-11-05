@@ -87,13 +87,18 @@ export function getGoalPage(
 /** The whole active list: every screen of the room reads it. */
 export async function getActiveGoals(channelId: string): Promise<GoalRead> {
   const read = await getGoalPage(channelId, "active");
+  // Every page repeats the goals above its own.
+  const rows = new Map(read.rows.map((row) => [row.id, row]));
   let next = read.next;
   while (next) {
     const page = await getGoalPage(channelId, "active", next);
-    read.rows.push(...page.rows);
+    for (const row of page.rows) {
+      const matched = row.matched || rows.get(row.id)?.matched === true;
+      rows.set(row.id, { ...row, matched });
+    }
     next = page.next;
   }
-  return { ...read, next: null };
+  return { ...read, rows: [...rows.values()], next: null };
 }
 
 export function getThreadGoals(
