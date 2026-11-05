@@ -218,7 +218,7 @@ class AdapterTest(unittest.TestCase):
         inbound = [watch_line(1, author=NPUB_HEX, mentions=[AGENT])]
         watch = [{"lines": inbound, "rc": 3, "stderr": "not_paired"}]
         env = dict(BUZZ_PRIVATE_KEY=SECRET, BUZZ_AUTH_TAG=tag, BUZZ_RELAY_URL="wss://relay.example",
-                   BUZZ_ALLOWED_USERS=NPUB, BUZZ_REPLY_IN_THREAD="false")
+                   KUZZ_ALLOWED_USERS=NPUB, BUZZ_ALLOWED_USERS="f" * 64, BUZZ_REPLY_IN_THREAD="false")
         with self._fake(watch, **env) as fake:
             adapter = self._adapter()
             events = self._capture(adapter)
@@ -272,8 +272,8 @@ class AdapterTest(unittest.TestCase):
             events = self._capture(adapter)
             self._sender_run(fake, adapter, lines)
             self.assertTrue(adapter.authorization_is_upstream)
-            by_text = {e.text: e.source.is_bot for e in events}
-            self.assertEqual(by_text, {"first": True, "second": True, "dm": True, "hi": False})
+            self.assertEqual({e.text for e in events}, {"first", "second", "dm", "hi"})
+            self.assertFalse(any(e.source.is_bot for e in events))
             # A lookup per sender at a time, none for a message that is not for us or from the owner.
             lookups = [call["args"][3] for call in fake.calls("agents", "same-owner")]
             self.assertEqual(lookups.count(sibling), 1)

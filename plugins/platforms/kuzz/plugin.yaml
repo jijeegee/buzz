@@ -27,7 +27,7 @@ optional_env:
     description: "Channel UUID for cron / notification delivery (defaults to the first listed channel)"
     prompt: "Home channel UUID (or empty)"
     password: false
-  - name: BUZZ_ALLOWED_USERS
+  - name: KUZZ_ALLOWED_USERS
     description: "Extra people (npub or hex, comma-separated) who may talk to the agent; the owner is always allowed"
     prompt: "Allowed users (comma-separated)"
     password: false

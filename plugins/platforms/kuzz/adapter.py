@@ -20,7 +20,7 @@ Identity:
 - neither: the adapter does not start.
 
 Access: the owner (``KUZZ_OWNER_PUBKEY``, else the paired owner, else the
-NIP-OA auth tag's owner) is always allowed; BUZZ_ALLOWED_USERS adds people.
+NIP-OA auth tag's owner) is always allowed; KUZZ_ALLOWED_USERS adds people.
 There is no allow-all: BUZZ_ALLOW_ALL_USERS / KUZZ_ALLOW_ALL_USERS are ignored
 and removed from every child's environment. Keys are never logged.
 """
@@ -284,8 +284,7 @@ class BuzzAdapter(BasePlatformAdapter):
         # Read by Hermes core (gateway/run_turn.py) for buzz progress threading.
         self._reply_to_mode = _reply_to_mode(config, self._extra)
         self._allowed_extra = _pubkeys(
-            _csv(_setting(("BUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
-            + _csv(_setting(("KUZZ_ALLOWED_USERS",), {}, "", []))
+            _csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
         )
         self._reaction_only = _pubkeys(_csv(_setting(("BUZZ_REACTION_ONLY_USERS",), self._extra, "reaction_only_users", [])))
         self._identity: Optional[Identity] = None
@@ -682,7 +681,6 @@ class BuzzAdapter(BasePlatformAdapter):
             user_id=msg.author,
             user_name=user_name,
             thread_id=msg.thread_root,
-            is_bot=msg.author != self.owner,  # Hermes' loop guard counts these: agents can answer each other
             message_id=msg.id,
         )
         event = MessageEvent(
