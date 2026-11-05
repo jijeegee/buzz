@@ -11,6 +11,7 @@ import {
 import { resetConfigForHarnessChange } from "@/features/agents/ui/agentConfigOptions";
 import { AgentDropdownSelect } from "@/features/agents/ui/agentConfigControls";
 import { getBakedBuildEnv, type BakedEnvEntry } from "@/shared/api/tauri";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   getGlobalAgentConfig,
   setGlobalAgentConfig,
@@ -87,6 +88,7 @@ function AgentDefaultsSection({
   const configRef = React.useRef<GlobalAgentConfig>(
     initialDraftRef.current?.config ?? EMPTY_GLOBAL_CONFIG,
   );
+  const owner = useIdentityQuery().data?.pubkey;
   const isDirtyRef = React.useRef(initialDraftRef.current?.isDirty ?? false);
   const [configIsValid, setConfigIsValid] = React.useState(false);
 
@@ -209,11 +211,11 @@ function AgentDefaultsSection({
 
   const commitPersistence = React.useCallback(async () => {
     if (!isDirtyRef.current) return;
-    const saved = await setGlobalAgentConfig(configRef.current);
+    const saved = await setGlobalAgentConfig(configRef.current, owner);
     isDirtyRef.current = false;
     configRef.current = saved.config;
     setConfig(saved.config);
-  }, []);
+  }, [owner]);
   React.useEffect(() => {
     onPersistenceStateChange({
       // configIsValid comes from AgentConfigFields' onValidityChange and

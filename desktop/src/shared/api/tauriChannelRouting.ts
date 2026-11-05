@@ -1,8 +1,9 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import { requireOwner } from "@/shared/api/tauriGlobalAgentConfig";
 
 /**
  * How agents pick up channel messages nobody @mentioned. One Rust-owned value
- * (`<app-data>/agents/channel-routing.json`); a missing file reads as `host`,
+ * (`<app-data>/agents/accounts/<owner-hex>/channel-routing.json`); a missing file reads as `host`,
  * which is the behavior before the setting existed.
  */
 export type ChannelRoutingMode = "off" | "host" | "lead" | "desktop-router";
@@ -51,9 +52,11 @@ export async function getChannelRouting(): Promise<ChannelRoutingStatus> {
 export async function setChannelRouting(
   mode: ChannelRoutingMode,
   agentPubkey: string | null,
+  owner: string | null | undefined,
 ): Promise<ChannelRoutingStatus> {
   return invokeTauri<ChannelRoutingStatus>("set_channel_routing", {
     mode,
     agentPubkey,
+    owner: requireOwner(owner),
   });
 }

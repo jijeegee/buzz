@@ -748,6 +748,7 @@ test("the unfocused root composer keeps its dismissed mention menu closed throug
   const rootMessage = page.locator(
     `[data-testid="message-row"][data-message-id="${THREAD_ROOT_ID}"]`,
   );
+  await rootMessage.dispatchEvent("pointerover");
   await rootMessage
     .getByRole("button", { name: "Reply in thread" })
     .evaluate((button: HTMLButtonElement) => button.click());

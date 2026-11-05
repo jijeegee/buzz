@@ -77,6 +77,7 @@ test.describe("channel shared header backdrop", () => {
       },
     );
 
+    await page.getByTestId("message-row").first().hover();
     const replyButton = page.locator('[data-testid^="reply-message-"]').first();
     await expect(replyButton).toBeVisible();
     await replyButton.click({ force: true });

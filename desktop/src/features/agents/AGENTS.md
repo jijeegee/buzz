@@ -575,7 +575,7 @@ with a TypeScript lookup table or an id comparison in a component.
     `routing_role_for`; transitions go through `plan_routing_transition`.**
     `managed_agents/channel_routing/` owns `ChannelRoutingMode`
     (`off | host | lead | desktop-router`, kebab-case) stored alone in
-    `<app-data>/agents/channel-routing.json` (`{ "mode": "host" }`; missing or
+    `<app-data>/agents/accounts/<owner-hex>/channel-routing.json` (`{ "mode": "host" }`; missing or
     unreadable reads as `host`, today's behavior). It is **not** a
     `GlobalAgentConfig` field (saving that restarts every agent). Off, Host,
     Lead, and Smart routing are selectable in this build
@@ -708,7 +708,7 @@ with a TypeScript lookup table or an id comparison in a component.
     persona description → kind:0 `about` → my own agent's system-prompt
     prefix → name only. The router model is the `message-routing` entry in
     Settings › Models › Task models, stored in
-    `<app-data>/agents/task-models.json` (never `GlobalAgentConfig`, so a
+    `<app-data>/agents/accounts/<owner-hex>/task-models.json` (never `GlobalAgentConfig`, so a
     change restarts nothing); its row renders provider + model through
     `ModelEffortFields` with `effort: null` (the router never thinks). Its
     Provider select lists every route explicitly, with real availability:

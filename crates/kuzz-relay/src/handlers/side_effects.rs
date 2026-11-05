@@ -522,7 +522,7 @@ pub(crate) async fn is_friend_of(
 
 /// Whether `actor` owns the agent `target`, by `users` or by pairing. A paired
 /// agent stays removable by its owner after being disconnected.
-async fn owns_agent(
+pub(crate) async fn owns_agent(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     target: &[u8],

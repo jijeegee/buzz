@@ -30,6 +30,7 @@ test("shared thread names support limits, Korean composition, live updates and c
   // without registering a legacy relayClient subscription.
   await page.getByTestId("channel-engineering").click();
   await page.getByTestId("channel-general").click();
+  await page.locator(`[data-message-id="${root.id}"]`).first().hover();
   await page.getByTestId(`reply-message-${root.id}`).click({ force: true });
   const panel = page.getByTestId("message-thread-panel");
   await panel.getByRole("button", { name: "Set thread name" }).click();
