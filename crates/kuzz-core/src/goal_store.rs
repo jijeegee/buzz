@@ -282,6 +282,19 @@ pub fn validate_id(id: &str) -> Result<(), GoalTreeError> {
     }
 }
 
+/// `current` with `add` appended and `remove` taken out: lowercase, no repeats.
+pub fn merge_assignees(current: &[String], add: &[String], remove: &[String]) -> Vec<String> {
+    let remove: Vec<String> = remove.iter().map(|a| a.to_ascii_lowercase()).collect();
+    let mut merged: Vec<String> = Vec::with_capacity(current.len() + add.len());
+    for pubkey in current.iter().chain(add) {
+        let pubkey = pubkey.to_ascii_lowercase();
+        if !merged.contains(&pubkey) && !remove.contains(&pubkey) {
+            merged.push(pubkey);
+        }
+    }
+    merged
+}
+
 /// Check goal text and assignees.
 pub fn validate_fields(
     title: Option<&str>,
@@ -290,6 +303,12 @@ pub fn validate_fields(
 ) -> Result<(), GoalTreeError> {
     if let Some(title) = title {
         validate_title(title)?;
+    }
+    // Postgres text cannot hold NUL.
+    if title.into_iter().chain(note).any(|t| t.contains(' ')) {
+        return Err(GoalTreeError::Invalid(
+            "goal text must not contain NUL".into(),
+        ));
     }
     if note.is_some_and(|n| n.chars().count() > MAX_NOTE_CHARS) {
         return Err(GoalTreeError::Invalid(format!(
@@ -560,8 +579,21 @@ mod tests {
     }
 
     #[test]
+    fn merged_assignees_are_lowercase_without_repeats() {
+        let (a, b) = ("a".repeat(64), "b".repeat(64));
+        let merged = merge_assignees(
+            std::slice::from_ref(&a),
+            &[a.to_uppercase(), b.clone()],
+            &[a.to_uppercase()],
+        );
+        assert_eq!(merged, [b]);
+    }
+
+    #[test]
     fn fields_are_checked() {
         assert!(validate_fields(Some(" "), None, &[]).is_err());
+        assert!(validate_fields(Some("a b"), None, &[]).is_err());
+        assert!(validate_fields(None, Some("a b"), &[]).is_err());
         assert!(validate_fields(Some("ok"), Some(&"x".repeat(MAX_NOTE_CHARS + 1)), &[]).is_err());
         assert!(validate_fields(Some("ok"), None, &["nope".into()]).is_err());
         assert!(validate_fields(Some("ok"), Some("note"), &["a".repeat(64)]).is_ok());

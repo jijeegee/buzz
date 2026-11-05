@@ -96,7 +96,7 @@ impl Fixture {
 
     async fn ok(&self, ops: &[GoalOp]) -> GoalOutcome {
         match self.write(ops).await.unwrap() {
-            GoalWrite::Applied(outcome) | GoalWrite::NoEffect(outcome) => outcome,
+            GoalWrite::Applied(_, outcome) | GoalWrite::NoEffect(outcome) => outcome,
             GoalWrite::Duplicate => panic!("unexpected duplicate"),
         }
     }
@@ -188,7 +188,7 @@ async fn replaying_an_event_changes_nothing() {
     let write = |e| f.db.apply_goal_ops(f.community, f.channel, e, &ops);
     assert!(matches!(
         write(&first).await.unwrap(),
-        GoalWrite::Applied(_)
+        GoalWrite::Applied(..)
     ));
     f.ok(&[GoalOp::Update {
         id: "a".into(),
@@ -199,7 +199,7 @@ async fn replaying_an_event_changes_nothing() {
         remove_assignees: Vec::new(),
     }])
     .await;
-    assert_eq!(write(&first).await.unwrap(), GoalWrite::Duplicate);
+    assert!(matches!(write(&first).await.unwrap(), GoalWrite::Duplicate));
     assert_eq!(f.goal("a").await.title, "newer");
 }
 
@@ -294,17 +294,20 @@ async fn done_to_dropped_is_not_a_finish() {
     let f = Fixture::new().await;
     f.root().await;
     let thread = f.thread(Utc::now()).await;
-    f.ok(&[
-        add("t", "root"),
-        link("t", &thread),
-        add("a", "t"),
-        add("b", "a"),
-    ])
+    f.ok(&[add("t", "root"), link("t", &thread), add("plan", "root")])
+        .await;
+    f.ok(&[done("plan")]).await;
+    // A move never deletes, so this leaves a finished, childless task.
+    f.ok(&[GoalOp::Move {
+        id: "plan".into(),
+        parent: "t".into(),
+        order: None,
+    }])
     .await;
-    f.ok(&[done("a")]).await;
-    let outcome = f.ok(&[set_status("a", GoalStatus::Dropped)]).await;
+    assert_eq!(f.goal("plan").await.status, GoalStatus::Done);
+    let outcome = f.ok(&[set_status("plan", GoalStatus::Dropped)]).await;
     assert!(outcome.deleted.is_empty());
-    assert_eq!(f.goal("a").await.status, GoalStatus::Dropped);
+    assert_eq!(f.goal("plan").await.status, GoalStatus::Dropped);
 }
 
 #[tokio::test]
@@ -535,7 +538,184 @@ async fn a_written_goal_records_its_editor_and_community_isolation_holds() {
         f.goal("root").await.updated_by,
         Some(f.keys.public_key().to_hex())
     );
-    assert!(other.goals().await.is_empty());
+    // The same channel id in another community must see nothing.
+    sqlx::query("INSERT INTO channels(community_id,id,name,visibility,channel_type,created_by,history_policy) VALUES($1,$2,'same-id','open'::channel_visibility,'stream',$3,'all')")
+        .bind(other.community.as_uuid()).bind(f.channel).bind(other.keys.public_key().to_bytes().as_slice()).execute(&other.db.pool).await.unwrap();
+    let seen = other
+        .db
+        .list_goals(other.community, f.channel)
+        .await
+        .unwrap();
+    assert!(seen.is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn one_event_can_add_link_and_finish() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let thread = f.thread(Utc::now()).await;
+    let outcome = f
+        .ok(&[
+            add("t", "root"),
+            link("t", &thread),
+            add("task", "t"),
+            done("t"),
+        ])
+        .await;
+    assert_eq!(outcome.deleted, ["task"]);
+    assert_eq!(outcome.parent.as_deref(), Some("root"));
+    assert_eq!(f.ids().await, ["root", "t"]);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_chain_of_finished_tasks_goes_and_reports_the_goal_that_stays() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let thread = f.thread(Utc::now()).await;
+    f.ok(&[
+        add("t", "root"),
+        link("t", &thread),
+        add("a", "t"),
+        add("b", "a"),
+    ])
+    .await;
+    assert!(f.ok(&[done("a")]).await.deleted.is_empty());
+    let outcome = f.ok(&[done("b")]).await;
+    assert_eq!(outcome.deleted, ["b", "a"]);
+    assert_eq!(outcome.parent.as_deref(), Some("t"));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn retries_with_a_new_event_id_store_nothing_and_keep_the_clock() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let thread = f.thread(Utc::now()).await;
+    f.ok(&[
+        add("plan", "root"),
+        link("plan", &thread),
+        add("other", "root"),
+    ])
+    .await;
+    f.ok(&[done("plan")]).await;
+    f.ok(&[GoalOp::Update {
+        id: "other".into(),
+        title: None,
+        note: None,
+        status: Some(GoalStatus::Dropped),
+        add_assignees: Vec::new(),
+        remove_assignees: Vec::new(),
+    }])
+    .await;
+    f.age(10).await;
+    let aged = f.goal("plan").await.updated_at;
+    let before = f.stored_events().await;
+    let retries = [
+        vec![set_status("plan", GoalStatus::Done), link("plan", &thread)],
+        vec![GoalOp::SetRoot {
+            id: "ignored".into(),
+            title: "room goal".into(),
+            note: None,
+        }],
+        vec![GoalOp::Update {
+            id: "plan".into(),
+            title: Some("goal plan".into()),
+            note: Some(String::new()),
+            status: None,
+            add_assignees: Vec::new(),
+            remove_assignees: Vec::new(),
+        }],
+        vec![GoalOp::Move {
+            id: "plan".into(),
+            parent: "root".into(),
+            order: None,
+        }],
+        vec![GoalOp::Unlink {
+            thread: hex::encode([3; 32]),
+        }],
+        vec![GoalOp::DropInactive],
+    ];
+    for ops in retries {
+        let write = f.write(&ops).await.unwrap();
+        assert!(
+            matches!(write, GoalWrite::NoEffect(_)),
+            "{ops:?}: {write:?}"
+        );
+    }
+    assert_eq!(f.stored_events().await, before);
+    assert_eq!(f.goal("plan").await.updated_at, aged);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn goal_rows_take_the_stored_events_receive_time() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let GoalWrite::Applied(stored, _) = f.write(&[add("a", "root")]).await.unwrap() else {
+        panic!("expected a stored event");
+    };
+    let row_time: chrono::DateTime<Utc> = sqlx::query_scalar(
+        "SELECT updated_at FROM goals WHERE community_id=$1 AND channel_id=$2 AND id='a'",
+    )
+    .bind(f.community.as_uuid())
+    .bind(f.channel)
+    .fetch_one(&f.db.pool)
+    .await
+    .unwrap();
+    let event_time: chrono::DateTime<Utc> =
+        sqlx::query_scalar("SELECT received_at FROM events WHERE community_id=$1 AND id=$2")
+            .bind(f.community.as_uuid())
+            .bind(stored.event.id.as_bytes().as_slice())
+            .fetch_one(&f.db.pool)
+            .await
+            .unwrap();
+    assert_eq!(row_time, event_time);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn drop_inactive_settles_nested_thread_goals() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let outer = f.thread(Utc::now() - Duration::days(120)).await;
+    let inner = f.thread(Utc::now() - Duration::days(120)).await;
+    f.ok(&[
+        add("outer", "root"),
+        link("outer", &outer),
+        add("mid", "outer"),
+        add("inner", "mid"),
+        link("inner", &inner),
+        add("inner_task", "inner"),
+        add("side", "outer"),
+    ])
+    .await;
+    f.age(120).await;
+    let outcome = f.ok(&[GoalOp::DropInactive]).await;
+    let mut deleted = outcome.deleted;
+    deleted.sort();
+    assert_eq!(deleted, ["inner_task", "side"]);
+    assert_eq!(f.ids().await, ["inner", "mid", "outer", "root"]);
+    for id in ["inner", "mid", "outer"] {
+        assert_eq!(f.goal(id).await.status, GoalStatus::Dropped, "{id}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn concurrent_writers_serialize_on_the_room() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let (ops_a, ops_b, ops_c) = ([add("a", "root")], [add("b", "root")], [add("c", "root")]);
+    let (a, b, c) = tokio::join!(f.write(&ops_a), f.write(&ops_b), f.write(&ops_c),);
+    for write in [a, b, c] {
+        assert!(matches!(write.unwrap(), GoalWrite::Applied(..)));
+    }
+    let mut orders: Vec<i64> = f.goals().await.iter().map(|g| g.order).collect();
+    orders.sort();
+    orders.dedup();
+    assert_eq!(orders.len(), 4, "each goal gets its own sort key");
 }
 
 #[test]

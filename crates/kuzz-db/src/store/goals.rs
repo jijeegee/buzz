@@ -6,9 +6,10 @@
 //! really gone; there is nothing to restore. Rules that need the room's shape
 //! live in [`kuzz_core::goal_store`].
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Utc};
+use kuzz_core::event::StoredEvent;
 use kuzz_core::goal_store::{self, GoalGraph, GoalShape};
 use kuzz_core::goal_tree::{GoalOp, GoalStatus};
 use kuzz_core::CommunityId;
@@ -17,7 +18,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::{Postgres, Row, Transaction};
 use uuid::Uuid;
 
-use crate::event::insert_event_in_transaction;
+use crate::event::insert_event_received_in_transaction;
 use crate::{Db, DbError, Result};
 
 /// Most ops one event may carry.
@@ -33,7 +34,7 @@ pub struct GoalOps {
 /// What one event did.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct GoalOutcome {
-    /// Parent of the last goal the event finished, if any.
+    /// Nearest surviving parent of the last goal the event finished, if any.
     pub parent: Option<String>,
     /// Goals deleted, in deletion order.
     pub deleted: Vec<String>,
@@ -43,10 +44,10 @@ pub struct GoalOutcome {
 }
 
 /// Result of [`Db::apply_goal_ops`].
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug)]
 pub enum GoalWrite {
-    /// Applied and stored.
-    Applied(GoalOutcome),
+    /// Applied and stored; the event is ready to send to subscribers.
+    Applied(Box<StoredEvent>, GoalOutcome),
     /// Nothing changed, so no event was stored or sent.
     NoEffect(GoalOutcome),
     /// This event was already applied.
@@ -260,17 +261,12 @@ impl Apply<'_, '_> {
         if ids.is_empty() {
             return Ok(());
         }
-        let mut survivors = Vec::new();
-        for id in &ids {
-            let mut cursor = self.graph.get(id).and_then(|n| n.parent.clone());
-            while let Some(parent) = cursor {
-                if !ids.contains(&parent) {
-                    survivors.push(parent);
-                    break;
-                }
-                cursor = self.graph.get(&parent).and_then(|n| n.parent.clone());
-            }
-        }
+        let doomed: HashSet<&String> = ids.iter().collect();
+        let mut survivors: Vec<String> = ids
+            .iter()
+            .filter_map(|id| self.graph.get(id)?.parent.clone())
+            .filter(|parent| !doomed.contains(parent))
+            .collect();
         survivors.sort();
         survivors.dedup();
         sqlx::query(
@@ -290,19 +286,33 @@ impl Apply<'_, '_> {
         Ok(())
     }
 
-    async fn write_status(&mut self, id: &str, status: GoalStatus) -> Result<()> {
+    async fn write_status(&mut self, ids: &[String], status: GoalStatus) -> Result<()> {
         sqlx::query(
             "UPDATE goals SET status = $4 \
+             WHERE community_id = $1 AND channel_id = $2 AND id = ANY($3)",
+        )
+        .bind(self.community)
+        .bind(self.channel)
+        .bind(ids)
+        .bind(status.as_str())
+        .execute(&mut **self.tx)
+        .await?;
+        for id in ids {
+            self.graph.set_status(id, status);
+        }
+        Ok(())
+    }
+
+    async fn stored_text(&mut self, id: &str) -> Result<(String, String, Vec<String>, i64)> {
+        Ok(sqlx::query_as(
+            "SELECT title, note, assignees, order_key FROM goals \
              WHERE community_id = $1 AND channel_id = $2 AND id = $3",
         )
         .bind(self.community)
         .bind(self.channel)
         .bind(id)
-        .bind(status.as_str())
-        .execute(&mut **self.tx)
-        .await?;
-        self.graph.set_status(id, status);
-        Ok(())
+        .fetch_one(&mut **self.tx)
+        .await?)
     }
 
     async fn set_root(&mut self, id: &str, title: &str, note: Option<&str>) -> Result<()> {
@@ -311,6 +321,10 @@ impl Apply<'_, '_> {
             checked(goal_store::validate_id(id))?;
             return self.insert(id, None, title, note.unwrap_or(""), &[]).await;
         };
+        let (old_title, old_note, ..) = self.stored_text(&root).await?;
+        if title == old_title && note.is_none_or(|n| n == old_note) {
+            return Ok(());
+        }
         sqlx::query(
             "UPDATE goals SET title = $4, note = COALESCE($5, note) \
              WHERE community_id = $1 AND channel_id = $2 AND id = $3",
@@ -335,20 +349,14 @@ impl Apply<'_, '_> {
     ) -> Result<()> {
         checked(goal_store::validate_id(id))?;
         checked(goal_store::validate_fields(Some(title), note, assignees))?;
-        if self.graph.get(id).is_some() {
-            let same: Option<(Option<String>, String)> = sqlx::query_as(
-                "SELECT parent_id, title FROM goals \
-                 WHERE community_id = $1 AND channel_id = $2 AND id = $3",
-            )
-            .bind(self.community)
-            .bind(self.channel)
-            .bind(id)
-            .fetch_optional(&mut **self.tx)
-            .await?;
+        if let Some(existing) = self.graph.get(id) {
+            let same_parent = existing.parent.as_deref() == Some(parent);
+            let (old_title, ..) = self.stored_text(id).await?;
             // A retry of an Add that landed; a Token retry gets a new event id.
-            return match same {
-                Some((Some(p), t)) if p == parent && t == title => Ok(()),
-                _ => Err(rejected(format!("duplicate goal id {id}"))),
+            return if same_parent && old_title == title {
+                Ok(())
+            } else {
+                Err(rejected(format!("duplicate goal id {id}")))
             };
         }
         if self.graph.get(parent).is_none() {
@@ -357,7 +365,7 @@ impl Apply<'_, '_> {
         if self.graph.layer(parent) + 1 > kuzz_core::goal_tree::MAX_DEPTH {
             return Err(rejected("goal would be too deep"));
         }
-        let assignees: Vec<String> = assignees.iter().map(|a| a.to_ascii_lowercase()).collect();
+        let assignees = goal_store::merge_assignees(&[], assignees, &[]);
         self.insert(id, Some(parent), title, note.unwrap_or(""), &assignees)
             .await
     }
@@ -380,47 +388,51 @@ impl Apply<'_, '_> {
             return Err(rejected(format!("goal not found: {id}")));
         };
         checked(goal_store::validate_fields(title, note, add_assignees))?;
-        let add: Vec<String> = add_assignees
-            .iter()
-            .map(|a| a.to_ascii_lowercase())
-            .collect();
-        let remove: Vec<String> = remove_assignees
-            .iter()
-            .map(|a| a.to_ascii_lowercase())
-            .collect();
-        let assignees: Vec<String> = sqlx::query_scalar(
+        let (old_title, old_note, old_assignees, _) = self.stored_text(id).await?;
+        let assignees =
+            goal_store::merge_assignees(&old_assignees, add_assignees, remove_assignees);
+        if assignees.len() > kuzz_core::goal_tree::MAX_ASSIGNEES {
+            return Err(rejected("goal has too many assignees"));
+        }
+        let unchanged = title.is_none_or(|t| t == old_title)
+            && note.is_none_or(|n| n == old_note)
+            && status.is_none_or(|s| s == current)
+            && assignees == old_assignees;
+        if unchanged {
+            return Ok(());
+        }
+        sqlx::query(
             "UPDATE goals SET title = COALESCE($4, title), note = COALESCE($5, note), \
-                assignees = ARRAY( \
-                    SELECT a FROM unnest(assignees || $6::text[]) WITH ORDINALITY AS u(a, n) \
-                    WHERE a <> ALL($7::text[]) GROUP BY a ORDER BY MIN(n)) \
-             WHERE community_id = $1 AND channel_id = $2 AND id = $3 \
-             RETURNING assignees",
+                assignees = $6 \
+             WHERE community_id = $1 AND channel_id = $2 AND id = $3",
         )
         .bind(self.community)
         .bind(self.channel)
         .bind(id)
         .bind(title)
         .bind(note)
-        .bind(&add)
-        .bind(&remove)
-        .fetch_one(&mut **self.tx)
+        .bind(&assignees)
+        .execute(&mut **self.tx)
         .await?;
-        if assignees.len() > kuzz_core::goal_tree::MAX_ASSIGNEES {
-            return Err(rejected("goal has too many assignees"));
-        }
+        let id = [id.to_owned()];
         if let Some(status) = status {
-            self.write_status(id, status).await?;
+            self.write_status(&id, status).await?;
         }
-        self.touch(&[id.to_owned()]).await?;
+        self.touch(&id).await?;
         if finishing && !goal_store::finished(current) {
-            self.after_finish(id).await?;
+            self.after_finish(&id[0]).await?;
         }
         Ok(())
     }
 
     async fn after_finish(&mut self, id: &str) -> Result<()> {
-        self.outcome.parent = self.graph.get(id).and_then(|n| n.parent.clone());
         let doomed = self.graph.deletions_after_finish(id);
+        // The report reads this goal back, so it must be one that stays.
+        let mut parent = self.graph.get(id).and_then(|n| n.parent.clone());
+        while let Some(gone) = parent.as_ref().filter(|p| doomed.contains(*p)) {
+            parent = self.graph.get(gone).and_then(|n| n.parent.clone());
+        }
+        self.outcome.parent = parent;
         self.delete(doomed).await
     }
 
@@ -431,8 +443,15 @@ impl Apply<'_, '_> {
         if node.parent.is_none() {
             return Err(rejected("the layer 1 goal cannot be moved"));
         }
+        let same_parent = node.parent.as_deref() == Some(parent);
         if self.graph.get(parent).is_none() {
             return Err(rejected(format!("goal not found: {parent}")));
+        }
+        if same_parent {
+            let (.., old_order) = self.stored_text(id).await?;
+            if order.is_none_or(|o| o == old_order) {
+                return Ok(());
+            }
         }
         checked(goal_store::validate_move(&self.graph, id, parent))?;
         let order = match order {
@@ -478,6 +497,18 @@ impl Apply<'_, '_> {
         }
         let status = node.status;
         let event_id = thread_bytes(thread)?;
+        let linked: Option<String> = sqlx::query_scalar(
+            "SELECT goal_id FROM goal_links \
+             WHERE community_id = $1 AND channel_id = $2 AND event_id = $3",
+        )
+        .bind(self.community)
+        .bind(self.channel)
+        .bind(&event_id)
+        .fetch_optional(&mut **self.tx)
+        .await?;
+        if linked.as_deref() == Some(id) {
+            return Ok(());
+        }
         sqlx::query(
             "INSERT INTO goal_links (community_id, channel_id, event_id, goal_id) \
              VALUES ($1, $2, $3, $4) \
@@ -490,11 +521,12 @@ impl Apply<'_, '_> {
         .bind(id)
         .execute(&mut **self.tx)
         .await?;
+        let id = [id.to_owned()];
         // Work has started on a goal once a thread is linked to it.
         if status == GoalStatus::Open {
-            self.write_status(id, GoalStatus::InProgress).await?;
+            self.write_status(&id, GoalStatus::InProgress).await?;
         }
-        self.touch(&[id.to_owned()]).await?;
+        self.touch(&id).await?;
         self.reload_shape().await
     }
 
@@ -518,7 +550,8 @@ impl Apply<'_, '_> {
     }
 
     /// Give up every inactive goal, deepest first so each deletion sees its
-    /// children already settled.
+    /// children already settled. Settled on a copy, so one DELETE covers it
+    /// all and the room lock is not held row by row.
     async fn drop_inactive(&mut self) -> Result<()> {
         let mut ids: Vec<(usize, String)> = self
             .graph
@@ -526,22 +559,21 @@ impl Apply<'_, '_> {
             .into_iter()
             .map(|id| (self.graph.layer(id), id.to_owned()))
             .collect();
+        if ids.is_empty() {
+            return Ok(());
+        }
         ids.sort_by(|a, b| b.cmp(a));
-        for (_, id) in &ids {
-            self.write_status(id, GoalStatus::Dropped).await?;
+        let ids: Vec<String> = ids.into_iter().map(|(_, id)| id).collect();
+        self.write_status(&ids, GoalStatus::Dropped).await?;
+        self.touch(&ids).await?;
+        let mut settled = self.graph.clone();
+        let mut doomed = Vec::new();
+        for id in &ids {
+            let gone = settled.deletions_after_finish(id);
+            settled.remove(&gone);
+            doomed.extend(gone);
         }
-        if !ids.is_empty() {
-            let touched: Vec<String> = ids.iter().map(|(_, id)| id.clone()).collect();
-            self.touch(&touched).await?;
-        }
-        for (_, id) in ids {
-            if self.graph.get(&id).is_some() {
-                self.after_finish(&id).await?;
-            }
-        }
-        // A bulk action names no single parent.
-        self.outcome.parent = None;
-        Ok(())
+        self.delete(doomed).await
     }
 
     async fn apply(&mut self, op: &GoalOp) -> Result<()> {
@@ -617,12 +649,13 @@ impl Db {
             return Ok(GoalWrite::Duplicate);
         }
         let graph = load_shape(&mut *tx, *community.as_uuid(), channel).await?;
+        let received_at = Utc::now();
         let mut apply = Apply {
             tx: &mut tx,
             community: *community.as_uuid(),
             channel,
             editor: event.pubkey.to_hex(),
-            now: Utc::now(),
+            now: received_at,
             graph,
             outcome: GoalOutcome::default(),
             changed: false,
@@ -634,9 +667,16 @@ impl Db {
         if !apply.changed {
             return Ok(GoalWrite::NoEffect(outcome));
         }
-        insert_event_in_transaction(&mut tx, community, event, Some(channel)).await?;
+        let (stored, _) = insert_event_received_in_transaction(
+            &mut tx,
+            community,
+            event,
+            Some(channel),
+            received_at,
+        )
+        .await?;
         tx.commit().await?;
-        Ok(GoalWrite::Applied(outcome))
+        Ok(GoalWrite::Applied(Box::new(stored), outcome))
     }
 
     /// Every goal of a conversation with its computed state. Links are

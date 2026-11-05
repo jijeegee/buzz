@@ -23,7 +23,6 @@ pub mod chat_list;
 /// Server-side chat state written with each message (read positions, thread
 /// follows, thread close state).
 pub mod chat_state;
-pub mod goals;
 /// Reader-driven chat state: read positions, unread marks, follows.
 pub mod chat_user_state;
 /// Community lifecycle and host-map persistence.
@@ -40,6 +39,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Goal rows, written by kind 40111 events.
+pub mod goals;
 /// Group search, public addresses, invite links and invitations.
 pub mod groups;
 /// Room history cut (`since_join`) lookups.
