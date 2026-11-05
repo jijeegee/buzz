@@ -254,7 +254,7 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
         return Err(err);
     }
 
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global = crate::managed_agents::load_agent_config_for_record(app, record);
     let personas = load_personas(app).unwrap_or_default();
     let teams = crate::managed_agents::load_teams(app).unwrap_or_default();
     let persona_env =
@@ -289,13 +289,19 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
             record,
             crate::managed_agents::channel_routing::routing_role_for(
                 record,
-                crate::managed_agents::channel_routing::load_channel_routing(app)?,
+                crate::managed_agents::channel_routing::load_channel_routing_for_owner(
+                    app,
+                    Some(&owner_pubkey),
+                )?,
                 Some(&owner_pubkey),
             ),
             live_roles,
         ),
-        &crate::managed_agents::task_threads::current_task_threads_env(app),
-        &crate::managed_agents::context_history::current_context_history_env(app),
+        &crate::managed_agents::task_threads::current_task_threads_env(app, Some(&owner_pubkey)),
+        &crate::managed_agents::context_history::current_context_history_env(
+            app,
+            Some(&owner_pubkey),
+        ),
     );
 
     let effective_parallelism =

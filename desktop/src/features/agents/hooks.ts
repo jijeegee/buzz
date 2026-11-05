@@ -46,6 +46,7 @@ import { syncAgentsToActiveHuddle } from "@/shared/api/tauriChannels";
 import { discoverAcpCommands } from "@/shared/api/acpCommands";
 import { setGlobalAgentConfig } from "@/shared/api/tauriGlobalAgentConfig";
 import { globalAgentConfigQueryKey } from "@/features/agents/useGlobalAgentConfig";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import type { HarnessDefinitionInput } from "@/shared/api/tauri";
 import { discoverAcpRuntimes } from "@/shared/api/tauriAcpDiscovery";
 import {
@@ -1074,9 +1075,11 @@ export function useBakedBuildEnvKeysQuery(options?: { enabled?: boolean }) {
  */
 export function useSetGlobalAgentConfigMutation() {
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
 
   return useMutation({
-    mutationFn: (config: GlobalAgentConfig) => setGlobalAgentConfig(config),
+    mutationFn: (config: GlobalAgentConfig) =>
+      setGlobalAgentConfig(config, owner),
     onSuccess: (result) => {
       queryClient.setQueryData(globalAgentConfigQueryKey, result.config);
     },

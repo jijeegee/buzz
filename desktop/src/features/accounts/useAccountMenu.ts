@@ -108,10 +108,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
    * one whose sign-in ended). The account it opens becomes the active one.
    */
   const signIn = React.useCallback(
-    async (
-      activePubkey: string | null,
-      provider: SignInProvider = "google",
-    ) => {
+    async (provider: SignInProvider = "google") => {
       setBusy(true);
       const action = beginAccountAction();
       signingIn.current = true;
@@ -120,17 +117,14 @@ export function useAccountMenu({ open }: { open: boolean }) {
         const next = await loginRef.current.run(false, false, false, provider);
         signingIn.current = false;
         hideProgress();
-        const opened = next?.keyBackup ? next.signingPubkey : next?.principal;
-        if (next && (next.accountChanged || opened !== activePubkey)) {
+        // Every sign-in reloads, the same account too: the next start checks
+        // this account's agents on this computer.
+        if (next) {
           action.reload(t("accounts.switch.switching"));
           return;
         }
         action.cancel();
         setBusy(false);
-        if (next) {
-          toast.success(t("accounts.menu.signedIn"));
-          void refetch();
-        }
       } catch (error) {
         signingIn.current = false;
         hideProgress();
@@ -139,7 +133,7 @@ export function useAccountMenu({ open }: { open: boolean }) {
         toast.error(errorText(error, t("accounts.menu.googleSignInFailed")));
       }
     },
-    [refetch, showProgress, hideProgress],
+    [showProgress, hideProgress],
   );
 
   return {

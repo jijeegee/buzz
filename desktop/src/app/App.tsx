@@ -946,7 +946,9 @@ function MachineBootstrap({ sharedIdentity }: { sharedIdentity: boolean }) {
         continueWithIdentity={machine.continueWithIdentity}
         continueWithRecoveredIdentity={machine.continueWithRecoveredIdentity}
         identityLost={machine.identityLost}
-        initialPage={machineInitialPage}
+        initialPage={
+          machineInitialPage ?? (machine.needsAgentSetup ? "setup" : undefined)
+        }
         queryClient={machine.queryClient}
       />
       {shouldAcknowledgeDeepLink ? <PendingInviteGate /> : null}
