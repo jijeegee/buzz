@@ -1054,4 +1054,18 @@ async fn other_managed_agent_records_are_untouched() {
         .await
         .expect("any d");
     assert!(written.accepted, "{}", written.message);
+
+    // A registered key that isn't paired is not a paired agent.
+    let (other, registered) = (Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&other, &registered]).await;
+    pair(&state, &owner, &registered).await;
+    sqlx::query("UPDATE key_registry SET role = 'agent' WHERE pubkey = $1")
+        .bind(registered.public_key().to_bytes().as_slice())
+        .execute(state.db.pool())
+        .await
+        .expect("role");
+    let written = send(&state, &tenant, &other, access_setting(&other, &registered))
+        .await
+        .expect("not paired");
+    assert!(written.accepted, "{}", written.message);
 }

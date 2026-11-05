@@ -751,9 +751,7 @@ async fn check_quote_targets(
     if hidden.is_empty() {
         Ok(())
     } else {
-        Err(IngestError::Rejected(
-            "invalid: quoted event not found".into(),
-        ))
+        Err(IngestError::Rejected("invalid: quoted event not found".into()))
     }
 }
 
@@ -2608,15 +2606,6 @@ fn write_restriction_denial(
     }
 }
 
-/// Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
-/// decision 4), shared by ingest and the WebSocket ephemeral and observer
-/// paths that never reach ingest.
-///
-/// The restriction state is effective: an agent is blocked by its own row and
-/// by its owner's (`users.agent_owner_pubkey`). A ban is normally enforced by
-/// the auth seam and the live disconnect; this gate is the durable backstop
-/// for a missed disconnect and for HTTP writes. A timeout has no auth-seam
-/// presence, so this is where it is enforced. Fails closed on a DB error.
 /// A paired agent's `kind:30177` is its access setting, which only its owner
 /// may write. Readers check the author themselves; this refuses it clearly.
 /// App agents have no pairing, so they pass as before. A disconnected agent
@@ -2631,13 +2620,22 @@ async fn check_paired_agent_setting(state: &AppState, event: &Event) -> Result<(
         .await
         .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
     if owner.is_some_and(|owner| owner != event.pubkey.to_bytes()) {
-        return Err(IngestError::Rejected(
+        return Err(IngestError::AuthFailed(
             "restricted: only the agent's owner can set this".into(),
         ));
     }
     Ok(())
 }
 
+/// Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
+/// decision 4), shared by ingest and the WebSocket ephemeral and observer
+/// paths that never reach ingest.
+///
+/// The restriction state is effective: an agent is blocked by its own row and
+/// by its owner's (`users.agent_owner_pubkey`). A ban is normally enforced by
+/// the auth seam and the live disconnect; this gate is the durable backstop
+/// for a missed disconnect and for HTTP writes. A timeout has no auth-seam
+/// presence, so this is where it is enforced. Fails closed on a DB error.
 pub(crate) async fn enforce_write_restriction(
     state: &AppState,
     tenant: &TenantContext,
@@ -3418,9 +3416,7 @@ async fn ingest_event_inner(
                 .await
                 .map_err(|e| IngestError::Internal(format!("error: {e}")))?
         {
-            return Err(IngestError::Rejected(
-                "invalid: thread head not found".into(),
-            ));
+            return Err(IngestError::Rejected("invalid: thread head not found".into()));
         }
         if head.channel_id != extract_channel_id(&event)
             || !matches!(
