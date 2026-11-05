@@ -2269,6 +2269,8 @@ mod postgres_tests {
             [
                 "artifact_heads",
                 "artifact_revisions",
+                "goal_links",
+                "goals",
                 "group_add_settings",
                 "group_invitations",
                 "group_invite_links",

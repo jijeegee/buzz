@@ -23,6 +23,7 @@ pub mod chat_list;
 /// Server-side chat state written with each message (read positions, thread
 /// follows, thread close state).
 pub mod chat_state;
+pub mod goals;
 /// Reader-driven chat state: read positions, unread marks, follows.
 pub mod chat_user_state;
 /// Community lifecycle and host-map persistence.
@@ -129,6 +130,8 @@ mod thread_search_postgres_tests;
 
 #[cfg(test)]
 mod chat_state_postgres_tests;
+#[cfg(test)]
+mod goals_postgres_tests;
 
 #[cfg(test)]
 mod chat_stored_state_postgres_tests;

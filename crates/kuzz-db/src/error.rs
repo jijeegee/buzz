@@ -72,6 +72,10 @@ pub enum DbError {
     #[error("thread window exceeds {0} budget")]
     ThreadWindowBudgetExceeded(&'static str),
 
+    /// A goal edit broke a goal rule; nothing was applied.
+    #[error("goal rejected: {0}")]
+    GoalRejected(String),
+
     /// A stored timestamp value could not be interpreted.
     #[error("invalid timestamp: {0}")]
     InvalidTimestamp(i64),
