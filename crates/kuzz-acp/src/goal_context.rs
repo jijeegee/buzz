@@ -33,8 +33,40 @@ const MAX_BODY_CHARS: usize = 12_000;
 const MAX_NOTE_CHARS: usize = 300;
 /// Note budget for the goal a thread works on.
 const MAX_FOCUS_NOTE_CHARS: usize = 2_000;
-/// Note budget for a goal named by title only.
-const NO_NOTE: usize = 0;
+/// Active list pages one turn reads. Pages count the tasks agents never see,
+/// so one page can end before the plan goals do.
+const MAX_BOARD_PAGES: usize = 5;
+
+/// How much of a goal a line shows. What a line leaves out cannot resend a
+/// view, so a goal outside the turn's work shows only what rarely changes.
+#[derive(Clone, Copy)]
+struct Shown {
+    /// Note budget; 0 leaves the note out.
+    note: usize,
+    /// Its progress and link count.
+    counts: bool,
+}
+
+/// The goal a thread works on.
+const FOCUS: Shown = Shown {
+    note: MAX_FOCUS_NOTE_CHARS,
+    counts: true,
+};
+/// A sub-goal of that goal, or a plan goal on the board.
+const OUTLINE: Shown = Shown {
+    note: MAX_NOTE_CHARS,
+    counts: true,
+};
+/// A goal above or beside the thread's: others move its counts all day.
+const CONTEXT: Shown = Shown {
+    note: MAX_NOTE_CHARS,
+    counts: false,
+};
+/// A thread goal elsewhere: its thread holds the rest.
+const TITLE: Shown = Shown {
+    note: 0,
+    counts: false,
+};
 
 fn one_line(text: &str, max_chars: usize) -> String {
     let collapsed = text.split_whitespace().collect::<Vec<_>>().join(" ");
@@ -86,13 +118,19 @@ fn board_rows(board: &GoalRead) -> Vec<(usize, &GoalReadRow)> {
         .collect()
 }
 
-/// How much note a board goal shows: layer 1 and plan goals carry one, a
-/// thread goal is a title; its thread holds the rest.
-fn board_note(row: &GoalReadRow) -> usize {
+fn board_shown(row: &GoalReadRow) -> Shown {
     if row.is_thread {
-        NO_NOTE
+        TITLE
     } else {
-        MAX_NOTE_CHARS
+        OUTLINE
+    }
+}
+
+fn branch_shown(row: &GoalReadRow) -> Shown {
+    if row.is_thread {
+        TITLE
+    } else {
+        CONTEXT
     }
 }
 
@@ -120,7 +158,7 @@ fn branches<'a>(read: &'a GoalRead, path: &[&'a GoalReadRow]) -> Vec<(usize, &'a
         .collect()
 }
 
-fn goal_line(layer: usize, row: &GoalReadRow, note_chars: usize) -> String {
+fn goal_line(layer: usize, row: &GoalReadRow, shown: Shown) -> String {
     let mut line = format!(
         "L{layer} [{}] {} (id: {})",
         row.status.as_str(),
@@ -128,19 +166,19 @@ fn goal_line(layer: usize, row: &GoalReadRow, note_chars: usize) -> String {
         row.id
     );
     let (done, total) = (row.progress.done, row.progress.total);
-    if total > 0 {
+    if shown.counts && total > 0 {
         line.push_str(&format!(" — {done}/{total} sub-goals done"));
     }
     if !row.assignees.is_empty() {
         line.push_str(&format!(" — assignees: {}", row.assignees.join(", ")));
     }
-    if !row.links.is_empty() {
+    if shown.counts && !row.links.is_empty() {
         // A count only: full thread ids cost tokens every turn, and the
         // current thread's own link is stated separately.
         line.push_str(&format!(" — threads: {}", row.links.len()));
     }
-    if note_chars > 0 && !row.note.trim().is_empty() {
-        line.push_str(&format!("\n    note: {}", one_line(&row.note, note_chars)));
+    if shown.note > 0 && !row.note.trim().is_empty() {
+        line.push_str(&format!("\n    note: {}", one_line(&row.note, shown.note)));
     }
     line
 }
@@ -243,7 +281,7 @@ fn push_board(body: &mut String, board: &GoalRead, channel_id: Uuid) {
         body,
         board_rows(board)
             .into_iter()
-            .map(|(l, r)| indent(l, goal_line(l, r, board_note(r)))),
+            .map(|(l, r)| indent(l, goal_line(l, r, board_shown(r)))),
         channel_id,
     );
     if board.next.is_some() {
@@ -285,25 +323,21 @@ pub(crate) fn render_goal_context(
                 path.iter()
                     .take(above)
                     .enumerate()
-                    .map(|(i, r)| indent(i + 1, goal_line(i + 1, r, MAX_NOTE_CHARS))),
+                    .map(|(i, r)| indent(i + 1, goal_line(i + 1, r, CONTEXT))),
                 channel_id,
             );
             body.push_str("\nThis thread's goal and its sub-goals:\n");
             push_bounded(
                 &mut body,
                 open_subtree(read, &goal.id).into_iter().map(|(l, r)| {
-                    let note_chars = if r.id == goal.id {
-                        MAX_FOCUS_NOTE_CHARS
-                    } else {
-                        MAX_NOTE_CHARS
-                    };
-                    indent(l - layer + 1, goal_line(l, r, note_chars))
+                    let shown = if r.id == goal.id { FOCUS } else { OUTLINE };
+                    indent(l - layer + 1, goal_line(l, r, shown))
                 }),
                 channel_id,
             );
             let others: Vec<String> = branches(read, &path)
                 .into_iter()
-                .map(|(l, r)| goal_line(l, r, board_note(r)))
+                .map(|(l, r)| goal_line(l, r, branch_shown(r)))
                 .collect();
             if !others.is_empty() {
                 body.push_str(
@@ -334,41 +368,76 @@ pub(crate) fn render_goal_context(
     Some(body.trim_end().to_string())
 }
 
+/// A row with only what its line shows, at full length.
+fn shown_row(row: &GoalReadRow, shown: Shown) -> GoalReadRow {
+    GoalReadRow {
+        note: if shown.note > 0 {
+            row.note.clone()
+        } else {
+            String::new()
+        },
+        links: if shown.counts {
+            row.links.clone()
+        } else {
+            Vec::new()
+        },
+        progress: if shown.counts {
+            row.progress
+        } else {
+            Default::default()
+        },
+        updated_by: None,
+        updated_at: 0,
+        matched: false,
+        inactive: false,
+        open_children: 0,
+        ..row.clone()
+    }
+}
+
 /// What one thread's view shows, losslessly (`None`: no goals). Two turns of a
 /// thread hold the same goals exactly when this matches; a rendered view would
-/// miss edits it cuts (long notes, big boards), and edits elsewhere leave it
-/// alone, so moving between threads or a busy room does not resend goals.
+/// miss edits it cuts (long notes, big boards), and edits to what it does not
+/// show leave it alone, so a busy room does not resend goals.
 fn view_key(goals: &Goals, focus: Option<&str>) -> Option<String> {
-    let (rows, quiet): (Vec<&GoalReadRow>, usize) =
-        match focus.and_then(|root| goals.goal_for(root)) {
-            Some(goal) => {
-                let read = &goals.threads;
-                let path = read.path(&goal.id);
-                let mut rows = path.clone();
-                rows.extend(open_subtree(read, &goal.id).into_iter().map(|(_, r)| r));
-                rows.extend(branches(read, &path).into_iter().map(|(_, r)| r));
-                (rows, 0)
-            }
-            None => {
-                let board = goals.board.as_ref().filter(|b| !b.rows.is_empty())?;
-                let rows = board_rows(board).into_iter().map(|(_, r)| r).collect();
-                (rows, board.counts.inactive)
-            }
-        };
-    // Which read carried a row is not part of what it says.
-    let rows: Vec<GoalReadRow> = rows
-        .into_iter()
-        .map(|row| GoalReadRow {
-            matched: false,
-            ..row.clone()
-        })
-        .collect();
+    let (rows, quiet): (Vec<GoalReadRow>, usize) = match focus.and_then(|root| goals.goal_for(root))
+    {
+        Some(goal) => {
+            let read = &goals.threads;
+            let path = read.path(&goal.id);
+            let mut rows: Vec<GoalReadRow> = path.iter().map(|r| shown_row(r, CONTEXT)).collect();
+            rows.extend(
+                open_subtree(read, &goal.id)
+                    .into_iter()
+                    .map(|(_, r)| shown_row(r, OUTLINE)),
+            );
+            rows.extend(
+                branches(read, &path)
+                    .into_iter()
+                    .map(|(_, r)| shown_row(r, branch_shown(r))),
+            );
+            (rows, 0)
+        }
+        None => {
+            let board = goals.board.as_ref().filter(|b| !b.rows.is_empty())?;
+            let rows = board_rows(board)
+                .into_iter()
+                .map(|(_, r)| shown_row(r, board_shown(r)))
+                .collect();
+            (rows, board.counts.inactive)
+        }
+    };
     serde_json::to_string(&(rows, quiet)).ok()
 }
 
 /// First line of a `<goal-context>` that restates goals a session already
 /// holds in an older version.
 const GOALS_CHANGED: &str = "The goals changed. This replaces every earlier goal context.";
+/// First line of a `<goal-context>` for a thread new to a session that holds
+/// other threads' views. Those may be older; a view cannot retract what it
+/// does not show.
+const GOALS_CURRENT: &str =
+    "These goals are current. Where earlier goal context differs, this one is right.";
 /// First line of a `<goal-context>` for a session that may hold goals nobody
 /// recorded (reattached after a restart).
 pub(crate) const GOALS_RESTATED: &str = "These goals replace any earlier goal context.";
@@ -477,9 +546,10 @@ pub(crate) fn goal_context_for_turn(
     match &now.rendered {
         Some(_) if held_view.is_some() && held_view == now.view.as_ref() => None,
         // A thread it has not seen: new to the session, not a replacement.
-        Some(rendered) if (held_any && held_view.is_none()) || !held_goals => {
-            Some(rendered.clone())
+        Some(rendered) if held_any && held_view.is_none() => {
+            Some(format!("{GOALS_CURRENT}\n\n{rendered}"))
         }
+        Some(rendered) if !held_goals => Some(rendered.clone()),
         Some(rendered) if seen.is_none() => Some(format!("{GOALS_RESTATED}\n\n{rendered}")),
         Some(rendered) => Some(format!("{GOALS_CHANGED}\n\n{rendered}")),
         None if now.off && held_goals => Some(GOALS_OFF.to_string()),
@@ -558,6 +628,20 @@ async fn read_goals(rest: &RestClient, filter: serde_json::Value) -> Result<Goal
     serde_json::from_value(json).map_err(|e| format!("unreadable goals: {e}"))
 }
 
+async fn read_board(channel_id: Uuid, rest: &RestClient) -> Result<GoalRead, String> {
+    let filter = json!({ "goals": 1, "channel": channel_id, "view": "active" });
+    let mut board = read_goals(rest, filter.clone()).await?;
+    for _ in 1..MAX_BOARD_PAGES {
+        let Some(cursor) = board.next.clone() else {
+            break;
+        };
+        let mut page = filter.clone();
+        page["cursor"] = json!(cursor);
+        board.absorb(read_goals(rest, page).await?);
+    }
+    Ok(board)
+}
+
 async fn fetch_views(
     channel_id: Uuid,
     foci: &[Option<&str>],
@@ -575,8 +659,7 @@ async fn fetch_views(
         .iter()
         .any(|focus| focus.is_none_or(|root| goals.goal_for(root).is_none()));
     if needs_board {
-        let filter = json!({ "goals": 1, "channel": channel_id, "view": "active" });
-        goals.board = Some(read_goals(rest, filter).await?);
+        goals.board = Some(read_board(channel_id, rest).await?);
     }
     Ok(goals)
 }
@@ -738,7 +821,9 @@ mod tests {
         assert_eq!(send(Some(&seen), &main), None);
         // Same tree, another thread's view: that view once, not as a change.
         let thread = GoalsNow::new(&goals_of(&tree), channel(), Some(THREAD));
-        assert_eq!(send(Some(&seen), &thread).as_deref(), thread.rendered());
+        let first = send(Some(&seen), &thread).unwrap();
+        assert!(first.starts_with(GOALS_CURRENT), "{first}");
+        assert!(first.ends_with(thread.rendered().unwrap()));
         let seen = GoalsSeen::after(Some(&seen), &thread);
         assert_eq!(send(Some(&seen), &thread), None);
         assert_eq!(send(Some(&seen), &main), None);
@@ -832,7 +917,7 @@ mod tests {
         assert!(goal_rules().contains("propose layer 1 changes on the main timeline"));
         assert!(goal_rules().contains("add and update layer 2 and below"));
         assert!(goal_rules().contains("add one under the closest plan goal"));
-        assert!(goal_rules().contains("Add a layer 2 goal only when people here ask."));
+        assert!(goal_rules().contains("Add a layer 2 plan goal only when people here ask."));
         assert!(!goal_rules().contains("restore") && !goal_rules().contains("exit 5"));
         assert!(goal_rules().contains("Do it yourself, without asking."));
         assert!(goal_rules().contains(
@@ -1175,6 +1260,10 @@ mod tests {
         linked(&mut tree, "cas", THREAD);
         let now = GoalsNow::new(&goals_of(&tree), channel(), Some(THREAD));
         let seen = GoalsSeen::after(None, &now);
+        // A task in a sibling thread moves counts this view does not show.
+        add(&mut tree, "far_task", "val", "Elsewhere");
+        let later = GoalsNow::new(&goals_of(&tree), channel(), Some(THREAD));
+        assert_eq!(goal_context_for_turn(Some(&seen), false, &later), None);
         // Inside another branch: not in this view.
         tree.apply(
             &GoalOp::Update {
@@ -1211,10 +1300,8 @@ mod tests {
         let changed = GoalsNow::new(&goals_of(&tree), channel(), Some(THREAD));
         let seen = GoalsSeen::after(Some(&seen), &changed);
         // Told "this replaces every earlier goal context", so main comes again.
-        assert_eq!(
-            goal_context_for_turn(Some(&seen), false, &main).as_deref(),
-            main.rendered()
-        );
+        let again = goal_context_for_turn(Some(&seen), false, &main).unwrap();
+        assert!(again.ends_with(main.rendered().unwrap()));
     }
 
     #[test]
