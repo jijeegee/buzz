@@ -872,13 +872,24 @@ Each line:
   thread_root  event id of the thread root for a thread reply, else null
   mentions     pubkeys the message mentions (array of 64 hex)
 
-To resume after a restart, pass the last created_at seen as --since.",
-        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600"
+To resume after a restart, pass the last created_at seen as --since.
+
+With --access-owner, the agent's access setting (kind 30177 signed by that
+owner) is printed too, before any message of a connection and whenever it
+is read or changes, as a line without an id:
+  type       \"access\"
+  mode       owner-only, allowlist or anyone
+  allowlist  pubkeys for allowlist (array of 64 hex)
+Anything that can't be read or verified prints owner-only.",
+        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600\n  kuzz messages watch --access-owner <HEX>"
     )]
     Watch {
         /// Unix seconds: also print messages from this time on (default: now)
         #[arg(long)]
         since: Option<i64>,
+        /// Owner's pubkey (64-char hex): also print this agent's access setting
+        #[arg(long)]
+        access_owner: Option<String>,
     },
 }
 
@@ -3082,6 +3093,7 @@ async fn client_from_session(
 async fn watch_messages(
     relay_url: String,
     since: Option<i64>,
+    access_owner: Option<String>,
     paired: Option<Keys>,
     token_source: Option<kuzz_token_broker::TokenSource>,
     private_key: Option<String>,
@@ -3090,7 +3102,7 @@ async fn watch_messages(
 ) -> Result<(), CliError> {
     if let Some(keys) = paired {
         let client = KuzzClient::new(relay_url, keys, None, None)?;
-        return commands::watch::cmd_watch(&client, since, None).await;
+        return commands::watch::cmd_watch(&client, since, access_owner, None).await;
     }
     let key_mode = token_source.is_none() && private_key.is_some();
     let uses_session = token_source.is_none() && private_key.is_none() && session.is_some();
@@ -3124,7 +3136,7 @@ async fn watch_messages(
         },
         other => other,
     })?;
-    commands::watch::cmd_watch(&client, since, reauth).await
+    commands::watch::cmd_watch(&client, since, access_owner, reauth).await
 }
 
 async fn run(cli: Cli) -> Result<(), CliError> {
@@ -3216,10 +3228,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
-    if let Cmd::Messages(MessagesCmd::Watch { since }) = cli.command {
+    if let Cmd::Messages(MessagesCmd::Watch {
+        since,
+        access_owner,
+    }) = cli.command
+    {
         return watch_messages(
             relay_url,
             since,
+            access_owner,
             paired.map(|(keys, _)| keys),
             token_source,
             cli.private_key,

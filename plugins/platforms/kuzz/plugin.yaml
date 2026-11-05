@@ -26,8 +26,8 @@ optional_env:
     prompt: "Home channel UUID (or empty)"
     password: false
   - name: KUZZ_ALLOWED_USERS
-    description: "Extra people (npub or hex, comma-separated) who may talk to the agent; the owner is always allowed"
-    prompt: "Allowed users (comma-separated)"
+    description: "Limits who the agent's Allowlist or Anyone setting lets in (npub or hex, comma-separated); adds nobody. Empty: no limit"
+    prompt: "Limit to these users (comma-separated, or empty)"
     password: false
   - name: KUZZ_REQUIRE_MENTION
     description: "Channel and thread messages must @mention the agent; DMs never need one (default true)"

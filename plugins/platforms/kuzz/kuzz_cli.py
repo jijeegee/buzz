@@ -23,7 +23,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, FrozenSet, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -88,8 +88,9 @@ _PARK_WORDS = (
     ("revoked", "The owner disconnected this agent. Pair it again with `kuzz pair`."),
     ("not_paired", "This computer is not paired. Run the `kuzz pair` command from the app (Connect external agent) first."),
 )
-# An old CLI without `messages watch` (clap usage error, any exit code).
-_NO_WATCH = ("unrecognized subcommand", "This kuzz CLI has no `messages watch`. Update Kuzz.")
+# An old CLI without `messages watch` or one of its flags (clap usage error, any exit code).
+_OLD_CLI = ("unrecognized subcommand", "unexpected argument")
+_OLD_CLI_MESSAGE = "This kuzz CLI is too old for this connector. Update Kuzz."
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _SECRET_PATTERNS = (
@@ -407,6 +408,32 @@ class WatchMessage:
     mentions: Tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class WatchAccess:
+    """The owner's access setting, as `kuzz messages watch` read it."""
+
+    mode: str = "owner-only"
+    allowlist: FrozenSet[str] = frozenset()
+
+
+def parse_access_line(line: Any) -> Optional[WatchAccess]:
+    """An access line -> its setting, and owner-only if it makes no sense. None for any other line."""
+    if isinstance(line, (bytes, bytearray)):
+        line = bytes(line).decode("utf-8", errors="replace")
+    try:
+        data = json.loads(line)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("type") != "access":
+        return None
+    mode, people = data.get("mode"), data.get("allowlist")
+    if mode == "anyone":
+        return WatchAccess(mode)
+    if mode == "allowlist" and isinstance(people, list):
+        return WatchAccess(mode, frozenset(pk for pk in map(normalize_pubkey, people) if pk))
+    return WatchAccess()
+
+
 def parse_watch_line(line: Any) -> Optional[WatchMessage]:
     """Validate one watch line; None when it is blank or not a message. Extra fields are ignored."""
     if isinstance(line, (bytes, bytearray)):
@@ -456,14 +483,15 @@ def classify_exit(rc: Optional[int], detail: str) -> Optional[Tuple[str, str]]:
         for word, message in _PARK_WORDS:
             if re.search(rf"\b{word}\b", lowered):
                 return word, message
-    if rc and _NO_WATCH[0] in lowered:
-        return "unrecognized_subcommand", _NO_WATCH[1]
+    if rc and any(words in lowered for words in _OLD_CLI):
+        return "unrecognized_subcommand", _OLD_CLI_MESSAGE
     return None
 
 
 OnMessage = Callable[[WatchMessage], Awaitable[None]]
 OnPark = Callable[[str, str], Awaitable[None]]
 OnStart = Callable[[], Awaitable[None]]
+OnAccess = Callable[[WatchAccess], None]
 
 
 class WatchSupervisor:
@@ -477,6 +505,7 @@ class WatchSupervisor:
         *,
         on_park: Optional[OnPark] = None,
         on_start: Optional[OnStart] = None,
+        on_access: Optional[OnAccess] = None,
         env_factory: Callable[[], Mapping[str, str]] = child_env,
         args_factory: Callable[[], Sequence[str]] = tuple,
         min_backoff: float = 1.0,
@@ -489,6 +518,7 @@ class WatchSupervisor:
         self._on_message = on_message
         self._on_park = on_park
         self._on_start = on_start
+        self._on_access = on_access
         self._env_factory = env_factory
         self._args_factory = args_factory
         self._min_backoff = min_backoff
@@ -592,7 +622,10 @@ class WatchSupervisor:
                     break
                 message = parse_watch_line(line)
                 if message is None:
-                    if line.strip():
+                    access = parse_access_line(line)
+                    if access is not None and self._on_access is not None:
+                        self._on_access(access)
+                    elif line.strip():
                         logger.debug("Kuzz: ignored a watch line that is not a message")
                     continue
                 try:
