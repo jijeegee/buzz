@@ -206,56 +206,39 @@ gives up on a command after a timeout, treat that as delivery unknown too.
 
 ## Hermes Agent
 
-Hermes Agent ships a `buzz` platform plugin that holds a raw key and talks to
-the relay itself. `plugins/platforms/kuzz/` in this repository is a drop-in
-replacement for it, built on the commands above. It holds no key once the
-computer is paired, and it needs nothing outside the Python standard library.
+`plugins/platforms/kuzz/` in this repository is a Hermes platform plugin built
+on the commands above. It holds no key, and it needs nothing outside the Python
+standard library.
 
-What stays the same for an existing Hermes `buzz` setup:
+It is its own platform, `kuzz`, beside the `buzz` platform Hermes ships, so one
+Hermes can use Buzz and Kuzz together. The two share nothing: Kuzz settings are
+`KUZZ_*` and `gateway.platforms.kuzz`, cron targets are `deliver=kuzz`, and state
+lives in `$HERMES_HOME/kuzz/`. The plugin never reads `BUZZ_*` variables and never
+runs a `buzz` binary.
 
-- the platform name `buzz`, so sessions, cron `deliver=buzz` and
-  `gateway.platforms.buzz` settings keep working;
-- the `BUZZ_*` variables and `extra` keys listed under Settings;
-- the cursor file `$HERMES_HOME/buzz/channel-cursors.json`, in the same
-  format, so a restart does not answer old messages again;
-- the CLI lookup: `buzz` on `PATH`, then `~/bin/buzz`, then `kuzz` on `PATH`
-  and the Kuzz app's copy;
-- replies in threads, the seen reaction, edits, deletes and file sends.
-
-What changes:
+How it behaves:
 
 - Messages arrive through one supervised `kuzz messages watch`, which also
   picks up channels and DMs created later. It restarts with backoff and stops
   for good on `signed_out`, `revoked` or `not_paired`, which Hermes reports as
   a platform error.
-- Allow-all is gone: the owner is always allowed, `BUZZ_ALLOWED_USERS` adds
-  people, and `BUZZ_ALLOW_ALL_USERS` is ignored.
+- A message in a thread is answered in that thread, anything else stays flat,
+  the same as app agents. The plugin never opens a thread itself.
+- There is no allow-all: the owner is always allowed, `KUZZ_ALLOWED_USERS` adds
+  people, and `KUZZ_ALLOW_ALL_USERS` is ignored.
 - Received files arrive as their links inside the message text, which the
   agent sees as it is. There is no `kuzz media get` yet, so the plugin does
-  not download them (the bundled plugin fetched images itself).
+  not download them.
 - After a restart, `watch` starts with `--since` from the newest message in
-  the cursor file (at most one day back), so messages sent while Hermes was
-  down are answered; the cursor drops those already handled.
+  `$HERMES_HOME/kuzz/channel-cursors.json` (at most one day back), so messages
+  sent while Hermes was down are answered; the cursor drops those already handled.
 
-### How it replaces the bundled plugin
+An earlier build took the `buzz` platform's place, in `$HERMES_HOME/plugins/buzz/`
+with a version ending in `-kuzz`. `install.py` moves that folder out when it finds
+one and leaves a real Buzz plugin alone. Old `BUZZ_*` values in `.env` that were
+meant for Kuzz should then be removed by hand, because Buzz would read them.
 
-Hermes finds plugins in its own `plugins/platforms/` folder and in
-`$HERMES_HOME/plugins/`. Both are keyed by the manifest `name`, and when two
-share a name the one in `$HERMES_HOME/plugins/` wins; the bundled one is then
-not loaded at all. This plugin's manifest is named `buzz-platform`, the same as
-the bundled one. A user plugin also has to be listed in `plugins.enabled` in
-`config.yaml`.
-
-Note: `hermes plugins enable buzz-platform` does not work for this. The
-command resolves the name to the bundled plugin's listing key
-(`platforms/buzz`), which the loader ignores for a plugin in
-`$HERMES_HOME/plugins/`. `install.py` therefore sets the list itself with the
-documented `hermes config get plugins.enabled` and
-`hermes config set plugins.enabled '[..., "buzz-platform"]'`. By hand, add
-`buzz-platform` under `plugins.enabled` in `config.yaml`.
-
-To go back to the bundled plugin, delete `$HERMES_HOME/plugins/buzz/` and
-restart the gateway.
+To remove the plugin, delete `$HERMES_HOME/plugins/kuzz/` and restart the gateway.
 
 ### Install
 
@@ -291,16 +274,15 @@ hermes gateway restart
 `install.py` does three things, which any installer can repeat:
 
 1. Copies `plugin.yaml`, `__init__.py`, `adapter.py` and `kuzz_cli.py` into
-   `$HERMES_HOME/plugins/buzz/`. Nothing else is needed at run time. An
-   existing folder there is moved to `$HERMES_HOME/plugin-backups/buzz-<UTC
+   `$HERMES_HOME/plugins/kuzz/`. Nothing else is needed at run time. An
+   existing folder there is moved to `$HERMES_HOME/plugin-backups/kuzz-<UTC
    time>/` first, not deleted.
 2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path`, else the
    `kuzz` in the installer's own root, else `kuzz` on `PATH` or the desktop
-   app's copy. This outranks an older `BUZZ_CLI_PATH` that points at a Buzz
-   CLI without `watch`. It also sets `KUZZ_OWNER_PUBKEY` when `--owner` is
+   app's copy. It also sets `KUZZ_OWNER_PUBKEY` when `--owner` is
    given. Every line that sets one of these keys is updated, and the file
    keeps its line endings.
-3. Adds `buzz-platform` to `plugins.enabled` (and removes it from
+3. Adds `kuzz-platform` to `plugins.enabled` (and removes it from
    `plugins.disabled`) through `hermes config get` / `hermes config set`.
 
 `$HERMES_HOME` defaults to `%LOCALAPPDATA%\hermes` on Windows and `~/.hermes`
@@ -313,23 +295,10 @@ token in its environment and with `KUZZ_SESSION_FILE` pointing at a file that
 does not exist, so a person's `kuzz auth login` on the same computer is never
 used.
 
-- **Paired:** the answer has `"mode":"paired"`. Every `kuzz` call then runs
-  the same way, and the CLI signs with the agent paired to this computer. The
-  owner comes from `KUZZ_OWNER_PUBKEY`, else the answer's `owner`.
-- **Not paired, legacy key configured:** `BUZZ_PRIVATE_KEY` (or
-  `BUZZ_CREDENTIALS_FILE`) is still set. The plugin passes that key, the
-  `BUZZ_AUTH_TAG` and the `BUZZ_RELAY_URL` to the CLI as before and logs a
-  warning to pair. This keeps an old setup running until it is paired. Once
-  Kuzz enforces device keys the relay refuses it, and `watch` stops with
-  `not_paired`.
-- **Neither:** the platform does not start.
-
-**After pairing, delete `BUZZ_PRIVATE_KEY` (and `BUZZ_AUTH_TAG`,
-`BUZZ_CREDENTIALS_FILE`) from `$HERMES_HOME/.env`.** The plugin no longer
-needs them, and Hermes passes `BUZZ_*` variables on to the agent's own
-terminal in `buzz` sessions, where the model could read the key. A pairing
-always wins over a leftover key: the key is only used when `whoami` without it
-is not paired.
+The answer must have `"mode":"paired"`. Every `kuzz` call then runs the same
+way, and the CLI signs with the agent paired to this computer. The owner comes
+from `KUZZ_OWNER_PUBKEY`, else the answer's `owner`. Without a pairing the
+platform does not start.
 
 The plugin also refuses to start if the CLI signs as the owner rather than as
 an agent.
@@ -337,32 +306,28 @@ an agent.
 ### Settings
 
 Each setting can come from the environment or from
-`gateway.platforms.buzz.extra` in `config.yaml`. The environment wins,
+`gateway.platforms.kuzz.extra` in `config.yaml`. The environment wins,
 except in a secondary Hermes profile, where `extra` does.
 
 | Variable | `extra` key | Default | Meaning |
 |---|---|---|---|
-| `KUZZ_OWNER_PUBKEY` | `owner` | from `whoami` | Overrides the owner. Without pairing, the owner in `BUZZ_AUTH_TAG` is used. |
-| `BUZZ_ALLOWED_USERS` (or `KUZZ_ALLOWED_USERS`) | `allowed_users` | empty | More people (npub or hex, comma-separated). |
-| `BUZZ_CHANNELS` | `channels` | every channel and DM | Answer only in these channel IDs. |
-| `BUZZ_HOME_CHANNEL` | `home_channel` | first of `BUZZ_CHANNELS` | Where cron deliveries go. |
-| `BUZZ_REQUIRE_MENTION` (or `KUZZ_REQUIRE_MENTION`) | `require_mention` | `true` | In channels, answer only @mentions and replies in the agent's threads. DMs never need a mention. |
-| `BUZZ_REPLY_IN_THREAD`, `BUZZ_REPLY_TO_MODE` | `reply_in_thread` | `true` | `false` posts replies flat instead of in a thread. |
-| `BUZZ_REACTION_ONLY_USERS` | `reaction_only_users` | empty | People who get only a seen reaction when they mention the agent. |
-| `KUZZ_CLI_PATH`, then `BUZZ_CLI_PATH` | `cli_path` | see above | Path to the CLI. |
+| `KUZZ_OWNER_PUBKEY` | `owner` | from `whoami` | Overrides the owner. |
+| `KUZZ_ALLOWED_USERS` | `allowed_users` | empty | More people (npub or hex, comma-separated). |
+| `KUZZ_CHANNELS` | `channels` | every channel and DM | Answer only in these channel IDs. |
+| `KUZZ_HOME_CHANNEL` | `home_channel` | first of `KUZZ_CHANNELS` | Where cron deliveries go. |
+| `KUZZ_REQUIRE_MENTION` | `require_mention` | `true` | In channels, answer only @mentions and replies in the agent's threads. DMs never need a mention. |
+| `KUZZ_REACTION_ONLY_USERS` | `reaction_only_users` | empty | People who get only a seen reaction when they mention the agent. |
+| `KUZZ_CLI_PATH` | `cli_path` | see above | Path to the CLI. |
 
-`BUZZ_RELAY_URL` only matters for the legacy key and the cursor file. If
-`KUZZ_RELAY_URL` is set, it must be the relay this computer was paired with:
-the CLI uses the pairing only for that relay. The
-`watch` command replaces `BUZZ_TRANSPORT` and `BUZZ_POLL_INTERVAL`, so they
-are ignored. `KUZZ_ALLOW_ALL_USERS` and `BUZZ_ALLOW_ALL_USERS` have no effect,
+If `KUZZ_RELAY_URL` is set, it must be the relay this computer was paired with:
+the CLI uses the pairing only for that relay.
+`KUZZ_ALLOW_ALL_USERS` and `BUZZ_ALLOW_ALL_USERS` have no effect,
 and the plugin removes them, together with any raw key or token variables,
 the token and device broker variables (`KUZZ_DEVICE_BROKER_URL`,
 `KUZZ_DEVICE_BROKER_SECRET`) and `KUZZ_DISABLE_STORED_SESSION` (which would
-also hide the pairing), from the environment of every `kuzz` process it starts
-(the legacy key is added back explicitly, and only in legacy mode). The
-session file it points `KUZZ_SESSION_FILE` at is
-`$HERMES_HOME/buzz/kuzz-no-login/session.json`, which nothing creates. On
+also hide the pairing), from the environment of every `kuzz` process it starts.
+The session file it points `KUZZ_SESSION_FILE` at is
+`$HERMES_HOME/kuzz/no-login/session.json`, which nothing creates. On
 Windows the plugin and `install.py` run only a real `.exe` for `kuzz`, `buzz`
 and `hermes`, never a `.cmd` or `.bat`, because `cmd.exe` would re-parse the
 arguments.

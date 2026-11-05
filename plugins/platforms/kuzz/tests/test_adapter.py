@@ -22,9 +22,9 @@ try:
     from gateway.platform_registry import PlatformEntry, platform_registry
 
     from kuzz import adapter as adapter_module
-    from kuzz.adapter import BuzzAdapter, register
+    from kuzz.adapter import KuzzAdapter, register
 except ImportError:  # Hermes Agent is not on the path
-    BuzzAdapter = None
+    KuzzAdapter = None
 
 EYES = "\U0001f440"
 NPUB = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
@@ -40,12 +40,12 @@ class _Ctx:
         entry = PlatformEntry(
             name=name, label=label, adapter_factory=adapter_factory, check_fn=check_fn,
             validate_config=validate_config, required_env=required_env or [], install_hint=install_hint,
-            source="plugin", plugin_name="buzz-platform", **kwargs,
+            source="plugin", plugin_name="kuzz-platform", **kwargs,
         )
         platform_registry.register(entry, scope=platform_registry.current_scope_key())
 
 
-@unittest.skipIf(BuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
+@unittest.skipIf(KuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
 class AdapterTest(unittest.TestCase):
     def setUp(self):
         # Hermes may still be writing gateway_state.json right after a disconnect.
@@ -56,8 +56,8 @@ class AdapterTest(unittest.TestCase):
     def _adapter(**extra):
         # Registered under the test's HERMES_HOME scope; also proves every kwarg is a PlatformEntry field.
         register(_Ctx())
-        adapter = BuzzAdapter(PlatformConfig(enabled=True, extra=dict(extra)))
-        assert adapter.platform == Platform("buzz")
+        adapter = KuzzAdapter(PlatformConfig(enabled=True, extra=dict(extra)))
+        assert adapter.platform == Platform("kuzz")
         return adapter
 
     def _fake(self, watch, **env):
@@ -117,7 +117,6 @@ class AdapterTest(unittest.TestCase):
 
             async def scenario():
                 self.assertTrue(await adapter.connect())
-                self.assertEqual(adapter._identity.mode, "paired")
                 self.assertEqual((await self._until_parked(adapter))[0], "signed_out")
                 self.assertTrue(adapter.has_fatal_error)
                 for chat, reply_to in [(CHANNEL, event_id(1)), (DM, event_id(4))]:
@@ -157,11 +156,11 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(
                 [call["args"] for call in fake.calls("messages", "send")],
                 [
-                    ["messages", "send", "--channel", CHANNEL, *thread, "--content", "-"],
+                    ["messages", "send", "--channel", CHANNEL, "--content", "-"],  # asked on the timeline: flat
                     ["messages", "send", "--channel", DM, "--content", "-"],
                     ["messages", "send", "--channel", CHANNEL, *thread, "--content", "-"],
                     ["messages", "send", "--channel", CHANNEL, *thread, "--content", "-"],
-                    ["messages", "send", "--channel", CHANNEL, *thread, "--file", str(media), "--content", "-"],
+                    ["messages", "send", "--channel", CHANNEL, "--file", str(media), "--content", "-"],
                 ],
             )
             seen = [c["args"] for c in fake.calls("reactions", "add")]
@@ -176,14 +175,14 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(adapter.config.extra["allow_from"], [OWNER])
             self.assertEqual(adapter.config.extra["group_allow_from"], [OWNER])
 
-            cursor = json.loads((Path(self._home.name) / "buzz" / "channel-cursors.json").read_text(encoding="utf-8"))
+            cursor = json.loads((Path(self._home.name) / "kuzz" / "channel-cursors.json").read_text(encoding="utf-8"))
             self.assertEqual(cursor["identity"], AGENT)
             self.assertEqual(cursor["channels"][DM]["chat_type"], "dm")
             self.assertIn(event_id(1), cursor["channels"][CHANNEL]["seen"])
 
     def test_saved_cursor_skips_seen_and_older_messages(self):
         last = 2_000_000_000
-        cursor_dir = Path(self._home.name) / "buzz"
+        cursor_dir = Path(self._home.name) / "kuzz"
         cursor_dir.mkdir()
         (cursor_dir / "channel-cursors.json").write_text(
             json.dumps({"identity": AGENT, "relay": "", "channels": {
@@ -194,10 +193,10 @@ class AdapterTest(unittest.TestCase):
             watch_line(1, mentions=[AGENT], created_at=last),  # seen before the restart
             watch_line(2, mentions=[AGENT], created_at=last - 120),  # older than the cursor allows
             watch_line(3, mentions=[AGENT], created_at=last + 1),  # new
-            watch_line(4, mentions=[AGENT], channel=DM),  # outside BUZZ_CHANNELS
+            watch_line(4, mentions=[AGENT], channel=DM),  # outside KUZZ_CHANNELS
         ]
         watch = [{"lines": inbound, "rc": 3, "stderr": "revoked"}]
-        with self._fake(watch, FAKE_KUZZ_OWNER=OWNER, BUZZ_CHANNELS=CHANNEL) as fake:
+        with self._fake(watch, FAKE_KUZZ_OWNER=OWNER, KUZZ_CHANNELS=CHANNEL) as fake:
             adapter = self._adapter()
             events = self._capture(adapter)
 
@@ -213,33 +212,24 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual(args[:3], ["messages", "watch", "--since"])
             self.assertLessEqual(int(args[3]), int(time.time()))
 
-    def test_legacy_key_until_paired(self):
-        tag = json.dumps(["auth", OWNER, "", "0" * 128])
-        inbound = [watch_line(1, author=NPUB_HEX, mentions=[AGENT])]
-        watch = [{"lines": inbound, "rc": 3, "stderr": "not_paired"}]
-        env = dict(BUZZ_PRIVATE_KEY=SECRET, BUZZ_AUTH_TAG=tag, BUZZ_RELAY_URL="wss://relay.example",
-                   KUZZ_ALLOWED_USERS=NPUB, BUZZ_ALLOWED_USERS="f" * 64, BUZZ_REPLY_IN_THREAD="false")
-        with self._fake(watch, **env) as fake:
+    def test_buzz_settings_belong_to_buzz(self):
+        env = dict(BUZZ_PRIVATE_KEY=SECRET, BUZZ_AUTH_TAG="tag", BUZZ_RELAY_URL="wss://buzz.example",
+                   BUZZ_CHANNELS="other", BUZZ_HOME_CHANNEL="buzz-home", BUZZ_ALLOWED_USERS="f" * 64,
+                   BUZZ_REACTION_ONLY_USERS="f" * 64, BUZZ_REQUIRE_MENTION="false", BUZZ_OWNER_PUBKEY="f" * 64)
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, **env) as fake:
             adapter = self._adapter()
-            events = self._capture(adapter)
+            self.assertEqual(adapter.channels, set())
+            self.assertEqual(adapter.home_channel, "")
+            self.assertTrue(adapter.require_mention)
+            self.assertEqual(adapter._reaction_only, set())
 
             async def scenario():
                 self.assertTrue(await adapter.connect())
-                self.assertEqual(adapter._identity.mode, "legacy")
-                self.assertEqual((await self._until_parked(adapter))[0], "not_paired")
-                result = await adapter.send(CHANNEL, "flat", reply_to=event_id(1))
-                self.assertTrue(result.success, result.error)
                 await adapter.disconnect()
 
             asyncio.run(scenario())
-            self.assertEqual([e.user_id for e in events], [NPUB_HEX])
-            self.assertEqual(adapter.config.extra["allow_from"], sorted([OWNER, NPUB_HEX]))
-            self.assertEqual(fake.calls("messages", "send")[0]["args"], ["messages", "send", "--channel", CHANNEL, "--content", "-"])
-            keyed = ["BUZZ_AUTH_TAG", "BUZZ_PRIVATE_KEY", "KUZZ_AUTH_TAG", "KUZZ_PRIVATE_KEY", "KUZZ_RELAY_URL"]
-            self.assertEqual(fake.calls("messages", "watch")[0]["env"], keyed)
-            self.assertEqual(fake.calls("auth", "whoami")[0]["env"], [], "the paired probe must run without keys")
-            log = (fake.dir / "calls.jsonl").read_text(encoding="utf-8")
-            self.assertNotIn(SECRET, log)
+            self.assertEqual(adapter.config.extra["allow_from"], [OWNER])
+            self.assertNotIn(SECRET, (fake.dir / "calls.jsonl").read_text(encoding="utf-8"))
 
     def _sender_run(self, fake, adapter, lines, *, settle=None):
         """Feed ``lines`` to a connected adapter; ``settle`` runs before the lookups finish."""
@@ -399,7 +389,7 @@ class AdapterTest(unittest.TestCase):
     def test_reaction_only_sender_still_gets_the_seen_reaction(self):
         lines = [watch_line(1, author=STRANGER, content="@Hermes hi", mentions=[AGENT])]
         with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[],
-                        BUZZ_REACTION_ONLY_USERS=STRANGER) as fake:
+                        KUZZ_REACTION_ONLY_USERS=STRANGER) as fake:
             adapter = self._adapter()
             events = self._capture(adapter)
             self._sender_run(fake, adapter, lines)
@@ -413,7 +403,6 @@ class AdapterTest(unittest.TestCase):
 
                 async def scenario():
                     self.assertTrue(await adapter.connect())
-                    self.assertEqual(adapter._identity.mode, "paired")
                     await adapter.disconnect()
 
                 asyncio.run(scenario())
@@ -436,15 +425,59 @@ class AdapterTest(unittest.TestCase):
                 self.assertEqual(fake.calls(), [])
             self.assertTrue(adapter.fatal_error_retryable)
 
-    def test_not_paired_and_no_key_fails_closed(self):
-        with self._fake([{"rc": 0}], BUZZ_RELAY_URL="wss://relay.example") as fake:
+    def test_not_paired_fails_closed_even_with_a_buzz_key(self):
+        with self._fake([{"rc": 0}], BUZZ_RELAY_URL="wss://relay.example", BUZZ_PRIVATE_KEY=SECRET) as fake:
             adapter = self._adapter()
             self.assertFalse(asyncio.run(adapter.connect()))
             self.assertEqual(adapter.fatal_error_code, "not_paired")
             self.assertEqual(fake.calls("messages", "watch"), [])
 
 
-@unittest.skipIf(BuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
+@unittest.skipIf(KuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
+class RegistrationTest(unittest.TestCase):
+    def _entry(self):
+        captured = {}
+
+        class Ctx:
+            def register_platform(self, **kwargs):
+                captured.update(kwargs)
+
+        register(Ctx())
+        return captured
+
+    def test_it_is_its_own_platform(self):
+        entry = self._entry()
+        self.assertEqual((entry["name"], entry["label"]), ("kuzz", "Kuzz"))
+        self.assertEqual(entry["cron_deliver_env_var"], "KUZZ_HOME_CHANNEL")
+        self.assertNotIn("allowed_users_env", entry)  # would deny the owner where core checks the list
+
+    def test_a_newer_hermes_gets_media_and_channel_targets(self):
+        entry = self._entry()
+        self.assertTrue(entry["standalone_send"].media)
+        self.assertFalse(entry["standalone_send"].all_sends)
+        channel = "01234567-89ab-cdef-0123-456789abcdef"
+        self.assertEqual(entry["target_ref_syntax_fn"](channel)[0], channel)
+
+    def test_an_older_hermes_loads_without_them(self):
+        with mock.patch.object(adapter_module, "fields", return_value=[]):
+            entry = self._entry()
+        self.assertNotIn("standalone_send", entry)
+        self.assertNotIn("target_ref_syntax_fn", entry)
+
+    def test_a_cli_alone_is_not_a_connection(self):
+        with FakeKuzz() as fake, mock.patch.dict("os.environ", {"KUZZ_CLI_PATH": str(fake.exe)}):
+            with mock.patch.dict("os.environ"):
+                import os
+
+                os.environ.pop("KUZZ_OWNER_PUBKEY", None)
+                self.assertFalse(adapter_module.validate_config(PlatformConfig(enabled=True)))
+                self.assertIsNone(adapter_module._env_enablement())
+            with mock.patch.dict("os.environ", {"KUZZ_OWNER_PUBKEY": OWNER}):
+                self.assertTrue(adapter_module.validate_config(PlatformConfig(enabled=True)))
+                self.assertEqual(adapter_module._env_enablement()["owner"], OWNER)
+
+
+@unittest.skipIf(KuzzAdapter is None, "Hermes Agent (gateway package) is not importable")
 class SecondaryProfileTest(unittest.TestCase):
     """Inside a multiplexed secondary profile: its own .env counts, the process env never does."""
 
@@ -452,7 +485,7 @@ class SecondaryProfileTest(unittest.TestCase):
 
     def scoped(self, secrets):
         self.env = mock.patch.dict("os.environ", {
-            "KUZZ_PAIRED_AGENT": "d" * 64, "KUZZ_OWNER_PUBKEY": "e" * 64, "BUZZ_HOME_CHANNEL": "default-home",
+            "KUZZ_PAIRED_AGENT": "d" * 64, "KUZZ_OWNER_PUBKEY": "e" * 64, "KUZZ_HOME_CHANNEL": "default-home",
         })
         patches = [self.env, mock.patch.object(adapter_module, "_profile_scoped", return_value=True),
                    mock.patch.object(adapter_module, "_get_secret", side_effect=lambda name, default=None: secrets.get(name, default)),
@@ -495,15 +528,15 @@ class SecondaryProfileTest(unittest.TestCase):
         self.assertTrue(identity.self_pubkey)
 
     def test_it_is_enabled_from_its_own_env_only(self):
-        self.scoped({"KUZZ_OWNER_PUBKEY": OWNER, "BUZZ_HOME_CHANNEL": "own-home"})
+        self.scoped({"KUZZ_OWNER_PUBKEY": OWNER, "KUZZ_HOME_CHANNEL": "own-home"})
         self.assertEqual(adapter_module._env_enablement(),
                          {"owner": OWNER, "home_channel": {"chat_id": "own-home", "name": "own-home"}})
-        self.assertEqual(adapter_module._setting(("BUZZ_HOME_CHANNEL",), {}, "home_channel"), "own-home")
+        self.assertEqual(adapter_module._setting(("KUZZ_HOME_CHANNEL",), {}, "home_channel"), "own-home")
 
     def test_a_profile_never_connected_is_not_enabled(self):
         self.scoped({})
         self.assertIsNone(adapter_module._env_enablement())
-        self.assertEqual(adapter_module._setting(("BUZZ_HOME_CHANNEL",), {"home_channel": "x"}, "home_channel"), "x")
+        self.assertEqual(adapter_module._setting(("KUZZ_HOME_CHANNEL",), {"home_channel": "x"}, "home_channel"), "x")
 
 
 if __name__ == "__main__":

@@ -6,6 +6,7 @@ Stdlib only; run with `python -m unittest discover -s plugins/platforms/kuzz/tes
 import asyncio
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
@@ -80,7 +81,7 @@ class EnvAndRedactionTest(unittest.TestCase):
         base.update(PATH="/bin", KUZZ_RELAY_URL="wss://relay", KUZZ_DEVICE_KEY_REF="ref")
         home = Path(tempfile.gettempdir()) / "hermes-home-test"
         env = kuzz_cli.child_env(base, home=home)
-        session_file = str(home / "buzz" / "kuzz-no-login" / "session.json")
+        session_file = str(home / "kuzz" / "no-login" / "session.json")
         self.assertEqual(
             env,
             {
@@ -392,6 +393,11 @@ class CliPathTest(unittest.TestCase):
     def test_configured_path_decides_alone(self):
         with FakeKuzz() as fake:
             self.assertEqual(kuzz_cli.resolve_cli_path("", str(fake.exe), "other"), str(fake.exe))
+            buzz = fake.dir / ("buzz.exe" if os.name == "nt" else "buzz")
+            shutil.copy2(fake.exe, buzz)
+            with mock.patch.dict(os.environ, {"PATH": str(fake.dir)}), \
+                    mock.patch.object(kuzz_cli, "find_kuzz", return_value=""):
+                self.assertEqual(kuzz_cli.resolve_cli_path(), "")
             self.assertEqual(kuzz_cli.resolve_cli_path(str(fake.dir / "missing.exe"), str(fake.exe)), "")
 
     @unittest.skipUnless(os.name == "nt", "Windows only")
@@ -413,30 +419,82 @@ class CliPathTest(unittest.TestCase):
 
 
 class InstallTest(unittest.TestCase):
-    def test_install_replaces_the_bundled_buzz_plugin(self):
+    def _install(self):
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("kuzz_install", PLUGIN / "install.py")
         install = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(install)
+        return install
+
+    def _old_folder(self, home, version):
+        folder = home / "plugins" / "buzz"
+        folder.mkdir(parents=True)
+        (folder / "plugin.yaml").write_text(f"name: buzz-platform\nversion: {version}\n", encoding="utf-8")
+        return folder
+
+    def test_an_earlier_kuzz_build_gives_buzz_its_slot_back(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "2.0.0-kuzz")
+            rc = install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
+            self.assertEqual(rc, 0)
+            self.assertFalse(folder.exists())
+            self.assertEqual([p.name for p in (home / "plugins").iterdir()], ["kuzz"])
+            [backup] = (home / "plugin-backups").iterdir()
+            self.assertTrue(backup.name.startswith("buzz-"))
+
+    def test_a_real_buzz_plugin_is_left_alone(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "1.0.0")
+            install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
+            self.assertTrue((folder / "plugin.yaml").is_file())
+            self.assertFalse((home / "plugin-backups").exists())
+            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["buzz", "kuzz"])
+
+    def test_enabling_swaps_the_old_name_only_after_retiring_it(self):
+        install = self._install()
+        writes = []
+
+        def config(_hermes, _env, action, _key, value=None):
+            if action == "set":
+                writes.append(json.loads(value))
+                return subprocess.CompletedProcess([], 0, "", "")
+            return subprocess.CompletedProcess([], 0, "", "")
+
+        for retired, enabled, expected in (
+            (True, ["buzz-platform", "x"], ["x", "kuzz-platform"]),
+            (False, ["buzz-platform"], ["buzz-platform", "kuzz-platform"]),
+        ):
+            with mock.patch.object(install, "find_hermes", return_value="hermes"), \
+                    mock.patch.object(install, "_hermes_config", side_effect=config), \
+                    mock.patch.object(install, "_read_list", side_effect=[enabled, []]):
+                self.assertTrue(install.enable_plugin(Path("home"), retired))
+            self.assertEqual(writes[-1], expected)
+
+    def test_install_copies_the_plugin(self):
+        install = self._install()
         manifest = (PLUGIN / "plugin.yaml").read_text(encoding="utf-8")
-        self.assertIn("name: buzz-platform\n", manifest)  # the bundled plugin's key: ours replaces it
-        self.assertEqual(install.PLUGIN_NAME, "buzz-platform")
+        self.assertIn("name: kuzz-platform\n", manifest)
+        self.assertEqual(install.PLUGIN_NAME, "kuzz-platform")
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".env").write_bytes(
                 b"OTHER=1\r\nKUZZ_OWNER_PUBKEY=old\r\nBUZZ_CLI_PATH=C:/old/buzz.exe\r\nexport KUZZ_OWNER_PUBKEY=older\r\n")
-            (home / "plugins" / "buzz").mkdir(parents=True)
-            (home / "plugins" / "buzz" / "stale.py").write_text("", encoding="utf-8")
+            (home / "plugins" / "kuzz").mkdir(parents=True)
+            (home / "plugins" / "kuzz" / "stale.py").write_text("", encoding="utf-8")
             rc = install.main(["--owner", NPUB, "--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
             self.assertEqual(rc, 0)
-            files = sorted(p.name for p in (home / "plugins" / "buzz").iterdir())
+            files = sorted(p.name for p in (home / "plugins" / "kuzz").iterdir())
             self.assertEqual(files, sorted(install.PLUGIN_FILES))
             # The old folder is kept, outside plugins/ so Hermes does not load it twice.
             [backup] = (home / "plugin-backups").iterdir()
-            self.assertTrue(backup.name.startswith("buzz-"))
+            self.assertTrue(backup.name.startswith("kuzz-"))
             self.assertTrue((backup / "stale.py").is_file())
-            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["buzz"])
+            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["kuzz"])
             # Every copy of a key is updated; CRLF stays CRLF.
             self.assertEqual(
                 (home / ".env").read_bytes().decode("utf-8"),
@@ -459,8 +517,8 @@ def load_install():
 class InstallHomeAndRestartTest(unittest.TestCase):
     def setUp(self):
         self.install = load_install()
-        # A Hermes whose config.yaml has no Buzz home yet; nothing real is run.
-        self.config = subprocess.CompletedProcess([], 1, "", "Config key not set: platforms.buzz.home_channel")
+        # A Hermes whose config.yaml has no Kuzz home yet; nothing real is run.
+        self.config = subprocess.CompletedProcess([], 1, "", "Config key not set: platforms.kuzz.home_channel")
         for name, kwargs in (("find_hermes", {"return_value": "hermes"}),
                              ("_hermes_config", {"side_effect": lambda *a: self.config})):
             patcher = mock.patch.object(self.install, name, **kwargs)
@@ -477,12 +535,12 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertEqual(call["args"], ["dms", "open", "--pubkey", NPUB_HEX])
             self.assertNotIn("KUZZ_PRIVATE_KEY", call["env"])
             self.assertIn("KUZZ_PAIRED_AGENT", call["env"])
-            self.assertEqual((home / ".env").read_text(encoding="utf-8"), "OTHER=1\nBUZZ_HOME_CHANNEL=dm-owner\n")
+            self.assertEqual((home / ".env").read_text(encoding="utf-8"), "OTHER=1\nKUZZ_HOME_CHANNEL=dm-owner\n")
 
     def test_an_existing_home_is_kept(self):
         with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake:
             home = Path(tmp)
-            (home / ".env").write_text("BUZZ_HOME_CHANNEL='chan-1'\n", encoding="utf-8")
+            (home / ".env").write_text("KUZZ_HOME_CHANNEL='chan-1'\n", encoding="utf-8")
             self.assertIsNone(self.install.set_home_channel(home, str(fake.exe), NPUB_HEX))
             self.config = subprocess.CompletedProcess([], 0, "chan-2\n", "")
             (home / ".env").unlink()
@@ -515,7 +573,7 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             restart.assert_called_once_with(home)
             env = (home / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={agent}", env)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", env)
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", env)
             with self.assertRaises(SystemExit):
                 self.install.main(argv[:2] + ["--agent", "nope"] + argv[4:])
 
@@ -525,14 +583,14 @@ class InstallHomeAndRestartTest(unittest.TestCase):
                 mock.patch.object(self.install, "restart_gateway", return_value=True):
             home = Path(tmp)
             base = ["--owner", NPUB, "--hermes-home", str(home), "--cli-path", str(fake.exe), "--no-restart"]
-            (home / ".env").write_text(f"KUZZ_PAIRED_AGENT={'a' * 64}\nBUZZ_HOME_CHANNEL=dm-old\n", encoding="utf-8")
+            (home / ".env").write_text(f"KUZZ_PAIRED_AGENT={'a' * 64}\nKUZZ_HOME_CHANNEL=dm-old\n", encoding="utf-8")
             # Same agent again: the home stays.
             self.assertEqual(self.install.main(base + ["--agent", "a" * 64]), 0)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-old", (home / ".env").read_text(encoding="utf-8"))
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-old", (home / ".env").read_text(encoding="utf-8"))
             # A new agent (re-connect): its own DM with the owner becomes the home.
             self.assertEqual(self.install.main(base + ["--agent", "b" * 64]), 0)
             env = (home / ".env").read_text(encoding="utf-8")
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-new", env)
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-new", env)
             self.assertNotIn("dm-old", env)
 
     def test_a_named_profile_uses_its_own_env_and_the_host_gateway(self):
@@ -543,9 +601,9 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             root = Path(tmp)
             profile = root / "profiles" / "work"
             profile.mkdir(parents=True)
-            (root / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_HOME_CHANNEL=root-home\n", encoding="utf-8")
-            (root / "plugins" / "buzz").mkdir(parents=True)
-            (root / "plugins" / "buzz" / "old.txt").write_text("old", encoding="utf-8")
+            (root / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nKUZZ_HOME_CHANNEL=root-home\n", encoding="utf-8")
+            (root / "plugins" / "kuzz").mkdir(parents=True)
+            (root / "plugins" / "kuzz" / "old.txt").write_text("old", encoding="utf-8")
             agent, default_agent = "b" * 64, "a" * 64
             with mock.patch.object(self.install, "restart_gateway", return_value=True) as restart:
                 self.assertEqual(self.install.main([
@@ -555,15 +613,15 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             restart.assert_called_once_with(profile)
             own = (profile / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={agent}", own)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", own)
-            self.assertTrue((profile / "plugins" / "buzz" / "plugin.yaml").exists())
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", own)
+            self.assertTrue((profile / "plugins" / "kuzz" / "plugin.yaml").exists())
             # The default profile's copy is refreshed with it.
-            self.assertTrue((root / "plugins" / "buzz" / "plugin.yaml").exists())
-            self.assertFalse((root / "plugins" / "buzz" / "old.txt").exists())
+            self.assertTrue((root / "plugins" / "kuzz" / "plugin.yaml").exists())
+            self.assertFalse((root / "plugins" / "kuzz" / "old.txt").exists())
             # The default profile keeps its agent and its home.
             default = (root / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={default_agent}", default)
-            self.assertIn("BUZZ_HOME_CHANNEL=root-home", default)
+            self.assertIn("KUZZ_HOME_CHANNEL=root-home", default)
             # The restart is the host's.
             run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
             self.assertTrue(self.install.restart_gateway(profile))
@@ -574,11 +632,11 @@ class InstallHomeAndRestartTest(unittest.TestCase):
                 mock.patch.object(self.install, "enable_plugin", return_value=True):
             profile = Path(tmp) / "profiles" / "work"
             profile.mkdir(parents=True)
-            (profile / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_HOME_CHANNEL=sources-home\n", encoding="utf-8")
+            (profile / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nKUZZ_HOME_CHANNEL=sources-home\n", encoding="utf-8")
             self.assertEqual(self.install.main([
                 "--owner", NPUB, "--agent", "b" * 64, "--hermes-home", str(profile),
                 "--cli-path", str(fake.exe), "--no-restart"]), 0)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", (profile / ".env").read_text(encoding="utf-8"))
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", (profile / ".env").read_text(encoding="utf-8"))
 
     def test_nothing_is_pinned_when_the_plugin_cant_be_enabled(self):
         with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake, \
