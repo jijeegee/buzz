@@ -10,7 +10,7 @@ use serde_json::{json, Value};
 
 use crate::client::KuzzClient;
 use crate::commands::parse_write_response;
-use crate::error::CliError;
+use crate::error::{classify_relay, CliError};
 use crate::FriendsCmd;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,13 +70,22 @@ fn parse_friend_list(raw: &str) -> Result<FriendList, CliError> {
     Ok(list)
 }
 
-async fn read_friend_list(client: &KuzzClient) -> Result<FriendList, CliError> {
-    let filter = json!({
+/// Every edit starts from this read, so it must not come from a replica: a
+/// list that lags would be republished over the real one.
+fn friend_list_filter(pubkey: &str) -> Value {
+    json!({
         "kinds": [3],
-        "authors": [client.pubkey().to_hex()],
+        "authors": [pubkey],
         "limit": 1,
-    });
-    parse_friend_list(&client.query(&filter).await?)
+        "consistency": "strong",
+    })
+}
+
+async fn read_friend_list(client: &KuzzClient) -> Result<FriendList, CliError> {
+    let raw = client
+        .query(&friend_list_filter(&client.pubkey().to_hex()))
+        .await?;
+    parse_friend_list(&raw)
 }
 
 /// True when the list changed. Naming a friend again renames them.
@@ -199,6 +208,10 @@ async fn cmd_remove(client: &KuzzClient, person: &str) -> Result<(), CliError> {
 }
 
 pub async fn dispatch(cmd: FriendsCmd, client: &KuzzClient) -> Result<(), CliError> {
+    run(cmd, client).await.map_err(classify_relay)
+}
+
+async fn run(cmd: FriendsCmd, client: &KuzzClient) -> Result<(), CliError> {
     match cmd {
         FriendsCmd::List { as_self: _ } => cmd_list(client).await,
         FriendsCmd::Add {
@@ -228,6 +241,11 @@ mod tests {
             ],
         }]);
         parse_friend_list(&raw.to_string()).unwrap()
+    }
+
+    #[test]
+    fn the_list_is_read_from_the_primary() {
+        assert_eq!(friend_list_filter(A)["consistency"], "strong");
     }
 
     #[test]
