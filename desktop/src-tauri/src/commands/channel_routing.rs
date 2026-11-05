@@ -168,6 +168,8 @@ pub async fn set_channel_routing(
             }
         }
         with_routing_store(&app, |records, runtimes| {
+            // One account for the star and the mode, whatever happens meanwhile.
+            let me = active_settings_owner(&app)?;
             if matches!(mode, ChannelRoutingMode::Host | ChannelRoutingMode::Lead) {
                 let pubkey = agent_pubkey
                     .as_deref()
@@ -189,7 +191,6 @@ pub async fn set_channel_routing(
                         return Err(reason.to_string());
                     }
                 }
-                let me = active_settings_owner(&app)?;
                 let changed = set_default_ai(records, Some(pubkey), |record| {
                     owned_by_viewer(visible_owner_hex(&app, record).as_deref(), Some(&me))
                 })?;
@@ -201,7 +202,7 @@ pub async fn set_channel_routing(
                     save_managed_agents(&app, records)?;
                 }
             }
-            save_channel_routing(&app, mode)?;
+            save_channel_routing(&app, &me, mode)?;
             // Residue only: a leftover file is inert and the launch sweep
             // retries, so a failed sweep must not fail the saved switch.
             if let Err(error) = lead_rules::sweep_stale_lead_rules(&app, runtimes) {

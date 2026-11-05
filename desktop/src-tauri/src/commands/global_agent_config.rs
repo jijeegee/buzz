@@ -48,15 +48,22 @@ pub fn get_global_agent_config(app: AppHandle) -> Result<GlobalAgentConfig, Stri
     load_active_agent_config(&app)
 }
 
-/// Whether `pubkey` signed in here since its agents were last checked.
+/// Whether `pubkey` signed in here since its agents were last checked. Never
+/// while the account cannot be used yet: `pubkey` is then the fallback key.
 #[tauri::command]
 pub fn get_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<bool, String> {
+    if active_settings_owner(&app).is_err() {
+        return Ok(false);
+    }
     agent_setup_pending(&app, &pubkey)
 }
 
 /// `pubkey`'s agent setup was checked, finished or put off until next sign-in.
 #[tauri::command]
 pub fn finish_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<(), String> {
+    if active_settings_owner(&app).is_err() {
+        return Ok(());
+    }
     clear_agent_setup_pending(&app, &pubkey)
 }
 

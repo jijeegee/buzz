@@ -84,9 +84,9 @@ pub(crate) struct LiveSettingsInputs<'a> {
     pub user_env: &'a BTreeMap<String, String>,
     /// The bound team's instructions (`effective_team_instructions`).
     pub team_instructions: Option<&'a str>,
-    /// The desktop-wide task thread trigger list (`task-threads.json`).
+    /// The owner's task thread trigger list (`task-threads.json`).
     pub task_threads: &'a str,
-    /// The desktop-wide new-session history budget (`context-history.json`).
+    /// The owner's new-session history budget (`context-history.json`).
     pub context_history: &'a str,
     pub session_policy: AcpSessionPolicy,
     pub routing_role: RoutingRole,

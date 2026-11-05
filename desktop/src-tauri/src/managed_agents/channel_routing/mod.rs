@@ -219,13 +219,13 @@ pub(crate) fn load_channel_routing_at(path: &Path) -> Result<ChannelRoutingMode,
     }
 }
 
-/// Persist the active account's mode with one atomic write.
+/// Persist `owner_hex`'s mode with one atomic write.
 pub fn save_channel_routing<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     mode: ChannelRoutingMode,
 ) -> Result<(), String> {
-    let owner = active_settings_owner(app)?;
-    save_channel_routing_at(&channel_routing_path(app, &owner)?, mode)
+    save_channel_routing_at(&channel_routing_path(app, owner_hex)?, mode)
 }
 
 pub(crate) fn save_channel_routing_at(path: &Path, mode: ChannelRoutingMode) -> Result<(), String> {
