@@ -5,7 +5,9 @@
 
 use std::sync::Arc;
 
-use kuzz_core::kind::{KIND_CONTACT_LIST, KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_WORKFLOW_DEF};
+use kuzz_core::kind::{
+    KIND_CONTACT_LIST, KIND_DM_ADD_MEMBER, KIND_DM_OPEN, KIND_MANAGED_AGENT, KIND_WORKFLOW_DEF,
+};
 use kuzz_core::tenant::TenantContext;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag};
 use uuid::Uuid;
@@ -1159,4 +1161,84 @@ async fn history_setting_and_quotes_of_hidden_messages() {
         vec![tag(&["h", &chat.to_string()]), tag(&["history", "all"])],
     );
     assert!(send(&state, &tenant, &owner, in_chat).await.is_err());
+}
+
+fn access_setting(keys: &Keys, agent: &Keys) -> Event {
+    let d = agent.public_key().to_hex();
+    let content = r#"{"respond_to":"anyone"}"#;
+    sign(keys, KIND_MANAGED_AGENT, content, vec![tag(&["d", &d])])
+}
+
+/// Only the owner writes a paired agent's access setting, also once it is
+/// disconnected. Mutations: drop the check, or use `connected_only` -> RED.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn only_the_owner_writes_a_paired_agents_setting() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, stranger, agent) = (Keys::generate(), Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &stranger, &agent]).await;
+    pair(&state, &owner, &agent).await;
+
+    for writer in [&stranger, &agent] {
+        let result = send(&state, &tenant, writer, access_setting(writer, &agent)).await;
+        assert!(rejection(result).contains("only the agent's owner"));
+    }
+    let written = send(&state, &tenant, &owner, access_setting(&owner, &agent))
+        .await
+        .expect("the owner writes");
+    assert!(written.accepted, "{}", written.message);
+
+    disconnect(&state, &agent).await;
+    let result = send(
+        &state,
+        &tenant,
+        &stranger,
+        access_setting(&stranger, &agent),
+    )
+    .await;
+    assert!(rejection(result).contains("only the agent's owner"));
+    let written = send(&state, &tenant, &owner, access_setting(&owner, &agent))
+        .await
+        .expect("the owner narrows after a disconnect");
+    assert!(written.accepted, "{}", written.message);
+}
+
+/// App agents have no pairing, and a `d` needn't be a key: both pass as before.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn other_managed_agent_records_are_untouched() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, agent) = (Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &agent]).await;
+
+    let written = send(&state, &tenant, &owner, access_setting(&owner, &agent))
+        .await
+        .expect("an app agent's record");
+    assert!(written.accepted, "{}", written.message);
+    let not_a_key = sign(
+        &owner,
+        KIND_MANAGED_AGENT,
+        "{}",
+        vec![tag(&["d", "not hex"])],
+    );
+    let written = send(&state, &tenant, &owner, not_a_key)
+        .await
+        .expect("any d");
+    assert!(written.accepted, "{}", written.message);
+
+    // A registered key that isn't paired is not a paired agent.
+    let (other, registered) = (Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&other, &registered]).await;
+    pair(&state, &owner, &registered).await;
+    sqlx::query("UPDATE key_registry SET role = 'agent' WHERE pubkey = $1")
+        .bind(registered.public_key().to_bytes().as_slice())
+        .execute(state.db.pool())
+        .await
+        .expect("role");
+    let written = send(&state, &tenant, &other, access_setting(&other, &registered))
+        .await
+        .expect("not paired");
+    assert!(written.accepted, "{}", written.message);
 }
