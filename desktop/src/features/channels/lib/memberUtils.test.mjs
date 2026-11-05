@@ -2,7 +2,11 @@ import { strict as assert } from "node:assert";
 import test from "node:test";
 
 import { canonicalNpub, truncateNpub } from "@/shared/lib/pubkey";
-import { compareMembersByRole, formatMemberName } from "./memberUtils.ts";
+import {
+  compareMembersByRole,
+  formatMemberName,
+  ownAgentPubkeys,
+} from "./memberUtils.ts";
 
 // Sequential-value pubkeys, the same shape as the members-sidebar e2e
 // roster fixture: every full npub shares the `npub1qqq…` head, so the
@@ -119,4 +123,31 @@ test("invalid keys keep the neutral surface and break ties deterministically", (
     "not-a-key",
     "zzz-definitely-not-a-key",
   ]);
+});
+
+test("own agents: this computer, owned on the relay, and paired, not others'", () => {
+  const me = "a".repeat(64);
+  const pubkey = (char) => char.repeat(64);
+  const own = ownAgentPubkeys(
+    [{ pubkey: pubkey("b") }],
+    [
+      { pubkey: pubkey("c"), ownerPubkey: me.toUpperCase() },
+      { pubkey: pubkey("d"), ownerPubkey: pubkey("9") },
+      { pubkey: pubkey("e"), ownerPubkey: null },
+    ],
+    [{ agents: [{ pubkey: pubkey("f").toUpperCase() }] }, { agents: null }, {}],
+    me,
+  );
+  assert.deepEqual([...own].sort(), [pubkey("b"), pubkey("c"), pubkey("f")]);
+  assert.deepEqual(
+    [
+      ...ownAgentPubkeys(
+        [],
+        [{ pubkey: pubkey("c"), ownerPubkey: null }],
+        undefined,
+        undefined,
+      ),
+    ],
+    [],
+  );
 });

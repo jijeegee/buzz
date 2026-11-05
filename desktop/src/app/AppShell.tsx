@@ -101,6 +101,7 @@ import { useApplyTemplate } from "@/features/channel-templates/useApplyTemplate"
 import { useAttachDefaultAi } from "@/features/agents/useAttachDefaultAi";
 import { joinAgentsAfterCreate } from "@/features/agents/lib/joinAgentsAfterCreate";
 import { useAutoAssignDeviceRobots } from "@/shared/api/useAutoAssignDeviceRobots";
+import { useAuthDevicesLiveUpdates } from "@/shared/api/useAuthDeviceNames";
 import { useOwnerDevicesLiveUpdates } from "@/shared/api/useOwnerDevices";
 import { relayClient } from "@/shared/api/relayClient";
 import { useIdentityQuery } from "@/shared/api/hooks";
@@ -277,6 +278,7 @@ export function AppShell() {
   usePresenceSubscription();
   useUserStatusSubscription();
   useCommunityEmojiLiveUpdates();
+  useAuthDevicesLiveUpdates();
   useOwnerDevicesLiveUpdates(deferredPubkey);
   useAutoAssignDeviceRobots(deferredPubkey);
   useMembershipNotifications(identityQuery.data?.pubkey);
