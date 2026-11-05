@@ -241,7 +241,7 @@ test("close resolves a pending update and sends CLOSE", async () => {
 
 const ROOM = "11111111-0000-4000-8000-000000000001";
 const TYPING = { kinds: [20002], "#h": [ROOM], limit: 0 };
-const GOALS = { kinds: [40110], "#h": [ROOM], limit: 0 };
+const GOALS = { kinds: [40111], "#h": [ROOM], limit: 0 };
 
 async function openRoom(filters = [TYPING, GOALS], onGone) {
   const client = new RelayClient();
@@ -267,7 +267,7 @@ test("room filters are live only and name the same single room", () => {
   assert.throws(() => assertRoomLiveFilters([]));
   assert.throws(() => assertRoomLiveFilters([{ kinds: [20002], limit: 0 }]));
   assert.throws(() =>
-    assertRoomLiveFilters([TYPING, { kinds: [40110], limit: 0 }]),
+    assertRoomLiveFilters([TYPING, { kinds: [40111], limit: 0 }]),
   );
   assert.throws(() =>
     assertRoomLiveFilters([TYPING, { ...GOALS, "#h": ["other"] }]),

@@ -19,7 +19,6 @@ import {
   goalForThread,
   goalOutline,
   goalPath,
-  goalProgress,
   goalRoot,
   threadGoalAccess,
 } from "../goalTree";
@@ -51,7 +50,7 @@ type ThreadGoalPanelViewProps = {
  * layer 1, sub-goal progress) that expands into the channel's whole goal
  * tree. The linked goal and its sub-goals can be edited there; the path above
  * is read-only and the rest is read-only and faded. Unlinked: a picker that links
- * the thread to a goal, or adds a new goal and links it in one revision.
+ * the thread to a goal, or adds a new goal and links it in one event.
  * Renders nothing when the conversation has no goals.
  */
 export function ThreadGoalPanelView({
@@ -136,7 +135,7 @@ export function ThreadGoalPanelView({
   const path = goalPath(tree, goal.id);
   // The layer 1 goal is already in the channel header; show the rest.
   const shown = path.length > 1 ? path.slice(1) : path;
-  const { done, total } = goalProgress(tree, goal.id);
+  const { done, total } = goal.progress;
   const closed = goal.status === "done" || goal.status === "dropped";
 
   return (
@@ -214,7 +213,7 @@ export function ThreadGoalPanelView({
 
 /**
  * Pick the goal a thread (or one message) works on: link to a goal, add a
- * new goal under one and link to it (one revision), or unlink. Without a
+ * new goal under one and link to it (one event), or unlink. Without a
  * `scope` every goal is offered.
  */
 export function GoalLinkPicker({
@@ -272,7 +271,8 @@ export function GoalLinkPicker({
   return (
     <div data-testid="thread-goal-picker">
       {goalOutline(tree).map(({ layer, node }) => {
-        const canLink = scope?.canLink(node.id, layer) ?? true;
+        // Layer 1 is the room's goal, never a thread's.
+        const canLink = layer >= 2 && (scope?.canLink(node.id, layer) ?? true);
         const canAddUnder = scope?.canAddUnder(node.id) ?? true;
         if (!canLink && !canAddUnder) return null;
         return (

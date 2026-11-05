@@ -38,17 +38,52 @@ Future<void> addChildGoal(
   );
 }
 
+/// Sets [node]'s status, asking first when that deletes the tasks below it.
+Future<void> setGoalStatus(
+  BuildContext context,
+  WidgetRef ref, {
+  required String channelId,
+  required GoalNode node,
+  required GoalStatus status,
+}) async {
+  final actions = ref.read(goalActionsProvider);
+  if (node.finishDeletesTasks(status)) {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: Text(l10n.goalsFinishConfirmTitle),
+        content: Text(l10n.goalsFinishConfirmBody),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.goalsCancel),
+          ),
+          TextButton(
+            key: ValueKey('goal-finish-confirm-${node.id}'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(status.label(l10n)),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+  }
+  await runGoalAction(
+    context,
+    () => actions.apply(channelId, UpdateGoal(id: node.id, status: status)),
+  );
+}
+
 /// Edit, set status, add a sub-goal, or remove [node] (on [layer]).
 Future<void> showGoalActions(
   BuildContext context,
   WidgetRef ref, {
   required String channelId,
-  required GoalTree tree,
   required GoalNode node,
   required int layer,
 }) async {
   final actions = ref.read(goalActionsProvider);
-  final subGoals = tree.subtreeIds(node.id).length - 1;
   final l10n = context.l10n;
   final choice = await showKuzzModalBottomSheet<String>(
     context: context,
@@ -78,9 +113,7 @@ Future<void> showGoalActions(
           ListTile(
             leading: Icon(LucideIcons.trash2, color: context.colors.error),
             title: Text(
-              subGoals > 0
-                  ? l10n.goalsRemoveWithSubGoals(subGoals)
-                  : l10n.goalsRemove,
+              l10n.goalsRemove,
               style: TextStyle(color: context.colors.error),
             ),
             onTap: () => Navigator.pop(sheetContext, 'remove'),
@@ -129,11 +162,7 @@ Future<void> showGoalActions(
         context: context,
         builder: (dialogContext) => AlertDialog(
           title: Text(l10n.goalsRemoveConfirmTitle),
-          content: Text(
-            subGoals > 0
-                ? l10n.goalsRemoveConfirmSubGoals(subGoals)
-                : l10n.goalsRemoveConfirmBody,
-          ),
+          content: Text(l10n.goalsRemoveConfirm),
           actions: [
             TextButton(
               onPressed: () => Navigator.pop(dialogContext, false),
@@ -147,20 +176,20 @@ Future<void> showGoalActions(
         ),
       );
       if (confirmed != true || !context.mounted) return;
+      // Quiet and finished sub-goals are not in this list, so only the relay
+      // knows what is below.
       await runGoalAction(
         context,
-        () => actions.apply(
-          channelId,
-          RemoveGoal(id: node.id, recursive: subGoals > 0),
-        ),
+        () =>
+            actions.apply(channelId, RemoveGoal(id: node.id, recursive: true)),
       );
     default:
-      await runGoalAction(
+      await setGoalStatus(
         context,
-        () => actions.apply(
-          channelId,
-          UpdateGoal(id: node.id, status: GoalStatus.parse(choice)),
-        ),
+        ref,
+        channelId: channelId,
+        node: node,
+        status: GoalStatus.parse(choice),
       );
   }
 }
