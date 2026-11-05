@@ -15,6 +15,7 @@ from unittest import mock
 
 from _support import AGENT, CHANNEL, DM, OWNER, STRANGER, FakeKuzz, event_id, watch_line
 
+from kuzz import kuzz_cli
 from kuzz.kuzz_cli import parse_watch_line
 
 try:
@@ -30,6 +31,9 @@ EYES = "\U0001f440"
 NPUB = "npub180cvv07tjdrrgpa0j7j7tmnyl2yr6yr7l8j4s3evf6u64th6gkwsyjh6w6"
 NPUB_HEX = "3bf0c63fcb93463407af97a5e5ee64fa883d107ef9e558472c4eb9aaaefa459d"
 SECRET = "f" * 64  # a stand-in legacy key; must never appear in calls' args or stdin
+SIBLING = "d" * 64
+LISTED = "e" * 64
+ANYONE = {"mode": "anyone", "allowlist": []}
 
 
 class _Ctx:
@@ -209,8 +213,8 @@ class AdapterTest(unittest.TestCase):
             self.assertEqual([e.message_id for e in events], [event_id(3)])
             # The restart catches up from the cursor (capped at now: these fixtures are in the future).
             args = fake.calls("messages", "watch")[0]["args"]
-            self.assertEqual(args[:3], ["messages", "watch", "--since"])
-            self.assertLessEqual(int(args[3]), int(time.time()))
+            self.assertEqual(args[:3] + args[4:5], ["messages", "watch", "--access-owner", "--since"])
+            self.assertLessEqual(int(args[5]), int(time.time()))
 
     def test_buzz_settings_belong_to_buzz(self):
         env = dict(BUZZ_PRIVATE_KEY=SECRET, BUZZ_AUTH_TAG="tag", BUZZ_RELAY_URL="wss://buzz.example",
@@ -385,6 +389,170 @@ class AdapterTest(unittest.TestCase):
             asyncio.run(scenario())
             self.assertEqual(len(events), 1)
             self.assertIn(event_id(1), adapter._channel(CHANNEL)["seen"])
+
+    def _heard(self, access, lines, *, prepare=None, **env):
+        """The events delivered from ``lines`` under ``access``. ``prepare`` gets the connected adapter."""
+        now = int(time.time())
+        # Each run starts clean, or the cursor of the one before would drop these same ids.
+        Path(self._home.name, "kuzz", "channel-cursors.json").unlink(missing_ok=True)
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[SIBLING], **env) as fake:
+            adapter = self._adapter()
+            events = self._capture(adapter)
+            self._keep_access(adapter)
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                adapter._on_access(kuzz_cli.parse_access_line(json.dumps({"type": "access", **access})))
+                if prepare:
+                    prepare(adapter)
+                for line in lines:
+                    while adapter._admissions:
+                        await asyncio.sleep(0.01)
+                    await adapter._on_message(parse_watch_line(json.dumps({"created_at": now, **line})))
+                while adapter._admissions:
+                    await asyncio.sleep(0.01)
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.calls = fake.calls()
+        return events
+
+    @staticmethod
+    def _keep_access(adapter):
+        """The fake watch ends and restarts: without this each start resets the setting. -> The real hook."""
+        reset = adapter._on_watch_start
+
+        async def keep():
+            pass
+
+        adapter._on_watch_start = keep
+        return reset
+
+    def _said_now(self, n):
+        return {**self._said(n), "created_at": int(time.time())}
+
+    @staticmethod
+    def _said(n, author=STRANGER, **overrides):
+        line = watch_line(n, author=author, content=f"m{n}", mentions=[AGENT], **overrides)
+        del line["created_at"]
+        return line
+
+    def test_who_is_heard_in_each_mode(self):
+        modes = {
+            "owner-only": ({"mode": "owner-only", "allowlist": []}, {"owner", "sibling"}),
+            "allowlist": ({"mode": "allowlist", "allowlist": [LISTED]}, {"owner", "sibling", "listed"}),
+            "anyone": ({"mode": "anyone", "allowlist": []}, {"owner", "sibling", "listed", "stranger"}),
+        }
+        senders = {"owner": OWNER, "sibling": SIBLING, "listed": LISTED, "stranger": STRANGER}
+        for mode, (access, heard) in modes.items():
+            with self.subTest(mode):
+                lines = [{**self._said(n, author), "content": f"@Hermes {who}"} for n, (who, author) in enumerate(senders.items(), 1)]
+                events = self._heard(access, lines)
+                self.assertEqual({e.text for e in events}, heard)
+                control = {e.text: e.allow_gateway_control for e in events}
+                self.assertTrue(control.pop("owner") and control.pop("sibling"))
+                self.assertFalse(any(control.values()), "other people never get gateway control")
+
+    def test_other_people_must_mention_even_without_require_mention(self):
+        line = self._said(1)
+        line["mentions"] = []
+        self.assertEqual(self._heard(ANYONE, [line], KUZZ_REQUIRE_MENTION="false"), [])
+
+    def test_a_dm_stays_closed_to_other_people(self):
+        for name, env in (("dm", {"FAKE_KUZZ_CHANNEL_TYPE": "dm"}), ("no type", {"FAKE_KUZZ_CHANNEL_TYPE": ""}),
+                          ("failed", {"FAKE_KUZZ_CHANNEL_TYPE": "fail"}), ("workflow", {"FAKE_KUZZ_CHANNEL_TYPE": "workflow"})):
+            with self.subTest(name):
+                # The DM list doesn't know this channel: a hidden DM, or past its limit.
+                self.assertEqual(self._heard(ANYONE, [self._said(1)], **env), [])
+        self.assertEqual(self._heard(ANYONE, [self._said(1, channel=DM)], FAKE_KUZZ_CHANNEL_TYPE="dm"), [])
+
+    def test_a_channel_type_is_looked_up_once_and_a_failure_again(self):
+        self.assertEqual(len(self._heard(ANYONE, [self._said(1), self._said(2)])), 2)
+        self.assertEqual(sum(call["args"][:2] == ["channels", "get"] for call in self.calls), 1)
+        self._heard(ANYONE, [self._said(1), self._said(2)], FAKE_KUZZ_CHANNEL_TYPE="fail")
+        self.assertEqual(sum(call["args"][:2] == ["channels", "get"] for call in self.calls), 2)
+
+    def test_allowed_users_only_narrows(self):
+        self.assertEqual({e.text for e in self._heard(ANYONE, [self._said(1, LISTED), self._said(2)], KUZZ_ALLOWED_USERS=LISTED)},
+                         {"m1"})
+        owner_only = {"mode": "owner-only", "allowlist": []}
+        self.assertEqual(self._heard(owner_only, [self._said(1, LISTED)], KUZZ_ALLOWED_USERS=LISTED), [])
+        self.assertEqual(self._heard({"mode": "allowlist", "allowlist": []}, [self._said(1, LISTED)],
+                                     KUZZ_ALLOWED_USERS=LISTED), [])
+
+    def test_allowed_users_with_only_typos_lets_nobody_in(self):
+        self.assertEqual(self._heard(ANYONE, [self._said(1)], KUZZ_ALLOWED_USERS="npub1typo"), [])
+
+    def test_a_burst_shares_one_channel_type_lookup(self):
+        def burst(adapter):
+            first = adapter._on_message
+
+            async def together(msg):
+                await first(msg)
+                await first(parse_watch_line(json.dumps(self._said_now(2))))
+
+            adapter._on_message = together
+
+        self.assertEqual(len(self._heard(ANYONE, [self._said(1)], prepare=burst)), 2)
+        self.assertEqual(sum(call["args"][:2] == ["channels", "get"] for call in self.calls), 1)
+
+    def test_a_late_message_from_other_people_is_dropped(self):
+        late = int(time.time()) - adapter_module._OTHERS_MAX_AGE_SECS - 30
+        lines = [{**self._said(1), "created_at": late}, {**self._said(2, OWNER), "created_at": late},
+                 {**self._said(3, SIBLING), "created_at": late}]
+        self.assertEqual({e.text for e in self._heard(ANYONE, lines)}, {"m2", "m3"})
+
+    def test_narrowing_during_a_lookup_wins(self):
+        def narrow_in_the_lookup(adapter):
+            async def lookup(_msg):
+                adapter._on_access(kuzz_cli.WatchAccess())
+                return True
+
+            adapter._in_open_channel = lookup
+
+        self.assertEqual(self._heard(ANYONE, [self._said(1)], prepare=narrow_in_the_lookup), [])
+
+    def test_a_setting_applies_live_and_a_new_watch_starts_owner_only(self):
+        async def scenario(adapter, events, watch_start):
+            self.assertTrue(await adapter.connect())
+            adapter._on_access(kuzz_cli.WatchAccess("anyone"))
+            await watch_start()
+            self.assertEqual(adapter._access, kuzz_cli.WatchAccess())
+            await adapter._on_message(parse_watch_line(json.dumps({**self._said(1), "created_at": int(time.time())})))
+            while adapter._admissions:
+                await asyncio.sleep(0.01)
+            self.assertEqual(events, [])
+            adapter._on_access(kuzz_cli.WatchAccess("anyone"))
+            await adapter._on_message(parse_watch_line(json.dumps({**self._said(2), "created_at": int(time.time())})))
+            while adapter._admissions:
+                await asyncio.sleep(0.01)
+            self.assertEqual([e.text for e in events], ["m2"])
+            await adapter.disconnect()
+
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[]):
+            adapter = self._adapter()
+            asyncio.run(scenario(adapter, self._capture(adapter), self._keep_access(adapter)))
+
+    def test_older_hermes_keeps_other_people_out(self):
+        with mock.patch.object(adapter_module, "_CAN_LIMIT_CONTROL", False):
+            self.assertEqual({e.text for e in self._heard(ANYONE, [self._said(1), self._said(2, OWNER)])}, {"m2"})
+
+    def test_a_sender_in_the_future_leaves_the_cursor_at_now(self):
+        ahead = int(time.time()) + 900
+        before = int(time.time())
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_SAME_OWNER=[]):
+            adapter = self._adapter()
+            self._capture(adapter)
+
+            async def scenario():
+                self.assertTrue(await adapter.connect())
+                await adapter._on_message(parse_watch_line(json.dumps({**self._said(1), "created_at": ahead})))
+                while adapter._admissions:
+                    await asyncio.sleep(0.01)
+                await adapter.disconnect()
+
+            asyncio.run(scenario())
+            self.assertLess(adapter._channel(CHANNEL)["last_ts"], before + 60)
 
     def test_reaction_only_sender_still_gets_the_seen_reaction(self):
         lines = [watch_line(1, author=STRANGER, content="@Hermes hi", mentions=[AGENT])]

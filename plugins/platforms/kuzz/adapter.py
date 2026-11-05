@@ -17,8 +17,11 @@ Replies: a message in a thread is answered in that thread, anything else stays f
 the same as app agents. Hermes threads progress lines only for platforms it names, so
 this adapter never opens a thread itself.
 
-Access: the owner (``KUZZ_OWNER_PUBKEY``, else the paired owner) is always allowed;
-KUZZ_ALLOWED_USERS adds people. There is no allow-all: KUZZ_ALLOW_ALL_USERS is ignored
+Access: this adapter is the only gate. The owner (``KUZZ_OWNER_PUBKEY``, else the paired
+owner) and the owner's other agents are always allowed. Other people pass by the owner's
+setting, which the watch reports and which starts as owner-only on every watch: they must
+@mention the agent in a stream or forum, never a DM, and get no gateway control.
+KUZZ_ALLOWED_USERS narrows that setting and adds nobody. KUZZ_ALLOW_ALL_USERS is ignored
 and removed from every child's environment. Keys are never logged.
 """
 
@@ -41,7 +44,7 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 
 from . import kuzz_cli
-from .kuzz_cli import WatchMessage, WatchSupervisor, normalize_pubkey
+from .kuzz_cli import WatchAccess, WatchMessage, WatchSupervisor, normalize_pubkey
 
 try:
     from gateway.platforms._shared import profile_scoped as _profile_scoped
@@ -90,6 +93,13 @@ CONNECT_UPDATE_HOLD = 20.0
 _SAME_OWNER_TIMEOUT_SECS = 3.0
 _SAME_OWNER_HIT_SECS = 300.0
 _SAME_OWNER_MISS_SECS = 60.0
+# `kuzz channels get`: its time limit. The answer decides only for people other than the owner's.
+_CHANNEL_TYPE_TIMEOUT_SECS = 3.0
+_OPEN_CHANNEL_TYPES = ("stream", "forum")
+# Other people's messages older than this are dropped: a catch-up must not judge them by a later setting.
+_OTHERS_MAX_AGE_SECS = 120
+# Older Hermes can't keep a message from running commands, so other people stay out there.
+_CAN_LIMIT_CONTROL = "allow_gateway_control" in {item.name for item in fields(MessageEvent)}
 _CURSOR_SAVE_SECS = 5.0
 # `kuzz messages edit` takes the text as an argument (no stdin); stay under the Windows limit.
 _EDIT_ARG_LIMIT = 24000
@@ -223,9 +233,9 @@ class KuzzAdapter(BasePlatformAdapter):
         self.channels: Set[str] = set(_csv(_setting(("KUZZ_CHANNELS",), self._extra, "channels", [])))
         self.home_channel = str(_setting(("KUZZ_HOME_CHANNEL",), self._extra, "home_channel", "") or "").strip()
         self.require_mention = _flag(_setting(("KUZZ_REQUIRE_MENTION",), self._extra, "require_mention"), True)
-        self._allowed_extra = _pubkeys(
-            _csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
-        )
+        limit_to = _csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
+        # Set but with no valid key, it limits to nobody: a typo must not open the agent.
+        self._limit_to: Optional[Set[str]] = _pubkeys(limit_to) if limit_to else None
         self._reaction_only = _pubkeys(_csv(_setting(("KUZZ_REACTION_ONLY_USERS",), self._extra, "reaction_only_users", [])))
         self._identity: Optional[Identity] = None
         self._cli: List[str] = []
@@ -248,6 +258,10 @@ class KuzzAdapter(BasePlatformAdapter):
         self._same_owner_answers = _Bounded(_ID_CAP)
         self._same_owner_lookups: Dict[str, asyncio.Task] = {}
         self._admissions: Set[asyncio.Task] = set()
+        self._access = WatchAccess()
+        # channel -> its type; failed lookups are not kept.
+        self._channel_types = _Bounded(_ID_CAP)
+        self._channel_type_lookups: Dict[str, asyncio.Task] = {}
         self._sync_allowlist()
 
     @property
@@ -270,7 +284,7 @@ class KuzzAdapter(BasePlatformAdapter):
 
     @property
     def allowed_pubkeys(self) -> Set[str]:
-        return ({self.owner} if self.owner else set()) | self._allowed_extra
+        return {self.owner} if self.owner else set()
 
     def _sync_allowlist(self) -> None:
         """Mirror the allowlist into ``config.extra`` so the gateway's own check agrees with ours."""
@@ -309,8 +323,8 @@ class KuzzAdapter(BasePlatformAdapter):
                 "wrong_identity", "The kuzz CLI acts as the owner, not as an agent. Pair the agent with the `kuzz pair` command from the app (Connect external agent)."
             )
         self._identity = identity
-        if not self.allowed_pubkeys:
-            return self._fail("owner_missing", "No owner or allowed user is known, so nobody could talk to the agent.")
+        if not self.owner:
+            return self._fail("owner_missing", "No owner is known, so nobody could talk to the agent.")
         self._sync_allowlist()
         if not self._acquire_lock():
             return self._fail("lock_conflict", "This agent is already running in another Hermes profile.")
@@ -323,6 +337,7 @@ class KuzzAdapter(BasePlatformAdapter):
             self._on_message,
             on_park=self._on_park,
             on_start=self._on_watch_start,
+            on_access=self._on_access,
             env_factory=self._env,
             args_factory=self._watch_args,
         )
@@ -344,7 +359,7 @@ class KuzzAdapter(BasePlatformAdapter):
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
         # After the watch: its last lines may have started admissions. A cancelled one is replayed.
-        pending = (*self._admissions, *self._same_owner_lookups.values())
+        pending = (*self._admissions, *self._same_owner_lookups.values(), *self._channel_type_lookups.values())
         for waiting in pending:
             waiting.cancel()
         await asyncio.gather(*pending, return_exceptions=True)
@@ -363,19 +378,25 @@ class KuzzAdapter(BasePlatformAdapter):
         await self._notify_fatal_error()
 
     def _watch_args(self) -> List[str]:
-        """``--since`` from the newest message seen (cursor file or this run), so a restart
-        catches up on what arrived while Hermes was down. Capped at a day; never in the future."""
+        """``--access-owner``, and ``--since`` from the newest message seen (cursor file or this
+        run), so a restart catches up on what arrived while Hermes was down. Capped at a day; never
+        in the future."""
+        access = ["--access-owner", str(self.owner)]
         newest = max(
             [s["last_ts"] for s in self._channel_state.values()] + [r["last_ts"] for r in self._restored.values()] + [0]
         )
         if not newest:
-            return []
+            return access
         now = int(time.time())
         since = min(max(int(newest) - _REPLAY_SLACK_SECS, now - _MAX_CATCH_UP_SECS), now)
-        return ["--since", str(since)]
+        return [*access, "--since", str(since)]
 
     async def _on_watch_start(self) -> None:
+        self._access = WatchAccess()  # before this watch's first line
         await self._refresh_dms(force=True)
+
+    def _on_access(self, access: WatchAccess) -> None:
+        self._access = access
 
     def _acquire_lock(self) -> bool:
         identity = self._identity.self_pubkey if self._identity and self._identity.self_pubkey else f"cli:{self._cli[0]}"
@@ -527,7 +548,8 @@ class KuzzAdapter(BasePlatformAdapter):
         if msg.id in state["seen"]:
             return
         state["seen"].put(msg.id)
-        state["last_ts"] = max(state["last_ts"], msg.created_at)
+        # Senders pick created_at: one in the future must not cost the owner's messages at restart.
+        state["last_ts"] = max(state["last_ts"], min(msg.created_at, int(time.time())))
         self._roots.put(msg.id, msg.thread_root)
         try:
             await self._handle(msg, state)
@@ -546,31 +568,74 @@ class KuzzAdapter(BasePlatformAdapter):
             return
         if not self._is_addressed(msg, is_dm):
             return
-        same_owner = self._known_same_owner(msg.author)
-        if same_owner is None:
-            # A CLI call: the read loop goes on, or one slow lookup would hold back the owner's messages.
-            task = asyncio.ensure_future(self._admit(msg, state, is_dm))
-            self._admissions.add(task)
-            task.add_done_callback(self._admissions.discard)
-        elif same_owner:
+        if self._known_same_owner(msg.author):
             await self._deliver(msg, state, is_dm)
-        else:
-            await self._refuse(msg)
+            return
+        # CLI calls: the read loop goes on, or one slow lookup would hold back the owner's messages.
+        task = asyncio.ensure_future(self._admit(msg, state, is_dm))
+        self._admissions.add(task)
+        task.add_done_callback(self._admissions.discard)
 
     async def _admit(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
         try:
             try:
                 same_owner = await self._same_owner(msg.author)
+                # Read the setting again after the lookup: narrowing it meanwhile must win.
+                other = (
+                    not same_owner
+                    and self._setting_admits(msg)
+                    and await self._in_open_channel(msg)
+                    and self._setting_admits(msg)
+                )
             except asyncio.CancelledError:
                 # Not answered yet, so the replay brings it back. After this point it must not.
                 state["seen"].pop(msg.id, None)
                 raise
             if same_owner:
                 await self._deliver(msg, state, is_dm)
+            elif other:
+                await self._deliver(msg, state, is_dm, control=False)
             else:
                 await self._refuse(msg)
         except Exception:
             logger.exception("Kuzz: could not admit %s", msg.id[:12])
+
+    def _setting_admits(self, msg: WatchMessage) -> bool:
+        """Whether someone who isn't the owner's may be heard here, by the owner's setting."""
+        access = self._access
+        admitted = access.mode == "anyone" or (access.mode == "allowlist" and msg.author in access.allowlist)
+        return (
+            admitted
+            and (self._limit_to is None or msg.author in self._limit_to)
+            and self._mentions_me(msg)
+            and msg.created_at >= time.time() - _OTHERS_MAX_AGE_SECS
+            and _CAN_LIMIT_CONTROL
+        )
+
+    async def _in_open_channel(self, msg: WatchMessage) -> bool:
+        """A stream or forum, by the relay. No answer counts as no: a DM stays closed to other people."""
+        channel = msg.channel
+        channel_type = self._channel_types.get(channel)
+        if channel_type is None:
+            lookup = self._channel_type_lookups.get(channel)
+            if lookup is None:
+                lookup = asyncio.ensure_future(self._lookup_channel_type(channel))
+                self._channel_type_lookups[channel] = lookup
+                lookup.add_done_callback(lambda _: self._channel_type_lookups.pop(channel, None))
+            channel_type = await lookup
+        return channel_type in _OPEN_CHANNEL_TYPES
+
+    async def _lookup_channel_type(self, channel: str) -> Optional[str]:
+        args = ["channels", "get", "--channel", channel]
+        try:
+            rc, out, _err = await kuzz_cli.run_cli(self._cli, args, timeout=_CHANNEL_TYPE_TIMEOUT_SECS, env=self._env())
+        except OSError:
+            return None
+        channel_type = _json_dict(out).get("channel_type") if rc == 0 else None
+        if not isinstance(channel_type, str) or not channel_type:
+            return None
+        self._channel_types.put(channel, channel_type)
+        return channel_type
 
     async def _refuse(self, msg: WatchMessage) -> None:
         if msg.author in self._reaction_only and self._mentions_me(msg):
@@ -583,6 +648,9 @@ class KuzzAdapter(BasePlatformAdapter):
 
     async def _same_owner(self, author: str) -> bool:
         """Whether the relay says ``author`` shares our owner. A burst from one sender shares a lookup."""
+        known = self._known_same_owner(author)
+        if known is not None:
+            return known
         lookup = self._same_owner_lookups.get(author)
         if lookup is None:
             lookup = asyncio.ensure_future(self._lookup_same_owner(author))
@@ -605,7 +673,7 @@ class KuzzAdapter(BasePlatformAdapter):
         self._same_owner_answers.put(author, (same_owner, time.monotonic() + keep))
         return same_owner
 
-    async def _deliver(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
+    async def _deliver(self, msg: WatchMessage, state: dict, is_dm: bool, *, control: bool = True) -> None:
         if not self._is_addressed(msg, is_dm) or not self._message_handler:
             return
         user_name = msg.author_name or msg.author[:8]
@@ -634,6 +702,8 @@ class KuzzAdapter(BasePlatformAdapter):
             message_id=msg.id,
             timestamp=datetime.fromtimestamp(msg.created_at) if msg.created_at else datetime.now(),
         )
+        if not control:
+            event.allow_gateway_control = False
         await self.handle_message(event)
         # "Seen" reaction, as the bundled plugin does.
         await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)

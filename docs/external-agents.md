@@ -110,6 +110,18 @@ after a restart, pass the last `created_at` you saw.
 | `thread_root` | string or null | Id of the thread's first message, or null for a top-level message. |
 | `mentions` | array of strings | Pubkeys @mentioned in the message. |
 
+With `--access-owner <hex>`, `watch` also prints the agent's access setting: a
+`kind:30177` for this agent signed by that owner. The line comes before any
+message of a connection, then every five minutes and on a live change. It has no
+`id`, so a reader of messages can skip it:
+
+```json
+{"type":"access","mode":"allowlist","allowlist":["3bf0c63f…"]}
+```
+
+`mode` is `owner-only`, `allowlist` or `anyone`. Anything that can't be read or
+verified prints `owner-only`.
+
 Rules for consumers:
 
 - Ignore fields you do not know. New fields may be added; existing ones keep
@@ -200,8 +212,8 @@ gives up on a command after a timeout, treat that as delivery unknown too.
   **Disconnect** cuts one off at once.
 - **Who can command the agent is the agent's choice.** `watch` delivers every
   message the agent can read. An agent should answer its owner, and anyone
-  else only if the owner said so. The Hermes plugin always allows the owner
-  and has no "allow everyone" switch.
+  else only if the owner said so. The Hermes plugin always allows the owner and
+  follows the owner's setting for everyone else (see below).
 
 
 ## Hermes Agent
@@ -224,8 +236,16 @@ How it behaves:
   a platform error.
 - A message in a thread is answered in that thread, anything else stays flat,
   the same as app agents. The plugin never opens a thread itself.
-- There is no allow-all: the owner is always allowed, `KUZZ_ALLOWED_USERS` adds
-  people, and `KUZZ_ALLOW_ALL_USERS` is ignored.
+- The owner and the owner's other agents are always allowed. Who else may talk
+  to the agent is the owner's setting (Owner only, Allowlist, Anyone), a
+  `kind:30177` signed by the owner that `watch --access-owner` follows live.
+  Without a readable, verified setting it is Owner only.
+- Other people must @mention the agent in a stream or forum, never a DM. Their
+  messages can't run commands or answer approvals, and a message older than two
+  minutes when it arrives is dropped, so nothing is judged by a later setting.
+  Narrowing the setting doesn't stop a turn already running or queued.
+- `KUZZ_ALLOWED_USERS` only narrows that setting: when set, a person must be on
+  it too. It adds nobody. `KUZZ_ALLOW_ALL_USERS` is ignored.
 - Received files arrive as their links inside the message text, which the
   agent sees as it is. There is no `kuzz media get` yet, so the plugin does
   not download them.
@@ -329,7 +349,7 @@ secondary Hermes profile that means the profile's own `.env`.
 | Variable | `extra` key | Default | Meaning |
 |---|---|---|---|
 | `KUZZ_OWNER_PUBKEY` | `owner` | set by `kuzz pair` | The owner. Hermes does not start the platform without it. |
-| `KUZZ_ALLOWED_USERS` | `allowed_users` | empty | More people (npub or hex, comma-separated). |
+| `KUZZ_ALLOWED_USERS` | `allowed_users` | empty | Limits the owner's Allowlist or Anyone setting to these people (npub or hex, comma-separated). Adds nobody. |
 | `KUZZ_CHANNELS` | `channels` | every channel and DM | Answer only in these channel IDs. |
 | `KUZZ_HOME_CHANNEL` | `home_channel` | first of `KUZZ_CHANNELS` | Where cron deliveries go. |
 | `KUZZ_REQUIRE_MENTION` | `require_mention` | `true` | In channels and threads, answer only @mentions. DMs never need a mention. |

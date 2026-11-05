@@ -11,6 +11,7 @@ FAKE_KUZZ_OWNER     when set, the CLI is paired: keyless `auth whoami` reports t
 FAKE_KUZZ_DMS       JSON for `dms list` (default [])
 FAKE_KUZZ_DM_ID     dm_id `dms open` returns (default dm-1; "" fails the call)
 FAKE_KUZZ_CHANNEL_NAME  name returned by `channels get`
+FAKE_KUZZ_CHANNEL_TYPE  channel_type returned by `channels get` ("fail": a network error)
 FAKE_KUZZ_SAME_OWNER    JSON list of keys `agents same-owner` knows; unset fails the call
 FAKE_KUZZ_SAME_OWNER_DELAY  seconds that call takes
 """
@@ -98,7 +99,12 @@ def main():
         print(json.dumps({"event_id": f"{count:064x}", "accepted": True}))
         return 0
     if args[:2] == ["channels", "get"]:
-        print(json.dumps({"id": args[-1], "name": os.environ.get("FAKE_KUZZ_CHANNEL_NAME", "general")}))
+        channel_type = os.environ.get("FAKE_KUZZ_CHANNEL_TYPE", "stream")
+        if channel_type == "fail":
+            sys.stderr.write(json.dumps({"error": "network", "message": "unreachable"}) + "\n")
+            return 2
+        print(json.dumps({"id": args[-1], "name": os.environ.get("FAKE_KUZZ_CHANNEL_NAME", "general"),
+                          "channel_type": channel_type}))
         return 0
     if args[:2] == ["users", "get"]:
         print(json.dumps([{"pubkey": me, "display_name": os.environ.get("FAKE_KUZZ_NAME", "")}]))

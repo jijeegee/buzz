@@ -217,6 +217,44 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(parked[0][0], "unrecognized_subcommand")
         self.assertEqual(sup.restarts, 0)
 
+    def test_old_cli_without_the_access_flag_parks(self):
+        runs = [{"rc": 2, "stderr": "error: unexpected argument '--access-owner' found"}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+            sup, _, parked, _ = self._supervise(fake)
+        self.assertEqual(parked[0][0], "unrecognized_subcommand")
+        self.assertIn("Update Kuzz", parked[0][1])
+        self.assertEqual(sup.restarts, 0)
+
+    def test_access_lines_reach_the_callback_in_order(self):
+        order = []
+
+        async def on_message(message):
+            order.append(message.id)
+
+        async def scenario(fake):
+            sup = kuzz_cli.WatchSupervisor(
+                fake.cli, on_message, on_access=lambda access: order.append(access.mode),
+                on_park=lambda *_: sup.stop(), min_backoff=0.01,
+            )
+            await asyncio.wait_for(sup.run(), timeout=30)
+
+        lines = [{"type": "access", "mode": "anyone", "allowlist": []}, watch_line(1)]
+        runs = [{"lines": lines, "rc": 3, "stderr": json.dumps({"error": "auth", "message": "signed_out"})}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+            asyncio.run(scenario(fake))
+        self.assertEqual(order, ["anyone", event_id(1)])
+
+    def test_access_lines(self):
+        parse = kuzz_cli.parse_access_line
+        self.assertEqual(parse('{"type":"access","mode":"anyone","allowlist":[]}').mode, "anyone")
+        listed = parse(json.dumps({"type": "access", "mode": "allowlist", "allowlist": ["a" * 64, "nope"]}))
+        self.assertEqual((listed.mode, listed.allowlist), ("allowlist", frozenset({"a" * 64})))
+        for odd in ('{"type":"access"}', '{"type":"access","mode":"everyone"}',
+                    '{"type":"access","mode":"allowlist","allowlist":"x"}'):
+            self.assertEqual(parse(odd), kuzz_cli.WatchAccess())
+        for other in ('{"id":"x"}', "not json", "", "[]"):
+            self.assertIsNone(parse(other))
+
     def test_stop_ends_a_running_watch(self):
         async def first_message(received):
             while not received:
