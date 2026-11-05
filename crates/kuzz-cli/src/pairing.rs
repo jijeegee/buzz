@@ -567,15 +567,19 @@ fn hermes_home() -> Option<PathBuf> {
 }
 
 /// Where an installed `kuzz` ships `plugins/`: the binary's own directory,
-/// `<prefix>/share/kuzz` next to a `<prefix>/bin/kuzz` (Unix packages), and
-/// this user's `<local data dir>/kuzz`. Never other ancestors: a `plugins/`
-/// folder anywhere above the binary is not trusted to run.
+/// `<prefix>/share/kuzz` next to a `<prefix>/bin/kuzz` (Unix packages),
+/// `Contents/Resources` beside `Contents/MacOS` (the macOS app), and this
+/// user's `<local data dir>/kuzz`. Never other ancestors: a `plugins/` folder
+/// anywhere above the binary is not trusted to run.
 pub(crate) fn hermes_installer_roots(exe: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = exe.parent() {
         roots.push(dir.to_path_buf());
         if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
             roots.push(prefix.join("share").join("kuzz"));
+        }
+        if let Some(contents) = dir.parent().filter(|_| dir.ends_with("Contents/MacOS")) {
+            roots.push(contents.join("Resources"));
         }
     }
     if let Some(data) = dirs::data_local_dir() {
@@ -592,8 +596,22 @@ fn find_hermes_installer() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-fn find_python() -> Option<&'static str> {
-    ["python3", "python", "py"].into_iter().find(|python| {
+/// Pythons to try, in order: Hermes's own under its `root` home, then `PATH`.
+fn python_candidates(root: &Path) -> Vec<std::ffi::OsString> {
+    let venv = root.join("hermes-agent").join("venv");
+    [
+        venv.join("Scripts").join("python.exe"),
+        venv.join("bin").join("python"),
+    ]
+    .into_iter()
+    .filter(|python| python.is_file())
+    .map(PathBuf::into_os_string)
+    .chain(["python3", "python", "py"].map(Into::into))
+    .collect()
+}
+
+fn find_python(root: &Path) -> Option<std::ffi::OsString> {
+    python_candidates(root).into_iter().find(|python| {
         std::process::Command::new(python)
             .arg("--version")
             .stdout(std::process::Stdio::null())
@@ -601,6 +619,14 @@ fn find_python() -> Option<&'static str> {
             .status()
             .is_ok_and(|status| status.success())
     })
+}
+
+/// The default profile's home, for a named profile's `<root>/profiles/<name>`.
+fn hermes_root(home: &Path) -> &Path {
+    home.parent()
+        .filter(|parent| parent.file_name().is_some_and(|name| name == "profiles"))
+        .and_then(Path::parent)
+        .unwrap_or(home)
 }
 
 /// What `kuzz pair --hermes` calls the agent.
@@ -638,14 +664,17 @@ fn install_hermes(
         .home
         .or_else(hermes_home)
         .filter(|home| home.is_dir());
-    let (Some(installer), Some(home), Some(python), Some(owner)) =
-        (installer, home, find_python(), owner)
+    let python = home
+        .as_deref()
+        .and_then(|home| find_python(hermes_root(home)));
+    let (Some(installer), Some(home), Some(python), Some(owner)) = (installer, home, python, owner)
     else {
         eprintln!("{manual}");
         return false;
     };
     let mut command = std::process::Command::new(python);
     command
+        .arg("-B")
         .arg(&installer)
         .arg("--owner")
         .arg(owner)
@@ -655,6 +684,10 @@ fn install_hermes(
         .arg(&home);
     for default_agent in default_agents {
         command.arg("--default-agent").arg(default_agent);
+    }
+    // This binary, not one found later: the macOS app's plugin root holds none.
+    if let Ok(exe) = std::env::current_exe() {
+        command.arg("--cli-path").arg(exe);
     }
     if !options.restart {
         command.arg("--no-restart");
@@ -674,6 +707,63 @@ fn install_hermes(
             eprintln!("warning: could not run the Hermes installer ({error}). {manual}");
             false
         }
+    }
+}
+
+/// Whether Hermes's home at `root` or one of its profiles has the plugin.
+fn has_hermes_connector(root: &Path) -> bool {
+    let connector = |home: &Path| home.join("plugins").join("kuzz").is_dir();
+    connector(root)
+        || std::fs::read_dir(root.join("profiles"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|profile| connector(&profile.path()))
+}
+
+/// `kuzz hermes refresh`: the installer's `--refresh`, which prints the result
+/// on stdout. Without a connector here there is nothing to do, so no Python is
+/// looked for (on macOS that alone can prompt to install developer tools).
+pub(crate) fn cmd_hermes_refresh(no_restart: bool, home: Option<PathBuf>) -> Result<(), CliError> {
+    let nothing = || {
+        println!(
+            "{}",
+            json!({"updated": [], "current": [], "failed": [], "restart": "none"})
+        );
+        Ok(())
+    };
+    let root = home
+        .or_else(hermes_home)
+        .map(|home| hermes_root(&home).to_path_buf())
+        .filter(|root| has_hermes_connector(root));
+    let (Some(root), Some(installer)) = (root, find_hermes_installer()) else {
+        return nothing();
+    };
+    let Some(python) = find_python(&root) else {
+        eprintln!("warning: no Python found, so the Hermes plugin was not updated");
+        return nothing();
+    };
+    let mut command = std::process::Command::new(python);
+    command
+        .arg("-B")
+        .arg(&installer)
+        .arg("--refresh")
+        .arg("--hermes-home")
+        .arg(&root);
+    if no_restart {
+        command.arg("--no-restart");
+    }
+    let output = command
+        .output()
+        .map_err(|error| CliError::Other(format!("could not run the Hermes installer: {error}")))?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(CliError::Other(
+            "the Hermes plugin was not fully updated".into(),
+        ))
     }
 }
 

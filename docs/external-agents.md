@@ -242,6 +242,18 @@ are not moved: put `BUZZ_CHANNELS`, `BUZZ_HOME_CHANNEL`, `BUZZ_REQUIRE_MENTION` 
 
 To remove the plugin, delete `$HERMES_HOME/plugins/kuzz/` and restart the gateway.
 
+### Updates
+
+The desktop app runs `kuzz hermes refresh` at each start, so a connected Hermes
+gets the connector of the installed app. Without the app, run it by hand after
+updating `kuzz`. It replaces the files in each profile that has
+`plugins/kuzz/` and changes nothing else. The previous folder goes to
+`$HERMES_HOME/plugin-backups/`.
+
+A running gateway is then restarted. Hermes refuses while it has live work, and
+the next refresh tries again. A stopped gateway stays stopped and reads the new
+files when it starts. A profile that runs its own gateway is not restarted.
+
 ### Install
 
 `kuzz pair --hermes --relay <url> <code>` installs it after pairing. It runs
@@ -250,13 +262,15 @@ To remove the plugin, delete `$HERMES_HOME/plugins/kuzz/` and restart the gatewa
 python <root>/plugins/platforms/kuzz/install.py --owner <owner hex> --hermes-home <Hermes home>
 ```
 
-with the first `python3`, `python` or `py` on `PATH`, where `<root>` is the
+with Hermes's own Python, else the first `python3`, `python` or `py` on `PATH`,
+where `<root>` is the
 first of these that holds `plugins/platforms/kuzz/install.py`:
 
 1. the folder of the `kuzz` binary (for the desktop app on Windows,
    `%LOCALAPPDATA%\KuzzApp`);
 2. `<prefix>/share/kuzz`, when the binary is `<prefix>/bin/kuzz`;
-3. `<local data dir>/kuzz` (`%LOCALAPPDATA%\kuzz` on Windows,
+3. `Contents/Resources`, for the macOS app;
+4. `<local data dir>/kuzz` (`%LOCALAPPDATA%\kuzz` on Windows,
    `~/.local/share/kuzz` on Linux, `~/Library/Application Support/kuzz` on
    macOS).
 
@@ -279,7 +293,8 @@ hermes gateway restart
    `$HERMES_HOME/plugins/kuzz/`. Nothing else is needed at run time. An
    existing folder there is moved to `$HERMES_HOME/plugin-backups/kuzz-<UTC
    time>/` first, not deleted.
-2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path`, else the
+2. Sets `KUZZ_CLI_PATH` in `$HERMES_HOME/.env`: `--cli-path` (`kuzz pair`
+   passes itself), else the
    `kuzz` in the installer's own root, else `kuzz` on `PATH` or the desktop
    app's copy. It also sets `KUZZ_OWNER_PUBKEY` when `--owner` is
    given. Every line that sets one of these keys is updated, and the file

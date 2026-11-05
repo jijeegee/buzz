@@ -4,6 +4,8 @@ Stdlib only; run with `python -m unittest discover -s plugins/platforms/kuzz/tes
 """
 
 import asyncio
+import contextlib
+import io
 import json
 import os
 import shutil
@@ -11,6 +13,7 @@ import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -541,6 +544,180 @@ def load_install():
     install = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(install)
     return install
+
+
+class RefreshTest(unittest.TestCase):
+    """Throwaway homes; a restart is only ever a mock here."""
+
+    def setUp(self):
+        self.install = load_install()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        patcher = mock.patch.object(self.install, "restart_gateway", return_value=True)
+        self.restart = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def connector(self, home, current=False):
+        folder = home / "plugins" / "kuzz"
+        folder.mkdir(parents=True)
+        for name in self.install.PLUGIN_FILES:
+            content = (PLUGIN / name).read_bytes() if current else b"old"
+            (folder / name).write_bytes(content)
+        return folder
+
+    def gateway(self, pid=10, start_time=1000, state="running", age=0, exit_reason=None):
+        beat = datetime.now(timezone.utc) - timedelta(seconds=age)
+        (self.root / "gateway_state.json").write_text(json.dumps({
+            "pid": pid, "start_time": start_time, "gateway_state": state,
+            "exit_reason": exit_reason, "updated_at": beat.isoformat(),
+        }), encoding="utf-8")
+
+    def backups(self):
+        return list((self.root / "plugin-backups").glob("*"))
+
+    def test_a_current_home_is_left_alone(self):
+        self.connector(self.root, current=True)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual((result["updated"], result["restart"]), ([], "none"))
+        self.assertEqual(result["current"], [str(self.root)])
+        self.assertEqual(self.backups(), [])
+        self.restart.assert_not_called()
+
+    def test_only_plugin_files_change(self):
+        folder = self.connector(self.root)
+        env = b"KUZZ_OWNER_PUBKEY=abc\r\nBUZZ_RELAY_URL=x\r\n"
+        (self.root / ".env").write_bytes(env)
+        (self.root / "config.yaml").write_bytes(b"plugins:\n  enabled: []\n")
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual((result["updated"], result["restart"]), ([str(self.root)], "done"))
+        self.assertEqual((folder / "adapter.py").read_bytes(), (PLUGIN / "adapter.py").read_bytes())
+        self.assertEqual((self.root / ".env").read_bytes(), env)
+        self.assertEqual((self.root / "config.yaml").read_bytes(), b"plugins:\n  enabled: []\n")
+        self.assertEqual(len(self.backups()), 1)
+        self.restart.assert_called_once_with(self.root)
+
+    def test_a_home_without_the_plugin_gets_nothing(self):
+        (self.root / "profiles" / "work").mkdir(parents=True)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual(result, {"updated": [], "current": [], "failed": [], "restart": "none"})
+        self.assertFalse((self.root / "plugins").exists())
+        self.assertFalse((self.root / "profiles" / "work" / "plugins").exists())
+
+    def test_profiles_are_updated_too(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual(result["updated"], [str(self.root), str(work)])
+        self.restart.assert_called_once_with(self.root)
+
+    def test_one_failed_home_does_not_stop_the_others(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        real = self.install.copy_plugin
+
+        def copy(home):
+            if home == self.root:
+                raise OSError("in use")
+            return real(home)
+
+        with mock.patch.object(self.install, "copy_plugin", side_effect=copy):
+            result = self.install.refresh(self.root)
+        self.assertEqual((result["failed"], result["updated"]), ([str(self.root)], [str(work)]))
+
+    def test_a_failed_rename_puts_the_old_connector_back(self):
+        folder = self.connector(self.root)
+        real = Path.rename
+
+        def rename(path, target):
+            if path.name.endswith(".installing"):
+                raise OSError("in use")
+            return real(path, target)
+
+        with mock.patch.object(Path, "rename", rename), self.assertRaises(OSError):
+            self.install.copy_plugin(self.root)
+        self.assertEqual((folder / "adapter.py").read_bytes(), b"old")
+
+    def test_a_busy_gateway_is_retried_until_it_restarts(self):
+        self.connector(self.root)
+        self.gateway()
+        self.restart.return_value = False
+        self.assertEqual(self.install.refresh(self.root)["restart"], "busy")
+        # Files are current now; only the record says a restart is owed.
+        self.gateway(start_time=1100)
+        self.restart.return_value = True
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+        self.gateway(pid=11)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.assertFalse((self.root / "kuzz" / self.install.PENDING_FILE).exists())
+
+    def test_a_restart_by_hand_clears_it(self):
+        self.connector(self.root)
+        self.gateway()
+        self.install.refresh(self.root, restart=False)
+        self.gateway(start_time=9000)
+        self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "none")
+        self.restart.assert_not_called()
+
+    def test_the_caller_can_take_the_restart(self):
+        self.connector(self.root)
+        self.gateway()
+        self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "needed")
+        self.restart.assert_not_called()
+
+    def test_a_stopped_gateway_is_never_started(self):
+        for state in ("stopped", "startup_failed"):
+            self.connector(self.root)
+            self.gateway(state=state)
+            result = self.install.refresh(self.root)
+            self.assertEqual((len(result["updated"]), result["restart"]), (1, "none"))
+            shutil.rmtree(self.root / "plugins")
+        self.restart.assert_not_called()
+
+    def test_no_state_file_reads_as_not_running(self):
+        self.connector(self.root)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.restart.assert_not_called()
+
+    def test_a_degraded_gateway_is_updated(self):
+        self.connector(self.root)
+        self.gateway(state="degraded")
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+
+    def test_a_stale_heartbeat_waits_for_the_next_run(self):
+        self.connector(self.root)
+        self.gateway(age=600)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.restart.assert_not_called()
+        self.gateway(age=0)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+
+    def test_the_gateway_dying_while_stale_clears_it(self):
+        self.connector(self.root)
+        self.gateway(age=600)
+        self.install.refresh(self.root)
+        self.gateway(state="stopped")
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.assertFalse((self.root / "kuzz" / self.install.PENDING_FILE).exists())
+
+    def test_main_prints_one_json_line(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = self.install.main(["--refresh", "--no-restart", "--hermes-home", str(work)])
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out.getvalue())["restart"], "needed")
+        self.assertEqual(len(out.getvalue().strip().splitlines()), 1)
 
 
 class InstallHomeAndRestartTest(unittest.TestCase):

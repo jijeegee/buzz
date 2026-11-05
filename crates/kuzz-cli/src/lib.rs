@@ -304,6 +304,21 @@ pub enum OutputFormat {
 }
 
 #[derive(Subcommand)]
+enum HermesCmd {
+    /// Update the connector of each Hermes profile that has it to this
+    /// version, then restart a running gateway when it is idle
+    Refresh {
+        /// Do not restart the Hermes gateway; the result says "needed" when
+        /// the caller should
+        #[arg(long)]
+        no_restart: bool,
+        /// The Hermes home (default: Hermes's default home)
+        #[arg(long, value_name = "DIR")]
+        hermes_home: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum Cmd {
     /// Sign in with Google, manage devices, sessions and bots
     #[command(subcommand)]
@@ -364,6 +379,9 @@ once), key_in_use, device_limit, rate_limited.",
         #[arg(long, requires = "hermes", value_name = "DIR")]
         hermes_home: Option<std::path::PathBuf>,
     },
+    /// Keep the Hermes connector on this computer up to date
+    #[command(subcommand)]
+    Hermes(HermesCmd),
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
@@ -3159,6 +3177,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
+    // Local files only; it needs no credential.
+    if let Cmd::Hermes(HermesCmd::Refresh {
+        no_restart,
+        hermes_home,
+    }) = cli.command
+    {
+        return pairing::cmd_hermes_refresh(no_restart, hermes_home);
+    }
+
     let token_source = token_source_for(&cli, kuzz_token_broker::TokenSource::from_env());
     let session = stored_session_for(env);
     // A paired agent acts when nothing else is configured and no person is
@@ -3257,7 +3284,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } => {
+        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } | Cmd::Hermes(_) => {
             unreachable!("handled above")
         }
     }
@@ -3614,6 +3641,7 @@ mod tests {
             "goals",
             "groups",
             "guide",
+            "hermes",
             "inbox",
             "invitations",
             "issues",

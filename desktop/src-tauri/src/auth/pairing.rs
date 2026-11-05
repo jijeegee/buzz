@@ -40,6 +40,11 @@ const DEVICE_WAIT: Duration = Duration::from_secs(3);
 const HELP_PROBE_LIMIT: Duration = Duration::from_secs(5);
 /// Longest `kuzz pair --hermes` (claim and plugin install) may take.
 const HERMES_PAIR_LIMIT: Duration = Duration::from_secs(180);
+/// The connector refresh at app start. It only copies files: the app restarts
+/// the gateway itself.
+const HERMES_REFRESH_LIMIT: Duration = Duration::from_secs(60);
+/// Only the released app changes a real Hermes, never a dev build.
+const RELEASE_IDENTIFIER: &str = "app.kuzz.app";
 /// Where `kuzz pair --hermes` finds the plugin installer under each of its
 /// install roots (`crates/kuzz-cli/src/pairing.rs`, `HERMES_INSTALLER`).
 const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
@@ -244,6 +249,47 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
         pairing_id: started.pairing_id,
         finished,
     })
+}
+
+/// At app start, so after every update: bring the Hermes connector up to the
+/// version this app ships. `--no-restart`: a gateway started under the bounded
+/// child would die with this app, so [`restart_hermes_gateway`] does it.
+pub(crate) fn refresh_hermes_connector<R: tauri::Runtime>(app: &AppHandle<R>) {
+    if cfg!(debug_assertions) || app.config().identifier != RELEASE_IDENTIFIER {
+        return;
+    }
+    std::thread::spawn(|| {
+        let Some(kuzz) = bundled_kuzz() else {
+            return;
+        };
+        let mut refresh = std::process::Command::new(kuzz);
+        refresh.args(["hermes", "refresh", "--no-restart"]);
+        for name in CLEARED_ENV {
+            refresh.env_remove(name);
+        }
+        let Some(output) =
+            crate::managed_agents::output_with_timeout(refresh, HERMES_REFRESH_LIMIT)
+        else {
+            eprintln!("kuzz-desktop: hermes: connector refresh did not finish");
+            return;
+        };
+        eprintln!(
+            "kuzz-desktop: hermes: connector refresh: {} {}",
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+        // Also on a failed exit: another profile may have been updated.
+        if refresh_needs_restart(&output.stdout) {
+            restart_hermes_gateway();
+        }
+    });
+}
+
+/// Whether `kuzz hermes refresh --no-restart` left the restart to the caller.
+/// Pure.
+fn refresh_needs_restart(stdout: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(stdout)
+        .is_ok_and(|result| result.get("restart").and_then(|v| v.as_str()) == Some("needed"))
 }
 
 /// The `kuzz` argv for a Hermes pairing (no shell). Pure. `--no-restart`:
@@ -529,13 +575,17 @@ fn bundled_kuzz() -> Option<PathBuf> {
 
 /// Where `kuzz` at `kuzz` looks for `plugins/`, as its
 /// `hermes_installer_roots`: its own folder, `<prefix>/share/kuzz` beside a
-/// `<prefix>/bin`, and `<local data>/kuzz`. Pure.
+/// `<prefix>/bin`, `Contents/Resources` beside `Contents/MacOS`, and
+/// `<local data>/kuzz`. Pure.
 fn hermes_plugin_roots(kuzz: &Path, local_data: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = kuzz.parent() {
         roots.push(dir.to_path_buf());
         if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
             roots.push(prefix.join("share").join("kuzz"));
+        }
+        if let Some(contents) = dir.parent().filter(|_| dir.ends_with("Contents/MacOS")) {
+            roots.push(contents.join("Resources"));
         }
     }
     if let Some(data) = local_data {
