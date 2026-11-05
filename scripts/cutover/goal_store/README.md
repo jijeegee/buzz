@@ -4,7 +4,7 @@ One-off move of goals from the kind 40110 document to the `goals` and
 `goal_links` tables. It is not a migration: it runs once, at the switch, on the
 last heads. Run it on a copy first.
 
-The relay must already be on an image with migration 0097, with
+The relay must already be on an image with migration 0099, with
 `KUZZ_GOAL_STORE` off. Writes must be stopped and the flag on before the export
 below, so the heads are final.
 
@@ -73,7 +73,7 @@ Run it after a re-import too, because the import puts the room back as it was.
 ## Rollback
 
 Before app updates open: turn `KUZZ_GOAL_STORE` off on the same image. Do not
-change the image, because older images refuse to start after 0097. 40110 writes
+change the image, because older images refuse to start after 0099. 40110 writes
 work again and anything written as 40111 since the switch is lost. To switch
 again, re-export and re-import.
 
