@@ -235,8 +235,10 @@ How it behaves:
 
 An earlier build took the `buzz` platform's place, in `$HERMES_HOME/plugins/buzz/`
 with a version ending in `-kuzz`. `install.py` moves that folder out when it finds
-one and leaves a real Buzz plugin alone. Old `BUZZ_*` values in `.env` that were
-meant for Kuzz should then be removed by hand, because Buzz would read them.
+one, once the new plugin is enabled, and leaves a real Buzz plugin alone. Settings
+are not moved: put `BUZZ_CHANNELS`, `BUZZ_HOME_CHANNEL`, `BUZZ_REQUIRE_MENTION` and
+`BUZZ_REACTION_ONLY_USERS` under their `KUZZ_` names, change cron `deliver=buzz` to
+`deliver=kuzz`, and remove `BUZZ_*` values that were for Kuzz, because Buzz would read them.
 
 To remove the plugin, delete `$HERMES_HOME/plugins/kuzz/` and restart the gateway.
 
@@ -306,16 +308,16 @@ an agent.
 ### Settings
 
 Each setting can come from the environment or from
-`gateway.platforms.kuzz.extra` in `config.yaml`. The environment wins,
-except in a secondary Hermes profile, where `extra` does.
+`gateway.platforms.kuzz.extra` in `config.yaml`. The environment wins. In a
+secondary Hermes profile that means the profile's own `.env`.
 
 | Variable | `extra` key | Default | Meaning |
 |---|---|---|---|
-| `KUZZ_OWNER_PUBKEY` | `owner` | from `whoami` | Overrides the owner. |
+| `KUZZ_OWNER_PUBKEY` | `owner` | set by `kuzz pair` | The owner. Hermes does not start the platform without it. |
 | `KUZZ_ALLOWED_USERS` | `allowed_users` | empty | More people (npub or hex, comma-separated). |
 | `KUZZ_CHANNELS` | `channels` | every channel and DM | Answer only in these channel IDs. |
 | `KUZZ_HOME_CHANNEL` | `home_channel` | first of `KUZZ_CHANNELS` | Where cron deliveries go. |
-| `KUZZ_REQUIRE_MENTION` | `require_mention` | `true` | In channels, answer only @mentions and replies in the agent's threads. DMs never need a mention. |
+| `KUZZ_REQUIRE_MENTION` | `require_mention` | `true` | In channels and threads, answer only @mentions. DMs never need a mention. |
 | `KUZZ_REACTION_ONLY_USERS` | `reaction_only_users` | empty | People who get only a seen reaction when they mention the agent. |
 | `KUZZ_CLI_PATH` | `cli_path` | see above | Path to the CLI. |
 
@@ -328,7 +330,7 @@ the token and device broker variables (`KUZZ_DEVICE_BROKER_URL`,
 also hide the pairing), from the environment of every `kuzz` process it starts.
 The session file it points `KUZZ_SESSION_FILE` at is
 `$HERMES_HOME/kuzz/no-login/session.json`, which nothing creates. On
-Windows the plugin and `install.py` run only a real `.exe` for `kuzz`, `buzz`
+Windows the plugin and `install.py` run only a real `.exe` for `kuzz`
 and `hermes`, never a `.cmd` or `.bat`, because `cmd.exe` would re-parse the
 arguments.
 

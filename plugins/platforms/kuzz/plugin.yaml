@@ -10,7 +10,7 @@ description: >
 author: Kuzz (based on the Hermes Agent Buzz plugin by Nous Research, MIT)
 optional_env:
   - name: KUZZ_OWNER_PUBKEY
-    description: "Owner pubkey (hex or npub); overrides the owner reported by `kuzz auth whoami`"
+    description: "Owner pubkey (hex or npub), written by `kuzz pair`; the platform does not start without it"
     prompt: "Owner pubkey (or empty)"
     password: false
   - name: KUZZ_CLI_PATH

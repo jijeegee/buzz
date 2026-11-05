@@ -3,12 +3,12 @@
     python install.py [--owner PUBKEY] [--hermes-home DIR] [--cli-path PATH] [--no-enable]
 
 What it does (the same steps `kuzz pair --hermes` and the desktop Hermes card follow):
-1. retires an earlier Kuzz build that took Hermes' ``buzz`` platform (a real Buzz plugin is
-   left alone), then copies PLUGIN_FILES into <HERMES_HOME>/plugins/kuzz/;
+1. copies PLUGIN_FILES into <HERMES_HOME>/plugins/kuzz/;
 2. sets KUZZ_CLI_PATH (the given path, else the installed kuzz) and, when given,
    KUZZ_OWNER_PUBKEY in <HERMES_HOME>/.env;
 3. adds ``kuzz-platform`` to ``plugins.enabled`` (and drops it from ``plugins.disabled``) with
-   `hermes config get` / `hermes config set`;
+   `hermes config get` / `hermes config set`, then retires an earlier Kuzz build that took
+   Hermes' ``buzz`` platform (a real Buzz plugin is left alone);
 4. with ``--agent``, pins KUZZ_PAIRED_AGENT in .env, so this home keeps acting as that agent
    when more pairings exist on the computer;
 5. with an owner and no home channel yet, sets KUZZ_HOME_CHANNEL to the owner's DM (opened by
@@ -82,20 +82,24 @@ def back_up(hermes_home: Path, folder: Path) -> Path:
     return backup
 
 
-def retire_old_connector(hermes_home: Path) -> bool:
-    """Take out an earlier Kuzz build from the ``buzz`` slot, so it can't answer beside this one
-    and bundled Buzz gets its place back. Only ours: its manifest version ends in -kuzz."""
-    folder = hermes_home / "plugins" / OLD_INSTALL_DIR
+def has_old_connector(hermes_home: Path) -> bool:
+    """An earlier Kuzz build sits in the ``buzz`` slot. Only ours: its manifest version ends in -kuzz."""
     try:
-        manifest = (folder / "plugin.yaml").read_text(encoding="utf-8")
+        manifest = (hermes_home / "plugins" / OLD_INSTALL_DIR / "plugin.yaml").read_text(encoding="utf-8")
     except OSError:
         return False
     version = next((line.partition(":")[2].strip() for line in manifest.splitlines() if line.startswith("version:")), "")
-    if not version.endswith(OLD_VERSION_SUFFIX):
-        return False
-    back_up(hermes_home, folder)
-    print(f"Remove old BUZZ_ settings from {hermes_home / '.env'} if they were for Kuzz: Buzz would read them.")
-    return True
+    return version.endswith(OLD_VERSION_SUFFIX)
+
+
+def retire_old_connector(hermes_home: Path) -> None:
+    """Take the earlier build out, so it can't answer beside this one and bundled Buzz gets its place back."""
+    back_up(hermes_home, hermes_home / "plugins" / OLD_INSTALL_DIR)
+    print(
+        f"Check {hermes_home / '.env'}: Kuzz no longer reads BUZZ_ settings, and Buzz would. Move BUZZ_CHANNELS, "
+        "BUZZ_HOME_CHANNEL, BUZZ_REQUIRE_MENTION and BUZZ_REACTION_ONLY_USERS to their KUZZ_ names, and cron "
+        "deliver=buzz to deliver=kuzz. Remove BUZZ_ values that were for Kuzz."
+    )
 
 
 def copy_plugin(hermes_home: Path) -> Path:
@@ -348,19 +352,26 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     pin_default_profile(hermes_home, default_agents)
     root = hermes_root(hermes_home)
-    if root != hermes_home and (root / "plugins" / INSTALL_DIR).is_dir():
+    old_root = root != hermes_home and has_old_connector(root)
+    if root != hermes_home and ((root / "plugins" / INSTALL_DIR).is_dir() or old_root):
         # The gateway restart reloads the default profile too; its copy must read scoped settings.
         copy_plugin(root)
-    retired = retire_old_connector(hermes_home)
+    old_here = has_old_connector(hermes_home)
     target = copy_plugin(hermes_home)
     # Before any pin: a pin the gateway won't act on would read as connected.
-    if not args.no_enable and not enable_plugin(hermes_home, retired):
+    if not args.no_enable and not (
+        enable_plugin(hermes_home, old_here) and (not old_root or enable_plugin(root, True))
+    ):
         print(
             f"Could not enable the plugin. Add {PLUGIN_NAME} to plugins.enabled in "
             f"{hermes_home / 'config.yaml'}, then connect again.",
             file=sys.stderr,
         )
         return 1
+    # Only now: a failed enable leaves the working connector in place.
+    for home, old in ((hermes_home, old_here), (root, old_root)):
+        if old and not args.no_enable:
+            retire_old_connector(home)
     env_file = hermes_home / ".env"
     # A different agent or owner than the one this home was set up for: its home DM is stale.
     # So is one in a named profile with no pin yet, copied with a cloned profile's .env.
@@ -379,6 +390,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     set_env_values(env_file, values)
     print(f"Installed the Kuzz plugin in {target}")
 
+    if not owner:
+        print("Set KUZZ_OWNER_PUBKEY in .env: Hermes does not start the platform without an owner.", file=sys.stderr)
     if args.no_enable:
         print(f"Next: add {PLUGIN_NAME} to plugins.enabled in config.yaml, then hermes gateway restart")
         return 0

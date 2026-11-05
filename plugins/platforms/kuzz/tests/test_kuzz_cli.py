@@ -433,17 +433,46 @@ class InstallTest(unittest.TestCase):
         (folder / "plugin.yaml").write_text(f"name: buzz-platform\nversion: {version}\n", encoding="utf-8")
         return folder
 
+    def _run_enabling(self, install, home, enabled=True):
+        with mock.patch.object(install, "enable_plugin", return_value=enabled) as enable, \
+                mock.patch.object(install, "restart_gateway", return_value=True):
+            rc = install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe"])
+        return rc, enable
+
     def test_an_earlier_kuzz_build_gives_buzz_its_slot_back(self):
         install = self._install()
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             folder = self._old_folder(home, "2.0.0-kuzz")
-            rc = install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
+            rc, enable = self._run_enabling(install, home)
             self.assertEqual(rc, 0)
+            enable.assert_called_once_with(home, True)
             self.assertFalse(folder.exists())
             self.assertEqual([p.name for p in (home / "plugins").iterdir()], ["kuzz"])
             [backup] = (home / "plugin-backups").iterdir()
             self.assertTrue(backup.name.startswith("buzz-"))
+
+    def test_a_failed_enable_keeps_the_working_connector(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "2.0.0-kuzz")
+            rc, _ = self._run_enabling(install, home, enabled=False)
+            self.assertEqual(rc, 1)
+            self.assertTrue((folder / "plugin.yaml").is_file())
+
+    def test_a_default_profile_on_the_earlier_build_moves_too(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = root / "profiles" / "work"
+            profile.mkdir(parents=True)
+            folder = self._old_folder(root, "2.0.0-kuzz")
+            rc, enable = self._run_enabling(install, profile)
+            self.assertEqual(rc, 0)
+            self.assertEqual([call.args for call in enable.call_args_list], [(profile, False), (root, True)])
+            self.assertFalse(folder.exists())
+            self.assertTrue((root / "plugins" / "kuzz" / "plugin.yaml").is_file())
 
     def test_a_real_buzz_plugin_is_left_alone(self):
         install = self._install()
