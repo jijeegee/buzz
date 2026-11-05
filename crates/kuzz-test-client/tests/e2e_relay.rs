@@ -3428,22 +3428,14 @@ async fn write_goal_tree_ws(
 async fn test_goal_edit_reaches_live_subscribers() {
     let url = relay_url();
     let owner = Keys::generate();
-    let member = Keys::generate();
     let channel_id = create_test_channel(&owner).await;
     let mut owner_ws = KuzzTestClient::connect(&url, &owner)
         .await
         .expect("connect owner");
-    let (added, msg) = add_member_ws(
-        &mut owner_ws,
-        &channel_id,
-        &member.public_key().to_hex(),
-        &owner,
-    )
-    .await;
-    assert!(added, "add member: {msg}");
-    let mut member_ws = KuzzTestClient::connect(&url, &member)
+    // A second connection, as another open app of the same member.
+    let mut other_ws = KuzzTestClient::connect(&url, &owner)
         .await
-        .expect("connect member");
+        .expect("connect second app");
     let (on, msg) = set_goals_ws(&mut owner_ws, &channel_id, "on", &owner).await;
     assert!(on, "turn goals on: {msg}");
 
@@ -3451,11 +3443,11 @@ async fn test_goal_edit_reaches_live_subscribers() {
     let filter = Filter::new()
         .kind(Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16))
         .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel_id.as_str()]);
-    member_ws
+    other_ws
         .subscribe(&sid, vec![filter])
         .await
         .expect("subscribe");
-    member_ws
+    other_ws
         .collect_until_eose(&sid, Duration::from_secs(5))
         .await
         .expect("EOSE");
@@ -3478,7 +3470,7 @@ async fn test_goal_edit_reaches_live_subscribers() {
     let outcome: serde_json::Value = serde_json::from_str(&ok.message).expect("outcome JSON");
     assert_eq!(outcome["deleted"], serde_json::json!([]));
 
-    let delivered = member_ws
+    let delivered = other_ws
         .recv_event(Duration::from_secs(5))
         .await
         .expect("live goal edit");
