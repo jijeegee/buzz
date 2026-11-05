@@ -750,6 +750,179 @@ fn put(keys: &Keys, channel: Uuid, target: &Keys, role: Option<&str>) -> Event {
     sign(keys, 9000, "", tags)
 }
 
+/// `agent`'s `users` row: (add policy, owner).
+async fn owner_row(
+    state: &AppState,
+    tenant: &TenantContext,
+    agent: &Keys,
+) -> (String, Option<Vec<u8>>) {
+    state
+        .db
+        .get_agent_channel_policy(tenant.community(), agent.public_key().as_bytes())
+        .await
+        .expect("policy")
+        .expect("row")
+}
+
+/// Forget that `agent` was bound, as a restart does.
+fn forget_bound(state: &AppState, tenant: &TenantContext, agent: &Keys) {
+    state
+        .identity
+        .bound_external_owners
+        .invalidate(&(tenant.community(), agent.public_key().to_bytes()));
+}
+
+/// A bind writes the owner and `owner_only` once. A later policy survives
+/// binding again, another owner is refused, and a key already bound costs no
+/// write. The agent's rows are created by the bind itself.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn binding_a_paired_agent_writes_once_and_never_overwrites() {
+    use crate::api::relay_members::{bind_external_owner, OwnerBind};
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, other, agent) = (Keys::generate(), Keys::generate(), Keys::generate());
+    let owner_key = owner.public_key().to_bytes();
+    let bind = |by: [u8; 32]| {
+        let (state, tenant, agent) = (&state, &tenant, agent.public_key());
+        async move { bind_external_owner(state, tenant, &agent, &by).await }
+    };
+
+    assert_eq!(bind(owner_key).await, OwnerBind::Bound);
+    assert_eq!(
+        owner_row(&state, &tenant, &agent).await,
+        ("owner_only".to_owned(), Some(owner_key.to_vec()))
+    );
+
+    // The agent's own later choice stays, through a restart too.
+    state
+        .db
+        .set_channel_add_policy(tenant.community(), agent.public_key().as_bytes(), "anyone")
+        .await
+        .expect("policy");
+    assert_eq!(bind(owner_key).await, OwnerBind::Bound);
+    forget_bound(&state, &tenant, &agent);
+    assert_eq!(bind(owner_key).await, OwnerBind::Bound);
+    assert_eq!(owner_row(&state, &tenant, &agent).await.0, "anyone");
+
+    // Someone else's key never takes it over.
+    assert_eq!(bind(other.public_key().to_bytes()).await, OwnerBind::Failed);
+    assert_eq!(
+        owner_row(&state, &tenant, &agent).await.1,
+        Some(owner_key.to_vec())
+    );
+
+    // Bound already: no write, even when the row says otherwise.
+    sqlx::query("UPDATE users SET agent_owner_pubkey = NULL WHERE pubkey = $1")
+        .bind(agent.public_key().to_bytes().as_slice())
+        .execute(state.db.pool())
+        .await
+        .expect("clear");
+    assert_eq!(bind(owner_key).await, OwnerBind::Bound);
+    assert_eq!(owner_row(&state, &tenant, &agent).await.1, None);
+}
+
+/// Binding ends the agent's pending invitations: only its owner adds it now.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn binding_expires_the_agents_pending_invitations() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, stranger, agent) = (Keys::generate(), Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &stranger, &agent]).await;
+    let (group, created) = create_chat(&state, &tenant, &stranger, &[]).await;
+    assert!(created.expect("chat").accepted);
+    let agent_key = agent.public_key().to_bytes();
+    let pending = || {
+        state
+            .db
+            .pending_group_invitations(tenant.community(), &agent_key)
+    };
+    state
+        .db
+        .upsert_group_invitation(
+            tenant.community(),
+            group,
+            stranger.public_key().as_bytes(),
+            agent.public_key().as_bytes(),
+        )
+        .await
+        .expect("invitation");
+    assert_eq!(pending().await.expect("pending").len(), 1);
+
+    crate::api::relay_members::bind_external_owner(
+        &state,
+        &tenant,
+        &agent.public_key(),
+        &owner.public_key().to_bytes(),
+    )
+    .await;
+    assert!(pending().await.expect("pending").is_empty());
+}
+
+/// A bound agent is the owner's: only they add it, and an admin can still
+/// change the role of one who is already in the group.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_bound_agent_is_added_by_its_owner_only() {
+    let state = state().await;
+    let tenant = tenant(&state).await;
+    let (owner, admin, agent) = (Keys::generate(), Keys::generate(), Keys::generate());
+    ensure_users(&state, &tenant, &[&owner, &admin, &agent]).await;
+    pair(&state, &owner, &agent).await;
+    crate::api::relay_members::bind_external_owner(
+        &state,
+        &tenant,
+        &agent.public_key(),
+        &owner.public_key().to_bytes(),
+    )
+    .await;
+    let group = state
+        .db
+        .create_channel(
+            tenant.community(),
+            "bound",
+            kuzz_db::channel::ChannelType::Stream,
+            kuzz_db::channel::ChannelVisibility::Private,
+            None,
+            admin.public_key().as_bytes(),
+            None,
+        )
+        .await
+        .expect("group")
+        .id;
+    state
+        .db
+        .add_member(
+            tenant.community(),
+            group,
+            owner.public_key().as_bytes(),
+            kuzz_db::channel::MemberRole::Member,
+            Some(admin.public_key().as_bytes()),
+        )
+        .await
+        .expect("owner joins");
+
+    let refused = send(&state, &tenant, &admin, put(&admin, group, &agent, None)).await;
+    assert!(refused.is_err() || !refused.unwrap().accepted);
+    assert!(role_of(&active_members(&state, &tenant, group).await, &agent).is_none());
+
+    let added = send(&state, &tenant, &owner, put(&owner, group, &agent, None))
+        .await
+        .expect("owner adds");
+    assert!(added.accepted, "{}", added.message);
+
+    let changed = send(
+        &state,
+        &tenant,
+        &admin,
+        put(&admin, group, &agent, Some("guest")),
+    )
+    .await
+    .expect("role change");
+    assert!(changed.accepted, "{}", changed.message);
+}
+
 /// The owner adds their paired agent at once, to a new group chat, an
 /// existing one and a private group, as a bot in group chats. Anyone else
 /// still sends an invitation, and so does the owner once it is disconnected.

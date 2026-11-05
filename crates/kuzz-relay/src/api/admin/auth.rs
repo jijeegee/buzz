@@ -421,6 +421,7 @@ async fn admit_admin_key(state: &AppState, event: &nostr::Event) -> Result<(), A
         crate::identity::device::Surface::Admin,
     )
     .await
+    .map(|_| ())
     .map_err(|refused| {
         let (status, code) = match refused {
             crate::identity::admission::KeyRefused::Unavailable => {

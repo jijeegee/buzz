@@ -8,17 +8,22 @@ import { createTrailingDebounce } from "@/shared/lib/trailingDebounce";
 export const CHAT_STATE_PING_DEBOUNCE_MS = 300;
 const RETRY_BASE_MS = 2_000;
 const RETRY_MAX_MS = 60_000;
+/** `reason` tag of a ping about a new group invitation. */
+const PING_GROUP_INVITATION = "group_invitation";
 
 /**
  * Listen for the relay's kind:24210 ping, sent to all of the user's devices
- * after any change to their chat state, and call `onPing` (debounced).
+ * after any change to their chat state, and call `onPing` (debounced). A ping
+ * about a new group invitation calls `onInvitation` instead.
  */
 export function useChatStatePing(
   pubkey: string | undefined,
   enabled: boolean,
   onPing: () => void,
+  onInvitation: () => void,
 ): void {
   const handlePing = React.useEffectEvent(onPing);
+  const handleInvitation = React.useEffectEvent(onInvitation);
   const me = pubkey?.trim().toLowerCase() ?? "";
 
   React.useEffect(() => {
@@ -36,7 +41,14 @@ export function useChatStatePing(
       meLive
         .subscribe(
           { kinds: [KIND_CHAT_STATE_PING], "#p": [me], limit: 0 },
-          () => debounce.trigger(),
+          (event) => {
+            const invitation = event.tags.some(
+              ([name, value]) =>
+                name === "reason" && value === PING_GROUP_INVITATION,
+            );
+            if (invitation) handleInvitation();
+            else debounce.trigger();
+          },
         )
         .then((unsubscribe) => {
           if (cancelled) {

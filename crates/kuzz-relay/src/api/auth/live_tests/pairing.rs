@@ -352,3 +352,99 @@ async fn pairing_calls_need_the_device_proof_in_every_auth_mode() {
     // The refused calls started nothing.
     assert_eq!(list(&inst, &pc).await.len(), 1);
 }
+
+/// `agent`'s `users` row: (add policy, owner key).
+async fn owner_row(inst: &Instance, agent: &nostr::Keys) -> Option<(String, Option<Vec<u8>>)> {
+    inst.state
+        .db
+        .get_agent_channel_policy(community_of(inst).await, agent.public_key().as_bytes())
+        .await
+        .unwrap()
+}
+
+async fn community_of(inst: &Instance) -> kuzz_core::CommunityId {
+    let id: uuid::Uuid = sqlx::query_scalar("SELECT id FROM communities WHERE host = $1")
+        .bind(&inst.host)
+        .fetch_one(inst.state.db.pool())
+        .await
+        .unwrap();
+    kuzz_core::CommunityId::from_uuid(id)
+}
+
+/// Undo a bind, as for a key paired before binding existed.
+async fn unbind(inst: &Instance, agent: &nostr::Keys) {
+    sqlx::query(
+        "UPDATE users SET agent_owner_pubkey = NULL, channel_add_policy = 'anyone' \
+          WHERE pubkey = $1",
+    )
+    .bind(agent.public_key().to_bytes().as_slice())
+    .execute(inst.state.db.pool())
+    .await
+    .unwrap();
+    inst.state.identity.bound_external_owners.invalidate_all();
+}
+
+/// Pairing makes the agent its owner's at once. A key paired earlier becomes
+/// so at its next WebSocket connection, or its next HTTP call alone.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn a_paired_key_is_bound_to_its_owner_at_every_door() {
+    let inst = agents_instance(DeviceAdmissionMode::Enforce).await;
+    let (pc, _) = owner(&inst).await;
+    let agent = external();
+    let (_, code) = start(&inst, &pc).await;
+    assert_eq!(claim(&inst, &code, &agent).await.0, 200);
+    let bound = Some((
+        "owner_only".to_owned(),
+        Some(pc.keys.public_key().to_bytes().to_vec()),
+    ));
+    assert_eq!(owner_row(&inst, &agent.keys).await, bound);
+
+    unbind(&inst, &agent.keys).await;
+    assert_eq!(
+        ws_auth(&inst, &agent.keys, &agent.device).await,
+        (true, String::new())
+    );
+    assert_eq!(owner_row(&inst, &agent.keys).await, bound);
+
+    unbind(&inst, &agent.keys).await;
+    let (status, body) =
+        super::device_http::bridge_query(&inst, &agent.keys, Some(&agent.device), None).await;
+    assert_eq!(status, 200, "{body}");
+    assert_eq!(owner_row(&inst, &agent.keys).await, bound);
+
+    // The owner's own key is never bound to anyone.
+    assert_eq!(owner_row(&inst, &pc.keys).await.and_then(|row| row.1), None);
+}
+
+/// A paired key goes down with its owner's ban, through the bound owner: its
+/// requests name no owner.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn a_paired_key_goes_down_with_its_owner_ban() {
+    use crate::handlers::auth::{community_ban_outcome, BanOutcome};
+    let inst = agents_instance(DeviceAdmissionMode::Enforce).await;
+    let (pc, _) = owner(&inst).await;
+    let agent = external();
+    let (_, code) = start(&inst, &pc).await;
+    assert_eq!(claim(&inst, &code, &agent).await.0, 200);
+    let community = community_of(&inst).await;
+    assert!(matches!(
+        community_ban_outcome(&inst.state, community, agent.keys.public_key(), None, None).await,
+        BanOutcome::Clear
+    ));
+
+    let owner_key = pc.keys.public_key().to_bytes();
+    inst.state
+        .db
+        .ban_community_member(community, &owner_key, &owner_key, None, None)
+        .await
+        .unwrap();
+    assert!(matches!(
+        community_ban_outcome(&inst.state, community, agent.keys.public_key(), None, None).await,
+        BanOutcome::Banned
+    ));
+    let (status, body) =
+        super::device_http::bridge_query(&inst, &agent.keys, Some(&agent.device), None).await;
+    assert_eq!(status, 403, "{body}");
+}

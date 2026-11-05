@@ -104,9 +104,9 @@ export function useGroupAddPolicyQuery() {
 }
 
 /**
- * Pending group invitations. There is no push yet, so the list refreshes on
- * app start (mount), whenever the window regains focus, and when the caller
- * bumps `refreshKey` (Chats opened).
+ * Pending group invitations. The list refreshes on the relay's invitation
+ * ping (`ChatStateSync`), on app start (mount), whenever the window regains
+ * focus, and when the caller bumps `refreshKey` (Chats opened).
  */
 export function useGroupInvitationsQuery(refreshKey: unknown) {
   const account = useAccountKey();

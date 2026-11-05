@@ -373,19 +373,28 @@ async fn check_nip98_replay_with_guard(
 /// authenticated by NIP-98 (or the `X-Pubkey` dev header) on the `http`
 /// surface. No work at all while the surface is off. Call it after NIP-FI
 /// admission, never for the `Bearer` branch (closed as a token path).
+///
+/// A paired key's owner link is recorded here too, for an agent that only
+/// ever uses HTTP. A failure does not refuse the request: the next one tries
+/// again.
 pub(crate) async fn admit_bridge_key(
     state: &AppState,
+    tenant: &TenantContext,
     headers: &HeaderMap,
     pubkey: &nostr::PublicKey,
 ) -> Result<(), (StatusCode, Json<Value>)> {
-    crate::identity::admission::admit_key_for_nip98(
+    let external_owner = crate::identity::admission::admit_key_for_nip98(
         state,
         headers,
         pubkey,
         crate::identity::device::Surface::Http,
     )
     .await
-    .map_err(crate::identity::admission::KeyRefused::http_error)
+    .map_err(crate::identity::admission::KeyRefused::http_error)?;
+    if let Some(owner) = external_owner {
+        super::relay_members::bind_external_owner(state, tenant, pubkey, &owner).await;
+    }
+    Ok(())
 }
 
 /// The proven caller of a bodyless `GET`: a message token, or a NIP-98 key
@@ -419,7 +428,7 @@ pub(crate) async fn admit_get_caller(
     check_nip98_replay(state, tenant, event_id_bytes)
         .await
         .map_err(IntoResponse::into_response)?;
-    admit_bridge_key(state, headers, &pubkey)
+    admit_bridge_key(state, tenant, headers, &pubkey)
         .await
         .map_err(IntoResponse::into_response)?;
     Ok(pubkey)
@@ -1310,7 +1319,7 @@ async fn submit_event_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if !server_stamped {
-        if let Err(e) = admit_bridge_key(state, headers, &pubkey).await {
+        if let Err(e) = admit_bridge_key(state, tenant, headers, &pubkey).await {
             return SubmitOutcome::Err {
                 status: e.0,
                 response: e,
@@ -1604,7 +1613,7 @@ async fn query_events_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if key_signed {
-        admit_bridge_key(state, headers, &pubkey).await?;
+        admit_bridge_key(state, tenant, headers, &pubkey).await?;
     }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -2348,7 +2357,7 @@ async fn count_events_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if key_signed {
-        admit_bridge_key(state, headers, &pubkey).await?;
+        admit_bridge_key(state, tenant, headers, &pubkey).await?;
     }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -3123,7 +3132,7 @@ async fn authorize_moderation_read(
     check_nip98_replay(state, &tenant, event_id_bytes)
         .await
         .map_err(|e| e.into_response())?;
-    admit_bridge_key(state, headers, &pubkey)
+    admit_bridge_key(state, &tenant, headers, &pubkey)
         .await
         .map_err(|e| e.into_response())?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();

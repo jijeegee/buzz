@@ -523,7 +523,12 @@ pub const KIND_AGENT_OBSERVER_FRAME: u32 = 24200;
 /// chats list (`chat_list` query). Carries only `["p", <user>]` and a nonce;
 /// never sent for other people's messages. Owner-only: delivered solely to
 /// connections authenticated as the `p` pubkey, and clients cannot publish it.
+///
+/// Also sent when that user gets a new group invitation, with a `reason` tag
+/// of [`PING_GROUP_INVITATION`] so apps refresh their invitations.
 pub const KIND_CHAT_STATE_PING: u32 = 24210;
+/// `reason` tag of a [`KIND_CHAT_STATE_PING`] about a new group invitation.
+pub const PING_GROUP_INVITATION: &str = "group_invitation";
 /// Ephemeral, relay-signed: "a new device signed in to your account"
 /// (device-bound keys plan §5, PR A4). Sent once when a login creates a
 /// device row, never for a re-login of a known device. Content is the

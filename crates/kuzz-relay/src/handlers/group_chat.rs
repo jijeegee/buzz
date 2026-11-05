@@ -198,9 +198,9 @@ pub(crate) async fn is_agent_pubkey(
     Ok(owned || state.db.is_bot_principal(pubkey).await?)
 }
 
-/// Whether `actor` is the owner adding their own connected paired agent. A
-/// paired agent has no `users` owner, so to everyone else it is a person and
-/// an add stays an invitation; its owner adds it like any owned agent.
+/// Whether `actor` is the owner adding their own connected paired agent, for
+/// the short time before its `users` row names them (it binds at pairing and
+/// on every connection): the owner adds it like any owned agent.
 pub(crate) async fn owner_adds_paired_agent(
     tenant: &TenantContext,
     state: &Arc<AppState>,

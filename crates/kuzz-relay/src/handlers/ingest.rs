@@ -3549,6 +3549,10 @@ async fn ingest_event_inner(
                 message: "duplicate: channel already exists".into(),
             });
         }
+        // `hidden_invites` were never stored, so nobody hears of those.
+        for invitee in &people.invitees {
+            super::side_effects::ping_new_invitation(tenant, state, invitee).await;
+        }
         pre_created_channel = Some(client_uuid);
         accepted_message = people.ok_message();
         metrics::counter!(

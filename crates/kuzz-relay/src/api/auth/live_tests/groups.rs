@@ -917,6 +917,95 @@ async fn agent_adds_owner_and_invitation_spam_limits() {
     assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
 }
 
+/// The next invitation ping on `ws`, if one arrives soon.
+async fn invitation_ping(ws: &mut Ws, within: Duration) -> Option<Value> {
+    tokio::time::timeout(within, async {
+        loop {
+            let frame = next_json(ws).await;
+            if frame[0] == "EVENT" && frame[2]["kind"] == 24210 {
+                return frame[2].clone();
+            }
+        }
+    })
+    .await
+    .ok()
+}
+
+/// A new invitation reaches the invitee's sockets at once, tagged. Adding
+/// again does not ping, and neither does someone they block.
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
+async fn a_new_invitation_pings_the_invitee_once() {
+    use kuzz_db::channel::ChannelVisibility;
+    let pool = sqlx::PgPool::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    let inst = instance(&community(&pool).await).await;
+    let scope = community_id(&inst).await;
+    let alice = new_user(&inst).await;
+    let bob = new_user(&inst).await;
+    let carol = new_user(&inst).await;
+    let room = group(&pool, scope, &alice, "Pings", ChannelVisibility::Open).await;
+    let blocked_room = group(&pool, scope, &carol, "Blocked", ChannelVisibility::Open).await;
+    let mut alice_ws = authed_ws(&inst, &alice).await;
+    let mut carol_ws = authed_ws(&inst, &carol).await;
+    let mut bob_ws = authed_ws(&inst, &bob).await;
+    let filter = json!({"kinds": [24210], "#p": [bob.principal], "limit": 0});
+    req_eose(&mut bob_ws, "pings", filter).await;
+
+    let ok = put_user(&mut alice_ws, room, &bob.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    let ping = invitation_ping(&mut bob_ws, Duration::from_secs(5))
+        .await
+        .expect("ping");
+    assert!(
+        ping["tags"]
+            .as_array()
+            .unwrap()
+            .contains(&json!(["reason", "group_invitation"])),
+        "{ping}"
+    );
+
+    put_user(&mut alice_ws, room, &bob.principal).await;
+    assert!(invitation_ping(&mut bob_ws, Duration::from_millis(500))
+        .await
+        .is_none());
+
+    let blocked = inst
+        .http
+        .put(inst.url(&format!("/auth/blocks/{}", carol.principal)))
+        .header("host", &inst.host)
+        .bearer_auth(&bob.access)
+        .send()
+        .await
+        .unwrap()
+        .status()
+        .as_u16();
+    assert_eq!(blocked, 204);
+    let ok = put_user(&mut carol_ws, blocked_room, &bob.principal).await;
+    assert!(ok_message(&ok).starts_with("invite-sent:"), "{ok}");
+    assert!(invitation_ping(&mut bob_ws, Duration::from_millis(500))
+        .await
+        .is_none());
+
+    // A new group chat invites through its own path.
+    let chat = uuid::Uuid::new_v4();
+    let ok = publish(
+        &mut alice_ws,
+        9007,
+        json!([
+            ["h", chat.to_string()],
+            ["group_chat"],
+            ["p", bob.principal]
+        ]),
+    )
+    .await;
+    assert_eq!(ok[2], true, "{ok}");
+    assert!(invitation_ping(&mut bob_ws, Duration::from_secs(5))
+        .await
+        .is_some());
+}
+
 /// The public `/g/<code>` and `/g/@<handle>` landing page: no auth, HTML,
 /// escaped user text, private groups without description, 404 page for
 /// unknown and reset codes.

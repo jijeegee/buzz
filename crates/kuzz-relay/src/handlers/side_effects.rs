@@ -12,6 +12,7 @@ use kuzz_core::kind::{
     KIND_IA_UNARCHIVED, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_NEW_SIGNIN_NOTICE, KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS,
     KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
+    PING_GROUP_INVITATION,
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
@@ -601,16 +602,29 @@ async fn check_person_add(
                     return Err(InvitationRateLimited.into())
                 }
                 channel_authz::InvitationWrite::Upsert => {
-                    // TODO(groups): push the invitation live; v1 clients
-                    // refresh the invitation list on focus / Chats open.
                     state
                         .db
                         .upsert_group_invitation(community, channel_id, actor, target)
                         .await?;
+                    if !write_state.already_pending {
+                        ping_new_invitation(tenant, state, target).await;
+                    }
                 }
             }
             Err(InvitationSent.into())
         }
+    }
+}
+
+/// Tell `target`'s apps about a new group invitation. The invitation is
+/// stored either way, so a failed ping only logs: apps also refresh on focus.
+pub(crate) async fn ping_new_invitation(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+) {
+    if let Err(e) = publish_user_ping(tenant, state, target, Some(PING_GROUP_INVITATION)).await {
+        warn!("group invitation ping failed: {e}");
     }
 }
 
@@ -723,7 +737,10 @@ pub async fn validate_admin_event(
                         &target_pubkey,
                     )
                     .await?;
-                    if let Some((policy, owner)) = &agent_policy {
+                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                    // The policy is about who may add an agent, so a member's
+                    // role change does not read it.
+                    if let (Some((policy, owner)), false) = (&agent_policy, already_member) {
                         channel_authz::decide_channel_add_policy(
                             policy,
                             owner
@@ -738,7 +755,6 @@ pub async fn validate_admin_event(
                     // only their channel_add_policy above; role changes of
                     // existing members are unaffected.
                     let is_group = matches!(channel.channel_type.as_str(), "stream" | "forum");
-                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
                     if is_group && !already_member {
                         let target_is_agent = paired_by_actor
                             || agent_policy
@@ -4279,14 +4295,31 @@ pub async fn publish_chat_state_ping(
     state: &Arc<AppState>,
     user: &[u8],
 ) -> anyhow::Result<()> {
+    publish_user_ping(tenant, state, user, None).await
+}
+
+/// [`publish_chat_state_ping`], with a `reason` tag when it is about
+/// something other than the chats list.
+async fn publish_user_ping(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    user: &[u8],
+    reason: Option<&str>,
+) -> anyhow::Result<()> {
     let user_hex = hex::encode(user);
+    let mut tags = vec![
+        Tag::parse(["p", &user_hex]).map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
+        Tag::parse(["nonce", &Uuid::new_v4().simple().to_string()])
+            .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
+    ];
+    if let Some(reason) = reason {
+        tags.push(
+            Tag::parse(["reason", reason])
+                .map_err(|e| anyhow::anyhow!("failed to build reason tag: {e}"))?,
+        );
+    }
     let event = EventBuilder::new(Kind::Custom(KIND_CHAT_STATE_PING as u16), "")
-        .tags([
-            Tag::parse(["p", &user_hex])
-                .map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
-            Tag::parse(["nonce", &Uuid::new_v4().simple().to_string()])
-                .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
-        ])
+        .tags(tags)
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign kind:{KIND_CHAT_STATE_PING}: {e}"))?;
     state.mark_local_event(tenant.community(), &event.id);

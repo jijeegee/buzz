@@ -573,6 +573,42 @@ impl Db {
         .await
     }
 
+    /// Record the owner of a paired external agent, with the `owner_only`
+    /// add policy, in one write and only while no owner is recorded. Its
+    /// pending group invitations expire with it: from here on only the owner
+    /// adds it. `false` when an owner already is: the caller checks which one.
+    #[datastore_span(name = "bind_external_agent_owner", system = "postgresql")]
+    pub async fn bind_external_agent_owner(
+        &self,
+        community_id: CommunityId,
+        agent_pubkey: &[u8],
+        owner_pubkey: &[u8],
+    ) -> Result<bool> {
+        let mut connection = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::Authorization,
+        )
+        .await?;
+        let bound: i64 = sqlx::query_scalar(
+            "WITH bound AS ( \
+                 UPDATE users SET agent_owner_pubkey = $1, \
+                        channel_add_policy = 'owner_only'::channel_add_policy \
+                  WHERE community_id = $2 AND pubkey = $3 AND agent_owner_pubkey IS NULL \
+                 RETURNING pubkey), \
+             expired AS ( \
+                 UPDATE group_invitations SET status = 'expired', responded_at = now() \
+                  WHERE community_id = $2 AND invitee = $3 AND status = 'pending' \
+                    AND EXISTS (SELECT 1 FROM bound)) \
+             SELECT count(*) FROM bound",
+        )
+        .bind(owner_pubkey)
+        .bind(community_id.as_uuid())
+        .bind(agent_pubkey)
+        .fetch_one(&mut *connection)
+        .await?;
+        Ok(bound > 0)
+    }
+
     /// Get the channel_add_policy and agent_owner_pubkey for a user.
     #[datastore_span(name = "get_agent_channel_policy", system = "postgresql")]
     pub async fn get_agent_channel_policy(
