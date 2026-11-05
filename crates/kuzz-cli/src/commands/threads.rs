@@ -426,7 +426,12 @@ async fn close_goal(
     root_id: &str,
     goal_done: Option<Option<String>>,
 ) -> Result<CloseGoal, CliError> {
-    let read = super::goals::read_thread(client, channel, root_id).await?;
+    // Closing a thread does not depend on goals unless asked to finish one.
+    let read = match super::goals::read_thread(client, channel, root_id).await {
+        Ok(read) => read,
+        Err(_) if goal_done.is_none() => return Ok(CloseGoal::Unlinked),
+        Err(e) => return Err(e),
+    };
     let mut goal = CloseGoal::plan(&read, root_id, goal_done.is_some());
     if let (CloseGoal::MarkedDone { id, report }, Some(note)) = (&mut goal, goal_done) {
         let op = super::goals::status_note_op(id, GoalStatus::Done, note);

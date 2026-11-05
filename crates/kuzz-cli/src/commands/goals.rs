@@ -172,6 +172,17 @@ fn write_json(event_id: &str, outcome: &GoalOutcome) -> Value {
     out
 }
 
+/// The relay enforces the goal rules, so a broken one is the caller's to fix,
+/// not a relay failure.
+fn refused_edit(error: CliError) -> CliError {
+    match error {
+        CliError::Relay { status: 400, body } if body.contains("invalid: ") => {
+            CliError::Usage(body)
+        }
+        other => other,
+    }
+}
+
 /// Send one edit; the ops apply in order, all or none.
 pub(crate) async fn write(
     client: &KuzzClient,
@@ -182,7 +193,8 @@ pub(crate) async fn write(
         kuzz_sdk::build_goal_ops(parse_uuid(channel)?, &ops).map_err(crate::validate::sdk_err)?;
     let event = client.sign_event(builder)?;
     let event_id = event.id.to_hex();
-    let outcome = parse_outcome(&client.submit_event(event).await?);
+    let ack = client.submit_event(event).await.map_err(refused_edit)?;
+    let outcome = parse_outcome(&ack);
     Ok((write_json(&event_id, &outcome), outcome))
 }
 
@@ -584,6 +596,20 @@ mod tests {
         let replay = json!({ "accepted": true, "message": "duplicate:" }).to_string();
         let out = write_json("e", &parse_outcome(&replay));
         assert_eq!(out, json!({ "event_id": "e", "accepted": true }));
+    }
+
+    #[test]
+    fn a_refused_edit_is_the_callers_error() {
+        let refused = CliError::Relay {
+            status: 400,
+            body: r#"{"error":"invalid: goal not found: x"}"#.into(),
+        };
+        assert!(matches!(refused_edit(refused), CliError::Usage(_)));
+        let other = CliError::Relay {
+            status: 400,
+            body: "bad request".into(),
+        };
+        assert!(matches!(refused_edit(other), CliError::Relay { .. }));
     }
 
     #[test]
