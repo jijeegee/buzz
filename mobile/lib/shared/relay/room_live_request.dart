@@ -8,7 +8,7 @@ import 'relay_provider.dart';
 import 'relay_session.dart';
 
 /// Goal tree heads (kuzz-core `KIND_GOAL_TREE`).
-const roomLiveGoalTreeKind = 40110;
+const roomLiveGoalTreeKind = 40111;
 
 /// The kinds an open room's own live REQ carries, one filter each, always all
 /// of them: a listener coming or going never re-sends the REQ. Shared with

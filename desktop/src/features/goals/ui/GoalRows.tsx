@@ -28,9 +28,8 @@ import {
   type GoalLinkTarget,
   goalChildren,
   goalLinkView,
-  goalProgress,
-  goalSubtreeIds,
   goalTitleError,
+  isPlanGoal,
 } from "../goalTree";
 
 /**
@@ -47,7 +46,7 @@ const STATUS_DOT: Record<GoalStatus, string> = {
   dropped: "border-muted-foreground/40 bg-muted-foreground/30",
 };
 
-/** One edit, or several applied as a single revision. */
+/** One edit, or several applied as a single event. */
 export type Apply = (op: GoalOp | GoalOp[]) => Promise<unknown>;
 
 /**
@@ -281,14 +280,13 @@ export function GoalRow({
   const scope = access?.(node.id) ?? "edit";
   const editable = scope === "focus" || scope === "edit";
   const [expanded, setExpanded] = React.useState(
-    scope === "focus" || scope === "path" || layer < 3,
+    scope === "focus" || scope === "path" || isPlanGoal(tree, node.id),
   );
   const [editing, setEditing] = React.useState(false);
   const [noteOpen, setNoteOpen] = React.useState(false);
   const [confirmingRemove, setConfirmingRemove] = React.useState(false);
-  const { done, total } = goalProgress(tree, node.id);
+  const { done, total } = node.progress;
   const status = node.status;
-  const subtreeSize = goalSubtreeIds(tree, node.id).size - 1;
 
   return (
     <div data-goal-access={scope} data-testid={`goal-row-${node.id}`}>
@@ -326,10 +324,10 @@ export function GoalRow({
                 {done}/{total}
               </span>
             ) : null}
-            {(node.assignees ?? []).map((pubkey) => (
+            {node.assignees.map((pubkey) => (
               <span key={pubkey}>@{nameOf(pubkey)}</span>
             ))}
-            {(node.threads ?? []).map((thread) => {
+            {node.links.map((thread) => {
               const isCurrent = thread === currentThreadId;
               const { label, target } = goalLinkView(
                 thread,
@@ -415,11 +413,7 @@ export function GoalRow({
       {editable && confirmingRemove ? (
         <div className="ml-6 flex items-center gap-2 rounded-lg bg-destructive/10 px-2 py-1.5 text-xs">
           <span className="flex-1 text-destructive">
-            {subtreeSize > 0
-              ? t("goals.row.removeConfirmWithChildren", {
-                  count: subtreeSize,
-                })
-              : t("goals.row.removeConfirm")}
+            {t("goals.row.removeConfirm")}
           </span>
           <Button
             onClick={() => setConfirmingRemove(false)}
@@ -432,13 +426,9 @@ export function GoalRow({
           <Button
             data-testid={`goal-remove-confirm-${node.id}`}
             onClick={() =>
-              runGoalEdit(
-                apply({
-                  op: "remove",
-                  id: node.id,
-                  recursive: subtreeSize > 0,
-                }),
-              )
+              // Quiet and finished sub-goals are not in this list, so only
+              // the relay knows what is below.
+              runGoalEdit(apply({ op: "remove", id: node.id, recursive: true }))
             }
             size="sm"
             type="button"
@@ -452,7 +442,7 @@ export function GoalRow({
       {editable && editing ? (
         <div className="ml-6 rounded-xl border border-border/60 p-3">
           <GoalEditor
-            initialNote={node.note ?? ""}
+            initialNote={node.note}
             initialTitle={node.title}
             onCancel={() => setEditing(false)}
             onSave={async (title, note) => {

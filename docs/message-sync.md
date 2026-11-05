@@ -129,19 +129,19 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 ## Open room REQ
 
-Typing indicators (20002) and the goal tree (40110) of an open room ride one
+Typing indicators (20002) and goal edits (40111) of an open room ride one
 live REQ per room, shared by every screen of that room (desktop
 `relayRoomLive.ts`, mobile `room_live_request.dart`):
 
 - Always the same two filters, `{kinds:[20002], #h:[room], limit:0}` and
-  `{kinds:[40110], #h:[room], limit:0}` (`test-fixtures/room-live-request.json`),
+  `{kinds:[40111], #h:[room], limit:0}` (`test-fixtures/room-live-request.json`),
   so a listener coming or going never re-sends the REQ. Every filter carries
   the room's `#h`, which keeps the REQ room-scoped on the relay.
 - The first listener opens it; it closes one microtask after the last one
   leaves, so a remount in the same task keeps it. A terminal CLOSED tells
   every listener and forgets the room; a later listener opens a fresh one.
 - Reconnect re-sends it unchanged (`limit: 0`); goal listeners then re-read
-  the tree, since a missed revision is not replayed. Typing has nothing to
+  the goals, since a missed edit is not replayed. Typing has nothing to
   lose.
 - Mobile typing does not rebuild on reconnect. Mobile goal chips stay live
   through `goalTreeLiveProvider`, watched by the room and thread goal buttons.

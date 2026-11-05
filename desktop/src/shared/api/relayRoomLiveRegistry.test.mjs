@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 
 import {
-  KIND_GOAL_TREE,
+  KIND_GOAL_OPS,
   RoomLiveRegistry,
   roomLiveRequestFilters,
 } from "./relayRoomLiveRegistry.ts";
@@ -61,12 +61,12 @@ test("two listeners of one room share one REQ and get only their kind", async ()
   const typing = [];
   const goals = [];
   registry.listen(ROOM, 20002, (e) => typing.push(e.id));
-  registry.listen(ROOM, KIND_GOAL_TREE, (e) => goals.push(e.id));
+  registry.listen(ROOM, KIND_GOAL_OPS, (e) => goals.push(e.id));
   await flush();
   assert.equal(opened.length, 1);
   assert.deepEqual(opened[0].filters, fixture.filters);
   opened[0].onEvent(event(20002, "t"));
-  opened[0].onEvent(event(KIND_GOAL_TREE, "g"));
+  opened[0].onEvent(event(KIND_GOAL_OPS, "g"));
   assert.deepEqual(typing, ["t"]);
   assert.deepEqual(goals, ["g"]);
 });
@@ -85,7 +85,7 @@ test("a remount in the same task keeps the REQ: no CLOSE, no new REQ", async () 
 test("the last listener leaving closes the REQ one microtask later", async () => {
   const { registry, open } = harness();
   const stopA = registry.listen(ROOM, 20002, () => {});
-  const stopB = registry.listen(ROOM, KIND_GOAL_TREE, () => {});
+  const stopB = registry.listen(ROOM, KIND_GOAL_OPS, () => {});
   await flush();
   stopA();
   await flush();
@@ -111,12 +111,12 @@ test("resync calls onResync once per listener", async () => {
   const { registry } = harness();
   let goals = 0;
   let other = 0;
-  registry.listen(ROOM, KIND_GOAL_TREE, () => {}, {
+  registry.listen(ROOM, KIND_GOAL_OPS, () => {}, {
     onResync: () => {
       goals += 1;
     },
   });
-  registry.listen("other-room", KIND_GOAL_TREE, () => {}, {
+  registry.listen("other-room", KIND_GOAL_OPS, () => {}, {
     onResync: () => {
       other += 1;
     },

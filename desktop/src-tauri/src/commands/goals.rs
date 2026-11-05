@@ -1,141 +1,54 @@
-//! Goal tree (kind 40110) commands — the layered goals of a channel or DM.
+//! Goal commands — the layered goals of a channel or DM.
 //!
-//! Edits are sent as operations, not whole trees: the backend re-reads the
-//! live head, applies the operation, and publishes with an
-//! `expected-revision` precondition. A conflict re-applies the same operation
-//! to the newer head, so concurrent editors never drop each other's changes.
+//! Reads are `{"goals":1}` `/query` extensions; the relay computes everything
+//! a row shows. Edits are kind 40111 events the relay applies to its rows in
+//! order, all or none, so there is nothing to re-read or retry here.
 
-use kuzz_core_pkg::goal_tree::{GoalOp, GoalTree};
-use kuzz_core_pkg::kind::KIND_GOAL_TREE;
+use kuzz_core_pkg::goal_tree::GoalOp;
+use kuzz_core_pkg::kind::KIND_GOAL_OPS;
 use tauri::State;
 
 use crate::{
     app_state::AppState,
-    relay::{query_relay, submit_event},
+    relay::{query_relay, query_relay_value, submit_event},
 };
 
-const MAX_WRITE_ATTEMPTS: usize = 4;
-
-struct Head {
-    id: String,
-    created_at: u64,
-    author: String,
-    tree: GoalTree,
-}
-
-/// `strong` pins the read to the writer pool. Every write is composed against
-/// a strong read so a lagging replica cannot hand it a stale revision.
-fn head_filter(channel_id: &str, strong: bool) -> serde_json::Value {
-    let mut filter =
-        serde_json::json!({ "kinds": [KIND_GOAL_TREE], "#h": [channel_id], "limit": 1 });
-    if strong {
-        filter["consistency"] = serde_json::json!("strong");
+fn view_filter(
+    channel_id: &str,
+    view: &str,
+    cursor: Option<serde_json::Value>,
+) -> serde_json::Value {
+    let mut filter = serde_json::json!({ "goals": 1, "channel": channel_id, "view": view });
+    if let Some(cursor) = cursor {
+        filter["cursor"] = cursor;
     }
     filter
 }
 
-async fn fetch_head(
-    state: &AppState,
-    channel_id: &str,
-    strong: bool,
-) -> Result<Option<Head>, String> {
-    let events = query_relay(state, &[head_filter(channel_id, strong)]).await?;
-    let Some(event) = events.first() else {
-        return Ok(None);
-    };
-    let tree = GoalTree::parse(&event.content).map_err(|e| e.to_string())?;
-    Ok(Some(Head {
-        id: event.id.to_hex(),
-        created_at: event.created_at.as_secs(),
-        author: event.pubkey.to_hex(),
-        tree,
-    }))
-}
-
-fn head_json(head: Option<Head>) -> serde_json::Value {
-    match head {
-        Some(head) => serde_json::json!({
-            "revision": head.id,
-            "updated_at": head.created_at,
-            "author": head.author,
-            "tree": head.tree,
-        }),
-        None => serde_json::json!({
-            "revision": null,
-            "updated_at": null,
-            "author": null,
-            "tree": GoalTree::empty(),
-        }),
-    }
-}
-
-/// Read the live goal tree of a channel or DM.
+/// One page of a goal list (`active`, `inactive`, or `done`).
 #[tauri::command]
-pub async fn get_goal_tree(
+pub async fn get_goals(
     channel_id: String,
+    view: String,
+    cursor: Option<serde_json::Value>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    Ok(head_json(fetch_head(&state, &channel_id, false).await?))
+    query_relay_value(&state, &[view_filter(&channel_id, &view, cursor)]).await
 }
 
-enum Edit {
-    /// Operations applied in order and published as one revision.
-    Ops(Vec<GoalOp>),
-    Replace(GoalTree),
-}
-
-async fn write(
-    state: &AppState,
-    channel_id: &str,
-    edit: Edit,
-) -> Result<serde_json::Value, String> {
-    let uuid = uuid::Uuid::parse_str(channel_id)
-        .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
-    let editor = state.signing_keys()?.public_key().to_hex();
-    for attempt in 0..MAX_WRITE_ATTEMPTS {
-        if attempt > 0 {
-            // Spread out writers that collided on the same head.
-            tokio::time::sleep(std::time::Duration::from_millis(150 << attempt)).await;
-        }
-        let head = fetch_head(state, channel_id, true).await?;
-        let (revision, head_created_at, mut tree) = match head {
-            Some(h) => (h.id, Some(h.created_at), h.tree),
-            None => ("none".to_string(), None, GoalTree::empty()),
-        };
-        match &edit {
-            Edit::Ops(ops) => {
-                let now = chrono::Utc::now().timestamp().max(0) as u64;
-                for op in ops {
-                    tree.apply(op, &editor, now).map_err(|e| e.to_string())?;
-                }
-            }
-            Edit::Replace(replacement) => tree = replacement.clone(),
-        }
-        let builder = kuzz_sdk_pkg::build_set_goal_tree(uuid, &tree, &revision, head_created_at)
-            .map_err(|e| e.to_string())?;
-        match submit_event(builder, state).await {
-            Ok(result) => {
-                return Ok(serde_json::json!({ "event_id": result.event_id, "tree": tree }));
-            }
-            Err(e) if e.contains("conflict: goal tree") => continue,
-            Err(e) => return Err(e),
-        }
-    }
-    Err("GOAL_TREE_BUSY: the goals kept changing while saving — try again".into())
-}
-
-/// Apply one edit operation to the live goal tree.
+/// What these threads or messages work on, whatever list their goals are in.
 #[tauri::command]
-pub async fn apply_goal_op(
+pub async fn get_thread_goals(
     channel_id: String,
-    op: GoalOp,
+    threads: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
-    write(&state, &channel_id, Edit::Ops(vec![op])).await
+    let filter = serde_json::json!({ "goals": 1, "channel": channel_id, "threads": threads });
+    query_relay_value(&state, &[filter]).await
 }
 
-/// Apply several operations as one revision — all of them or none, e.g.
-/// "add a sub-goal and link this thread to it" from a thread.
+/// Apply edits as one event: all of them or none, e.g. "add a sub-goal and
+/// link this thread to it" from a thread.
 #[tauri::command]
 pub async fn apply_goal_ops(
     channel_id: String,
@@ -145,54 +58,39 @@ pub async fn apply_goal_ops(
     if ops.is_empty() {
         return Err("no goal changes to save".into());
     }
-    write(&state, &channel_id, Edit::Ops(ops)).await
+    let uuid = uuid::Uuid::parse_str(&channel_id)
+        .map_err(|_| format!("invalid channel UUID: {channel_id}"))?;
+    let builder = kuzz_sdk_pkg::build_goal_ops(uuid, &ops).map_err(|e| e.to_string())?;
+    let result = submit_event(builder, &state).await?;
+    Ok(serde_json::json!({ "event_id": result.event_id }))
 }
 
-/// List previous goal tree revisions, newest first.
+/// List goal edits, newest first.
 #[tauri::command]
-pub async fn get_goal_tree_history(
+pub async fn get_goal_history(
     channel_id: String,
     limit: Option<u32>,
     state: State<'_, AppState>,
 ) -> Result<serde_json::Value, String> {
     let filter = serde_json::json!({
-        "kinds": [KIND_GOAL_TREE],
+        "kinds": [KIND_GOAL_OPS],
         "#h": [channel_id],
         "limit": limit.unwrap_or(30).clamp(1, 200),
     });
     let events = query_relay(&state, &[filter]).await?;
-    let revisions: Vec<serde_json::Value> = events
+    let edits: Vec<serde_json::Value> = events
         .iter()
         .map(|event| {
-            let goals = GoalTree::parse(&event.content).map(|t| t.nodes.len()).ok();
+            let ops = serde_json::from_str::<serde_json::Value>(&event.content)
+                .ok()
+                .and_then(|content| content.get("ops").cloned());
             serde_json::json!({
-                "revision": event.id.to_hex(),
+                "event_id": event.id.to_hex(),
                 "created_at": event.created_at.as_secs(),
                 "author": event.pubkey.to_hex(),
-                "goals": goals,
+                "ops": ops,
             })
         })
         .collect();
-    Ok(serde_json::json!({ "revisions": revisions }))
-}
-
-/// Restore a previous revision as the new head.
-#[tauri::command]
-pub async fn restore_goal_tree(
-    channel_id: String,
-    revision: String,
-    state: State<'_, AppState>,
-) -> Result<serde_json::Value, String> {
-    let filter = serde_json::json!({
-        "ids": [revision],
-        "kinds": [KIND_GOAL_TREE],
-        "#h": [channel_id],
-        "limit": 1,
-    });
-    let events = query_relay(&state, &[filter]).await?;
-    let event = events
-        .first()
-        .ok_or_else(|| format!("revision {revision} not found"))?;
-    let tree = GoalTree::parse(&event.content).map_err(|e| e.to_string())?;
-    write(&state, &channel_id, Edit::Replace(tree)).await
+    Ok(serde_json::json!({ "edits": edits }))
 }
