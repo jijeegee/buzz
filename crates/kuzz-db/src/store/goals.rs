@@ -71,6 +71,8 @@ pub enum GoalSelection {
     },
     /// What these threads work on.
     Threads(Vec<[u8; 32]>),
+    /// These goals with their context. An unknown id reads as nothing.
+    Goals(Vec<String>),
 }
 
 /// A position in a goal list.
@@ -805,6 +807,9 @@ impl Db {
                     .take(MAX_GOAL_PAGE)
                     .map(|n| n.id.clone())
                     .collect()
+            }
+            GoalSelection::Goals(wanted) => {
+                wanted.iter().flat_map(|id| graph.focus(id, now)).collect()
             }
             GoalSelection::Threads(wanted) => {
                 let ids: Vec<&[u8]> = wanted.iter().map(<[u8; 32]>::as_slice).collect();

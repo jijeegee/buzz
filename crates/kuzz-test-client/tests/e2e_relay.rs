@@ -3442,7 +3442,10 @@ async fn test_goal_edit_reaches_live_subscribers() {
     let sid = sub_id("goal-ops-live");
     let filter = Filter::new()
         .kind(Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16))
-        .custom_tags(SingleLetterTag::lowercase(Alphabet::H), [channel_id.as_str()]);
+        .custom_tags(
+            SingleLetterTag::lowercase(Alphabet::H),
+            [channel_id.as_str()],
+        );
     other_ws
         .subscribe(&sid, vec![filter])
         .await

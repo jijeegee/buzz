@@ -53,6 +53,25 @@ fn bad(message: &str) -> QueryError {
     api_error(StatusCode::BAD_REQUEST, message)
 }
 
+fn no_cursor(object: &serde_json::Map<String, Value>) -> Result<(), QueryError> {
+    if object.get("cursor").is_some_and(|c| !c.is_null()) {
+        return Err(bad("goals threads and nodes take no cursor"));
+    }
+    Ok(())
+}
+
+fn parse_nodes(nodes: &Value) -> Result<Vec<String>, QueryError> {
+    let nodes = nodes
+        .as_array()
+        .filter(|n| !n.is_empty() && n.len() <= MAX_GOAL_THREADS)
+        .ok_or_else(|| bad(&format!("goals nodes must list 1..={MAX_GOAL_THREADS} ids")))?;
+    nodes
+        .iter()
+        .map(|n| n.as_str().map(str::to_owned))
+        .collect::<Option<Vec<_>>>()
+        .ok_or_else(|| bad("goals nodes must be strings"))
+}
+
 fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
     let [filter] = filters else {
         return Err(bad("goals requires exactly one filter"));
@@ -63,11 +82,13 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
     if let Some(key) = object.keys().find(|key| {
         !matches!(
             key.as_str(),
-            "goals" | "channel" | "view" | "threads" | "cursor" | "consistency"
+            "goals" | "channel" | "view" | "threads" | "nodes" | "cursor" | "consistency"
         )
     }) {
         return Err(bad(&format!("unknown goals field {key}")));
     }
+    super::resolve_read_route(filter)
+        .map_err(|()| bad("consistency must be \"strong\" when present"))?;
     if object.get("goals").and_then(Value::as_u64) != Some(1) {
         return Err(bad("goals version must be 1"));
     }
@@ -76,8 +97,12 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
         .and_then(Value::as_str)
         .and_then(|c| Uuid::parse_str(c).ok())
         .ok_or_else(|| bad("goals channel must be a uuid"))?;
-    let selection = match (object.get("view"), object.get("threads")) {
-        (Some(view), None) => {
+    let selection = match (
+        object.get("view"),
+        object.get("threads"),
+        object.get("nodes"),
+    ) {
+        (Some(view), None, None) => {
             let view = view
                 .as_str()
                 .and_then(GoalView::parse)
@@ -92,13 +117,15 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
                 .transpose()?;
             GoalSelection::View { view, after }
         }
-        (None, Some(threads)) => {
-            if object.get("cursor").is_some_and(|c| !c.is_null()) {
-                return Err(bad("goals threads takes no cursor"));
-            }
+        (None, Some(threads), None) => {
+            no_cursor(object)?;
             GoalSelection::Threads(parse_threads(threads)?)
         }
-        _ => return Err(bad("goals needs one of view or threads")),
+        (None, None, Some(nodes)) => {
+            no_cursor(object)?;
+            GoalSelection::Goals(parse_nodes(nodes)?)
+        }
+        _ => return Err(bad("goals needs one of view, threads, or nodes")),
     };
     Ok((channel, selection))
 }
@@ -235,6 +262,10 @@ mod tests {
                 after: None
             }
         );
+        assert!(parse(&[
+            json!({"goals": 1, "channel": CHANNEL, "view": "done", "consistency": "weak"})
+        ])
+        .is_err());
         // `next` is null on the last page, and clients send it straight back.
         parse(&[
             json!({"goals": 1, "channel": CHANNEL, "view": "done", "cursor": null,

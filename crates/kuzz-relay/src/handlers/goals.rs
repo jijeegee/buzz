@@ -12,20 +12,28 @@ use uuid::Uuid;
 
 /// Apply an event whose channel already passed ingest's write gates. The
 /// outcome goes back as JSON in the result message: deleted goals can no
-/// longer be read, so this is the writer's only record of them.
+/// longer be read, so this is the writer's only record of them. The flag says
+/// whether a new event was stored.
 pub(crate) async fn accept(
     state: &Arc<AppState>,
     tenant: &TenantContext,
     event: &Event,
     channel: Uuid,
     visibility: Option<ThreadedChannelVisibility>,
-) -> Result<IngestResult, IngestError> {
+) -> Result<(IngestResult, bool), IngestError> {
     let ops = parse_goal_ops(&event.content).map_err(goal_error)?;
     let write = state
         .db
         .apply_goal_ops(tenant.community(), channel, event, &ops)
         .await
         .map_err(goal_error)?;
+    let inserted = matches!(write, GoalWrite::Applied(..));
+    if !matches!(write, GoalWrite::NoEffect(_)) {
+        // Before fan-out, and again on a retry, as for any stored event: a
+        // note can name uploaded media.
+        crate::media_access::record_event_media(state, tenant.community(), event, Some(channel))
+            .await;
+    }
     let outcome = match write {
         GoalWrite::Applied(stored, outcome) => {
             super::event::dispatch_persistent_event(
@@ -42,11 +50,12 @@ pub(crate) async fn accept(
         GoalWrite::NoEffect(outcome) => Some(outcome),
         GoalWrite::Duplicate => None,
     };
-    Ok(IngestResult {
+    let result = IngestResult {
         event_id: event.id.to_hex(),
         accepted: true,
         message: outcome_message(outcome)?,
-    })
+    };
+    Ok((result, inserted))
 }
 
 fn outcome_message(outcome: Option<GoalOutcome>) -> Result<String, IngestError> {

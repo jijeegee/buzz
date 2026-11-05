@@ -3342,18 +3342,25 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_GOAL_OPS {
         let channel = channel_id
             .ok_or_else(|| IngestError::Rejected("invalid: goal event missing channel".into()))?;
-        let result =
+        let (result, inserted) =
             super::goals::accept(state, tenant, &event, channel, threaded_visibility.clone())
                 .await?;
-        emit(
-            tracer,
+        let msg_id = msg_id_label(event.id.as_bytes());
+        let claimed_community = claimed_community_from_event(&event);
+        let action = if inserted {
             TraceAction::WriteInsert {
-                msg_id: msg_id_label(event.id.as_bytes()),
+                msg_id,
                 channel: channel_label(channel),
-                claimed_community: claimed_community_from_event(&event),
-            },
-            state_for_request(tenant, auth.pubkey()),
-        );
+                claimed_community,
+            }
+        } else {
+            TraceAction::WriteDuplicate {
+                msg_id,
+                channel: channel_label(channel),
+                claimed_community,
+            }
+        };
+        emit(tracer, action, state_for_request(tenant, auth.pubkey()));
         return Ok(result);
     }
 

@@ -337,6 +337,32 @@ async fn a_removed_member_loses_a_private_room() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn a_node_read_gives_the_goal_and_its_context() {
+    let f = Fixture::new(true).await;
+    f.write(
+        f.open,
+        &[root(), add("a", "root"), add("a1", "a"), add("b", "root")],
+    )
+    .await;
+    let (status, body) = f
+        .read(
+            &f.owner,
+            json!({"goals": 1, "channel": f.open, "nodes": ["a", "gone"]}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    let mut ids: Vec<&str> = body["rows"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|r| r["id"].as_str().unwrap())
+        .collect();
+    ids.sort_unstable();
+    assert_eq!(ids, ["a", "a1", "b", "root"], "{body}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn a_replay_is_marked_duplicate() {
     let f = Fixture::new(true).await;
     f.write(f.open, &[root()]).await;
