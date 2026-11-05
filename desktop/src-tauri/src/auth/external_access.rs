@@ -166,7 +166,10 @@ where
 {
     let work = async {
         for agent in agents.await? {
-            narrow(state, &agent).await?;
+            // One failure must not leave the others wide.
+            if let Err(error) = narrow(state, &agent).await {
+                eprintln!("kuzz-desktop: narrowing a disconnected agent's access failed: {error}");
+            }
         }
         Ok::<(), String>(())
     };
