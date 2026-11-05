@@ -259,6 +259,40 @@ test("older pages wait for the relay: stored replies draw first and stay drawn w
   }
 });
 
+test("the list's own scroll during a seek is not the reader moving", async () => {
+  window.localStorage.clear();
+  const view = mount({
+    replies: replies("r2", "r3"),
+    firstUnreadReplyId: "r2",
+    hasOlderReplies: true,
+    fetchOlder: () => new Promise(() => {}),
+  });
+  try {
+    await act(() => Promise.resolve());
+    const list = document.createElement("div");
+    list.innerHTML = '<div data-message-id="r2"></div>';
+    document.body.append(list);
+    const realNow = Date.now;
+    Date.now = () => realNow() + 60_000;
+    try {
+      act(() => {
+        list.dispatchEvent(new window.Event("scroll", { bubbles: true }));
+      });
+    } finally {
+      Date.now = realNow;
+      list.remove();
+    }
+    view.update({
+      replies: replies("r1", "r2", "r3"),
+      firstUnreadReplyId: "r1",
+      hasOlderReplies: false,
+    });
+    assert.equal(view.last().targetId, "r1");
+  } finally {
+    view.unmount();
+  }
+});
+
 test("a reader who scrolled during a seek stays put", async () => {
   window.localStorage.clear();
   const view = mount({

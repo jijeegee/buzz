@@ -728,8 +728,7 @@ the relay at the same time; neither waits for the other.
   gap, or none when unknown. It chains the room's spans (a room span vouches
   from `lo + 1865`, a head span from its `lo`, or from 0 for a whole
   history) back from the newest painted row, and is none when the room is
-  not current or has ever stored a job row. A thread paint uses the room
-  spans and the thread's head span. See [Opening at a
+  not current or has ever stored a job row. See [Opening at a
   position](#opening-at-a-position) for how a gap is used.
 - **Same account and server:** a paint names the account and the relay it
   is for (desktop: from the community's query cache); the store answers

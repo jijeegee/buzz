@@ -215,14 +215,14 @@ export async function loadNewestThreadReplies(
   // A thread never loaded paints its stored replies while the relay is
   // asked; a painted thread's refetch takes that request. A link to a reply
   // goes to the relay: the walk to the reply pages the relay anyway.
-  const first =
-    queryClient.getQueryData(stateKey) === undefined && !options.mustInclude;
+  const notLoaded = queryClient.getQueryData(stateKey) === undefined;
+  const first = notLoaded && !options.mustInclude;
   const relay =
     (first
       ? undefined
       : takePendingThreadRelay(queryClient, channelId, rootId)) ??
     fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
-  if (first) noteThreadRequest(queryClient, channelId, relay);
+  if (notLoaded) noteThreadRequest(queryClient, channelId, relay);
   const race = first
     ? await storeBeforeRelay(
         paintedThreadPage(queryClient, channelId, rootId, limitRows),

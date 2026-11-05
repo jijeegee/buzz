@@ -22,8 +22,8 @@ export function storeScope(queryClient: QueryClient): StoreScope | null {
 }
 
 /**
- * From when each painted room or thread is held without a gap, while its
- * paint awaits the relay: `null` when not known.
+ * From when each painted room is held without a gap, while its paint awaits
+ * the relay: `null` when not known.
  */
 const coverage = new Map<string, number | null>();
 
@@ -41,9 +41,9 @@ export function forgetPaintCoverage(key: string) {
 }
 
 /**
- * For a room (channel id) or thread (threadPaintKey) shown from a paint the
- * relay has not replaced yet: from when it is held without a gap (`null`:
- * unknown). `undefined` when no such paint is shown.
+ * For a room shown from a paint the relay has not replaced yet: from when it
+ * is held without a gap (`null`: unknown). `undefined` when no such paint is
+ * shown.
  */
 export function paintCoverage(key: string | null): number | null | undefined {
   return key === null ? undefined : coverage.get(key);

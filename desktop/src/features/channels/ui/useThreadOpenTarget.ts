@@ -75,11 +75,11 @@ type UseThreadOpenTargetOptions = {
 /**
  * Where a thread opens, decided once per visit as rooms do: a linked reply
  * (the caller's own target), else the first unread reply, else where the
- * reader left it, else the newest reply. A reply in an older page is fetched
- * first, with a room's limits; until then the thread reports `isResolving` so
- * nothing is drawn elsewhere first. Stored replies decide at once, holes and
- * all, but provisionally: once the relay's replies are in, the open moves if
- * the reader has not scrolled (docs/message-sync.md#opening-at-a-position).
+ * reader left it, else the newest reply. Replies held are drawn at once,
+ * holes and all, but provisionally: once the relay's replies are in, the open
+ * moves if the reader has not scrolled, fetching older pages with a room's
+ * limits when the target is in one. `isResolving` is only for a thread with no
+ * replies held yet (docs/message-sync.md#opening-at-a-position).
  */
 export function useThreadOpenTarget({
   channelId,
@@ -238,6 +238,7 @@ export function useThreadOpenTarget({
     readerMoved,
     plan?.drawn === true && (plan.provisional || !plan.decided),
     key,
+    plan?.drawn === true && !plan.decided,
   );
   const staleRemembered =
     plan?.decided === true &&
