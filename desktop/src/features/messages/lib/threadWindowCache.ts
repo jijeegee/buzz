@@ -222,7 +222,7 @@ export async function loadNewestThreadReplies(
       ? undefined
       : takePendingThreadRelay(queryClient, channelId, rootId)) ??
     fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
-  noteThreadRequest(channelId, relay);
+  if (first) noteThreadRequest(queryClient, channelId, relay);
   const race = first
     ? await storeBeforeRelay(
         paintedThreadPage(queryClient, channelId, rootId, limitRows),
@@ -236,7 +236,6 @@ export async function loadNewestThreadReplies(
       channelId,
       rootId,
       race.relayFailed ? null : relay,
-      race.stored.completeFrom,
     );
     if (!race.relayFailed) {
       void refreshThreadAfterStore(

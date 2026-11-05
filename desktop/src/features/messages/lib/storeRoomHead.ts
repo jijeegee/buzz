@@ -145,7 +145,7 @@ async function paintWindow(queryClient: QueryClient, channelId: string) {
 function startRelay(queryClient: QueryClient, channelId: string) {
   noteStart(queryClient, channelId);
   return sendRoomWindow(queryClient, channelId, async () => {
-    await afterThreadRequest(channelId);
+    await afterThreadRequest(queryClient, channelId);
     return deps.relayWindow(channelId);
   });
 }

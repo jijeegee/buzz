@@ -1933,18 +1933,17 @@ that position.
   page, or a scroll of the message list more than 0.75 s after the open
   (earlier scrolls are the list placing itself). This resets on each new
   room or thread. If the reader moved, it stays. Threads follow the same
-  rule against the relay's replies, and a thread's stored replies always
-  decide on the first frame, holes included: the relay's page fills them and
-  moves the open if needed. Cases:
+  rule against the relay's replies, and replies held always draw on the
+  first frame (once the read state's first load is in), holes included: the
+  relay's page fills them and moves the open if needed. Cases:
   `test-fixtures/message-store-paint-first.json` (`anchor`, `reanchor`).
 - **Threads:** the same order: a linked reply, the first unread reply (near
   the top), where the reader left the thread, the newest reply. The reading
   position is kept per thread under `<channel id>/<root id>`. Desktop pages
   back for a reply in an older page (the same limits as a room) once the
-  relay has answered, with the stored replies still drawn; replies not yet
-  held wait for that. A room opened with its thread sends its relay request
-  after the thread's, at most 2 s later, and the thread's first rows draw
-  ahead of the room's. Mobile keeps a thread's list hidden while it opens for
+  relay has answered, with the replies held still drawn. A room opened with
+  a thread not loaded yet sends its relay request after the thread's, at most
+  2 s later, and the thread's first rows draw ahead of the room's. Mobile keeps a thread's list hidden while it opens for
   at most about 1.2 s, the 1 s read state wait included (also when the
   target's time is not known yet); then the replies at hand show at the
   newest, and a position found later moves the list once, only if the reader

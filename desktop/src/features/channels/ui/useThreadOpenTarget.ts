@@ -203,11 +203,15 @@ export function useThreadOpenTarget({
         plan.provisional = false;
         needsOlder = true;
       }
-    } else if (decision === "seek" && repliesConfirmed) {
-      needsOlder = true;
+    } else if (decision === "seek" && (plan.drawn || replies.length === 0)) {
+      needsOlder = repliesConfirmed;
+    } else if (plan.drawn && readerMoved.current) {
+      // A seek that ended after the reader moved leaves them where they are.
+      plan.decided = true;
+      plan.provisional = false;
     } else {
-      // Older pages are the relay's: until it has answered, the stored
-      // replies are drawn and its answer decides whether to seek.
+      // Older pages are the relay's: the replies held are drawn while it is
+      // asked, and it decides whether to seek at all.
       const open =
         decision === "seek"
           ? {
@@ -216,8 +220,10 @@ export function useThreadOpenTarget({
               keeps: firstUnread === null,
             }
           : decision;
-      plan.decided = true;
+      plan.decided = decision !== "seek" || !repliesConfirmed;
+      needsOlder = !plan.decided;
       plan.drawn = true;
+      plan.released = false;
       plan.provisional = !repliesConfirmed || !isReadStateSettled;
       plan.targetId = open.targetId;
       plan.topPx = open.targetId === null ? null : open.topPx;
@@ -228,7 +234,11 @@ export function useThreadOpenTarget({
 
   // As in rooms: a visit that opens somewhere new forgets the old spot, but
   // one that ran out of time or read state keeps it for the next visit.
-  useReaderMoved(readerMoved, plan?.decided === true && plan.provisional, key);
+  useReaderMoved(
+    readerMoved,
+    plan?.drawn === true && (plan.provisional || !plan.decided),
+    key,
+  );
   const staleRemembered =
     plan?.decided === true &&
     !plan.provisional &&
