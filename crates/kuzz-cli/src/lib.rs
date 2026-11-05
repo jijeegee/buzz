@@ -57,6 +57,12 @@ where
             }
         }
     };
+    // Here, not in `run`: the command tree is too deep to build on top of it
+    // in unoptimized builds.
+    if let Cmd::Guide = cli.command {
+        commands::guide::cmd_guide(&help_tree::render(&Cli::command(), usize::MAX));
+        return 0;
+    }
     // Boxed: the future holds every command's state, and on the stack it
     // overflows Windows' 1 MB main thread in unoptimized builds.
     match Box::pin(run(cli)).await {
@@ -408,6 +414,14 @@ once), key_in_use, device_limit, rate_limited.",
         #[arg(long)]
         full: bool,
     },
+    /// Report a message or a person to moderators
+    #[command(subcommand)]
+    Report(ReportCmd),
+    /// Keep reminders for yourself, shared with the app
+    #[command(subcommand)]
+    Reminders(RemindersCmd),
+    /// How an AI uses Kuzz, with every command
+    Guide,
     /// Keep your own friend list
     #[command(subcommand)]
     Friends(FriendsCmd),
@@ -1384,6 +1398,108 @@ pub enum GifsCmd {
 }
 
 #[derive(Subcommand)]
+pub enum ReportCmd {
+    /// Report a message you can read. Reporting again adds another report, so do not repeat one
+    Message {
+        /// 64-char hex event ID of the message
+        #[arg(long)]
+        event: String,
+        /// Why you are reporting it
+        #[arg(long, value_enum)]
+        reason: ReportReason,
+        /// What moderators should know
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Report a person. Reporting again adds another report, so do not repeat one
+    Person {
+        /// Person's pubkey (hex or npub)
+        #[arg(long)]
+        pubkey: String,
+        /// Why you are reporting them
+        #[arg(long, value_enum)]
+        reason: ReportReason,
+        /// What moderators should know
+        #[arg(long)]
+        note: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ReportReason {
+    Illegal,
+    Nudity,
+    Malware,
+    Spam,
+    Impersonation,
+    Profanity,
+    Other,
+}
+
+impl ReportReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Illegal => "illegal",
+            Self::Nudity => "nudity",
+            Self::Malware => "malware",
+            Self::Spam => "spam",
+            Self::Impersonation => "impersonation",
+            Self::Profanity => "profanity",
+            Self::Other => "other",
+        }
+    }
+}
+
+#[derive(Subcommand)]
+#[command(
+    after_help = "Nothing wakes you when a reminder comes due: check `kuzz reminders list --due`."
+)]
+pub enum RemindersCmd {
+    /// Add a reminder with a note, a message, or both
+    Add {
+        /// When: RFC 3339 or unix seconds, within a year
+        #[arg(long)]
+        at: String,
+        /// What to remember
+        #[arg(long)]
+        note: Option<String>,
+        /// 64-char hex event ID of a message to come back to
+        #[arg(long)]
+        event: Option<String>,
+    },
+    /// List pending reminders, soonest first
+    List {
+        /// Only those whose time has come
+        #[arg(long, conflicts_with = "all")]
+        due: bool,
+        /// Also those done or cancelled
+        #[arg(long)]
+        all: bool,
+    },
+    /// Mark a pending reminder done
+    Done {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+    },
+    /// Cancel a pending reminder
+    Cancel {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+    },
+    /// Move a pending reminder to a new time
+    Snooze {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+        /// When: RFC 3339 or unix seconds, within a year
+        #[arg(long)]
+        at: String,
+    },
+}
+
+#[derive(Subcommand)]
 pub enum FriendsCmd {
     /// List your own friends
     List {
@@ -1645,14 +1761,20 @@ pub enum WorkflowsCmd {
         #[arg(long)]
         inputs: Option<String>,
     },
-    /// List runs for a workflow
+    /// List runs for a workflow, newest first
     Runs {
         /// Workflow UUID
         #[arg(long)]
         workflow: String,
-        /// Maximum number of results to return
+        /// Maximum number of results to return (1-100, default 20)
         #[arg(long)]
         limit: Option<u32>,
+        /// Next page: `before` from `next`
+        #[arg(long, requires = "before_id")]
+        before: Option<String>,
+        /// Next page: `before_id` from `next`
+        #[arg(long, requires = "before")]
+        before_id: Option<String>,
     },
     /// Approve or deny a workflow step
     #[command(
@@ -1699,7 +1821,7 @@ pub enum SocialCmd {
         #[arg(long)]
         reply_to: Option<String>,
     },
-    /// Set your contact list (NIP-02 kind:3)
+    /// Replace your whole contact list (NIP-02 kind:3). To change one friend use `kuzz friends`
     #[command(name = "set-contacts")]
     SetContactList {
         /// JSON array of contacts: [{"pubkey":"hex","relay_url":"...","petname":"..."}]
@@ -1736,7 +1858,7 @@ pub enum SocialCmd {
         #[arg(long)]
         pubkey: String,
     },
-    /// Publish a NIP-51/NIP-65 social list or set.
+    /// Publish a NIP-51/NIP-65 social list or set, replacing the whole list.
     #[command(name = "set-list")]
     SetList {
         /// Supported kind: 10000, 10001, 10002, 10003, 30000, or 30003.
@@ -3114,6 +3236,8 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             let before = before_at_us.zip(before_key);
             commands::inbox::cmd_inbox(&client, limit, unread, before, full).await
         }
+        Cmd::Report(sub) => commands::report::dispatch(sub, &client).await,
+        Cmd::Reminders(sub) => commands::reminders::dispatch(sub, &client).await,
         Cmd::Friends(sub) => commands::friends::dispatch(sub, &client).await,
         Cmd::Groups(sub) => commands::groups::dispatch(sub, &client).await,
         Cmd::Invitations(sub) => commands::invitations::dispatch(sub, &client).await,
@@ -3133,7 +3257,9 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) | Cmd::Auth(_) | Cmd::Pair { .. } => unreachable!("handled above"),
+        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } => {
+            unreachable!("handled above")
+        }
     }
 }
 
@@ -3402,6 +3528,54 @@ mod tests {
     }
 
     #[test]
+    fn every_example_in_the_guide_parses() {
+        let examples: Vec<&str> = commands::guide::GUIDE
+            .lines()
+            .filter_map(|line| line.strip_prefix("  kuzz "))
+            .collect();
+        assert!(examples.len() >= 8, "{examples:?}");
+        for example in examples {
+            let args = std::iter::once("kuzz").chain(example.split(' '));
+            assert!(parse_args(args).is_ok(), "{example}");
+        }
+    }
+
+    #[test]
+    fn bot_removal_needs_yes() {
+        let bot = ["kuzz", "auth", "bots", "delete", "abc"];
+        assert!(parse_args(bot).is_err());
+        assert!(parse_args(["kuzz", "auth", "bots", "delete", "abc", "--yes"]).is_ok());
+        assert!(parse_args(["kuzz", "auth", "bots", "revoke-all"]).is_err());
+        assert!(parse_args(["kuzz", "auth", "bots", "revoke-all", "--yes"]).is_ok());
+    }
+
+    #[test]
+    fn report_reasons_match_the_relay() {
+        use clap::ValueEnum;
+        let reasons: Vec<&str> = ReportReason::value_variants()
+            .iter()
+            .map(|reason| reason.as_str())
+            .collect();
+        assert_eq!(
+            reasons,
+            [
+                "illegal",
+                "nudity",
+                "malware",
+                "spam",
+                "impersonation",
+                "profanity",
+                "other"
+            ]
+        );
+    }
+
+    #[test]
+    fn reminder_list_takes_one_view() {
+        assert!(parse_args(["kuzz", "reminders", "list", "--due", "--all"]).is_err());
+    }
+
+    #[test]
     fn set_status_clear_rejects_text_and_emoji() {
         for extra in [["--text", "busy"], ["--emoji", "🎶"]] {
             let args = ["kuzz", "users", "set-status", "--clear"]
@@ -3439,6 +3613,7 @@ mod tests {
             "gifs",
             "goals",
             "groups",
+            "guide",
             "inbox",
             "invitations",
             "issues",
@@ -3453,6 +3628,8 @@ mod tests {
             "pr",
             "projects",
             "reactions",
+            "reminders",
+            "report",
             "repos",
             "social",
             "teams",
@@ -3556,6 +3733,11 @@ mod tests {
             vec!["get", "history", "restore", "set"]
         );
         assert_eq!(names(&cmd, "reactions"), vec!["add", "get", "remove"]);
+        assert_eq!(names(&cmd, "report"), vec!["message", "person"]);
+        assert_eq!(
+            names(&cmd, "reminders"),
+            vec!["add", "cancel", "done", "list", "snooze"]
+        );
         assert_eq!(
             names(&cmd, "emoji"),
             vec!["export", "import", "list", "rm", "set"]

@@ -66,6 +66,10 @@ kuzz messages mark-all-read
 kuzz threads follow --thread <root>           # unfollow to stop
 kuzz threads search --query "launch"          # by thread name
 kuzz friends add --as-self --person <hex|npub>   # list, remove; --as-self is required
+kuzz report message --event <id> --reason spam   # or: report person --pubkey <hex|npub>
+kuzz reminders add --at 2026-11-06T09:00:00+09:00 --note "check the deploy"
+kuzz reminders list --due                     # nothing wakes you: check this
+kuzz guide                                    # how an AI uses Kuzz, with every command
 kuzz groups search --query "design"           # find open groups
 kuzz groups get --handle @design              # or --channel <uuid>
 kuzz groups handle --channel <uuid> --set design   # or --clear
@@ -158,7 +162,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `unarchive` | Unarchive a channel |
 | | `delete` | Delete a channel |
 | | `members` | List channel members |
-| | `add-member` | Add a member |
+| | `add-member` | Add a member, or report that an invitation went out instead (`invited`) |
 | | `remove-member` | Remove a member |
 | `canvas` | `get` | Get channel canvas |
 | | `set` | Set channel canvas |
@@ -168,6 +172,9 @@ The table below mirrors that tree for readers who are not at a terminal.
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
 | `inbox` | | Your chats with unread counts and the latest message |
+| `report` | `message`, `person` | Report to moderators; a repeat adds another report |
+| `reminders` | `add`, `list`, `done`, `cancel`, `snooze` | Your own reminders, shared with the app |
+| `guide` | | How an AI uses Kuzz, with every command |
 | `friends` | `list` | List your own friends |
 | | `add` | Add a friend, or rename one |
 | | `remove` | Remove a friend |

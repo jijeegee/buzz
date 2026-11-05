@@ -6,13 +6,13 @@
 use kuzz_core::{
     kind::{
         KIND_AGENT_OBSERVER_FRAME, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_DELETION,
-        KIND_DM_OPEN, KIND_EMOJI_SET, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
-        KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_STATUS_CLOSED,
-        KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-        KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_MODERATION_BAN,
-        KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
-        KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT, KIND_USER_STATUS,
-        KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
+        KIND_DM_OPEN, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_GIT_ISSUE, KIND_GIT_PATCH,
+        KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+        KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+        KIND_GIT_STATUS_OPEN, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST,
+        KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+        KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT,
+        KIND_REPORT, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
     },
     observer::{
         content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -1111,6 +1111,44 @@ pub fn build_contact_list(
     contacts: &[(&str, Option<&str>, Option<&str>)],
 ) -> Result<EventBuilder, SdkError> {
     build_contact_list_keeping(contacts, "", &[])
+}
+
+/// Report a message to moderators (NIP-56). `note` may be empty.
+pub fn build_report_message(
+    author: &str,
+    event_id: &str,
+    report_type: &str,
+    note: &str,
+) -> Result<EventBuilder, SdkError> {
+    let tags = vec![tag(&["p", author])?, tag(&["e", event_id, report_type])?];
+    Ok(EventBuilder::new(Kind::Custom(KIND_REPORT as u16), note.trim()).tags(tags))
+}
+
+/// Report a person to moderators (NIP-56). `note` may be empty.
+pub fn build_report_person(
+    person: &str,
+    report_type: &str,
+    note: &str,
+) -> Result<EventBuilder, SdkError> {
+    let tags = vec![tag(&["p", person, report_type])?];
+    Ok(EventBuilder::new(Kind::Custom(KIND_REPORT as u16), note.trim()).tags(tags))
+}
+
+/// An event reminder (NIP-ER). The caller encrypts the content to itself.
+pub fn build_event_reminder(
+    id: &str,
+    encrypted_content: &str,
+    not_before: Option<u64>,
+    expiration: Option<u64>,
+) -> Result<EventBuilder, SdkError> {
+    let mut tags = vec![tag(&["d", id])?];
+    if let Some(not_before) = not_before {
+        tags.push(tag(&["not_before", &not_before.to_string()])?);
+    }
+    if let Some(expiration) = expiration {
+        tags.push(tag(&["expiration", &expiration.to_string()])?);
+    }
+    Ok(EventBuilder::new(Kind::Custom(KIND_EVENT_REMINDER as u16), encrypted_content).tags(tags))
 }
 
 /// [`build_contact_list`] carrying over what the previous list held besides
@@ -2738,6 +2776,65 @@ mod tests {
             let s = t.as_slice();
             s.first().map(|v| v.as_str()) == Some(key) && s.get(1).map(|v| v.as_str()) == Some(val)
         })
+    }
+
+    fn tag_lists(event: &nostr::Event) -> Vec<Vec<String>> {
+        event.tags.iter().map(|t| t.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn report_events_match_the_relay_shape() {
+        let keys = nostr::Keys::generate();
+        let person = "a".repeat(64);
+        let message = "b".repeat(64);
+        let event = build_report_message(&person, &message, "spam", " look ")
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(event.kind.as_u16() as u32, KIND_REPORT);
+        assert_eq!(event.content, "look");
+        assert_eq!(
+            tag_lists(&event),
+            vec![
+                vec!["p".to_string(), person.clone()],
+                vec!["e".to_string(), message, "spam".to_string()],
+            ]
+        );
+        let event = build_report_person(&person, "other", "")
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(
+            tag_lists(&event),
+            vec![vec!["p".to_string(), person, "other".to_string()]]
+        );
+    }
+
+    #[test]
+    fn reminder_tags_follow_its_state() {
+        let keys = nostr::Keys::generate();
+        let tags = |not_before, expiration| {
+            let event = build_event_reminder("id", "cipher", not_before, expiration)
+                .unwrap()
+                .sign_with_keys(&keys)
+                .unwrap();
+            assert_eq!(event.kind.as_u16() as u32, KIND_EVENT_REMINDER);
+            tag_lists(&event)
+        };
+        assert_eq!(
+            tags(Some(5), None),
+            vec![
+                vec!["d".to_string(), "id".to_string()],
+                vec!["not_before".to_string(), "5".to_string()],
+            ]
+        );
+        assert_eq!(
+            tags(None, Some(9)),
+            vec![
+                vec!["d".to_string(), "id".to_string()],
+                vec!["expiration".to_string(), "9".to_string()],
+            ]
+        );
     }
 
     #[test]
