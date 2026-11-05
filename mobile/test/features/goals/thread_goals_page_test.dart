@@ -10,8 +10,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../helpers/widget_helpers.dart';
 
 const _channel = 'channel-1';
-const _editor =
-    'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa';
 const _thread =
     'bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb';
 const _otherThread =
@@ -21,21 +19,45 @@ const _message =
 const _gone =
     'eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee';
 
-GoalTree _tree() {
-  var tree = GoalTree.empty;
-  for (final op in <GoalOp>[
-    const SetRootGoal(id: 'root', title: 'Launch'),
-    const AddGoal(id: 'srv', parent: 'root', title: 'Server'),
-    const AddGoal(id: 'ui', parent: 'root', title: 'Desktop UI'),
-    const AddGoal(id: 'cas', parent: 'srv', title: 'CAS writes'),
-    const AddGoal(id: 'val', parent: 'srv', title: 'Validation'),
-    const UpdateGoal(id: 'cas', status: GoalStatus.done),
-    const LinkThread(id: 'srv', thread: _thread),
-  ]) {
-    tree = tree.apply(op, editor: _editor, now: 1);
-  }
-  return tree;
-}
+GoalTree _tree({
+  String srvNote = '',
+  List<String> uiLinks = const [],
+  bool uiThread = false,
+}) => GoalTree([
+  const GoalNode(
+    id: 'root',
+    parent: null,
+    title: 'Launch',
+    progress: (done: 1, total: 4),
+  ),
+  GoalNode(
+    id: 'srv',
+    parent: 'root',
+    title: 'Server',
+    note: srvNote,
+    status: GoalStatus.inProgress,
+    links: const [_thread],
+    isThread: true,
+    progress: (done: 1, total: 2),
+    order: 1,
+  ),
+  GoalNode(
+    id: 'ui',
+    parent: 'root',
+    title: 'Desktop UI',
+    links: uiLinks,
+    isThread: uiThread,
+    order: 2,
+  ),
+  const GoalNode(
+    id: 'cas',
+    parent: 'srv',
+    title: 'CAS writes',
+    status: GoalStatus.done,
+    order: 3,
+  ),
+  const GoalNode(id: 'val', parent: 'srv', title: 'Validation', order: 4),
+]);
 
 /// Records edits instead of publishing them.
 class _FakeGoalActions extends GoalActions {
@@ -59,11 +81,13 @@ Future<_FakeGoalActions> _pump(
     WidgetHelpers.testable(
       overrides: [
         goalTreeProvider(_channel).overrideWith(
-          (ref) async => GoalTreeHead(
-            revision: 'head',
-            createdAt: 1,
+          (ref) async => GoalBoard(
             tree: tree ?? _tree(),
+            counts: (active: 5, inactive: 0, done: 1),
           ),
+        ),
+        threadGoalTreeProvider.overrideWith(
+          (ref, key) async => tree ?? _tree(),
         ),
         goalActionsProvider.overrideWith(
           (ref) => actions = _FakeGoalActions(ref),
@@ -98,11 +122,7 @@ void main() {
   testWidgets('the linked goal note opens from its note button', (
     tester,
   ) async {
-    final tree = _tree().apply(
-      const UpdateGoal(id: 'srv', note: 'Keep writes atomic'),
-      editor: _editor,
-      now: 2,
-    );
+    final tree = _tree(srvNote: 'Keep writes atomic');
     await _pump(
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
@@ -117,11 +137,7 @@ void main() {
   testWidgets('thread links open other threads; this thread stays put', (
     tester,
   ) async {
-    final tree = _tree().apply(
-      const LinkThread(id: 'ui', thread: _otherThread),
-      editor: _editor,
-      now: 2,
-    );
+    final tree = _tree(uiLinks: [_otherThread]);
     await _pump(
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
@@ -150,14 +166,7 @@ void main() {
   testWidgets('message links say where they go; missing ones are disabled', (
     tester,
   ) async {
-    var tree = _tree();
-    for (final id in [_otherThread, _message, _gone]) {
-      tree = tree.apply(
-        LinkThread(id: 'ui', thread: id),
-        editor: _editor,
-        now: 2,
-      );
-    }
+    final tree = _tree(uiLinks: [_otherThread, _message, _gone]);
     await _pump(
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
@@ -323,16 +332,14 @@ void main() {
     await tester.tap(find.byKey(const ValueKey('goal-editor-save')));
     await tester.pumpAndSettle();
     final batch = actions.batches.last;
-    expect(batch, hasLength(2), reason: 'one revision');
+    expect(batch, hasLength(2), reason: 'one event');
     final add = batch[0] as AddGoal;
     final linked = batch[1] as LinkThread;
     expect((add.parent, add.title), ('ui', 'Thread panel'));
     expect((linked.id, linked.thread), (add.id, _otherThread));
   });
 
-  testWidgets('the goal card toggles the linked goal and relinks', (
-    tester,
-  ) async {
+  testWidgets('the linked goal relinks', (tester) async {
     // Thread links make rows taller; keep the relink button on screen.
     tester.view.physicalSize = const Size(800, 1200);
     tester.view.devicePixelRatio = 1;
@@ -341,12 +348,6 @@ void main() {
       tester,
       const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
     );
-    // Linking started srv; the card's status button moves it on.
-    await tester.tap(find.byKey(const ValueKey('goal-status-srv')).first);
-    await tester.pumpAndSettle();
-    final toggle = actions.batches.single.single as UpdateGoal;
-    expect((toggle.id, toggle.status), ('srv', GoalStatus.done));
-
     await tester.ensureVisible(
       find.byKey(const ValueKey('thread-goal-change')),
     );
@@ -354,7 +355,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.tap(find.byKey(const ValueKey('thread-goal-link-ui')).last);
     await tester.pumpAndSettle();
-    final link = actions.batches.last.single as LinkThread;
+    final link = actions.batches.single.single as LinkThread;
     expect((link.id, link.thread), ('ui', _thread));
 
     await tester.ensureVisible(
@@ -379,13 +380,37 @@ void main() {
     expect((batch[1] as LinkThread).thread, _thread);
   });
 
-  test('unlink removes the thread from every goal', () {
-    final tree = _tree().apply(
-      const UnlinkThread(thread: _thread),
-      editor: _editor,
-      now: 2,
+  testWidgets('thread goals fold, but this thread\'s path stays open', (
+    tester,
+  ) async {
+    final tree = GoalTree([
+      ..._tree(uiLinks: [_otherThread], uiThread: true).nodes,
+      const GoalNode(id: 'ui-task', parent: 'ui', title: 'Icons'),
+    ]);
+    await _pump(
+      tester,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+      tree: tree,
     );
-    expect(tree.forThread(_thread), isNull);
-    expect(tree.node('srv')!.threads, isEmpty);
+    expect(find.byKey(const ValueKey('goal-row-val')), findsOneWidget);
+    expect(find.byKey(const ValueKey('goal-row-ui')), findsOneWidget);
+    expect(find.byKey(const ValueKey('goal-row-ui-task')), findsNothing);
+    await tester.tap(find.byKey(const ValueKey('goal-fold-ui')));
+    await tester.pump();
+    expect(find.byKey(const ValueKey('goal-row-ui-task')), findsOneWidget);
+  });
+
+  testWidgets('finishing a thread goal with tasks asks first', (tester) async {
+    final actions = await _pump(
+      tester,
+      const ThreadGoalsPage(channelId: _channel, threadRootId: _thread),
+    );
+    await tester.tap(find.byKey(const ValueKey('goal-status-srv')).first);
+    await tester.pumpAndSettle();
+    expect(actions.batches, isEmpty);
+    await tester.tap(find.byKey(const ValueKey('goal-finish-confirm-srv')));
+    await tester.pumpAndSettle();
+    final toggle = actions.batches.single.single as UpdateGoal;
+    expect((toggle.id, toggle.status), ('srv', GoalStatus.done));
   });
 }

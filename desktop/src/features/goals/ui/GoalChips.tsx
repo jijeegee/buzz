@@ -10,6 +10,7 @@ import {
   useGoalAssigneeNames,
   useGoalLinkKinds,
   useGoalTreeQuery,
+  useThreadGoalTree,
 } from "../hooks";
 import type { Apply } from "./GoalRows";
 import { ThreadGoalPanelView } from "./ThreadGoalPanelView";
@@ -74,9 +75,9 @@ export function ThreadGoalPanel({
   onOpenLink?: (target: GoalLinkTarget) => void;
   threadRootId: string;
 }) {
-  const goalQuery = useGoalTreeQuery(channelId);
+  const threads = React.useMemo(() => [threadRootId], [threadRootId]);
+  const tree = useThreadGoalTree(channelId, threads);
   const applyMutation = useApplyGoalOpMutation(channelId);
-  const tree = goalQuery.data?.tree;
   const nameOf = useGoalAssigneeNames(tree);
   const linkKinds = useGoalLinkKinds(channelId, tree);
   const applyGoalOp = applyMutation.mutateAsync;

@@ -192,7 +192,7 @@ function SettingsParent({ runtime, initialConfig, saveRef }) {
     saveRef.current = {
       async save() {
         // Call the real setGlobalAgentConfig IPC (routes through the Tauri stub).
-        const result = await setGlobalAgentConfig(config);
+        const result = await setGlobalAgentConfig(config, "aa".repeat(32));
         setWriteCount((c) => c + 1);
         // Feed canonical response back into state — the production reread path.
         setConfig(result.config);

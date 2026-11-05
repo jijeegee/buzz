@@ -4,7 +4,7 @@ import test from "node:test";
 // The thread head goal panel: collapsed it shows the linked goal's path and
 // sub-goal progress; expanded it edits the sub-goal tree through the same
 // operations as the channel goals panel. The link picker can add a goal and
-// link the thread to it as one revision.
+// link the thread to it as one event.
 
 const { fireEvent } = await import("@testing-library/react");
 const React = (await import("react")).default;
@@ -20,16 +20,28 @@ const node = (id, parent, extra = {}) => ({
   id,
   parent,
   title: `Goal ${id}`,
+  note: "",
   status: "open",
   order: 0,
+  assignees: [],
+  links: [],
+  matched: true,
+  inactive: false,
+  is_thread: false,
+  progress: { done: 0, total: 0 },
+  open_children: 0,
   ...extra,
 });
 
 const tree = {
-  v: 1,
   nodes: [
     node("root", null),
-    node("srv", "root", { threads: [THREAD], note: "Keep writes atomic" }),
+    node("srv", "root", {
+      links: [THREAD],
+      is_thread: true,
+      note: "Keep writes atomic",
+      progress: { done: 1, total: 2 },
+    }),
     node("cas", "srv", { status: "done" }),
     node("val", "srv", { order: 1 }),
     node("ui", "root", { order: 1 }),
@@ -148,7 +160,7 @@ test("an unlinked thread keeps the link picker", async () => {
 });
 
 test("no goal tree renders nothing", async () => {
-  const { element } = view({ tree: { v: 1, nodes: [] } });
+  const { element } = view({ tree: { nodes: [] } });
   const { container, unmount } = await mount(element);
   assert.equal(container.innerHTML, "");
   await unmount();
@@ -241,7 +253,7 @@ test("thread links go to other threads; this thread's link stays put", async () 
   const linkedTree = {
     ...tree,
     nodes: tree.nodes.map((n) =>
-      n.id === "ui" ? { ...n, threads: [OTHER] } : n,
+      n.id === "ui" ? { ...n, links: [OTHER] } : n,
     ),
   };
   const { element } = view({
@@ -269,7 +281,7 @@ test("linked messages read Message and jump; missing ones are disabled", async (
   const linkedTree = {
     ...tree,
     nodes: tree.nodes.map((n) =>
-      n.id === "ui" ? { ...n, threads: [MAIN, REPLY, GONE, ROOT, LOADING] } : n,
+      n.id === "ui" ? { ...n, links: [MAIN, REPLY, GONE, ROOT, LOADING] } : n,
     ),
   };
   const { element } = view({
@@ -360,8 +372,9 @@ test("a message's picker offers only the goals it may link", async () => {
   }
   await linked.unmount();
 
-  // In a thread without a goal: any goal, as the thread's own picker.
+  // In a thread without a goal: as the thread's own picker, layer 2 and below.
   const unlinked = await picker("cd".repeat(32));
-  assert.equal(unlinked.q("thread-goal-option-root").disabled, false);
+  assert.equal(unlinked.q("thread-goal-option-root").disabled, true);
+  assert.equal(unlinked.q("thread-goal-option-ui").disabled, false);
   await unlinked.unmount();
 });

@@ -1,16 +1,42 @@
 /**
- * E2E mock of the goal tree and layer 0 goal Tauri commands. Mirrors the
- * relevant `kuzz_core::goal_tree::GoalTree::apply` rules (including "linking
- * a thread starts an open goal") closely enough for UI tests; validation is
- * left to the real backend.
+ * E2E mock of the goal and layer 0 goal Tauri commands. Reads return rows the
+ * way the relay does; edits mirror the relevant `kuzz_core` op rules (including
+ * "linking a thread starts an open goal") closely enough for UI tests.
+ * Validation and the deletion rule are left to the real relay.
  */
-import type { GoalNode, GoalOp, GoalTree } from "@/shared/api/tauriGoals";
+import type {
+  GoalNode,
+  GoalOp,
+  GoalRead,
+  GoalTree,
+  GoalView,
+} from "@/shared/api/tauriGoals";
 
 const trees = new Map<string, GoalTree>();
-const revisions = new Map<string, number>();
+const writes = new Map<string, number>();
 const layer0 = new Map<string, unknown>();
 
 const EDITOR = "e2e";
+
+function newNode(
+  fields: Pick<GoalNode, "id" | "parent" | "title" | "order"> &
+    Partial<GoalNode>,
+): GoalNode {
+  return {
+    note: "",
+    status: "open",
+    assignees: [],
+    links: [],
+    updated_by: EDITOR,
+    updated_at: Math.floor(Date.now() / 1000),
+    matched: false,
+    inactive: false,
+    is_thread: false,
+    progress: { done: 0, total: 0 },
+    open_children: 0,
+    ...fields,
+  };
+}
 
 function applyOp(tree: GoalTree, op: GoalOp): GoalTree {
   const nodes = tree.nodes.map((node) => ({ ...node }));
@@ -32,29 +58,31 @@ function applyOp(tree: GoalTree, op: GoalOp): GoalTree {
         root.note = op.note ?? root.note;
         touch(root);
       } else {
-        nodes.push({
-          id: op.id,
-          parent: null,
-          title: op.title,
-          note: op.note ?? undefined,
-          status: "open",
-          order: 0,
-        });
+        nodes.push(
+          newNode({
+            id: op.id,
+            parent: null,
+            title: op.title,
+            note: op.note ?? "",
+            order: 0,
+          }),
+        );
       }
       break;
     }
     case "add": {
       find(op.parent);
       const order = nodes.filter((n) => n.parent === op.parent).length;
-      nodes.push({
-        id: op.id,
-        parent: op.parent,
-        title: op.title,
-        note: op.note ?? undefined,
-        status: "open",
-        assignees: op.assignees,
-        order,
-      });
+      nodes.push(
+        newNode({
+          id: op.id,
+          parent: op.parent,
+          title: op.title,
+          note: op.note ?? "",
+          assignees: op.assignees ?? [],
+          order,
+        }),
+      );
       break;
     }
     case "update": {
@@ -85,46 +113,107 @@ function applyOp(tree: GoalTree, op: GoalOp): GoalTree {
     }
     case "link": {
       const thread = op.thread.toLowerCase();
-      for (const n of nodes) n.threads = n.threads?.filter((t) => t !== thread);
+      for (const n of nodes) n.links = n.links.filter((t) => t !== thread);
       const node = find(op.id);
-      node.threads = [...(node.threads ?? []), thread];
+      node.links = [...node.links, thread];
+      node.is_thread = true;
       if (node.status === "open") node.status = "in_progress";
       touch(node);
       break;
     }
     case "unlink": {
       const thread = op.thread.toLowerCase();
-      for (const n of nodes) n.threads = n.threads?.filter((t) => t !== thread);
+      for (const n of nodes) {
+        n.links = n.links.filter((t) => t !== thread);
+        n.is_thread = n.links.length > 0;
+      }
       break;
     }
+    case "drop_inactive":
+      break;
   }
   return { ...tree, nodes };
 }
 
-function head(channelId: string) {
-  const tree = trees.get(channelId);
-  return tree
-    ? {
-        revision: `rev-${revisions.get(channelId) ?? 0}`,
-        updated_at: Math.floor(Date.now() / 1000),
-        author: EDITOR,
-        tree,
-      }
-    : {
-        revision: null,
-        updated_at: null,
-        author: null,
-        tree: { v: 1, nodes: [] },
-      };
+function viewOf(node: GoalNode): GoalView {
+  return node.status === "done" || node.status === "dropped"
+    ? "done"
+    : "active";
+}
+
+/** The selected goals with the goals above them, the way the relay reads. */
+function read(tree: GoalTree, selected: GoalNode[]): GoalRead {
+  const byId = new Map(tree.nodes.map((node) => [node.id, node]));
+  const chosen = new Set(selected.map((node) => node.id));
+  const shown = new Set(chosen);
+  for (const node of selected) {
+    for (let up = node.parent; up; up = byId.get(up)?.parent ?? null) {
+      shown.add(up);
+    }
+  }
+  const belowOf = (id: string): GoalNode[] =>
+    tree.nodes
+      .filter((node) => node.parent === id)
+      .flatMap((node) => [node, ...belowOf(node.id)]);
+  return {
+    counts: {
+      active: tree.nodes.filter((n) => viewOf(n) === "active").length,
+      inactive: 0,
+      done: tree.nodes.filter((n) => viewOf(n) === "done").length,
+    },
+    rows: tree.nodes
+      .filter((node) => shown.has(node.id))
+      .map((node) => ({
+        ...node,
+        matched: chosen.has(node.id),
+        progress: {
+          done: belowOf(node.id).filter((n) => viewOf(n) === "done").length,
+          total: belowOf(node.id).length,
+        },
+        open_children: tree.nodes.filter(
+          (n) => n.parent === node.id && viewOf(n) === "active",
+        ).length,
+      })),
+    threads: [],
+    next: null,
+  };
+}
+
+function treeOf(channelId: string): GoalTree {
+  return trees.get(channelId) ?? { nodes: [] };
+}
+
+function readView(channelId: string, view: GoalView): GoalRead {
+  const tree = treeOf(channelId);
+  return read(
+    tree,
+    tree.nodes.filter((node) => viewOf(node) === view),
+  );
+}
+
+function readThreads(channelId: string, threads: string[]): GoalRead {
+  const tree = treeOf(channelId);
+  const goalOf = (thread: string) =>
+    tree.nodes.find((node) => node.links.includes(thread));
+  return {
+    ...read(
+      tree,
+      tree.nodes.filter((node) => threads.some((t) => goalOf(t) === node)),
+    ),
+    threads: threads.map((thread) => ({
+      thread,
+      goal: goalOf(thread)?.id ?? null,
+    })),
+  };
 }
 
 function write(channelId: string, ops: GoalOp[]) {
-  let tree = trees.get(channelId) ?? { v: 1, nodes: [] };
+  let tree = treeOf(channelId);
   for (const op of ops) tree = applyOp(tree, op);
   trees.set(channelId, tree);
-  const revision = (revisions.get(channelId) ?? 0) + 1;
-  revisions.set(channelId, revision);
-  return { event_id: `rev-${revision}`, tree };
+  const count = (writes.get(channelId) ?? 0) + 1;
+  writes.set(channelId, count);
+  return { event_id: `edit-${count}` };
 }
 
 /** Handle a goal command, or return `undefined` when it is not one. */
@@ -135,16 +224,14 @@ export function handleGoalsMockCommand(
   const args = (payload ?? {}) as Record<string, unknown>;
   const channelId = String(args.channelId ?? "");
   switch (command) {
-    case "get_goal_tree":
-      return { value: head(channelId) };
-    case "apply_goal_op":
-      return { value: write(channelId, [args.op as GoalOp]) };
+    case "get_goals":
+      return { value: readView(channelId, args.view as GoalView) };
+    case "get_thread_goals":
+      return { value: readThreads(channelId, args.threads as string[]) };
     case "apply_goal_ops":
       return { value: write(channelId, args.ops as GoalOp[]) };
-    case "get_goal_tree_history":
-      return { value: { revisions: [] } };
-    case "restore_goal_tree":
-      return { value: head(channelId) };
+    case "get_goal_history":
+      return { value: { edits: [] } };
     case "get_layer0_goal":
       return {
         value: layer0.get(String(args.agentPubkey ?? "self")) ?? {
@@ -163,9 +250,9 @@ export function handleGoalsMockCommand(
   }
 }
 
-/** Forget every mocked goal tree (between tests). */
+/** Forget every mocked goal (between tests). */
 export function resetGoalsMock(): void {
   trees.clear();
-  revisions.clear();
+  writes.clear();
   layer0.clear();
 }

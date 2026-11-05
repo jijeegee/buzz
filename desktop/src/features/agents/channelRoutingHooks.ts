@@ -5,6 +5,7 @@ import {
   personasQueryKey,
   useCreateManagedAgentMutation,
 } from "@/features/agents/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import { buildHostAgentCreateInput } from "@/features/agents/lib/hostAgent";
 import {
   type ChannelRoutingMode,
@@ -83,6 +84,7 @@ export function useRoutingAgentApplied(): string | null {
 /** One user action = one `set_channel_routing` carrying mode and agent. */
 export function useSetChannelRoutingMutation() {
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
   return useMutation({
     mutationFn: ({
       mode,
@@ -90,7 +92,7 @@ export function useSetChannelRoutingMutation() {
     }: {
       mode: ChannelRoutingMode;
       agentPubkey: string | null;
-    }) => setChannelRouting(mode, agentPubkey),
+    }) => setChannelRouting(mode, agentPubkey, owner),
     onSuccess: (status) => {
       queryClient.setQueryData(channelRoutingQueryKey, status);
     },

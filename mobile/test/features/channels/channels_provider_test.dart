@@ -951,6 +951,152 @@ void main() {
     );
   });
 
+  group('stream frames reach what a chunk reaches', () {
+    NostrEvent frame(
+      String id,
+      int kind, {
+      String? room,
+      String? target,
+      int at = 10,
+    }) => NostrEvent(
+      id: id,
+      pubkey: 'alice',
+      createdAt: at,
+      kind: kind,
+      tags: [
+        if (room != null) ['h', room],
+        if (target != null) ['e', target],
+      ],
+      content: '',
+      sig: 'sig',
+    );
+
+    final sequence = [
+      frame('message-a', 9, room: _channelA),
+      frame('reaction-a', 7, target: 'message-a'),
+      frame('unreact-a', 5, target: 'reaction-a'),
+      frame('message-b', 9, room: _channelB),
+      frame('reaction-b', 7, target: 'message-b'),
+      frame('edit-a', EventKind.streamMessageEdit, room: _channelA),
+      // A message loaded from history: the open room holds it, nothing routed.
+      frame('reaction-history', 7, target: 'history-a'),
+      frame('reaction-unknown', 7, target: 'never-seen'),
+    ];
+
+    Future<(ProviderContainer, _FakeRelaySession)> open({
+      List<NostrEvent> hiddenDms = const [],
+    }) async {
+      final session = _FakeRelaySession(
+        hiddenDmEvents: hiddenDms,
+        memberships: [
+          _membership(_channelA, myPk),
+          _membership(_channelB, myPk),
+        ],
+        metadata: [
+          _meta(id: _channelA, name: 'a'),
+          _meta(id: _channelB, name: 'b'),
+        ],
+      );
+      final container = _buildContainer(session: session);
+      addTearDown(container.dispose);
+      await container.read(channelsProvider.future);
+      await _settle();
+      return (container, session);
+    }
+
+    Future<List<String>> listen(ProviderContainer container) async {
+      final calls = <String>[];
+      final router = container.read(roomLiveRouterProvider);
+      for (final room in [_channelA, _channelB]) {
+        await router.listenRoom(
+          room,
+          (e) => calls.add('$room ${e.id}'),
+          holdsEvent: (id) => room == _channelA && id == 'history-a',
+        );
+      }
+      container
+          .read(channelLiveEventsProvider)
+          .listen((e) => calls.add('all ${e.id}'));
+      return calls;
+    }
+
+    test('the same sequence gives the same listener calls', () async {
+      final (onChunk, session) = await open();
+      final chunkCalls = await listen(onChunk);
+      sequence.forEach(session.emit);
+
+      final (onStream, _) = await open();
+      final streamCalls = await listen(onStream);
+      final notifier = onStream.read(channelsProvider.notifier);
+      notifier.debugStreamCarried({_channelA, _channelB});
+      await _settle();
+      sequence.forEach(notifier.debugStreamFrame);
+
+      expect(chunkCalls, contains('$_channelA reaction-history'));
+      expect(chunkCalls, contains('$_channelA unreact-a'));
+      expect(chunkCalls, contains('all message-b'));
+      expect(streamCalls, chunkCalls);
+    });
+
+    test('one carried room does not take a frame of another room', () async {
+      final (container, _) = await open();
+      final calls = await listen(container);
+      final notifier = container.read(channelsProvider.notifier);
+      final router = container.read(roomLiveRouterProvider);
+      router.routeBundleEvent(sequence[3], {_channelB});
+      notifier.debugStreamCarried({_channelA});
+      await _settle();
+      notifier.debugStreamFrame(sequence[4]);
+      expect(calls, ['$_channelB message-b']);
+      // Its chunk still delivers it.
+      router.routeBundleEvent(sequence[4], {_channelB});
+      expect(calls, ['$_channelB message-b', '$_channelB reaction-b']);
+    });
+
+    test('an open room not listed yet gets its frames', () async {
+      final (container, _) = await open();
+      final notifier = container.read(channelsProvider.notifier);
+      final opened = <String>[];
+      await container
+          .read(roomLiveRouterProvider)
+          .listenRoom(_channelD, (e) => opened.add(e.id));
+      notifier.debugStreamCarried({_channelA, _channelB});
+      await _settle();
+      notifier.debugStreamFrame(frame('unlisted', 9, room: _channelD));
+      expect(opened, ['unlisted']);
+    });
+
+    test('a build attaching after the EOSE listens for membership', () async {
+      final (container, _) = await open();
+      final notifier = container.read(channelsProvider.notifier);
+      expect(notifier.debugStreamListensMembership, isFalse);
+      notifier.debugStreamAttachedLate({_channelA, _channelB});
+      expect(notifier.debugStreamListensMembership, isTrue);
+      expect(notifier.debugStreamReopens, isTrue);
+    });
+
+    test('a build attaching after the EOSE marks quiet rooms ready', () async {
+      final (container, _) = await open(
+        hiddenDms: [
+          _hiddenDms([_channelD], pubkey: myPk),
+        ],
+      );
+      final router = container.read(roomLiveRouterProvider);
+      final tick = router.readyTick;
+      container.read(channelsProvider.notifier).debugStreamAttachedLate({
+        _channelD,
+      });
+      expect(
+        await router.whenRoomsReadySince(
+          [_channelD],
+          tick,
+          limit: Duration.zero,
+        ),
+        isTrue,
+      );
+    });
+  });
+
   // docs/message-sync.md#handoff: the stream EOSE's hand-off re-syncs the
   // chunks; an unread catch-up it retires runs again with that sync.
   for (final handoff in [false, true]) {
@@ -2374,9 +2520,7 @@ void main() {
     );
     final container = _buildContainer(session: session);
     addTearDown(container.dispose);
-    int treeReads() => session.queryBatches
-        .where((batch) => batch.any((f) => f.kinds.contains(40110)))
-        .length;
+    int treeReads() => session.goalReads;
 
     await container.read(channelsProvider.future);
     await container.read(goalTreeProvider(_channelA).future);
@@ -2789,6 +2933,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
 
   final List<NostrFilter> historyFilters = [];
   final List<List<NostrFilter>> queryBatches = [];
+  int goalReads = 0;
   Object? messageBatchError;
   Object? latestBatchError;
 
@@ -3077,6 +3222,15 @@ class _FakeRelaySession extends RelaySessionNotifier {
     messageHistoryCount++;
     if (messageHistoryError case final error?) throw error;
     return const [];
+  }
+
+  @override
+  Future<Object?> queryRelayJson(
+    List<Map<String, dynamic>> filters, {
+    Duration timeout = const Duration(seconds: 8),
+  }) async {
+    goalReads++;
+    return const <String, dynamic>{};
   }
 
   @override

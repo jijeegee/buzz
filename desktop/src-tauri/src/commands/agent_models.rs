@@ -19,7 +19,7 @@ use crate::{
     app_state::AppState,
     managed_agents::{
         current_instance_id, discovery_env_with_baked_floor, find_managed_agent_mut,
-        known_acp_runtime, load_global_agent_config, load_managed_agents, load_personas,
+        known_acp_runtime, load_agent_config_for_record, load_managed_agents, load_personas,
         managed_agent_avatar_url, missing_command_message, normalize_agent_args, resolve_command,
         save_managed_agents, sync_managed_agent_processes, try_regenerate_nest, AgentModelInfo,
         AgentModelsResponse, ManagedAgentRecord, UpdateManagedAgentRequest,
@@ -69,7 +69,7 @@ pub async fn get_agent_models(
         // so model discovery runs against the persona's current harness, not the
         // frozen record snapshot. An explicit per-agent override wins.
         let personas = load_personas(&app).unwrap_or_default();
-        let global = load_global_agent_config(&app).unwrap_or_default();
+        let global = load_agent_config_for_record(&app, record);
 
         // Single pure helper — descriptor + authoritative model/provider
         // resolver, packaged so the linked-agent regression test binds the

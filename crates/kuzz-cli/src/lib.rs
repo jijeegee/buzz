@@ -304,6 +304,21 @@ pub enum OutputFormat {
 }
 
 #[derive(Subcommand)]
+enum HermesCmd {
+    /// Update the connector of each Hermes profile that has it to this
+    /// version, then restart a running gateway when it is idle
+    Refresh {
+        /// Do not restart the Hermes gateway; the result says "needed" when
+        /// the caller should
+        #[arg(long)]
+        no_restart: bool,
+        /// The Hermes home (default: Hermes's default home)
+        #[arg(long, value_name = "DIR")]
+        hermes_home: Option<std::path::PathBuf>,
+    },
+}
+
+#[derive(Subcommand)]
 enum Cmd {
     /// Sign in with Google, manage devices, sessions and bots
     #[command(subcommand)]
@@ -364,6 +379,9 @@ once), key_in_use, device_limit, rate_limited.",
         #[arg(long, requires = "hermes", value_name = "DIR")]
         hermes_home: Option<std::path::PathBuf>,
     },
+    /// Keep the Hermes connector on this computer up to date
+    #[command(subcommand)]
+    Hermes(HermesCmd),
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
@@ -854,13 +872,24 @@ Each line:
   thread_root  event id of the thread root for a thread reply, else null
   mentions     pubkeys the message mentions (array of 64 hex)
 
-To resume after a restart, pass the last created_at seen as --since.",
-        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600"
+To resume after a restart, pass the last created_at seen as --since.
+
+With --access-owner, the agent's access setting (kind 30177 signed by that
+owner) is printed too, before any message of a connection and whenever it
+is read or changes, as a line without an id:
+  type       \"access\"
+  mode       owner-only, allowlist or anyone
+  allowlist  pubkeys for allowlist (array of 64 hex)
+Anything that can't be read or verified prints owner-only.",
+        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600\n  kuzz messages watch --access-owner <HEX>"
     )]
     Watch {
         /// Unix seconds: also print messages from this time on (default: now)
         #[arg(long)]
         since: Option<i64>,
+        /// Owner's pubkey (64-char hex): also print this agent's access setting
+        #[arg(long)]
+        access_owner: Option<String>,
     },
 }
 
@@ -1133,8 +1162,8 @@ pub enum CanvasCmd {
 
 #[derive(Subcommand)]
 pub enum GoalsCmd {
-    /// Show the goal tree as an outline; with --node or --thread also show that
-    /// goal's path, sub-goals, and the other goals on its layer
+    /// Show active goals as an outline; with --node or --thread also show that
+    /// goal's path, open sub-goals, and the active goals beside it
     Get {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1145,6 +1174,9 @@ pub enum GoalsCmd {
         /// Focus on the goal this thread (root event id) is linked to
         #[arg(long)]
         thread: Option<String>,
+        /// Also list quiet and finished goals
+        #[arg(long)]
+        all: bool,
     },
     /// Create the single layer 1 goal, or rewrite it
     SetRoot {
@@ -1241,7 +1273,8 @@ pub enum GoalsCmd {
         #[arg(long)]
         order: Option<i64>,
     },
-    /// Delete a goal; removing the layer 1 goal clears the tree (history keeps it)
+    /// Delete a goal; removing the layer 1 goal clears the tree. Deleted goals
+    /// do not come back, but `history` keeps the edit.
     Remove {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1279,23 +1312,14 @@ pub enum GoalsCmd {
         #[arg(long)]
         thread: String,
     },
-    /// List previous revisions of the goal tree, newest first
+    /// List edits to the goals, newest first
     History {
         /// Channel or DM UUID
         #[arg(long)]
         channel: String,
-        /// Maximum revisions to list
+        /// Maximum edits to list
         #[arg(long, default_value_t = 20)]
         limit: u32,
-    },
-    /// Restore the goal tree to a previous revision
-    Restore {
-        /// Channel or DM UUID
-        #[arg(long)]
-        channel: String,
-        /// Revision event id (64-char hex)
-        #[arg(long)]
-        revision: String,
     },
 }
 
@@ -3064,6 +3088,7 @@ async fn client_from_session(
 async fn watch_messages(
     relay_url: String,
     since: Option<i64>,
+    access_owner: Option<String>,
     paired: Option<Keys>,
     token_source: Option<kuzz_token_broker::TokenSource>,
     private_key: Option<String>,
@@ -3072,7 +3097,7 @@ async fn watch_messages(
 ) -> Result<(), CliError> {
     if let Some(keys) = paired {
         let client = KuzzClient::new(relay_url, keys, None, None)?;
-        return commands::watch::cmd_watch(&client, since, None).await;
+        return commands::watch::cmd_watch(&client, since, access_owner, None).await;
     }
     let key_mode = token_source.is_none() && private_key.is_some();
     let uses_session = token_source.is_none() && private_key.is_none() && session.is_some();
@@ -3106,7 +3131,7 @@ async fn watch_messages(
         },
         other => other,
     })?;
-    commands::watch::cmd_watch(&client, since, reauth).await
+    commands::watch::cmd_watch(&client, since, access_owner, reauth).await
 }
 
 async fn run(cli: Cli) -> Result<(), CliError> {
@@ -3159,6 +3184,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
+    // Local files only; it needs no credential.
+    if let Cmd::Hermes(HermesCmd::Refresh {
+        no_restart,
+        hermes_home,
+    }) = cli.command
+    {
+        return pairing::cmd_hermes_refresh(no_restart, hermes_home);
+    }
+
     let token_source = token_source_for(&cli, kuzz_token_broker::TokenSource::from_env());
     let session = stored_session_for(env);
     // A paired agent acts when nothing else is configured and no person is
@@ -3189,10 +3223,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
-    if let Cmd::Messages(MessagesCmd::Watch { since }) = cli.command {
+    if let Cmd::Messages(MessagesCmd::Watch {
+        since,
+        access_owner,
+    }) = cli.command
+    {
         return watch_messages(
             relay_url,
             since,
+            access_owner,
             paired.map(|(keys, _)| keys),
             token_source,
             cli.private_key,
@@ -3257,7 +3296,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } => {
+        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } | Cmd::Hermes(_) => {
             unreachable!("handled above")
         }
     }
@@ -3614,6 +3653,7 @@ mod tests {
             "goals",
             "groups",
             "guide",
+            "hermes",
             "inbox",
             "invitations",
             "issues",

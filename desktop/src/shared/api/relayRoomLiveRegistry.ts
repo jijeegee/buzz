@@ -2,8 +2,8 @@ import type { RelaySubscriptionFilter } from "@/shared/api/relayClientShared";
 import type { RelayEvent } from "@/shared/api/types";
 import { KIND_TYPING_INDICATOR } from "@/shared/constants/kinds";
 
-/** Goal tree heads (kuzz-core `KIND_GOAL_TREE`). */
-export const KIND_GOAL_TREE = 40110;
+/** Goal edits (kuzz-core `KIND_GOAL_OPS`). */
+export const KIND_GOAL_OPS = 40111;
 
 /**
  * The kinds an open room's own live REQ carries, one filter each, always
@@ -13,7 +13,7 @@ export const KIND_GOAL_TREE = 40110;
  */
 export const ROOM_LIVE_REQUEST_KINDS: readonly number[] = [
   KIND_TYPING_INDICATOR,
-  KIND_GOAL_TREE,
+  KIND_GOAL_OPS,
 ];
 
 /** The open-room REQ's filters for `roomId`: live only, one per kind. */
@@ -54,7 +54,7 @@ type Entry = {
 };
 
 /**
- * One live REQ per open room for the room's typing indicators and goal tree,
+ * One live REQ per open room for the room's typing indicators and goal edits,
  * shared by every listener of that room (`ROOM_LIVE_REQUEST_KINDS`).
  *
  * - The first listener opens it; it closes one microtask after the last

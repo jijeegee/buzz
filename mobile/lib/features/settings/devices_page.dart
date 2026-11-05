@@ -16,7 +16,13 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/modal_presentation.dart';
+import '../agents/agent_settings_provider.dart';
+import '../agents/external_agent_access.dart';
+import '../agents/external_agent_sheet.dart';
 import 'account_actions.dart';
+
+/// A stalled relay must not hold up a disconnect.
+const _narrowLimit = Duration(seconds: 10);
 
 /// Settings › Devices & security for a token relay, as on desktop: the
 /// signed-in devices — rename, pick each one's robot, sign one out — the
@@ -65,8 +71,30 @@ class DevicesPage extends HookConsumerWidget {
       return true;
     }
 
+    /// Every wider setting back to owner-only first, so pairing the same key
+    /// again can't bring one back. Never in the way of the disconnect.
+    Future<void> narrow(Future<List<String>> Function() agents) async {
+      final owner = ref.read(externalAccessWriterProvider);
+      if (owner == null) return;
+      final relay = ref.read(agentSettingsRelayProvider);
+      try {
+        await () async {
+          for (final agent in await agents()) {
+            await narrowExternalAgentAccess(
+              relay,
+              owner: owner,
+              agentPubkey: agent,
+            );
+          }
+        }().timeout(_narrowLimit);
+      } catch (failure) {
+        debugPrint('[Devices] no agents to narrow: $failure');
+      }
+    }
+
     Future<void> disconnect(
       String name,
+      Future<List<String>> Function(AccountApi) agents,
       Future<void> Function(AccountApi) act,
     ) async {
       final ok = await confirmDestructive(
@@ -77,14 +105,27 @@ class DevicesPage extends HookConsumerWidget {
       );
       if (!ok) return;
       // On failure too: it may be gone already.
-      if (!await run(act) && context.mounted) {
+      final done = await run((api) async {
+        await narrow(() => agents(api));
+        await act(api);
+      });
+      if (!done && context.mounted) {
         ref.invalidate(accountDevicesProvider(origin));
       }
     }
 
     Future<void> signOutDevice(AccountDevice device) async {
       if (device.isExternal) {
-        return disconnect(device.name, (api) => api.revokeDevice(device.id));
+        return disconnect(
+          device.name,
+          // Read fresh: this list can miss an agent connected since.
+          (api) async => [
+            for (final fresh in await api.listDevices())
+              if (fresh.id == device.id)
+                for (final agent in fresh.agents) agent.pubkey,
+          ],
+          (api) => api.revokeDevice(device.id),
+        );
       }
       final ok = await confirmDestructive(
         context,
@@ -186,11 +227,20 @@ class DevicesPage extends HookConsumerWidget {
                       for (final agent in external.agents)
                         _ExternalAgentRow(
                           agent: agent,
+                          onOpen: (name) => unawaited(
+                            showExternalAgentSheet(
+                              context,
+                              ref,
+                              agentPubkey: agent.pubkey,
+                              name: name,
+                            ),
+                          ),
                           onDisconnect: busy.value
                               ? null
                               : (name) => unawaited(
                                   disconnect(
                                     name,
+                                    (_) async => [agent.pubkey],
                                     (api) => api.disconnectAgent(
                                       external.id,
                                       agent.pubkey,
@@ -284,9 +334,16 @@ List<(AccountDevice, List<AccountDevice>)> _nestExternal(
 
 /// One external agent, under the row of the computer it runs on.
 class _ExternalAgentRow extends ConsumerWidget {
-  const _ExternalAgentRow({required this.agent, required this.onDisconnect});
+  const _ExternalAgentRow({
+    required this.agent,
+    required this.onOpen,
+    required this.onDisconnect,
+  });
 
   final AccountDeviceAgent agent;
+
+  /// Gets the agent's name.
+  final ValueChanged<String> onOpen;
 
   /// Gets the agent's name.
   final ValueChanged<String>? onDisconnect;
@@ -306,6 +363,7 @@ class _ExternalAgentRow extends ConsumerWidget {
     final callback = onDisconnect;
     return AppListRowRaw(
       key: Key('agent-row-${agent.pubkey}'),
+      onTap: () => onOpen(name),
       leading: Icon(
         LucideIcons.bot,
         size: 24,

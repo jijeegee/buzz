@@ -445,7 +445,7 @@ pub(crate) fn prepare_for_start<R: tauri::Runtime>(
     record: &ManagedAgentRecord,
 ) -> Result<(), String> {
     let personas = super::load_personas(app).unwrap_or_default();
-    let global = super::load_global_agent_config(app).unwrap_or_default();
+    let global = super::load_agent_config_for_record(app, record);
     let Some(hermes_command) = hermes_command_for_start(record, &personas, &global) else {
         return Ok(());
     };

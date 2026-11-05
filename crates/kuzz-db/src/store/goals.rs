@@ -11,6 +11,7 @@ use std::collections::{HashMap, HashSet};
 use chrono::{DateTime, Utc};
 use kuzz_core::event::StoredEvent;
 use kuzz_core::goal_store::{self, GoalGraph, GoalShape, GoalView};
+pub use kuzz_core::goal_store::{GoalCounts, GoalCursor, GoalOps, GoalOutcome};
 use kuzz_core::goal_tree::{GoalOp, GoalStatus};
 use kuzz_core::CommunityId;
 use nostr::Event;
@@ -23,25 +24,6 @@ use crate::{Db, DbError, Result};
 
 /// Most ops one event may carry.
 pub const MAX_OPS_PER_EVENT: usize = 16;
-
-/// Content of a kind 40111 event.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GoalOps {
-    /// Applied in order; all or none.
-    pub ops: Vec<GoalOp>,
-}
-
-/// What one event did.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GoalOutcome {
-    /// Nearest surviving parent of the last goal the event finished, if any.
-    pub parent: Option<String>,
-    /// Goals deleted, in deletion order.
-    pub deleted: Vec<String>,
-    /// Finish or remove targets that do not exist. Retries land here, and so
-    /// do wrong ids, so writers warn about these.
-    pub missing: Vec<String>,
-}
 
 /// Result of [`Db::apply_goal_ops`].
 #[derive(Clone, Debug)]
@@ -73,26 +55,6 @@ pub enum GoalSelection {
     Threads(Vec<[u8; 32]>),
     /// These goals with their context. An unknown id reads as nothing.
     Goals(Vec<String>),
-}
-
-/// A position in a goal list.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-pub struct GoalCursor {
-    /// Sort key of the last row.
-    pub order: i64,
-    /// Id of the last row.
-    pub id: String,
-}
-
-/// Goals in each list.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
-pub struct GoalCounts {
-    /// Unfinished with recent activity.
-    pub active: usize,
-    /// Unfinished and quiet.
-    pub inactive: usize,
-    /// Done or dropped.
-    pub done: usize,
 }
 
 /// The rows of one read, each with the goals above it.
@@ -835,7 +797,17 @@ impl Db {
                 focus
             }
         };
-        let mut wanted: HashSet<String> = HashSet::with_capacity(matched.len());
+        let mut wanted: HashSet<String> = HashSet::with_capacity(matched.len() + 1);
+        if matches!(
+            selection,
+            GoalSelection::View {
+                view: GoalView::Active,
+                after: None
+            }
+        ) {
+            // Every room with goals has layer 1 on its board, finished or not.
+            wanted.extend(graph.root().map(str::to_owned));
+        }
         for id in &matched {
             if wanted.insert(id.clone()) {
                 wanted.extend(graph.ancestors(id));

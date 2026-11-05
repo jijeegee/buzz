@@ -392,7 +392,11 @@ export class UserStreamLive implements UserStreamLiveHooks {
       void this.savePrevLive(live);
     }
     const room = host.roomOf(event);
-    if (!room) return;
+    if (!room) {
+      // Normal for a reaction on a row this client never saw.
+      live.report.add("streamNoRoom");
+      return;
+    }
     // Always stored (by the store layer); shown unless left (44101).
     if (!live.membership.renders(room, event.created_at)) return;
     if (host.bundle.dispatchStream(event, room)) return;
@@ -789,7 +793,8 @@ export class UserStreamLive implements UserStreamLiveHooks {
   /**
    * Desktop listener repair: rows of `roomIds` since `since` newer than each
    * room's live start minus 5 s reach the listeners, once by id. The room on
-   * screen goes first, on its own.
+   * screen goes first, on its own. Oldest first: a reaction or its removal
+   * has no `h`, and its room comes from the row it references.
    */
   private async repair(
     live: LiveConnection,
@@ -798,7 +803,8 @@ export class UserStreamLive implements UserStreamLiveHooks {
     floors: Readonly<Record<string, number>>,
     stop: () => boolean,
   ) {
-    const visible = this.host.visibleRoom?.() ?? null;
+    const { host } = this;
+    const visible = host.visibleRoom?.() ?? null;
     const rest = roomIds.filter((room) => room !== visible);
     const batches = rest.length < roomIds.length ? [[visible as string]] : [];
     for (let start = 0; start < rest.length; start += REPAIR_BATCH_ROOMS) {
@@ -807,15 +813,17 @@ export class UserStreamLive implements UserStreamLiveHooks {
     for (const rooms of batches) {
       if (stop()) return;
       const walk = await this.walk(rooms, since, stop);
-      for (const event of walk.events) {
-        const room = roomTag(event);
+      for (const event of [...walk.events].reverse()) {
+        const room =
+          roomTag(event) ??
+          (rooms.length === 1 ? rooms[0] : host.roomOf(event));
         if (room === null) continue;
         const floor =
           floors[room] ??
           (this.liveSince.get(room) ?? live.liveAt) - LISTENER_FLOOR_SKEW_SECS;
         if (event.created_at < floor) continue;
         if (!live.membership.renders(room, event.created_at)) continue;
-        this.host.bundle.dispatchStream(event, room);
+        host.bundle.dispatchStream(event, room);
       }
     }
   }

@@ -14,7 +14,6 @@ import { useWatchedUnread } from "@/features/accounts/inactiveAccountWatch/useWa
 import { AccountSwitcherSection } from "@/features/accounts/ui/AccountSwitcherSection";
 import { AddAccountDialog } from "@/features/accounts/ui/AddAccountDialog";
 import { useAccountMenu } from "@/features/accounts/useAccountMenu";
-import { useIdentityQuery } from "@/shared/api/hooks";
 import { type MessageKey, t as translate, useT } from "@/shared/i18n";
 import { CreateAccountDialog } from "@/shared/ui/CreateAccountDialog";
 import {
@@ -192,7 +191,10 @@ export function AccountSettingsCard({
       const next = await login.run(false, false, connect, provider);
       if (!next) return;
       setStatus(next);
+      // A sign-in always reloads, so the next start checks this account's
+      // agents here; linking this account's own key changes nothing.
       if (
+        !connect ||
         !next.keyBackup ||
         next.accountChanged ||
         next.signingPubkey !== status.signingPubkey
@@ -300,11 +302,10 @@ export function AccountSettingsCard({
 function AccountsOnThisComputer({ disabled }: { disabled: boolean }) {
   const t = useT();
   const accountMenu = useAccountMenu({ open: true });
-  const activePubkey = useIdentityQuery().data?.pubkey ?? null;
   const unread = useWatchedUnread();
   const [addAccountOpen, setAddAccountOpen] = React.useState(false);
   const signIn = (provider: SignInProvider) =>
-    void accountMenu.signIn(activePubkey, provider);
+    void accountMenu.signIn(provider);
   return (
     <SettingsOptionRow className="items-start">
       <div className="min-w-0 flex-1" data-testid="settings-accounts">

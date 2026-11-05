@@ -1,81 +1,115 @@
 import * as React from "react";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import {
+  useInfiniteQuery,
+  useMutation,
+  useQuery,
+  useQueryClient,
+} from "@tanstack/react-query";
 
 import { useUsersBatchQuery } from "@/features/profile/hooks";
 import { roomLive } from "@/shared/api/relayRoomLive";
+import { KIND_GOAL_OPS } from "@/shared/api/relayRoomLiveRegistry";
 import {
-  applyGoalOp,
   applyGoalOps,
+  getActiveGoals,
+  getGoalHistory,
+  getGoalPage,
+  getThreadGoals,
+  type GoalCursor,
   type GoalOp,
   type GoalTree,
-  getGoalTree,
-  getGoalTreeHistory,
-  restoreGoalTree,
+  type GoalView,
 } from "@/shared/api/tauriGoals";
 import { t as translate, useT } from "@/shared/i18n";
 import { classifyGoalLinks } from "./goalLinks";
+import { mergeGoalTrees } from "./goalTree";
 
-/** Kind 40110 — see `kuzz_core::kind::KIND_GOAL_TREE`. */
-export const KIND_GOAL_TREE = 40110;
+/** Everything read about a room's goals, refreshed together. */
+const goalsKey = (channelId: string | null) => ["goals", channelId];
 
-const goalTreeKey = (channelId: string | null) => ["goal-tree", channelId];
-const goalHistoryKey = (channelId: string | null) => [
-  "goal-tree-history",
-  channelId,
-];
+const noRoom = () =>
+  Promise.reject(new Error(translate("goals.noGroupSelected")));
 
 /**
- * The live goal tree of a channel or DM. The room's live REQ refetches it
- * whenever anyone (human or agent) publishes a new revision, and after a
- * reconnect.
+ * Reads again whenever anyone (human or agent) edits the room's goals, and
+ * after a reconnect, which may have missed edits. The open room's own REQ
+ * (shared with typing) carries the edits.
  */
-export function useGoalTreeQuery(channelId: string | null, enabled = true) {
+function useGoalsLive(channelId: string | null, active: boolean) {
   const queryClient = useQueryClient();
-  const active = enabled && channelId !== null;
-
   React.useEffect(() => {
     if (!active || !channelId) return;
-    // The open room's own REQ (shared with typing) carries new revisions; a
-    // reconnect may have missed some, so it reads the tree again then too.
     const refetch = () => {
-      void queryClient.invalidateQueries({ queryKey: goalTreeKey(channelId) });
-      void queryClient.invalidateQueries({
-        queryKey: goalHistoryKey(channelId),
-      });
+      void queryClient.invalidateQueries({ queryKey: goalsKey(channelId) });
     };
-    return roomLive.listen(channelId, KIND_GOAL_TREE, refetch, {
+    return roomLive.listen(channelId, KIND_GOAL_OPS, refetch, {
       onResync: refetch,
     });
   }, [active, channelId, queryClient]);
+}
 
+/** The active goals of a channel or DM, with the size of each list. */
+export function useGoalTreeQuery(channelId: string | null, enabled = true) {
+  const active = enabled && channelId !== null;
+  useGoalsLive(channelId, active);
   return useQuery({
-    queryKey: goalTreeKey(channelId),
-    queryFn: () => {
-      if (!channelId)
-        return Promise.reject(new Error(translate("goals.noGroupSelected")));
-      return getGoalTree(channelId);
+    queryKey: [...goalsKey(channelId), "active"],
+    queryFn: async () => {
+      if (!channelId) return noRoom();
+      const read = await getActiveGoals(channelId);
+      const tree: GoalTree = { nodes: read.rows };
+      return { tree, counts: read.counts };
     },
     enabled: active,
     staleTime: 30_000,
   });
 }
 
-/** Apply one edit, or several as a single revision (all or none). */
+/**
+ * The active goals plus what `ids` (threads or messages) work on, which may
+ * be quiet or finished. Undefined until both are loaded.
+ */
+export function useThreadGoalTree(channelId: string | null, ids: string[]) {
+  const activeQuery = useGoalTreeQuery(channelId);
+  const focusQuery = useQuery({
+    queryKey: [...goalsKey(channelId), "threads", ids.join(",")],
+    queryFn: () => (channelId ? getThreadGoals(channelId, ids) : noRoom()),
+    enabled: channelId !== null,
+    staleTime: 30_000,
+  });
+  const active = activeQuery.data?.tree;
+  const focus = focusQuery.data?.rows;
+  return React.useMemo(
+    () =>
+      active && focus ? mergeGoalTrees([active, { nodes: focus }]) : undefined,
+    [active, focus],
+  );
+}
+
+/** A quiet or done list, read a page at a time. */
+export function useGoalListQuery(channelId: string | null, view: GoalView) {
+  useGoalsLive(channelId, channelId !== null);
+  return useInfiniteQuery({
+    queryKey: [...goalsKey(channelId), "list", view],
+    queryFn: ({ pageParam }) =>
+      channelId ? getGoalPage(channelId, view, pageParam) : noRoom(),
+    initialPageParam: null as GoalCursor | null,
+    getNextPageParam: (page) => page.next,
+    enabled: channelId !== null,
+    staleTime: 30_000,
+  });
+}
+
+/** Apply one edit, or several as a single event (all or none). */
 export function useApplyGoalOpMutation(channelId: string | null) {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: (op: GoalOp | GoalOp[]) => {
-      if (!channelId)
-        return Promise.reject(new Error(translate("goals.noGroupSelected")));
-      return Array.isArray(op)
-        ? applyGoalOps(channelId, op)
-        : applyGoalOp(channelId, op);
-    },
+    mutationFn: (op: GoalOp | GoalOp[]) =>
+      channelId
+        ? applyGoalOps(channelId, Array.isArray(op) ? op : [op])
+        : noRoom(),
     onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: goalTreeKey(channelId) });
-      void queryClient.invalidateQueries({
-        queryKey: goalHistoryKey(channelId),
-      });
+      void queryClient.invalidateQueries({ queryKey: goalsKey(channelId) });
     },
   });
 }
@@ -83,7 +117,7 @@ export function useApplyGoalOpMutation(channelId: string | null) {
 /** Display names for everyone assigned to a goal in `tree`. */
 export function useGoalAssigneeNames(tree: GoalTree | undefined) {
   const assigneePubkeys = React.useMemo(
-    () => [...new Set((tree?.nodes ?? []).flatMap((n) => n.assignees ?? []))],
+    () => [...new Set((tree?.nodes ?? []).flatMap((n) => n.assignees))],
     [tree],
   );
   const usersQuery = useUsersBatchQuery(assigneePubkeys);
@@ -105,17 +139,12 @@ export function useGoalLinkKinds(
   tree: GoalTree | undefined,
 ) {
   const ids = React.useMemo(
-    () =>
-      [...new Set((tree?.nodes ?? []).flatMap((n) => n.threads ?? []))].sort(),
+    () => [...new Set((tree?.nodes ?? []).flatMap((n) => n.links))].sort(),
     [tree],
   );
   return useQuery({
     queryKey: ["goal-link-kinds", channelId, ids.join(",")],
-    queryFn: () => {
-      if (!channelId)
-        return Promise.reject(new Error(translate("goals.noGroupSelected")));
-      return classifyGoalLinks(channelId, ids);
-    },
+    queryFn: () => (channelId ? classifyGoalLinks(channelId, ids) : noRoom()),
     enabled: channelId !== null && ids.length > 0,
     staleTime: 30_000,
   }).data;
@@ -126,29 +155,8 @@ export function useGoalHistoryQuery(
   enabled: boolean,
 ) {
   return useQuery({
-    queryKey: goalHistoryKey(channelId),
-    queryFn: () => {
-      if (!channelId)
-        return Promise.reject(new Error(translate("goals.noGroupSelected")));
-      return getGoalTreeHistory(channelId);
-    },
+    queryKey: [...goalsKey(channelId), "history"],
+    queryFn: () => (channelId ? getGoalHistory(channelId) : noRoom()),
     enabled: enabled && channelId !== null,
-  });
-}
-
-export function useRestoreGoalTreeMutation(channelId: string | null) {
-  const queryClient = useQueryClient();
-  return useMutation({
-    mutationFn: (revision: string) => {
-      if (!channelId)
-        return Promise.reject(new Error(translate("goals.noGroupSelected")));
-      return restoreGoalTree(channelId, revision);
-    },
-    onSettled: () => {
-      void queryClient.invalidateQueries({ queryKey: goalTreeKey(channelId) });
-      void queryClient.invalidateQueries({
-        queryKey: goalHistoryKey(channelId),
-      });
-    },
   });
 }

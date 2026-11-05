@@ -400,6 +400,10 @@ for (const stage of ["add", "publish"] as const) {
         // Drive the real reply route handler, including while the modal has
         // focus (the equivalent external history/navigation intent).
         await page
+          .locator(`[data-message-id="${id}"]`)
+          .first()
+          .dispatchEvent("pointerover");
+        await page
           .getByTestId(`reply-message-${id}`)
           .first()
           .evaluate((button) => (button as HTMLButtonElement).click());
@@ -487,6 +491,10 @@ for (const incoming of ["unrelated thread B draft", "@RemoteScout hello"]) {
     const navigate = async (id: string | undefined) => {
       // Drive the real reply route handler, including while the modal has
       // focus (the equivalent external history/navigation intent).
+      await page
+        .locator(`[data-message-id="${id}"]`)
+        .first()
+        .dispatchEvent("pointerover");
       await page
         .getByTestId(`reply-message-${id}`)
         .first()
@@ -604,6 +612,10 @@ for (const incoming of ["B preserved"]) {
     const navigate = async (id: string | undefined) => {
       // Drive the real reply route handler, including while the modal has
       // focus (the equivalent external history/navigation intent).
+      await page
+        .locator(`[data-message-id="${id}"]`)
+        .first()
+        .dispatchEvent("pointerover");
       await page
         .getByTestId(`reply-message-${id}`)
         .first()

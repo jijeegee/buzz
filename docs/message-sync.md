@@ -93,7 +93,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 1. An event with an `h` tag belongs to that room.
 2. Reactions (7) and their removals (5) carry no `h` tag:
-   - on a one-room subscription, the event belongs to that room;
+   - on a one-room chunk, the event belongs to that room (a user-stream frame
+     never uses this: the stream may carry a room the client does not list
+     yet);
    - otherwise to the room of the event it references, the last `e` tag first:
      an event routed earlier (so a removal follows its reaction), or an event
      loaded in an open room. The room must be one the chunk carries.
@@ -129,19 +131,19 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 ## Open room REQ
 
-Typing indicators (20002) and the goal tree (40110) of an open room ride one
+Typing indicators (20002) and goal edits (40111) of an open room ride one
 live REQ per room, shared by every screen of that room (desktop
 `relayRoomLive.ts`, mobile `room_live_request.dart`):
 
 - Always the same two filters, `{kinds:[20002], #h:[room], limit:0}` and
-  `{kinds:[40110], #h:[room], limit:0}` (`test-fixtures/room-live-request.json`),
+  `{kinds:[40111], #h:[room], limit:0}` (`test-fixtures/room-live-request.json`),
   so a listener coming or going never re-sends the REQ. Every filter carries
   the room's `#h`, which keeps the REQ room-scoped on the relay.
 - The first listener opens it; it closes one microtask after the last one
   leaves, so a remount in the same task keeps it. A terminal CLOSED tells
   every listener and forgets the room; a later listener opens a fresh one.
 - Reconnect re-sends it unchanged (`limit: 0`); goal listeners then re-read
-  the tree, since a missed revision is not replayed. Typing has nothing to
+  the goals, since a missed edit is not replayed. Typing has nothing to
   lose.
 - Mobile typing does not rebuild on reconnect. Mobile goal chips stay live
   through `goalTreeLiveProvider`, watched by the room and thread goal buttons.
@@ -510,7 +512,7 @@ in the commit.
 
 The REQs behind them: the community bundle, the room bundle (one per 128
 rooms), the account bundles (authored and addressed), and per open room its
-typing + goal-tree REQ. The pinned counts are for a relay without the
+typing + goal-edit REQ. The pinned counts are for a relay without the
 [user stream](#user-stream) (the e2e mock). With it, `shadow` adds one REQ
 (the stream) next to the chunks (`idleStreamShadow`), and `live`/`gated`
 replace the member chunks with it (`idleStreamLive`).
@@ -728,8 +730,7 @@ the relay at the same time; neither waits for the other.
   gap, or none when unknown. It chains the room's spans (a room span vouches
   from `lo + 1865`, a head span from its `lo`, or from 0 for a whole
   history) back from the newest painted row, and is none when the room is
-  not current or has ever stored a job row. A thread paint uses the room
-  spans and the thread's head span. See [Opening at a
+  not current or has ever stored a job row. See [Opening at a
   position](#opening-at-a-position) for how a gap is used.
 - **Same account and server:** a paint names the account and the relay it
   is for (desktop: from the community's query cache); the store answers
@@ -1780,6 +1781,10 @@ Counters are kept per account and server, persisted cumulatively in
 since the last line (any change from 0), or 10 min after the last line if
 anything changed.
 
+`streamNoRoom` (desktop, live/gated) counts frames with no `h` whose target's
+room is unknown. It is a reading, not a gate: a reaction on a row this client
+never loaded lands here normally. Compare before and after a check.
+
 - **Already stored (`newRow`):** when the gate counters (`falseSkip`,
   `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
   after this connection's start time does not count as "already stored",
@@ -1912,10 +1917,7 @@ that position.
   remembered row if held, else the newest. A store paint decides only when
   it has no gap back to the read marker: its `complete_from` is at or
   before the marker, or no painted row is unread, or the room was never
-  read. For a thread the reply before the first unread one stands in for
-  the marker; when the first unread reply is the oldest loaded, the paint
-  decides only if older replies can be paged or `complete_from` is 0 (whole
-  history). Otherwise an earlier unread row may be missing, and the open
+  read. Otherwise an earlier unread row may be missing, and the open
   waits for the relay's window. Only when every held row is
   unread and older history exists, or the remembered row is older than
   them, is the relay asked for older pages first (below); that is the only
@@ -1936,13 +1938,17 @@ that position.
   page, or a scroll of the message list more than 0.75 s after the open
   (earlier scrolls are the list placing itself). This resets on each new
   room or thread. If the reader moved, it stays. Threads follow the same
-  rule against the relay's replies. Cases:
+  rule against the relay's replies, and replies held always draw on the
+  first frame (once the read state's first load is in), holes included: the
+  relay's page fills them and moves the open if needed. Cases:
   `test-fixtures/message-store-paint-first.json` (`anchor`, `reanchor`).
 - **Threads:** the same order: a linked reply, the first unread reply (near
   the top), where the reader left the thread, the newest reply. The reading
   position is kept per thread under `<channel id>/<root id>`. Desktop pages
-  back for a reply in an older page (the same limits as a room) before the
-  replies are drawn. Mobile keeps a thread's list hidden while it opens for
+  back for a reply in an older page (the same limits as a room) once the
+  relay has answered, with the replies held still drawn. A room opened with
+  a thread not loaded yet sends its relay request after the thread's, at most
+  2 s later, and the thread's first rows draw ahead of the room's. Mobile keeps a thread's list hidden while it opens for
   at most about 1.2 s, the 1 s read state wait included (also when the
   target's time is not known yet); then the replies at hand show at the
   newest, and a position found later moves the list once, only if the reader

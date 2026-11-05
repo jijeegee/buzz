@@ -20,6 +20,7 @@ import {
 import type { GlobalAgentConfig } from "@/shared/api/types";
 import { getBakedBuildEnv, type BakedEnvEntry } from "@/shared/api/tauri";
 import { globalAgentConfigQueryKey } from "@/features/agents/useGlobalAgentConfig";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   useAcpRuntimesQuery,
   useRuntimeFileConfigQuery,
@@ -94,6 +95,7 @@ export function AgentDefaultsEditor({
     null,
   );
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
   const [bakedEnv, setBakedEnv] = React.useState<BakedEnvEntry[]>([]);
 
   React.useEffect(() => {
@@ -211,7 +213,7 @@ export function AgentDefaultsEditor({
     setSaveState("saving");
     setSaveError(null);
     try {
-      const result = await setGlobalAgentConfig(submittedConfig);
+      const result = await setGlobalAgentConfig(submittedConfig, owner);
       // Apply the backend's canonical config ONLY if nothing changed during the
       // IPC window. If the user edited, keep their newer value and leave dirty=true
       // so they can save again. setDirty(false) runs inside the updater so both
