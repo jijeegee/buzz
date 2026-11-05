@@ -119,6 +119,9 @@ pub enum BotsCmd {
     Delete {
         /// Bot id (hex)
         bot_id: String,
+        /// Confirm: this cannot be undone
+        #[arg(long, required = true)]
+        yes: bool,
     },
     /// Issue a 1-hour token for a bot this device hosts (revokes earlier ones)
     Token {
@@ -143,7 +146,11 @@ pub enum BotsCmd {
         bot_id: String,
     },
     /// Revoke every token of every bot you own (bots are kept)
-    RevokeAll,
+    RevokeAll {
+        /// Confirm: every bot stops until it gets a new token
+        #[arg(long, required = true)]
+        yes: bool,
+    },
     /// Update a bot's display name or avatar
     Profile {
         /// Bot id (hex)
@@ -344,7 +351,7 @@ async fn bots(api: &AuthApi, cmd: BotsCmd) -> Result<(), CliError> {
             )
             .await?
         }
-        BotsCmd::Delete { bot_id } => {
+        BotsCmd::Delete { bot_id, yes: _ } => {
             let id = validate_bot_id(&bot_id)?;
             api.call(Method::DELETE, &format!("/auth/bots/{id}"), None)
                 .await?;
@@ -401,7 +408,7 @@ async fn bots(api: &AuthApi, cmd: BotsCmd) -> Result<(), CliError> {
             .await?;
             accepted("bot tokens revoked", &[("bot_id", json!(id))])
         }
-        BotsCmd::RevokeAll => {
+        BotsCmd::RevokeAll { yes: _ } => {
             api.call(Method::POST, "/auth/bots/revoke-all", Some(json!({})))
                 .await?;
             accepted("all bot tokens revoked", &[])

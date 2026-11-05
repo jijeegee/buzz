@@ -4,8 +4,8 @@ use crate::client::{
     extract_d_tag, extract_relay_response_field, normalize_write_response, print_create_response,
     KuzzClient,
 };
-use crate::error::CliError;
-use crate::validate::{parse_uuid, read_or_stdin, sdk_err, validate_uuid};
+use crate::error::{classify_relay, CliError};
+use crate::validate::{parse_uuid, percent_encode, read_or_stdin, sdk_err, validate_uuid};
 
 // TODO(phase-4): Replace raw nostr::EventBuilder usage with kuzz-sdk builder functions
 
@@ -57,40 +57,40 @@ pub async fn cmd_get_workflow(client: &KuzzClient, workflow_id: &str) -> Result<
     Ok(())
 }
 
-/// Get workflow run history — query kinds [46001, 46002, 46003].
-///
-/// NOTE: The relay does not currently emit workflow execution events (46001-46003).
-/// Run history is stored in the workflow_runs DB table, not as Nostr events.
-/// This command will return an empty array until the relay adds event emission
-/// or a dedicated REST endpoint for run history.
+fn runs_path(
+    workflow_id: &str,
+    limit: Option<u32>,
+    before: Option<(&str, &str)>,
+) -> Result<String, CliError> {
+    validate_uuid(workflow_id)?;
+    let limit = limit.unwrap_or(20).clamp(1, 100);
+    let mut path = format!("/workflows/{workflow_id}/runs?limit={limit}");
+    if let Some((before, before_id)) = before {
+        validate_uuid(before_id)?;
+        path.push_str(&format!(
+            "&before={}&before_id={before_id}",
+            percent_encode(before)
+        ));
+    }
+    Ok(path)
+}
+
+/// Get workflow run history from the relay's `workflow_runs` table.
 pub async fn cmd_get_workflow_runs(
     client: &KuzzClient,
     workflow_id: &str,
     limit: Option<u32>,
+    before: Option<(&str, &str)>,
 ) -> Result<(), CliError> {
-    validate_uuid(workflow_id)?;
-    let limit = limit.unwrap_or(20).min(100);
-    let filter = serde_json::json!({
-        "kinds": [46001, 46002, 46003],
-        "#d": [workflow_id],
-        "limit": limit
-    });
-    let resp = client.query(&filter).await?;
-    let events: Vec<serde_json::Value> = serde_json::from_str(&resp).unwrap_or_default();
-    let normalized: Vec<serde_json::Value> = events
-        .iter()
-        .map(|e| {
-            serde_json::json!({
-                "event_id": e.get("id").and_then(|v| v.as_str()).unwrap_or(""),
-                "kind": e.get("kind").and_then(|v| v.as_u64()).unwrap_or(0),
-                "content": e.get("content").and_then(|v| v.as_str()).unwrap_or(""),
-                "created_at": e.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0),
-                "tags": e.get("tags").cloned().unwrap_or(serde_json::json!([])),
-            })
-        })
-        .collect();
-    let output = serde_json::to_string(&normalized).unwrap_or_default();
-    println!("{output}");
+    let path = runs_path(workflow_id, limit, before)?;
+    // The route takes NIP-98 only.
+    if client.is_token_mode() {
+        return Err(CliError::Usage(
+            "workflows runs needs a key login; a token login cannot read run history".into(),
+        ));
+    }
+    let resp = client.get_authed(&path).await.map_err(classify_relay)?;
+    println!("{resp}");
     Ok(())
 }
 
@@ -239,8 +239,14 @@ pub async fn dispatch(cmd: crate::WorkflowsCmd, client: &KuzzClient) -> Result<(
         WorkflowsCmd::Trigger { workflow, inputs } => {
             cmd_trigger_workflow(client, &workflow, inputs.as_deref()).await
         }
-        WorkflowsCmd::Runs { workflow, limit } => {
-            cmd_get_workflow_runs(client, &workflow, limit).await
+        WorkflowsCmd::Runs {
+            workflow,
+            limit,
+            before,
+            before_id,
+        } => {
+            let before = before.as_deref().zip(before_id.as_deref());
+            cmd_get_workflow_runs(client, &workflow, limit, before).await
         }
         WorkflowsCmd::Approve {
             token,
@@ -250,5 +256,41 @@ pub async fn dispatch(cmd: crate::WorkflowsCmd, client: &KuzzClient) -> Result<(
             // approved is already a bool — no parse_bool_flag needed
             cmd_approve_step(client, &token, approved, note.as_deref()).await
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const WORKFLOW: &str = "550e8400-e29b-41d4-a716-446655440000";
+
+    #[test]
+    fn runs_path_clamps_the_limit() {
+        let path = |limit| runs_path(WORKFLOW, limit, None).unwrap();
+        assert_eq!(path(None), format!("/workflows/{WORKFLOW}/runs?limit=20"));
+        assert_eq!(path(Some(0)), format!("/workflows/{WORKFLOW}/runs?limit=1"));
+        assert_eq!(
+            path(Some(500)),
+            format!("/workflows/{WORKFLOW}/runs?limit=100")
+        );
+    }
+
+    #[test]
+    fn runs_path_encodes_the_cursor() {
+        let path = runs_path(
+            WORKFLOW,
+            None,
+            Some(("2026-11-05T01:02:03+00:00", WORKFLOW)),
+        );
+        assert!(path.unwrap().ends_with(&format!(
+            "&before=2026-11-05T01%3A02%3A03%2B00%3A00&before_id={WORKFLOW}"
+        )));
+    }
+
+    #[test]
+    fn runs_path_refuses_anything_but_a_uuid() {
+        assert!(runs_path("../auth", None, None).is_err());
+        assert!(runs_path(WORKFLOW, None, Some(("x", "../auth"))).is_err());
     }
 }

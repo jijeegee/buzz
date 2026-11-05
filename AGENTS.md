@@ -329,6 +329,8 @@ check existing reply handlers for the pattern.
 
 ## Agent CLI (`kuzz-cli`)
 
+A new user feature ships with its CLI command in the same change.
+
 `kuzz` is the agent-first CLI. Auth env vars
 (`KUZZ_RELAY_URL`, `KUZZ_PRIVATE_KEY`, `KUZZ_AUTH_TAG`) are auto-injected
 by the ACP harness into managed agent subprocesses. In development, set
