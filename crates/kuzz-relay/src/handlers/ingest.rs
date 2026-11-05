@@ -19,7 +19,8 @@ use kuzz_core::kind::{
     KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
     KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
     KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED,
-    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE,
+    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_OPS,
+    KIND_GOAL_TREE,
     KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
     KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
     KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
@@ -649,7 +650,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
                 Ok(Scope::ChannelsWrite)
             }
         }
-        KIND_NIP29_CREATE_GROUP | KIND_CANVAS | KIND_GOAL_TREE => Ok(Scope::ChannelsWrite),
+        KIND_NIP29_CREATE_GROUP | KIND_CANVAS | KIND_GOAL_TREE | KIND_GOAL_OPS => {
+            Ok(Scope::ChannelsWrite)
+        }
         KIND_NIP29_JOIN_REQUEST | KIND_NIP29_LEAVE_REQUEST | KIND_NIP43_LEAVE_REQUEST => {
             Ok(Scope::ChannelsRead)
         }
@@ -916,6 +919,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
             | KIND_STREAM_MESSAGE_DIFF
             | KIND_CANVAS
             | KIND_GOAL_TREE
+            | KIND_GOAL_OPS
             | KIND_FORUM_POST
             | KIND_FORUM_VOTE
             | KIND_FORUM_COMMENT
@@ -3311,8 +3315,21 @@ async fn ingest_event_inner(
         }
     }
 
+    // One store at a time: the switch decides which write is the real one, so
+    // an old app cannot change goals the new store no longer reads.
+    if kind_u32 == KIND_GOAL_TREE && state.config.goal_store {
+        return Err(IngestError::Rejected(
+            "invalid: goals have moved; update the app to change them".into(),
+        ));
+    }
+    if kind_u32 == KIND_GOAL_OPS && !state.config.goal_store {
+        return Err(IngestError::Rejected(
+            "invalid: goal edits are not on yet".into(),
+        ));
+    }
+
     // A conversation with goals off keeps its tree but takes no new writes.
-    if kind_u32 == KIND_GOAL_TREE {
+    if matches!(kind_u32, KIND_GOAL_TREE | KIND_GOAL_OPS) {
         if let Some(channel) = &channel_row {
             if !channel.goals_enabled {
                 return Err(IngestError::Rejected(
@@ -3320,6 +3337,13 @@ async fn ingest_event_inner(
                 ));
             }
         }
+    }
+
+    // Goal edits passed the same gates; the store owns the rest of the write.
+    if kind_u32 == KIND_GOAL_OPS {
+        let channel = channel_id
+            .ok_or_else(|| IngestError::Rejected("invalid: goal event missing channel".into()))?;
+        return super::goals::accept(state, tenant, &event, channel).await;
     }
 
     // Artifact revisions passed the same home-channel write gates as kind 9
@@ -7658,6 +7682,7 @@ mod postgres_tests {
     #[test]
     fn goal_tree_is_channel_scoped_and_needs_channel_write() {
         assert!(requires_h_channel_scope(KIND_GOAL_TREE));
+        assert!(requires_h_channel_scope(KIND_GOAL_OPS));
         assert!(matches!(
             required_scope_for_kind(KIND_GOAL_TREE, &goal_tree_event(ONE_GOAL, vec![])),
             Ok(Scope::ChannelsWrite)

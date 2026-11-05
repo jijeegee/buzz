@@ -1,8 +1,12 @@
 //! PostgreSQL tests for goal rows: all-or-nothing events, the deletion rule
 //! against real links and thread metadata, and retries.
-use super::goals::{parse_goal_ops, GoalOutcome, GoalRow, GoalWrite};
+use super::goals::{
+    parse_goal_ops, GoalCounts, GoalOutcome, GoalPage, GoalRow, GoalSelection, GoalWrite,
+    MAX_GOAL_PAGE,
+};
 use crate::{Db, DbError};
 use chrono::{Duration, Utc};
+use kuzz_core::goal_store::GoalView;
 use kuzz_core::goal_tree::{GoalOp, GoalStatus};
 use kuzz_core::kind::KIND_GOAL_OPS;
 use kuzz_core::CommunityId;
@@ -763,6 +767,139 @@ async fn concurrent_writers_serialize_on_the_room() {
     orders.sort();
     orders.dedup();
     assert_eq!(orders.len(), 4, "each goal gets its own sort key");
+}
+
+impl Fixture {
+    async fn view(&self, view: GoalView) -> GoalPage {
+        let selection = GoalSelection::View { view, after: None };
+        self.db
+            .read_goals(self.community, self.channel, &selection)
+            .await
+            .unwrap()
+    }
+}
+
+fn row_ids(page: &GoalPage, matched: bool) -> Vec<&str> {
+    let mut ids: Vec<&str> = page
+        .rows
+        .iter()
+        .filter(|r| r.matched == matched)
+        .map(|r| r.goal.id.as_str())
+        .collect();
+    ids.sort();
+    ids
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_list_returns_its_rows_with_their_parents_and_counts() {
+    let f = Fixture::new().await;
+    f.root().await;
+    f.ok(&[
+        add("plan", "root"),
+        add("sub", "plan"),
+        add("old", "root"),
+        add("old_sub", "old"),
+    ])
+    .await;
+    f.age(120).await;
+    f.ok(&[add("live", "plan")]).await;
+    f.ok(&[done("sub")]).await;
+
+    let done_page = f.view(GoalView::Done).await;
+    assert_eq!(row_ids(&done_page, true), ["sub"]);
+    assert_eq!(row_ids(&done_page, false), ["plan", "root"]);
+    assert_eq!(
+        done_page.counts,
+        GoalCounts {
+            active: 3,
+            inactive: 2,
+            done: 1
+        }
+    );
+
+    let inactive = f.view(GoalView::Inactive).await;
+    assert_eq!(row_ids(&inactive, true), ["old", "old_sub"]);
+    assert_eq!(row_ids(&inactive, false), ["root"]);
+    assert!(inactive
+        .rows
+        .iter()
+        .any(|r| r.goal.id == "old" && r.goal.inactive));
+
+    let active = f.view(GoalView::Active).await;
+    let plan = active.rows.iter().find(|r| r.goal.id == "plan").unwrap();
+    assert_eq!(plan.progress, (1, 2));
+    assert_eq!(plan.open_children, 1);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn lists_page_through_every_row_once() {
+    let f = Fixture::new().await;
+    f.root().await;
+    sqlx::query("INSERT INTO goals(community_id,channel_id,id,parent_id,title,order_key,updated_at,created_at) SELECT $1,$2,'g'||i,'root','t',i,now(),now() FROM generate_series(1,450) i")
+        .bind(f.community.as_uuid()).bind(f.channel).execute(&f.db.pool).await.unwrap();
+    let mut after = None;
+    let mut seen = Vec::new();
+    let mut pages = 0;
+    loop {
+        let selection = GoalSelection::View {
+            view: GoalView::Active,
+            after: after.clone(),
+        };
+        let page =
+            f.db.read_goals(f.community, f.channel, &selection)
+                .await
+                .unwrap();
+        pages += 1;
+        let matched: Vec<String> = page
+            .rows
+            .iter()
+            .filter(|r| r.matched)
+            .map(|r| r.goal.id.clone())
+            .collect();
+        assert!(matched.len() <= MAX_GOAL_PAGE);
+        seen.extend(matched);
+        after = page.next;
+        if after.is_none() {
+            break;
+        }
+    }
+    assert_eq!(pages, 3);
+    let total = seen.len();
+    seen.sort();
+    seen.dedup();
+    assert_eq!(seen.len(), total);
+    assert_eq!(total, 451);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_thread_read_finds_its_goal_even_when_quiet() {
+    let f = Fixture::new().await;
+    f.root().await;
+    let thread = f.thread(Utc::now() - Duration::days(120)).await;
+    f.ok(&[
+        add("plan", "root"),
+        add("t", "plan"),
+        link("t", &thread),
+        add("task", "t"),
+        add("other", "root"),
+    ])
+    .await;
+    f.age(120).await;
+    f.ok(&[add("fresh", "root")]).await;
+    let selection = GoalSelection::Threads(vec![thread, [8; 32]]);
+    let page =
+        f.db.read_goals(f.community, f.channel, &selection)
+            .await
+            .unwrap();
+    assert_eq!(page.threads[0], (thread, Some("t".to_owned())));
+    assert_eq!(page.threads[1], ([8; 32], None));
+    assert_eq!(row_ids(&page, true), ["fresh", "t", "task"]);
+    assert_eq!(row_ids(&page, false), ["plan", "root"]);
+    let goal = page.rows.iter().find(|r| r.goal.id == "t").unwrap();
+    assert!(goal.goal.is_thread && goal.goal.inactive);
 }
 
 #[test]
