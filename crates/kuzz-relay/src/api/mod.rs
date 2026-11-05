@@ -371,6 +371,86 @@ pub mod relay_members {
         agent: &nostr::PublicKey,
         owner: &nostr::PublicKey,
     ) -> bool {
+        if !ensure_owner_link_users(state, tenant, agent, owner).await {
+            return false;
+        }
+        let write = state
+            .db
+            .set_agent_owner_for_authorization(
+                tenant.community(),
+                agent.as_bytes(),
+                owner.as_bytes(),
+            )
+            .await;
+        finish_owner_link(state, tenant, agent, owner, write).await
+    }
+
+    /// What became of a paired key's owner link.
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub enum OwnerBind {
+        /// `users` names this owner.
+        Bound,
+        /// A closed relay does not have the owner as a member: no row is
+        /// written for them, and the key stays unowned there.
+        OwnerNotMember,
+        /// The link could not be recorded, or `users` names someone else.
+        Failed,
+    }
+
+    /// Record the registry owner of a paired external key on `users`, so the
+    /// relay treats it as that owner's agent. The registry answer is the
+    /// proof: `owner` comes from an admission, not from the caller.
+    ///
+    /// The owner and the `owner_only` add policy are written together, and
+    /// only while no owner is recorded: a later kind 10100 change survives
+    /// every reconnect. A key already bound this process costs no query.
+    pub async fn bind_external_owner(
+        state: &AppState,
+        tenant: &TenantContext,
+        agent: &nostr::PublicKey,
+        owner: &[u8; 32],
+    ) -> OwnerBind {
+        let seen = (tenant.community(), agent.to_bytes());
+        let bound = &state.identity.bound_external_owners;
+        if bound.get(&seen).as_ref() == Some(owner) {
+            return OwnerBind::Bound;
+        }
+        let Ok(owner_key) = nostr::PublicKey::from_slice(owner) else {
+            tracing::warn!("paired key has an invalid owner key");
+            return OwnerBind::Failed;
+        };
+        match check_relay_membership(state, tenant.community(), owner, None, None).await {
+            Ok(MembershipDecision::Denied) => return OwnerBind::OwnerNotMember,
+            Ok(_) => {}
+            Err(e) => {
+                tracing::warn!(error = %e, "owner membership check failed during pairing bind");
+                return OwnerBind::Failed;
+            }
+        }
+        if !ensure_owner_link_users(state, tenant, agent, &owner_key).await {
+            return OwnerBind::Failed;
+        }
+        let write = state
+            .db
+            .bind_external_agent_owner(tenant.community(), agent.as_bytes(), owner)
+            .await;
+        if finish_owner_link(state, tenant, agent, &owner_key, write).await {
+            bound.insert(seen, *owner);
+            OwnerBind::Bound
+        } else {
+            tracing::warn!(agent = %agent.to_hex(), "paired owner could not be recorded");
+            OwnerBind::Failed
+        }
+    }
+
+    /// Both ends of an owner link exist: `agent_owner_pubkey` has a
+    /// community-scoped foreign key.
+    async fn ensure_owner_link_users(
+        state: &AppState,
+        tenant: &TenantContext,
+        agent: &nostr::PublicKey,
+        owner: &nostr::PublicKey,
+    ) -> bool {
         for (role, pubkey) in [("agent", agent), ("owner", owner)] {
             match state
                 .db
@@ -391,16 +471,19 @@ pub mod relay_members {
                 }
             }
         }
+        true
+    }
 
-        let materialized = match state
-            .db
-            .set_agent_owner_for_authorization(
-                tenant.community(),
-                agent.as_bytes(),
-                owner.as_bytes(),
-            )
-            .await
-        {
+    /// Apply the effects of a first-write-wins owner `write`; `false` when
+    /// no link to `owner` holds.
+    async fn finish_owner_link(
+        state: &AppState,
+        tenant: &TenantContext,
+        agent: &nostr::PublicKey,
+        owner: &nostr::PublicKey,
+        write: kuzz_db::Result<bool>,
+    ) -> bool {
+        let materialized = match write {
             Ok(true) => {
                 // The owner was just recorded. Sockets this agent opened
                 // without it would only be found by an owner-to-agent lookup

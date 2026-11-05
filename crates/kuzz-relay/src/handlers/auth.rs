@@ -14,6 +14,7 @@ use std::sync::Arc;
 use axum::extract::ws::Message as WsMessage;
 use tracing::{debug, info, warn};
 
+use crate::api::relay_members::OwnerBind;
 use crate::connection::{AuthState, ConnectionState};
 use crate::identity::admission::{admit_key_socket, KeyRefused};
 use crate::identity::config::DeviceAdmissionMode;
@@ -260,6 +261,16 @@ pub(crate) async fn admitted_owner(
 /// link, revoking the owner cannot find the agent's live sockets.
 pub(crate) const OWNER_LINK_ERROR: &str = "error: internal error recording agent owner";
 
+/// The refusal of an agent whose owner link cannot be recorded.
+fn owner_link_denial() -> AdmissionDenial {
+    AdmissionDenial {
+        metric: "agent_owner_link_error",
+        reason: OWNER_LINK_ERROR,
+        outcome: AuthOutcome::RelayMembershipCheckError,
+        class: kuzz_auth::DenialClass::AuthorizationUnavailable,
+    }
+}
+
 /// NIP-FI class for a failed NIP-42 proof: a bad proof is client evidence
 /// (`evidence rejected`); only a relay-internal verifier failure is
 /// `authorization unavailable`.
@@ -435,6 +446,7 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
             // pairing and before the policy gates; refuses only in enforce.
             // The socket is registered before the admission, which records
             // the device it admitted, so a later sign-out closes it (A4b).
+            let mut external_owner = None;
             if let Some(device_tag) = device_tag {
                 let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
                     pubkey.as_bytes(),
@@ -453,18 +465,19 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                     .identity
                     .key_sockets
                     .insert(conn_id, Arc::clone(&socket));
-                if let Err(refused) =
-                    admit_key_socket(&state, &pubkey, device_tag, claimed_owner, &socket).await
-                {
-                    // `report` already logged it once an hour; a supervisor
-                    // retrying must not flood the log.
-                    debug!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = refused.as_str(), "key refused on this device");
-                    // Known limit (plan F9): with NIP-FI on, the client sees
-                    // only the canonical denial class, not the specific reason
-                    // (`restricted: signed_out` / `revoked`), so a supervisor
-                    // cannot tell "park" from "retry" there.
-                    deny_admission(&conn, &event_id_hex, device_denial(refused));
-                    return;
+                match admit_key_socket(&state, &pubkey, device_tag, claimed_owner, &socket).await {
+                    Ok(owner) => external_owner = owner,
+                    Err(refused) => {
+                        // `report` already logged it once an hour; a supervisor
+                        // retrying must not flood the log.
+                        debug!(conn_id = %conn_id, pubkey = %pubkey.to_hex(), reason = refused.as_str(), "key refused on this device");
+                        // Known limit (plan F9): with NIP-FI on, the client sees
+                        // only the canonical denial class, not the specific reason
+                        // (`restricted: signed_out` / `revoked`), so a supervisor
+                        // cannot tell "park" from "retry" there.
+                        deny_admission(&conn, &event_id_hex, device_denial(refused));
+                        return;
+                    }
                 }
             }
 
@@ -690,11 +703,34 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                 Err(crate::nip_fi_gate::SessionExpired) => return,
             };
 
+            // A paired key's owner comes from the registry and is recorded
+            // the same way, with the add policy of an in-app agent.
+            let paired_owner = match external_owner {
+                None => None,
+                Some(owner) => {
+                    match crate::api::relay_members::bind_external_owner(
+                        &state,
+                        &conn.tenant,
+                        &pubkey,
+                        &owner,
+                    )
+                    .await
+                    {
+                        OwnerBind::Bound => nostr::PublicKey::from_slice(&owner).ok(),
+                        OwnerBind::OwnerNotMember => None,
+                        OwnerBind::Failed => {
+                            deny_admission(&conn, &event_id_hex, owner_link_denial());
+                            return;
+                        }
+                    }
+                }
+            };
+
             // Record the NIP-OA owner link before admission: revoking the
             // owner finds the agent's sockets through it, so an agent whose
             // link cannot be recorded is refused rather than admitted
             // unrevocable.
-            if let Some(owner) = nip_oa_owner {
+            if let Some(owner) = nip_oa_owner.filter(|_| paired_owner.is_none()) {
                 if !crate::api::relay_members::materialize_nip_oa_owner(
                     &state,
                     &conn.tenant,
@@ -709,18 +745,12 @@ pub async fn handle_auth(event: nostr::Event, conn: Arc<ConnectionState>, state:
                         nip_oa_owner = %owner.to_hex(),
                         "NIP-OA owner could not be materialized, denying"
                     );
-                    deny_admission(
-                        &conn,
-                        &event_id_hex,
-                        AdmissionDenial {
-                            metric: "agent_owner_link_error",
-                            reason: OWNER_LINK_ERROR,
-                            outcome: AuthOutcome::RelayMembershipCheckError,
-                            class: kuzz_auth::DenialClass::AuthorizationUnavailable,
-                        },
-                    );
+                    deny_admission(&conn, &event_id_hex, owner_link_denial());
                     return;
                 }
+            }
+            let nip_oa_owner = paired_owner.or(nip_oa_owner);
+            if let Some(owner) = nip_oa_owner {
                 auth_ctx.agent_owner_pubkey = Some(owner);
             }
 

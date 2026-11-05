@@ -47,6 +47,8 @@ const RECHECK_CONCURRENCY: usize = 16;
 pub(crate) struct Admitted {
     pub(crate) principal: PrincipalId,
     pub(crate) device_id: Uuid,
+    /// The owner of a paired external agent key: none for any other role.
+    pub(crate) external_owner: Option<[u8; 32]>,
 }
 
 /// One open socket authenticated by a message key.
@@ -409,6 +411,7 @@ pub(crate) mod tests {
         Admitted {
             principal: PrincipalId::generate(),
             device_id: Uuid::from_u128(device_id),
+            external_owner: None,
         }
     }
 

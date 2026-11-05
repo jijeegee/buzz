@@ -96,7 +96,7 @@ async fn authorize_workflow_read(
         .await
         .map_err(|e| e.into_response())?;
     // Device-bound keys, after the replay check (a replay costs no lookup).
-    bridge::admit_bridge_key(state, headers, &pubkey)
+    bridge::admit_bridge_key(state, &tenant, headers, &pubkey)
         .await
         .map_err(|e| e.into_response())?;
 

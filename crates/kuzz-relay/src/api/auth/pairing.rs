@@ -256,6 +256,7 @@ pub(super) async fn claim(
         } => {
             // A refusal cached before the pairing must not outlive it.
             state.identity.admissions.evict_key(&agent_bytes);
+            bind_owner(&state, &headers, &agent, &owner_pubkey).await;
             tracing::info!(pairing = %pairing_id, device = %device_id, "auth.pairing_connected");
             axum::Json(json!({
                 "pairing_id": pairing_id,
@@ -279,6 +280,26 @@ pub(super) async fn claim(
             "this account already has the most paired computers it can",
         ),
         ClaimPairing::Invalid => invalid_code(),
+    }
+}
+
+/// Make the just-paired agent its owner's on this host's community. A failure
+/// only logs: the agent's next connection binds it.
+async fn bind_owner(
+    state: &AppState,
+    headers: &HeaderMap,
+    agent: &nostr::PublicKey,
+    owner: &[u8; 32],
+) {
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    match crate::tenant::bind_community(&state.db, raw_host).await {
+        Ok(tenant) => {
+            crate::api::relay_members::bind_external_owner(state, &tenant, agent, owner).await;
+        }
+        Err(_) => tracing::warn!("no community for the pairing host; owner not bound yet"),
     }
 }
 

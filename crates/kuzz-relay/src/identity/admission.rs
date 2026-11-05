@@ -39,7 +39,7 @@ use base64::Engine as _;
 use kuzz_auth::device_proof::{
     verify_event_device_tag, DeviceProofError, DevicePubkey, DEVICE_PUBKEY_LEN,
 };
-use kuzz_db::identity::{KeyAdmission, KeyRefusal};
+use kuzz_db::identity::{KeyAdmission, KeyRefusal, KeyRole};
 use uuid::Uuid;
 
 use super::config::DeviceAdmissionMode;
@@ -340,14 +340,15 @@ impl AdmissionCache {
         let key: CacheKey = (*pubkey, device_key);
         match answer {
             KeyAdmission::Admitted {
+                role,
                 principal,
                 device_id,
                 owner_pubkey,
-                ..
             } => {
                 let admitted = Admitted {
                     principal,
                     device_id,
+                    external_owner: external_owner(role, owner_pubkey),
                 };
                 if !self.revoked_since(epoch, device_id, pubkey) {
                     self.admitted.insert(
@@ -402,21 +403,25 @@ pub(crate) async fn admit_key(
     device_tag: Result<Option<DevicePubkey>, DeviceProofError>,
     surface: Surface,
 ) -> Result<(), KeyRefused> {
-    admit_key_with_owner(state, pubkey, device_tag, None, surface).await
+    admit_key_with_owner(state, pubkey, device_tag, None, surface)
+        .await
+        .map(|_| ())
 }
 
 /// [`admit_key`] for an auth event that also names a NIP-OA owner
 /// (`claimed_owner`, from a verified tag): a registered key must name its
-/// registry owner.
+/// registry owner. The answer is the owner of a paired external key that was
+/// admitted: none for every other key, and for any key while `surface` is off
+/// or when a refusal is only logged.
 pub(crate) async fn admit_key_with_owner(
     state: &AppState,
     pubkey: &nostr::PublicKey,
     device_tag: Result<Option<DevicePubkey>, DeviceProofError>,
     claimed_owner: Option<nostr::PublicKey>,
     surface: Surface,
-) -> Result<(), KeyRefused> {
+) -> Result<Option<[u8; 32]>, KeyRefused> {
     if device::mode(state, surface) == DeviceAdmissionMode::Off {
-        return Ok(());
+        return Ok(None);
     }
     let subject = pubkey.to_hex();
     let outcome = match device_tag {
@@ -433,7 +438,7 @@ pub(crate) async fn admit_key_with_owner(
                 epoch,
             )
             .await
-            .map(|_| ())
+            .map(|admitted| admitted.and_then(|admitted| admitted.external_owner))
         }
     };
     judge(state, surface, &subject, outcome)
@@ -450,10 +455,10 @@ pub(crate) async fn admit_key_socket(
     device_tag: Result<Option<DevicePubkey>, DeviceProofError>,
     claimed_owner: Option<nostr::PublicKey>,
     socket: &KeySocket,
-) -> Result<(), KeyRefused> {
+) -> Result<Option<[u8; 32]>, KeyRefused> {
     let surface = socket.surface();
     if device::mode(state, surface) == DeviceAdmissionMode::Off {
-        return Ok(());
+        return Ok(None);
     }
     let subject = pubkey.to_hex();
     let outcome = match device_tag {
@@ -482,10 +487,10 @@ pub(crate) async fn admit_key_socket(
                             socket.forget();
                             Err(KeyRefused::Unavailable)
                         } else {
-                            Ok(())
+                            Ok(admitted.external_owner)
                         }
                     }
-                    other => other.map(|_| ()),
+                    other => other.map(|_| None),
                 };
                 if outcome != Err(KeyRefused::Unavailable) {
                     break;
@@ -506,9 +511,9 @@ pub(crate) async fn admit_key_for_event(
     event: &nostr::Event,
     auth_tag: Option<&str>,
     surface: Surface,
-) -> Result<(), KeyRefused> {
+) -> Result<Option<[u8; 32]>, KeyRefused> {
     if device::mode(state, surface) == DeviceAdmissionMode::Off {
-        return Ok(());
+        return Ok(None);
     }
     let claimed_owner = crate::api::relay_members::extract_nip_oa_owner(
         event.pubkey.as_bytes(),
@@ -536,9 +541,9 @@ pub(crate) async fn admit_key_for_nip98(
     headers: &HeaderMap,
     pubkey: &nostr::PublicKey,
     surface: Surface,
-) -> Result<(), KeyRefused> {
+) -> Result<Option<[u8; 32]>, KeyRefused> {
     if device::mode(state, surface) == DeviceAdmissionMode::Off {
-        return Ok(());
+        return Ok(None);
     }
     match nip98_event(headers) {
         Some(Some(event)) if event.pubkey == *pubkey => {
@@ -572,23 +577,30 @@ fn nip98_event(headers: &HeaderMap) -> Option<Option<nostr::Event>> {
 }
 
 /// Apply the surface's mode to an admission outcome: report a refusal and
-/// return it only under `enforce`.
+/// return it only under `enforce`. A refusal that is only reported admits
+/// the key with no owner.
 fn judge(
     state: &AppState,
     surface: Surface,
     subject: &str,
-    outcome: Result<(), KeyRefused>,
-) -> Result<(), KeyRefused> {
-    let Err(refused) = outcome else {
-        return Ok(());
+    outcome: Result<Option<[u8; 32]>, KeyRefused>,
+) -> Result<Option<[u8; 32]>, KeyRefused> {
+    let refused = match outcome {
+        Ok(owner) => return Ok(owner),
+        Err(refused) => refused,
     };
     let enforced = device::mode(state, surface) == DeviceAdmissionMode::Enforce;
     device::report(state, surface, subject, refused.as_str(), enforced);
     if enforced {
         Err(refused)
     } else {
-        Ok(())
+        Ok(None)
     }
+}
+
+/// The owner a key was admitted under, when the key is a paired external one.
+fn external_owner(role: KeyRole, owner_pubkey: Option<[u8; 32]>) -> Option<[u8; 32]> {
+    owner_pubkey.filter(|_| role == KeyRole::External)
 }
 
 /// The registry's answer for `pubkey` on `device`: `Ok(Some(_))` admitted
@@ -631,16 +643,17 @@ async fn lookup(
     }
     match state.db.key_admission(&key.0, key.1.as_ref()).await {
         Ok(KeyAdmission::Admitted {
+            role,
             principal,
             device_id,
             owner_pubkey,
-            ..
         }) => {
             let cached = CachedAdmit {
                 owner: owner_pubkey,
                 admitted: Admitted {
                     principal,
                     device_id,
+                    external_owner: external_owner(role, owner_pubkey),
                 },
                 epoch,
             };
@@ -758,6 +771,7 @@ mod tests {
             admitted: Admitted {
                 principal: PrincipalId::generate(),
                 device_id,
+                external_owner: None,
             },
             epoch,
         }
@@ -851,7 +865,7 @@ mod tests {
     async fn a_socket_admission_records_only_unrevoked_answers() {
         for (mode, outcome) in [
             (DeviceAdmissionMode::Enforce, Err(KeyRefused::Unavailable)),
-            (DeviceAdmissionMode::Log, Ok(())),
+            (DeviceAdmissionMode::Log, Ok(None)),
         ] {
             let state = crate::state::tests::test_state_with_config(
                 "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
@@ -870,7 +884,7 @@ mod tests {
                 .insert(key, cached(None, laptop, admissions.epoch()));
             assert_eq!(
                 admit_key_socket(&state, &pubkey, Ok(Some(device)), None, &socket).await,
-                Ok(())
+                Ok(None)
             );
             assert_eq!(socket.admitted().map(|a| a.device_id), Some(laptop));
 
@@ -881,7 +895,7 @@ mod tests {
             admissions.admitted.insert(key, cached(None, laptop, stale));
             assert_eq!(
                 admit_key_socket(&state, &pubkey, Ok(Some(device)), None, &socket).await,
-                Ok(())
+                Ok(None)
             );
             let socket = crate::identity::key_sockets::tests::socket(pubkey, Surface::Ws);
             let stale = admissions.epoch();
@@ -1068,13 +1082,72 @@ mod tests {
         let admit = |device, claimed| {
             admit_key_with_owner(&state, &pubkey, Ok(Some(device)), claimed, Surface::Ws)
         };
-        assert_eq!(admit(device, None).await, Ok(()));
-        assert_eq!(admit(device, Some(owner)).await, Ok(()));
+        assert_eq!(admit(device, None).await, Ok(None));
+        assert_eq!(admit(device, Some(owner)).await, Ok(None));
         assert_eq!(
             admit(device, Some(stranger)).await,
             Err(KeyRefused::OwnerMismatch)
         );
-        assert_eq!(admit(other_device, Some(stranger)).await, Ok(()));
+        assert_eq!(admit(other_device, Some(stranger)).await, Ok(None));
+    }
+
+    /// Only an external key's role yields an owner.
+    #[test]
+    fn only_a_paired_key_reports_its_owner() {
+        let owner = Some([7u8; 32]);
+        assert_eq!(external_owner(KeyRole::External, owner), owner);
+        assert_eq!(external_owner(KeyRole::External, None), None);
+        assert_eq!(external_owner(KeyRole::Agent, owner), None);
+        assert_eq!(external_owner(KeyRole::Person, owner), None);
+    }
+
+    /// The owner of a paired key comes back on a cached answer, on sockets
+    /// and calls alike, and never when the key is refused. In `log` a refusal
+    /// admits the key, still with no owner.
+    #[tokio::test]
+    async fn a_paired_owner_comes_back_only_when_the_key_is_admitted() {
+        for (mode, refused) in [
+            (DeviceAdmissionMode::Enforce, Err(KeyRefused::OwnerMismatch)),
+            (DeviceAdmissionMode::Log, Ok(None)),
+        ] {
+            let state = crate::state::tests::test_state_with_config(
+                "postgres://kuzz:kuzz_dev@127.0.0.1:1/kuzz",
+                |config| config.auth_token.device_admission = mode,
+            )
+            .await;
+            let pubkey = nostr::Keys::generate().public_key();
+            let owner = nostr::Keys::generate().public_key();
+            let stranger = nostr::Keys::generate().public_key();
+            let (_, device) = test_support::device(23);
+            let mut answer = cached(Some(owner.to_bytes()), Uuid::from_u128(1), 0);
+            answer.admitted.external_owner = Some(owner.to_bytes());
+            state
+                .identity
+                .admissions
+                .admitted
+                .insert((pubkey.to_bytes(), Some(*device.as_bytes())), answer);
+            let socket = crate::identity::key_sockets::tests::socket(pubkey, Surface::Ws);
+            assert_eq!(
+                admit_key_socket(&state, &pubkey, Ok(Some(device)), None, &socket).await,
+                Ok(Some(owner.to_bytes()))
+            );
+            assert_eq!(
+                admit_key_with_owner(&state, &pubkey, Ok(Some(device)), None, Surface::Http).await,
+                Ok(Some(owner.to_bytes()))
+            );
+            assert_eq!(
+                admit_key_with_owner(
+                    &state,
+                    &pubkey,
+                    Ok(Some(device)),
+                    Some(stranger),
+                    Surface::Http
+                )
+                .await,
+                refused,
+                "{mode:?}"
+            );
+        }
     }
 
     /// The bridge entrance: no `Authorization: Nostr` (the `X-Pubkey` dev
@@ -1110,8 +1183,8 @@ mod tests {
                 assert_eq!(unsigned, Err(KeyRefused::Unsigned));
                 assert_eq!(foreign, Err(KeyRefused::BadTag));
             } else {
-                assert_eq!(unsigned, Ok(()), "{mode:?}");
-                assert_eq!(foreign, Ok(()), "{mode:?}");
+                assert_eq!(unsigned, Ok(None), "{mode:?}");
+                assert_eq!(foreign, Ok(None), "{mode:?}");
             }
         }
     }

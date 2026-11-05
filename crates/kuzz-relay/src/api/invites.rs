@@ -306,7 +306,7 @@ async fn authenticate(
         ..
     } = bridge::verify_nip98_exempt_invite_claim(headers, "POST", &url, Some(body))?;
     bridge::check_nip98_replay(state, &tenant, event_id_bytes).await?;
-    bridge::admit_bridge_key(state, headers, &pubkey).await?;
+    bridge::admit_bridge_key(state, &tenant, headers, &pubkey).await?;
 
     Ok((tenant, pubkey))
 }
@@ -412,7 +412,7 @@ async fn mint_invite_checked(
     if let Err(e) = bridge::check_nip98_replay(&state, &tenant, event_id_bytes).await {
         return e.into_response();
     }
-    if let Err(e) = bridge::admit_bridge_key(&state, &headers, &pubkey).await {
+    if let Err(e) = bridge::admit_bridge_key(&state, &tenant, &headers, &pubkey).await {
         return e.into_response();
     }
 

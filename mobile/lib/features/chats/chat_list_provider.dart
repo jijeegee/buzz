@@ -12,6 +12,7 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 import '../channels/channel_live_events.dart';
+import '../groups/group_invitations.dart';
 import '../people/blocked_users_provider.dart';
 import 'chat_list.dart';
 import 'chat_state_writer.dart';
@@ -20,6 +21,12 @@ import 'thread_pins_provider.dart';
 /// Ephemeral kind the relay sends to all of a user's devices when their chat
 /// state changes (a read, unread mark or follow on another device).
 const chatStatePingKind = 24210;
+
+/// Whether a chat-state ping is about a new group invitation.
+bool isGroupInvitationPing(NostrEvent event) => event.tags.any(
+  (tag) =>
+      tag.length >= 2 && tag[0] == 'reason' && tag[1] == 'group_invitation',
+);
 
 /// Shortest time between reloads triggered by app resume, pings or deletions.
 /// Reconnects and pull to refresh always reload.
@@ -212,7 +219,13 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
               },
               limit: 0,
             ),
-            (_) {
+            (event) {
+              if (isGroupInvitationPing(event)) {
+                unawaited(
+                  ref.read(groupInvitationsProvider.notifier).refresh(),
+                );
+                return;
+              }
               if (ref.read(chatStateWriterProvider)?.isOwnWriteEcho() ??
                   false) {
                 return;
@@ -225,6 +238,8 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
         return;
       }
       ref.onDispose(unsubscribe);
+      // A ping sent while offline is gone.
+      unawaited(ref.read(groupInvitationsProvider.notifier).refresh());
     } catch (error) {
       debugPrint('[ChatList] ping subscription failed: $error');
     }
