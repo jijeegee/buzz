@@ -305,7 +305,7 @@ pub fn validate_fields(
         validate_title(title)?;
     }
     // Postgres text cannot hold NUL.
-    if title.into_iter().chain(note).any(|t| t.contains(' ')) {
+    if title.into_iter().chain(note).any(|t| t.contains('\0')) {
         return Err(GoalTreeError::Invalid(
             "goal text must not contain NUL".into(),
         ));
@@ -592,8 +592,8 @@ mod tests {
     #[test]
     fn fields_are_checked() {
         assert!(validate_fields(Some(" "), None, &[]).is_err());
-        assert!(validate_fields(Some("a b"), None, &[]).is_err());
-        assert!(validate_fields(None, Some("a b"), &[]).is_err());
+        assert!(validate_fields(Some("a\0b"), None, &[]).is_err());
+        assert!(validate_fields(None, Some("a\0b"), &[]).is_err());
         assert!(validate_fields(Some("ok"), Some(&"x".repeat(MAX_NOTE_CHARS + 1)), &[]).is_err());
         assert!(validate_fields(Some("ok"), None, &["nope".into()]).is_err());
         assert!(validate_fields(Some("ok"), Some("note"), &["a".repeat(64)]).is_ok());

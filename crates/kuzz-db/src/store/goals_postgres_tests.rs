@@ -551,6 +551,53 @@ async fn a_written_goal_records_its_editor_and_community_isolation_holds() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn a_move_with_no_order_sends_a_goal_last_among_its_siblings() {
+    let f = Fixture::new().await;
+    f.root().await;
+    f.ok(&[add("a", "root"), add("b", "root")]).await;
+    let first = f.goal("a").await.order;
+    f.ok(&[GoalOp::Move {
+        id: "a".into(),
+        parent: "root".into(),
+        order: None,
+    }])
+    .await;
+    assert!(f.goal("a").await.order > f.goal("b").await.order);
+    assert!(f.goal("a").await.order > first);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn relinking_a_reopened_goal_starts_it_again() {
+    let f = Fixture::new().await;
+    f.root().await;
+    f.ok(&[add("a", "root"), link("a", &[4; 32])]).await;
+    f.ok(&[set_status("a", GoalStatus::Open)]).await;
+    f.ok(&[link("a", &[4; 32])]).await;
+    assert_eq!(f.goal("a").await.status, GoalStatus::InProgress);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn the_reported_parent_survives_a_later_op_in_the_event() {
+    let f = Fixture::new().await;
+    f.root().await;
+    f.ok(&[add("top", "root"), add("mid", "top"), add("leaf", "mid")])
+        .await;
+    let outcome = f
+        .ok(&[
+            done("leaf"),
+            GoalOp::Remove {
+                id: "mid".into(),
+                recursive: true,
+            },
+        ])
+        .await;
+    assert_eq!(outcome.parent.as_deref(), Some("top"));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn one_event_can_add_link_and_finish() {
     let f = Fixture::new().await;
     f.root().await;
@@ -628,7 +675,7 @@ async fn retries_with_a_new_event_id_store_nothing_and_keep_the_clock() {
             remove_assignees: Vec::new(),
         }],
         vec![GoalOp::Move {
-            id: "plan".into(),
+            id: "other".into(),
             parent: "root".into(),
             order: None,
         }],

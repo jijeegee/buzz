@@ -262,6 +262,12 @@ impl Apply<'_, '_> {
             return Ok(());
         }
         let doomed: HashSet<&String> = ids.iter().collect();
+        // The report reads this goal back, so it must be one that stays.
+        let mut parent = self.outcome.parent.take();
+        while let Some(gone) = parent.as_ref().filter(|p| doomed.contains(*p)) {
+            parent = self.graph.get(gone).and_then(|n| n.parent.clone());
+        }
+        self.outcome.parent = parent;
         let mut survivors: Vec<String> = ids
             .iter()
             .filter_map(|id| self.graph.get(id)?.parent.clone())
@@ -426,13 +432,8 @@ impl Apply<'_, '_> {
     }
 
     async fn after_finish(&mut self, id: &str) -> Result<()> {
+        self.outcome.parent = self.graph.get(id).and_then(|n| n.parent.clone());
         let doomed = self.graph.deletions_after_finish(id);
-        // The report reads this goal back, so it must be one that stays.
-        let mut parent = self.graph.get(id).and_then(|n| n.parent.clone());
-        while let Some(gone) = parent.as_ref().filter(|p| doomed.contains(*p)) {
-            parent = self.graph.get(gone).and_then(|n| n.parent.clone());
-        }
-        self.outcome.parent = parent;
         self.delete(doomed).await
     }
 
@@ -449,7 +450,17 @@ impl Apply<'_, '_> {
         }
         if same_parent {
             let (.., old_order) = self.stored_text(id).await?;
-            if order.is_none_or(|o| o == old_order) {
+            // With no order the goal goes last, so one already last stays put.
+            let last: Option<i64> = sqlx::query_scalar(
+                "SELECT MAX(order_key) FROM goals \
+                 WHERE community_id = $1 AND channel_id = $2 AND parent_id = $3",
+            )
+            .bind(self.community)
+            .bind(self.channel)
+            .bind(parent)
+            .fetch_one(&mut **self.tx)
+            .await?;
+            if order.or(last) == Some(old_order) {
                 return Ok(());
             }
         }
@@ -506,7 +517,7 @@ impl Apply<'_, '_> {
         .bind(&event_id)
         .fetch_optional(&mut **self.tx)
         .await?;
-        if linked.as_deref() == Some(id) {
+        if linked.as_deref() == Some(id) && status != GoalStatus::Open {
             return Ok(());
         }
         sqlx::query(
