@@ -527,14 +527,6 @@ async fn finish_sign_in(
     // token account's marker names no account (or, from older builds, its
     // principal).
     let owner = signed_in_account.unwrap_or(principal);
-    if !connect {
-        // Before anything below can reload the window into the next start.
-        if let Err(error) =
-            crate::managed_agents::account_settings::mark_agent_setup_pending(app, &owner.to_hex())
-        {
-            eprintln!("kuzz-desktop: auth: {error}");
-        }
-    }
     let resume = state
         .token_auth
         .signed_out
@@ -543,6 +535,14 @@ async fn finish_sign_in(
         .token_auth
         .signed_out
         .clear(&origin, signed_in_account.or(Some(principal)))?;
+    if !connect {
+        // Before anything below can reload the window into the next start.
+        if let Err(error) =
+            crate::managed_agents::account_settings::mark_agent_setup_pending(app, &owner.to_hex())
+        {
+            eprintln!("kuzz-desktop: auth: {error}");
+        }
+    }
     state.token_auth.clear_pending_refresh(&origin);
     let now = chrono::Utc::now().timestamp();
     let session = UserSession {

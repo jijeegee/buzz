@@ -128,6 +128,8 @@ const DEFAULT_CONFIG = {
 function makeIpcHandler(overrides = {}) {
   return (cmd, payload) => {
     if (cmd in overrides) return overrides[cmd](payload);
+    if (cmd === "get_identity")
+      return Promise.resolve({ pubkey: "aa".repeat(32) });
     if (cmd === "get_global_agent_config")
       return Promise.resolve(DEFAULT_CONFIG);
     if (cmd === "set_global_agent_config") {

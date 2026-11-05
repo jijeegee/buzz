@@ -625,13 +625,13 @@ type E2eConfig = {
     identityLocked?: boolean;
     /** Delay (ms) applied to identity import so specs can observe pending navigation. */
     identityImportDelayMs?: number;
+    /** A sign-in left this account's agent check for the next start. */
+    agentSetupPending?: boolean;
     /**
      * Global agent config returned by `get_global_agent_config`. Defaults to
      * an empty config (no provider, model, or env vars) if not specified.
      * Pass a config with a provider to test Inherit-from-global behavior.
      */
-    /** A sign-in left this account's agent check for the next start. */
-    agentSetupPending?: boolean;
     globalAgentConfig?: {
       env_vars: Record<string, string>;
       provider: string | null;

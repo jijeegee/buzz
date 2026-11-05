@@ -16,7 +16,10 @@ use tauri::AppHandle;
 use crate::{
     app_state::AppState,
     managed_agents::{
-        account_settings::{active_settings_owner, agent_setup_pending, clear_agent_setup_pending},
+        account_settings::{
+            active_settings_owner, agent_setup_pending, clear_agent_setup_pending,
+            require_settings_owner,
+        },
         agent_readiness, current_instance_id, find_managed_agent_mut, known_acp_runtime,
         load_active_agent_config, load_agent_config_for_owner, load_managed_agents, load_personas,
         record_agent_command, resolve_effective_agent_env, save_agent_config_for_owner,
@@ -48,15 +51,22 @@ pub fn get_global_agent_config(app: AppHandle) -> Result<GlobalAgentConfig, Stri
     load_active_agent_config(&app)
 }
 
-/// Whether `pubkey` signed in here since its agents were last checked.
+/// Whether `pubkey` signed in here since its agents were last checked. Never
+/// while the account cannot be used yet: `pubkey` is then the fallback key.
 #[tauri::command]
 pub fn get_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<bool, String> {
+    if active_settings_owner(&app).is_err() {
+        return Ok(false);
+    }
     agent_setup_pending(&app, &pubkey)
 }
 
 /// `pubkey`'s agent setup was checked, finished or put off until next sign-in.
 #[tauri::command]
 pub fn finish_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<(), String> {
+    if active_settings_owner(&app).is_err() {
+        return Ok(());
+    }
     clear_agent_setup_pending(&app, &pubkey)
 }
 
@@ -90,9 +100,7 @@ pub async fn set_global_agent_config(
     // lock in Phase 2 after sync_managed_agent_processes.
     let app_for_write = app.clone();
     let phase1 = tokio::task::spawn_blocking(move || {
-        if !active_settings_owner(&app_for_write)?.eq_ignore_ascii_case(&owner) {
-            return Err("The account changed. Reopen this screen and try again.".to_string());
-        }
+        require_settings_owner(&app_for_write, &owner)?;
         validate_global_config(&config)?;
 
         let old_global = load_agent_config_for_owner(&app_for_write, &owner).unwrap_or_default();

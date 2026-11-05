@@ -289,6 +289,18 @@ test("signing back in with agents not set up reopens agent setup only", async ({
   await expect(page.getByTestId("onboarding-page-2")).toHaveCount(0);
 });
 
+test("a first signup that was marked still reaches the first-signup screens", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, { agentSetupPending: true });
+  await page.goto("/");
+
+  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await page.getByTestId("onboarding-setup-skip").click();
+
+  await expect(page.getByTestId("community-profile-next")).toBeVisible();
+});
+
 test("signing back in with agents set up goes straight in", async ({
   page,
 }) => {

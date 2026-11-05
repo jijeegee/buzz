@@ -939,7 +939,7 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     }
     // Self-opened task threads ride the thread policy, after user env like
     // the policy itself; the snapshot below stamps the same value.
-    let task_threads = super::task_threads::current_task_threads_env(app);
+    let task_threads = super::task_threads::current_task_threads_env(app, owner_hex);
     super::task_threads::apply_task_threads_env(&mut command, acp_session_policy, &task_threads);
     // The channel routing role (saved mode × the record's star, held back
     // while another agent still runs a role it is losing) decides the
@@ -951,14 +951,14 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
         record,
         super::channel_routing::routing_role_for(
             record,
-            super::channel_routing::load_channel_routing(app)?,
+            super::channel_routing::load_channel_routing_for_owner(app, owner_hex)?,
             owner_hex,
         ),
         live_routing_roles,
     );
     // New-session history follows the routing role (dispatchers keep their
     // own window); written after user env and stamped into the snapshot below.
-    let context_history = super::context_history::current_context_history_env(app);
+    let context_history = super::context_history::current_context_history_env(app, owner_hex);
     super::context_history::apply_context_history_env(&mut command, routing_role, &context_history);
     super::apply_routing_env(
         &mut command,

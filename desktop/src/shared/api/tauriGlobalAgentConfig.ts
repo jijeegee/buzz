@@ -13,6 +13,12 @@ export async function getGlobalAgentConfig(): Promise<GlobalAgentConfig> {
   return invokeTauri<GlobalAgentConfig>("get_global_agent_config");
 }
 
+/** The account a settings save is for; Rust refuses it once that account is no longer active. */
+export function requireOwner(owner: string | null | undefined) {
+  if (!owner) throw new Error("Your account isn't ready yet. Try again.");
+  return owner;
+}
+
 /**
  * Validate and persist an account's agent configuration. `owner` is the
  * account the screen shows; a save from before an account switch is refused.
@@ -27,10 +33,9 @@ export async function setGlobalAgentConfig(
   config: GlobalAgentConfig,
   owner: string | null | undefined,
 ): Promise<GlobalAgentConfigSaveResult> {
-  if (!owner) throw new Error("Your account isn't ready yet. Try again.");
   return invokeTauri<GlobalAgentConfigSaveResult>("set_global_agent_config", {
     config,
-    owner,
+    owner: requireOwner(owner),
   });
 }
 

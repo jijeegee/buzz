@@ -50,9 +50,11 @@ impl TaskModelSetting {
 
 pub type TaskModels = BTreeMap<String, TaskModelSetting>;
 
-fn task_models_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    let owner = active_settings_owner(app)?;
-    Ok(account_settings_dir(app, &owner)?.join(TASK_MODELS_FILE))
+fn task_models_path<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<PathBuf, String> {
+    Ok(account_settings_dir(app, owner_hex)?.join(TASK_MODELS_FILE))
 }
 
 /// Parse the stored file. Damaged JSON reads as "all automatic" with a
@@ -70,7 +72,7 @@ pub(crate) fn parse_task_models(content: &str) -> TaskModels {
 
 pub fn load_task_models<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<TaskModels, String> {
     match active_settings_owner(app) {
-        Ok(_) => load_task_models_at(&task_models_path(app)?),
+        Ok(owner) => load_task_models_at(&task_models_path(app, &owner)?),
         Err(_) => Ok(TaskModels::new()),
     }
 }
@@ -111,10 +113,11 @@ pub(crate) fn normalize_choice(
 /// entry.
 pub fn save_task_model<R: tauri::Runtime>(
     app: &AppHandle<R>,
+    owner_hex: &str,
     task_id: &str,
     setting: TaskModelSetting,
 ) -> Result<TaskModels, String> {
-    save_task_model_at(&task_models_path(app)?, task_id, setting)
+    save_task_model_at(&task_models_path(app, owner_hex)?, task_id, setting)
 }
 
 pub(crate) fn save_task_model_at(

@@ -246,7 +246,7 @@ export function hasEnsuredWelcomeChannel(
 
 function welcomeTeamOwedStorageKey(pubkey: string, communityScope: string) {
   return `${WELCOME_TEAM_OWED_STORAGE_KEY}:${encodeURIComponent(
-    communityScope,
+    communityScope.trim().replace(/\/+$/, ""),
   )}:${pubkey}`;
 }
 

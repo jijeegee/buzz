@@ -1,4 +1,5 @@
 import { invokeTauri } from "@/shared/api/tauri";
+import { requireOwner } from "@/shared/api/tauriGlobalAgentConfig";
 
 /**
  * Smart routing (channel routing mode `desktop-router`) and the Settings ›
@@ -147,10 +148,12 @@ export async function setTaskModel(
   taskId: string,
   provider: string | null,
   model: string | null,
+  owner: string | null | undefined,
 ): Promise<TaskModelStatus[]> {
   return invokeTauri<TaskModelStatus[]>("set_task_model", {
     taskId,
     provider,
     model,
+    owner: requireOwner(owner),
   });
 }
