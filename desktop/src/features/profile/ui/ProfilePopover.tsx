@@ -343,7 +343,7 @@ export function ProfilePopover({
               onClick={() => {
                 closePopover();
                 window.requestAnimationFrame(() => {
-                  onOpenSettings("account");
+                  onOpenSettings();
                 });
               }}
               role="menuitem"
