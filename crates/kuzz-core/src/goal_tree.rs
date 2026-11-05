@@ -132,14 +132,14 @@ fn invalid(message: impl Into<String>) -> GoalTreeError {
     GoalTreeError::Invalid(message.into())
 }
 
-fn is_lower_hex_64(value: &str) -> bool {
+pub(crate) fn is_lower_hex_64(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
             .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
-fn valid_id(id: &str) -> bool {
+pub(crate) fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.chars().count() <= MAX_ID_CHARS
         && id
@@ -147,7 +147,7 @@ fn valid_id(id: &str) -> bool {
             .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
-fn validate_title(title: &str) -> Result<(), GoalTreeError> {
+pub(crate) fn validate_title(title: &str) -> Result<(), GoalTreeError> {
     if title.trim().is_empty() {
         return Err(invalid("goal title must not be empty"));
     }
@@ -572,6 +572,9 @@ impl GoalTree {
                     node.threads.retain(|t| *t != thread);
                 }
             }
+            GoalOp::DropInactive => {
+                return Err(invalid("drop_inactive needs the goal store"));
+            }
         }
         Ok(())
     }
@@ -660,6 +663,8 @@ pub enum GoalOp {
         /// Thread root event id.
         thread: String,
     },
+    /// Give up every inactive goal. Goal store only.
+    DropInactive,
 }
 
 /// A fresh node id: `g_` + 16 random lowercase hex characters.

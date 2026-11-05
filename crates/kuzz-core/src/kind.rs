@@ -570,6 +570,9 @@ pub const KIND_CANVAS: u32 = 40100;
 /// Same head-per-channel storage as [`KIND_CANVAS`]; every write must carry an
 /// `expected-revision` precondition.
 pub const KIND_GOAL_TREE: u32 = 40110;
+/// Goal edits (`{"ops":[...]}`): applied to goal rows inside the event's own
+/// write transaction, and the signed change log of a conversation's goals.
+pub const KIND_GOAL_OPS: u32 = 40111;
 /// System message for channel state changes (join, leave, rename, etc.).
 pub const KIND_SYSTEM_MESSAGE: u32 = 40099;
 
@@ -800,6 +803,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
     KIND_GOAL_TREE,
+    KIND_GOAL_OPS,
     KIND_PUBLIC_GOAL,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,

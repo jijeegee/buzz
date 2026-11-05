@@ -442,7 +442,7 @@ pub async fn insert_event(
         tx.commit().await?;
         Ok(result)
     } else {
-        insert_event_on(&mut connection, community_id, event, channel_id).await
+        insert_event_on(&mut connection, community_id, event, channel_id, Utc::now()).await
     }
 }
 
@@ -517,7 +517,19 @@ pub async fn insert_event_in_transaction(
     event: &Event,
     channel_id: Option<Uuid>,
 ) -> Result<(StoredEvent, bool)> {
-    let result = insert_event_on(tx.as_mut(), community_id, event, channel_id).await?;
+    insert_event_received_in_transaction(tx, community_id, event, channel_id, Utc::now()).await
+}
+
+/// [`insert_event_in_transaction`] with the receive time chosen by the caller,
+/// for writes that stamp related rows with the same instant.
+pub async fn insert_event_received_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    received_at: DateTime<Utc>,
+) -> Result<(StoredEvent, bool)> {
+    let result = insert_event_on(tx.as_mut(), community_id, event, channel_id, received_at).await?;
     if result.1 {
         crate::operator_listener::enqueue_mentions_in_transaction(tx, community_id, event).await?;
     }
@@ -529,6 +541,7 @@ async fn insert_event_on(
     community_id: CommunityId,
     event: &Event,
     channel_id: Option<Uuid>,
+    received_at: DateTime<Utc>,
 ) -> Result<(StoredEvent, bool)> {
     let kind_u16 = event.kind.as_u16();
     let kind_u32 = u32::from(kind_u16);
@@ -549,7 +562,6 @@ async fn insert_event_on(
     let created_at_secs = event.created_at.as_secs() as i64;
     let created_at = DateTime::from_timestamp(created_at_secs, 0)
         .ok_or(DbError::InvalidTimestamp(created_at_secs))?;
-    let received_at = Utc::now();
     let d_tag = extract_d_tag(event);
     let not_before = extract_not_before(event);
     let result = sqlx::query(

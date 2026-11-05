@@ -331,6 +331,14 @@ pub struct Config {
     /// rollback for migration 0068.
     pub chat_state_writes: bool,
 
+    /// Goal rows instead of goal documents (`KUZZ_GOAL_STORE`, default off).
+    ///
+    /// On: kind 40111 edits and `{"goals":1}` reads are served and kind 40110
+    /// writes are refused. Off: goals stay documents, 40111 is refused, and
+    /// reads answer `404 goal_store_disabled`. Turning it off is the rollback
+    /// until app updates that only write rows have gone out.
+    pub goal_store: bool,
+
     /// Advertise `kuzz-deletion-records` in NIP-11 `supported_extensions`
     /// (`KUZZ_DELETION_RECORDS_ADVERTISED`, default off).
     ///
@@ -1239,6 +1247,7 @@ impl Config {
         let age_attestation_required = parse_optional_bool("KUZZ_AGE_ATTESTATION_REQUIRED")?;
         let audit_enabled = parse_bool("KUZZ_AUDIT_ENABLED", true)?;
         let chat_state_writes = parse_bool("KUZZ_CHAT_STATE_WRITES", false)?;
+        let goal_store = parse_bool("KUZZ_GOAL_STORE", false)?;
         let deletion_records_advertised = parse_bool("KUZZ_DELETION_RECORDS_ADVERTISED", false)?;
         let join_policy = if terms_markdown.is_none()
             && privacy_markdown.is_none()
@@ -1482,6 +1491,7 @@ impl Config {
             media_uploads_per_minute,
             audit_enabled,
             chat_state_writes,
+            goal_store,
             deletion_records_advertised,
             ephemeral_ttl_override,
             git_repo_path,
@@ -1727,6 +1737,7 @@ mod tests {
             !config.chat_state_writes,
             "chat-state writes must default to off"
         );
+        assert!(!config.goal_store, "the goal store must default to off");
         assert!(
             !config.deletion_records_advertised,
             "deletion records must not be advertised before the backfill"
