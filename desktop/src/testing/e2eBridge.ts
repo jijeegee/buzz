@@ -630,6 +630,8 @@ type E2eConfig = {
      * an empty config (no provider, model, or env vars) if not specified.
      * Pass a config with a provider to test Inherit-from-global behavior.
      */
+    /** A sign-in left this account's agent check for the next start. */
+    agentSetupPending?: boolean;
     globalAgentConfig?: {
       env_vars: Record<string, string>;
       provider: string | null;
@@ -9019,6 +9021,8 @@ let installCallCount = 0;
 const installCallCountByRuntime: Record<string, number> = {};
 let addChannelMembersCallCount = 0;
 let setGlobalAgentConfigCallCount = 0;
+const AGENT_SETUP_FINISHED_KEY = "kuzz-e2e-agent-setup-finished";
+let mockAgentSetupPending = false;
 let mockGlobalAgentConfig: {
   env_vars: Record<string, string>;
   provider: string | null;
@@ -12101,6 +12105,9 @@ export function maybeInstallE2eTauriMocks() {
     return queued.length;
   };
   window.__KUZZ_E2E_USERS_BATCH_PENDING__ = () => heldUsersBatchReleases.length;
+  mockAgentSetupPending =
+    (config.mock?.agentSetupPending ?? false) &&
+    !window.sessionStorage.getItem(AGENT_SETUP_FINISHED_KEY);
   mockGlobalAgentConfig = config.mock?.globalAgentConfig
     ? { ...config.mock.globalAgentConfig }
     : null;
@@ -14980,6 +14987,13 @@ export function maybeInstallE2eTauriMocks() {
           }
         );
       }
+      case "get_agent_setup_pending":
+        return mockAgentSetupPending;
+      case "finish_agent_setup_pending":
+        mockAgentSetupPending = false;
+        // The mock is rebuilt on reload; the real marker lives on disk.
+        window.sessionStorage.setItem(AGENT_SETUP_FINISHED_KEY, "true");
+        return null;
       case "get_global_agent_config_set_call_count":
         return setGlobalAgentConfigCallCount;
       case "set_global_agent_config": {

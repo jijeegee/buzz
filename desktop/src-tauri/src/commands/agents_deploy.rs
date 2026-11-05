@@ -254,7 +254,7 @@ pub(super) fn build_deploy_payload_with_live_roles<R: tauri::Runtime>(
         return Err(err);
     }
 
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global = crate::managed_agents::load_agent_config_for_record(app, record);
     let personas = load_personas(app).unwrap_or_default();
     let teams = crate::managed_agents::load_teams(app).unwrap_or_default();
     let persona_env =

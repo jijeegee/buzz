@@ -75,14 +75,14 @@ mod sweep;
 pub(crate) use sweep::sweep_untracked_bundle_harnesses;
 
 mod process;
+pub(crate) use process::{
+    current_instance_id, process_belongs_to_us, process_has_kuzz_marker, process_is_running,
+    terminate_process, terminate_untracked_pair_runtime, valid_agent_runtime_receipt,
+};
 #[cfg(test)]
 use process::{
     kuzz_marker_entry, name_matches_interpreter, name_matches_known_binary,
     terminate_runtime_receipt_with, valid_agent_runtime_receipt_with,
-};
-pub(crate) use process::{
-    current_instance_id, process_belongs_to_us, process_has_kuzz_marker, process_is_running,
-    terminate_process, terminate_untracked_pair_runtime, valid_agent_runtime_receipt,
 };
 
 mod orphan_sweep;
@@ -598,7 +598,8 @@ pub fn spawn_agent_child<R: tauri::Runtime>(
     let teams = super::load_teams(app).unwrap_or_default();
     // Load global config once; used for runtime_metadata_env_vars (model/provider fallback)
     // and for the env-var merge at spawn time.
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global =
+        crate::managed_agents::load_agent_config_for_owner(app, &record_owner).unwrap_or_default();
 
     // Resolve model/provider/prompt ONCE, here, at the shared spawn boundary —
     // the single source both the env writes below and the spawn-config snapshot

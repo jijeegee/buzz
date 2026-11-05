@@ -21,6 +21,7 @@ const PENDING_WELCOME_CHANNEL_STORAGE_KEY =
 const WELCOME_INITIAL_UNREAD_SUPPRESSION_STORAGE_KEY =
   "kuzz:onboarding-welcome-initial-unread-suppression.v1";
 const PENDING_WELCOME_CHANNEL_MAX_AGE_MS = 5 * 60 * 1000;
+const WELCOME_TEAM_OWED_STORAGE_KEY = "kuzz-welcome-team-owed.v1";
 const WELCOME_CHANNEL_ENSURED_STORAGE_KEY = "kuzz-welcome-channel-ensured.v2";
 
 type WelcomeChannelClient = {
@@ -236,6 +237,50 @@ export function hasEnsuredWelcomeChannel(
     return (
       window.localStorage.getItem(
         welcomeChannelEnsuredStorageKey(pubkey, communityScope),
+      ) === "true"
+    );
+  } catch {
+    return false;
+  }
+}
+
+function welcomeTeamOwedStorageKey(pubkey: string, communityScope: string) {
+  return `${WELCOME_TEAM_OWED_STORAGE_KEY}:${encodeURIComponent(
+    communityScope,
+  )}:${pubkey}`;
+}
+
+/**
+ * The Welcome channel is made once per account, on the computer it first signs
+ * up from, and that computer alone gets the Welcome Team. The marker lets a
+ * failed setup retry here on a later launch.
+ */
+export function setWelcomeTeamOwed(
+  pubkey: string | null | undefined,
+  communityScope: string | null | undefined,
+  owed: boolean,
+) {
+  if (typeof window === "undefined" || !pubkey || !communityScope) return;
+
+  try {
+    const key = welcomeTeamOwedStorageKey(pubkey, communityScope);
+    if (owed) window.localStorage.setItem(key, "true");
+    else window.localStorage.removeItem(key);
+  } catch {
+    // Best-effort: a computer without the marker just skips the team.
+  }
+}
+
+export function isWelcomeTeamOwed(
+  pubkey: string | null | undefined,
+  communityScope: string | null | undefined,
+) {
+  if (typeof window === "undefined" || !pubkey || !communityScope) return false;
+
+  try {
+    return (
+      window.localStorage.getItem(
+        welcomeTeamOwedStorageKey(pubkey, communityScope),
       ) === "true"
     );
   } catch {

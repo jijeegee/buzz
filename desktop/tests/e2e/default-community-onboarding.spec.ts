@@ -29,6 +29,8 @@ async function installDefaultCommunity(
     failApply?: boolean;
     profileExists?: boolean;
     holdLogin?: boolean;
+    computerSetUp?: boolean;
+    agentSetupPending?: boolean;
   } = {},
 ) {
   await seedActiveIdentity(page, { ...TEST_IDENTITIES.alice, username: "" });
@@ -113,6 +115,7 @@ async function installDefaultCommunity(
   await installMockBridge(
     page,
     {
+      agentSetupPending: options.agentSetupPending,
       profileHasEvent: options.profileExists ?? false,
       acpRuntimesCatalog: [
         {
@@ -137,7 +140,7 @@ async function installDefaultCommunity(
         env_vars: {},
         provider: null,
         model: null,
-        preferred_runtime: null,
+        preferred_runtime: options.computerSetUp ? "claude" : null,
       },
     },
     {
@@ -233,6 +236,85 @@ for (const skip of [false, true]) {
     await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
   });
 }
+
+test("an existing account already set up here goes straight in", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, {
+    computerSetUp: true,
+    profileExists: true,
+  });
+  await page.goto("/");
+  await page.getByTestId("onboarding-google-sign-in").click();
+
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
+  await expect(page.getByTestId("community-onboarding-flow")).toHaveCount(0);
+});
+
+test("an existing account not set up here sees agent setup only", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, { profileExists: true });
+  await page.goto("/");
+  await page.getByTestId("onboarding-google-sign-in").click();
+
+  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await page.getByTestId("onboarding-setup-skip").click();
+
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("community-profile-next")).toHaveCount(0);
+});
+
+test("signing back in with agents not set up reopens agent setup only", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, {
+    agentSetupPending: true,
+    completed: true,
+    existing: true,
+    profileExists: true,
+  });
+  await page.goto("/");
+
+  await expect(page.getByTestId("onboarding-page-2")).toBeVisible();
+  await expect(page.getByTestId("onboarding-back")).toHaveCount(0);
+  await page.getByTestId("onboarding-setup-skip").click();
+
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("community-profile-next")).toHaveCount(0);
+
+  await page.reload();
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("onboarding-page-2")).toHaveCount(0);
+});
+
+test("signing back in with agents set up goes straight in", async ({
+  page,
+}) => {
+  await installDefaultCommunity(page, {
+    agentSetupPending: true,
+    computerSetUp: true,
+    existing: true,
+    profileExists: true,
+  });
+  await page.goto("/");
+
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("machine-onboarding-gate")).toHaveCount(0);
+});
+
+test("a plain app start does not ask about agents", async ({ page }) => {
+  await installDefaultCommunity(page, {
+    completed: true,
+    existing: true,
+    profileExists: true,
+  });
+  await page.goto("/");
+
+  await expect(page.getByTestId("app-sidebar")).toBeVisible();
+  await expect(page.getByTestId("onboarding-page-2")).toHaveCount(0);
+});
 
 test("denied AUTH remains durable across reload, retries once with the same community and signer", async ({
   page,

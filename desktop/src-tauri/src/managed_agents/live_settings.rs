@@ -325,7 +325,7 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
     let records = super::storage::load_managed_agents_without_keys(app)?;
     let personas = super::personas::load_personas_readonly(app)?;
     let teams = super::teams::load_teams_readonly(&super::teams::teams_store_path(app)?)?;
-    let global = super::global_config::load_global_agent_config(app)?;
+    let agent_configs = super::AgentConfigsByOwner::load(app, &records);
     let task_threads = super::task_threads::current_task_threads_env(app);
     let context_history = super::context_history::current_context_history_env(app);
     let mut failures = Vec::new();
@@ -340,7 +340,7 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
             record,
             &personas,
             &teams,
-            &global,
+            agent_configs.for_record(record),
             &task_threads,
             &context_history,
             launch.session_policy,

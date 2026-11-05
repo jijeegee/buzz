@@ -20,8 +20,8 @@ mod huddle;
 mod identity_storage;
 mod initial_window;
 mod key_backup;
-mod link_preview_tags;
 mod launch_at_login;
+mod link_preview_tags;
 mod linux_media;
 #[cfg(target_os = "macos")]
 mod macos_notifications;
@@ -908,6 +908,8 @@ pub fn run() {
             put_agent_session_config,
             get_global_agent_config,
             set_global_agent_config,
+            get_agent_setup_pending,
+            finish_agent_setup_pending,
             mesh_start_node,
             mesh_stop_node,
             mesh_node_status,

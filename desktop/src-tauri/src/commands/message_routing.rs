@@ -7,7 +7,7 @@ use tauri::AppHandle;
 use crate::{
     managed_agents::{
         channel_routing::{load_channel_routing, ChannelRoutingMode},
-        load_global_agent_config, managed_agents_base_dir,
+        load_active_agent_config, managed_agents_base_dir,
         task_models::{
             load_task_models, normalize_choice, save_task_model, TaskModelSetting, TaskModels,
             KNOWN_TASK_IDS, MESSAGE_ROUTING_TASK,
@@ -47,7 +47,7 @@ pub(crate) fn resolve_router_model_for_app<R: tauri::Runtime>(
     app: &AppHandle<R>,
     task_models: &TaskModels,
 ) -> Result<Result<ResolvedRouterModel, RouterNotReady>, String> {
-    let global = load_global_agent_config(app)?;
+    let global = load_active_agent_config(app)?;
     Ok(resolve_router_model(
         task_models.get(MESSAGE_ROUTING_TASK),
         global.provider.as_deref(),
@@ -192,7 +192,7 @@ fn task_model_statuses<R: tauri::Runtime>(
     app: &AppHandle<R>,
     task_models: &TaskModels,
 ) -> Result<Vec<TaskModelStatus>, String> {
-    let global = load_global_agent_config(app)?;
+    let global = load_active_agent_config(app)?;
     let lookup = env_lookup(&global);
     let saved = task_models.get(MESSAGE_ROUTING_TASK);
     let resolved = resolve_router_model(saved, global.provider.as_deref(), &lookup, cli_state);

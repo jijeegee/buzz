@@ -49,7 +49,7 @@ pub(super) fn summarize_from_disk(
         record,
         runtimes,
         &load_personas(app).unwrap_or_default(),
-        &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
+        &crate::managed_agents::load_agent_config_for_record(app, record),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
         crate::managed_agents::visible_owner_hex(app, record),
     )
@@ -105,7 +105,7 @@ pub(super) async fn start_local_agent_pairs_with_preflight(
     }
     let personas_for_preflight = load_personas(app).unwrap_or_default();
     let global_for_preflight =
-        crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+        crate::managed_agents::load_agent_config_for_record(app, &record_snapshot);
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
@@ -266,7 +266,7 @@ where
     // for a global-inherited blank definition, it also folds in the global
     // default, which record-byte sniffing could never see.
     let personas = load_personas(app).unwrap_or_default();
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global = crate::managed_agents::load_agent_config_for_record(app, &record_snapshot);
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
@@ -356,7 +356,7 @@ where
         record,
         &runtimes,
         &personas,
-        &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
+        &crate::managed_agents::load_agent_config_for_record(app, record),
         crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
         crate::managed_agents::visible_owner_hex(app, record),
     )
@@ -420,8 +420,7 @@ async fn managed_agent_summaries(
         // One disk read for the whole list — build_managed_agent_summary takes
         // personas and config as parameters precisely so this poll-every-5s
         // call does not re-read them per record.
-        let global_config =
-            crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
+        let agent_configs = crate::managed_agents::AgentConfigsByOwner::load(&app, &records);
         let routing_mode =
             crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
         let me = crate::managed_agents::active_owner_hex(&app);
@@ -443,7 +442,7 @@ async fn managed_agent_summaries(
                     record,
                     &runtimes,
                     &personas,
-                    &global_config,
+                    agent_configs.for_record(record),
                     routing_mode,
                     owner,
                 )

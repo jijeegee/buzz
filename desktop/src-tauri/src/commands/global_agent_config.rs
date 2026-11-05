@@ -16,11 +16,12 @@ use tauri::AppHandle;
 use crate::{
     app_state::AppState,
     managed_agents::{
+        account_settings::{active_settings_owner, agent_setup_pending, clear_agent_setup_pending},
         agent_readiness, current_instance_id, find_managed_agent_mut, known_acp_runtime,
-        load_global_agent_config, load_managed_agents, load_personas, record_agent_command,
-        resolve_effective_agent_env, save_global_agent_config, save_managed_agents,
-        stop_managed_agent_process, sync_managed_agent_processes, validate_global_config,
-        AgentReadiness, BackendKind, GlobalAgentConfig,
+        load_active_agent_config, load_agent_config_for_owner, load_managed_agents, load_personas,
+        record_agent_command, resolve_effective_agent_env, save_agent_config_for_owner,
+        save_managed_agents, stop_managed_agent_process, sync_managed_agent_processes,
+        validate_global_config, AgentReadiness, BackendKind, GlobalAgentConfig,
     },
 };
 
@@ -39,18 +40,34 @@ pub struct GlobalAgentConfigSaveResult {
     pub failed_restart_count: u32,
 }
 
-/// Read the current global agent configuration.
+/// Read the active account's agent configuration.
 ///
-/// Returns the default (empty) config if `global-agent-config.json` has not
-/// been written yet.
+/// Returns the default (empty) config if that account has not saved one here.
 #[tauri::command]
 pub fn get_global_agent_config(app: AppHandle) -> Result<GlobalAgentConfig, String> {
-    load_global_agent_config(&app)
+    load_active_agent_config(&app)
 }
 
-/// Validate and persist a new global agent configuration, then auto-restart
-/// any running local agent whose effective env changes under the new config
-/// (including setup-listener agents whose readiness flips to `Ready`).
+/// Whether `pubkey` signed in here since its agents were last checked.
+#[tauri::command]
+pub fn get_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<bool, String> {
+    agent_setup_pending(&app, &pubkey)
+}
+
+/// `pubkey`'s agent setup was checked, finished or put off until next sign-in.
+#[tauri::command]
+pub fn finish_agent_setup_pending(pubkey: String, app: AppHandle) -> Result<(), String> {
+    clear_agent_setup_pending(&app, &pubkey)
+}
+
+/// Validate and persist `owner`'s agent configuration, then auto-restart any
+/// of `owner`'s running local agents whose effective env changes under the new
+/// config (including setup-listener agents whose readiness flips to `Ready`).
+///
+/// `owner` is the account the screen showed. A save that arrives after the
+/// active account changed is refused: it holds the other account's keys.
+/// Everything below uses `owner`, so a switch during the restarts changes
+/// nothing, and no other account's agents are touched.
 ///
 /// Strips empty env values before writing (empty = "inherit" semantics), then
 /// applies standard validation: POSIX key shape, reserved-key reject,
@@ -62,6 +79,7 @@ pub fn get_global_agent_config(app: AppHandle) -> Result<GlobalAgentConfig, Stri
 #[tauri::command]
 pub async fn set_global_agent_config(
     config: GlobalAgentConfig,
+    owner: String,
     app: AppHandle,
 ) -> Result<GlobalAgentConfigSaveResult, String> {
     // ── Phase 1: disk write (sync, spawn_blocking) ────────────────────────
@@ -72,20 +90,23 @@ pub async fn set_global_agent_config(
     // lock in Phase 2 after sync_managed_agent_processes.
     let app_for_write = app.clone();
     let phase1 = tokio::task::spawn_blocking(move || {
+        if !active_settings_owner(&app_for_write)?.eq_ignore_ascii_case(&owner) {
+            return Err("The account changed. Reopen this screen and try again.".to_string());
+        }
         validate_global_config(&config)?;
 
-        let old_global = load_global_agent_config(&app_for_write).unwrap_or_default();
+        let old_global = load_agent_config_for_owner(&app_for_write, &owner).unwrap_or_default();
 
-        save_global_agent_config(&app_for_write, &config)?;
+        save_agent_config_for_owner(&app_for_write, &owner, &config)?;
 
         // Re-read from disk so the returned value reflects the strip-on-write pass.
-        let new_global = load_global_agent_config(&app_for_write)?;
+        let new_global = load_agent_config_for_owner(&app_for_write, &owner)?;
 
         // Pre-filter: identify agents that look eligible before taking any locks.
         // This is a hint only; definitive eligibility check happens under lock
         // in Phase 2.
         let (candidates, personas_snapshot) =
-            collect_restart_candidates(&app_for_write, &old_global, &new_global);
+            collect_restart_candidates(&app_for_write, &owner, &old_global, &new_global);
 
         Ok::<_, String>((new_global, old_global, candidates, personas_snapshot))
     })
@@ -157,6 +178,7 @@ enum RestartOutcome {
 ///   take effect, since env is baked at spawn time).
 fn collect_restart_candidates(
     app: &AppHandle,
+    owner: &str,
     old_global: &GlobalAgentConfig,
     new_global: &GlobalAgentConfig,
 ) -> (Vec<String>, Vec<crate::managed_agents::AgentDefinition>) {
@@ -189,6 +211,10 @@ fn collect_restart_candidates(
         .iter()
         .filter(|record| {
             if record.backend != BackendKind::Local {
+                return false;
+            }
+            let agent_owner = crate::managed_agents::visible_owner_hex(app, record);
+            if !crate::managed_agents::owned_by_viewer(agent_owner.as_deref(), Some(owner)) {
                 return false;
             }
             let has_live_runtime = runtimes.iter_mut().any(|(key, runtime)| {

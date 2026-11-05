@@ -87,7 +87,7 @@ export function SidebarProfileCard({
   const [addAccountOpen, setAddAccountOpen] = React.useState(false);
   const signIn = (provider: SignInProvider) => {
     setProfilePopoverOpen(false);
-    void accountMenu.signIn(activePubkey, provider);
+    void accountMenu.signIn(provider);
   };
   const watchedUnread = useWatchedUnread();
   const otherAccountUnread = anyWatchedUnread(watchedUnread);
