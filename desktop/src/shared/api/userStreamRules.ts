@@ -419,8 +419,12 @@ export type ComparatorCounters = {
   streamOnlyUnexpected: number;
 };
 
+/** What a report needs to tell a `chunkOnly` event apart. */
+export type ComparedEvent = { kind: number; created_at: number };
+
 type CompareWindow = {
   room: string;
+  event?: ComparedEvent;
   deadlineMs: number;
   chunk: boolean;
   stream: boolean;
@@ -437,6 +441,11 @@ export class ShadowComparator {
     streamOnlyExpected: 0,
     streamOnlyUnexpected: 0,
   };
+  /**
+   * `chunkOnly` split by age (`chunkOnlyOld`: written before the stream's EOSE,
+   * so a chunk's repair walk, which the stream never replays) and by kind.
+   */
+  readonly chunkOnlyDetail: Record<string, number> = {};
   private open = new Map<string, CompareWindow>();
   private classified = new Set<string>();
   private joined = new Set<string>();
@@ -462,7 +471,13 @@ export class ShadowComparator {
     this.joined.add(room);
   }
 
-  observe(on: "chunk" | "stream", id: string, room: string, atMs: number) {
+  observe(
+    on: "chunk" | "stream",
+    id: string,
+    room: string,
+    atMs: number,
+    event?: ComparedEvent,
+  ) {
     if (this.stopped || this.startedAtMs === null || atMs < this.startedAtMs) {
       return;
     }
@@ -472,6 +487,7 @@ export class ShadowComparator {
     if (!window) {
       window = {
         room,
+        event,
         deadlineMs: atMs + USER_STREAM_LIMITS.compareWindowMs,
         chunk: false,
         stream: false,
@@ -510,10 +526,24 @@ export class ShadowComparator {
     if (compared) this.counters.eventsCompared += 1;
     if (window.chunk && window.stream) return;
     if (window.chunk) {
-      if (compared) this.counters.chunkOnly += 1;
+      if (compared) {
+        this.counters.chunkOnly += 1;
+        this.noteChunkOnly(window.event);
+      }
       return;
     }
     if (carried) this.counters.streamOnlyExpected += 1;
     else this.counters.streamOnlyUnexpected += 1;
+  }
+
+  private noteChunkOnly(event: ComparedEvent | undefined) {
+    if (!event || this.startedAtMs === null) return;
+    const old = event.created_at * 1000 < this.startedAtMs;
+    for (const key of [
+      old ? "chunkOnlyOld" : "chunkOnlyNew",
+      `chunkOnlyKind${event.kind}`,
+    ]) {
+      this.chunkOnlyDetail[key] = (this.chunkOnlyDetail[key] ?? 0) + 1;
+    }
   }
 }
