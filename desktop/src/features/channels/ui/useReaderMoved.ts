@@ -50,13 +50,18 @@ function isMessageList(target: EventTarget | null) {
  * list after the list has placed itself. A provisional open moves to the
  * relay's position only while it stays false
  * (docs/message-sync.md#opening-at-a-position). Called after the render's
- * decision, so a decision made in this render is watched.
+ * decision, so a decision made in this render is watched. With `listMoves`
+ * the list itself is moving (a seek folding rows in): only the reader's own
+ * input counts, not a scroll.
  */
 export function useReaderMoved(
   moved: React.RefObject<boolean>,
   watching: boolean,
   visit: string | null,
+  listMoves = false,
 ) {
+  const listMovesRef = React.useRef(listMoves);
+  listMovesRef.current = listMoves;
   const visitRef = React.useRef(visit);
   if (visitRef.current !== visit) {
     visitRef.current = visit;
@@ -78,6 +83,7 @@ export function useReaderMoved(
       if (!isEditable(event.target)) note();
     };
     const noteScroll = (event: Event) => {
+      if (listMovesRef.current) return;
       if (Date.now() - since >= READER_SCROLL_GRACE_MS) {
         if (isMessageList(event.target)) note();
       }

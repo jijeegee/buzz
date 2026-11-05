@@ -1,6 +1,7 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { managedAgentsQueryKey } from "@/features/agents/hooks";
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   getTaskThreads,
   setTaskThreads,
@@ -19,8 +20,9 @@ export function useTaskThreadsQuery() {
 
 export function useSetTaskThreadsMutation() {
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
   return useMutation({
-    mutationFn: (setting: TaskThreadsSetting) => setTaskThreads(setting),
+    mutationFn: (setting: TaskThreadsSetting) => setTaskThreads(setting, owner),
     onMutate: async (setting) => {
       await queryClient.cancelQueries({ queryKey: taskThreadsQueryKey });
       const previous =

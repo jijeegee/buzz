@@ -296,6 +296,10 @@ test("following a broadcast reply persists its thread root", async ({
   await expect(
     page.locator(`[data-thread-head-id="${broadcastReply.id}"]`),
   ).toBeVisible();
+  await page
+    .locator(`[data-message-id="${broadcastReply.id}"]`)
+    .first()
+    .hover();
   await page.getByTestId(`more-actions-${broadcastReply.id}`).focus();
   await page.keyboard.press("Enter");
   await expect(page.getByRole("menu")).toBeVisible();

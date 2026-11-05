@@ -1,11 +1,13 @@
 import 'dart:convert';
 
+import 'package:kuzz/features/agents/external_agent_access.dart';
 import 'package:kuzz/features/settings/devices_page.dart';
 import 'package:kuzz/shared/devices/agent_host_devices.dart';
 import 'package:kuzz/shared/devices/device_robot.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:hooks_riverpod/misc.dart';
 
 import '../../shared/auth/token/token_auth_test_fakes.dart';
 import '../../shared/devices/own_device_events_fake.dart';
@@ -17,6 +19,7 @@ Future<TokenSettingsHarness> _pumpDevices(
   WidgetTester tester, {
   bool agents = true,
   List<Map<String, Object?>> moreDevices = const [],
+  List<Override> overrides = const [],
 }) async {
   final h = TokenSettingsHarness();
   h.account.devices.addAll(moreDevices);
@@ -27,10 +30,42 @@ Future<TokenSettingsHarness> _pumpDevices(
   await h.pump(
     tester,
     DevicesPage(origin: tokenOrigin, agents: agents),
-    overrides: [relaySessionProvider.overrideWith(() => _session)],
+    overrides: [
+      relaySessionProvider.overrideWith(() => _session),
+      ...overrides,
+    ],
   );
   return h;
 }
+
+final _owner = 'cd' * 32;
+
+Map<String, Object?> _hermesHost(String agent) => {
+  'id': 'device-4',
+  'name': 'host',
+  'platform': 'external',
+  'current': false,
+  'login_device_id': 'device-2',
+  'agents': [
+    {'pubkey': agent, 'runtime': 'Hermes'},
+  ],
+};
+
+NostrEvent _access(String agent, String respondTo) => NostrEvent(
+  id: 'ef' * 32,
+  pubkey: _owner,
+  createdAt: 100,
+  kind: EventKind.managedAgent,
+  tags: [
+    ['d', agent],
+  ],
+  content: jsonEncode({
+    'name': 'Hermes',
+    'parallelism': 1,
+    'respond_to': respondTo,
+  }),
+  sig: '',
+);
 
 Future<void> _tapAndConfirm(WidgetTester tester, Key key) async {
   await tester.ensureVisible(find.byKey(key));
@@ -212,6 +247,131 @@ void main() {
       hasLength(1),
     );
     expect(h.account.calls('DELETE', '/auth/devices/device-4'), isEmpty);
+  });
+
+  group('narrowing a paired agent on disconnect', () {
+    Future<TokenSettingsHarness> pump(WidgetTester tester) => _pumpDevices(
+      tester,
+      moreDevices: [_hermesHost('ab')],
+      overrides: [externalAccessWriterProvider.overrideWithValue(_owner)],
+    );
+
+    testWidgets('a wider agent goes back to owner-only, then disconnects', (
+      tester,
+    ) async {
+      final h = await pump(tester);
+      _session.stored.add(_access('ab', 'anyone'));
+
+      await _tapAndConfirm(tester, const Key('agent-disconnect-ab'));
+
+      expect(_session.published, hasLength(1));
+      expect(
+        jsonDecode(_session.published.single.content)['respond_to'],
+        'owner-only',
+      );
+      expect(
+        h.account.calls('DELETE', '/auth/devices/device-4/agents/ab'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('a failure to narrow does not stop the disconnect', (
+      tester,
+    ) async {
+      final h = await pump(tester);
+      _session
+        ..stored.add(_access('ab', 'anyone'))
+        ..publishError = StateError('offline');
+
+      await _tapAndConfirm(tester, const Key('agent-disconnect-ab'));
+
+      expect(
+        h.account.calls('DELETE', '/auth/devices/device-4/agents/ab'),
+        hasLength(1),
+      );
+    });
+
+    testWidgets('a whole computer narrows the agents it has now', (
+      tester,
+    ) async {
+      final h = await _pumpDevices(
+        tester,
+        moreDevices: [
+          {..._hermesHost('ab'), 'agents': const <Object?>[]},
+        ],
+        overrides: [externalAccessWriterProvider.overrideWithValue(_owner)],
+      );
+      h.account.devices = [
+        for (final device in h.account.devices)
+          if (device['id'] == 'device-4') _hermesHost('ab') else device,
+      ];
+      _session.stored.add(_access('ab', 'anyone'));
+
+      await _tapAndConfirm(tester, const Key('device-disconnect-device-4'));
+
+      expect(_session.published, hasLength(1));
+      expect(h.account.calls('DELETE', '/auth/devices/device-4'), hasLength(1));
+    });
+
+    testWidgets('a session without a key publishes nothing', (tester) async {
+      final h = await _pumpDevices(tester, moreDevices: [_hermesHost('ab')]);
+      _session.stored.add(_access('ab', 'anyone'));
+
+      await _tapAndConfirm(tester, const Key('agent-disconnect-ab'));
+
+      expect(_session.published, isEmpty);
+      expect(
+        h.account.calls('DELETE', '/auth/devices/device-4/agents/ab'),
+        hasLength(1),
+      );
+    });
+  });
+
+  testWidgets('a paired agent opens its sheet with access and chat', (
+    tester,
+  ) async {
+    await _pumpDevices(
+      tester,
+      moreDevices: [_hermesHost('ab')],
+      overrides: [externalAccessWriterProvider.overrideWithValue(_owner)],
+    );
+    _session.stored.add(_access('ab', 'anyone'));
+
+    await tester.tap(find.byKey(const Key('agent-row-ab')));
+    await frames(tester);
+
+    expect(find.byKey(const Key('agent-access-message')), findsOneWidget);
+    expect(find.byKey(const Key('agent-access-save')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('agent-access-mode-owner-only')));
+    await frames(tester);
+    await tester.ensureVisible(find.byKey(const Key('agent-access-save')));
+    await frames(tester);
+    await tester.tap(find.byKey(const Key('agent-access-save')));
+    await frames(tester);
+
+    expect(
+      jsonDecode(_session.published.single.content)['respond_to'],
+      'owner-only',
+    );
+    await tester.pump(const Duration(milliseconds: 400));
+    expect(find.byKey(const Key('agent-access-save')), findsNothing);
+  });
+
+  testWidgets('a session without a key says why it can not save', (
+    tester,
+  ) async {
+    await _pumpDevices(tester, moreDevices: [_hermesHost('ab')]);
+
+    await tester.tap(find.byKey(const Key('agent-row-ab')));
+    await frames(tester);
+    await tester.ensureVisible(find.byKey(const Key('agent-access-save')));
+    await frames(tester);
+    await tester.tap(find.byKey(const Key('agent-access-save')));
+    await frames(tester);
+
+    expect(find.byKey(const Key('agent-access-error')), findsOneWidget);
+    expect(_session.published, isEmpty);
   });
 
   testWidgets('renaming a device saves the trimmed name and refreshes', (

@@ -6,6 +6,7 @@ import {
   threadRepliesKey,
 } from "@/features/messages/lib/messageQueryKeys";
 import { storeBeforeRelay } from "@/features/messages/lib/paintFirst";
+import { noteThreadRequest } from "@/features/messages/lib/threadFirst";
 import {
   compareThreadRelayPage,
   notePaintedThread,
@@ -214,13 +215,14 @@ export async function loadNewestThreadReplies(
   // A thread never loaded paints its stored replies while the relay is
   // asked; a painted thread's refetch takes that request. A link to a reply
   // goes to the relay: the walk to the reply pages the relay anyway.
-  const first =
-    queryClient.getQueryData(stateKey) === undefined && !options.mustInclude;
+  const notLoaded = queryClient.getQueryData(stateKey) === undefined;
+  const first = notLoaded && !options.mustInclude;
   const relay =
     (first
       ? undefined
       : takePendingThreadRelay(queryClient, channelId, rootId)) ??
     fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
+  if (notLoaded) noteThreadRequest(queryClient, channelId, relay);
   const race = first
     ? await storeBeforeRelay(
         paintedThreadPage(queryClient, channelId, rootId, limitRows),
@@ -234,7 +236,6 @@ export async function loadNewestThreadReplies(
       channelId,
       rootId,
       race.relayFailed ? null : relay,
-      race.stored.completeFrom,
     );
     if (!race.relayFailed) {
       void refreshThreadAfterStore(

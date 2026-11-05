@@ -150,13 +150,15 @@ impl Db {
                                     OR ((c.channel_type = 'dm' OR c.group_chat)
                                         AND EXISTS (
                                         SELECT 1 FROM channel_members cm
-                                        JOIN users au
+                                        LEFT JOIN users au
                                           ON au.community_id = cm.community_id
                                          AND au.pubkey = cm.pubkey
                                         WHERE cm.community_id = $1
                                           AND cm.channel_id = r.channel_id
                                           AND cm.removed_at IS NULL
-                                          AND au.agent_owner_pubkey = $3)))))
+                                          AND (au.agent_owner_pubkey = $3
+                                               OR cm.pubkey IN
+                                                  (SELECT paired_agents_of($3))))))))
                       -- A message from before the reader's join does not
                       -- grant the file (since_join rooms).
                       AND NOT channel_event_hidden($1, r.channel_id, e.channel_sequence, e.thread_root_sequence, $3)

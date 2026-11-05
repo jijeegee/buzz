@@ -21,6 +21,7 @@ import {
 import { Button } from "@/shared/ui/button";
 import { Spinner } from "@/shared/ui/spinner";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
+import { checkAccountSetUp } from "../computerSetup";
 import { BackupStep } from "./BackupStep";
 import { DefaultConfigStep } from "./DefaultConfigStep";
 import { DownloadKeyStep } from "./DownloadKeyStep";
@@ -126,7 +127,11 @@ export function MachineOnboardingFlow({
     React.useState<OnboardingTransitionDirection>("forward");
   const [error, setError] = React.useState<string | null>(null);
   const [isPending, setIsPending] = React.useState(false);
-  const [identityWasImported, setIdentityWasImported] = React.useState(false);
+  // Opened on agent setup, sign-in already happened: finishing must not start
+  // the first-signup screens for an existing account.
+  const [identityWasImported, setIdentityWasImported] = React.useState(
+    initialPage === "config" || initialPage === "setup",
+  );
   const [keyImportStage, setKeyImportStage] =
     React.useState<NostrKeyImportStage>("key-entry");
   const [isKeyImporting, setIsKeyImporting] = React.useState(false);
@@ -178,10 +183,8 @@ export function MachineOnboardingFlow({
     [],
   );
   const handleSetupBackActionChange = React.useCallback(
-    (backAction: () => void) =>
-      setSetupBackAction((current) =>
-        current === backAction ? current : backAction,
-      ),
+    (backAction: (() => void) | undefined) =>
+      setSetupBackAction(() => backAction ?? null),
     [],
   );
   const returnToApiConfig = React.useCallback(() => {
@@ -221,6 +224,10 @@ export function MachineOnboardingFlow({
       const identity = await getIdentity();
       continueWithRecoveredIdentity(identity.pubkey);
       queryClient.setQueryData(["identity"], identity);
+      if (await checkAccountSetUp()) {
+        complete(identity.pubkey, { continueToProfile: false });
+        return;
+      }
       setIdentityWasImported(true);
       setSelectedPubkey(identity.pubkey);
       setIdentityStorage(identity.storage);
@@ -235,7 +242,7 @@ export function MachineOnboardingFlow({
     } finally {
       setIsPending(false);
     }
-  }, [continueWithRecoveredIdentity, queryClient, t]);
+  }, [complete, continueWithRecoveredIdentity, queryClient, t]);
 
   const replaceLostIdentity = React.useCallback(async () => {
     const confirmed = window.confirm(
@@ -271,12 +278,16 @@ export function MachineOnboardingFlow({
       const identity = await importIdentity(nsec, password);
       continueWithIdentity(identity.pubkey);
       queryClient.setQueryData(["identity"], identity);
+      if (await checkAccountSetUp()) {
+        complete(identity.pubkey, { continueToProfile: false });
+        return;
+      }
       setIdentityWasImported(true);
       setSelectedPubkey(identity.pubkey);
       setTransitionDirection("forward");
       setPage("setup");
     },
-    [continueWithIdentity, queryClient],
+    [complete, continueWithIdentity, queryClient],
   );
 
   const backFromKeyImport = React.useCallback(() => {
@@ -375,8 +386,8 @@ export function MachineOnboardingFlow({
                     setPage("identity-key-intro");
                   },
                 }
-              : page === "setup"
-                ? { onClick: setupBackAction ?? backFromSetup }
+              : page === "setup" && setupBackAction
+                ? { onClick: setupBackAction }
                 : page === "config"
                   ? {
                       disabled: isDefaultConfigSaving,
@@ -747,6 +758,7 @@ export function MachineOnboardingFlow({
           }}
           direction={transitionDirection}
           initialMethod={harnessConnectionMethod}
+          noBackFromFirstStage={initialPage === "setup"}
           onInitialListBack={
             isChoosingDifferentHarness ? returnToApiConfig : undefined
           }

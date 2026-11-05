@@ -21,7 +21,7 @@ use std::collections::{BTreeMap, HashMap};
 use tauri::AppHandle;
 
 use super::{
-    generated_routing_dir, load_channel_routing, routing_role_for, transition::is_held,
+    generated_routing_dir, load_channel_routing_for_owner, routing_role_for, transition::is_held,
     AgentRoutingState, ChannelRoutingMode, ObservedProcess, RoutingRole,
 };
 use crate::managed_agents::{
@@ -121,10 +121,32 @@ pub(crate) fn launch_role_among(
     }
 }
 
+/// `owner`'s agents and their live local roles: the only ones that can hold an
+/// agent of `owner`. Each account routes on its own, so another account's lead
+/// or host stands in nobody's way.
+pub(crate) fn owners_agents(
+    records: Vec<ManagedAgentRecord>,
+    live_local: &[(String, RoutingRole)],
+    owner: Option<&str>,
+    owner_of: impl Fn(&ManagedAgentRecord) -> Option<String>,
+) -> (Vec<ManagedAgentRecord>, Vec<(String, RoutingRole)>) {
+    let owner = owner.map(str::to_ascii_lowercase);
+    let records: Vec<_> = records
+        .into_iter()
+        .filter(|candidate| owner_of(candidate).map(|hex| hex.to_ascii_lowercase()) == owner)
+        .collect();
+    let live_local = live_local
+        .iter()
+        .filter(|(pubkey, _)| records.iter().any(|record| record.pubkey == *pubkey))
+        .cloned()
+        .collect();
+    (records, live_local)
+}
+
 /// The role a spawn or deploy of `record` launches with: `desired_role`
 /// (from `routing_role_for`) gated by the hold rule over every other live
 /// local process (`live_local`, from [`live_local_roles`]) and provider
-/// deployment. A store that cannot be read skips
+/// deployment of the same owner. A store that cannot be read skips
 /// the gate (the launch then fails or succeeds on its own terms).
 ///
 /// The restart badge's prospective snapshot calls this too, so it compares
@@ -147,12 +169,16 @@ pub(crate) fn launch_role<R: tauri::Runtime>(
             return desired_role;
         }
     };
+    let owner = crate::managed_agents::visible_owner_hex(app, record);
+    let (records, live_local) = owners_agents(records, live_local, owner.as_deref(), |candidate| {
+        crate::managed_agents::visible_owner_hex(app, candidate)
+    });
     launch_role_with(
         record,
         desired_role,
-        live_local,
+        &live_local,
         &records,
-        load_channel_routing(app).unwrap_or_default(),
+        load_channel_routing_for_owner(app, owner.as_deref()).unwrap_or_default(),
         crate::managed_agents::agent_owner_hex(app, record).as_deref(),
         &load_deployed_roles(app),
     )

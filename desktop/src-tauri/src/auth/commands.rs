@@ -535,6 +535,14 @@ async fn finish_sign_in(
         .token_auth
         .signed_out
         .clear(&origin, signed_in_account.or(Some(principal)))?;
+    if !connect {
+        // Before anything below can reload the window into the next start.
+        if let Err(error) =
+            crate::managed_agents::account_settings::mark_agent_setup_pending(app, &owner.to_hex())
+        {
+            eprintln!("kuzz-desktop: auth: {error}");
+        }
+    }
     state.token_auth.clear_pending_refresh(&origin);
     let now = chrono::Utc::now().timestamp();
     let session = UserSession {
@@ -838,7 +846,10 @@ pub async fn get_ws_auth_frame(app: AppHandle) -> Result<Option<serde_json::Valu
         CredentialMode::Token(_) => {
             let session = fresh_session(&state, &origin).await?;
             let account = session.principal.to_hex();
-            Ok(Some(crate::message_store::token_frame(&session.access, &account)))
+            Ok(Some(crate::message_store::token_frame(
+                &session.access,
+                &account,
+            )))
         }
     }
 }
@@ -1564,10 +1575,22 @@ pub(crate) async fn forget_session(
 pub async fn list_devices(app: AppHandle) -> Result<Vec<api::DeviceInfo>, String> {
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
-    let session = fresh_session(&state, &origin).await?;
-    api::list_devices(&state.http_client, &origin, &session.access)
-        .await
-        .map_err(api_error)
+    // Launch draws the stored account before its session is back: wait for
+    // the restore rather than answer "not signed in". Same guard as
+    // `get_token_auth_status`: never restore on a relay without token auth.
+    if support_for(&state, &origin).await.is_some() {
+        super::restore::restore_if_stored(&app, &origin).await;
+    }
+    let result = match fresh_session(&state, &origin).await {
+        Ok(session) => api::list_devices(&state.http_client, &origin, &session.access)
+            .await
+            .map_err(api_error),
+        Err(error) => Err(error),
+    };
+    if let Err(error) = &result {
+        eprintln!("kuzz-desktop: auth: device list failed: {error}");
+    }
+    result
 }
 
 /// Rename one of this account's devices (any device, not only this one).

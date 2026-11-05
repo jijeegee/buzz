@@ -121,6 +121,7 @@ test("thread head reflects the channel-window edit even before thread aux loads"
   );
 
   // 3. Open the thread via the reply action (the flow in the bug report).
+  await page.locator(`[data-message-id="${rootId}"]`).first().hover();
   const replyButton = page.getByTestId(`reply-message-${rootId}`);
   await replyButton.click({ force: true });
   const threadPanel = page.getByTestId("message-thread-panel");
