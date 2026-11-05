@@ -93,7 +93,9 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 1. An event with an `h` tag belongs to that room.
 2. Reactions (7) and their removals (5) carry no `h` tag:
-   - on a one-room subscription, the event belongs to that room;
+   - on a one-room chunk, the event belongs to that room (a user-stream frame
+     never uses this: the stream may carry a room the client does not list
+     yet);
    - otherwise to the room of the event it references, the last `e` tag first:
      an event routed earlier (so a removal follows its reaction), or an event
      loaded in an open room. The room must be one the chunk carries.
@@ -1778,6 +1780,10 @@ Counters are kept per account and server, persisted cumulatively in
 #<seq> <counters as JSON>` is logged when a counter changed by at least 10%
 since the last line (any change from 0), or 10 min after the last line if
 anything changed.
+
+`streamNoRoom` (desktop, live/gated) counts frames with no `h` whose target's
+room is unknown. It is a reading, not a gate: a reaction on a row this client
+never loaded lands here normally. Compare before and after a check.
 
 - **Already stored (`newRow`):** when the gate counters (`falseSkip`,
   `liveMissed`, `skipAuditNew`) are computed, a row stored locally at or
