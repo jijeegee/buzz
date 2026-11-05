@@ -26,6 +26,8 @@ internal object KuzzEnrollmentKeys {
     private val main = Handler(Looper.getMainLooper())
 
     fun handle(call: MethodCall, result: MethodChannel.Result): Boolean {
+        // Other methods may pass a list: `argument` throws on anything but a map.
+        if (!call.method.startsWith("enrollmentKey")) return false
         val alias = call.argument<String>("alias")
         when (call.method) {
             "enrollmentKeyCreate" -> {
