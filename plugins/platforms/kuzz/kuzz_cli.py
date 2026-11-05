@@ -68,7 +68,7 @@ def no_login_session_file(home: Optional[Path] = None) -> str:
     """A person's stored login (`kuzz auth login`) outranks the paired agent for its relay.
     Children get this session file, which nothing creates, so they act as the agent. It lives
     in the Hermes home (this OS user's), not in a shared temp folder."""
-    return str(Path(home or hermes_home_dir()) / "buzz" / "kuzz-no-login" / "session.json")
+    return str(Path(home or hermes_home_dir()) / "kuzz" / "no-login" / "session.json")
 
 CLI_TIMEOUT = 30.0
 # A Windows update asks every profile on this computer to let go of kuzz.exe, which can't be
@@ -174,16 +174,12 @@ def normalize_pubkey(ref: Any) -> Optional[str]:
 
 def resolve_cli_path(*configured: str) -> str:
     """The CLI binary. The first non-empty configured path decides alone (missing -> "").
-    Otherwise: ``buzz`` on PATH, ``~/bin/buzz`` (the bundled plugin's lookup), then
-    ``kuzz`` on PATH and the Kuzz desktop app's copy."""
+    Otherwise ``kuzz`` on PATH and the Kuzz desktop app's copy. Never ``buzz``, another app."""
     for path in configured:
         if path and path.strip():
             path = path.strip()
             found = path if Path(path).expanduser().is_file() else shutil.which(path)
             return str(found) if found and is_runnable(str(found)) else ""
-    for candidate in (which_program("buzz"), str(Path.home() / "bin" / _program("buzz"))):
-        if candidate and is_runnable(candidate):
-            return candidate
     return find_kuzz()
 
 
