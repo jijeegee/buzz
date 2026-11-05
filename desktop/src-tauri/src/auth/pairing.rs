@@ -154,6 +154,20 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
+    // Read fresh: the card's list can miss an agent connected since.
+    let agents = async {
+        let devices = api::list_devices(&state.http_client, &origin, &session.access)
+            .await
+            .map_err(api_error)?;
+        Ok(devices
+            .into_iter()
+            .find(|device| device.id == device_id)
+            .map_or_else(Vec::new, |device| device.agents)
+            .into_iter()
+            .map(|agent| agent.pubkey)
+            .collect())
+    };
+    super::external_access::narrow_before_disconnect(&state, agents).await;
     api::revoke_device(&state.http_client, &origin, &session.access, &device_id)
         .await
         .map_err(api_error)
@@ -170,6 +184,8 @@ pub async fn disconnect_external_agent(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
+    super::external_access::narrow_before_disconnect(&state, async { Ok(vec![pubkey.clone()]) })
+        .await;
     api::disconnect_agent(
         &state.http_client,
         &origin,
