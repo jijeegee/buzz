@@ -201,3 +201,80 @@ test("pending and huddle rows omit both copy-link surfaces", async ({
     huddleId,
   );
 });
+
+test("keyboard: Tab and Shift+Tab reach a row's actions before any hover", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  const rows = page.getByTestId("message-row");
+  await expect(rows.last()).toBeVisible();
+
+  const opener = rows.nth(-2).locator('[data-testid^="row-actions-focus-"]');
+  await rows.last().locator("button, a").first().focus();
+  // Back through the last row's own buttons, then into the row above it.
+  for (let i = 0; i < 12 && (await opener.count()) > 0; i += 1) {
+    await page.keyboard.press("Shift+Tab");
+  }
+  await expect(opener).toHaveCount(0);
+  await expect(
+    rows.nth(-2).locator('[data-testid^="more-actions-"]:focus'),
+  ).toHaveCount(1);
+
+  // Coming from above lands on the first button.
+  const row = rows.nth(-3);
+  await page.evaluate(() => (document.activeElement as HTMLElement).blur());
+  await row.locator('[data-testid^="row-actions-focus-"]').focus();
+  await expect(
+    row.locator('[data-testid^="message-action-bar-"] button:focus'),
+  ).toHaveCount(1);
+  await expect(row.locator('[data-testid^="more-actions-"]:focus')).toHaveCount(
+    0,
+  );
+});
+
+test("a hover on the thread summary mounts the row's actions", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.waitForFunction(
+    () => typeof window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__ === "function",
+  );
+  await page.getByTestId("channel-general").click();
+  const rootId = await page.evaluate(() => {
+    const emit = window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__;
+    if (!emit) throw new Error("Mock message emitter is unavailable.");
+    return emit({ channelName: "general", content: "Summary root" }).id;
+  });
+  await expect(page.locator(`[data-message-id="${rootId}"]`)).toBeVisible();
+  await page.evaluate((id) => {
+    window.__KUZZ_E2E_EMIT_MOCK_MESSAGE__?.({
+      channelName: "general",
+      content: "Summary reply",
+      parentEventId: id,
+    });
+  }, rootId);
+  const summary = page.locator(
+    `[data-testid="message-thread-summary"][data-thread-head-id="${rootId}"]`,
+  );
+  await expect(summary).toBeVisible();
+  await expect(page.getByTestId(`message-action-bar-${rootId}`)).toHaveCount(0);
+  await summary.hover();
+  await expect(page.getByTestId(`message-action-bar-${rootId}`)).toHaveCount(1);
+});
+
+test("narrowing the window shows a row's actions without a hover", async ({
+  page,
+}) => {
+  await installMockBridge(page);
+  await page.goto("/");
+  await page.getByTestId("channel-general").click();
+  const row = page.getByTestId("message-row").last();
+  const bar = row.locator('[data-testid^="message-action-bar-"]');
+  await expect(row).toBeVisible();
+  await expect(bar).toHaveCount(0);
+  await page.setViewportSize({ height: 800, width: 500 });
+  await expect(bar).toHaveCount(1);
+});

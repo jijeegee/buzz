@@ -893,7 +893,7 @@ pub async fn is_member(
 
 /// Returns `true` when `reader` may read the channel as the owner of an agent
 /// in it: the channel is a live DM or group chat and an active member's
-/// `users.agent_owner_pubkey` is `reader`.
+/// `users.agent_owner_pubkey` is `reader`, or it is an agent `reader` paired.
 ///
 /// Read-only owner view. Never use this for writes, membership, or the
 /// accessible-channel set; callers add the channel request-locally only when
@@ -919,13 +919,14 @@ pub async fn can_read_via_owned_agent(
              AND c.id = cm.channel_id
              AND c.deleted_at IS NULL
              AND (c.channel_type = 'dm' OR c.group_chat)
-            JOIN users u
+            LEFT JOIN users u
               ON u.community_id = cm.community_id
              AND u.pubkey = cm.pubkey
             WHERE cm.community_id = $1
               AND cm.channel_id = $2
               AND cm.removed_at IS NULL
-              AND u.agent_owner_pubkey = $3
+              AND (u.agent_owner_pubkey = $3
+                   OR cm.pubkey IN (SELECT paired_agents_of($3)))
               AND cm.pubkey <> $3
         ) AS ok
         "#,

@@ -1,8 +1,9 @@
 use std::collections::BTreeMap;
 
 use super::{
-    normalize_global_config_fields, resolve_effective_model_provider, strip_empty_env_vars,
-    validate_global_config, GlobalAgentConfig,
+    load_config_at, normalize_global_config_fields, resolve_effective_model_provider,
+    strip_empty_env_vars, validate_global_config, AgentConfigsByOwner, GlobalAgentConfig,
+    CONFIG_FILE,
 };
 use crate::managed_agents::{AgentDefinition, BackendKind, ManagedAgentRecord, RespondTo};
 
@@ -796,4 +797,66 @@ fn effort_level_validates_through_the_shared_gate_and_normalizes_blank() {
     validate_global_config(&config).expect("blank is normalized away, not rejected");
     normalize_global_config_fields(&mut config);
     assert_eq!(config.effort_level, None);
+}
+
+fn owned_record(pubkey: &str) -> ManagedAgentRecord {
+    ManagedAgentRecord {
+        pubkey: pubkey.to_string(),
+        ..bare_record()
+    }
+}
+
+fn config_with_provider(provider: &str) -> GlobalAgentConfig {
+    GlobalAgentConfig {
+        provider: Some(provider.to_string()),
+        ..GlobalAgentConfig::default()
+    }
+}
+
+#[test]
+fn each_agent_reads_its_owners_config_and_each_owner_is_read_once() {
+    let records = [
+        owned_record("AA"),
+        owned_record("bb"),
+        owned_record("cc"),
+        owned_record("dd"),
+    ];
+    let reads = std::cell::Cell::new(0);
+    let configs = AgentConfigsByOwner::collect(
+        &records,
+        |record| match record.pubkey.as_str() {
+            "AA" | "cc" => Some("OWNER-A".to_string()),
+            "bb" => Some("owner-b".to_string()),
+            _ => None,
+        },
+        |owner| {
+            reads.set(reads.get() + 1);
+            config_with_provider(owner)
+        },
+    );
+    assert_eq!(reads.get(), 2);
+    let provider = |pubkey| configs.for_record(&owned_record(pubkey)).provider.clone();
+    assert_eq!(provider("aa").as_deref(), Some("owner-a"));
+    assert_eq!(provider("cc").as_deref(), Some("owner-a"));
+    assert_eq!(provider("bb").as_deref(), Some("owner-b"));
+}
+
+#[test]
+fn an_agent_with_no_known_owner_gets_no_account_values() {
+    let records = [owned_record("aa"), owned_record("bb")];
+    let configs = AgentConfigsByOwner::collect(
+        &records,
+        |record| (record.pubkey == "aa").then(|| "owner-a".to_string()),
+        config_with_provider,
+    );
+    assert_eq!(configs.for_record(&owned_record("bb")).provider, None);
+    assert_eq!(configs.for_record(&owned_record("zz")).provider, None);
+}
+
+#[test]
+fn a_missing_config_file_reads_as_the_default() {
+    let dir = tempfile::tempdir().unwrap();
+    let config = load_config_at(&dir.path().join(CONFIG_FILE)).unwrap();
+    assert_eq!(config.provider, None);
+    assert!(config.env_vars.is_empty());
 }

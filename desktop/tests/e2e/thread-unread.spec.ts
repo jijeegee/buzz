@@ -985,6 +985,7 @@ test.describe("thread unread indicator", () => {
     });
     const messageId = message?.id ?? "";
 
+    await page.locator(`[data-message-id="${messageId}"]`).first().hover();
     const toggle = page.getByTestId(`mark-read-toggle-${messageId}`);
     const moreActions = page.getByTestId(`more-actions-${messageId}`);
 

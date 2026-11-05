@@ -177,14 +177,29 @@ async fn select_window(
         .push(")");
     // since_join: replies from before the reader's current join stay hidden.
     // The root itself is only an anchor here (a later reply already names it).
+    // The floor is a subquery so it is read once and not per reply; at 0 no
+    // reply reaches channel_event_hidden.
     if let Some(reader) = history_reader {
-        q.push(" AND NOT channel_event_hidden(")
+        for prefix in [
+            " AND e.channel_sequence > (SELECT COALESCE(NULLIF(channel_history_floor(",
+            " AND (e.thread_root_sequence = 0 OR e.thread_root_sequence > \
+             (SELECT COALESCE(NULLIF(channel_history_floor(",
+        ] {
+            q.push(prefix)
+                .push_bind(community.as_uuid())
+                .push(", ")
+                .push_bind(request.channel)
+                .push(", ")
+                .push_bind(reader.to_vec())
+                .push("), 0), -1))");
+        }
+        q.push(" OR NOT channel_event_hidden(")
             .push_bind(community.as_uuid())
             .push(", ")
             .push_bind(request.channel)
             .push(", e.channel_sequence, e.thread_root_sequence, ")
             .push_bind(reader.to_vec())
-            .push(")");
+            .push("))");
     }
     q.push(order)
         .push(" LIMIT ")
