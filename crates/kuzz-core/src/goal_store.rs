@@ -151,12 +151,12 @@ impl GoalGraph {
         rows
     }
 
-    /// Unfinished goals directly below a goal.
-    pub fn open_children(&self, id: &str) -> usize {
+    /// Active goals directly below a goal: what still stands between it and
+    /// done. Inactive goals are left out, so an abandoned thread blocks nothing.
+    pub fn open_children(&self, id: &str, views: &HashMap<&str, GoalView>) -> usize {
         self.children(id)
             .iter()
-            .filter_map(|c| self.nodes.get(c))
-            .filter(|n| !finished(n.status))
+            .filter(|c| views.get(c.as_str()) == Some(&GoalView::Active))
             .count()
     }
 
@@ -702,6 +702,19 @@ mod tests {
         assert_eq!(progress["task2"], (1, 1));
         assert_eq!(progress["plan"], (0, 1));
         assert_eq!(progress["root"], (0, 2));
+    }
+
+    #[test]
+    fn open_children_leave_out_finished_and_inactive_goals() {
+        let mut live = goal("live", Some("root"));
+        live.updated_at = 100 * DAY;
+        let graph = GoalGraph::new(vec![
+            goal("root", None),
+            live,
+            goal("quiet", Some("root")),
+            done(goal("gone", Some("root"))),
+        ]);
+        assert_eq!(graph.open_children("root", &graph.views(100 * DAY)), 1);
     }
 
     #[test]

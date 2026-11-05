@@ -115,7 +115,7 @@ pub struct GoalPageRow {
     pub matched: bool,
     /// Done and total goals below that count; see [`GoalGraph::progress`].
     pub progress: (usize, usize),
-    /// Unfinished goals directly below.
+    /// Active goals directly below.
     pub open_children: usize,
 }
 
@@ -846,7 +846,7 @@ impl Db {
             .map(|goal| GoalPageRow {
                 matched: matched.contains(&goal.id),
                 progress: progress.get(goal.id.as_str()).copied().unwrap_or_default(),
-                open_children: graph.open_children(&goal.id),
+                open_children: graph.open_children(&goal.id, &views),
                 goal,
             })
             .collect();

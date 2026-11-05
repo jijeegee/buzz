@@ -20,8 +20,7 @@ use kuzz_core::kind::{
     KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
     KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED,
     KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_OPS,
-    KIND_GOAL_TREE,
-    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_GOAL_TREE, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
     KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
     KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
     KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
@@ -3343,7 +3342,19 @@ async fn ingest_event_inner(
     if kind_u32 == KIND_GOAL_OPS {
         let channel = channel_id
             .ok_or_else(|| IngestError::Rejected("invalid: goal event missing channel".into()))?;
-        return super::goals::accept(state, tenant, &event, channel).await;
+        let result =
+            super::goals::accept(state, tenant, &event, channel, threaded_visibility.clone())
+                .await?;
+        emit(
+            tracer,
+            TraceAction::WriteInsert {
+                msg_id: msg_id_label(event.id.as_bytes()),
+                channel: channel_label(channel),
+                claimed_community: claimed_community_from_event(&event),
+            },
+            state_for_request(tenant, auth.pubkey()),
+        );
+        return Ok(result);
     }
 
     // Artifact revisions passed the same home-channel write gates as kind 9

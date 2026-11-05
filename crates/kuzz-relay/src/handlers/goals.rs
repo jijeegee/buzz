@@ -1,7 +1,8 @@
 //! Goal edits (kind 40111): rows and the stored event change in one
 //! transaction, then the event goes out so open apps reload.
 use super::ingest::{IngestError, IngestResult};
-use crate::state::AppState;
+use crate::state::{AppState, ThreadedChannelVisibility};
+use kuzz_core::kind::KIND_GOAL_OPS;
 use kuzz_core::TenantContext;
 use kuzz_db::goals::{parse_goal_ops, GoalOutcome, GoalWrite};
 use kuzz_db::DbError;
@@ -17,6 +18,7 @@ pub(crate) async fn accept(
     tenant: &TenantContext,
     event: &Event,
     channel: Uuid,
+    visibility: Option<ThreadedChannelVisibility>,
 ) -> Result<IngestResult, IngestError> {
     let ops = parse_goal_ops(&event.content).map_err(goal_error)?;
     let write = state
@@ -26,7 +28,15 @@ pub(crate) async fn accept(
         .map_err(goal_error)?;
     let outcome = match write {
         GoalWrite::Applied(stored, outcome) => {
-            super::artifact::publish(state, tenant, &stored).await;
+            super::event::dispatch_persistent_event(
+                tenant,
+                state,
+                &stored,
+                KIND_GOAL_OPS,
+                &event.pubkey.to_hex(),
+                visibility,
+            )
+            .await;
             Some(outcome)
         }
         GoalWrite::NoEffect(outcome) => Some(outcome),
@@ -41,7 +51,7 @@ pub(crate) async fn accept(
 
 fn outcome_message(outcome: Option<GoalOutcome>) -> Result<String, IngestError> {
     let Some(outcome) = outcome else {
-        return Ok(String::new());
+        return Ok("duplicate:".to_owned());
     };
     serde_json::to_string(&outcome).map_err(|e| IngestError::Internal(format!("goal outcome: {e}")))
 }
@@ -59,7 +69,7 @@ mod tests {
 
     #[test]
     fn a_duplicate_has_no_outcome_and_a_write_reports_json() {
-        assert_eq!(outcome_message(None).unwrap(), "");
+        assert_eq!(outcome_message(None).unwrap(), "duplicate:");
         let message = outcome_message(Some(GoalOutcome {
             parent: Some("p".into()),
             deleted: vec!["a".into()],

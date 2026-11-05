@@ -21,7 +21,8 @@
 //!  "threads": [{"thread": "<event-hex>", "goal": "g_1"}], "next": null}
 //! ```
 //!
-//! A conversation with goals off reads as empty. While `KUZZ_GOAL_STORE` is
+//! Reads always come from the writer, so `consistency` is accepted and has
+//! nothing to change. A conversation with goals off reads as empty. While `KUZZ_GOAL_STORE` is
 //! off the request answers `404 {"error": "goal_store_disabled"}`.
 
 use std::sync::Arc;
@@ -62,7 +63,7 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
     if let Some(key) = object.keys().find(|key| {
         !matches!(
             key.as_str(),
-            "goals" | "channel" | "view" | "threads" | "cursor"
+            "goals" | "channel" | "view" | "threads" | "cursor" | "consistency"
         )
     }) {
         return Err(bad(&format!("unknown goals field {key}")));
@@ -83,6 +84,7 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
                 .ok_or_else(|| bad("goals view must be active, inactive, or done"))?;
             let after = object
                 .get("cursor")
+                .filter(|c| !c.is_null())
                 .map(|c| {
                     serde_json::from_value::<GoalCursor>(c.clone())
                         .map_err(|_| bad("goals cursor is not valid"))
@@ -91,7 +93,7 @@ fn parse(filters: &[Value]) -> Result<(Uuid, GoalSelection), QueryError> {
             GoalSelection::View { view, after }
         }
         (None, Some(threads)) => {
-            if object.contains_key("cursor") {
+            if object.get("cursor").is_some_and(|c| !c.is_null()) {
                 return Err(bad("goals threads takes no cursor"));
             }
             GoalSelection::Threads(parse_threads(threads)?)
@@ -233,6 +235,12 @@ mod tests {
                 after: None
             }
         );
+        // `next` is null on the last page, and clients send it straight back.
+        parse(&[
+            json!({"goals": 1, "channel": CHANNEL, "view": "done", "cursor": null,
+            "consistency": "strong"}),
+        ])
+        .unwrap();
         let (_, selection) = parse(&[json!({"goals": 1, "channel": CHANNEL, "view": "done",
             "cursor": {"order": 3, "id": "g"}})])
         .unwrap();

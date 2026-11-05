@@ -276,6 +276,78 @@ async fn goals_off_refuses_edits_reads_empty_and_hides_the_log() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn goals_off_also_empties_a_thread_read() {
+    let f = Fixture::new(true).await;
+    let thread = [5u8; 32];
+    f.write(
+        f.open,
+        &[
+            root(),
+            add("a", "root"),
+            GoalOp::Link {
+                id: "a".into(),
+                thread: hex::encode(thread),
+            },
+        ],
+    )
+    .await;
+    let filter = json!({"goals": 1, "channel": f.open, "threads": [hex::encode(thread)]});
+    let (_, body) = f.read(&f.owner, filter.clone()).await;
+    assert_eq!(body["threads"][0]["goal"], "a", "{body}");
+    f.set_goals_enabled(f.open, false).await;
+    let (status, body) = f.read(&f.owner, filter).await;
+    assert_eq!(status, StatusCode::OK, "{body}");
+    assert_eq!(body["rows"], json!([]));
+    assert_eq!(body["threads"], json!([]));
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn an_archived_room_takes_no_edits() {
+    let f = Fixture::new(true).await;
+    f.write(f.open, &[root()]).await;
+    sqlx::query("UPDATE channels SET archived_at=now() WHERE community_id=$1 AND id=$2")
+        .bind(f.community.as_uuid())
+        .bind(f.open)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let event = f.ops_event(&f.owner, f.open, &[add("a", "root")]);
+    let (status, body) = f.publish(&f.owner, &event).await;
+    assert!(!status.is_success() || body["accepted"] == false, "{body}");
+    assert!(body.to_string().contains("archived"), "{body}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_removed_member_loses_a_private_room() {
+    let f = Fixture::new(true).await;
+    f.write(f.private, &[root()]).await;
+    let member = Keys::generate();
+    sqlx::query("INSERT INTO channel_members(community_id,channel_id,pubkey,role,removed_at) VALUES($1,$2,$3,'member',now())")
+        .bind(f.community.as_uuid()).bind(f.private).bind(member.public_key().as_bytes().as_slice()).execute(&f.pool).await.unwrap();
+    let (status, body) = f
+        .read(
+            &member,
+            json!({"goals": 1, "channel": f.private, "view": "active"}),
+        )
+        .await;
+    assert_eq!(status, StatusCode::FORBIDDEN, "{body}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn a_replay_is_marked_duplicate() {
+    let f = Fixture::new(true).await;
+    f.write(f.open, &[root()]).await;
+    let event = f.ops_event(&f.owner, f.open, &[add("a", "root")]);
+    f.publish(&f.owner, &event).await;
+    let (_, body) = f.publish(&f.owner, &event).await;
+    assert_eq!(body["message"], "duplicate:", "{body}");
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn with_the_switch_on_old_goal_documents_are_refused() {
     let f = Fixture::new(true).await;
     let tree = f.event(&f.owner, f.open, KIND_GOAL_TREE, "{}".into());

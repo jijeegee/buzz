@@ -66,11 +66,7 @@ pub(crate) async fn accept(
 
 /// Live delivery only; unlike kind 9 there are no audit, workflow, or thread
 /// side effects. Missed deliveries are recovered by replaying stored events.
-pub(crate) async fn publish(
-    state: &Arc<AppState>,
-    tenant: &TenantContext,
-    stored: &StoredEvent,
-) {
+async fn publish(state: &Arc<AppState>, tenant: &TenantContext, stored: &StoredEvent) {
     let Some(channel) = stored.channel_id else {
         return;
     };
@@ -87,7 +83,7 @@ pub(crate) async fn publish(
         state
             .local_event_ids
             .invalidate(&(tenant.community(), stored.event.id.to_bytes()));
-        tracing::warn!(error=%e, kind = stored.event.kind.as_u16(), "Redis publish failed");
+        tracing::warn!(error=%e, "artifact Redis publish failed");
     }
     super::event::fan_out_event_to_local_subscribers(state, tenant.community(), stored).await;
 }
