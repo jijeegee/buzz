@@ -94,7 +94,8 @@ export function useRemoteOwnedAgents(): RemoteOwnedAgentsState {
     owner.length > 0 &&
     (managedAgents.data === undefined ||
       ownerDevicesQuery.isPending ||
-      devices.isPending ||
+      // Retries until it reads; a failed first read counts as settled.
+      (devices.isPending && devices.failureCount === 0) ||
       (candidates.length > 0 && projections.isPending));
 
   const agents = React.useMemo(() => {
