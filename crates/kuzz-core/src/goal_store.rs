@@ -620,7 +620,8 @@ impl GoalRead {
         path
     }
 
-    fn children(&self, id: Option<&str>) -> Vec<&GoalReadRow> {
+    /// Goals directly below `id` (`None`: layer 1), in order.
+    pub fn children(&self, id: Option<&str>) -> Vec<&GoalReadRow> {
         let mut rows: Vec<&GoalReadRow> = self
             .rows
             .iter()

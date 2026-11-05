@@ -3963,11 +3963,10 @@ pub async fn run_prompt_task(
                 } else if goals_off {
                     Some(crate::goal_context::GoalsNow::off(scope.root_event_id()))
                 } else {
-                    crate::goal_context::fetch_goal_tree(*cid, &ctx.rest_client)
+                    let focus = scope.root_event_id();
+                    crate::goal_context::fetch_goals(*cid, &[focus], &ctx.rest_client)
                         .await
-                        .map(|tree| {
-                            crate::goal_context::GoalsNow::new(&tree, *cid, scope.root_event_id())
-                        })
+                        .map(|goals| crate::goal_context::GoalsNow::new(&goals, *cid, focus))
                 };
                 match open_session_and_apply_model(
                     &mut agent,
@@ -4451,8 +4450,19 @@ pub async fn run_prompt_task(
             thread_context_is_hydrated,
             live_now.context_history,
         );
-        // The goal tree is fetched alongside the conversation context so the
-        // extra relay query adds no latency of its own.
+        // The thread this turn belongs to: the fetched thread, or a thread
+        // session's own root on its first turn.
+        let goal_focus = match &context_target {
+            ContextTarget::Thread(root) => Some(root.as_str()),
+            _ => None,
+        }
+        .or_else(|| b.scope.root_event_id());
+        // A Claude session's system prompt holds the goals as seen from its own
+        // thread, so a session serving several threads is not rebuilt on every
+        // hop; turns about another thread get that view in their message.
+        let session_focus = b.scope.root_event_id();
+        // Goals are fetched alongside the conversation context so the extra
+        // relay query adds no latency of its own.
         let conversation_context_fetch = async {
             if ctx.context_message_limit > 0 {
                 fetch_conversation_context_for_target(
@@ -4468,15 +4478,15 @@ pub async fn run_prompt_task(
                 None
             }
         };
-        let goal_tree_fetch = async {
+        let goals_fetch = async {
             if ctx.goals_enabled && !goals_off {
-                crate::goal_context::fetch_goal_tree(b.channel_id, &ctx.rest_client).await
+                let foci = [goal_focus, session_focus];
+                crate::goal_context::fetch_goals(b.channel_id, &foci, &ctx.rest_client).await
             } else {
                 None
             }
         };
-        let (conversation_context, goal_tree) =
-            tokio::join!(conversation_context_fetch, goal_tree_fetch);
+        let (conversation_context, goals) = tokio::join!(conversation_context_fetch, goals_fetch);
         if let Some(root) =
             fetched_thread_root_to_hydrate(&context_target, conversation_context.as_ref(), is_dm)
         {
@@ -4510,27 +4520,16 @@ pub async fn run_prompt_task(
             None => None,
         };
         // The goals now; sent below only when the session does not hold them.
-        // The thread this turn belongs to: the fetched thread, or a thread
-        // session's own root on its first turn.
-        let goal_focus = match &context_target {
-            ContextTarget::Thread(root) => Some(root.as_str()),
-            _ => None,
-        }
-        .or_else(|| b.scope.root_event_id());
         let goals_now_for = |focus: Option<&str>| {
             if ctx.goals_enabled && goals_off {
                 Some(crate::goal_context::GoalsNow::off(focus))
             } else {
-                goal_tree
+                goals
                     .as_ref()
-                    .map(|tree| crate::goal_context::GoalsNow::new(tree, b.channel_id, focus))
+                    .map(|goals| crate::goal_context::GoalsNow::new(goals, b.channel_id, focus))
             }
         };
         let goal_context_current = goals_now_for(goal_focus);
-        // A Claude session's system prompt holds the goals as seen from its own
-        // thread, so a session serving several threads is not rebuilt on every
-        // hop; turns about another thread get that view in their message.
-        let session_focus = b.scope.root_event_id();
         let prompt_goals_now = goals_now_for(session_focus);
 
         // Standing context sent with this prompt already carries the current
@@ -11098,7 +11097,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
 
     #[test]
     fn compaction_makes_the_next_turn_restate_goals_or_say_they_are_off() {
-        use crate::goal_context::{goal_context_for_turn, GoalsNow, GoalsSeen};
+        use crate::goal_context::{goal_context_for_turn, goals_of, GoalsNow, GoalsSeen};
         use kuzz_core::goal_tree::{GoalOp, GoalTree};
         let channel = Uuid::new_v4();
         let mut tree = GoalTree::empty();
@@ -11112,7 +11111,7 @@ printf '%s\n' '{{"jsonrpc":"2.0","id":0,"result":{{"stopReason":"end_turn"}}}}'"
             1,
         )
         .unwrap();
-        let on = GoalsNow::new(&tree, channel, None);
+        let on = GoalsNow::new(&goals_of(&tree), channel, None);
         let off = GoalsNow::off(None);
         let next_turn = |state: &SessionState, now: &GoalsNow| {
             let delivery = state.deliveries.get(&conv(channel)).unwrap();

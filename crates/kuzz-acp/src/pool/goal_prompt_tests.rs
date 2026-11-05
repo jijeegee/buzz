@@ -35,19 +35,41 @@ fn goal_tree_content() -> String {
     tree.to_content().unwrap()
 }
 
-/// A relay that answers goal tree queries for `with_tree` only; every other
+const NO_GOALS: &str =
+    r#"{"counts":{"active":0,"inactive":0,"done":0},"rows":[],"threads":[],"next":null}"#;
+
+/// The relay's goal read for that tree.
+fn goal_read_body() -> String {
+    serde_json::json!({
+        "counts": { "active": 1, "inactive": 0, "done": 0 },
+        "rows": [{
+            "id": "root", "parent": null, "title": "Launch the beta", "note": "",
+            "status": "open", "order": 1, "assignees": [], "links": [],
+            "updated_by": null, "updated_at": 1, "matched": true, "inactive": false,
+            "is_thread": false, "progress": { "done": 0, "total": 0 }, "open_children": 0,
+        }],
+        "threads": [],
+        "next": null,
+    })
+    .to_string()
+}
+
+/// A relay that answers goal reads for `with_tree` only; every other
 /// query gets an empty result.
 async fn spawn_relay(with_tree: Uuid) -> String {
     let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
     let base_url = format!("http://{}", listener.local_addr().unwrap());
-    let tree_body = serde_json::json!([{ "content": goal_tree_content() }]).to_string();
+    let tree_body = goal_read_body();
     tokio::spawn(async move {
         while let Ok((mut socket, _)) = listener.accept().await {
             let mut request = vec![0; 16 * 1024];
             let read = socket.read(&mut request).await.unwrap_or(0);
             let request = String::from_utf8_lossy(&request[..read]);
-            let body = if request.contains("40110") && request.contains(&with_tree.to_string()) {
+            let is_goals = request.contains("\"goals\":1");
+            let body = if is_goals && request.contains(&with_tree.to_string()) {
                 tree_body.as_str()
+            } else if is_goals {
+                NO_GOALS
             } else {
                 "[]"
             };
@@ -597,7 +619,8 @@ async fn claude_session_serving_several_threads_is_not_rebuilt_per_thread() {
     let scope = claude_session_without_goals(&mut agent, channel_id);
     // The session's system prompt already holds the channel-wide view.
     let tree = GoalTree::parse(&goal_tree_content()).unwrap();
-    let channel_view = crate::goal_context::GoalsNow::new(&tree, channel_id, None);
+    let channel_view =
+        crate::goal_context::GoalsNow::new(&crate::goal_context::goals_of(&tree), channel_id, None);
     {
         let delivery = agent.state.deliveries.get_mut(&scope).unwrap();
         delivery.prompt_goals.as_mut().unwrap().held = channel_view.rendered().map(str::to_string);
@@ -642,7 +665,7 @@ async fn claude_session_serving_several_threads_is_not_rebuilt_per_thread() {
 
 #[test]
 fn goals_removed_from_a_claude_prompt_are_announced_only_when_messages_had_them() {
-    use crate::goal_context::{goal_removal_notice, GoalsNow};
+    use crate::goal_context::{goal_removal_notice, goals_of, GoalsNow};
     let off = GoalsNow::off(None);
     assert!(goal_removal_notice(false, true, &off).is_none());
     assert!(goal_removal_notice(true, true, &off)
@@ -652,14 +675,14 @@ fn goals_removed_from_a_claude_prompt_are_announced_only_when_messages_had_them(
     assert!(goal_removal_notice(true, false, &off)
         .unwrap()
         .contains("turned off"));
-    let none = GoalsNow::new(&GoalTree::empty(), Uuid::new_v4(), None);
+    let none = GoalsNow::new(&goals_of(&GoalTree::empty()), Uuid::new_v4(), None);
     assert!(goal_removal_notice(true, true, &none)
         .unwrap()
         .contains("no longer has goals"));
     // ...but a room without goals is not told its goals are gone.
     assert!(goal_removal_notice(true, false, &none).is_none());
     let tree = GoalTree::parse(&goal_tree_content()).unwrap();
-    let some = GoalsNow::new(&tree, Uuid::new_v4(), None);
+    let some = GoalsNow::new(&goals_of(&tree), Uuid::new_v4(), None);
     assert!(goal_removal_notice(true, true, &some).is_none());
 }
 
