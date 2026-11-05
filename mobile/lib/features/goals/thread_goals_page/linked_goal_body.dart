@@ -1,7 +1,7 @@
 part of '../thread_goals_page.dart';
 
 /// The linked goal: its path, a card with status and progress, the channel's
-/// whole goal tree, an add button, and relink / unlink actions. In the tree
+/// active goals, an add button, and relink / unlink actions. In the outline
 /// the linked goal and its sub-goals are editable, the path above is
 /// read-only, and the rest is read-only and faded. Nested threads link their
 /// chain root, so they share the outer thread's scope.

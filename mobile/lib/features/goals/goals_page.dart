@@ -383,8 +383,8 @@ class _GoalListRows extends ConsumerWidget {
     Map<String, GoalLinkInfo>? linkKinds,
     BuildContext context,
   ) {
-    final path = tree.path(top.id);
-    final above = path.skip(1).take(path.length - 2);
+    final above = tree.between(top.id);
+    final layer = tree.path(top.id).length;
     return Column(
       key: ValueKey('goals-list-top-${top.id}'),
       crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -396,12 +396,12 @@ class _GoalListRows extends ConsumerWidget {
           ),
         GoalOutline(
           tree: tree,
-          tops: [(layer: path.length, node: top)],
+          tops: [(layer: layer, node: top)],
           rowBuilder: (row, fold) => _GoalRow(
             channelId: listKey.channelId,
             row: row,
             fold: fold,
-            indent: row.layer - path.length,
+            indent: row.layer - layer,
             linkKinds: linkKinds,
           ),
         ),

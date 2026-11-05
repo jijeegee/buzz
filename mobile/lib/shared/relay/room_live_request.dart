@@ -55,7 +55,7 @@ class _Entry {
   bool gone = false;
 }
 
-/// One live REQ per open room for the room's typing indicators and goal tree,
+/// One live REQ per open room for the room's typing indicators and goal edits,
 /// shared by every listener of that room ([roomLiveRequestKinds]). Mirrors
 /// desktop's `RoomLiveRegistry`:
 ///

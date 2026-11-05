@@ -214,21 +214,31 @@ class GoalTree {
     return ids;
   }
 
+  /// The goals on [id]'s path, without layer 1 and without [id].
+  List<GoalNode> between(String id) {
+    final goals = path(id);
+    return goals.length > 2 ? goals.sublist(1, goals.length - 1) : const [];
+  }
+
   /// A goal with no thread link, here or above; it shows unfolded.
   bool isPlanGoal(String id) => !path(id).any((node) => node.isThread);
 
   /// The selected goals a list shows at its top level, in order. Layer 1
   /// keeps to its card: a row would offer to remove the whole room.
   List<GoalNode> listTops() =>
-      nodes.where((node) {
-        if (!node.matched || node.parent == null) return false;
-        final above = path(node.id);
-        return !above.sublist(1, above.length - 1).any((goal) => goal.matched);
-      }).toList()..sort(
-        (a, b) => a.order != b.order
-            ? a.order.compareTo(b.order)
-            : a.id.compareTo(b.id),
-      );
+      nodes
+          .where(
+            (node) =>
+                node.matched &&
+                node.parent != null &&
+                !between(node.id).any((goal) => goal.matched),
+          )
+          .toList()
+        ..sort(
+          (a, b) => a.order != b.order
+              ? a.order.compareTo(b.order)
+              : a.id.compareTo(b.id),
+        );
 
   GoalNode? forThread(String threadRootId) {
     final thread = threadRootId.toLowerCase();

@@ -73,25 +73,33 @@ final threadGoalTreeProvider = FutureProvider.autoDispose
 typedef GoalListKey = ({String channelId, GoalView view});
 
 /// The pages read of a quiet or done list. Read when the list opens, and
-/// re-read from the first page with [goalTreeProvider].
+/// re-read, as many pages as were shown, with [goalTreeProvider].
 class GoalListNotifier extends AsyncNotifier<GoalRead> {
   GoalListNotifier(this.key);
   final GoalListKey key;
+  var _pages = 1;
+
+  Future<GoalRead> _page(Object? cursor) =>
+      _readGoals(ref, goalViewFilter(key.channelId, key.view, cursor: cursor));
 
   @override
   Future<GoalRead> build() async {
     await ref.watch(goalTreeProvider(key.channelId).future);
-    return _readGoals(ref, goalViewFilter(key.channelId, key.view));
+    var read = await _page(null);
+    for (var page = 1; page < _pages && read.next != null; page++) {
+      read = read.followedBy(await _page(read.next));
+    }
+    return read;
   }
 
   Future<void> loadMore() async {
     final current = state.value;
     final cursor = current?.next;
     if (current == null || cursor == null) return;
-    final page = await _readGoals(
-      ref,
-      goalViewFilter(key.channelId, key.view, cursor: cursor),
-    );
+    final page = await _page(cursor);
+    // A re-read got in first; its rows are the newer ones.
+    if (!identical(state.value, current)) return;
+    _pages++;
     state = AsyncData(current.followedBy(page));
   }
 }
@@ -128,9 +136,10 @@ class GoalActions {
   Future<void> apply(String channelId, GoalOp op) => applyAll(channelId, [op]);
 
   Future<void> applyAll(String channelId, List<GoalOp> ops) async {
-    final relayConfig = _ref.read(relayConfigProvider);
-    final session = _ref.read(relaySessionProvider.notifier);
-    final signer = SignedEventRelay(session: session, nsec: relayConfig.nsec);
+    final signer = SignedEventRelay.forConfig(
+      session: _ref.read(relaySessionProvider.notifier),
+      config: _ref.read(relayConfigProvider),
+    );
     if (signer.pubkey == null) {
       throw GoalTreeException(appL10n.goalsSignInToEdit);
     }
