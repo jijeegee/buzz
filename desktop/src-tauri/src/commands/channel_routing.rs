@@ -3,7 +3,8 @@
 //! `set_channel_routing` is the single write path for both the routing mode
 //! and the routing agent (the default-AI star); `get_channel_routing` reports
 //! the saved mode together with the transition plan, so the card and the
-//! auto-restart loop read the same applied state.
+//! auto-restart loop read the same applied state. Both are the active
+//! account's: its mode, its star, and only its agents.
 
 use std::collections::HashMap;
 
@@ -13,15 +14,17 @@ use tauri::{AppHandle, Manager};
 use crate::{
     app_state::AppState,
     managed_agents::{
+        account_settings::active_settings_owner,
         channel_routing::{
-            lead_rules, load_channel_routing, load_deployed_roles, observe_remote,
+            lead_rules, load_active_channel_routing, load_deployed_roles, observe_remote,
             observed_routing_state, plan_routing_transition, routing_role_for,
             save_channel_routing, AgentTransition, AppliedRouting, ChannelRoutingMode,
             ObservedProcess, RoutingRole,
         },
-        current_instance_id, find_managed_agent_mut, load_managed_agents, process_is_running,
-        save_managed_agents, set_default_ai, sync_managed_agent_processes, workspace_pair_key,
-        BackendKind, ManagedAgentPairRuntime, ManagedAgentRecord, ManagedAgentRuntimeKey,
+        current_instance_id, find_managed_agent_mut, load_managed_agents, owned_by_viewer,
+        process_is_running, save_managed_agents, set_default_ai, sync_managed_agent_processes,
+        visible_owner_hex, workspace_pair_key, BackendKind, ManagedAgentPairRuntime,
+        ManagedAgentRecord, ManagedAgentRuntimeKey,
     },
     util::now_iso,
 };
@@ -66,7 +69,11 @@ fn routing_status<R: tauri::Runtime>(
     mode: ChannelRoutingMode,
 ) -> ChannelRoutingStatus {
     let deployed_roles = load_deployed_roles(app);
-    let keyed = records.iter().filter(|record| !record.pubkey.is_empty());
+    let me = active_settings_owner(app).ok();
+    let keyed = records.iter().filter(|record| {
+        !record.pubkey.is_empty()
+            && owned_by_viewer(visible_owner_hex(app, record).as_deref(), me.as_deref())
+    });
     let states: Vec<_> = keyed
         .clone()
         .map(|record| {
@@ -130,9 +137,11 @@ fn with_routing_store(
 /// The saved channel routing mode, routing agent, and transition plan.
 #[tauri::command]
 pub async fn get_channel_routing(app: AppHandle) -> Result<ChannelRoutingStatus, String> {
-    tokio::task::spawn_blocking(move || with_routing_store(&app, |_, _| load_channel_routing(&app)))
-        .await
-        .map_err(|e| format!("spawn_blocking failed: {e}"))?
+    tokio::task::spawn_blocking(move || {
+        with_routing_store(&app, |_, _| load_active_channel_routing(&app))
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {e}"))?
 }
 
 /// Save the routing mode and, for a mode that needs one, the routing agent —
@@ -180,7 +189,10 @@ pub async fn set_channel_routing(
                         return Err(reason.to_string());
                     }
                 }
-                let changed = set_default_ai(records, Some(pubkey))?;
+                let me = active_settings_owner(&app)?;
+                let changed = set_default_ai(records, Some(pubkey), |record| {
+                    owned_by_viewer(visible_owner_hex(&app, record).as_deref(), Some(&me))
+                })?;
                 if !changed.is_empty() {
                     let now = now_iso();
                     for changed_pubkey in &changed {

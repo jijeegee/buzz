@@ -242,12 +242,13 @@ impl ManagedAgentRecord {
     }
 }
 
-/// Star exactly one managed agent as this desktop's default AI, or clear the
-/// star with `None`.
+/// Star exactly one managed agent as an account's default AI, or clear the
+/// star with `None`. `in_account` picks that account's records; the rest keep
+/// their own star and cannot be starred from here.
 ///
-/// This is the single place the "at most one default" rule lives: every
-/// other record is unstarred in the same pass, so the store can never hold
-/// two defaults regardless of which command called it. A key-less definition
+/// This is the single place the "at most one default per account" rule lives:
+/// every other record of the account is unstarred in the same pass, so it can
+/// never hold two defaults regardless of which command called it. A key-less definition
 /// record (empty `pubkey`) cannot be the default — it has no identity to
 /// join a channel or spawn with — and an unknown pubkey is rejected before
 /// anything is mutated.
@@ -257,18 +258,22 @@ impl ManagedAgentRecord {
 pub fn set_default_ai(
     records: &mut [ManagedAgentRecord],
     pubkey: Option<&str>,
+    in_account: impl Fn(&ManagedAgentRecord) -> bool,
 ) -> Result<Vec<String>, String> {
     if let Some(target) = pubkey {
         if target.is_empty() {
             return Err("The default AI must be a deployed agent with its own key.".to_string());
         }
-        if !records.iter().any(|record| record.pubkey == target) {
+        if !records
+            .iter()
+            .any(|record| record.pubkey == target && in_account(record))
+        {
             return Err(format!("agent {target} not found"));
         }
     }
 
     let mut changed = Vec::new();
-    for record in records.iter_mut() {
+    for record in records.iter_mut().filter(|record| in_account(record)) {
         let next = pubkey.is_some_and(|target| record.pubkey == target);
         if record.is_default_ai != next {
             record.is_default_ai = next;
@@ -397,8 +402,8 @@ pub struct ManagedAgentRecord {
     pub env_vars: BTreeMap<String, String>,
     #[serde(default = "default_start_on_app_launch")]
     pub start_on_app_launch: bool,
-    /// `true` for the one managed agent the user starred as this desktop's
-    /// default AI. Single selection is enforced by [`set_default_ai`], never
+    /// `true` for the one managed agent its owner starred as their default
+    /// AI. Single selection is enforced by [`set_default_ai`], never
     /// by serde. Absent in stores written before the field existed and
     /// omitted from the wire while `false`, so untouched records round-trip
     /// byte-identically.

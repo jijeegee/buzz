@@ -206,3 +206,46 @@ fn a_held_gainer_has_no_restart_badge_until_the_old_host_restarts() {
     ];
     assert!(badge(promoted, role_with(&settled)).is_empty());
 }
+
+#[test]
+fn another_accounts_role_holds_nobody() {
+    let mine = record("mine", true, false);
+    let mut theirs = record("theirs", false, false);
+    theirs.backend = BackendKind::Local;
+    let owner_of = |candidate: &ManagedAgentRecord| {
+        Some(if candidate.pubkey == "mine" { "A" } else { "b" }.to_string())
+    };
+
+    // B's old lead is still running and has lost its star: it would hold A's
+    // gainer if the two shared one routing.
+    let live = [("theirs".to_string(), RoutingRole::Lead)];
+    let all = vec![mine.clone(), theirs];
+    assert_eq!(
+        launch_role_with(
+            &mine,
+            RoutingRole::Dispatcher,
+            &live,
+            &all,
+            ChannelRoutingMode::Host,
+            Some("a"),
+            &HashMap::new(),
+        ),
+        RoutingRole::None
+    );
+
+    let (owned, owned_live) = owners_agents(all, &live, Some("a"), owner_of);
+    assert_eq!(owned.len(), 1);
+    assert!(owned_live.is_empty());
+    assert_eq!(
+        launch_role_with(
+            &mine,
+            RoutingRole::Dispatcher,
+            &owned_live,
+            &owned,
+            ChannelRoutingMode::Host,
+            Some("a"),
+            &HashMap::new(),
+        ),
+        RoutingRole::Dispatcher
+    );
+}

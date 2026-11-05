@@ -1,8 +1,9 @@
 //! Channel routing: how agents pick up channel messages nobody @mentioned.
 //!
-//! One desktop-wide enum ([`ChannelRoutingMode`]) is stored in
-//! `<app-data>/agents/channel-routing.json` (`{ "mode": "host" }`). A missing
-//! file reads as [`ChannelRoutingMode::Host`] — the behavior from before the
+//! One enum per account ([`ChannelRoutingMode`]) is stored in
+//! `<app-data>/agents/accounts/<owner-hex>/channel-routing.json`
+//! (`{ "mode": "host" }`): every account's agents run at once, each under its
+//! owner's mode and star. A missing file reads as [`ChannelRoutingMode::Host`] — the behavior from before the
 //! setting existed, where the starred record always spawned as a dispatcher.
 //! It is deliberately **not** a `GlobalAgentConfig` field: saving that config
 //! restarts every local agent, while a mode switch only concerns the agents
@@ -20,7 +21,12 @@ use std::path::{Path, PathBuf};
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
 
-use super::{managed_agents_base_dir, storage::atomic_write_json, BackendKind, ManagedAgentRecord};
+use super::{
+    account_settings::{account_settings_dir, active_settings_owner},
+    managed_agents_base_dir,
+    storage::atomic_write_json,
+    BackendKind, ManagedAgentRecord,
+};
 
 mod launch;
 pub(crate) mod lead_rules;
@@ -168,8 +174,11 @@ pub(crate) fn parse_channel_routing(content: Option<&str>) -> ChannelRoutingMode
     }
 }
 
-fn channel_routing_path<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<PathBuf, String> {
-    Ok(managed_agents_base_dir(app)?.join(CHANNEL_ROUTING_FILE))
+fn channel_routing_path<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner_hex: &str,
+) -> Result<PathBuf, String> {
+    Ok(account_settings_dir(app, owner_hex)?.join(CHANNEL_ROUTING_FILE))
 }
 
 /// `<app-data>/agents/routing/` — where generated routing files live.
@@ -179,12 +188,25 @@ pub(crate) fn generated_routing_dir<R: tauri::Runtime>(
     Ok(managed_agents_base_dir(app)?.join(GENERATED_ROUTING_DIR))
 }
 
-/// Load the saved mode; see [`parse_channel_routing`] for the fallbacks.
-/// Only a failure to read an existing file is an error.
-pub fn load_channel_routing<R: tauri::Runtime>(
+/// The mode an agent of `owner` works under; see [`parse_channel_routing`] for
+/// the fallbacks. An agent with no known owner has no saved mode. Only a
+/// failure to read an existing file is an error.
+pub(crate) fn load_channel_routing_for_owner<R: tauri::Runtime>(
+    app: &AppHandle<R>,
+    owner: Option<&str>,
+) -> Result<ChannelRoutingMode, String> {
+    match owner {
+        Some(owner) => load_channel_routing_at(&channel_routing_path(app, owner)?),
+        None => Ok(ChannelRoutingMode::default()),
+    }
+}
+
+/// The active account's mode, for the screens. The default while that account
+/// cannot be used yet.
+pub fn load_active_channel_routing<R: tauri::Runtime>(
     app: &AppHandle<R>,
 ) -> Result<ChannelRoutingMode, String> {
-    load_channel_routing_at(&channel_routing_path(app)?)
+    load_channel_routing_for_owner(app, active_settings_owner(app).ok().as_deref())
 }
 
 pub(crate) fn load_channel_routing_at(path: &Path) -> Result<ChannelRoutingMode, String> {
@@ -197,12 +219,13 @@ pub(crate) fn load_channel_routing_at(path: &Path) -> Result<ChannelRoutingMode,
     }
 }
 
-/// Persist the mode with one atomic write.
+/// Persist the active account's mode with one atomic write.
 pub fn save_channel_routing<R: tauri::Runtime>(
     app: &AppHandle<R>,
     mode: ChannelRoutingMode,
 ) -> Result<(), String> {
-    save_channel_routing_at(&channel_routing_path(app)?, mode)
+    let owner = active_settings_owner(app)?;
+    save_channel_routing_at(&channel_routing_path(app, &owner)?, mode)
 }
 
 pub(crate) fn save_channel_routing_at(path: &Path, mode: ChannelRoutingMode) -> Result<(), String> {

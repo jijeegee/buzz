@@ -326,8 +326,6 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
     let personas = super::personas::load_personas_readonly(app)?;
     let teams = super::teams::load_teams_readonly(&super::teams::teams_store_path(app)?)?;
     let agent_configs = super::AgentConfigsByOwner::load(app, &records);
-    let task_threads = super::task_threads::current_task_threads_env(app);
-    let context_history = super::context_history::current_context_history_env(app);
     let mut failures = Vec::new();
     for (pubkey, launch) in targets {
         let Some(record) = records
@@ -336,6 +334,10 @@ fn sync_running_agents<R: tauri::Runtime>(app: &AppHandle<R>) -> Result<(), Stri
         else {
             continue;
         };
+        let owner = super::visible_owner_hex(app, record);
+        let task_threads = super::task_threads::current_task_threads_env(app, owner.as_deref());
+        let context_history =
+            super::context_history::current_context_history_env(app, owner.as_deref());
         let settings = current_live_settings(
             record,
             &personas,
