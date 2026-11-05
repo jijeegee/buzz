@@ -44,6 +44,21 @@ pub enum CliError {
     Other(String),
 }
 
+/// For commands whose relay refusals are the caller's to act on: a bad
+/// request or missing target is a user error (exit 1), a conflict exit 5.
+/// A relay with chat state off is not the caller's mistake, so it stays a
+/// relay error.
+pub fn classify_relay(error: CliError) -> CliError {
+    match error {
+        CliError::Relay { status: 400, body } => CliError::Usage(body),
+        CliError::Relay { status: 404, body } if !body.contains("chat_state_disabled") => {
+            CliError::NotFound(body)
+        }
+        CliError::Relay { status: 409, body } => CliError::Conflict(body),
+        other => other,
+    }
+}
+
 /// Walk the full `std::error::Error::source()` chain on a `reqwest::Error`
 /// and render it as a colon-separated string, e.g.
 /// `error sending request: dns error: failed to lookup address information: ...`

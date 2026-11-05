@@ -57,7 +57,9 @@ where
             }
         }
     };
-    match run(cli).await {
+    // Boxed: the future holds every command's state, and on the stack it
+    // overflows Windows' 1 MB main thread in unoptimized builds.
+    match Box::pin(run(cli)).await {
         Ok(()) => 0,
         Err(e) => {
             error::print_error(&e);
@@ -383,6 +385,32 @@ once), key_in_use, device_limit, rate_limited.",
     /// Search and share GIFs via the relay's KLIPY proxy
     #[command(subcommand)]
     Gifs(GifsCmd),
+    /// See your chats, newest first: unread counts and the latest message
+    ///
+    /// Closed threads are left out, as they are in the app's Chats list.
+    #[command(
+        after_help = "Examples:\n  kuzz inbox --unread\n  kuzz inbox --limit 20\n  kuzz inbox --before-at-us <at_us> --before-key <key>   # next page, from `next`"
+    )]
+    Inbox {
+        /// Chats per page (default 100)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=200), conflicts_with = "unread")]
+        limit: Option<u32>,
+        /// Only chats with unread messages, across every page
+        #[arg(long)]
+        unread: bool,
+        /// Next page: `at_us` from `next`
+        #[arg(long, requires = "before_key", conflicts_with = "unread")]
+        before_at_us: Option<i64>,
+        /// Next page: `key` from `next`
+        #[arg(long, requires = "before_at_us", conflicts_with = "unread")]
+        before_key: Option<String>,
+        /// Print whole events instead of a short preview of the latest message
+        #[arg(long)]
+        full: bool,
+    },
+    /// Keep your own friend list
+    #[command(subcommand)]
+    Friends(FriendsCmd),
     /// Find groups and manage their public address and invite links
     #[command(subcommand)]
     Groups(GroupsCmd),
@@ -750,6 +778,32 @@ pub enum MessagesCmd {
         #[arg(long)]
         limit: Option<u32>,
     },
+    /// Mark a channel or thread read, to its newest message or up to --event.
+    ///
+    /// A thread must be one you follow. A room you are not in is refused
+    /// with an auth error.
+    MarkRead {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "thread", conflicts_with = "thread")]
+        channel: Option<String>,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: Option<String>,
+        /// Newest message you have seen (64-char hex)
+        #[arg(long)]
+        event: Option<String>,
+    },
+    /// Mark a channel or thread unread, to come back to it
+    MarkUnread {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "thread", conflicts_with = "thread")]
+        channel: Option<String>,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: Option<String>,
+    },
+    /// Mark every chat in your inbox read
+    MarkAllRead,
     /// Upvote or downvote a forum post
     Vote {
         /// Event ID of the post to vote on (64-char hex)
@@ -1326,6 +1380,40 @@ pub enum GifsCmd {
         /// Provider GIF slug from a search result
         #[arg(long)]
         slug: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum FriendsCmd {
+    /// List your own friends
+    List {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+    },
+    /// Add a friend, or rename one with --name.
+    ///
+    /// A person on your list can add you to existing groups directly, without
+    /// an invitation.
+    Add {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+        /// Pubkey (hex or npub)
+        #[arg(long)]
+        person: String,
+        /// Name to remember them by
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Remove a friend
+    Remove {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+        /// Pubkey (hex or npub)
+        #[arg(long)]
+        person: String,
     },
 }
 
@@ -3016,6 +3104,17 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
+        Cmd::Inbox {
+            limit,
+            unread,
+            before_at_us,
+            before_key,
+            full,
+        } => {
+            let before = before_at_us.zip(before_key);
+            commands::inbox::cmd_inbox(&client, limit, unread, before, full).await
+        }
+        Cmd::Friends(sub) => commands::friends::dispatch(sub, &client).await,
         Cmd::Groups(sub) => commands::groups::dispatch(sub, &client).await,
         Cmd::Invitations(sub) => commands::invitations::dispatch(sub, &client).await,
         Cmd::Dms(sub) => commands::dms::dispatch(sub, &client).await,
@@ -3336,9 +3435,11 @@ mod tests {
             "dms",
             "emoji",
             "feed",
+            "friends",
             "gifs",
             "goals",
             "groups",
+            "inbox",
             "invitations",
             "issues",
             "media",
@@ -3417,6 +3518,9 @@ mod tests {
                 "delete",
                 "edit",
                 "get",
+                "mark-all-read",
+                "mark-read",
+                "mark-unread",
                 "name-thread",
                 "search",
                 "send",
@@ -3566,7 +3670,7 @@ mod tests {
             ("feed", 1),
             ("issues", 6),
             ("media", 1),
-            ("messages", 10),
+            ("messages", 13),
             ("pack", 2),
             ("patches", 4),
             ("pr", 5),
@@ -3574,7 +3678,7 @@ mod tests {
             ("reactions", 3),
             ("repos", 6),
             ("social", 7),
-            ("threads", 3),
+            ("threads", 6),
             ("upload", 1),
             ("users", 5),
             ("workflows", 8),

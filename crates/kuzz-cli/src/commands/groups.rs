@@ -6,7 +6,7 @@
 //! value that needs encoding fails as an auth error instead of a clear one.
 
 use crate::client::KuzzClient;
-use crate::error::CliError;
+use crate::error::{classify_relay, CliError};
 use crate::validate::{percent_encode, validate_uuid};
 use crate::GroupsCmd;
 
@@ -94,6 +94,10 @@ async fn print_get(client: &KuzzClient, path: &str) -> Result<(), CliError> {
 }
 
 pub async fn dispatch(cmd: GroupsCmd, client: &KuzzClient) -> Result<(), CliError> {
+    run(cmd, client).await.map_err(classify_relay)
+}
+
+async fn run(cmd: GroupsCmd, client: &KuzzClient) -> Result<(), CliError> {
     match cmd {
         GroupsCmd::Search { query } => print_get(client, &search_path(&query)).await,
         GroupsCmd::Get { channel, handle } => {

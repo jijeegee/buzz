@@ -3,6 +3,7 @@ use nostr::PublicKey;
 use uuid::Uuid;
 
 use crate::client::{normalize_events, normalize_write_response, KuzzClient};
+use crate::commands::inbox::{cmd_mark_all_read, cmd_mark_read, cmd_mark_unread};
 use crate::error::CliError;
 use crate::validate::{
     infer_language, parse_event_id, parse_uuid, read_or_stdin, truncate_diff,
@@ -1243,6 +1244,23 @@ pub async fn dispatch(
             cmd_vote_on_post(client, &event, &direction).await
         }
         MessagesCmd::Watch { since } => super::watch::cmd_watch(client, since, None).await,
+        MessagesCmd::MarkRead {
+            channel,
+            thread,
+            event,
+        } => {
+            cmd_mark_read(
+                client,
+                channel.as_deref(),
+                thread.as_deref(),
+                event.as_deref(),
+            )
+            .await
+        }
+        MessagesCmd::MarkUnread { channel, thread } => {
+            cmd_mark_unread(client, channel.as_deref(), thread.as_deref()).await
+        }
+        MessagesCmd::MarkAllRead => cmd_mark_all_read(client).await,
     }
 }
 
