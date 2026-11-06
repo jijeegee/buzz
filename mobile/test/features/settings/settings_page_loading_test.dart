@@ -52,7 +52,7 @@ void main() {
     );
     expect(find.text('Invite to community'), findsOneWidget);
 
-    expect(find.text('v0.16.0 (432)'), findsNothing);
+    expect(find.text('v0.16.0'), findsNothing);
     expect(find.byTooltip('Close settings'), findsOneWidget);
     metadata.complete({
       'appName': 'Kuzz',
@@ -67,7 +67,7 @@ void main() {
       300,
       scrollable: find.byType(Scrollable).first,
     );
-    expect(find.text('v0.16.0 (432)'), findsOneWidget);
+    expect(find.text('v0.16.0'), findsOneWidget);
     expect(tester.takeException(), isNull);
   });
 }
