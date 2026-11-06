@@ -24,6 +24,11 @@ export default defineConfig(async ({ mode }) => {
   };
 
   return {
+    build: {
+      // Release builds upload these to Sentry and delete them before the
+      // app is packaged; "hidden" leaves no sourceMappingURL in the bundle.
+      sourcemap: process.env.KUZZ_SENTRY_SOURCEMAPS === "1" ? "hidden" : false,
+    },
     define: {
       __KUZZ_ERROR_REPORTING__: JSON.stringify(errorReporting),
     },
