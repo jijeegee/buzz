@@ -337,6 +337,9 @@ function ExternalAgentTile({
  * profile. Connect makes a code, has `kuzz pair --hermes` claim it and
  * install the plugin, then reads the pairing list for the result.
  */
+/** How long a finished Connect waits for the lists before its button frees. */
+const CONNECT_REFRESH_WAIT_MS = 5_000;
+
 export function HermesFoundCard() {
   const t = useT();
   const queryClient = useQueryClient();
@@ -349,19 +352,24 @@ export function HermesFoundCard() {
   const pendingToast = React.useRef<{ profile: string; text: string } | null>(
     null,
   );
+  const connectedPubkeys = React.useMemo(
+    () =>
+      new Set(
+        groups.flatMap((group) =>
+          group.agents.map((agent) => agent.pubkey.toLowerCase()),
+        ),
+      ),
+    [groups],
+  );
   const rows = React.useMemo(
     () =>
       hermesRows(
         hermes.data?.profiles ?? [],
         owner,
-        new Set(
-          groups.flatMap((group) =>
-            group.agents.map((agent) => agent.pubkey.toLowerCase()),
-          ),
-        ),
+        connectedPubkeys,
         groups.some((group) => hermesDeviceIds.has(group.deviceId)),
       ),
-    [groups, hermes.data?.profiles, hermesDeviceIds, owner],
+    [connectedPubkeys, groups, hermes.data?.profiles, hermesDeviceIds, owner],
   );
   React.useEffect(() => {
     const pending = pendingToast.current;
@@ -387,7 +395,15 @@ export function HermesFoundCard() {
   async function connect(profile: HermesProfile) {
     setConnecting(profile.name);
     try {
-      const run = await connectHermes(profile.name);
+      // Its earlier agent comes back, unless another profile (a copy)
+      // still runs it.
+      const run = await connectHermes(
+        profile.name,
+        profile.owner !== null &&
+          profile.owner === owner?.toLowerCase() &&
+          (profile.pairedAgent === null ||
+            !connectedPubkeys.has(profile.pairedAgent)),
+      );
       const claim = connectedClaim(await listAgentPairings(), run.pairingId);
       if (!claim) throw new Error(t("agents.external.hermesFailed"));
       rememberConnection(owner, claim, { hermes: true });
@@ -406,7 +422,12 @@ export function HermesFoundCard() {
           : t("agents.external.hermesFailed"),
       );
     } finally {
-      await refreshExternalAgents(queryClient);
+      // The button waits for the lists, but never for long: the profile's
+      // own state shows what follows.
+      await Promise.race([
+        refreshExternalAgents(queryClient),
+        new Promise((resolve) => setTimeout(resolve, CONNECT_REFRESH_WAIT_MS)),
+      ]);
       setConnecting(null);
     }
   }

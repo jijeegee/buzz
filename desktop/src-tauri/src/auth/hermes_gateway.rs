@@ -65,6 +65,18 @@ pub struct HermesGatewayView {
     busy: bool,
 }
 
+impl HermesGatewayView {
+    /// For the log: running, the Kuzz state, busy. No error text.
+    pub(super) fn summary(&self) -> String {
+        format!(
+            "running: {}, kuzz: {}, busy: {}",
+            self.running,
+            self.kuzz.as_deref().unwrap_or("none"),
+            self.busy
+        )
+    }
+}
+
 fn read_state(home: &Path) -> Value {
     std::fs::read(home.join(STATE_FILE))
         .ok()
@@ -255,7 +267,9 @@ fn restart(root: &Path, profile: &str) -> Result<(), String> {
         let kuzz = if now.is_null() || same_gateway(&now, &before) {
             None
         } else {
-            gateway_view(root, profile).filter(|view| view.running).and_then(|view| view.kuzz)
+            gateway_view(root, profile)
+                .filter(|view| view.running)
+                .and_then(|view| view.kuzz)
         };
         match hold.observe(kuzz.as_deref(), Instant::now()) {
             Settled::Connected => {
@@ -403,7 +417,7 @@ fn log_file(root: &Path) -> Option<File> {
         .ok()
 }
 
-fn log(root: &Path, line: &str) {
+pub(super) fn log(root: &Path, line: &str) {
     eprintln!("kuzz-desktop: hermes: {line}");
     if let Some(mut file) = log_file(root) {
         let now = chrono::Utc::now().to_rfc3339();

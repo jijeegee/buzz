@@ -163,6 +163,14 @@ impl PairingStore {
         write_owner_only(&self.path(&pairing.agent_pubkey), &bytes).map_err(fail)
     }
 
+    /// The pairing of `agent_pubkey` (lowercase hex) when it holds the key.
+    pub fn saved(&self, agent_pubkey: &str) -> Option<Pairing> {
+        let bytes = Zeroizing::new(std::fs::read(self.path(agent_pubkey)).ok()?);
+        serde_json::from_slice::<Pairing>(&bytes)
+            .ok()
+            .filter(|pairing| pairing.agent_pubkey == agent_pubkey && pairing.keys().is_some())
+    }
+
     /// Forget the pairing of `agent_pubkey` (missing is fine).
     pub fn remove(&self, agent_pubkey: &str) {
         let _ = std::fs::remove_file(self.path(agent_pubkey));
@@ -411,6 +419,9 @@ pub(crate) struct PairRequest<'a> {
     pub runtime: Option<&'a str>,
     /// The agent's own key (`--private-key`/`KUZZ_PRIVATE_KEY`), if any.
     pub agent_keys: Option<Keys>,
+    /// An earlier pairing of this computer to pair again (`--reuse-agent`):
+    /// its saved key, kept saved; a refusal leaves it as it was.
+    pub again: Option<Pairing>,
 }
 
 /// Claim `request.code` with `device` and save the pairing in `store`.
@@ -423,9 +434,13 @@ pub(crate) async fn pair(
     store: &PairingStore,
 ) -> Result<Pairing, CliError> {
     let origin = relay_origin(request.relay_url)?;
-    let (keys, generated) = match request.agent_keys {
-        Some(keys) => (keys, false),
-        None => (Keys::generate(), true),
+    let (keys, saved) = match (
+        request.again.as_ref().and_then(Pairing::keys),
+        request.agent_keys,
+    ) {
+        (Some(keys), _) => (keys, true),
+        (None, Some(keys)) => (keys, false),
+        (None, None) => (Keys::generate(), true),
     };
     let mut pairing = Pairing {
         version: PAIRING_FILE_VERSION,
@@ -439,7 +454,7 @@ pub(crate) async fn pair(
         device_id: None,
         paired_at: chrono::Utc::now().timestamp(),
         owner: None,
-        agent_secret: generated.then(|| keys.secret_key().to_secret_hex()),
+        agent_secret: saved.then(|| keys.secret_key().to_secret_hex()),
     };
     let body = {
         let (code, keys, device, name, runtime) = (
@@ -471,7 +486,16 @@ pub(crate) async fn pair(
             Ok(pairing)
         }
         ClaimOutcome::Refused(error) => {
-            store.remove(&pairing.agent_pubkey);
+            match request
+                .again
+                .filter(|again| again.agent_pubkey == pairing.agent_pubkey)
+            {
+                // The refusal is what to report, even if this fails.
+                Some(again) => {
+                    let _ = store.save(&again);
+                }
+                None => store.remove(&pairing.agent_pubkey),
+            }
             Err(error)
         }
         ClaimOutcome::Unknown(error) => {
@@ -931,6 +955,7 @@ pub(crate) async fn cmd_pair(
     device_name: Option<String>,
     runtime: Option<String>,
     private_key: Option<String>,
+    reuse_agent: Option<String>,
     hermes: Option<HermesInstall>,
 ) -> Result<(), CliError> {
     if kuzz_token_broker::stored_session_disabled(|name| std::env::var(name).ok()) {
@@ -969,6 +994,24 @@ pub(crate) async fn cmd_pair(
     };
     let store = PairingStore::open_default()
         .ok_or_else(|| CliError::Other("cannot locate a data directory for pairings".into()))?;
+    let again = match reuse_agent.map(|key| key.trim().to_ascii_lowercase()) {
+        Some(_) if agent_keys.is_some() => {
+            return Err(CliError::Usage(
+                "--reuse-agent pairs a saved key; it cannot go with --private-key".into(),
+            ))
+        }
+        Some(key) if !is_hex_pubkey(&key) => {
+            return Err(CliError::Usage("--reuse-agent needs a hex pubkey".into()))
+        }
+        Some(key) => {
+            let again = store.saved(&key);
+            if again.is_none() {
+                eprintln!("no saved key for agent {}; pairing a new agent", &key[..8]);
+            }
+            again
+        }
+        None => None,
+    };
     let device = pair_device_key().await?;
     let keys_for_name = agent_keys.clone();
     let pairing = pair(
@@ -979,6 +1022,7 @@ pub(crate) async fn cmd_pair(
             device_name: &device_name,
             runtime: runtime.as_deref(),
             agent_keys,
+            again,
         },
         &device,
         &store,

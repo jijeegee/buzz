@@ -378,6 +378,11 @@ once), key_in_use, device_limit, rate_limited.",
         /// Hermes's default home)
         #[arg(long, requires = "hermes", value_name = "DIR")]
         hermes_home: Option<std::path::PathBuf>,
+        /// Pair this computer's earlier agent again (its pubkey), so it
+        /// comes back as the same agent; a new one when its key is not saved
+        /// here
+        #[arg(long, value_name = "PUBKEY")]
+        reuse_agent: Option<String>,
     },
     /// Keep the Hermes connector on this computer up to date
     #[command(subcommand)]
@@ -3166,6 +3171,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         hermes,
         no_restart,
         hermes_home,
+        reuse_agent,
     } = cli.command
     {
         let relay = pairing::pair_relay(pair_relay.as_deref(), &cli.relay, cli.relay_from_default)?;
@@ -3176,6 +3182,7 @@ async fn run(cli: Cli) -> Result<(), CliError> {
             device_name,
             runtime,
             cli.private_key,
+            reuse_agent,
             hermes.then_some(pairing::HermesInstall {
                 restart: !no_restart,
                 home: hermes_home,
