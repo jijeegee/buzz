@@ -70,6 +70,16 @@ struct ClaimRequest {
     runtime: Option<String>,
 }
 
+/// `POST /auth/pairing/start` body, optional. Unknown fields are ignored,
+/// so a newer app can add some.
+#[derive(Deserialize, Default)]
+struct StartRequest {
+    /// The app pairs an agent on its own computer: the external device is
+    /// shown under the device that started the pairing.
+    #[serde(default)]
+    same_computer: bool,
+}
+
 fn conflict(code: &str, message: &str) -> Response {
     auth_error(StatusCode::CONFLICT, code, message)
 }
@@ -107,16 +117,33 @@ fn pairing_json(pairing: &PairingRecord) -> Value {
 }
 
 /// `POST /auth/pairing/start`: a new one-use code for this account.
-pub(super) async fn start(State(state): State<Arc<AppState>>, headers: HeaderMap) -> Response {
+pub(super) async fn start(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
     let (binding, device, _) =
         match authorize_device_call(&state, &headers, "auth:pairing:start", 20).await {
             Ok(authorized) => authorized,
             Err(response) => return response,
         };
+    let request = if body.is_empty() {
+        StartRequest::default()
+    } else {
+        match serde_json::from_slice::<StartRequest>(&body) {
+            Ok(request) => request,
+            Err(_) => return bad_request("same_computer must be a boolean"),
+        }
+    };
     let (code, code_hash) = generate_pair_code();
     match state
         .db
-        .start_pairing(&binding.principal, device, &code_hash)
+        .start_pairing(
+            &binding.principal,
+            device,
+            &code_hash,
+            request.same_computer,
+        )
         .await
     {
         Ok(StartPairing::Started { id, expires_at }) => axum::Json(json!({

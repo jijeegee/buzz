@@ -360,7 +360,9 @@ async fn register_keeps_the_level_and_re_pairing_resets_it() {
         }
     };
     let code_hash: [u8; 32] = rand::random();
-    db.start_pairing(&owner, pc, &code_hash).await.unwrap();
+    db.start_pairing(&owner, pc, &code_hash, false)
+        .await
+        .unwrap();
     let ClaimPairing::Connected { device_id, .. } = pair(code_hash).await else {
         panic!("first pairing");
     };
@@ -380,7 +382,9 @@ async fn register_keeps_the_level_and_re_pairing_resets_it() {
         .unwrap()
         .expect("disconnected");
     let code_hash: [u8; 32] = rand::random();
-    db.start_pairing(&owner, pc, &code_hash).await.unwrap();
+    db.start_pairing(&owner, pc, &code_hash, false)
+        .await
+        .unwrap();
     assert!(matches!(
         pair(code_hash).await,
         ClaimPairing::Connected { .. }
@@ -400,7 +404,9 @@ async fn register_keeps_the_level_and_re_pairing_resets_it() {
     .await
     .unwrap();
     let code_hash: [u8; 32] = rand::random();
-    db.start_pairing(&owner, pc, &code_hash).await.unwrap();
+    db.start_pairing(&owner, pc, &code_hash, false)
+        .await
+        .unwrap();
     let claimed = db
         .claim_pairing(&PairingClaim {
             code_hash: &code_hash,

@@ -2151,6 +2151,9 @@ CREATE TABLE devices (
     -- `login` (signed in with the identity provider) or `external` (an
     -- external agent's computer paired by the owner, 0090).
     kind          TEXT NOT NULL DEFAULT 'login' CHECK (kind IN ('login', 'external')),
+    -- The signed-in device an external device's agents run on, when the app
+    -- paired them on its own computer and the keys differ (0101). Display only.
+    host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
     CONSTRAINT devices_external_shape CHECK ((kind = 'external') = (platform = 'external')
            AND (kind = 'login' OR (device_pubkey IS NOT NULL AND install_id IS NULL)))
 );
@@ -2308,6 +2311,8 @@ CREATE TABLE pairing_requests (
     device_pubkey     BYTEA CHECK (device_pubkey IS NULL OR octet_length(device_pubkey) = 33),
     device_name       TEXT CHECK (device_name IS NULL OR char_length(device_name) BETWEEN 1 AND 64),
     device_id         UUID REFERENCES devices(id) ON DELETE SET NULL,
+    -- Started by the app to pair an agent on its own computer (0101).
+    same_computer     BOOLEAN NOT NULL DEFAULT false,
     created_at        TIMESTAMPTZ NOT NULL DEFAULT now(),
     expires_at        TIMESTAMPTZ NOT NULL,
     claimed_at        TIMESTAMPTZ,
