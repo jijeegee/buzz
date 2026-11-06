@@ -475,7 +475,7 @@ fn a_tpm_marker_blocks_the_software_fallback() {
     for create in [true, false] {
         assert!(matches!(
             software_fallback(&store, DEVICE_KEY_SCOPE, tpm_error(), create),
-            Err(DeviceKeyError::Tpm { .. })
+            Err(DeviceKeyError::HardwareOutOfReach(_))
         ));
     }
     assert!(
@@ -495,6 +495,28 @@ fn a_tpm_marker_blocks_the_software_fallback() {
             .expect("fallback")
             .is_some()
     );
+}
+
+/// A software scope of its own opens, is created only when asked, and stays
+/// the same key.
+#[test]
+fn open_software_makes_only_what_it_is_asked_to() {
+    let store = MemoryStore::default();
+    assert!(DeviceKey::open_software("tool", &store, false)
+        .expect("open")
+        .is_none());
+    let made = DeviceKey::open_software("tool", &store, true)
+        .expect("create")
+        .expect("key");
+    assert_eq!(made.kind(), DeviceKeyKind::Software);
+    let again = DeviceKey::open_software("tool", &store, false)
+        .expect("open")
+        .expect("key");
+    assert_eq!(made.pubkey(), again.pubkey());
+    assert!(matches!(
+        DeviceKey::open_software("no spaces", &store, true),
+        Err(DeviceKeyError::InvalidScope)
+    ));
 }
 
 /// A hardware key without a marker (a stray test or dev build key) never

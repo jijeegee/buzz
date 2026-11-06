@@ -59,6 +59,7 @@ PAIRED_AGENT_ENV = "KUZZ_PAIRED_AGENT"
 CONFIG_TIMEOUT = 30
 DM_TIMEOUT = 20
 RESTART_TIMEOUT = 300
+HELP_TIMEOUT = 30
 # Refresh: the gateway that was running when files were replaced, under <root>/kuzz/. From Hermes's
 # state file: start_time drifts between readings, and a heartbeat counts as stale at 120 s.
 PENDING_FILE = "refresh-pending.json"
@@ -173,7 +174,7 @@ def find_hermes(hermes_home: Path) -> Optional[str]:
     name = "hermes.exe" if os.name == "nt" else "hermes"
     root = hermes_root(hermes_home)
     for folder in (root / "bin", root / "hermes-agent" / "venv" / "Scripts",
-                   root / "hermes-agent" / "venv" / "bin"):
+                   root / "hermes-agent" / "venv" / "bin", Path.home() / ".local" / "bin"):
         candidate = folder / name
         if is_runnable(str(candidate)):
             return str(candidate)
@@ -319,18 +320,80 @@ def pin_default_profile(hermes_home: Path, default_agents: Dict[str, str]) -> No
         set_env_values(root / ".env", {PAIRED_AGENT_ENV: agent})
 
 
+def restart_profile(hermes_home: Path) -> str:
+    """The profile whose gateway runs ``hermes_home``: its own when it ever ran one or has a
+    launchd job (one gateway per profile), else the host, which serves the profiles and loads
+    plugins. Always named: a sticky ``hermes profile use`` would otherwise bounce another profile.
+    The same rule as the app's ``restart_profile`` (desktop ``hermes_gateway.rs``)."""
+    root = hermes_root(hermes_home)
+    if hermes_home == root:
+        return "default"
+    name = hermes_home.name
+    served = read_json(root / "gateway_state.json").get("served_profiles")
+    if isinstance(served, list) and name in served:
+        return "default"
+    service = Path.home() / "Library" / "LaunchAgents" / f"ai.hermes.gateway-{name}.plist"
+    own = read_json(hermes_home / "gateway_state.json")
+    return name if "pid" in own or (sys.platform == "darwin" and service.is_file()) else "default"
+
+
+def supports_detach(hermes: str, env: dict) -> bool:
+    """``--detach`` only exists in newer Hermes; an older one exits 2 on it."""
+    try:
+        result = subprocess.run(
+            [hermes, "gateway", "restart", "--help"], env=env, stdin=subprocess.DEVNULL, capture_output=True,
+            text=True, encoding="utf-8", errors="replace", timeout=HELP_TIMEOUT, check=False,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return False
+    return "--detach" in result.stdout
+
+
+def await_new_gateway(command: List[str], env: dict, state_file: Path) -> bool:
+    """A restart without ``--detach``: without a service it stays on as the gateway, so it runs
+    apart from this process and is never killed. Done when it exits, or when another gateway shows
+    in the state file."""
+    before = read_json(state_file)
+    try:
+        process = subprocess.Popen(
+            command, env=env, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+            creationflags=getattr(subprocess, "DETACHED_PROCESS", 0), start_new_session=True,
+        )
+    except OSError:
+        return False
+    deadline = time.monotonic() + RESTART_TIMEOUT
+    while time.monotonic() < deadline:
+        code = process.poll()
+        if code is not None:
+            return code == 0
+        record = read_json(state_file)
+        if gateway_alive(record) and not same_gateway(record, before):
+            return True
+        time.sleep(1)
+    return False
+
+
 def restart_gateway(hermes_home: Path) -> bool:
-    """``hermes gateway restart --detach``: loads the plugin now, and starts a stopped gateway.
-    Without ``--yes`` it refuses while Hermes has live work (no prompt without a terminal), so a
-    running turn or cron job is never cut off; the caller then asks for a manual restart.
-    For a named profile too this is the host gateway: it serves the profiles and loads plugins.
-    ``-p default``: a sticky ``hermes profile use`` would otherwise bounce only that profile."""
+    """``hermes gateway restart``: loads the plugin now, and starts a stopped gateway. Without
+    ``--yes`` a newer Hermes refuses while it has live work (no prompt without a terminal), so a
+    running turn or cron job is never cut off; the caller then asks for a manual restart."""
     hermes = find_hermes(hermes_home)
     if not hermes:
         return False
+    root = hermes_root(hermes_home)
+    env = hermes_env(root)
+    profile = restart_profile(hermes_home)
+    command = [hermes, "-p", profile, "gateway", "restart"]
+    if not supports_detach(hermes, env):
+        state_file = (root if profile == "default" else hermes_home) / "gateway_state.json"
+        record = read_json(state_file)
+        if gateway_alive(record) and record.get("active_agents"):
+            return False  # no guard of its own: it would cut the running work off
+        return await_new_gateway(command, env, state_file)
+    command.append("--detach")
     try:
         result = subprocess.run(
-            [hermes, "-p", "default", "gateway", "restart", "--detach"], env=hermes_env(hermes_root(hermes_home)),
+            command, env=env,
             stdin=subprocess.DEVNULL, capture_output=True, text=True, encoding="utf-8",
             errors="replace", timeout=RESTART_TIMEOUT, check=False,
         )

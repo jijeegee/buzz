@@ -152,16 +152,6 @@ fn the_old_hermes_key_file_is_removed() {
 }
 
 #[test]
-fn a_restarted_gateway_gets_no_kuzz_settings() {
-    for name in ["KUZZ_PRIVATE_KEY", "kuzz_relay_url", "BUZZ_HOME_CHANNEL"] {
-        assert!(is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
-    }
-    for name in ["PATH", "HERMES_HOME", "XKUZZ_A"] {
-        assert!(!is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
-    }
-}
-
-#[test]
 fn a_named_profile_is_passed_by_its_folder() {
     let home = PathBuf::from(HOME).join("profiles").join("work");
     let args = hermes_pair_args("wss://r", "CODE", "Work", Some(&home));

@@ -222,6 +222,11 @@ gives up on a command after a timeout, treat that as delivery unknown too.
 on the commands above. It holds no key, and it needs nothing outside the Python
 standard library.
 
+On a Mac whose app holds a Secure Enclave device key, the bundled `kuzz` can't
+reach that key, so it uses a software key of its own
+(`~/Library/Application Support/kuzz/device-keys`). That computer can show up
+twice in the device list, once for the app and once for Hermes.
+
 It is its own platform, `kuzz`, beside the `buzz` platform Hermes ships, so one
 Hermes can use Buzz and Kuzz together. The two share nothing: Kuzz settings are
 `KUZZ_*` and `gateway.platforms.kuzz`, cron targets are `deliver=kuzz`, and state

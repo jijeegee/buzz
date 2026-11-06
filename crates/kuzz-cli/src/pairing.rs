@@ -817,8 +817,8 @@ async fn pair_device_key() -> Result<DeviceKey, CliError> {
     }
     #[cfg(not(test))]
     {
-        use kuzz_token_broker::device::{open_shared, OpenMode};
-        match tokio::task::spawn_blocking(|| open_shared(OpenMode::CreateIfMissing)).await {
+        use kuzz_token_broker::device::{open_for_cli, OpenMode};
+        match tokio::task::spawn_blocking(|| open_for_cli(OpenMode::CreateIfMissing)).await {
             Ok(Ok(Some(key))) => Ok(key),
             Ok(Ok(None)) => Err(CliError::Other("device key could not be created".into())),
             Ok(Err(error)) => Err(CliError::Other(format!(
