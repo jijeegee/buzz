@@ -1,5 +1,6 @@
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/mentions/agent_identity_provider.dart';
 
@@ -52,6 +53,79 @@ String? _nonEmpty(String? value) {
 final myAgentsProvider = Provider.autoDispose<List<MyAgent>>((ref) {
   return myAgentsFrom(
     hostDevices: ref.watch(agentHostDevicesProvider),
+    directory:
+        ref.watch(agentDirectoryProvider).asData?.value ??
+        const <AgentDirectoryEntry>[],
+  );
+});
+
+/// An agent connected from a paired computer (`kuzz pair`, Hermes), not run
+/// by a Kuzz app: no start, stop or edit here.
+class MyExternalAgent {
+  const MyExternalAgent({
+    required this.agent,
+    required this.externalDeviceId,
+    this.runtime,
+  });
+
+  /// The agent, with [MyAgent.deviceId] the computer it runs on: the
+  /// signed-in device there, else the external device itself.
+  final MyAgent agent;
+
+  /// Lowercase id of the external device it connected through.
+  final String externalDeviceId;
+
+  /// What it runs on (`Hermes`), when the connection said.
+  final String? runtime;
+}
+
+/// The agents on the account's external devices ([AccountDevice.agents]),
+/// each under its computer as desktop's Agents list does. Sorted by pubkey.
+List<MyExternalAgent> myExternalAgentsFrom({
+  required List<AccountDevice> devices,
+  required List<AgentDirectoryEntry> directory,
+}) {
+  final byPubkey = {
+    for (final entry in directory) entry.pubkey.toLowerCase(): entry,
+  };
+  final ids = {for (final device in devices) device.id.trim().toLowerCase()};
+  final agents = <String, MyExternalAgent>{};
+  for (final device in devices) {
+    if (!device.isExternal) continue;
+    final id = device.id.trim().toLowerCase();
+    final login = device.loginDeviceId?.trim().toLowerCase();
+    final host = login != null && ids.contains(login) ? login : id;
+    for (final agent in device.agents) {
+      final pubkey = agent.pubkey.trim().toLowerCase();
+      agents.putIfAbsent(
+        pubkey,
+        () => MyExternalAgent(
+          agent: MyAgent(
+            pubkey: pubkey,
+            deviceId: host,
+            directoryName: _nonEmpty(byPubkey[pubkey]?.displayName),
+          ),
+          externalDeviceId: id,
+          runtime: agent.runtime,
+        ),
+      );
+    }
+  }
+  return agents.values.toList()
+    ..sort((a, b) => a.agent.pubkey.compareTo(b.agent.pubkey));
+}
+
+/// [myExternalAgentsFrom] for the signed-in user; none until the device
+/// list loads, or when it can't be read.
+final myExternalAgentsProvider = Provider.autoDispose<List<MyExternalAgent>>((
+  ref,
+) {
+  final origin = ref.watch(accountOriginProvider);
+  if (origin == null) return const [];
+  return myExternalAgentsFrom(
+    devices:
+        ref.watch(accountDevicesProvider(origin)).value ??
+        const <AccountDevice>[],
     directory:
         ref.watch(agentDirectoryProvider).asData?.value ??
         const <AgentDirectoryEntry>[],

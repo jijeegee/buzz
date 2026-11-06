@@ -21,7 +21,7 @@ import 'my_agents.dart';
 /// robot of the computer it runs on before its name, its status (and, with
 /// [showComputer], the computer) below, and the "⋮" for its actions.
 /// Tapping it opens the DM with the agent; a long press or the "⋮" opens
-/// the actions sheet.
+/// the actions sheet, or [onActions] when given.
 class MyAgentTile extends ConsumerWidget {
   const MyAgentTile({
     super.key,
@@ -29,12 +29,21 @@ class MyAgentTile extends ConsumerWidget {
     required this.name,
     this.showComputer = false,
     this.indent = 0,
+    this.external = false,
+    this.onActions,
   });
 
   final MyAgent agent;
   final String name;
   final bool showComputer;
   final double indent;
+
+  /// Connected from a paired computer: offline reads "Offline", not
+  /// "Stopped", since no app here runs it.
+  final bool external;
+
+  /// Replaces the actions sheet, for an agent this app can't start or stop.
+  final VoidCallback? onActions;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -55,6 +64,9 @@ class MyAgentTile extends ConsumerWidget {
                 ref.watch(currentAccountDeviceIdProvider) == agent.deviceId,
           )
         : null;
+    final statusLabel = external && status == MyAgentStatus.stopped
+        ? context.l10n.profilePresenceOffline
+        : myAgentStatusLabel(status);
     final initial = name.trim().isNotEmpty
         ? String.fromCharCode(name.trim().runes.first).toUpperCase()
         : '?';
@@ -66,6 +78,8 @@ class MyAgentTile extends ConsumerWidget {
       onTap: () => unawaited(openMyAgentDm(context, ref, agent.pubkey, name)),
       onLongPress: () {
         unawaited(HapticFeedback.mediumImpact());
+        final actions = onActions;
+        if (actions != null) return actions();
         unawaited(showMyAgentSheet(context, ref, agent: agent, name: name));
       },
       child: Padding(
@@ -137,9 +151,9 @@ class MyAgentTile extends ConsumerWidget {
                   ),
                   Text(
                     computer == null
-                        ? myAgentStatusLabel(status)
+                        ? statusLabel
                         : context.l10n.agentsStatusOnComputer(
-                            myAgentStatusLabel(status),
+                            statusLabel,
                             computer,
                           ),
                     key: ValueKey('my-agent-status-${agent.pubkey}'),
@@ -150,7 +164,7 @@ class MyAgentTile extends ConsumerWidget {
                 ],
               ),
             ),
-            MyAgentMenu(agent: agent, name: name),
+            MyAgentMenu(agent: agent, name: name, onPressed: onActions),
           ],
         ),
       ),
