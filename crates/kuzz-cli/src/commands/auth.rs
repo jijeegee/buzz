@@ -654,7 +654,7 @@ pub async fn login(
 /// without one, as before.
 async fn login_device_key() -> Option<kuzz_token_broker::device::DeviceKey> {
     #[cfg(not(test))]
-    use kuzz_token_broker::device::{open_shared, OpenMode};
+    use kuzz_token_broker::device::{open_for_cli, OpenMode};
     #[cfg(test)]
     {
         crate::device::process_signer()
@@ -662,7 +662,7 @@ async fn login_device_key() -> Option<kuzz_token_broker::device::DeviceKey> {
             .and_then(|signer| signer.key().cloned())
     }
     #[cfg(not(test))]
-    match tokio::task::spawn_blocking(|| open_shared(OpenMode::CreateIfMissing)).await {
+    match tokio::task::spawn_blocking(|| open_for_cli(OpenMode::CreateIfMissing)).await {
         Ok(Ok(key)) => key,
         Ok(Err(error)) => {
             crate::device::warn(&format!("device key unavailable: {error}"));

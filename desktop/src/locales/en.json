@@ -24679,6 +24679,18 @@
   "@agents.external.hermesOtherAccount": {
     "description": "Shown on a Hermes profile row connected by a different Kuzz account on this computer."
   },
+  "agents.external.hermesBusy": "Hermes is finishing its work. It connects after that.",
+  "@agents.external.hermesBusy": {
+    "description": "Agents page Hermes card: a connected profile waiting for Hermes to finish running work before it restarts. Hermes is a product name."
+  },
+  "agents.external.hermesOffline": "Hermes hasn't picked up the connection yet. Restart it to finish.",
+  "@agents.external.hermesOffline": {
+    "description": "Agents page Hermes card: paired, but Hermes is not connected to Kuzz. Hermes is a product name."
+  },
+  "agents.external.hermesRestart": "Restart Hermes",
+  "@agents.external.hermesRestart": {
+    "description": "Agents page Hermes card: button that restarts Hermes so it connects. Hermes is a product name."
+  },
   "agents.external.hermesFailed": "Couldn't connect Hermes. Try again.",
   "@agents.external.hermesFailed": {
     "description": "Agents page Hermes card: error toast. Hermes is a product name."

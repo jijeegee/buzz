@@ -405,6 +405,8 @@ const hermesProfile = (name, fields = {}) => ({
   pairedAgent: null,
   owner: null,
   blockedReason: null,
+  gateway: null,
+  settling: false,
   ...fields,
 });
 const hermesStates = (profiles, owner, connected = [], device = false) =>
@@ -422,6 +424,46 @@ test("hermes rows: a profile is connected when its pinned agent is", () => {
   assert.deepEqual(hermesStates([hermesProfile("work", pinned)], "me"), [
     "connect",
   ]);
+});
+
+test("hermes rows: paired alone is not connected", () => {
+  const row = (fields) =>
+    hermesStates(
+      [hermesProfile("work", { pairedAgent: "a1", owner: "me", ...fields })],
+      "me",
+      ["a1"],
+    )[0];
+  const gateway = (fields) => ({
+    running: true,
+    kuzz: null,
+    error: null,
+    busy: false,
+    ...fields,
+  });
+  // A gateway that doesn't report on Kuzz: as before.
+  assert.equal(row({}), "connected");
+  assert.equal(row({ gateway: gateway({ kuzz: "connected" }) }), "connected");
+  // The gateway hasn't loaded the plugin, stopped, or failed.
+  assert.equal(row({ gateway: gateway({}) }), "offline");
+  assert.equal(row({ gateway: gateway({ running: false }) }), "offline");
+  assert.equal(row({ gateway: gateway({ kuzz: "fatal" }) }), "offline");
+  // A crash leaves the old record behind.
+  assert.equal(
+    row({ gateway: gateway({ running: false, kuzz: "connected" }) }),
+    "offline",
+  );
+  // Still coming up, with no restart of ours to wait for: Restart stays open.
+  assert.equal(row({ gateway: gateway({ kuzz: "connecting" }) }), "offline");
+  assert.equal(row({ settling: true }), "settling");
+  // The old record still says connected while a restart runs.
+  assert.equal(
+    row({ settling: true, gateway: gateway({ kuzz: "connected" }) }),
+    "settling",
+  );
+  assert.equal(
+    row({ settling: true, gateway: gateway({ busy: true }) }),
+    "busy",
+  );
 });
 
 test("hermes rows: a default profile from before pins counts as connected", () => {

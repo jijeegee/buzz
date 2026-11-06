@@ -88,6 +88,9 @@ export function useAgentPairingsQuery(enabled: boolean) {
   });
 }
 
+/** How often the card looks at a gateway that is loading the connector. */
+const HERMES_SETTLING_POLL_MS = 3_000;
+
 export function useHermesStatusQuery(enabled: boolean) {
   return useQuery({
     enabled,
@@ -97,6 +100,13 @@ export function useHermesStatusQuery(enabled: boolean) {
     // A profile made in Hermes shows up the next time this screen opens.
     refetchOnMount: "always",
     staleTime: 60_000,
+    refetchInterval: (query) =>
+      query.state.data?.profiles.some(
+        ({ settling, gateway }) =>
+          settling || (gateway?.running && gateway.kuzz === "connecting"),
+      )
+        ? HERMES_SETTLING_POLL_MS
+        : false,
   });
 }
 

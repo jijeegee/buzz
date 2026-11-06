@@ -68,7 +68,7 @@ pub async fn process_signer() -> Option<DeviceSigner> {
     {
         PROCESS
             .get_or_init(|| async {
-                match tokio::task::spawn_blocking(DeviceSigner::from_env).await {
+                match tokio::task::spawn_blocking(DeviceSigner::from_env_for_cli).await {
                     Ok((signer, warning)) => {
                         if let Some(warning) = warning {
                             warn(&warning);

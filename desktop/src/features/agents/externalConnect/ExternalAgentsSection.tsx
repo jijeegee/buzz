@@ -12,6 +12,7 @@ import {
   disconnectExternalAgent,
   disconnectExternalDevice,
   listAgentPairings,
+  restartHermes,
 } from "@/shared/api/agentPairing";
 import { sameDevice } from "@/shared/api/ownerDevices";
 import { useT } from "@/shared/i18n";
@@ -344,6 +345,10 @@ export function HermesFoundCard() {
   const { groups, devicesLoaded, hermesDeviceIds, owner, pairingsLoaded } =
     useExternalAgentGroups();
   const [connecting, setConnecting] = React.useState<string | null>(null);
+  /** The toast of a Connect, shown once Hermes has really connected. */
+  const pendingToast = React.useRef<{ profile: string; text: string } | null>(
+    null,
+  );
   const rows = React.useMemo(
     () =>
       hermesRows(
@@ -358,6 +363,14 @@ export function HermesFoundCard() {
       ),
     [groups, hermes.data?.profiles, hermesDeviceIds, owner],
   );
+  React.useEffect(() => {
+    const pending = pendingToast.current;
+    const row = rows.find((row) => row.profile.name === pending?.profile);
+    if (pending && row?.state === "connected") {
+      pendingToast.current = null;
+      toast.success(pending.text);
+    }
+  }, [rows]);
 
   if (
     !available ||
@@ -379,12 +392,13 @@ export function HermesFoundCard() {
       if (!claim) throw new Error(t("agents.external.hermesFailed"));
       rememberConnection(owner, claim, { hermes: true });
       if (!run.finished) throw new Error(t("agents.external.hermesFailed"));
-      toast.success(
-        t("agents.external.connectedToast", {
+      pendingToast.current = {
+        profile: profile.name,
+        text: t("agents.external.connectedToast", {
           agent: profile.displayName,
           device: claim.deviceName ?? t("agents.external.thisComputer"),
         }),
-      );
+      };
     } catch (error) {
       toast.error(
         error instanceof Error
@@ -394,6 +408,20 @@ export function HermesFoundCard() {
     } finally {
       await refreshExternalAgents(queryClient);
       setConnecting(null);
+    }
+  }
+
+  async function restart(profile: HermesProfile) {
+    try {
+      await restartHermes(profile.name);
+    } catch (error) {
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : t("agents.external.hermesFailed"),
+      );
+    } finally {
+      await refreshExternalAgents(queryClient);
     }
   }
 
@@ -432,12 +460,35 @@ export function HermesFoundCard() {
                   ? `${profile.blockedReason} ${t("agents.external.hermesBlockedHint")}`
                   : t("agents.external.hermesOtherAccount")}
               </p>
+            ) : state === "busy" ? (
+              <p className="break-words text-xs text-muted-foreground">
+                {t("agents.external.hermesBusy")}
+              </p>
+            ) : state === "offline" ? (
+              <p className="break-words text-xs text-muted-foreground">
+                {profile.gateway?.error ?? t("agents.external.hermesOffline")}
+              </p>
             ) : null}
           </div>
           {state === "connected" ? (
             <span className="shrink-0 text-xs text-muted-foreground">
               {t("agents.external.hermesConnected")}
             </span>
+          ) : state === "settling" || state === "busy" ? (
+            <span className="shrink-0 text-xs text-muted-foreground">
+              {t("agents.external.hermesConnecting")}
+            </span>
+          ) : state === "offline" ? (
+            <Button
+              data-testid={`hermes-restart-${profile.name}`}
+              disabled={connecting !== null}
+              onClick={() => void restart(profile)}
+              size="sm"
+              type="button"
+              variant="outline"
+            >
+              {t("agents.external.hermesRestart")}
+            </Button>
           ) : state === "connect" || state === "otherAccount" ? (
             <Button
               data-testid={`hermes-connect-${profile.name}`}

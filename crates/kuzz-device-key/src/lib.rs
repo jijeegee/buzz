@@ -34,6 +34,8 @@
 //!   on a machine without usable hardware, or before the hardware backend
 //!   existed): an existing key is never replaced.
 //! - [`DeviceKey::open_or_create_file`], always.
+//! - [`DeviceKey::open_software`], always: a scope of its own for a tool
+//!   that cannot reach the app's hardware key.
 //!
 //! Never after a hardware key was used: opening or creating a TPM or
 //! Secure Enclave key records a marker (scope `<scope>#tpm` on both, the
@@ -105,6 +107,10 @@ pub enum DeviceKeyError {
         /// Its `OSStatus` (0 when the call failed without one).
         code: i32,
     },
+    /// This binary cannot reach the hardware key the app uses here (a marker
+    /// says one was used): no software key may stand in for that key.
+    #[error("{0}")]
+    HardwareOutOfReach(Box<DeviceKeyError>),
     /// A [`SoftwareKeyStore`] backend (e.g. an app's OS keyring) failed.
     #[error("device key store: {0}")]
     Store(String),
@@ -205,7 +211,8 @@ fn record_tpm_marker(
 
 /// The software key standing in for an unavailable TPM (`error`): the
 /// store key of `scope` (created when `create`), unless the scope's TPM
-/// marker says a TPM key was used here, in which case `error`.
+/// marker says a TPM key was used here, in which case
+/// [`DeviceKeyError::HardwareOutOfReach`].
 #[cfg(any(windows, target_os = "macos", test))]
 fn software_fallback(
     store: &dyn SoftwareKeyStore,
@@ -214,7 +221,7 @@ fn software_fallback(
     create: bool,
 ) -> Result<Option<p256::ecdsa::SigningKey>> {
     if store.load(&tpm_marker_scope(scope))?.is_some() {
-        return Err(error);
+        return Err(DeviceKeyError::HardwareOutOfReach(Box::new(error)));
     }
     if create {
         software::open_or_create(store, scope).map(Some)
@@ -445,6 +452,26 @@ impl DeviceKey {
         // The marker goes last: while any key piece may remain, it keeps
         // blocking a silent software fallback.
         store.delete(&tpm_marker_scope(scope))
+    }
+
+    /// The software key of `scope` in `store`, never hardware: for a scope
+    /// of its own (a tool that cannot reach the app's hardware key).
+    /// `create`: make it when absent. `Ok(None)`: there is none.
+    pub fn open_software(
+        scope: &str,
+        store: &dyn SoftwareKeyStore,
+        create: bool,
+    ) -> Result<Option<Self>> {
+        validate_scope(scope)?;
+        let key = if create {
+            Some(software::open_or_create(store, scope)?)
+        } else {
+            store
+                .load(scope)?
+                .map(|secret| software::signing_key(&secret))
+                .transpose()?
+        };
+        key.map(Self::software).transpose()
     }
 
     /// Open the software key stored in `path`, creating it (and its parent

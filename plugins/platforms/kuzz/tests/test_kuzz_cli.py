@@ -876,7 +876,7 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertIn(f"KUZZ_PAIRED_AGENT={default_agent}", default)
             self.assertIn("KUZZ_HOME_CHANNEL=root-home", default)
             # The restart is the host's.
-            run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+            run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "--detach", "")
             self.assertTrue(self.install.restart_gateway(profile))
             self.assertEqual(run.call_args.kwargs["env"]["HERMES_HOME"], str(root))
 
@@ -926,6 +926,64 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertEqual(restart.call_count, 1)
             self.assertEqual(self.install.main(argv + ["--no-restart"]), 0)
             self.assertEqual(restart.call_count, 1)
+
+    def test_restart_goes_to_the_gateway_running_the_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            own = root / "profiles" / "own"
+            own.mkdir(parents=True)
+            self.assertEqual(self.install.restart_profile(root), "default")
+            # Nothing runs it yet: the host picks it up.
+            self.assertEqual(self.install.restart_profile(own), "default")
+            state = json.dumps({"pid": 7, "gateway_state": "running"})
+            (own / "gateway_state.json").write_text(state, encoding="utf-8")
+            self.assertEqual(self.install.restart_profile(own), "own")
+            # A host serving it loads the plugin for it.
+            (root / "gateway_state.json").write_text(json.dumps({"served_profiles": ["own"]}), encoding="utf-8")
+            self.assertEqual(self.install.restart_profile(own), "default")
+
+    def test_detach_is_passed_only_to_a_hermes_that_has_it(self):
+        def answers(help_text):
+            def run(command, **_):
+                return subprocess.CompletedProcess(command, 0, help_text if "--help" in command else "", "")
+            return run
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(self.install, "find_hermes", return_value="hermes"), \
+                mock.patch.object(self.install.subprocess, "run") as run:
+            run.side_effect = answers("usage: restart [--force] [--detach]")
+            self.assertTrue(self.install.restart_gateway(Path(tmp)))
+            self.assertEqual(run.call_args.args[0][-1], "--detach")
+            run.side_effect = answers("usage: restart [--force]")
+            with mock.patch.object(self.install.subprocess, "Popen") as popen:
+                popen.return_value.poll.return_value = 0
+                self.assertTrue(self.install.restart_gateway(Path(tmp)))
+            self.assertEqual(popen.call_args.args[0], ["hermes", "-p", "default", "gateway", "restart"])
+
+    def test_a_hermes_without_its_own_guard_is_not_restarted_while_working(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(self.install, "find_hermes", return_value="hermes"), \
+                mock.patch.object(self.install, "supports_detach", return_value=False), \
+                mock.patch.object(self.install, "await_new_gateway", return_value=True) as start:
+            state = Path(tmp) / "gateway_state.json"
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "active_agents": 1}), encoding="utf-8")
+            self.assertFalse(self.install.restart_gateway(Path(tmp)))
+            start.assert_not_called()
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "active_agents": 0}), encoding="utf-8")
+            self.assertTrue(self.install.restart_gateway(Path(tmp)))
+
+    def test_a_restart_that_stays_on_as_the_gateway_is_left_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "gateway_state.json"
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "start_time": 1000}), encoding="utf-8")
+            process = mock.Mock()
+            def replaced():
+                state.write_text(json.dumps({"pid": 8, "gateway_state": "running", "start_time": 2000}), encoding="utf-8")
+            process.poll.side_effect = lambda: replaced()
+            with mock.patch.object(self.install.subprocess, "Popen", return_value=process), \
+                    mock.patch.object(self.install.time, "sleep"):
+                self.assertTrue(self.install.await_new_gateway(["hermes"], {}, state))
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
 
     def test_restart_without_hermes_reports_failure(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(self.install, "find_hermes", return_value=None):

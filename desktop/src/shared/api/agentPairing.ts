@@ -40,6 +40,17 @@ export type HermesStatus = {
   profiles: HermesProfile[];
 };
 
+/** What Hermes's state file says about a gateway. */
+export type HermesGateway = {
+  running: boolean;
+  /** Hermes's state of the Kuzz platform. `null`: not loaded. */
+  kuzz: string | null;
+  /** Hermes's words on what is wrong with the Kuzz platform. */
+  error: string | null;
+  /** It has work running. */
+  busy: boolean;
+};
+
 /** A Hermes profile a person can connect (`name` is `default` or its folder). */
 export type HermesProfile = {
   name: string;
@@ -48,6 +59,10 @@ export type HermesProfile = {
   pairedAgent: string | null;
   owner: string | null;
   blockedReason: string | null;
+  /** Its gateway, from Hermes's state file. `null`: nothing is known. */
+  gateway: HermesGateway | null;
+  /** This app is getting its gateway to load the connector. */
+  settling: boolean;
 };
 
 /**
@@ -74,6 +89,11 @@ export function getHermesStatus(): Promise<HermesStatus> {
 
 export function connectHermes(profile: string): Promise<HermesPairingRun> {
   return invokeTauri<HermesPairingRun>("connect_hermes", { profile });
+}
+
+/** Have the gateway of a connected profile load the connector. */
+export function restartHermes(profile: string): Promise<void> {
+  return invokeTauri<void>("restart_hermes", { profile });
 }
 
 /** Who a paired agent answers. */
