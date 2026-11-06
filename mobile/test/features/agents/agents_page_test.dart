@@ -12,6 +12,7 @@ import 'package:kuzz/features/agents/my_teams.dart';
 import 'package:kuzz/features/channels/channel.dart';
 import 'package:kuzz/features/channels/send_message_provider.dart';
 import 'package:kuzz/features/profile/presence_cache_provider.dart';
+import 'package:kuzz/shared/auth/account/account_api.dart';
 import 'package:kuzz/shared/devices/agent_host_devices.dart';
 import 'package:kuzz/shared/devices/device_robot.dart';
 import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
@@ -73,6 +74,8 @@ void main() {
           }),
           // Signed out for settings: they open read-only, with no relay.
           myPubkeyProvider.overrideWithValue(null),
+          // No account: no paired agents from the device list.
+          accountOriginProvider.overrideWithValue(null),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const AgentsPage()),
       ),

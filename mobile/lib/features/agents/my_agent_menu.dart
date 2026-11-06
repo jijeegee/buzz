@@ -17,19 +17,27 @@ import 'my_agent_actions.dart';
 import 'my_agents.dart';
 
 /// The "⋮" on an agent: opens [showMyAgentSheet], the same sheet a long
-/// press on the row opens.
+/// press on the row opens, or [onPressed] when given.
 class MyAgentMenu extends ConsumerWidget {
-  const MyAgentMenu({super.key, required this.agent, required this.name});
+  const MyAgentMenu({
+    super.key,
+    required this.agent,
+    required this.name,
+    this.onPressed,
+  });
 
   final MyAgent agent;
   final String name;
+  final VoidCallback? onPressed;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) => IconButton(
     key: ValueKey('my-agent-menu-${agent.pubkey}'),
     icon: const Icon(LucideIcons.ellipsisVertical, size: 18),
     tooltip: context.l10n.agentsActions,
-    onPressed: () => showMyAgentSheet(context, ref, agent: agent, name: name),
+    onPressed:
+        onPressed ??
+        () => showMyAgentSheet(context, ref, agent: agent, name: name),
   );
 }
 
