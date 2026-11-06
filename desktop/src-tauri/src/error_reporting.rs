@@ -111,10 +111,16 @@ fn scrub_event(mut event: Event<'static>) -> Event<'static> {
     event
 }
 
-static QUOTED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"`[^`]*`|"[^"]*"|'[^']{2,}'|“[^”]*”|‘[^’]{2,}’"#).unwrap());
+// A quote left open (cut JSON) runs to the end; escaped quotes stay inside.
+static QUOTED: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(concat!(
+        r#"`[^`]*(?:`|$)|"(?:[^"\\]|\\.)*(?:"|$)|'[^']{2,}'"#,
+        r"|“[^”]*(?:”|$)|‘[^’]{2,}’|「[^」]*(?:」|$)|«[^»]*(?:»|$)",
+    ))
+    .unwrap()
+});
 static USER_DIR: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(\b[a-z]:[\/]+users[\/]+|/home/|/users/)[^\/\r\n]+").unwrap()
+    Regex::new(r"(?i)(\b[a-z]:[\\/]+users[\\/]+|/home/|/users/)[^\\/\r\n]+").unwrap()
 });
 static SECRETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
@@ -217,6 +223,20 @@ mod tests {
             assert!(!scrubbed.contains(secret), "{secret} left in {scrubbed}");
         }
         assert!(scrubbed.contains("C:/Users/[user]/AppData"), "{scrubbed}");
+        let windows = scrub_text(r"open C:\Users\Jiho Kim\AppData\x failed");
+        assert_eq!(windows, r"open C:\Users\[user]\AppData\x failed");
+    }
+
+    #[test]
+    fn scrub_text_removes_open_and_escaped_quotes() {
+        let escaped = scrub_text(r#"bad "a \"b secret\" c" and 「비밀」 end"#);
+        assert!(
+            !escaped.contains("b secret") && !escaped.contains("비밀"),
+            "{escaped}"
+        );
+        assert!(escaped.ends_with(" end"), "{escaped}");
+        let open = scrub_text(r#"EOF while parsing {"content":"hello my secret"#);
+        assert!(!open.contains("hello my secret"), "{open}");
     }
 
     #[test]

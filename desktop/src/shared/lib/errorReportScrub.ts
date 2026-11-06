@@ -14,8 +14,10 @@ export const MAX_TEXT_CHARS = 300;
 /** Longest input scrubbed; longer error text is cut first. */
 const MAX_INPUT_CHARS = 2_000;
 
-const QUOTED = /`[^`]*`|"[^"]*"|'[^']{2,}'|“[^”]*”|‘[^’]{2,}’/g;
-const USER_DIR = /(\b[a-z]:[\/]+users[\/]+|\/home\/|\/users\/)[^\/\r\n]+/gi;
+// A quote left open (cut JSON) runs to the end; escaped quotes stay inside.
+const QUOTED =
+  /`[^`]*(?:`|$)|"(?:[^"\\]|\\.)*(?:"|$)|'[^']{2,}'|“[^”]*(?:”|$)|‘[^’]{2,}’|「[^」]*(?:」|$)|«[^»]*(?:»|$)/g;
+const USER_DIR = /(\b[a-z]:[\\/]+users[\\/]+|\/home\/|\/users\/)[^\\/\r\n]+/gi;
 const URL_QUERY = /\b((?:https?|wss?):\/\/[^\s?#]+)[?#]\S*/gi;
 const SECRETS = new RegExp(
   [

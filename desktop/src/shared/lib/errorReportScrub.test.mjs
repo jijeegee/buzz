@@ -67,6 +67,25 @@ describe("scrubText", () => {
       assert.ok(!scrubbed.includes(secret), `${secret} left in ${scrubbed}`);
     }
     assert.ok(scrubbed.includes("C:/Users/[user]/AppData"), scrubbed);
+    assert.equal(
+      scrubText(String.raw`open C:\Users\Jiho Kim\AppData\x failed`),
+      String.raw`open C:\Users\[user]\AppData\x failed`,
+    );
+  });
+
+  it("removes open and escaped quotes", () => {
+    const escaped = scrubText(
+      String.raw`bad "a \"b secret\" c" and 「비밀」 end`,
+    );
+    assert.ok(
+      !escaped.includes("b secret") && !escaped.includes("비밀"),
+      escaped,
+    );
+    assert.ok(escaped.endsWith(" end"), escaped);
+    const open = scrubText(
+      `Unexpected end of JSON {"content":"hello my secret`,
+    );
+    assert.ok(!open.includes("hello my secret"), open);
   });
 
   it("keeps code locations and versions readable", () => {
