@@ -11,26 +11,40 @@ export const MAX_REPORTS_PER_RUN = 20;
 /** Longest error text kept, after scrubbing. */
 export const MAX_TEXT_CHARS = 300;
 
-const QUOTED = /`[^`]*`|"[^"]*"|'[^']{2,}'/g;
+/** Longest input scrubbed; longer error text is cut first. */
+const MAX_INPUT_CHARS = 2_000;
+
+const QUOTED = /`[^`]*`|"[^"]*"|'[^']{2,}'|“[^”]*”|‘[^’]{2,}’/g;
+const USER_DIR = /(\b[a-z]:[\/]+users[\/]+|\/home\/|\/users\/)[^\/\r\n]+/gi;
 const URL_QUERY = /\b((?:https?|wss?):\/\/[^\s?#]+)[?#]\S*/gi;
 const SECRETS = new RegExp(
   [
     String.raw`\b(?:nsec|npub|nprofile|nevent|naddr|note)1[0-9a-z]{10,}`,
     String.raw`[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}`,
     String.raw`\b[0-9a-f]{32,}\b`,
-    String.raw`\b(?:bearer|token|key|secret|password|auth)\s*[:=]\s*\S+`,
-    String.raw`[A-Za-z0-9_\-]{40,}`,
+    String.raw`\bauthorization\s*[:=]\s*\S+(?:\s+\S+)?`,
+    String.raw`\b(?:bearer|nostr|basic)\s+[A-Za-z0-9._~+/=\-]{8,}`,
+    String.raw`\b(?:token|key|secret|password|auth)\s*[:=]\s*\S+`,
+    String.raw`\b\d{1,3}(?:\.\d{1,3}){3}\b`,
+    String.raw`\b[0-9a-f]*\d[0-9a-f]*(?::[0-9a-f]{0,4}){2,7}`,
+    String.raw`[A-Za-z0-9+/_\-]{16,}={1,2}`,
+    String.raw`[A-Za-z0-9_\-+]{40,}`,
   ].join("|"),
   "gi",
 );
 
 /**
- * Scrubs one error string: quoted text (which can be message text), keys,
- * tokens, emails and URL queries are replaced, then cut to MAX_TEXT_CHARS.
+ * Scrubs one error string: quoted text (which can be message text), user
+ * folder names, keys, tokens, emails, IP addresses and URL queries are
+ * replaced, then cut to MAX_TEXT_CHARS. Input is cut to MAX_INPUT_CHARS
+ * first so a huge error cannot stall the webview in the regexes.
  */
 export function scrubText(text: string): string {
-  const scrubbed = text
+  const scrubbed = Array.from(text)
+    .slice(0, MAX_INPUT_CHARS)
+    .join("")
     .replace(QUOTED, "[quoted]")
+    .replace(USER_DIR, "$1[user]")
     .replace(URL_QUERY, "$1")
     .replace(SECRETS, "[redacted]");
   const chars = Array.from(scrubbed);

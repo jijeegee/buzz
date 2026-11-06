@@ -11,7 +11,7 @@ use std::hash::{Hash, Hasher};
 use std::sync::{LazyLock, Mutex};
 
 use regex::Regex;
-use sentry::protocol::Event;
+use sentry::protocol::{DebugImage, Event};
 
 /// Most reports one run may send; a crash loop must not use up the quota.
 const MAX_EVENTS_PER_RUN: usize = 20;
@@ -25,7 +25,9 @@ const DSN: Option<&str> = option_env!("KUZZ_DESKTOP_SENTRY_DSN");
 pub fn init() -> Option<sentry::ClientInitGuard> {
     let dsn = DSN.map(str::trim).filter(|dsn| !dsn.is_empty())?;
     let seen = Mutex::new(SeenErrors::default());
-    let mut options = sentry::ClientOptions::new()
+    // The contexts integration fills in the computer's name, which can be a
+    // person's name; `scrub_event` removes it from every event.
+    let options = sentry::ClientOptions::new()
         .release(env!("CARGO_PKG_VERSION"))
         .environment(env!("KUZZ_DESKTOP_BUILD_ENV"))
         .send_default_pii(false)
@@ -36,8 +38,6 @@ pub fn init() -> Option<sentry::ClientInitGuard> {
             let mut seen = seen.lock().unwrap_or_else(|e| e.into_inner());
             seen.admit(&event).then_some(event)
         });
-    // The default is the computer's name, which can be a person's name.
-    options.server_name = None;
     let guard = sentry::init((dsn, options));
     Some(guard)
 }
@@ -96,28 +96,54 @@ fn scrub_event(mut event: Event<'static>) -> Event<'static> {
     for thread in &mut event.threads.values {
         thread.name = None;
     }
+    // Loaded modules are full paths, e.g. C:\Users\<name>\AppData\...;
+    // symbolication matches by debug id, so the file name is enough.
+    for image in &mut event.debug_meta.to_mut().images {
+        match image {
+            DebugImage::Symbolic(image) => {
+                image.name = file_name(&image.name);
+                image.debug_file = image.debug_file.as_deref().map(file_name);
+            }
+            DebugImage::Apple(image) => image.name = file_name(&image.name),
+            _ => {}
+        }
+    }
     event
 }
 
 static QUOTED: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r#"`[^`]*`|"[^"]*"|'[^']{2,}'"#).unwrap());
+    LazyLock::new(|| Regex::new(r#"`[^`]*`|"[^"]*"|'[^']{2,}'|“[^”]*”|‘[^’]{2,}’"#).unwrap());
+static USER_DIR: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"(?i)(\b[a-z]:[\/]+users[\/]+|/home/|/users/)[^\/\r\n]+").unwrap()
+});
 static SECRETS: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(concat!(
         r"(?i)\b(?:nsec|npub|nprofile|nevent|naddr|note)1[0-9a-z]{10,}",
         r"|[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}",
         r"|\b[0-9a-f]{32,}\b",
-        r"|\b(?:bearer|token|key|secret|password|auth)\s*[:=]\s*\S+",
-        r"|[A-Za-z0-9_\-]{40,}",
+        r"|\bauthorization\s*[:=]\s*\S+(?:\s+\S+)?",
+        r"|\b(?:bearer|nostr|basic)\s+[A-Za-z0-9._~+/=\-]{8,}",
+        r"|\b(?:token|key|secret|password|auth)\s*[:=]\s*\S+",
+        r"|\b\d{1,3}(?:\.\d{1,3}){3}\b",
+        r"|\b[0-9a-f]*\d[0-9a-f]*(?::[0-9a-f]{0,4}){2,7}",
+        r"|[A-Za-z0-9+/_\-]{16,}={1,2}",
+        r"|[A-Za-z0-9_\-+]{40,}",
     ))
     .unwrap()
 });
 static URL_QUERY: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)\b((?:https?|wss?)://[^\s?#]+)[?#]\S*").unwrap());
 
-/// Scrubs one error string: quoted text, keys, tokens, emails and URL
-/// queries are replaced, and the result is cut to [`MAX_TEXT_CHARS`].
+/// Longest input scrubbed; longer error text is cut first.
+const MAX_INPUT_CHARS: usize = 2_000;
+
+/// Scrubs one error string: quoted text, user folder names, keys, tokens,
+/// emails, IP addresses and URL queries are replaced, and the result is cut
+/// to [`MAX_TEXT_CHARS`].
 pub(crate) fn scrub_text(text: &str) -> String {
-    let text = QUOTED.replace_all(text, "[quoted]");
+    let text: String = text.chars().take(MAX_INPUT_CHARS).collect();
+    let text = QUOTED.replace_all(&text, "[quoted]");
+    let text = USER_DIR.replace_all(&text, "${1}[user]");
     let text = URL_QUERY.replace_all(&text, "$1");
     let text = SECRETS.replace_all(&text, "[redacted]");
     if text.chars().count() <= MAX_TEXT_CHARS {
@@ -126,10 +152,15 @@ pub(crate) fn scrub_text(text: &str) -> String {
     text.chars().take(MAX_TEXT_CHARS).chain(['…']).collect()
 }
 
+/// Bare file name of a path, so loaded-module lists carry no user folder.
+fn file_name(path: &str) -> String {
+    path.rsplit(['\\', '/']).next().unwrap_or(path).to_string()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use sentry::protocol::{Breadcrumb, Exception, Request, User};
+    use sentry::protocol::{Breadcrumb, Exception, Request, SymbolicDebugImage, User};
 
     #[test]
     fn scrub_text_removes_quoted_message_text() {
@@ -163,6 +194,59 @@ mod tests {
     fn scrub_text_drops_url_queries_and_keeps_hosts() {
         let scrubbed = scrub_text("GET https://gateway.kuzz.app/api/x?auth=zzz#frag failed");
         assert_eq!(scrubbed, "GET https://gateway.kuzz.app/api/x failed");
+    }
+
+    #[test]
+    fn scrub_text_removes_ips_user_folders_and_auth_headers() {
+        let text = concat!(
+            "connect 192.168.0.12:3000 refused; 2001:db8::1 down; ",
+            "open C:/Users/Jiho Kim/AppData/Local/Kuzz/x failed; ",
+            "/home/jiho/.kuzz gone; Authorization: Nostr eyJhbGciOi; ",
+            "blob abc+def/ghiJKLMNOPQRSTUVWXYZ==; said “my message”",
+        );
+        let scrubbed = scrub_text(text);
+        for secret in [
+            "192.168",
+            "2001:db8",
+            "Jiho",
+            "jiho",
+            "eyJhbGciOi",
+            "ghiJKLMNOP",
+            "my message",
+        ] {
+            assert!(!scrubbed.contains(secret), "{secret} left in {scrubbed}");
+        }
+        assert!(scrubbed.contains("C:/Users/[user]/AppData"), "{scrubbed}");
+    }
+
+    #[test]
+    fn scrub_text_keeps_rust_paths_and_versions_readable() {
+        let scrubbed = scrub_text("panicked at kuzz_desktop::relay::add in v0.6.24");
+        assert_eq!(scrubbed, "panicked at kuzz_desktop::relay::add in v0.6.24");
+    }
+
+    #[test]
+    fn scrub_event_keeps_only_module_file_names() {
+        let mut event = Event::new();
+        event.debug_meta.to_mut().images.push(
+            SymbolicDebugImage {
+                name: r"C:\Users\Jiho Kim\AppData\Local\Kuzz\kuzz-desktop.exe".into(),
+                arch: None,
+                image_addr: 0.into(),
+                image_size: 0,
+                image_vmaddr: 0.into(),
+                id: Default::default(),
+                code_id: None,
+                debug_file: Some(r"E:\build\kuzz_desktop.pdb".into()),
+            }
+            .into(),
+        );
+        let event = scrub_event(event);
+        let DebugImage::Symbolic(image) = &event.debug_meta.images[0] else {
+            panic!("expected a symbolic image");
+        };
+        assert_eq!(image.name, "kuzz-desktop.exe");
+        assert_eq!(image.debug_file.as_deref(), Some("kuzz_desktop.pdb"));
     }
 
     #[test]

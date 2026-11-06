@@ -46,6 +46,40 @@ describe("scrubText", () => {
     );
   });
 
+  it("removes IPs, user folders and auth headers", () => {
+    const scrubbed = scrubText(
+      [
+        "connect 192.168.0.12:3000 refused; 2001:db8::1 down;",
+        "open C:/Users/Jiho Kim/AppData/Local/Kuzz/x failed;",
+        "/home/jiho/.kuzz gone; Authorization: Nostr eyJhbGciOi;",
+        "blob abc+def/ghiJKLMNOPQRSTUVWXYZ==; said “my message”",
+      ].join(" "),
+    );
+    for (const secret of [
+      "192.168",
+      "2001:db8",
+      "Jiho",
+      "jiho",
+      "eyJhbGciOi",
+      "ghiJKLMNOP",
+      "my message",
+    ]) {
+      assert.ok(!scrubbed.includes(secret), `${secret} left in ${scrubbed}`);
+    }
+    assert.ok(scrubbed.includes("C:/Users/[user]/AppData"), scrubbed);
+  });
+
+  it("keeps code locations and versions readable", () => {
+    const text = "failed at useCommunityInit (index-abc.js:12:34) in v0.6.24";
+    assert.equal(scrubText(text), text);
+  });
+
+  it("stays fast on huge error text", () => {
+    const started = performance.now();
+    scrubText("a.".repeat(100_000));
+    assert.ok(performance.now() - started < 200);
+  });
+
   it("caps length", () => {
     assert.equal(
       Array.from(scrubText("word ".repeat(200))).length,
