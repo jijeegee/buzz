@@ -5,10 +5,9 @@ enum _UpdateCheckView { idle, checking, upToDate, failed }
 /// Settings › Updates: installed version, a manual check, and the update
 /// when one is offered.
 class _UpdatesSection extends HookConsumerWidget {
-  const _UpdatesSection({required this.version, required this.buildNumber});
+  const _UpdatesSection({required this.version});
 
   final String? version;
-  final String? buildNumber;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -28,11 +27,7 @@ class _UpdatesSection extends HookConsumerWidget {
       };
     }
 
-    final versionText = version == null
-        ? ''
-        : (buildNumber == null || buildNumber!.isEmpty)
-        ? 'v$version'
-        : 'v$version ($buildNumber)';
+    final versionText = version == null ? '' : 'v$version';
 
     final String? checkSubtitle = switch (checkView.value) {
       _UpdateCheckView.checking => context.l10n.settingsCheckingForUpdates,

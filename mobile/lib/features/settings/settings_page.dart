@@ -279,10 +279,7 @@ class SettingsPage extends HookConsumerWidget {
                       const PeopleSettings(),
                       const SupportSettings(),
                       const ExperimentsSettings(),
-                      _UpdatesSection(
-                        version: packageInfo.data?.version,
-                        buildNumber: packageInfo.data?.buildNumber,
-                      ),
+                      _UpdatesSection(version: packageInfo.data?.version),
                       const _SignOutSection(),
                       // The built-in server cannot be removed from the
                       // device.
