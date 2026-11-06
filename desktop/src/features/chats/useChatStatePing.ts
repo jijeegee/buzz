@@ -10,20 +10,25 @@ const RETRY_BASE_MS = 2_000;
 const RETRY_MAX_MS = 60_000;
 /** `reason` tag of a ping about a new group invitation. */
 const PING_GROUP_INVITATION = "group_invitation";
+/** `reason` tag of a ping about a change in the user's device list. */
+const PING_DEVICES = "devices";
 
 /**
  * Listen for the relay's kind:24210 ping, sent to all of the user's devices
  * after any change to their chat state, and call `onPing` (debounced). A ping
- * about a new group invitation calls `onInvitation` instead.
+ * about a new group invitation calls `onInvitation` instead, and one about a
+ * change in their device list calls `onDevices`.
  */
 export function useChatStatePing(
   pubkey: string | undefined,
   enabled: boolean,
   onPing: () => void,
   onInvitation: () => void,
+  onDevices: () => void,
 ): void {
   const handlePing = React.useEffectEvent(onPing);
   const handleInvitation = React.useEffectEvent(onInvitation);
+  const handleDevices = React.useEffectEvent(onDevices);
   const me = pubkey?.trim().toLowerCase() ?? "";
 
   React.useEffect(() => {
@@ -42,11 +47,9 @@ export function useChatStatePing(
         .subscribe(
           { kinds: [KIND_CHAT_STATE_PING], "#p": [me], limit: 0 },
           (event) => {
-            const invitation = event.tags.some(
-              ([name, value]) =>
-                name === "reason" && value === PING_GROUP_INVITATION,
-            );
-            if (invitation) handleInvitation();
+            const reason = event.tags.find(([name]) => name === "reason")?.[1];
+            if (reason === PING_GROUP_INVITATION) handleInvitation();
+            else if (reason === PING_DEVICES) handleDevices();
             else debounce.trigger();
           },
         )

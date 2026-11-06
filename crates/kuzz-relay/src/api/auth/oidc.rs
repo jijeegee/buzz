@@ -1103,6 +1103,12 @@ async fn finish_login(
     if session.new_device {
         spawn_new_signin_notice(state, headers, *principal, device_name, session.device_id);
     }
+    // Every login: a signed-out device comes back, or its key changes.
+    super::devices_ping::spawn_devices_ping(
+        state,
+        headers,
+        super::devices_ping::PingTo::Principal(*principal),
+    );
     let expires_in = state.identity.config().access_ttl.as_secs();
     if client == "web" {
         let cookie = refresh_cookie(

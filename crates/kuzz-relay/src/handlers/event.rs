@@ -2676,6 +2676,48 @@ mod tests {
             assert!(phone.try_recv().is_err(), "delivered once");
         }
 
+        /// A devices ping is the same owner-only ping, tagged with reason
+        /// `devices` so apps reread their device list, not their chats.
+        #[tokio::test]
+        async fn devices_ping_reaches_only_the_user_with_its_reason() {
+            use kuzz_core::kind::{KIND_CHAT_STATE_PING, PING_DEVICES};
+
+            let state = test_state().await;
+            let tenant = kuzz_core::tenant::TenantContext::resolved(
+                kuzz_core::tenant::CommunityId::from_uuid(Uuid::nil()),
+                "ping.test",
+            );
+            let (user, stranger) = (Keys::generate(), Keys::generate());
+            let ping_filter = || {
+                Filter::new()
+                    .kind(Kind::Custom(KIND_CHAT_STATE_PING as u16))
+                    .pubkey(user.public_key())
+            };
+            let user_pk = Some(user.public_key().to_bytes().to_vec());
+            let stranger_pk = Some(stranger.public_key().to_bytes().to_vec());
+            let (_, mut laptop) = register_global_sub(&state, "l", ping_filter(), user_pk);
+            let (_, mut snoop) = register_global_sub(&state, "s", ping_filter(), stranger_pk);
+
+            crate::handlers::side_effects::publish_devices_ping(
+                &tenant,
+                &state,
+                &user.public_key().to_bytes(),
+            )
+            .await
+            .expect("ping");
+
+            let ping = event_from_ws_message(laptop.try_recv().expect("laptop pinged"));
+            assert_eq!(ping.pubkey, state.relay_keypair.public_key());
+            let reason: Vec<_> = ping
+                .tags
+                .iter()
+                .map(|tag| tag.as_slice())
+                .filter(|tag| tag.first().map(String::as_str) == Some("reason"))
+                .collect();
+            assert_eq!(reason, vec![&["reason".to_owned(), PING_DEVICES.to_owned()][..]]);
+            assert!(snoop.try_recv().is_err(), "stranger must not receive");
+        }
+
         #[tokio::test]
         async fn global_presence_pubsub_event_fans_out_to_local_subscribers() {
             let state = test_state().await;

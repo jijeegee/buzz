@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/auth/account/account_api.dart' show accountDevicesProvider;
 import '../../shared/message_store/message_store.dart' show MessageStoreLease;
 import '../../shared/message_store/message_store_provider.dart';
 import '../../shared/push/push_inbox_events.dart';
@@ -26,6 +27,12 @@ const chatStatePingKind = 24210;
 bool isGroupInvitationPing(NostrEvent event) => event.tags.any(
   (tag) =>
       tag.length >= 2 && tag[0] == 'reason' && tag[1] == 'group_invitation',
+);
+
+/// Whether a chat-state ping is about a change in the user's device list
+/// (a computer or external agent connected, disconnected or renamed).
+bool isDevicesPing(NostrEvent event) => event.tags.any(
+  (tag) => tag.length >= 2 && tag[0] == 'reason' && tag[1] == 'devices',
 );
 
 /// Shortest time between reloads triggered by app resume, pings or deletions.
@@ -224,6 +231,10 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
                 unawaited(
                   ref.read(groupInvitationsProvider.notifier).refresh(),
                 );
+                return;
+              }
+              if (isDevicesPing(event)) {
+                ref.invalidate(accountDevicesProvider);
                 return;
               }
               if (ref.read(chatStateWriterProvider)?.isOwnWriteEcho() ??
