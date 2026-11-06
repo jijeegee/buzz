@@ -2,26 +2,45 @@ import { invokeTauri } from "@/shared/api/tauri";
 
 export type GoalStatus = "open" | "in_progress" | "done" | "dropped";
 
+/** One goal as the relay reads it, with what the relay computed. */
 export type GoalNode = {
   id: string;
   parent: string | null;
   title: string;
-  note?: string;
+  note: string;
   status: GoalStatus;
-  assignees?: string[];
-  threads?: string[];
   order: number;
-  updated_by?: string;
-  updated_at?: number;
+  assignees: string[];
+  /** Linked thread and message ids. */
+  links: string[];
+  updated_by: string | null;
+  updated_at: number;
+  /** Selected by the read, as opposed to shown as a parent of one that was. */
+  matched: boolean;
+  /** Unfinished with no activity for the inactive window. */
+  inactive: boolean;
+  /** A linked thread has replies. */
+  is_thread: boolean;
+  /** Goals below that count; the relay decides which do. */
+  progress: { done: number; total: number };
+  /** Active goals directly below. */
+  open_children: number;
 };
 
-export type GoalTree = { v: number; nodes: GoalNode[] };
+export type GoalTree = { nodes: GoalNode[] };
 
-export type GoalTreeHead = {
-  revision: string | null;
-  updatedAt: number | null;
-  author: string | null;
-  tree: GoalTree;
+export type GoalView = "active" | "inactive" | "done";
+
+export type GoalCounts = Record<GoalView, number>;
+
+export type GoalCursor = { order: number; id: string };
+
+/** One `{"goals":1}` read: selected rows and the goals above them. */
+export type GoalRead = {
+  counts: GoalCounts;
+  rows: GoalNode[];
+  threads: { thread: string; goal: string | null }[];
+  next: GoalCursor | null;
 };
 
 /** One edit; mirrors `kuzz_core::goal_tree::GoalOp`. */
@@ -47,79 +66,75 @@ export type GoalOp =
   | { op: "move"; id: string; parent: string; order?: number | null }
   | { op: "remove"; id: string; recursive: boolean }
   | { op: "link"; id: string; thread: string }
-  | { op: "unlink"; thread: string };
+  | { op: "unlink"; thread: string }
+  | { op: "drop_inactive" };
 
-export type GoalTreeRevision = {
-  revision: string;
+export type GoalEdit = {
+  eventId: string;
   createdAt: number;
   author: string;
-  goals: number | null;
+  ops: GoalOp[];
 };
 
-type RawHead = {
-  revision: string | null;
-  updated_at: number | null;
-  author: string | null;
-  tree: GoalTree;
-};
-
-export async function getGoalTree(channelId: string): Promise<GoalTreeHead> {
-  const raw = await invokeTauri<RawHead>("get_goal_tree", { channelId });
-  return {
-    revision: raw.revision ?? null,
-    updatedAt: raw.updated_at ?? null,
-    author: raw.author ?? null,
-    tree: raw.tree,
-  };
-}
-
-export async function applyGoalOp(
+export function getGoalPage(
   channelId: string,
-  op: GoalOp,
-): Promise<{ eventId: string; tree: GoalTree }> {
-  const raw = await invokeTauri<{ event_id: string; tree: GoalTree }>(
-    "apply_goal_op",
-    { channelId, op },
-  );
-  return { eventId: raw.event_id, tree: raw.tree };
+  view: GoalView,
+  cursor: GoalCursor | null = null,
+): Promise<GoalRead> {
+  return invokeTauri<GoalRead>("get_goals", { channelId, view, cursor });
 }
 
-/** Apply several edits as one revision: all of them or none. */
+/** The whole active list: every screen of the room reads it. */
+export async function getActiveGoals(channelId: string): Promise<GoalRead> {
+  const read = await getGoalPage(channelId, "active");
+  // Every page repeats the goals above its own.
+  const rows = new Map(read.rows.map((row) => [row.id, row]));
+  let next = read.next;
+  while (next) {
+    const page = await getGoalPage(channelId, "active", next);
+    for (const row of page.rows) {
+      const matched = row.matched || rows.get(row.id)?.matched === true;
+      rows.set(row.id, { ...row, matched });
+    }
+    next = page.next;
+  }
+  return { ...read, rows: [...rows.values()], next: null };
+}
+
+export function getThreadGoals(
+  channelId: string,
+  threads: string[],
+): Promise<GoalRead> {
+  return invokeTauri<GoalRead>("get_thread_goals", { channelId, threads });
+}
+
+/** Apply edits as one event: all of them or none. */
 export async function applyGoalOps(
   channelId: string,
   ops: GoalOp[],
-): Promise<{ eventId: string; tree: GoalTree }> {
-  const raw = await invokeTauri<{ event_id: string; tree: GoalTree }>(
-    "apply_goal_ops",
-    { channelId, ops },
-  );
-  return { eventId: raw.event_id, tree: raw.tree };
+): Promise<{ eventId: string }> {
+  const raw = await invokeTauri<{ event_id: string }>("apply_goal_ops", {
+    channelId,
+    ops,
+  });
+  return { eventId: raw.event_id };
 }
 
-export async function getGoalTreeHistory(
-  channelId: string,
-): Promise<GoalTreeRevision[]> {
+export async function getGoalHistory(channelId: string): Promise<GoalEdit[]> {
   const raw = await invokeTauri<{
-    revisions: {
-      revision: string;
+    edits: {
+      event_id: string;
       created_at: number;
       author: string;
-      goals: number | null;
+      ops: GoalOp[] | null;
     }[];
-  }>("get_goal_tree_history", { channelId, limit: 30 });
-  return raw.revisions.map((r) => ({
-    revision: r.revision,
-    createdAt: r.created_at,
-    author: r.author,
-    goals: r.goals,
+  }>("get_goal_history", { channelId, limit: 30 });
+  return raw.edits.map((edit) => ({
+    eventId: edit.event_id,
+    createdAt: edit.created_at,
+    author: edit.author,
+    ops: edit.ops ?? [],
   }));
-}
-
-export async function restoreGoalTree(
-  channelId: string,
-  revision: string,
-): Promise<void> {
-  await invokeTauri("restore_goal_tree", { channelId, revision });
 }
 
 /** A fresh node id in the same shape as `kuzz_core::goal_tree::new_node_id`. */

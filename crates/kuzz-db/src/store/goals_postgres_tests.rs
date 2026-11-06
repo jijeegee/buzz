@@ -910,3 +910,21 @@ fn op_content_is_bounded() {
     assert!(parse_goal_ops(&ops(0)).is_err());
     assert!(parse_goal_ops("{").is_err());
 }
+
+#[tokio::test]
+async fn the_active_list_keeps_a_finished_layer_one() {
+    let f = Fixture::new().await;
+    f.root().await;
+    f.ok(&[done("root")]).await;
+    let selection = GoalSelection::View {
+        view: GoalView::Active,
+        after: None,
+    };
+    let page =
+        f.db.read_goals(f.community, f.channel, &selection)
+            .await
+            .unwrap();
+    assert_eq!(page.rows.len(), 1);
+    assert!(!page.rows[0].matched);
+    assert_eq!(page.counts.active, 0);
+}

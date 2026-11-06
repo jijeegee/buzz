@@ -1162,8 +1162,8 @@ pub enum CanvasCmd {
 
 #[derive(Subcommand)]
 pub enum GoalsCmd {
-    /// Show the goal tree as an outline; with --node or --thread also show that
-    /// goal's path, sub-goals, and the other goals on its layer
+    /// Show active goals as an outline; with --node or --thread also show that
+    /// goal's path, open sub-goals, and the active goals beside it
     Get {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1174,6 +1174,9 @@ pub enum GoalsCmd {
         /// Focus on the goal this thread (root event id) is linked to
         #[arg(long)]
         thread: Option<String>,
+        /// Also list quiet and finished goals
+        #[arg(long)]
+        all: bool,
     },
     /// Create the single layer 1 goal, or rewrite it
     SetRoot {
@@ -1270,7 +1273,8 @@ pub enum GoalsCmd {
         #[arg(long)]
         order: Option<i64>,
     },
-    /// Delete a goal; removing the layer 1 goal clears the tree (history keeps it)
+    /// Delete a goal; removing the layer 1 goal clears the tree. Deleted goals
+    /// do not come back, but `history` keeps the edit.
     Remove {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1308,23 +1312,14 @@ pub enum GoalsCmd {
         #[arg(long)]
         thread: String,
     },
-    /// List previous revisions of the goal tree, newest first
+    /// List edits to the goals, newest first
     History {
         /// Channel or DM UUID
         #[arg(long)]
         channel: String,
-        /// Maximum revisions to list
+        /// Maximum edits to list
         #[arg(long, default_value_t = 20)]
         limit: u32,
-    },
-    /// Restore the goal tree to a previous revision
-    Restore {
-        /// Channel or DM UUID
-        #[arg(long)]
-        channel: String,
-        /// Revision event id (64-char hex)
-        #[arg(long)]
-        revision: String,
     },
 }
 

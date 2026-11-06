@@ -630,6 +630,21 @@ pub fn build_set_canvas_unconditional_after_head(
         .custom_created_at(nostr::Timestamp::from(created_at)))
 }
 
+/// Build a goal edit (kind 40111) for a channel or DM. The relay applies the
+/// ops in order, all or none.
+pub fn build_goal_ops(
+    channel_id: Uuid,
+    ops: &[kuzz_core::goal_tree::GoalOp],
+) -> Result<EventBuilder, SdkError> {
+    let content = serde_json::to_string(&kuzz_core::goal_store::GoalOps { ops: ops.to_vec() })
+        .map_err(|e| SdkError::InvalidInput(e.to_string()))?;
+    Ok(EventBuilder::new(
+        Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16),
+        content,
+    )
+    .tags(vec![tag(&["h", &channel_id.to_string()])?]))
+}
+
 /// Build a goal tree write (kind 40110) for a channel or DM.
 ///
 /// The relay requires every goal tree write to name the head it was composed

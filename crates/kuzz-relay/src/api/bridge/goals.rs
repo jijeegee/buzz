@@ -28,7 +28,7 @@
 use std::sync::Arc;
 
 use axum::{http::StatusCode, Json};
-use kuzz_core::goal_store::GoalView;
+use kuzz_core::goal_store::{GoalProgress, GoalRead, GoalReadRow, GoalReadThread, GoalView};
 use kuzz_core::TenantContext;
 use kuzz_db::goals::{
     GoalCounts, GoalCursor, GoalPage, GoalPageRow, GoalSelection, MAX_GOAL_THREADS,
@@ -183,14 +183,14 @@ pub(super) async fn query(
         Err(e) => return Err(db_read_error("channel lookup error", &e)),
     };
     if !channel.goals_enabled {
-        return Ok(Json(page_json(&empty_page())));
+        return respond(&empty_page());
     }
     let page = state
         .db
         .read_goals(tenant.community(), channel_id, &selection)
         .await
         .map_err(|e| db_read_error("goal read error", &e))?;
-    Ok(Json(page_json(&page)))
+    respond(&page)
 }
 
 fn empty_page() -> GoalPage {
@@ -202,40 +202,53 @@ fn empty_page() -> GoalPage {
     }
 }
 
-fn row_json(row: &GoalPageRow) -> Value {
-    let goal = &row.goal;
-    json!({
-        "id": goal.id,
-        "parent": goal.parent,
-        "title": goal.title,
-        "note": goal.note,
-        "status": goal.status.as_str(),
-        "order": goal.order,
-        "assignees": goal.assignees,
-        "links": goal.links,
-        "updated_by": goal.updated_by,
-        "updated_at": goal.updated_at,
-        "matched": row.matched,
-        "inactive": goal.inactive,
-        "is_thread": goal.is_thread,
-        "progress": {"done": row.progress.0, "total": row.progress.1},
-        "open_children": row.open_children,
-    })
+fn respond(page: &GoalPage) -> Result<Json<Value>, QueryError> {
+    page_json(page)
+        .map(Json)
+        .map_err(|e| internal_error(&format!("goal response: {e}")))
 }
 
-fn page_json(page: &GoalPage) -> Value {
-    let threads: Vec<Value> = page
+fn read_row(row: &GoalPageRow) -> GoalReadRow {
+    let goal = &row.goal;
+    GoalReadRow {
+        id: goal.id.clone(),
+        parent: goal.parent.clone(),
+        title: goal.title.clone(),
+        note: goal.note.clone(),
+        status: goal.status,
+        order: goal.order,
+        assignees: goal.assignees.clone(),
+        links: goal.links.clone(),
+        updated_by: goal.updated_by.clone(),
+        updated_at: goal.updated_at,
+        matched: row.matched,
+        inactive: goal.inactive,
+        is_thread: goal.is_thread,
+        progress: GoalProgress {
+            done: row.progress.0,
+            total: row.progress.1,
+        },
+        open_children: row.open_children,
+    }
+}
+
+fn page_json(page: &GoalPage) -> Result<Value, serde_json::Error> {
+    let threads = page
         .threads
         .iter()
-        .map(|(thread, goal)| json!({"thread": hex::encode(thread), "goal": goal}))
+        .map(|(thread, goal)| GoalReadThread {
+            thread: hex::encode(thread),
+            goal: goal.clone(),
+        })
         .collect();
-    json!({
-        "goals": 1,
-        "counts": page.counts,
-        "rows": page.rows.iter().map(row_json).collect::<Vec<_>>(),
-        "threads": threads,
-        "next": page.next,
-    })
+    let mut body = serde_json::to_value(GoalRead {
+        counts: page.counts,
+        rows: page.rows.iter().map(read_row).collect(),
+        threads,
+        next: page.next.clone(),
+    })?;
+    body["goals"] = json!(1);
+    Ok(body)
 }
 
 #[cfg(test)]
@@ -376,7 +389,7 @@ mod tests {
                 id: "g".into(),
             }),
         };
-        let value = page_json(&page);
+        let value = page_json(&page).unwrap();
         assert_eq!(value["counts"]["active"], 1);
         assert_eq!(value["rows"][0]["status"], "in_progress");
         assert_eq!(value["rows"][0]["progress"]["total"], 2);
@@ -387,7 +400,7 @@ mod tests {
 
     #[test]
     fn a_conversation_with_goals_off_reads_as_empty() {
-        let value = page_json(&empty_page());
+        let value = page_json(&empty_page()).unwrap();
         assert_eq!(value["rows"], json!([]));
         assert_eq!(value["counts"]["active"], 0);
     }
