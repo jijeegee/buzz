@@ -110,6 +110,9 @@ def main():
         print(json.dumps([{"pubkey": me, "display_name": os.environ.get("FAKE_KUZZ_NAME", "")}]))
         return 0
     if args[:2] == ["dms", "list"]:
+        if os.environ.get("FAKE_KUZZ_DMS_REFUSED"):
+            sys.stderr.write(json.dumps({"error": "auth", "message": "restricted: device"}) + "\n")
+            return 3
         print(os.environ.get("FAKE_KUZZ_DMS", "[]"))
         return 0
     if args[:2] == ["dms", "open"]:

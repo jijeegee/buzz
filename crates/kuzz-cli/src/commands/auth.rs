@@ -500,9 +500,25 @@ pub fn host_name() -> String {
                 .ok()
                 .map(|s| s.trim().to_owned())
         })
+        .or_else(mac_computer_name)
         .unwrap_or_default();
     let name: String = raw.chars().filter(|c| !c.is_control()).take(48).collect();
     name.trim().to_owned()
+}
+
+/// The Mac's name from System Settings: macOS sets no `HOSTNAME` for apps
+/// and launchd jobs and has no `/etc/hostname`.
+fn mac_computer_name() -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let output = std::process::Command::new("/usr/sbin/scutil")
+        .args(["--get", "ComputerName"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    (output.status.success() && !name.is_empty()).then_some(name)
 }
 
 /// The host name, bounded to what the relay accepts (64 printable chars).

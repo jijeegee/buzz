@@ -593,11 +593,23 @@ class AdapterTest(unittest.TestCase):
                 self.assertEqual(fake.calls(), [])
             self.assertTrue(adapter.fatal_error_retryable)
 
+    def test_a_refused_relay_fails_connect_before_the_watch(self):
+        with self._fake([{"rc": 0}], FAKE_KUZZ_OWNER=OWNER, FAKE_KUZZ_DMS_REFUSED="1") as fake:
+            adapter = self._adapter()
+            self.assertFalse(asyncio.run(adapter.connect()))
+            self.assertEqual(adapter.fatal_error_code, "relay_refused")
+            self.assertIn("restricted: device", adapter.fatal_error_message)
+            # Retryable, so Hermes backs off; the watch never starts.
+            self.assertTrue(adapter.fatal_error_retryable)
+            self.assertEqual(fake.calls("messages", "watch"), [])
+
     def test_not_paired_fails_closed_even_with_a_buzz_key(self):
         with self._fake([{"rc": 0}], BUZZ_RELAY_URL="wss://relay.example", BUZZ_PRIVATE_KEY=SECRET) as fake:
             adapter = self._adapter()
             self.assertFalse(asyncio.run(adapter.connect()))
             self.assertEqual(adapter.fatal_error_code, "not_paired")
+            # Retryable, or Hermes stops a gateway whose other platforms are still connecting.
+            self.assertTrue(adapter.fatal_error_retryable)
             self.assertEqual(fake.calls("messages", "watch"), [])
 
 

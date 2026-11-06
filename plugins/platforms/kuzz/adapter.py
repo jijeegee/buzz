@@ -325,13 +325,17 @@ class KuzzAdapter(BasePlatformAdapter):
         self._identity = identity
         if not self.owner:
             return self._fail("owner_missing", "No owner is known, so nobody could talk to the agent.")
+        # One signed relay call before reporting connected: a refused device or a revoked agent fails
+        # here, where Hermes backs off, not a second later in the watch, which would loop.
+        refused = await self._load_dms()
+        if refused:
+            return self._fail("relay_refused", f"The Kuzz relay refused this agent: {refused}")
         self._sync_allowlist()
         if not self._acquire_lock():
             return self._fail("lock_conflict", "This agent is already running in another Hermes profile.")
         await self._load_profile()
         self._connected_at = time.time()
         self._load_cursors()
-        await self._refresh_dms(force=True)
         self._supervisor = WatchSupervisor(
             self._cli,
             self._on_message,
@@ -366,15 +370,18 @@ class KuzzAdapter(BasePlatformAdapter):
         self._save_cursors()
         self._release_lock()
 
+    # Every Kuzz failure is retryable. Hermes queues a retryable platform and keeps the gateway up;
+    # a non-retryable one stops the whole gateway when no other platform has connected yet (Telegram
+    # still connecting), taking the person's other platforms down with Kuzz.
     def _fail(self, code: str, message: str) -> bool:
         logger.error("Kuzz: %s", message)
-        self._set_fatal_error(code, message, retryable=False)
+        self._set_fatal_error(code, message, retryable=True)
         return False
 
     async def _on_park(self, code: str, message: str) -> None:
         self._save_cursors()
         self._release_lock()
-        self._set_fatal_error(code, message, retryable=False)
+        self._set_fatal_error(code, message, retryable=True)
         await self._notify_fatal_error()
 
     def _watch_args(self) -> List[str]:
@@ -437,6 +444,20 @@ class KuzzAdapter(BasePlatformAdapter):
         dms = await _cli_json(self._cli, ["dms", "list"], self._env())
         if isinstance(dms, list):
             self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
+
+    async def _load_dms(self) -> str:
+        """Load the DM list; the CLI's error when it fails, else ""."""
+        self._dm_checked_at = time.monotonic()
+        rc, out, err = await self._run(["dms", "list"])
+        if rc != 0:
+            return kuzz_cli.cli_error_message(err, rc)
+        try:
+            dms = json.loads(out)
+        except ValueError:
+            dms = None
+        if isinstance(dms, list):
+            self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
+        return ""
 
     async def _is_dm(self, channel: str) -> bool:
         if channel not in self._dm_channels:

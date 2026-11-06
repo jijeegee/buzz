@@ -607,6 +607,14 @@ fn open_never_creates_a_key() {
         tpm::open(&tpm_key_name(&scope)),
         Ok(None) | Err(tpm::TpmError::Unavailable(_))
     ));
+    // A marker says a hardware key was made that this binary can't see.
+    let marked = MemoryStore::default();
+    record_tpm_marker(&marked, &scope, &vector_key().pubkey()).expect("marker");
+    #[cfg(any(windows, target_os = "macos"))]
+    assert!(matches!(
+        DeviceKey::open(&scope, &marked),
+        Err(DeviceKeyError::HardwareOutOfReach(_))
+    ));
     // An existing store key opens.
     let made = software::open_or_create(&store, &scope).expect("seed");
     let opened = DeviceKey::open(&scope, &store).expect("open").expect("key");

@@ -174,6 +174,14 @@ pub(crate) fn open(name_text: &str) -> std::result::Result<Option<TpmKey>, TpmEr
     }))
 }
 
+/// What [`open`] finding no key means when a marker says one was made.
+pub(crate) fn missing() -> DeviceKeyError {
+    DeviceKeyError::Tpm {
+        op: "NCryptOpenKey",
+        code: NTE_BAD_KEYSET as u32,
+    }
+}
+
 /// Open the key a racing creator made after `op` reported `NTE_EXISTS`.
 fn open_winner(name: &str, op: &'static str) -> std::result::Result<TpmKey, TpmError> {
     match open(name) {
