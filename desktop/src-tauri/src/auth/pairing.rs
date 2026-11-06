@@ -172,7 +172,8 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
             .map(|agent| agent.pubkey)
             .collect())
     };
-    super::external_access::narrow_before_disconnect(&state, agents).await;
+    super::external_access::narrow_before_disconnect(&state, &origin, &session.access, agents)
+        .await;
     api::revoke_device(&state.http_client, &origin, &session.access, &device_id)
         .await
         .map_err(api_error)
@@ -189,8 +190,10 @@ pub async fn disconnect_external_agent(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
-    super::external_access::narrow_before_disconnect(&state, async { Ok(vec![pubkey.clone()]) })
-        .await;
+    super::external_access::narrow_before_disconnect(&state, &origin, &session.access, async {
+        Ok(vec![pubkey.clone()])
+    })
+    .await;
     api::disconnect_agent(
         &state.http_client,
         &origin,

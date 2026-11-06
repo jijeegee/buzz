@@ -110,6 +110,18 @@ fn restoring() -> std::sync::MutexGuard<'static, Option<HashMap<String, RestoreL
 /// When a restore outside a sign-in was last tried, per `"{origin} {owner}"`.
 static PENDING_TRIED: Mutex<Option<HashMap<String, Instant>>> = Mutex::new(None);
 
+/// Whether a registration to this device also writes the owner tools
+/// default (only over a level never set).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ToolsDefault {
+    /// Not here (a sign-out confirming key copies must stay quick).
+    Skip,
+    /// Written, no notice (an agent just created).
+    Quiet,
+    /// Written; turning owner tools on is told to the owner (Q1a).
+    Notice,
+}
+
 /// What one registration attempt learned.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Registration {
@@ -197,7 +209,14 @@ pub(crate) fn start_gate<R: tauri::Runtime>(
     let origin = super::origin_for(relay_url);
     let elsewhere = data_dir(app)
         .is_some_and(|dir| hosting_in(&dir, &origin, &record.pubkey) == Some(Hosting::OtherDevice));
-    spawn_register(app, record, &origin, owner_hex, elsewhere);
+    spawn_register(
+        app,
+        record,
+        &origin,
+        owner_hex,
+        elsewhere,
+        ToolsDefault::Notice,
+    );
     if elsewhere {
         eprintln!(
             "kuzz-desktop: agents: {} runs on another device; not started",
@@ -261,6 +280,7 @@ pub(crate) fn spawn_register<R: tauri::Runtime>(
     origin: &str,
     owner_hex: &str,
     recheck: bool,
+    tools_default: ToolsDefault,
 ) {
     if crate::device_key::current().is_none() || record.private_key_nsec.is_empty() {
         return;
@@ -278,7 +298,9 @@ pub(crate) fn spawn_register<R: tauri::Runtime>(
     let origin = origin.to_owned();
     let owner_hex = owner_hex.to_owned();
     tauri::async_runtime::spawn(async move {
-        if register(&app, &record, &origin, &owner_hex).await == Registration::NoAnswer {
+        if register(&app, &record, &origin, &owner_hex, tools_default).await
+            == Registration::NoAnswer
+        {
             // Not answered: try again on the next start.
             ATTEMPTED
                 .lock()
@@ -296,6 +318,7 @@ async fn register<R: tauri::Runtime>(
     record: &ManagedAgentRecord,
     origin: &str,
     owner_hex: &str,
+    tools_default: ToolsDefault,
 ) -> Registration {
     let Some(device) = crate::device_key::current() else {
         return Registration::NoAnswer;
@@ -359,7 +382,16 @@ async fn register<R: tauri::Runtime>(
         }
     }
     match hosting {
-        Hosting::Here => Registration::Here,
+        Hosting::Here => {
+            // Owner tools: the default, only over a level never set.
+            if tools_default != ToolsDefault::Skip
+                && super::tool_levels::write_default(app, origin, &access, record).await
+                && tools_default == ToolsDefault::Notice
+            {
+                super::tool_levels::notify_defaulted(app, vec![record.name.clone()]);
+            }
+            Registration::Here
+        }
         Hosting::OtherDevice => Registration::OtherDevice,
     }
 }
@@ -738,8 +770,11 @@ pub(crate) async fn confirm_copies(
             break;
         }
         let limit = remaining.min(CONFIRM_ONE_LIMIT);
-        if let Ok(Registration::Here) =
-            tokio::time::timeout(limit, register(app, record, origin, &owner_hex)).await
+        if let Ok(Registration::Here) = tokio::time::timeout(
+            limit,
+            register(app, record, origin, &owner_hex, ToolsDefault::Skip),
+        )
+        .await
         {
             confirmed.insert(record.pubkey.to_ascii_lowercase());
         }

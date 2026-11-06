@@ -7,6 +7,8 @@ const OWNER = "b".repeat(64);
 const calls = [];
 let current = { respondTo: "anyone", respondToAllowlist: [] };
 let saveFailure = null;
+// `null`: the owner tools read never answers (the row stays unknown).
+let toolLevels = null;
 
 const tauriMock = {
   invoke(command, args) {
@@ -18,6 +20,11 @@ const tauriMock = {
       return saveFailure
         ? Promise.reject(new Error(saveFailure))
         : Promise.resolve();
+    }
+    if (command === "get_agent_tool_levels") {
+      return toolLevels === null
+        ? new Promise(() => {})
+        : Promise.resolve(toolLevels);
     }
     if (command === "get_agent_access_owner_only") {
       return Promise.resolve(false);
@@ -91,6 +98,8 @@ async function mountDialog() {
       document.querySelector("[data-testid='agent-respond-to-select']"),
     saveButton: () =>
       document.querySelector("[data-testid='external-agent-access-save']"),
+    ownerTools: () =>
+      document.querySelector("[data-testid='external-agent-owner-tools']"),
     unmount: async () => {
       await act(async () => root.unmount());
       container.remove();
@@ -156,5 +165,75 @@ test("an allowlist needs someone before it can save", async () => {
   await choose(dialog.select(), "allowlist");
 
   assert.equal(dialog.saveButton().disabled, true);
+  await dialog.unmount();
+});
+
+function level(value) {
+  return [{ pubkey: AGENT, level: value, respondClass: null, here: false }];
+}
+
+test("turning owner tools on sends the level with the save", async () => {
+  current = { respondTo: "owner-only", respondToAllowlist: [] };
+  saveFailure = null;
+  toolLevels = level("limited");
+  const dialog = await mountDialog();
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "false");
+
+  await act(async () => dialog.ownerTools().click());
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "true");
+  await act(async () => dialog.saveButton().click());
+  await settle();
+
+  assert.equal(saves().length, 1);
+  assert.equal(saves()[0].args.toolLevel, "full");
+  toolLevels = null;
+  await dialog.unmount();
+});
+
+test("an unchanged level is not sent", async () => {
+  current = { respondTo: "owner-only", respondToAllowlist: [] };
+  saveFailure = null;
+  toolLevels = level("full");
+  const dialog = await mountDialog();
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "true");
+
+  await act(async () => dialog.saveButton().click());
+  await settle();
+
+  assert.equal("toolLevel" in saves()[0].args, false);
+  toolLevels = null;
+  await dialog.unmount();
+});
+
+test("owner tools are off and locked while anyone can talk to it", async () => {
+  current = { respondTo: "anyone", respondToAllowlist: [] };
+  saveFailure = null;
+  toolLevels = level("full");
+  const dialog = await mountDialog();
+
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "false");
+  assert.equal(dialog.ownerTools().disabled, true);
+  toolLevels = null;
+  await dialog.unmount();
+});
+
+test("turning owner tools on for an allowlist asks first", async () => {
+  current = { respondTo: "allowlist", respondToAllowlist: [OWNER] };
+  saveFailure = null;
+  toolLevels = level("limited");
+  const dialog = await mountDialog();
+
+  await act(async () => dialog.ownerTools().click());
+  await settle();
+  // Still off until the owner confirms the warning.
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "false");
+  const confirm = document.querySelector(
+    "[data-testid='external-agent-owner-tools-confirm-on']",
+  );
+  assert.ok(confirm);
+  await act(async () => confirm.click());
+  await settle();
+  assert.equal(dialog.ownerTools().getAttribute("aria-checked"), "true");
+  toolLevels = null;
   await dialog.unmount();
 });

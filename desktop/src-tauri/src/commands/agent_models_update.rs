@@ -151,6 +151,30 @@ pub async fn update_managed_agent(
     // Captured before Phase 1 stops the runtime for an access-policy change: a
     // community removed while this update runs refuses the restart.
     let admission = crate::managed_agents::AdmissionSnapshot::capture(&state);
+    // Owner tools go to the relay before anything is saved, with the class
+    // the agent answers after this save: with the level on, a failed call
+    // fails the save.
+    let prospective = {
+        let _store_guard = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|e| e.to_string())?;
+        let records = load_managed_agents(&app)?;
+        let mut record = records
+            .into_iter()
+            .find(|record| record.pubkey == input.pubkey)
+            .ok_or_else(|| format!("agent {} not found", input.pubkey))?;
+        let class_changed = input
+            .respond_to
+            .is_some_and(|mode| mode != record.respond_to);
+        (class_changed || input.tool_level.is_some()).then(|| {
+            record.respond_to = input.respond_to.unwrap_or(record.respond_to);
+            record
+        })
+    };
+    if let Some(prospective) = prospective {
+        crate::auth::tool_levels::before_managed_save(&app, &prospective, input.tool_level).await?;
+    }
     // Phase 1: local save (synchronous, under lock)
     let (mut summary, sync_params, rollback, access_policy_changed, access_restart_relays) = {
         let _store_guard = state

@@ -684,6 +684,104 @@ pub(crate) async fn register_agent(
     Ok(registered.result)
 }
 
+/// `/auth/agents/{pubkey}/<action>` for a 64-hex agent key; anything else is
+/// refused before a request is built.
+fn agent_path(origin: &str, pubkey: &str, action: &str) -> Result<String, ApiError> {
+    let key = nostr::PublicKey::from_hex(pubkey.trim()).map_err(|_| ApiError {
+        status: None,
+        code: None,
+        message: format!("invalid agent key: {pubkey}"),
+    })?;
+    Ok(format!("{origin}/auth/agents/{}/{action}", key.to_hex()))
+}
+
+/// `POST /auth/agents/{pubkey}/tool-level`: set the agent's owner tools
+/// (`full` | `limited`) with the access class it answers now. `default`
+/// writes only over a level never set. Returns `set` or `already_set`.
+pub(crate) async fn set_agent_tool_level(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    pubkey: &str,
+    level: &str,
+    respond_class: &str,
+    default: bool,
+) -> Result<String, ApiError> {
+    #[derive(Deserialize)]
+    struct Set {
+        result: String,
+    }
+    let set: Set = send_json(
+        client
+            .post(agent_path(origin, pubkey, "tool-level")?)
+            .header("Authorization", bearer(access))
+            .json(&serde_json::json!({
+                "level": level,
+                "respond_class": respond_class,
+                "default": default,
+            })),
+    )
+    .await?;
+    Ok(set.result)
+}
+
+/// `POST /auth/agents/{pubkey}/revoke`: retire the agent's key on the relay
+/// (only from the device hosting it; `409 not_host` otherwise).
+pub(crate) async fn revoke_agent(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    pubkey: &str,
+) -> Result<(), ApiError> {
+    call(
+        client,
+        reqwest::Method::POST,
+        agent_path(origin, pubkey, "revoke")?,
+        access,
+        None,
+    )
+    .await
+}
+
+/// One agent of `POST /auth/agents/tool-levels`.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+pub(crate) struct AgentToolLevel {
+    pub pubkey: String,
+    /// `full`, `limited`, or `None` when never set.
+    #[serde(default)]
+    pub level: Option<String>,
+    #[serde(default)]
+    pub respond_class: Option<String>,
+    /// Whether the calling device hosts the agent.
+    #[serde(default)]
+    pub here: bool,
+}
+
+/// Most keys one `tool-levels` call may name.
+pub(crate) const TOOL_LEVELS_BATCH: usize = 64;
+
+/// `POST /auth/agents/tool-levels` for at most [`TOOL_LEVELS_BATCH`] keys.
+/// A key missing from the answer is unknown (treated as off).
+pub(crate) async fn agent_tool_levels(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    pubkeys: &[String],
+) -> Result<Vec<AgentToolLevel>, ApiError> {
+    #[derive(Deserialize)]
+    struct Levels {
+        agents: Vec<AgentToolLevel>,
+    }
+    let levels: Levels = send_json(
+        client
+            .post(format!("{origin}/auth/agents/tool-levels"))
+            .header("Authorization", bearer(access))
+            .json(&serde_json::json!({ "pubkeys": pubkeys })),
+    )
+    .await?;
+    Ok(levels.agents)
+}
+
 /// `POST /auth/pairing/start`: a one-use external agent pairing code. The
 /// code and the command holding it stay in zeroizing memory.
 #[derive(Deserialize)]
@@ -1368,6 +1466,22 @@ mod tests {
         let proof = DeviceProof::parse(body["proof"].as_str().unwrap()).unwrap();
         assert!(proof.verify(&new.pubkey(), &scope, now).is_ok());
         assert!(proof.verify(&old.pubkey(), &scope, now).is_err());
+    }
+
+    #[tokio::test]
+    async fn revoke_names_the_agent_key_and_refuses_anything_else() {
+        let agent = nostr::Keys::generate().public_key().to_hex();
+        let (origin, served) = one_request(204).await;
+        revoke_agent(&reqwest::Client::new(), &origin, "bzs_acc", &agent)
+            .await
+            .unwrap();
+        let raw = served.await.unwrap();
+        assert!(raw.starts_with(&format!("POST /auth/agents/{agent}/revoke ")));
+
+        let refused = revoke_agent(&reqwest::Client::new(), &origin, "bzs_acc", "../me")
+            .await
+            .unwrap_err();
+        assert_eq!(refused.status, None);
     }
 
     #[test]

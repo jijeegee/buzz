@@ -19,6 +19,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../agents/agent_settings_provider.dart';
 import '../agents/external_agent_access.dart';
 import '../agents/external_agent_sheet.dart';
+import '../agents/owner_tools_row.dart';
 import 'account_actions.dart';
 
 /// A stalled relay must not hold up a disconnect.
@@ -73,13 +74,18 @@ class DevicesPage extends HookConsumerWidget {
 
     /// Every wider setting back to owner-only first, so pairing the same key
     /// again can't bring one back. Never in the way of the disconnect.
-    Future<void> narrow(Future<List<String>> Function() agents) async {
+    Future<void> narrow(
+      AccountApi api,
+      Future<List<String>> Function() agents,
+    ) async {
       final owner = ref.read(externalAccessWriterProvider);
-      if (owner == null) return;
       final relay = ref.read(agentSettingsRelayProvider);
       try {
         await () async {
           for (final agent in await agents()) {
+            // Owner tools off first.
+            await lowerToolLevelBeforeDisconnect(api, agent);
+            if (owner == null) continue;
             await narrowExternalAgentAccess(
               relay,
               owner: owner,
@@ -106,7 +112,7 @@ class DevicesPage extends HookConsumerWidget {
       if (!ok) return;
       // On failure too: it may be gone already.
       final done = await run((api) async {
-        await narrow(() => agents(api));
+        await narrow(api, () => agents(api));
         await act(api);
       });
       if (!done && context.mounted) {

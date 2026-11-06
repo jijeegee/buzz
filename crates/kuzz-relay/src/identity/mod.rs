@@ -19,6 +19,7 @@
 pub(crate) mod admission;
 #[cfg(test)]
 mod admission_routes;
+pub(crate) mod authority;
 pub mod client_ip;
 pub mod client_version;
 pub mod config;
