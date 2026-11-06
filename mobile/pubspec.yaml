@@ -59,6 +59,7 @@ dependencies:
     path: packages/kuzz_device_key
   kuzz_android_push:
     path: packages/kuzz_android_push
+  sentry_flutter: 9.30.1
 
 dev_dependencies:
   flutter_test:
