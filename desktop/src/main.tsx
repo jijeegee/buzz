@@ -27,6 +27,7 @@ import { initializeConversationDensityPreference } from "@/shared/lib/conversati
 import { initializeFontSizePreference } from "@/shared/lib/fontSizePreference";
 import { I18nProvider } from "@/shared/i18n";
 import { initializeLocale } from "@/shared/i18n/localeRuntime";
+import { initErrorReporting } from "@/shared/lib/errorReporting";
 
 type E2eWindow = Window & {
   __KUZZ_E2E__?: unknown;
@@ -135,6 +136,8 @@ async function installE2eBridgeIfConfigured() {
 }
 
 async function bootstrap() {
+  // First, so startup failures below are reported too.
+  initErrorReporting();
   takeAccountSwitchAtBoot();
   resetDevWebviewStateFromUrl();
   configureDevE2eBridgeFromUrl();

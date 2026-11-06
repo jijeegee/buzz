@@ -12,6 +12,7 @@ mod deep_link;
 mod device_key;
 mod device_robot;
 mod egress_guard;
+mod error_reporting;
 mod event_sync;
 mod events;
 #[cfg_attr(not(test), allow(dead_code))]
@@ -105,6 +106,8 @@ use tauri_plugin_window_state::StateFlags;
 use tray_menu::show_main_window;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // First, so panics anywhere below are reported. Lives for the process.
+    let _error_reporting = error_reporting::init();
     // mesh-llm async chains overflow tokio's default 2 MiB stacks; run on 8 MiB like upstream.
     #[cfg(feature = "mesh-llm")]
     match tokio::runtime::Builder::new_multi_thread()

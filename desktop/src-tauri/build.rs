@@ -21,6 +21,7 @@ fn main() {
     println!("cargo:rerun-if-env-changed=KUZZ_BUILD_AGENT_ACCESS_OWNER_ONLY");
     println!("cargo:rerun-if-env-changed=KUZZ_BUILD_AUTO_CONNECT_DEFAULT_RELAY");
     println!("cargo:rerun-if-env-changed=KUZZ_BUILD_DEMO_SLUG");
+    println!("cargo:rerun-if-env-changed=KUZZ_SENTRY_DSN_DESKTOP");
     println!("cargo:rustc-check-cfg=cfg(kuzz_updater_enabled)");
 
     if let Ok(slug) = std::env::var("KUZZ_BUILD_DEMO_SLUG") {
@@ -41,6 +42,15 @@ fn main() {
             panic!("KUZZ_BUILD_DEMO_SLUG must be a lowercase ASCII slug");
         }
         println!("cargo:rustc-env=KUZZ_DESKTOP_BUILD_DEMO_SLUG={slug}");
+    }
+
+    // Crash reporting address (see `error_reporting`); unset builds send nothing.
+    if let Some(dsn) = std::env::var("KUZZ_SENTRY_DSN_DESKTOP")
+        .ok()
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty())
+    {
+        println!("cargo:rustc-env=KUZZ_DESKTOP_SENTRY_DSN={dsn}");
     }
 
     // Explicit owner-only agent-access capability. Release packaging sets this

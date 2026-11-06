@@ -1,4 +1,5 @@
 import { t } from "@/shared/i18n";
+import { reportError } from "@/shared/lib/errorReporting";
 import { Component, type ReactNode } from "react";
 
 type RootErrorBoundaryProps = {
@@ -32,6 +33,7 @@ export class RootErrorBoundary extends Component<
 
   override componentDidCatch(error: unknown, info: React.ErrorInfo): void {
     console.error("[RootErrorBoundary] uncaught render error:", error, info);
+    reportError(error);
   }
 
   override render(): ReactNode {
