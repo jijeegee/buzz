@@ -159,6 +159,8 @@ audioadapter-buffers = "3.0"
 tempfile = "3"
 strip-ansi-escapes = "0.2"
 tracing = "0.1"
+# Crash and error reporting (see src/error_reporting.rs); off without a DSN.
+sentry = { version = "0.49", default-features = false, features = ["backtrace", "contexts", "debug-images", "panic", "reqwest", "rustls-no-provider"] }
 
 [dev-dependencies]
 tauri = { version = "2", features = ["test"] }

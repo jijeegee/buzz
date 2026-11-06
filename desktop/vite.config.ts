@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import path from "node:path";
 import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
@@ -11,7 +12,21 @@ export default defineConfig(async ({ mode }) => {
   const protectedFeaturesEnabled =
     (process.env.VITE_KUZZ_BESTIE ?? modeEnv.VITE_KUZZ_BESTIE) === "1";
 
+  // Crash reporting (src/shared/lib/errorReporting.ts): the same build
+  // variables the Rust side reads, so one release script sets both.
+  const appVersion: string = JSON.parse(
+    readFileSync(path.resolve(__dirname, "package.json"), "utf8"),
+  ).version;
+  const errorReporting = {
+    dsn: (process.env.KUZZ_SENTRY_DSN_WEB ?? "").trim(),
+    environment: process.env.KUZZ_ENV?.trim() === "dev" ? "dev" : "prod",
+    release: appVersion,
+  };
+
   return {
+    define: {
+      __KUZZ_ERROR_REPORTING__: JSON.stringify(errorReporting),
+    },
     plugins: [
       tanstackRouter({
         target: "react",
