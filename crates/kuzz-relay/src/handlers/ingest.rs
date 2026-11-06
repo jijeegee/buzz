@@ -37,6 +37,7 @@ use kuzz_core::kind::{
     KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER, RELAY_ADMIN_ADD_MEMBER,
     RELAY_ADMIN_CHANGE_ROLE, RELAY_ADMIN_REMOVE_MEMBER, RELAY_ADMIN_SET_WORKSPACE_PROFILE,
 };
+use kuzz_core::principal::PrincipalId;
 use kuzz_core::tenant::TenantContext;
 use kuzz_core::verification::verify_event;
 use kuzz_core::CommunityId;
@@ -2587,6 +2588,54 @@ fn allowed_while_timed_out(kind: u32) -> bool {
     )
 }
 
+/// Once an owner edited their paired agent's profile, the owner is its only
+/// writer: the relay stamps it, and what the agent signs is refused.
+async fn check_owner_set_profile(state: &AppState, event: &Event) -> Result<(), IngestError> {
+    let owner_set = state
+        .db
+        .external_agent_profile(&event.pubkey.to_bytes())
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+    if owner_set.is_some() {
+        return Err(IngestError::Rejected(
+            "blocked: this agent's profile is set by its owner".into(),
+        ));
+    }
+    Ok(())
+}
+
+/// A barrier between the owner-set check and storing the kind:0, for the race
+/// where the owner saves in that gap.
+#[cfg(test)]
+pub(crate) mod owner_profile_test_hooks {
+    use std::collections::HashMap;
+    use std::sync::{Arc, LazyLock, Mutex};
+    use tokio::sync::{oneshot, Notify};
+
+    type Gate = (oneshot::Sender<()>, Arc<Notify>);
+    static GATES: LazyLock<Mutex<HashMap<[u8; 32], Gate>>> = LazyLock::new(Default::default);
+
+    /// Hold `agent`'s next kind:0 there: the receiver fires when it arrives,
+    /// and the `Notify` lets it go on.
+    pub(crate) fn arm(agent: [u8; 32]) -> (oneshot::Receiver<()>, Arc<Notify>) {
+        let (arrived, on_arrival) = oneshot::channel();
+        let release = Arc::new(Notify::new());
+        GATES
+            .lock()
+            .unwrap()
+            .insert(agent, (arrived, Arc::clone(&release)));
+        (on_arrival, release)
+    }
+
+    pub(super) async fn after_check(agent: &[u8; 32]) {
+        let gate = GATES.lock().unwrap().remove(agent);
+        if let Some((arrived, release)) = gate {
+            let _ = arrived.send(());
+            release.notified().await;
+        }
+    }
+}
+
 /// The write-path verdict for a restriction snapshot, or `None` to admit.
 fn write_restriction_denial(
     kind: u32,
@@ -2946,6 +2995,11 @@ async fn ingest_event_inner(
 
     if kind_u32 == KIND_MANAGED_AGENT {
         check_paired_agent_setting(state, &event).await?;
+    }
+    if kind_u32 == KIND_PROFILE {
+        check_owner_set_profile(state, &event).await?;
+        #[cfg(test)]
+        owner_profile_test_hooks::after_check(&event.pubkey.to_bytes()).await;
     }
 
     // Command kinds are routed AFTER signature verification, timestamp check,
@@ -4241,6 +4295,14 @@ async fn ingest_event_inner(
         threaded_visibility.clone(),
     )
     .await;
+
+    if kind_u32 == KIND_PROFILE {
+        // The owner may have saved after this event passed the check above;
+        // their profile has to stay on top. A no-op for everyone else.
+        if let Ok(key) = PrincipalId::from_slice(&event.pubkey.to_bytes()) {
+            crate::identity::profile::spawn_external_agent_profile_publish(state, tenant, key);
+        }
+    }
 
     info!(event_id = %event_id_hex, kind = kind_u32, "Event ingested via pipeline");
 

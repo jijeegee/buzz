@@ -117,7 +117,9 @@ pub fn verified_agent_owners_from_profiles(events: &[Event]) -> HashMap<String, 
     latest_profiles
         .into_iter()
         .filter_map(|(agent_pubkey, profile)| {
-            if profile.kind != nostr::Kind::Metadata || profile.verify().is_err() {
+            if profile.kind != nostr::Kind::Metadata
+                || !kuzz_core_pkg::draft::verify_served_event(profile)
+            {
                 return None;
             }
             profile_valid_oa_owner_pubkey(profile).map(|owner| (agent_pubkey, owner))

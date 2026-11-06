@@ -4558,6 +4558,26 @@
   "@ownerToolsSaveFailed": {
     "description": "Owner tools: the change failed."
   },
+  "agentProfileEdit": "Edit profile",
+  "@agentProfileEdit": {
+    "description": "Paired agent sheet, button and sheet title for changing the agent's name, photo and description."
+  },
+  "agentProfileChangePhoto": "Change photo",
+  "@agentProfileChangePhoto": {
+    "description": "Paired agent profile sheet, button that picks a new photo."
+  },
+  "agentProfileRemovePhoto": "Remove photo",
+  "@agentProfileRemovePhoto": {
+    "description": "Paired agent profile sheet, button that clears the photo."
+  },
+  "agentProfileName": "Name",
+  "@agentProfileName": {
+    "description": "Paired agent profile sheet, name field label."
+  },
+  "agentProfileDescription": "Description",
+  "@agentProfileDescription": {
+    "description": "Paired agent profile sheet, description field label."
+  },
   "agentsMessage": "Message",
   "@agentsMessage": {
     "description": "Agent sheet, button that opens a direct message with the agent. Short."

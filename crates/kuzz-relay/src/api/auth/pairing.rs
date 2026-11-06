@@ -318,7 +318,7 @@ pub(super) async fn claim(
 /// Make the just-paired agent its owner's on this host's community. A failure
 /// only logs: the agent's next connection binds it.
 async fn bind_owner(
-    state: &AppState,
+    state: &Arc<AppState>,
     headers: &HeaderMap,
     agent: &nostr::PublicKey,
     owner: &[u8; 32],

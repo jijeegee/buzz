@@ -381,6 +381,8 @@ pub struct ProfileEventState {
     pub created_at: i64,
     /// Event content (profile JSON).
     pub content: String,
+    /// The relay stamped it (sentinel signature), rather than a key signing it.
+    pub server_stamped: bool,
 }
 
 /// Upper bound on communities one profile change fans out to.
@@ -481,7 +483,7 @@ async fn lock_profile_publish(
     .map(record_from_row)
     .transpose()?;
     let latest = sqlx::query(
-        "SELECT id, created_at, content FROM events \
+        "SELECT id, created_at, content, sig FROM events \
          WHERE community_id = $1 AND kind = 0 AND pubkey = $2 \
            AND channel_id IS NULL AND deleted_at IS NULL \
          ORDER BY created_at DESC, id ASC LIMIT 1",
@@ -492,10 +494,12 @@ async fn lock_profile_publish(
     .await?
     .map(|row| -> Result<ProfileEventState> {
         let created_at: DateTime<Utc> = row.try_get("created_at")?;
+        let sig: Vec<u8> = row.try_get("sig")?;
         Ok(ProfileEventState {
             id: row.try_get("id")?,
             created_at: created_at.timestamp(),
             content: row.try_get("content")?,
+            server_stamped: kuzz_core::draft::is_sentinel_sig(&sig),
         })
     })
     .transpose()?;

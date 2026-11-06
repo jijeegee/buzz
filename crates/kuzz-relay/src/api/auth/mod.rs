@@ -76,6 +76,7 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
             post(agents::set_tool_level),
         )
         .route("/auth/agents/{pubkey}/revoke", post(agents::revoke))
+        .route("/auth/agents/{pubkey}/profile", put(agents::set_profile))
         .route("/auth/pairing/start", post(pairing::start))
         .route("/auth/pairing", get(pairing::list))
         // An external agent claims a pairing code (no account session).

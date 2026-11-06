@@ -36,17 +36,20 @@ use axum::{
 use kuzz_auth::device_proof::{verify_event_device_tag, DevicePubkey};
 use kuzz_auth::key_backup::EncryptedKeyBackup;
 use kuzz_auth::TokenBinding;
+use kuzz_core::principal::PrincipalId;
 use kuzz_core::TenantContext;
 use kuzz_db::identity::{
-    ActionSource, ActionStatus, AgentKeyBackupRecord, KeyAdmission, KeyRole, NewAgentAction,
-    RegisterAgentKey, RespondClass, RevokeAgentKey, SetToolLevel, ToolLevel, ToolLevelWrite,
+    ActionSource, ActionStatus, AgentKeyBackupRecord, ExternalAgentProfile, KeyAdmission, KeyRole,
+    NewAgentAction, RegisterAgentKey, RespondClass, RevokeAgentKey, SetToolLevel, ToolLevel,
+    ToolLevelWrite,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
-use super::{auth_error, authenticate_user_token, bad_request, rate_limit};
+use super::devices_ping::{spawn_devices_ping, PingTo};
+use super::{auth_error, authenticate_user_token, bad_request, internal, rate_limit};
 use crate::identity::authority::{agent_authority, Denial};
 use crate::identity::config::DeviceAdmissionMode;
 use crate::identity::device::{self, Surface};
@@ -58,6 +61,8 @@ const CHALLENGE_TTL: u64 = 120;
 const CHALLENGE_NAMESPACE: &str = "agent-register:challenge";
 /// Version of this HTTP contract.
 const AGENT_KEYS_API_VERSION: u16 = 1;
+/// Longest external agent description, in characters.
+const MAX_AGENT_ABOUT_CHARS: usize = 280;
 /// Most keys one status call asks about.
 pub(crate) const MAX_STATUS_KEYS: usize = 64;
 
@@ -705,6 +710,89 @@ struct ToolLevelsRequest {
 
 fn agent_not_found() -> Response {
     auth_error(StatusCode::NOT_FOUND, "agent_not_found", "agent not found")
+}
+
+/// Parse `PUT /auth/agents/{pubkey}/profile`: the whole profile, like kind:0.
+/// A blank or null picture or description clears it.
+fn parse_external_profile(body: &[u8]) -> Result<ExternalAgentProfile, Response> {
+    let body = super::json_object(body)?;
+    let Some(Some(name)) = super::optional_string(&body, "display_name")? else {
+        return Err(bad_request("display_name is required"));
+    };
+    let display_name = name.trim().to_owned();
+    super::validate_display_name(&display_name)?;
+    let trimmed = |field: Option<Option<String>>| {
+        field
+            .flatten()
+            .map(|value| value.trim().to_owned())
+            .filter(|value| !value.is_empty())
+    };
+    let avatar_url = trimmed(super::optional_string(&body, "avatar_url")?);
+    // An http(s) URL, or the data: image of an emoji avatar.
+    if let Some(url) = &avatar_url {
+        crate::handlers::relay_admin::validate_workspace_icon(url)
+            .map_err(|_| bad_request("avatar_url must be an http(s) or data:image URL"))?;
+    }
+    let about = trimmed(super::optional_string(&body, "about")?);
+    if about
+        .as_ref()
+        .is_some_and(|about| about.chars().count() > MAX_AGENT_ABOUT_CHARS)
+    {
+        return Err(bad_request("about is too long"));
+    }
+    Ok(ExternalAgentProfile {
+        display_name,
+        avatar_url,
+        about,
+    })
+}
+
+/// `PUT /auth/agents/{pubkey}/profile`: the owner sets their external agent's
+/// name, picture and description from any device. The relay keeps them and
+/// stamps the agent's kind:0, so the agent's computer can be off; from then on
+/// the agent's own kind:0 is refused.
+pub(super) async fn set_profile(
+    State(state): State<Arc<AppState>>,
+    Path(pubkey): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (binding, _, _) =
+        match authorize_device_call(&state, &headers, "auth:agents:profile", 60).await {
+            Ok(authorized) => authorized,
+            Err(response) => return response,
+        };
+    let profile = match parse_external_profile(&body) {
+        Ok(profile) => profile,
+        Err(response) => return response,
+    };
+    let Some(agent) = path_agent(&pubkey) else {
+        return agent_not_found();
+    };
+    let tenant = match request_community(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(response) => return response,
+    };
+    match state
+        .db
+        .set_external_agent_profile(&binding.principal, &agent, &profile)
+        .await
+    {
+        Ok(true) => {}
+        Ok(false) => return agent_not_found(),
+        Err(error) => return internal("set_external_agent_profile", &error),
+    }
+    let Ok(key) = PrincipalId::from_slice(&agent) else {
+        return agent_not_found();
+    };
+    if let Err(error) =
+        crate::identity::profile::publish_external_agent_profile_everywhere(&state, &tenant, &key)
+            .await
+    {
+        return internal("publish_external_agent_profile", &error);
+    }
+    spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
+    StatusCode::NO_CONTENT.into_response()
 }
 
 /// A canonical lowercase agent key from the path.

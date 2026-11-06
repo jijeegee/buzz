@@ -5,9 +5,11 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../../shared/auth/account/account_api.dart' show accountDevicesProvider;
+import '../../shared/auth/account/account_api.dart'
+    show accountDevicesProvider, accountOriginProvider;
 import '../../shared/message_store/message_store.dart' show MessageStoreLease;
 import '../../shared/message_store/message_store_provider.dart';
+import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/push/push_inbox_events.dart';
 import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -235,6 +237,7 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
               }
               if (isDevicesPing(event)) {
                 ref.invalidate(accountDevicesProvider);
+                unawaited(_refreshExternalAgentProfiles());
                 return;
               }
               if (ref.read(chatStateWriterProvider)?.isOwnWriteEcho() ??
@@ -267,6 +270,23 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
           ),
         ], timeout: chatListQueryTimeout);
     return parseChatListResponse(response);
+  }
+
+  /// The owner may have changed an external agent's name or photo elsewhere.
+  Future<void> _refreshExternalAgentProfiles() async {
+    final origin = ref.read(accountOriginProvider);
+    if (origin == null) return;
+    try {
+      final devices = await ref.read(accountDevicesProvider(origin).future);
+      final agents = [
+        for (final device in devices)
+          for (final agent in device.agents) agent.pubkey,
+      ];
+      if (agents.isEmpty) return;
+      await ref.read(userCacheProvider.notifier).refresh(agents);
+    } catch (_) {
+      // They refresh on the next read.
+    }
   }
 
   Future<void> _loadMorePages(int generation) async {

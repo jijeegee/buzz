@@ -417,6 +417,23 @@ class AccountApi {
         '/agents/${Uri.encodeComponent(pubkey)}',
   );
 
+  /// Set external agent [pubkey]'s name, picture and description, as
+  /// absolute state: a null [avatarUrl] or [about] clears it.
+  Future<void> setExternalAgentProfile(
+    String pubkey, {
+    required String displayName,
+    required String? avatarUrl,
+    required String? about,
+  }) => _send(
+    'PUT',
+    '/auth/agents/${Uri.encodeComponent(pubkey.toLowerCase())}/profile',
+    body: {
+      'display_name': displayName,
+      'avatar_url': avatarUrl,
+      'about': about,
+    },
+  );
+
   /// Rename [deviceId] (any of this account's devices).
   Future<AccountDevice> renameDevice(String deviceId, String name) async {
     final response = await _send(

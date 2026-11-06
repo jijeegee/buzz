@@ -419,6 +419,9 @@ pub async fn validate_standard_deletion_event(
         {
             return Err(anyhow::anyhow!("must be event author"));
         }
+        if parts[0] == "0" {
+            refuse_owner_set_profile(state, &target_pubkey_bytes).await?;
+        }
         return Ok(());
     }
 
@@ -445,8 +448,19 @@ pub async fn validate_standard_deletion_event(
         {
             return Err(anyhow::anyhow!("must be event author"));
         }
+        if target_event.event.kind == nostr::Kind::Metadata {
+            refuse_owner_set_profile(state, &target_author).await?;
+        }
     }
 
+    Ok(())
+}
+
+/// Deleting an owner-edited agent's kind:0 would take the owner's edit off it.
+async fn refuse_owner_set_profile(state: &AppState, agent: &[u8]) -> anyhow::Result<()> {
+    if state.db.external_agent_profile(agent).await?.is_some() {
+        anyhow::bail!("this agent's profile is set by its owner");
+    }
     Ok(())
 }
 

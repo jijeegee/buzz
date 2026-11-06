@@ -737,6 +737,7 @@ pub fn run() {
             auth::pairing::restart_hermes,
             auth::pairing::disconnect_external_device,
             auth::pairing::disconnect_external_agent,
+            auth::pairing::set_external_agent_profile,
             auth::tool_levels::get_agent_tool_levels,
             auth::external_access::get_external_agent_access,
             auth::external_access::set_external_agent_access,

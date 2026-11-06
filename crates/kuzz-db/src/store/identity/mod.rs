@@ -12,6 +12,7 @@
 mod access_token;
 mod admission;
 mod agent_keys;
+mod agent_profile;
 mod agent_tools;
 mod bot;
 mod key_backup;
@@ -49,6 +50,7 @@ use crate::error::{DbError, Result};
 
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use admission::{KeyAdmission, KeyRefusal, KeyRole};
+pub use agent_profile::ExternalAgentProfile;
 pub use agent_keys::{AgentKeyBackupRecord, OwnedKey, RegisterAgentKey, MAX_AGENT_KEYS_PER_DEVICE};
 pub use agent_tools::{
     ActionSource, ActionStatus, AgentToolState, KeyAuthority, NewAgentAction, RespondClass,

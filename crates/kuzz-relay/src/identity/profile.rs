@@ -12,6 +12,10 @@
 //! publishes the newest profile; an event is written only when the
 //! community's newest kind:0 differs from it.
 //!
+//! An external agent has no principal, but once its owner edited its profile
+//! the relay stamps its kind:0 the same way: see
+//! [`publish_external_agent_profile`].
+//!
 //! Triggers:
 //! - [`spawn_publish_everywhere`] after a profile write commits
 //!   (`PATCH /auth/profile`, bot create, `PATCH /auth/bots/{id}/profile`):
@@ -31,7 +35,10 @@ use std::time::Duration;
 use kuzz_core::kind::event_kind_u32;
 use kuzz_core::principal::{PrincipalId, PrincipalKind};
 use kuzz_core::tenant::{CommunityId, TenantContext};
-use kuzz_db::identity::{PrincipalRecord, ProfileEventState, ProfilePublishSnapshot};
+use kuzz_db::identity::{
+    ExternalAgentProfile, PrincipalRecord, ProfileEventState, ProfilePublishLock,
+    ProfilePublishSnapshot,
+};
 use futures_util::StreamExt as _;
 use serde_json::{json, Value};
 
@@ -105,6 +112,30 @@ pub(crate) fn profile_metadata(record: &PrincipalRecord) -> Value {
     metadata
 }
 
+/// The kind:0 content for an owner-edited external agent: what its newest
+/// kind:0 says (other fields stay), with the owner's name, picture and
+/// description. Kind:0 is absolute state, so a blank field is removed.
+fn external_agent_metadata(latest: Option<&str>, profile: &ExternalAgentProfile) -> Value {
+    let mut metadata = latest
+        .and_then(|content| serde_json::from_str::<Value>(content).ok())
+        .filter(Value::is_object)
+        .unwrap_or_else(|| json!({}));
+    metadata["name"] = json!(profile.display_name);
+    metadata["display_name"] = json!(profile.display_name);
+    if let Some(fields) = metadata.as_object_mut() {
+        fields.remove("image");
+        fields.remove("picture");
+        fields.remove("about");
+        if let Some(avatar) = profile.avatar_url.as_deref() {
+            fields.insert("picture".into(), json!(avatar));
+        }
+        if let Some(about) = profile.about.as_deref() {
+            fields.insert("about".into(), json!(about));
+        }
+    }
+    metadata
+}
+
 /// Whether the community's newest kind:0 already says `desired`.
 fn is_current(existing: Option<&ProfileEventState>, desired: &Value) -> bool {
     existing
@@ -156,13 +187,38 @@ pub(crate) async fn publish_profile_in_community(
         lock.release().await?;
         return Ok(false);
     };
+    let current = is_current(snapshot.latest.as_ref(), &desired);
+    let latest = snapshot.latest.as_ref();
+    store_profile(
+        state,
+        tenant,
+        principal,
+        lock,
+        latest,
+        current,
+        &desired,
+        json!([]),
+    )
+    .await
+}
+
+/// Under the publish lock: replay the projection of a head that is already
+/// `current`, or stamp and store a kind:0 saying `desired`. Returns whether a
+/// new event was stored.
+#[allow(clippy::too_many_arguments)]
+async fn store_profile(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    principal: &PrincipalId,
+    lock: ProfilePublishLock,
+    latest: Option<&ProfileEventState>,
+    current: bool,
+    desired: &Value,
+    tags: Value,
+) -> anyhow::Result<bool> {
     // Content equality proves storage, not completion of the projection. A
     // committed kind:0 is also the durable retry record for its side effects.
-    if let Some(latest) = snapshot
-        .latest
-        .as_ref()
-        .filter(|_| is_current(snapshot.latest.as_ref(), &desired))
-    {
+    if let Some(latest) = latest.filter(|_| current) {
         let stored = state
             .db
             .get_event_by_id_for_event_write(tenant.community(), &latest.id)
@@ -175,11 +231,11 @@ pub(crate) async fn publish_profile_in_community(
         lock.release().await?;
         return Ok(false);
     }
-    let created_at = next_created_at(snapshot.latest.as_ref(), chrono::Utc::now().timestamp());
+    let created_at = next_created_at(latest, chrono::Utc::now().timestamp());
     let draft = json!({
         "kind": 0,
         "created_at": created_at,
-        "tags": [],
+        "tags": tags,
         "content": desired.to_string(),
     });
     // The server chose `created_at` (possibly bumped past a future-dated
@@ -210,6 +266,118 @@ pub(crate) async fn publish_profile_in_community(
     }
     lock.release().await?;
     Ok(inserted)
+}
+
+/// Stamp `agent`'s owner-set profile into one community when it is not already
+/// current there; an agent with none, or banned here, is left alone. Keeps the
+/// tags and other fields of its newest kind:0. A head the agent signed is
+/// replaced even when its text matches, so the projection replay never runs
+/// for an agent-signed event. Returns whether a new event was stored.
+pub(crate) async fn publish_external_agent_profile(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    agent: &PrincipalId,
+) -> anyhow::Result<bool> {
+    let _slot = state
+        .identity
+        .publish_slots
+        .semaphore(state.db.pool().options().get_max_connections())
+        .acquire_owned()
+        .await
+        .map_err(|_| anyhow::anyhow!("kind:0 publish slots closed"))?;
+    let (lock, snapshot) = state
+        .db
+        .lock_principal_profile_publish(tenant.community(), agent)
+        .await?;
+    let key = agent.as_bytes().as_slice();
+    let profile = state.db.external_agent_profile(key).await?;
+    let restriction = state
+        .db
+        .moderation_restriction_state(tenant.community(), key)
+        .await?;
+    // Only where the agent already is: the owner's Host header picks no community.
+    let Some(profile) = profile.filter(|_| snapshot.has_user_row && !restriction.banned) else {
+        lock.release().await?;
+        return Ok(false);
+    };
+    let latest = snapshot.latest.as_ref();
+    let head = match latest {
+        Some(head) => {
+            state
+                .db
+                .get_event_by_id_for_event_write(tenant.community(), &head.id)
+                .await?
+        }
+        None => None,
+    };
+    let desired = external_agent_metadata(latest.map(|head| head.content.as_str()), &profile);
+    let current = latest.is_some_and(|head| head.server_stamped) && is_current(latest, &desired);
+    let tags = match &head {
+        Some(head) => serde_json::to_value(&head.event.tags)?,
+        None => json!([]),
+    };
+    store_profile(state, tenant, agent, lock, latest, current, &desired, tags).await
+}
+
+/// Publish `agent`'s owner-set profile into `first` and every other community
+/// whose `users` projection holds it. Every community is tried; an error means
+/// at least one failed, and saving again is safe.
+pub(crate) async fn publish_external_agent_profile_everywhere(
+    state: &Arc<AppState>,
+    first: &TenantContext,
+    agent: &PrincipalId,
+) -> anyhow::Result<()> {
+    let mut outcome = publish_or_forget_bind(state, first, agent).await;
+    for target in state.db.principal_profile_communities(agent).await? {
+        if target.community == first.community() {
+            continue;
+        }
+        let tenant = TenantContext::resolved(target.community, target.host);
+        if let Err(error) = publish_or_forget_bind(state, &tenant, agent).await {
+            outcome = Err(error);
+        }
+    }
+    outcome
+}
+
+/// A failure forgets the owner bind, so the key's next connect publishes again.
+async fn publish_or_forget_bind(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    agent: &PrincipalId,
+) -> anyhow::Result<()> {
+    let outcome = publish_external_agent_profile(state, tenant, agent).await;
+    if outcome.is_err() {
+        state
+            .identity
+            .bound_external_owners
+            .invalidate(&(tenant.community(), *agent.as_bytes()));
+    }
+    outcome.map(|_| ())
+}
+
+/// Spawn [`publish_external_agent_profile`] for a key that may have an
+/// owner-set profile: after its owner link is bound in a community, and after
+/// a kind:0 it signed slipped in past the ingest check while the owner saved.
+pub(crate) fn spawn_external_agent_profile_publish(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    agent: PrincipalId,
+) {
+    let state = Arc::clone(state);
+    let tenant = tenant.clone();
+    tokio::spawn(async move {
+        let outcome = match state.db.external_agent_profile(agent.as_bytes()).await {
+            Ok(Some(_)) => publish_or_forget_bind(&state, &tenant, &agent).await,
+            Ok(None) => return,
+            Err(error) => Err(error.into()),
+        };
+        if let Err(error) = outcome {
+            metrics::counter!("kuzz_auth_profile_publish_failures_total").increment(1);
+            tracing::warn!(%agent, community = %tenant.community(), %error,
+                "owner-set agent kind:0 publish failed; retried on its next connect");
+        }
+    });
 }
 
 async fn reconcile(
@@ -332,14 +500,44 @@ mod tests {
     }
 
     #[test]
+    fn external_agent_metadata_keeps_other_fields_and_clears_blanks() {
+        let latest = r#"{"name":"old","display_name":"old","picture":"https://a/o.png","image":"https://a/i.png","about":"old","nip05":"a@b.c","bot":true}"#;
+        let named = ExternalAgentProfile {
+            display_name: "New".into(),
+            avatar_url: None,
+            about: None,
+        };
+        assert_eq!(
+            external_agent_metadata(Some(latest), &named),
+            json!({"name": "New", "display_name": "New", "nip05": "a@b.c", "bot": true})
+        );
+        let full = ExternalAgentProfile {
+            display_name: "New".into(),
+            avatar_url: Some("https://a/n.png".into()),
+            about: Some("Sells socks".into()),
+        };
+        assert_eq!(
+            external_agent_metadata(Some("not json"), &full),
+            json!({
+                "name": "New",
+                "display_name": "New",
+                "picture": "https://a/n.png",
+                "about": "Sells socks",
+            })
+        );
+    }
+
+    #[test]
     fn current_only_when_content_matches() {
         let desired = json!({"name": "Ada", "display_name": "Ada"});
         let same = ProfileEventState {
+            server_stamped: true,
             id: vec![],
             created_at: 10,
             content: r#"{"display_name":"Ada","name":"Ada"}"#.into(),
         };
         let stale = ProfileEventState {
+            server_stamped: true,
             id: vec![],
             created_at: 10,
             content: r#"{"name":"Old"}"#.into(),
@@ -352,6 +550,7 @@ mod tests {
     #[test]
     fn created_at_moves_past_a_same_second_predecessor() {
         let existing = ProfileEventState {
+            server_stamped: true,
             id: vec![],
             created_at: 100,
             content: String::new(),

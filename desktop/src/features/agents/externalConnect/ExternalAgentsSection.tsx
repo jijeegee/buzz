@@ -38,6 +38,7 @@ import {
   DeviceHeading,
 } from "../ui/AgentTile";
 import { EditExternalAccessDialog } from "./EditExternalAccessDialog";
+import { EditExternalProfileDialog } from "./EditExternalProfileDialog";
 import {
   connectedClaim,
   type ExternalAgent,
@@ -87,6 +88,10 @@ export function ExternalAgentsSection({
   } | null>(null);
   const [busy, setBusy] = React.useState(false);
   const [adding, setAdding] = React.useState<ExternalChannelAgent | null>(null);
+  const [editingProfile, setEditingProfile] = React.useState<{
+    pubkey: string;
+    name: string;
+  } | null>(null);
   const [editingAccess, setEditingAccess] = React.useState<{
     pubkey: string;
     name: string;
@@ -156,6 +161,7 @@ export function ExternalAgentsSection({
                 key={agent?.pubkey ?? "unknown"}
                 onAddToChannel={setAdding}
                 onEditAccess={setEditingAccess}
+                onEditProfile={setEditingProfile}
                 onDisconnect={(name) =>
                   setConfirming({
                     group,
@@ -214,6 +220,14 @@ export function ExternalAgentsSection({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+      {editingProfile ? (
+        <EditExternalProfileDialog
+          agent={editingProfile}
+          onOpenChange={(open) => {
+            if (!open) setEditingProfile(null);
+          }}
+        />
+      ) : null}
       {editingAccess && owner ? (
         <EditExternalAccessDialog
           agent={editingAccess}
@@ -253,6 +267,7 @@ function ExternalAgentTile({
   onAddToChannel,
   onDisconnect,
   onEditAccess,
+  onEditProfile,
 }: {
   /** `null`: a paired computer whose agent this app has not seen. */
   agent: ExternalAgent | null;
@@ -264,6 +279,7 @@ function ExternalAgentTile({
   /** `name`: the agent's name. */
   onDisconnect: (name: string) => void;
   onEditAccess: (agent: { pubkey: string; name: string }) => void;
+  onEditProfile: (agent: { pubkey: string; name: string }) => void;
 }) {
   const t = useT();
   const pubkey = agent?.pubkey ?? null;
@@ -295,6 +311,16 @@ function ExternalAgentTile({
               variant="outline"
             >
               {t("agents.myAgents.addToGroup")}
+            </Button>
+          ) : null}
+          {pubkey ? (
+            <Button
+              data-testid={`external-agent-profile-${pubkey}`}
+              onClick={() => onEditProfile({ pubkey, name })}
+              size="xs"
+              variant="outline"
+            >
+              {t("agents.external.editProfile")}
             </Button>
           ) : null}
           {pubkey ? (

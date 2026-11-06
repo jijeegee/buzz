@@ -24579,6 +24579,14 @@
   "@agents.modelPicker.restartToApply": {
     "description": "Model picker on the agent profile: small note next to the picker. Short, lowercase."
   },
+  "agents.external.editProfile": "Edit profile",
+  "@agents.external.editProfile": {
+    "description": "Button on an external agent's row and the title of its profile dialog."
+  },
+  "agents.external.editProfileBody": "Change {name}'s name, photo and description. Only you can change them from now on, on any of your devices.",
+  "@agents.external.editProfileBody": {
+    "description": "Explains the external agent profile dialog. {name} is the agent's name."
+  },
   "agents.external.connectButton": "Connect external agent",
   "@agents.external.connectButton": {
     "description": "Agents page header: button that opens the screen to connect an agent running on another computer. Short."

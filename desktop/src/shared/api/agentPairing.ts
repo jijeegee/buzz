@@ -138,6 +138,21 @@ export function setExternalAgentAccess(
   });
 }
 
+/** Set a paired agent's name, picture and description, from any device. */
+export function setExternalAgentProfile(
+  pubkey: string,
+  profile: {
+    displayName: string;
+    avatarUrl: string | null;
+    about: string | null;
+  },
+): Promise<void> {
+  return invokeTauri<void>("set_external_agent_profile", {
+    pubkey,
+    ...profile,
+  });
+}
+
 /** Sign a paired computer out. */
 export function disconnectExternalDevice(deviceId: string): Promise<void> {
   return invokeTauri<void>("disconnect_external_device", { deviceId });
