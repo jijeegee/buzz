@@ -134,9 +134,3 @@ export async function resolveKuzzDownloadUrlForPlatform(
       return KUZZ_DOWNLOADS_URL;
   }
 }
-
-export async function resolveKuzzDownloadUrl(): Promise<string> {
-  return resolveKuzzDownloadUrlForPlatform(
-    await detectKuzzDownloadPlatform(navigator),
-  );
-}

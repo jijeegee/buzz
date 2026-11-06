@@ -54,7 +54,7 @@ void main() {
       find.descendant(of: markFinder, matching: find.byType(ScaleTransition)),
     );
     final initialScale = pulse.scale.value;
-    await tester.pump(const Duration(milliseconds: 300));
+    await tester.pump(const Duration(milliseconds: 120));
     expect(pulse.scale.value, isNot(initialScale));
 
     refreshCompleter.complete();

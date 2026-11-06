@@ -179,8 +179,7 @@ function KuzzLoader({
 }
 
 // Cold boot gate: the theme-adaptive grainient background with a single
-// centered Kuzz bee flying over it — the same static mark as before, now with
-// its wings flapping (ported from the Kuzz website's wing-flap). Replaces the
+// centered Kuzz mark over it. Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
   const t = useT();

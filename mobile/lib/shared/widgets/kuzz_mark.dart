@@ -94,7 +94,10 @@ class KuzzLoadingMark extends HookWidget {
     );
     useEffect(() {
       if (pulses) {
-        controller.repeat(reverse: true);
+        // Start at the resting size so the mark does not jump.
+        controller
+          ..value = 0.5
+          ..repeat(reverse: true);
       } else {
         controller
           ..stop()
