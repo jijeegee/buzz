@@ -89,6 +89,12 @@ _MAX_CATCH_UP_SECS = 86400
 _DM_REFRESH_SECS = 60.0
 # Hermes gives connect 30s.
 CONNECT_UPDATE_HOLD = 20.0
+# Hermes queues a parked watch for reconnection with no delay, and a successful connect clears the
+# queue, so a watch that parks right after connect would cycle every few seconds. For this long
+# after a park, connect fails with the park's reason instead, and Hermes's own backoff applies.
+PARK_HOLD = 300.0
+# The last park in this process (code, message, monotonic time); a gateway restart forgets it.
+_last_park: Optional[Tuple[str, str, float]] = None
 # `kuzz agents same-owner`: its time limit and how long an answer is remembered.
 _SAME_OWNER_TIMEOUT_SECS = 3.0
 _SAME_OWNER_HIT_SECS = 300.0
@@ -311,6 +317,9 @@ class KuzzAdapter(BasePlatformAdapter):
             logger.info("Kuzz: an app update is still running; connecting later")
             self._set_fatal_error("update_running", "Kuzz is updating.", retryable=True)
             return False
+        parked = _last_park
+        if parked is not None and time.monotonic() - parked[2] < PARK_HOLD:
+            return self._fail(parked[0], parked[1])
         cli_path = _cli_path(self._extra)
         if not cli_path:
             return self._fail("cli_missing", "The kuzz CLI was not found. Install Kuzz or set KUZZ_CLI_PATH.")
@@ -325,13 +334,17 @@ class KuzzAdapter(BasePlatformAdapter):
         self._identity = identity
         if not self.owner:
             return self._fail("owner_missing", "No owner is known, so nobody could talk to the agent.")
+        # One signed relay call before reporting connected: a refused device or a revoked agent fails
+        # here, where Hermes backs off, not a second later in the watch, which would loop.
+        refused = await self._load_dms()
+        if refused:
+            return self._fail("relay_refused", f"The Kuzz relay refused this agent: {refused}")
         self._sync_allowlist()
         if not self._acquire_lock():
             return self._fail("lock_conflict", "This agent is already running in another Hermes profile.")
         await self._load_profile()
         self._connected_at = time.time()
         self._load_cursors()
-        await self._refresh_dms(force=True)
         self._supervisor = WatchSupervisor(
             self._cli,
             self._on_message,
@@ -366,15 +379,20 @@ class KuzzAdapter(BasePlatformAdapter):
         self._save_cursors()
         self._release_lock()
 
+    # Every Kuzz failure is retryable. Hermes queues a retryable platform and keeps the gateway up;
+    # a non-retryable one stops the whole gateway when no other platform has connected yet (Telegram
+    # still connecting), taking the person's other platforms down with Kuzz.
     def _fail(self, code: str, message: str) -> bool:
         logger.error("Kuzz: %s", message)
-        self._set_fatal_error(code, message, retryable=False)
+        self._set_fatal_error(code, message, retryable=True)
         return False
 
     async def _on_park(self, code: str, message: str) -> None:
+        global _last_park
+        _last_park = (code, message, time.monotonic())
         self._save_cursors()
         self._release_lock()
-        self._set_fatal_error(code, message, retryable=False)
+        self._set_fatal_error(code, message, retryable=True)
         await self._notify_fatal_error()
 
     def _watch_args(self) -> List[str]:
@@ -437,6 +455,20 @@ class KuzzAdapter(BasePlatformAdapter):
         dms = await _cli_json(self._cli, ["dms", "list"], self._env())
         if isinstance(dms, list):
             self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
+
+    async def _load_dms(self) -> str:
+        """Load the DM list; the CLI's error when it fails, else ""."""
+        self._dm_checked_at = time.monotonic()
+        rc, out, err = await self._run(["dms", "list"])
+        if rc != 0:
+            return kuzz_cli.cli_error_message(err, rc)
+        try:
+            dms = json.loads(out)
+        except ValueError:
+            dms = None
+        if isinstance(dms, list):
+            self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
+        return ""
 
     async def _is_dm(self, channel: str) -> bool:
         if channel not in self._dm_channels:

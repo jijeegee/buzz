@@ -67,7 +67,7 @@ mod tpm;
 use secure_enclave as hw;
 #[cfg(windows)]
 mod hw {
-    pub(crate) use crate::tpm::{create, open, TpmError as HwError, TpmKey as HwKey};
+    pub(crate) use crate::tpm::{create, missing, open, TpmError as HwError, TpmKey as HwKey};
 }
 
 #[cfg(test)]
@@ -349,10 +349,11 @@ impl DeviceKey {
     /// `store`) without ever creating one: for child processes of the app
     /// that made it. `Ok(None)` when there is none. The same key
     /// [`Self::open_or_create`] picks: a software key without a hardware
-    /// marker wins over a hardware key. Unavailable hardware
-    /// with a hardware marker in `store` is an error, as in
-    /// [`Self::open_or_create`] (on macOS: a binary without the app's
-    /// keychain access group after the app made a Secure Enclave key).
+    /// marker wins over a hardware key. Unavailable hardware, or no hardware
+    /// key, with a hardware marker in `store` is
+    /// [`DeviceKeyError::HardwareOutOfReach`] (on macOS: a binary without the
+    /// app's keychain access group after the app made a Secure Enclave key,
+    /// which finds no key at all).
     pub fn open(scope: &str, store: &dyn SoftwareKeyStore) -> Result<Option<Self>> {
         validate_scope(scope)?;
         #[cfg(any(windows, target_os = "macos"))]
@@ -362,9 +363,10 @@ impl DeviceKey {
                     Some(software) => Self::software(software).map(Some),
                     None => Self::from_hardware(key, scope, store).map(Some),
                 },
-                Ok(None) => store
-                    .load(scope)?
-                    .map(|secret| Self::software(software::signing_key(&secret)?))
+                // With a marker the key exists but this binary can't see it
+                // (on macOS: no keychain access group says "not found").
+                Ok(None) => software_fallback(store, scope, hw::missing(), false)?
+                    .map(Self::software)
                     .transpose(),
                 Err(hw::HwError::Unavailable(error)) => {
                     software_fallback(store, scope, error, false)?

@@ -37,6 +37,9 @@ const BUSY_LIMIT: Duration = Duration::from_secs(600);
 const EXIT_LIMIT: Duration = Duration::from_secs(240);
 /// Longest wait for Kuzz to come up after the restart exited.
 const CONNECT_LIMIT: Duration = Duration::from_secs(90);
+/// How long Kuzz must stay connected to count: a refused device fails the
+/// watch about a second after the adapter reports connected.
+const CONNECTED_HOLD: Duration = Duration::from_secs(10);
 /// Longest the `--help` probe may take: Hermes starts slowly.
 const HELP_LIMIT: Duration = Duration::from_secs(30);
 
@@ -246,16 +249,26 @@ fn restart(root: &Path, profile: &str) -> Result<(), String> {
         .map_err(|error| format!("gateway restart failed to start: {error}"))?;
     let mut deadline = Instant::now() + EXIT_LIMIT;
     let mut exited = false;
+    let mut hold = Hold::default();
     while Instant::now() < deadline {
         let now = read_state(&target_home);
-        if !now.is_null()
-            && !same_gateway(&now, &before)
-            && gateway_view(root, profile)
-                .is_some_and(|view| view.running && view.kuzz.as_deref() == Some("connected"))
-        {
-            log(root, "Kuzz is connected");
-            reap(child);
-            return Ok(());
+        let kuzz = if now.is_null() || same_gateway(&now, &before) {
+            None
+        } else {
+            gateway_view(root, profile).filter(|view| view.running).and_then(|view| view.kuzz)
+        };
+        match hold.observe(kuzz.as_deref(), Instant::now()) {
+            Settled::Connected => {
+                log(root, "Kuzz is connected");
+                reap(child);
+                return Ok(());
+            }
+            Settled::Failed => {
+                log(root, "Kuzz failed to connect");
+                reap(child);
+                return Ok(());
+            }
+            Settled::Waiting => {}
         }
         if !exited {
             let status = child
@@ -278,6 +291,37 @@ fn restart(root: &Path, profile: &str) -> Result<(), String> {
     log(root, "Kuzz is not connected yet");
     reap(child);
     Ok(())
+}
+
+/// What the new gateway's Kuzz state has shown so far.
+#[derive(Debug, PartialEq, Eq)]
+enum Settled {
+    Waiting,
+    /// Connected for [`CONNECTED_HOLD`].
+    Connected,
+    /// The adapter failed (`fatal`, or `retrying` in Hermes's background
+    /// queue): waiting longer changes nothing.
+    Failed,
+}
+
+/// Since when the new gateway's Kuzz entry has read connected. Pure.
+#[derive(Default)]
+struct Hold(Option<Instant>);
+
+impl Hold {
+    fn observe(&mut self, kuzz: Option<&str>, now: Instant) -> Settled {
+        match kuzz {
+            Some("connected") => {
+                let since = *self.0.get_or_insert(now);
+                if now.duration_since(since) >= CONNECTED_HOLD {
+                    return Settled::Connected;
+                }
+            }
+            Some("fatal" | "retrying") => return Settled::Failed,
+            _ => self.0 = None,
+        }
+        Settled::Waiting
+    }
 }
 
 /// A restart that stays on as the gateway: on exit it must not stay behind
@@ -565,6 +609,24 @@ mod tests {
         assert!(is_settling("a"));
         drop(Settling("a".into()));
         assert!(!is_settling("a"));
+    }
+
+    #[test]
+    fn connected_counts_only_once_it_holds() {
+        let start = Instant::now();
+        let at = |secs| start + Duration::from_secs(secs);
+        let mut hold = Hold::default();
+        assert_eq!(hold.observe(Some("connecting"), at(0)), Settled::Waiting);
+        assert_eq!(hold.observe(Some("connected"), at(1)), Settled::Waiting);
+        // A refused device: connected for a second, then the adapter gives up.
+        assert_eq!(hold.observe(Some("fatal"), at(2)), Settled::Failed);
+        assert_eq!(hold.observe(Some("retrying"), at(2)), Settled::Failed);
+        // Dropping out starts the hold over.
+        assert_eq!(hold.observe(Some("connected"), at(3)), Settled::Waiting);
+        assert_eq!(hold.observe(None, at(4)), Settled::Waiting);
+        assert_eq!(hold.observe(Some("connected"), at(5)), Settled::Waiting);
+        assert_eq!(hold.observe(Some("connected"), at(14)), Settled::Waiting);
+        assert_eq!(hold.observe(Some("connected"), at(15)), Settled::Connected);
     }
 
     #[test]

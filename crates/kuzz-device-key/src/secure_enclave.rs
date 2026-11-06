@@ -138,6 +138,11 @@ pub(crate) fn open(name: &str) -> std::result::Result<Option<HwKey>, HwError> {
     }))
 }
 
+/// What [`open`] finding no key means when a marker says one was made.
+pub(crate) fn missing() -> DeviceKeyError {
+    error("SecItemCopyMatching", ERR_ITEM_NOT_FOUND)
+}
+
 /// Create the Secure Enclave key `name` (non-exportable, this Mac only).
 /// When a racing creator made one too, both settle on the same key
 /// ([`pick`]) and ours is deleted if it lost.
