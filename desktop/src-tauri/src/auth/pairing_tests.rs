@@ -33,7 +33,13 @@ fn default_home() -> PathBuf {
 
 #[test]
 fn hermes_pairing_runs_exactly_this_argv() {
-    let args = hermes_pair_args("wss://gateway.kuzz.app", "7QKF-M2XD-9RTB", "Hermes", None);
+    let args = hermes_pair_args(
+        "wss://gateway.kuzz.app",
+        "7QKF-M2XD-9RTB",
+        "Hermes",
+        None,
+        None,
+    );
     let expected: Vec<OsString> = [
         "pair",
         "--hermes",
@@ -154,7 +160,7 @@ fn the_old_hermes_key_file_is_removed() {
 #[test]
 fn a_named_profile_is_passed_by_its_folder() {
     let home = PathBuf::from(HOME).join("profiles").join("work");
-    let args = hermes_pair_args("wss://r", "CODE", "Work", Some(&home));
+    let args = hermes_pair_args("wss://r", "CODE", "Work", Some(&home), Some("ab12"));
     let expected: Vec<OsString> = [
         OsString::from("pair"),
         "--hermes".into(),
@@ -162,6 +168,8 @@ fn a_named_profile_is_passed_by_its_folder() {
         "--name=Work".into(),
         "--hermes-home".into(),
         home.clone().into(),
+        "--reuse-agent".into(),
+        "ab12".into(),
         "--relay".into(),
         "wss://r".into(),
         "CODE".into(),

@@ -87,8 +87,18 @@ export function getHermesStatus(): Promise<HermesStatus> {
   return invokeTauri<HermesStatus>("get_hermes_status");
 }
 
-export function connectHermes(profile: string): Promise<HermesPairingRun> {
-  return invokeTauri<HermesPairingRun>("connect_hermes", { profile });
+/**
+ * `sameAccount`: the profile was connected for this account, so its agent is
+ * paired again rather than a new one.
+ */
+export function connectHermes(
+  profile: string,
+  sameAccount: boolean,
+): Promise<HermesPairingRun> {
+  return invokeTauri<HermesPairingRun>("connect_hermes", {
+    profile,
+    sameAccount,
+  });
 }
 
 /** Have the gateway of a connected profile load the connector. */

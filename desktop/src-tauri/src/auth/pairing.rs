@@ -210,10 +210,14 @@ pub async fn disconnect_external_agent(
 pub async fn get_hermes_status() -> HermesStatus {
     tokio::task::spawn_blocking(|| {
         let home = hermes_home();
+        let profiles = home.as_deref().map(hermes_profiles).unwrap_or_default();
+        if let Some(root) = home.as_deref() {
+            log_shown_changes(root, &profiles);
+        }
         HermesStatus {
             found: home.is_some(),
             can_connect: home.is_some() && hermes_installer().is_some(),
-            profiles: home.as_deref().map(hermes_profiles).unwrap_or_default(),
+            profiles,
         }
     })
     .await
@@ -224,19 +228,58 @@ pub async fn get_hermes_status() -> HermesStatus {
     })
 }
 
+/// What the screen last read of each profile, for the log.
+static SHOWN: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+
+/// Log what the screen reads of a profile when it differs from last time:
+/// how a Connect went on is in the same log as the restart.
+fn log_shown_changes(root: &Path, profiles: &[HermesProfileView]) {
+    let Ok(mut shown) = SHOWN.lock() else {
+        return;
+    };
+    for profile in profiles {
+        let now = format!(
+            "paired: {}, settling: {}, gateway: {:?}",
+            profile
+                .paired_agent
+                .as_deref()
+                .map_or("none", |key| &key[..8]),
+            profile.settling,
+            profile.gateway.as_ref().map(HermesGatewayView::summary),
+        );
+        match shown.iter_mut().find(|(name, _)| *name == profile.name) {
+            Some((_, last)) if *last == now => continue,
+            Some((_, last)) => *last = now.clone(),
+            None => shown.push((profile.name.clone(), now.clone())),
+        }
+        hermes_gateway::log(root, &format!("shown {}: {now}", profile.name));
+    }
+}
+
 /// Pair Hermes on this computer: a new code, then the bundled
 /// `kuzz pair --hermes --relay <url> <code>`, which claims it and installs
 /// the plugin. `profile` is a name from [`get_hermes_status`], read again
-/// here (never a path from the screen). Returns once the CLI is done; the
-/// caller reads the pairing list for the result.
+/// here (never a path from the screen). `same_account`: the profile was
+/// connected for this account, so its agent is paired again (same key, when
+/// saved here). Returns once the CLI is done; the caller reads the pairing
+/// list for the result.
 #[tauri::command]
-pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPairingRun, String> {
+pub async fn connect_hermes(
+    app: AppHandle,
+    profile: String,
+    same_account: Option<bool>,
+) -> Result<HermesPairingRun, String> {
     let chosen = profile.clone();
-    let (kuzz, target, name) = tokio::task::spawn_blocking(move || {
+    let (kuzz, target, name, again, root) = tokio::task::spawn_blocking(move || {
         let root = hermes_home()?;
         let target = hermes_profile_target(&root, &chosen)?;
-        let name = hermes_display_name(target.as_deref().unwrap_or(&root), &chosen);
-        Some((hermes_installer()?, target, name))
+        let home = target.as_deref().unwrap_or(&root);
+        let name = hermes_display_name(home, &chosen);
+        let again = same_account
+            .unwrap_or(false)
+            .then(|| paired_agent_of(home))
+            .flatten();
+        Some((hermes_installer()?, target, name, again, root))
     })
     .await
     .ok()
@@ -249,6 +292,13 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     let started = api::pairing_start(&state.http_client, &origin, &session.access, true)
         .await
         .map_err(api_error)?;
+    hermes_gateway::log(
+        &root,
+        &format!(
+            "connect {profile}: code received (same agent: {})",
+            again.is_some()
+        ),
+    );
     let relay = started
         .relay_url
         .clone()
@@ -257,7 +307,13 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     let code = Zeroizing::new(started.code.to_string());
     let finished = tokio::task::spawn_blocking(move || {
         let mut pair = std::process::Command::new(&kuzz);
-        pair.args(hermes_pair_args(&relay, &code, &name, target.as_deref()));
+        pair.args(hermes_pair_args(
+            &relay,
+            &code,
+            &name,
+            target.as_deref(),
+            again.as_deref(),
+        ));
         for name in CLEARED_ENV {
             pair.env_remove(name);
         }
@@ -266,7 +322,10 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     })
     .await
     .unwrap_or(false);
-    eprintln!("kuzz-desktop: hermes: kuzz pair finished (ok: {finished})");
+    hermes_gateway::log(
+        &root,
+        &format!("connect {profile}: kuzz pair finished (ok: {finished})"),
+    );
     if finished {
         hermes_gateway::settle(&profile);
     }
@@ -339,6 +398,7 @@ fn hermes_pair_args(
     code: &str,
     name: &str,
     profile_home: Option<&Path>,
+    again: Option<&str>,
 ) -> Vec<OsString> {
     // One argument: a name may start with a dash.
     let name = format!("--name={name}");
@@ -349,6 +409,10 @@ fn hermes_pair_args(
     if let Some(home) = profile_home {
         args.push("--hermes-home".into());
         args.push(home.into());
+    }
+    if let Some(agent) = again {
+        args.push("--reuse-agent".into());
+        args.push(agent.into());
     }
     args.extend(["--relay", relay, code].map(OsString::from));
     args
@@ -441,6 +505,13 @@ fn is_person_profile(name: &str) -> bool {
             .is_some_and(|hex| hex.len() == 16 && hex.chars().all(|c| c.is_ascii_hexdigit()))
     });
     valid && name != DEFAULT_PROFILE && !managed
+}
+
+/// The agent the profile in `home` acts as (`KUZZ_PAIRED_AGENT`).
+fn paired_agent_of(home: &Path) -> Option<String> {
+    let env = std::fs::read(home.join(".env")).ok()?;
+    let env = String::from_utf8_lossy(&env);
+    env_pubkey(env.trim_start_matches('\u{feff}'), "KUZZ_PAIRED_AGENT")
 }
 
 /// The hex pubkey in `key=...` of a `.env` text. Pure.

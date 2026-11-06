@@ -146,6 +146,7 @@ fn request<'a>(relay_url: &'a str, keys: Option<Keys>) -> PairRequest<'a> {
         device_name: "studio mac",
         runtime: Some("Hermes"),
         agent_keys: keys,
+        again: None,
     }
 }
 
@@ -246,6 +247,53 @@ async fn refusals_are_clear_and_leave_nothing_behind() {
         assert!(error.to_string().contains(expect), "{code}: {error}");
         assert!(store.list().is_empty(), "{code}: pairing left behind");
     }
+}
+
+#[tokio::test]
+async fn pairing_again_keeps_the_same_agent_and_its_key() {
+    let dir = tempfile::tempdir().unwrap();
+    let (_, device) = file_signer(&dir);
+    let store = PairingStore::new(dir.path().join("pairings"));
+    let (relay, claims) = fake_relay(connected()).await;
+    let first = pair(request(&relay, None), &device, &store).await.unwrap();
+
+    let again = store
+        .saved(&first.agent_pubkey)
+        .expect("saved with its key");
+    let (relay, claims_again) = fake_relay(connected()).await;
+    let second = pair(
+        PairRequest {
+            again: Some(again.clone()),
+            ..request(&relay, None)
+        },
+        &device,
+        &store,
+    )
+    .await
+    .unwrap();
+    assert_eq!(second.agent_pubkey, first.agent_pubkey);
+    assert_eq!(
+        claims_again.lock().unwrap()[0]["agent_pubkey"],
+        claims.lock().unwrap()[0]["agent_pubkey"]
+    );
+    assert_eq!(store.list().len(), 1);
+    assert!(store.saved(&first.agent_pubkey).is_some(), "key kept");
+
+    // Refused: the earlier pairing stays as it was, key and all.
+    let (relay, _) = fake_relay(refused(StatusCode::CONFLICT, "key_in_use")).await;
+    pair(
+        PairRequest {
+            again: Some(again),
+            ..request(&relay, None)
+        },
+        &device,
+        &store,
+    )
+    .await
+    .expect_err("refused");
+    let kept = store.saved(&first.agent_pubkey).expect("still saved");
+    assert_eq!(kept.state, "connected");
+    assert_eq!(store.list().len(), 1);
 }
 
 #[tokio::test]
