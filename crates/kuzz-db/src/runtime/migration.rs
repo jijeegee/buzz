@@ -727,6 +727,15 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[92].version, 100);
+        let agent_tools = migrations[92].sql.as_str();
+        assert!(agent_tools.contains("ADD COLUMN tool_level TEXT"));
+        assert!(agent_tools.contains("ADD COLUMN tool_community_id UUID"));
+        assert!(agent_tools.contains("CREATE TABLE agent_actions"));
+        assert!(agent_tools.contains("attach_community_write_fence('agent_actions')"));
+        assert!(
+            include_str!("../../../../schema/schema.sql").contains("CREATE TABLE agent_actions")
+        );
         assert_eq!(migrations[88].version, 95);
         assert!(migrations[88].sql.as_str().contains("ADD COLUMN entry_seq"));
         assert!(include_str!("../../../../schema/schema.sql")
@@ -747,7 +756,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 89);
+        assert_eq!(migrations.len(), 93);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql
@@ -2267,8 +2276,11 @@ mod postgres_tests {
         expected_fences.remove("rate_limit_violations");
         expected_fences.extend(
             [
+                "agent_actions",
                 "artifact_heads",
                 "artifact_revisions",
+                "goal_links",
+                "goals",
                 "group_add_settings",
                 "group_invitations",
                 "group_invite_links",

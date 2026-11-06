@@ -891,7 +891,7 @@ fn normalize_create_effort_level_rejects_unsafe_values_for_a_local_backend() {
 // ── delete order (Rule 1, Rule 3) ──────────────────────────────────────────
 
 #[tokio::test]
-async fn delete_stops_then_deletes_on_the_server_then_locally() {
+async fn delete_checks_stops_then_deletes_on_the_server_then_locally() {
     use std::sync::Mutex;
     let agent = nostr::Keys::generate().public_key().to_hex();
     let order = Mutex::new(Vec::new());
@@ -907,24 +907,128 @@ async fn delete_stops_then_deletes_on_the_server_then_locally() {
     };
     delete_managed_agent_in_order(
         &agent,
+        step("check", Ok(())),
         step("stop", Ok(())),
         step("server", Ok(())),
+        step("revoke", Ok(())),
         step("local", Ok(())),
     )
     .await
     .unwrap();
-    assert_eq!(*order.lock().unwrap(), vec!["stop", "server", "local"]);
+    // The key is revoked last among the server steps, before the local delete.
+    assert_eq!(
+        *order.lock().unwrap(),
+        vec!["check", "stop", "server", "revoke", "local"]
+    );
     assert!(!crate::auth::bots::DeleteFence::is_active(&agent));
 
-    // A server failure keeps the agent: the local delete never runs.
+    // A server failure keeps the agent: no revoke, no local delete.
     order.lock().unwrap().clear();
     let failed = delete_managed_agent_in_order(
         &agent,
+        step("check", Ok(())),
         step("stop", Ok(())),
         step("server", Err("relay down".into())),
+        step("revoke", Ok(())),
         step("local", Ok(())),
     )
     .await;
     assert!(failed.is_err());
-    assert_eq!(*order.lock().unwrap(), vec!["stop", "server"]);
+    assert_eq!(*order.lock().unwrap(), vec!["check", "stop", "server"]);
+
+    // A revoke failure keeps the agent too.
+    order.lock().unwrap().clear();
+    let failed = delete_managed_agent_in_order(
+        &agent,
+        step("check", Ok(())),
+        step("stop", Ok(())),
+        step("server", Ok(())),
+        step("revoke", Err("relay down".into())),
+        step("local", Ok(())),
+    )
+    .await;
+    assert!(failed.is_err());
+    assert_eq!(
+        *order.lock().unwrap(),
+        vec!["check", "stop", "server", "revoke"]
+    );
+}
+
+#[tokio::test]
+async fn a_guarded_remote_delete_never_reaches_the_server_or_revokes() {
+    use std::sync::Mutex;
+    let agent = nostr::Keys::generate().public_key().to_hex();
+    let mut record = sample_record_for_delete(&agent);
+    record.backend = BackendKind::Provider {
+        id: "blox".into(),
+        config: serde_json::json!({}),
+    };
+    record.backend_agent_id = Some("remote-1".into());
+    let records = vec![record];
+    let order = Mutex::new(Vec::new());
+    let step = |name: &'static str| {
+        let order = &order;
+        move || async move {
+            order.lock().unwrap().push(name);
+            Ok::<(), String>(())
+        }
+    };
+    let refused = delete_managed_agent_in_order(
+        &agent,
+        || async { delete_preconditions(&records, &agent, None) },
+        step("stop"),
+        step("server"),
+        step("revoke"),
+        step("local"),
+    )
+    .await
+    .unwrap_err();
+    assert!(refused.contains("force_remote_delete"), "{refused}");
+    assert!(order.lock().unwrap().is_empty());
+
+    // Confirmed by the user: every step runs.
+    delete_managed_agent_in_order(
+        &agent,
+        || async { delete_preconditions(&records, &agent, Some(true)) },
+        step("stop"),
+        step("server"),
+        step("revoke"),
+        step("local"),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        *order.lock().unwrap(),
+        vec!["stop", "server", "revoke", "local"]
+    );
+
+    // An unknown agent is refused before anything runs.
+    assert!(delete_preconditions(&records, "missing", Some(true)).is_err());
+}
+
+fn sample_record_for_delete(pubkey: &str) -> ManagedAgentRecord {
+    let mut record: ManagedAgentRecord = serde_json::from_value(serde_json::json!({
+        "pubkey": pubkey,
+        "name": "agent",
+        "private_key_nsec": "",
+        "relay_url": "",
+        "acp_command": "kuzz-acp",
+        "agent_command": "goose",
+        "agent_args": [],
+        "mcp_command": "",
+        "turn_timeout_seconds": 320,
+        "system_prompt": null,
+        "model": null,
+        "provider": null,
+        "env_vars": {},
+        "created_at": "2026-01-01T00:00:00Z",
+        "updated_at": "2026-01-01T00:00:00Z",
+        "last_started_at": null,
+        "last_stopped_at": null,
+        "last_exit_code": null,
+        "last_error": null
+    }))
+    .expect("sample record");
+    record.backend = BackendKind::Local;
+    record
 }

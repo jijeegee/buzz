@@ -234,6 +234,23 @@ fn is_unique_violation(error: &sqlx::Error) -> bool {
     matches!(error, sqlx::Error::Database(db) if db.code().as_deref() == Some("23505"))
 }
 
+/// The account key of the person who paired `agent` (`kuzz pair`), which
+/// `users` does not record. With `connected_only`, none once the agent or its
+/// computer was disconnected (no host, or its device revoked).
+pub(crate) async fn paired_agent_owner(
+    pool: &sqlx::PgPool,
+    agent: &[u8],
+    connected_only: bool,
+) -> Result<Option<Vec<u8>>> {
+    Ok(sqlx::query_scalar(
+        "SELECT b.pubkey FROM key_registry r            JOIN account_key_backups b ON b.account_id = r.principal_id           WHERE r.pubkey = $1 AND r.role = 'external' AND r.revoked_at IS NULL             AND (NOT $2 OR EXISTS (SELECT 1 FROM devices h                                     WHERE h.id = r.host_device_id                                       AND h.revoked_at IS NULL))",
+    )
+    .bind(agent)
+    .bind(connected_only)
+    .fetch_optional(pool)
+    .await?)
+}
+
 impl Db {
     /// Live open groups whose name, description or address contains `text`
     /// (case-insensitive). Exact name/address matches first, then larger
@@ -669,6 +686,56 @@ impl Db {
         Ok(removed.unwrap_or(false))
     }
 
+    /// The owner's account key for each of `keys` that has one: an agent's
+    /// `users` owner, else a bot's owner, else the person who paired it. A
+    /// connected bot's `users` owner is the account id, so both map to the
+    /// account key. Unowned keys, deleted bots, revoked keys and paired keys
+    /// without a live computer are left out.
+    #[datastore_span(name = "key_owners", system = "postgresql")]
+    pub async fn key_owners(
+        &self,
+        community_id: CommunityId,
+        keys: &[[u8; 32]],
+    ) -> Result<Vec<([u8; 32], Vec<u8>)>> {
+        let keys: Vec<Vec<u8>> = keys.iter().map(|key| key.to_vec()).collect();
+        let rows: Vec<(Vec<u8>, Vec<u8>)> = sqlx::query_as(
+            "SELECT o.key, o.owner FROM ( \
+               SELECT k.key, COALESCE( \
+                 (SELECT COALESCE(a.pubkey, u.agent_owner_pubkey) FROM users u \
+                    LEFT JOIN account_key_backups a ON a.account_id = u.agent_owner_pubkey \
+                   WHERE u.community_id = $1 AND u.pubkey = k.key), \
+                 (SELECT COALESCE(a.pubkey, b.owner_principal_id) FROM bots b \
+                    LEFT JOIN account_key_backups a ON a.account_id = b.owner_principal_id \
+                   WHERE b.id = k.key), \
+                 (SELECT a.pubkey FROM key_registry r \
+                    JOIN account_key_backups a ON a.account_id = r.principal_id \
+                   WHERE r.pubkey = k.key AND r.role = 'external') \
+               ) AS owner \
+               FROM unnest($2::bytea[]) AS k(key) \
+              WHERE NOT EXISTS (SELECT 1 FROM bots b \
+                                 WHERE b.id = k.key AND b.deleted_at IS NOT NULL) \
+                AND NOT EXISTS (SELECT 1 FROM key_registry r \
+                                  LEFT JOIN devices d ON d.id = r.host_device_id \
+                                 WHERE r.pubkey = k.key \
+                                   AND (r.revoked_at IS NOT NULL \
+                                        OR d.revoked_at IS NOT NULL \
+                                        OR (r.role = 'external' AND d.id IS NULL))) \
+             ) o WHERE o.owner IS NOT NULL",
+        )
+        .bind(community_id.as_uuid())
+        .bind(&keys)
+        .fetch_all(&self.pool)
+        .await?;
+        rows.into_iter()
+            .map(|(key, owner)| {
+                let key: [u8; 32] = key
+                    .try_into()
+                    .map_err(|_| DbError::InvalidData("invalid key".into()))?;
+                Ok((key, owner))
+            })
+            .collect()
+    }
+
     /// Whether `pubkey` is a bot principal (token-mode agent), even one that
     /// has not connected yet and so has no `users.agent_owner_pubkey`.
     #[datastore_span(name = "is_bot_principal", system = "postgresql")]
@@ -679,6 +746,16 @@ impl Db {
         .bind(pubkey)
         .fetch_one(&self.pool)
         .await?)
+    }
+
+    /// See [`paired_agent_owner`].
+    #[datastore_span(name = "paired_agent_owner", system = "postgresql")]
+    pub async fn paired_agent_owner(
+        &self,
+        agent: &[u8],
+        connected_only: bool,
+    ) -> Result<Option<Vec<u8>>> {
+        paired_agent_owner(&self.pool, agent, connected_only).await
     }
 
     /// Whether `blocker` blocks `blocked`.

@@ -87,6 +87,14 @@ const KEY_EXCEPTIONS: &[(&str, &str, Why)] = &[
         ),
     ),
     (
+        "api/auth/agents.rs",
+        "me",
+        Why::Exempt(
+            "read-only self-report: reads key_admission itself (via agent_authority) and \
+             grants nothing; a key not admitted on this device is told why, as limited",
+        ),
+    ),
+    (
         "api/auth/pairing.rs",
         "claim",
         Why::Exempt(

@@ -1,5 +1,6 @@
-; Tauri 2.11.4's NSIS installer template (tauri-bundler), with one change
-; marked "Kuzz:" in PageReinstall. Re-copy it when @tauri-apps/cli changes.
+; Tauri 2.11.4's NSIS installer template (tauri-bundler), with changes marked
+; "Kuzz:" in PageReinstall and around Section Install. Re-copy it when
+; @tauri-apps/cli changes.
 Unicode true
 ManifestDPIAware true
 ; Add in `dpiAwareness` `PerMonitorV2` to manifest for Windows 10 1607+ (note this should not affect lower versions since they should be able to ignore this and pick up `dpiAware` `true` set by `ManifestDPIAware true`)
@@ -77,6 +78,7 @@ Var UpdateMode
 Var NoShortcutMode
 Var WixMode
 Var OldMainBinaryName
+Var KuzzPauseFile
 
 Name "${PRODUCTNAME}"
 BrandingText "${COPYRIGHT}"
@@ -644,6 +646,48 @@ Section WebView2
   ${EndIf}
 SectionEnd
 
+; Kuzz: a running Hermes holds kuzz.exe open and must keep running. The signal
+; file makes its Kuzz plugin let go of kuzz.exe until the file is gone (update_paused
+; in plugins/platforms/kuzz/kuzz_cli.py, which ignores a file older than 5 minutes).
+; 35 seconds outlast the plugin's 30 second limit on a kuzz command.
+Function KuzzPauseHermes
+  ${IfNot} ${FileExists} "$INSTDIR\kuzz.exe"
+    Return
+  ${EndIf}
+
+  ReadEnvStr $1 LOCALAPPDATA
+  CreateDirectory "$1\kuzz"
+  StrCpy $KuzzPauseFile "$1\kuzz\update-pause"
+  DetailPrint "Waiting for kuzz.exe to be free..."
+
+  signal:
+    ; Recreated, so a retry after a long wait is not stale.
+    Delete "$KuzzPauseFile"
+    FileOpen $0 "$KuzzPauseFile" w
+    FileClose $0
+    StrCpy $1 0
+
+  poll:
+    ClearErrors
+    FileOpen $0 "$INSTDIR\kuzz.exe" a
+    ${IfNot} ${Errors}
+      FileClose $0
+      Return
+    ${EndIf}
+    ${If} $1 < 35
+      IntOp $1 $1 + 1
+      Sleep 1000
+      Goto poll
+    ${EndIf}
+
+  MessageBox MB_ICONEXCLAMATION|MB_RETRYCANCEL "${PRODUCTNAME} can't update because kuzz.exe is in use. Close the program using it, then retry." /SD IDCANCEL IDRETRY signal
+
+  ; Nothing was installed. CheckIfAppIsRunning closed the app, so give it back.
+  Delete "$KuzzPauseFile"
+  Call .onInstSuccess
+  Abort "${PRODUCTNAME} was not updated: kuzz.exe is in use."
+FunctionEnd
+
 Section Install
   SetOutPath $INSTDIR
 
@@ -652,6 +696,9 @@ Section Install
   !endif
 
   !insertmacro CheckIfAppIsRunning "${MAINBINARYNAME}.exe" "${PRODUCTNAME}"
+
+  ; Kuzz: must be free before anything is replaced
+  Call KuzzPauseHermes
 
   ; Copy main executable
   File "${MAINBINARYSRCPATH}"
@@ -743,11 +790,19 @@ Section Install
     !insertmacro NSIS_HOOK_POSTINSTALL
   !endif
 
+  ; Kuzz: Hermes reconnects
+  Delete "$KuzzPauseFile"
+
   ; Auto close this page for passive mode
   ${If} $PassiveMode = 1
     SetAutoClose true
   ${EndIf}
 SectionEnd
+
+; Kuzz: a failed install must not leave Hermes waiting
+Function .onInstFailed
+  Delete "$KuzzPauseFile"
+FunctionEnd
 
 Function .onInstSuccess
   ; Check for `/R` flag only in silent and passive installers because

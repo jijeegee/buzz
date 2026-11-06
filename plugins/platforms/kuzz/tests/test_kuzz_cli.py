@@ -4,12 +4,16 @@ Stdlib only; run with `python -m unittest discover -s plugins/platforms/kuzz/tes
 """
 
 import asyncio
+import contextlib
+import io
 import json
 import os
+import shutil
 import subprocess
 import tempfile
 import time
 import unittest
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -80,7 +84,7 @@ class EnvAndRedactionTest(unittest.TestCase):
         base.update(PATH="/bin", KUZZ_RELAY_URL="wss://relay", KUZZ_DEVICE_KEY_REF="ref")
         home = Path(tempfile.gettempdir()) / "hermes-home-test"
         env = kuzz_cli.child_env(base, home=home)
-        session_file = str(home / "buzz" / "kuzz-no-login" / "session.json")
+        session_file = str(home / "kuzz" / "no-login" / "session.json")
         self.assertEqual(
             env,
             {
@@ -213,6 +217,44 @@ class SupervisorTest(unittest.TestCase):
         self.assertEqual(parked[0][0], "unrecognized_subcommand")
         self.assertEqual(sup.restarts, 0)
 
+    def test_old_cli_without_the_access_flag_parks(self):
+        runs = [{"rc": 2, "stderr": "error: unexpected argument '--access-owner' found"}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+            sup, _, parked, _ = self._supervise(fake)
+        self.assertEqual(parked[0][0], "unrecognized_subcommand")
+        self.assertIn("Update Kuzz", parked[0][1])
+        self.assertEqual(sup.restarts, 0)
+
+    def test_access_lines_reach_the_callback_in_order(self):
+        order = []
+
+        async def on_message(message):
+            order.append(message.id)
+
+        async def scenario(fake):
+            sup = kuzz_cli.WatchSupervisor(
+                fake.cli, on_message, on_access=lambda access: order.append(access.mode),
+                on_park=lambda *_: sup.stop(), min_backoff=0.01,
+            )
+            await asyncio.wait_for(sup.run(), timeout=30)
+
+        lines = [{"type": "access", "mode": "anyone", "allowlist": []}, watch_line(1)]
+        runs = [{"lines": lines, "rc": 3, "stderr": json.dumps({"error": "auth", "message": "signed_out"})}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+            asyncio.run(scenario(fake))
+        self.assertEqual(order, ["anyone", event_id(1)])
+
+    def test_access_lines(self):
+        parse = kuzz_cli.parse_access_line
+        self.assertEqual(parse('{"type":"access","mode":"anyone","allowlist":[]}').mode, "anyone")
+        listed = parse(json.dumps({"type": "access", "mode": "allowlist", "allowlist": ["a" * 64, "nope"]}))
+        self.assertEqual((listed.mode, listed.allowlist), ("allowlist", frozenset({"a" * 64})))
+        for odd in ('{"type":"access"}', '{"type":"access","mode":"everyone"}',
+                    '{"type":"access","mode":"allowlist","allowlist":"x"}'):
+            self.assertEqual(parse(odd), kuzz_cli.WatchAccess())
+        for other in ('{"id":"x"}', "not json", "", "[]"):
+            self.assertIsNone(parse(other))
+
     def test_stop_ends_a_running_watch(self):
         async def first_message(received):
             while not received:
@@ -226,10 +268,177 @@ class SupervisorTest(unittest.TestCase):
         self.assertLess(stop_secs, 10)
 
 
+class UpdatePauseTest(unittest.TestCase):
+    """The installer's signal file: ``%LOCALAPPDATA%\\kuzz\\update-pause``."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        for patch in (
+            mock.patch.dict(os.environ, {"LOCALAPPDATA": tmp.name}),
+            mock.patch.object(kuzz_cli, "UPDATE_PAUSE_POLL", 0.02),
+        ):
+            patch.start()
+            self.addCleanup(patch.stop)
+        self.signal = Path(tmp.name) / "kuzz" / "update-pause"
+
+    def _pause(self, age=0.0):
+        self.signal.parent.mkdir(exist_ok=True)
+        self.signal.touch()
+        stamp = time.time() - age
+        os.utime(self.signal, (stamp, stamp))
+
+    def _supervise(self, fake, script):
+        """Run a supervisor beside ``script(received, sup)``, then stop it."""
+        received = []
+
+        async def on_message(msg):
+            received.append(msg)
+
+        async def main():
+            sup = WatchSupervisor(fake.cli, on_message, min_backoff=30, pause_poll=0.02)
+            task = asyncio.ensure_future(sup.run())
+            await asyncio.wait_for(script(received, sup), 20)
+            await sup.stop()
+            await asyncio.wait_for(task, 20)
+            return sup
+
+        return run(main()), received
+
+    @staticmethod
+    async def _until(condition):
+        while not condition():
+            await asyncio.sleep(0.02)
+
+    def test_signal_counts_only_while_fresh(self):
+        self.assertFalse(kuzz_cli.update_paused())
+        self._pause()
+        self.assertTrue(kuzz_cli.update_paused())
+        self._pause(age=kuzz_cli.UPDATE_PAUSE_MAX_AGE + 1)
+        self.assertFalse(kuzz_cli.update_paused())
+
+    def test_no_local_data_means_no_pause(self):
+        with mock.patch.dict(os.environ):
+            del os.environ["LOCALAPPDATA"]
+            self.assertIsNone(kuzz_cli.update_pause_file())
+            self.assertFalse(kuzz_cli.update_paused())
+
+    def test_pause_ends_the_watch_and_resume_skips_the_backoff(self):
+        runs = [{"lines": [watch_line(1)], "hang": True}, {"lines": [watch_line(2)], "hang": True}]
+        with FakeKuzz(FAKE_KUZZ_WATCH=runs) as fake:
+
+            async def script(received, sup):
+                await self._until(lambda: received)
+                self._pause()
+                await self._until(lambda: sup._ended_for_update and sup._proc is None)
+                await asyncio.sleep(0.1)
+                self.assertEqual(len(fake.calls("messages", "watch")), 1)  # held, not restarted
+                self.signal.unlink()
+                await self._until(lambda: len(received) == 2)
+
+            sup, received = self._supervise(fake, script)
+        self.assertEqual([m.id for m in received], [event_id(1), event_id(2)])
+        self.assertEqual(sup.restarts, 0)
+        self.assertIsNone(sup.parked)
+
+    def test_watch_does_not_start_during_a_pause(self):
+        self._pause()
+        with FakeKuzz(FAKE_KUZZ_WATCH=[{"lines": [watch_line(1)], "hang": True}]) as fake:
+
+            async def script(received, sup):
+                await asyncio.sleep(0.2)
+                self.assertEqual(fake.calls("messages", "watch"), [])
+                self.signal.unlink()
+                await self._until(lambda: received)
+
+            sup, _ = self._supervise(fake, script)
+        self.assertEqual(sup.restarts, 0)
+
+    def test_stop_ends_a_held_watch(self):
+        self._pause()
+        with FakeKuzz() as fake:
+
+            async def script(received, sup):
+                await asyncio.sleep(0.05)
+
+            self._supervise(fake, script)
+            self.assertEqual(fake.calls("messages", "watch"), [])
+
+    def test_stale_signal_does_not_stop_the_watch(self):
+        self._pause(age=kuzz_cli.UPDATE_PAUSE_MAX_AGE + 1)
+        with FakeKuzz(FAKE_KUZZ_WATCH=[{"lines": [watch_line(1)], "hang": True}]) as fake:
+
+            async def script(received, sup):
+                await self._until(lambda: received)
+                await asyncio.sleep(0.1)
+
+            sup, _ = self._supervise(fake, script)
+            self.assertEqual(len(fake.calls("messages", "watch")), 1)
+        self.assertFalse(sup._ended_for_update)
+
+    def test_send_waits_for_the_pause_to_end(self):
+        self._pause()
+        with FakeKuzz() as fake:
+
+            async def main():
+                send = asyncio.ensure_future(kuzz_cli.send_message(fake.cli, CHANNEL, "later"))
+                await asyncio.sleep(0.1)
+                self.assertFalse(send.done())
+                self.assertEqual(fake.calls("messages", "send"), [])
+                self.signal.unlink()
+                return await asyncio.wait_for(send, 20)
+
+            outcome = run(main())
+            self.assertIsNotNone(outcome.event_id)
+            self.assertEqual(fake.calls("messages", "send")[0]["stdin"], "later")
+
+    def test_send_retries_when_the_file_is_replaced_under_a_pause(self):
+        real = asyncio.create_subprocess_exec
+        attempts = []
+
+        async def spawn(*args, **kwargs):
+            attempts.append(args)
+            if len(attempts) == 1:
+                self._pause()
+                raise PermissionError("kuzz.exe is being replaced")
+            return await real(*args, **kwargs)
+
+        with FakeKuzz() as fake:
+
+            async def main():
+                with mock.patch.object(kuzz_cli.asyncio, "create_subprocess_exec", spawn):
+                    send = asyncio.ensure_future(kuzz_cli.send_message(fake.cli, CHANNEL, "later"))
+                    await self._until(lambda: attempts)
+                    await asyncio.sleep(0.1)
+                    self.assertEqual(len(attempts), 1)
+                    self.signal.unlink()
+                    return await asyncio.wait_for(send, 20)
+
+            outcome = run(main())
+        self.assertIsNotNone(outcome.event_id)
+        self.assertEqual(len(attempts), 2)
+
+    def test_a_spawn_error_without_a_pause_is_reported(self):
+        outcome = run(kuzz_cli.send_message([str(self.signal.parent / "missing.exe")], CHANNEL, "x"))
+        self.assertIsNone(outcome.event_id)
+        self.assertIn("could not start kuzz", outcome.error)
+
+    def test_hold_gives_up_at_its_limit(self):
+        self._pause()
+        self.assertFalse(run(kuzz_cli.hold_for_update(limit=0.05)))
+        self.signal.unlink()
+        self.assertTrue(run(kuzz_cli.hold_for_update(limit=0.05)))
+
+
 class CliPathTest(unittest.TestCase):
     def test_configured_path_decides_alone(self):
         with FakeKuzz() as fake:
             self.assertEqual(kuzz_cli.resolve_cli_path("", str(fake.exe), "other"), str(fake.exe))
+            buzz = fake.dir / ("buzz.exe" if os.name == "nt" else "buzz")
+            shutil.copy2(fake.exe, buzz)
+            with mock.patch.dict(os.environ, {"PATH": str(fake.dir)}), \
+                    mock.patch.object(kuzz_cli, "find_kuzz", return_value=""):
+                self.assertEqual(kuzz_cli.resolve_cli_path(), "")
             self.assertEqual(kuzz_cli.resolve_cli_path(str(fake.dir / "missing.exe"), str(fake.exe)), "")
 
     @unittest.skipUnless(os.name == "nt", "Windows only")
@@ -251,30 +460,111 @@ class CliPathTest(unittest.TestCase):
 
 
 class InstallTest(unittest.TestCase):
-    def test_install_replaces_the_bundled_buzz_plugin(self):
+    def _install(self):
         import importlib.util
 
         spec = importlib.util.spec_from_file_location("kuzz_install", PLUGIN / "install.py")
         install = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(install)
+        return install
+
+    def _old_folder(self, home, version):
+        folder = home / "plugins" / "buzz"
+        folder.mkdir(parents=True)
+        (folder / "plugin.yaml").write_text(f"name: buzz-platform\nversion: {version}\n", encoding="utf-8")
+        return folder
+
+    def _run_enabling(self, install, home, enabled=True):
+        with mock.patch.object(install, "enable_plugin", return_value=enabled) as enable, \
+                mock.patch.object(install, "restart_gateway", return_value=True):
+            rc = install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe"])
+        return rc, enable
+
+    def test_an_earlier_kuzz_build_gives_buzz_its_slot_back(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "2.0.0-kuzz")
+            rc, enable = self._run_enabling(install, home)
+            self.assertEqual(rc, 0)
+            enable.assert_called_once_with(home, True)
+            self.assertFalse(folder.exists())
+            self.assertEqual([p.name for p in (home / "plugins").iterdir()], ["kuzz"])
+            [backup] = (home / "plugin-backups").iterdir()
+            self.assertTrue(backup.name.startswith("buzz-"))
+
+    def test_a_failed_enable_keeps_the_working_connector(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "2.0.0-kuzz")
+            rc, _ = self._run_enabling(install, home, enabled=False)
+            self.assertEqual(rc, 1)
+            self.assertTrue((folder / "plugin.yaml").is_file())
+
+    def test_a_default_profile_on_the_earlier_build_moves_too(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            profile = root / "profiles" / "work"
+            profile.mkdir(parents=True)
+            folder = self._old_folder(root, "2.0.0-kuzz")
+            rc, enable = self._run_enabling(install, profile)
+            self.assertEqual(rc, 0)
+            self.assertEqual([call.args for call in enable.call_args_list], [(profile, False), (root, True)])
+            self.assertFalse(folder.exists())
+            self.assertTrue((root / "plugins" / "kuzz" / "plugin.yaml").is_file())
+
+    def test_a_real_buzz_plugin_is_left_alone(self):
+        install = self._install()
+        with tempfile.TemporaryDirectory() as tmp:
+            home = Path(tmp)
+            folder = self._old_folder(home, "1.0.0")
+            install.main(["--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
+            self.assertTrue((folder / "plugin.yaml").is_file())
+            self.assertFalse((home / "plugin-backups").exists())
+            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["buzz", "kuzz"])
+
+    def test_enabling_swaps_the_old_name_only_after_retiring_it(self):
+        install = self._install()
+        writes = []
+
+        def config(_hermes, _env, action, _key, value=None):
+            if action == "set":
+                writes.append(json.loads(value))
+                return subprocess.CompletedProcess([], 0, "", "")
+            return subprocess.CompletedProcess([], 0, "", "")
+
+        for retired, enabled, expected in (
+            (True, ["buzz-platform", "x"], ["x", "kuzz-platform"]),
+            (False, ["buzz-platform"], ["buzz-platform", "kuzz-platform"]),
+        ):
+            with mock.patch.object(install, "find_hermes", return_value="hermes"), \
+                    mock.patch.object(install, "_hermes_config", side_effect=config), \
+                    mock.patch.object(install, "_read_list", side_effect=[enabled, []]):
+                self.assertTrue(install.enable_plugin(Path("home"), retired))
+            self.assertEqual(writes[-1], expected)
+
+    def test_install_copies_the_plugin(self):
+        install = self._install()
         manifest = (PLUGIN / "plugin.yaml").read_text(encoding="utf-8")
-        self.assertIn("name: buzz-platform\n", manifest)  # the bundled plugin's key: ours replaces it
-        self.assertEqual(install.PLUGIN_NAME, "buzz-platform")
+        self.assertIn("name: kuzz-platform\n", manifest)
+        self.assertEqual(install.PLUGIN_NAME, "kuzz-platform")
         with tempfile.TemporaryDirectory() as tmp:
             home = Path(tmp)
             (home / ".env").write_bytes(
                 b"OTHER=1\r\nKUZZ_OWNER_PUBKEY=old\r\nBUZZ_CLI_PATH=C:/old/buzz.exe\r\nexport KUZZ_OWNER_PUBKEY=older\r\n")
-            (home / "plugins" / "buzz").mkdir(parents=True)
-            (home / "plugins" / "buzz" / "stale.py").write_text("", encoding="utf-8")
+            (home / "plugins" / "kuzz").mkdir(parents=True)
+            (home / "plugins" / "kuzz" / "stale.py").write_text("", encoding="utf-8")
             rc = install.main(["--owner", NPUB, "--hermes-home", str(home), "--cli-path", "C:/k/kuzz.exe", "--no-enable"])
             self.assertEqual(rc, 0)
-            files = sorted(p.name for p in (home / "plugins" / "buzz").iterdir())
+            files = sorted(p.name for p in (home / "plugins" / "kuzz").iterdir())
             self.assertEqual(files, sorted(install.PLUGIN_FILES))
             # The old folder is kept, outside plugins/ so Hermes does not load it twice.
             [backup] = (home / "plugin-backups").iterdir()
-            self.assertTrue(backup.name.startswith("buzz-"))
+            self.assertTrue(backup.name.startswith("kuzz-"))
             self.assertTrue((backup / "stale.py").is_file())
-            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["buzz"])
+            self.assertEqual(sorted(p.name for p in (home / "plugins").iterdir()), ["kuzz"])
             # Every copy of a key is updated; CRLF stays CRLF.
             self.assertEqual(
                 (home / ".env").read_bytes().decode("utf-8"),
@@ -294,11 +584,194 @@ def load_install():
     return install
 
 
+class RefreshTest(unittest.TestCase):
+    """Throwaway homes; a restart is only ever a mock here."""
+
+    def setUp(self):
+        self.install = load_install()
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name)
+        patcher = mock.patch.object(self.install, "restart_gateway", return_value=True)
+        self.restart = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def connector(self, home, current=False):
+        folder = home / "plugins" / "kuzz"
+        folder.mkdir(parents=True)
+        for name in self.install.PLUGIN_FILES:
+            content = (PLUGIN / name).read_bytes() if current else b"old"
+            (folder / name).write_bytes(content)
+        return folder
+
+    def gateway(self, pid=10, start_time=1000, state="running", age=0, exit_reason=None):
+        beat = datetime.now(timezone.utc) - timedelta(seconds=age)
+        (self.root / "gateway_state.json").write_text(json.dumps({
+            "pid": pid, "start_time": start_time, "gateway_state": state,
+            "exit_reason": exit_reason, "updated_at": beat.isoformat(),
+        }), encoding="utf-8")
+
+    def backups(self):
+        return list((self.root / "plugin-backups").glob("*"))
+
+    def test_a_current_home_is_left_alone(self):
+        self.connector(self.root, current=True)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual((result["updated"], result["restart"]), ([], "none"))
+        self.assertEqual(result["current"], [str(self.root)])
+        self.assertEqual(self.backups(), [])
+        self.restart.assert_not_called()
+
+    def test_only_plugin_files_change(self):
+        folder = self.connector(self.root)
+        env = b"KUZZ_OWNER_PUBKEY=abc\r\nBUZZ_RELAY_URL=x\r\n"
+        (self.root / ".env").write_bytes(env)
+        (self.root / "config.yaml").write_bytes(b"plugins:\n  enabled: []\n")
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual((result["updated"], result["restart"]), ([str(self.root)], "done"))
+        self.assertEqual((folder / "adapter.py").read_bytes(), (PLUGIN / "adapter.py").read_bytes())
+        self.assertEqual((self.root / ".env").read_bytes(), env)
+        self.assertEqual((self.root / "config.yaml").read_bytes(), b"plugins:\n  enabled: []\n")
+        self.assertEqual(len(self.backups()), 1)
+        self.restart.assert_called_once_with(self.root)
+
+    def test_a_home_without_the_plugin_gets_nothing(self):
+        (self.root / "profiles" / "work").mkdir(parents=True)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual(result, {"updated": [], "current": [], "failed": [], "restart": "none"})
+        self.assertFalse((self.root / "plugins").exists())
+        self.assertFalse((self.root / "profiles" / "work" / "plugins").exists())
+
+    def test_profiles_are_updated_too(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        result = self.install.refresh(self.root)
+        self.assertEqual(result["updated"], [str(self.root), str(work)])
+        self.restart.assert_called_once_with(self.root)
+
+    def test_one_failed_home_does_not_stop_the_others(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        real = self.install.copy_plugin
+
+        def copy(home):
+            if home == self.root:
+                raise OSError("in use")
+            return real(home)
+
+        with mock.patch.object(self.install, "copy_plugin", side_effect=copy):
+            result = self.install.refresh(self.root)
+        self.assertEqual((result["failed"], result["updated"]), ([str(self.root)], [str(work)]))
+
+    def test_a_home_that_keeps_failing_restarts_nothing(self):
+        self.connector(self.root)
+        self.gateway()
+        with mock.patch.object(self.install, "copy_plugin", side_effect=OSError("in use")):
+            for pid in (10, 11):
+                self.gateway(pid=pid)
+                self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "none")
+        self.restart.assert_not_called()
+
+    def test_a_failed_rename_puts_the_old_connector_back(self):
+        folder = self.connector(self.root)
+        real = Path.rename
+
+        def rename(path, target):
+            if path.name.endswith(".installing"):
+                raise OSError("in use")
+            return real(path, target)
+
+        with mock.patch.object(Path, "rename", rename), self.assertRaises(OSError):
+            self.install.copy_plugin(self.root)
+        self.assertEqual((folder / "adapter.py").read_bytes(), b"old")
+
+    def test_a_busy_gateway_is_retried_until_it_restarts(self):
+        self.connector(self.root)
+        self.gateway()
+        self.restart.return_value = False
+        self.assertEqual(self.install.refresh(self.root)["restart"], "busy")
+        # Files are current now; only the record says a restart is owed.
+        self.gateway(start_time=1100)
+        self.restart.return_value = True
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+        self.gateway(pid=11)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.assertFalse((self.root / "kuzz" / self.install.PENDING_FILE).exists())
+
+    def test_a_restart_by_hand_clears_it(self):
+        self.connector(self.root)
+        self.gateway()
+        self.install.refresh(self.root, restart=False)
+        self.gateway(start_time=9000)
+        self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "none")
+        self.restart.assert_not_called()
+
+    def test_the_caller_can_take_the_restart(self):
+        self.connector(self.root)
+        self.gateway()
+        self.assertEqual(self.install.refresh(self.root, restart=False)["restart"], "needed")
+        self.restart.assert_not_called()
+
+    def test_a_stopped_gateway_is_never_started(self):
+        for state in ("stopped", "startup_failed"):
+            self.connector(self.root)
+            self.gateway(state=state)
+            result = self.install.refresh(self.root)
+            self.assertEqual((len(result["updated"]), result["restart"]), (1, "none"))
+            shutil.rmtree(self.root / "plugins")
+        self.restart.assert_not_called()
+
+    def test_no_state_file_reads_as_not_running(self):
+        self.connector(self.root)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.restart.assert_not_called()
+
+    def test_a_degraded_gateway_is_updated(self):
+        self.connector(self.root)
+        self.gateway(state="degraded")
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+
+    def test_a_stale_heartbeat_waits_for_the_next_run(self):
+        self.connector(self.root)
+        self.gateway(age=600)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.restart.assert_not_called()
+        self.gateway(age=0)
+        self.assertEqual(self.install.refresh(self.root)["restart"], "done")
+
+    def test_the_gateway_dying_while_stale_clears_it(self):
+        self.connector(self.root)
+        self.gateway(age=600)
+        self.install.refresh(self.root)
+        self.gateway(state="stopped")
+        self.assertEqual(self.install.refresh(self.root)["restart"], "none")
+        self.assertFalse((self.root / "kuzz" / self.install.PENDING_FILE).exists())
+
+    def test_main_prints_one_json_line(self):
+        work = self.root / "profiles" / "work"
+        self.connector(self.root)
+        self.connector(work)
+        self.gateway()
+        out = io.StringIO()
+        with contextlib.redirect_stdout(out), contextlib.redirect_stderr(io.StringIO()):
+            rc = self.install.main(["--refresh", "--no-restart", "--hermes-home", str(work)])
+        self.assertEqual(rc, 0)
+        self.assertEqual(json.loads(out.getvalue())["restart"], "needed")
+        self.assertEqual(len(out.getvalue().strip().splitlines()), 1)
+
+
 class InstallHomeAndRestartTest(unittest.TestCase):
     def setUp(self):
         self.install = load_install()
-        # A Hermes whose config.yaml has no Buzz home yet; nothing real is run.
-        self.config = subprocess.CompletedProcess([], 1, "", "Config key not set: platforms.buzz.home_channel")
+        # A Hermes whose config.yaml has no Kuzz home yet; nothing real is run.
+        self.config = subprocess.CompletedProcess([], 1, "", "Config key not set: platforms.kuzz.home_channel")
         for name, kwargs in (("find_hermes", {"return_value": "hermes"}),
                              ("_hermes_config", {"side_effect": lambda *a: self.config})):
             patcher = mock.patch.object(self.install, name, **kwargs)
@@ -315,12 +788,12 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertEqual(call["args"], ["dms", "open", "--pubkey", NPUB_HEX])
             self.assertNotIn("KUZZ_PRIVATE_KEY", call["env"])
             self.assertIn("KUZZ_PAIRED_AGENT", call["env"])
-            self.assertEqual((home / ".env").read_text(encoding="utf-8"), "OTHER=1\nBUZZ_HOME_CHANNEL=dm-owner\n")
+            self.assertEqual((home / ".env").read_text(encoding="utf-8"), "OTHER=1\nKUZZ_HOME_CHANNEL=dm-owner\n")
 
     def test_an_existing_home_is_kept(self):
         with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake:
             home = Path(tmp)
-            (home / ".env").write_text("BUZZ_HOME_CHANNEL='chan-1'\n", encoding="utf-8")
+            (home / ".env").write_text("KUZZ_HOME_CHANNEL='chan-1'\n", encoding="utf-8")
             self.assertIsNone(self.install.set_home_channel(home, str(fake.exe), NPUB_HEX))
             self.config = subprocess.CompletedProcess([], 0, "chan-2\n", "")
             (home / ".env").unlink()
@@ -353,7 +826,7 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             restart.assert_called_once_with(home)
             env = (home / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={agent}", env)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", env)
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", env)
             with self.assertRaises(SystemExit):
                 self.install.main(argv[:2] + ["--agent", "nope"] + argv[4:])
 
@@ -363,14 +836,14 @@ class InstallHomeAndRestartTest(unittest.TestCase):
                 mock.patch.object(self.install, "restart_gateway", return_value=True):
             home = Path(tmp)
             base = ["--owner", NPUB, "--hermes-home", str(home), "--cli-path", str(fake.exe), "--no-restart"]
-            (home / ".env").write_text(f"KUZZ_PAIRED_AGENT={'a' * 64}\nBUZZ_HOME_CHANNEL=dm-old\n", encoding="utf-8")
+            (home / ".env").write_text(f"KUZZ_PAIRED_AGENT={'a' * 64}\nKUZZ_HOME_CHANNEL=dm-old\n", encoding="utf-8")
             # Same agent again: the home stays.
             self.assertEqual(self.install.main(base + ["--agent", "a" * 64]), 0)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-old", (home / ".env").read_text(encoding="utf-8"))
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-old", (home / ".env").read_text(encoding="utf-8"))
             # A new agent (re-connect): its own DM with the owner becomes the home.
             self.assertEqual(self.install.main(base + ["--agent", "b" * 64]), 0)
             env = (home / ".env").read_text(encoding="utf-8")
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-new", env)
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-new", env)
             self.assertNotIn("dm-old", env)
 
     def test_a_named_profile_uses_its_own_env_and_the_host_gateway(self):
@@ -381,9 +854,9 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             root = Path(tmp)
             profile = root / "profiles" / "work"
             profile.mkdir(parents=True)
-            (root / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_HOME_CHANNEL=root-home\n", encoding="utf-8")
-            (root / "plugins" / "buzz").mkdir(parents=True)
-            (root / "plugins" / "buzz" / "old.txt").write_text("old", encoding="utf-8")
+            (root / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nKUZZ_HOME_CHANNEL=root-home\n", encoding="utf-8")
+            (root / "plugins" / "kuzz").mkdir(parents=True)
+            (root / "plugins" / "kuzz" / "old.txt").write_text("old", encoding="utf-8")
             agent, default_agent = "b" * 64, "a" * 64
             with mock.patch.object(self.install, "restart_gateway", return_value=True) as restart:
                 self.assertEqual(self.install.main([
@@ -393,17 +866,17 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             restart.assert_called_once_with(profile)
             own = (profile / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={agent}", own)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", own)
-            self.assertTrue((profile / "plugins" / "buzz" / "plugin.yaml").exists())
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", own)
+            self.assertTrue((profile / "plugins" / "kuzz" / "plugin.yaml").exists())
             # The default profile's copy is refreshed with it.
-            self.assertTrue((root / "plugins" / "buzz" / "plugin.yaml").exists())
-            self.assertFalse((root / "plugins" / "buzz" / "old.txt").exists())
+            self.assertTrue((root / "plugins" / "kuzz" / "plugin.yaml").exists())
+            self.assertFalse((root / "plugins" / "kuzz" / "old.txt").exists())
             # The default profile keeps its agent and its home.
             default = (root / ".env").read_text(encoding="utf-8")
             self.assertIn(f"KUZZ_PAIRED_AGENT={default_agent}", default)
-            self.assertIn("BUZZ_HOME_CHANNEL=root-home", default)
+            self.assertIn("KUZZ_HOME_CHANNEL=root-home", default)
             # The restart is the host's.
-            run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "", "")
+            run.side_effect = lambda *a, **k: subprocess.CompletedProcess([], 0, "--detach", "")
             self.assertTrue(self.install.restart_gateway(profile))
             self.assertEqual(run.call_args.kwargs["env"]["HERMES_HOME"], str(root))
 
@@ -412,11 +885,11 @@ class InstallHomeAndRestartTest(unittest.TestCase):
                 mock.patch.object(self.install, "enable_plugin", return_value=True):
             profile = Path(tmp) / "profiles" / "work"
             profile.mkdir(parents=True)
-            (profile / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nBUZZ_HOME_CHANNEL=sources-home\n", encoding="utf-8")
+            (profile / ".env").write_text(f"KUZZ_OWNER_PUBKEY={NPUB_HEX}\nKUZZ_HOME_CHANNEL=sources-home\n", encoding="utf-8")
             self.assertEqual(self.install.main([
                 "--owner", NPUB, "--agent", "b" * 64, "--hermes-home", str(profile),
                 "--cli-path", str(fake.exe), "--no-restart"]), 0)
-            self.assertIn("BUZZ_HOME_CHANNEL=dm-1", (profile / ".env").read_text(encoding="utf-8"))
+            self.assertIn("KUZZ_HOME_CHANNEL=dm-1", (profile / ".env").read_text(encoding="utf-8"))
 
     def test_nothing_is_pinned_when_the_plugin_cant_be_enabled(self):
         with tempfile.TemporaryDirectory() as tmp, FakeKuzz() as fake, \
@@ -453,6 +926,64 @@ class InstallHomeAndRestartTest(unittest.TestCase):
             self.assertEqual(restart.call_count, 1)
             self.assertEqual(self.install.main(argv + ["--no-restart"]), 0)
             self.assertEqual(restart.call_count, 1)
+
+    def test_restart_goes_to_the_gateway_running_the_profile(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            own = root / "profiles" / "own"
+            own.mkdir(parents=True)
+            self.assertEqual(self.install.restart_profile(root), "default")
+            # Nothing runs it yet: the host picks it up.
+            self.assertEqual(self.install.restart_profile(own), "default")
+            state = json.dumps({"pid": 7, "gateway_state": "running"})
+            (own / "gateway_state.json").write_text(state, encoding="utf-8")
+            self.assertEqual(self.install.restart_profile(own), "own")
+            # A host serving it loads the plugin for it.
+            (root / "gateway_state.json").write_text(json.dumps({"served_profiles": ["own"]}), encoding="utf-8")
+            self.assertEqual(self.install.restart_profile(own), "default")
+
+    def test_detach_is_passed_only_to_a_hermes_that_has_it(self):
+        def answers(help_text):
+            def run(command, **_):
+                return subprocess.CompletedProcess(command, 0, help_text if "--help" in command else "", "")
+            return run
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(self.install, "find_hermes", return_value="hermes"), \
+                mock.patch.object(self.install.subprocess, "run") as run:
+            run.side_effect = answers("usage: restart [--force] [--detach]")
+            self.assertTrue(self.install.restart_gateway(Path(tmp)))
+            self.assertEqual(run.call_args.args[0][-1], "--detach")
+            run.side_effect = answers("usage: restart [--force]")
+            with mock.patch.object(self.install.subprocess, "Popen") as popen:
+                popen.return_value.poll.return_value = 0
+                self.assertTrue(self.install.restart_gateway(Path(tmp)))
+            self.assertEqual(popen.call_args.args[0], ["hermes", "-p", "default", "gateway", "restart"])
+
+    def test_a_hermes_without_its_own_guard_is_not_restarted_while_working(self):
+        with tempfile.TemporaryDirectory() as tmp, \
+                mock.patch.object(self.install, "find_hermes", return_value="hermes"), \
+                mock.patch.object(self.install, "supports_detach", return_value=False), \
+                mock.patch.object(self.install, "await_new_gateway", return_value=True) as start:
+            state = Path(tmp) / "gateway_state.json"
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "active_agents": 1}), encoding="utf-8")
+            self.assertFalse(self.install.restart_gateway(Path(tmp)))
+            start.assert_not_called()
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "active_agents": 0}), encoding="utf-8")
+            self.assertTrue(self.install.restart_gateway(Path(tmp)))
+
+    def test_a_restart_that_stays_on_as_the_gateway_is_left_running(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            state = Path(tmp) / "gateway_state.json"
+            state.write_text(json.dumps({"pid": 7, "gateway_state": "running", "start_time": 1000}), encoding="utf-8")
+            process = mock.Mock()
+            def replaced():
+                state.write_text(json.dumps({"pid": 8, "gateway_state": "running", "start_time": 2000}), encoding="utf-8")
+            process.poll.side_effect = lambda: replaced()
+            with mock.patch.object(self.install.subprocess, "Popen", return_value=process), \
+                    mock.patch.object(self.install.time, "sleep"):
+                self.assertTrue(self.install.await_new_gateway(["hermes"], {}, state))
+            process.kill.assert_not_called()
+            process.terminate.assert_not_called()
 
     def test_restart_without_hermes_reports_failure(self):
         with tempfile.TemporaryDirectory() as tmp, mock.patch.object(self.install, "find_hermes", return_value=None):

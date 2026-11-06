@@ -201,6 +201,7 @@ export const ChannelPane = React.memo(function ChannelPane({
   threadHeadMessage,
   threadMessages,
   threadMessagesPending = false,
+  threadMessagesFetching = false,
   threadMessagesError = false,
   onRetryThreadReplies,
   threadHasOlderReplies = false,
@@ -573,10 +574,9 @@ export const ChannelPane = React.memo(function ChannelPane({
     isLoading: threadMessagesPending,
     firstUnreadReplyId: threadFirstUnreadReplyId ?? null,
     readState: threadOpenRead,
-    repliesConfirmed: useThreadRepliesConfirmed(
-      activeChannel?.id,
-      threadHeadMessage?.id,
-    ),
+    repliesConfirmed:
+      useThreadRepliesConfirmed(activeChannel?.id, threadHeadMessage?.id) &&
+      !threadMessagesFetching,
     hasOlderReplies: threadHasOlderReplies,
     isFetchingOlder: threadIsFetchingOlderReplies,
     fetchOlder: onFetchOlderThreadReplies,

@@ -753,7 +753,8 @@ async fn add_member_inner(
 /// lock could deadlock against ourselves on a small pool. That is safe because
 /// `agent_owner_pubkey` is immutable — [`crate::user::set_agent_owner`] only
 /// updates it when it `IS NULL` (first-mint-wins), so its value cannot change
-/// under us and needs no serialization.
+/// under us and needs no serialization. The paired owner is read there too, for
+/// the same reason; a racing revoke only decides whether this removal wins.
 pub async fn remove_member(
     pool: &PgPool,
     community_id: CommunityId,
@@ -770,6 +771,10 @@ pub async fn remove_member(
         false
     } else {
         crate::user::is_agent_owner(pool, community_id, pubkey, actor_pubkey).await?
+            || super::groups::paired_agent_owner(pool, pubkey, false)
+                .await?
+                .as_deref()
+                == Some(actor_pubkey)
     };
 
     let connection = crate::observability::acquire_writer(
@@ -888,7 +893,7 @@ pub async fn is_member(
 
 /// Returns `true` when `reader` may read the channel as the owner of an agent
 /// in it: the channel is a live DM or group chat and an active member's
-/// `users.agent_owner_pubkey` is `reader`.
+/// `users.agent_owner_pubkey` is `reader`, or it is an agent `reader` paired.
 ///
 /// Read-only owner view. Never use this for writes, membership, or the
 /// accessible-channel set; callers add the channel request-locally only when
@@ -914,13 +919,14 @@ pub async fn can_read_via_owned_agent(
              AND c.id = cm.channel_id
              AND c.deleted_at IS NULL
              AND (c.channel_type = 'dm' OR c.group_chat)
-            JOIN users u
+            LEFT JOIN users u
               ON u.community_id = cm.community_id
              AND u.pubkey = cm.pubkey
             WHERE cm.community_id = $1
               AND cm.channel_id = $2
               AND cm.removed_at IS NULL
-              AND u.agent_owner_pubkey = $3
+              AND (u.agent_owner_pubkey = $3
+                   OR cm.pubkey IN (SELECT paired_agents_of($3)))
               AND cm.pubkey <> $3
         ) AS ok
         "#,

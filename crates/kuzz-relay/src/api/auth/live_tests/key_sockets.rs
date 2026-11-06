@@ -10,7 +10,7 @@ use crate::identity::config::DeviceAdmissionMode;
 use kuzz_core::kind::KIND_NEW_SIGNIN_NOTICE;
 
 /// A socket NIP-42-authenticated as `keys` from `device`.
-async fn key_socket(inst: &Instance, keys: &nostr::Keys, device: &SigningKey) -> Ws {
+pub(super) async fn key_socket(inst: &Instance, keys: &nostr::Keys, device: &SigningKey) -> Ws {
     let mut request = format!("ws://{}/", inst.addr)
         .into_client_request()
         .expect("ws request");
@@ -35,7 +35,11 @@ async fn key_socket(inst: &Instance, keys: &nostr::Keys, device: &SigningKey) ->
 /// closes the socket right after its OK, and on Windows the close can reset
 /// the connection before the frame is read; the answer is deterministic, so
 /// such a try is repeated (as in `device_ws`).
-async fn auth_answer(inst: &Instance, keys: &nostr::Keys, device: &SigningKey) -> (bool, String) {
+pub(super) async fn auth_answer(
+    inst: &Instance,
+    keys: &nostr::Keys,
+    device: &SigningKey,
+) -> (bool, String) {
     for _ in 0..20 {
         let mut request = format!("ws://{}/", inst.addr)
             .into_client_request()

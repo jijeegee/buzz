@@ -836,6 +836,8 @@ export type UpdateManagedAgentInput = {
   respondToAllowlist?: string[];
   /** Tri-state: absent = don't touch; `null` = clear; `string` = set. Persisted in the locked update so access-change restarts snapshot the new effort. Send only when `effortTouched`. */
   effortLevel?: string | null;
+  /** Absent = keep. Present = the owner turned owner tools on or off. */
+  toolLevel?: "full" | "limited";
 };
 // Persona (agent definition) types live in a sibling module to keep this
 // file inside the repo-wide size ratchet; re-exported so import paths

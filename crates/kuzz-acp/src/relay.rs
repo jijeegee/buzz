@@ -609,6 +609,37 @@ impl RestClient {
         .await
     }
 
+    /// Whether the relay says `pubkey` shares this agent's owner.
+    pub async fn same_owner(&self, pubkey: &str) -> Result<bool, RelayError> {
+        let path = format!("/agents/same-owner?pubkeys={pubkey}");
+        let url = format!("{}{path}", self.base_url);
+        let resp = self
+            .request_with_retry("GET", &path, || {
+                let url = url.clone();
+                async move {
+                    let auth = self
+                        .nip98_header("GET", &url, None)
+                        .await
+                        .unwrap_or_default();
+                    self.http
+                        .get(&url)
+                        .header("Authorization", auth)
+                        .send()
+                        .await
+                }
+            })
+            .await?;
+        let body: Value = resp
+            .json()
+            .await
+            .map_err(|e| RelayError::Http(e.to_string()))?;
+        let keys = body
+            .get("keys")
+            .and_then(Value::as_array)
+            .ok_or_else(|| RelayError::Http("same-owner answer has no keys".into()))?;
+        Ok(keys.iter().any(|key| key.as_str() == Some(pubkey)))
+    }
+
     /// Query events via the HTTP bridge: `POST /query` with NIP-98 auth.
     ///
     /// Accepts a slice of `nostr::Filter` (serialized as JSON array).

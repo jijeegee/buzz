@@ -442,7 +442,7 @@ pub async fn insert_event(
         tx.commit().await?;
         Ok(result)
     } else {
-        insert_event_on(&mut connection, community_id, event, channel_id).await
+        insert_event_on(&mut connection, community_id, event, channel_id, Utc::now()).await
     }
 }
 
@@ -517,7 +517,19 @@ pub async fn insert_event_in_transaction(
     event: &Event,
     channel_id: Option<Uuid>,
 ) -> Result<(StoredEvent, bool)> {
-    let result = insert_event_on(tx.as_mut(), community_id, event, channel_id).await?;
+    insert_event_received_in_transaction(tx, community_id, event, channel_id, Utc::now()).await
+}
+
+/// [`insert_event_in_transaction`] with the receive time chosen by the caller,
+/// for writes that stamp related rows with the same instant.
+pub async fn insert_event_received_in_transaction(
+    tx: &mut Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    event: &Event,
+    channel_id: Option<Uuid>,
+    received_at: DateTime<Utc>,
+) -> Result<(StoredEvent, bool)> {
+    let result = insert_event_on(tx.as_mut(), community_id, event, channel_id, received_at).await?;
     if result.1 {
         crate::operator_listener::enqueue_mentions_in_transaction(tx, community_id, event).await?;
     }
@@ -529,6 +541,7 @@ async fn insert_event_on(
     community_id: CommunityId,
     event: &Event,
     channel_id: Option<Uuid>,
+    received_at: DateTime<Utc>,
 ) -> Result<(StoredEvent, bool)> {
     let kind_u16 = event.kind.as_u16();
     let kind_u32 = u32::from(kind_u16);
@@ -549,7 +562,6 @@ async fn insert_event_on(
     let created_at_secs = event.created_at.as_secs() as i64;
     let created_at = DateTime::from_timestamp(created_at_secs, 0)
         .ok_or(DbError::InvalidTimestamp(created_at_secs))?;
-    let received_at = Utc::now();
     let d_tag = extract_d_tag(event);
     let not_before = extract_not_before(event);
     let result = sqlx::query(
@@ -691,8 +703,9 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
     };
     // since_join: rows from before the reader's join, and reactions/edits/
     // deletions about such rows, are hidden. One channel: compare against its
-    // floor once (index-friendly; floor 0 hides nothing, not even sequence
-    // 0); otherwise per row. Room state kinds are never cut.
+    // floor, a subquery so it is read once and not per row (floor 0 hides
+    // nothing, not even sequence 0); otherwise per row. Room state kinds are
+    // never cut.
     let state_exempt = q.kinds.as_ref().is_none_or(|kinds| {
         kinds
             .iter()
@@ -706,12 +719,12 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
         for column in ["channel_sequence", "thread_root_sequence"] {
             if column == "channel_sequence" {
                 qb.push(format!(
-                    "{col_prefix}{column} > COALESCE(NULLIF(channel_history_floor("
+                    "{col_prefix}{column} > (SELECT COALESCE(NULLIF(channel_history_floor("
                 ));
             } else {
                 qb.push(format!(
-                    " AND ({col_prefix}{column} = 0 OR {col_prefix}{column} > COALESCE(NULLIF(\
-                     channel_history_floor("
+                    " AND ({col_prefix}{column} = 0 OR {col_prefix}{column} > \
+                     (SELECT COALESCE(NULLIF(channel_history_floor("
                 ));
             }
             qb.push_bind(q.community_id.as_uuid());
@@ -720,11 +733,11 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
             qb.push(", ");
             qb.push_bind(reader.clone());
             if column == "channel_sequence" {
-                qb.push("), 0), -1)");
+                qb.push("), 0), -1))");
             } else {
                 // ...unless the reader entered that thread (migration 0095).
                 qb.push(format!(
-                    "), 0), -1) OR NOT channel_event_hidden({col_prefix}community_id, \
+                    "), 0), -1)) OR NOT channel_event_hidden({col_prefix}community_id, \
                      {col_prefix}channel_id, {col_prefix}channel_sequence, \
                      {col_prefix}thread_root_sequence, "
                 ));
@@ -743,12 +756,23 @@ fn push_history_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, co
         qb.push(format!(" OR channel_kind_is_room_state({col_prefix}kind)"));
     }
     qb.push(")");
+    qb.push(" AND NOT (");
+    if let Some(channel) = q.channel_id {
+        // Evaluated first: no cut, no row goes through the function.
+        qb.push("(SELECT channel_history_floor(");
+        qb.push_bind(q.community_id.as_uuid());
+        qb.push(", ");
+        qb.push_bind(channel);
+        qb.push(", ");
+        qb.push_bind(reader.clone());
+        qb.push(")) > 0 AND ");
+    }
     qb.push(format!(
-        " AND NOT channel_event_targets_before_join({col_prefix}community_id, \
+        "channel_event_targets_before_join({col_prefix}community_id, \
          {col_prefix}channel_id, {col_prefix}kind, {col_prefix}tags, "
     ));
     qb.push_bind(reader.clone());
-    qb.push(")");
+    qb.push("))");
 }
 
 fn push_blocked_dm_clause(qb: &mut QueryBuilder<sqlx::Postgres>, q: &EventQuery, col_prefix: &str) {
@@ -2935,6 +2959,26 @@ mod e_tag_filter_shape_tests {
         assert!(!sql[..fence_end].contains("ORDER BY"));
         assert!(!sql[..fence_end].contains("LIMIT"));
         assert!(sql[fence_end..].contains("ORDER BY created_at DESC, id ASC LIMIT "));
+    }
+
+    /// One statement, and the floor read once: as a plain expression it is
+    /// read per row, thousands of times for one page.
+    #[test]
+    fn one_channel_reads_the_floor_in_a_subquery() {
+        let mut q = EventQuery::for_community(CommunityId::from_uuid(uuid::Uuid::nil()));
+        q.channel_id = Some(uuid::Uuid::nil());
+        q.kinds = Some(vec![9]);
+        q.history_reader = Some(vec![7; 32]);
+        let qb = build_query_events_sql(&q);
+        let sql = qb.sql().as_str().to_owned();
+        let floors = sql.matches("channel_history_floor(").count();
+        assert_eq!(floors, 3);
+        assert_eq!(
+            floors,
+            sql.matches("(SELECT COALESCE(NULLIF(channel_history_floor(")
+                .count()
+                + sql.matches("(SELECT channel_history_floor(").count()
+        );
     }
 
     #[test]

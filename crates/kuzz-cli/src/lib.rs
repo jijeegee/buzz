@@ -57,7 +57,15 @@ where
             }
         }
     };
-    match run(cli).await {
+    // Here, not in `run`: the command tree is too deep to build on top of it
+    // in unoptimized builds.
+    if let Cmd::Guide = cli.command {
+        commands::guide::cmd_guide(&help_tree::render(&Cli::command(), usize::MAX));
+        return 0;
+    }
+    // Boxed: the future holds every command's state, and on the stack it
+    // overflows Windows' 1 MB main thread in unoptimized builds.
+    match Box::pin(run(cli)).await {
         Ok(()) => 0,
         Err(e) => {
             error::print_error(&e);
@@ -221,6 +229,40 @@ pub enum OnOff {
     Off,
 }
 
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ChannelHistory {
+    #[value(name = "all")]
+    All,
+    #[value(name = "since_join")]
+    SinceJoin,
+}
+
+impl ChannelHistory {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::All => "all",
+            Self::SinceJoin => "since_join",
+        }
+    }
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum GroupInvitePolicy {
+    #[value(name = "members")]
+    Members,
+    #[value(name = "admins")]
+    Admins,
+}
+
+impl GroupInvitePolicy {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Members => "members",
+            Self::Admins => "admins",
+        }
+    }
+}
+
 #[derive(Clone, clap::ValueEnum)]
 pub enum PresenceStatus {
     #[value(name = "online")]
@@ -259,6 +301,21 @@ pub enum OutputFormat {
     /// Reduced fields for agent scanning
     #[value(name = "compact")]
     Compact,
+}
+
+#[derive(Subcommand)]
+enum HermesCmd {
+    /// Update the connector of each Hermes profile that has it to this
+    /// version, then restart a running gateway when it is idle
+    Refresh {
+        /// Do not restart the Hermes gateway; the result says "needed" when
+        /// the caller should
+        #[arg(long)]
+        no_restart: bool,
+        /// The Hermes home (default: Hermes's default home)
+        #[arg(long, value_name = "DIR")]
+        hermes_home: Option<std::path::PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -322,6 +379,9 @@ once), key_in_use, device_limit, rate_limited.",
         #[arg(long, requires = "hermes", value_name = "DIR")]
         hermes_home: Option<std::path::PathBuf>,
     },
+    /// Keep the Hermes connector on this computer up to date
+    #[command(subcommand)]
+    Hermes(HermesCmd),
     /// Draft owner-reviewed agent creation and updates
     #[command(subcommand)]
     Agents(AgentsCmd),
@@ -349,6 +409,43 @@ once), key_in_use, device_limit, rate_limited.",
     /// Search and share GIFs via the relay's KLIPY proxy
     #[command(subcommand)]
     Gifs(GifsCmd),
+    /// See your chats, newest first: unread counts and the latest message
+    ///
+    /// Closed threads are left out, as they are in the app's Chats list.
+    #[command(
+        after_help = "Examples:\n  kuzz inbox --unread\n  kuzz inbox --limit 20\n  kuzz inbox --before-at-us <at_us> --before-key <key>   # next page, from `next`"
+    )]
+    Inbox {
+        /// Chats per page (default 100)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=200), conflicts_with = "unread")]
+        limit: Option<u32>,
+        /// Only chats with unread messages, across every page
+        #[arg(long)]
+        unread: bool,
+        /// Next page: `at_us` from `next`
+        #[arg(long, requires = "before_key", conflicts_with = "unread")]
+        before_at_us: Option<i64>,
+        /// Next page: `key` from `next`
+        #[arg(long, requires = "before_at_us", conflicts_with = "unread")]
+        before_key: Option<String>,
+        /// Print whole events instead of a short preview of the latest message
+        #[arg(long)]
+        full: bool,
+    },
+    /// Report a message or a person to moderators
+    #[command(subcommand)]
+    Report(ReportCmd),
+    /// Keep reminders for yourself, shared with the app
+    #[command(subcommand)]
+    Reminders(RemindersCmd),
+    /// How an AI uses Kuzz, with every command
+    Guide,
+    /// Keep your own friend list
+    #[command(subcommand)]
+    Friends(FriendsCmd),
+    /// Find groups and manage their public address and invite links
+    #[command(subcommand)]
+    Groups(GroupsCmd),
     /// List, accept, and decline group invitations sent to you
     #[command(subcommand)]
     Invitations(InvitationsCmd),
@@ -458,6 +555,17 @@ pub enum AgentsCmd {
         model: Option<String>,
         #[arg(long, value_enum)]
         respond_to: Option<RespondToArg>,
+    },
+    /// Show which of the given keys are your owner or your owner's agents
+    #[command(
+        after_help = "Prints {\"keys\": [...]}; any other key is left out.\n\n\
+Example:\n  \
+kuzz agents same-owner --pubkeys <HEX>,<HEX>"
+    )]
+    SameOwner {
+        /// Comma-separated pubkeys (hex)
+        #[arg(long, required = true, value_delimiter = ',')]
+        pubkeys: Vec<String>,
     },
     /// Submit a NIP-IA archive request for an identity (kind 9035)
     #[command(
@@ -702,6 +810,32 @@ pub enum MessagesCmd {
         #[arg(long)]
         limit: Option<u32>,
     },
+    /// Mark a channel or thread read, to its newest message or up to --event.
+    ///
+    /// A thread must be one you follow. A room you are not in is refused
+    /// with an auth error.
+    MarkRead {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "thread", conflicts_with = "thread")]
+        channel: Option<String>,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: Option<String>,
+        /// Newest message you have seen (64-char hex)
+        #[arg(long)]
+        event: Option<String>,
+    },
+    /// Mark a channel or thread unread, to come back to it
+    MarkUnread {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "thread", conflicts_with = "thread")]
+        channel: Option<String>,
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: Option<String>,
+    },
+    /// Mark every chat in your inbox read
+    MarkAllRead,
     /// Upvote or downvote a forum post
     Vote {
         /// Event ID of the post to vote on (64-char hex)
@@ -738,13 +872,24 @@ Each line:
   thread_root  event id of the thread root for a thread reply, else null
   mentions     pubkeys the message mentions (array of 64 hex)
 
-To resume after a restart, pass the last created_at seen as --since.",
-        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600"
+To resume after a restart, pass the last created_at seen as --since.
+
+With --access-owner, the agent's access setting (kind 30177 signed by that
+owner) is printed too, before any message of a connection and whenever it
+is read or changes, as a line without an id:
+  type       \"access\"
+  mode       owner-only, allowlist or anyone
+  allowlist  pubkeys for allowlist (array of 64 hex)
+Anything that can't be read or verified prints owner-only.",
+        after_help = "Examples:\n  kuzz messages watch\n  kuzz messages watch --since 1783497600\n  kuzz messages watch --access-owner <HEX>"
     )]
     Watch {
         /// Unix seconds: also print messages from this time on (default: now)
         #[arg(long)]
         since: Option<i64>,
+        /// Owner's pubkey (64-char hex): also print this agent's access setting
+        #[arg(long)]
+        access_owner: Option<String>,
     },
 }
 
@@ -836,9 +981,10 @@ pub enum ChannelsCmd {
         #[arg(long = "member", value_name = "PUBKEY")]
         members: Vec<String>,
     },
-    /// Update channel name, description, visibility, ephemeral TTL, or goals
+    /// Update channel name, description, visibility, ephemeral TTL, goals,
+    /// photo, or what new members can read
     #[command(
-        after_help = "Examples:\n  kuzz channels update --channel <uuid> --name general\n  kuzz channels update --channel <uuid> --visibility open\n  kuzz channels update --channel <uuid> --visibility private\n  kuzz channels update --channel <uuid> --goals off"
+        after_help = "Examples:\n  kuzz channels update --channel <uuid> --name general\n  kuzz channels update --channel <uuid> --visibility open\n  kuzz channels update --channel <uuid> --visibility private\n  kuzz channels update --channel <uuid> --goals off\n  kuzz channels update --channel <uuid> --picture <url-from-kuzz-upload>\n  kuzz channels update --channel <uuid> --history since_join"
     )]
     Update {
         /// Channel UUID
@@ -864,6 +1010,28 @@ pub enum ChannelsCmd {
         /// DM participant). Off hides the goal tree and blocks goal edits.
         #[arg(long, value_enum)]
         goals: Option<OnOff>,
+        /// Set the channel photo (owner/admin; not group chats) to a URL from
+        /// `kuzz upload`. Use on its own, without other update flags.
+        #[arg(
+            long,
+            value_name = "URL",
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals", "no_picture", "history"]
+        )]
+        picture: Option<String>,
+        /// Remove the channel photo (owner/admin; not group chats). Use on its own.
+        #[arg(
+            long,
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals", "history"]
+        )]
+        no_picture: bool,
+        /// What new members can read: all earlier messages, or only those since
+        /// they joined (owner/admin; not group chats or DMs). Use on its own.
+        #[arg(
+            long,
+            value_enum,
+            conflicts_with_all = ["name", "description", "visibility", "ttl", "no_ttl", "goals"]
+        )]
+        history: Option<ChannelHistory>,
     },
     /// Set the channel topic
     Topic {
@@ -994,8 +1162,8 @@ pub enum CanvasCmd {
 
 #[derive(Subcommand)]
 pub enum GoalsCmd {
-    /// Show the goal tree as an outline; with --node or --thread also show that
-    /// goal's path, sub-goals, and the other goals on its layer
+    /// Show active goals as an outline; with --node or --thread also show that
+    /// goal's path, open sub-goals, and the active goals beside it
     Get {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1006,6 +1174,9 @@ pub enum GoalsCmd {
         /// Focus on the goal this thread (root event id) is linked to
         #[arg(long)]
         thread: Option<String>,
+        /// Also list quiet and finished goals
+        #[arg(long)]
+        all: bool,
     },
     /// Create the single layer 1 goal, or rewrite it
     SetRoot {
@@ -1102,7 +1273,8 @@ pub enum GoalsCmd {
         #[arg(long)]
         order: Option<i64>,
     },
-    /// Delete a goal; removing the layer 1 goal clears the tree (history keeps it)
+    /// Delete a goal; removing the layer 1 goal clears the tree. Deleted goals
+    /// do not come back, but `history` keeps the edit.
     Remove {
         /// Channel or DM UUID
         #[arg(long)]
@@ -1140,23 +1312,14 @@ pub enum GoalsCmd {
         #[arg(long)]
         thread: String,
     },
-    /// List previous revisions of the goal tree, newest first
+    /// List edits to the goals, newest first
     History {
         /// Channel or DM UUID
         #[arg(long)]
         channel: String,
-        /// Maximum revisions to list
+        /// Maximum edits to list
         #[arg(long, default_value_t = 20)]
         limit: u32,
-    },
-    /// Restore the goal tree to a previous revision
-    Restore {
-        /// Channel or DM UUID
-        #[arg(long)]
-        channel: String,
-        /// Revision event id (64-char hex)
-        #[arg(long)]
-        revision: String,
     },
 }
 
@@ -1255,6 +1418,203 @@ pub enum GifsCmd {
         /// Provider GIF slug from a search result
         #[arg(long)]
         slug: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum ReportCmd {
+    /// Report a message you can read. Reporting again adds another report, so do not repeat one
+    Message {
+        /// 64-char hex event ID of the message
+        #[arg(long)]
+        event: String,
+        /// Why you are reporting it
+        #[arg(long, value_enum)]
+        reason: ReportReason,
+        /// What moderators should know
+        #[arg(long)]
+        note: Option<String>,
+    },
+    /// Report a person. Reporting again adds another report, so do not repeat one
+    Person {
+        /// Person's pubkey (hex or npub)
+        #[arg(long)]
+        pubkey: String,
+        /// Why you are reporting them
+        #[arg(long, value_enum)]
+        reason: ReportReason,
+        /// What moderators should know
+        #[arg(long)]
+        note: Option<String>,
+    },
+}
+
+#[derive(Clone, Copy, clap::ValueEnum)]
+pub enum ReportReason {
+    Illegal,
+    Nudity,
+    Malware,
+    Spam,
+    Impersonation,
+    Profanity,
+    Other,
+}
+
+impl ReportReason {
+    fn as_str(self) -> &'static str {
+        match self {
+            Self::Illegal => "illegal",
+            Self::Nudity => "nudity",
+            Self::Malware => "malware",
+            Self::Spam => "spam",
+            Self::Impersonation => "impersonation",
+            Self::Profanity => "profanity",
+            Self::Other => "other",
+        }
+    }
+}
+
+#[derive(Subcommand)]
+#[command(
+    after_help = "Nothing wakes you when a reminder comes due: check `kuzz reminders list --due`."
+)]
+pub enum RemindersCmd {
+    /// Add a reminder with a note, a message, or both
+    Add {
+        /// When: RFC 3339 or unix seconds, within a year
+        #[arg(long)]
+        at: String,
+        /// What to remember
+        #[arg(long)]
+        note: Option<String>,
+        /// 64-char hex event ID of a message to come back to
+        #[arg(long)]
+        event: Option<String>,
+    },
+    /// List pending reminders, soonest first
+    List {
+        /// Only those whose time has come
+        #[arg(long, conflicts_with = "all")]
+        due: bool,
+        /// Also those done or cancelled
+        #[arg(long)]
+        all: bool,
+    },
+    /// Mark a pending reminder done
+    Done {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+    },
+    /// Cancel a pending reminder
+    Cancel {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+    },
+    /// Move a pending reminder to a new time
+    Snooze {
+        /// Reminder id from `add` or `list`
+        #[arg(long)]
+        id: String,
+        /// When: RFC 3339 or unix seconds, within a year
+        #[arg(long)]
+        at: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum FriendsCmd {
+    /// List your own friends
+    List {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+    },
+    /// Add a friend, or rename one with --name.
+    ///
+    /// A person on your list can add you to existing groups directly, without
+    /// an invitation.
+    Add {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+        /// Pubkey (hex or npub)
+        #[arg(long)]
+        person: String,
+        /// Name to remember them by
+        #[arg(long)]
+        name: Option<String>,
+    },
+    /// Remove a friend
+    Remove {
+        /// Your own list. Required: the owner's list comes later.
+        #[arg(long, required = true)]
+        as_self: bool,
+        /// Pubkey (hex or npub)
+        #[arg(long)]
+        person: String,
+    },
+}
+
+#[derive(Subcommand)]
+pub enum GroupsCmd {
+    /// Search open groups by name, description, or public address
+    Search {
+        /// Search text (2-64 characters)
+        #[arg(long)]
+        query: String,
+    },
+    /// Show a group. Private groups need membership; --handle finds open groups only
+    Get {
+        /// Channel UUID
+        #[arg(long, required_unless_present = "handle", conflicts_with = "handle")]
+        channel: Option<String>,
+        /// Public address, with or without the leading @
+        #[arg(long)]
+        handle: Option<String>,
+    },
+    /// Set or clear a group's public address (open groups, owner/admin)
+    Handle {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// New address: 3-32 of a-z, 0-9, and _
+        #[arg(long, required_unless_present = "clear", conflicts_with = "clear")]
+        set: Option<String>,
+        /// Remove the public address
+        #[arg(long)]
+        clear: bool,
+    },
+    /// Show a group's invite link, or replace it with --reset.
+    ///
+    /// Showing also creates a link if the group has none, and replaces one
+    /// whose creator can no longer share it.
+    InviteLink {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Replace the link (owner/admin). The old link stops working.
+        #[arg(long)]
+        reset: bool,
+    },
+    /// Show or set who may share the invite link (owner/admin sets)
+    InvitePolicy {
+        /// Channel UUID
+        #[arg(long)]
+        channel: String,
+        /// Who may share it
+        #[arg(long, value_enum)]
+        set: Option<GroupInvitePolicy>,
+    },
+    /// Preview a group from an invite link, code, or @handle without joining.
+    ///
+    /// Joining by link is for people. Agents join when a member adds them or
+    /// through `kuzz invitations accept`.
+    Preview {
+        /// Invite link, code, or @handle
+        #[arg(long)]
+        link: String,
     },
 }
 
@@ -1425,14 +1785,20 @@ pub enum WorkflowsCmd {
         #[arg(long)]
         inputs: Option<String>,
     },
-    /// List runs for a workflow
+    /// List runs for a workflow, newest first
     Runs {
         /// Workflow UUID
         #[arg(long)]
         workflow: String,
-        /// Maximum number of results to return
+        /// Maximum number of results to return (1-100, default 20)
         #[arg(long)]
         limit: Option<u32>,
+        /// Next page: `before` from `next`
+        #[arg(long, requires = "before_id")]
+        before: Option<String>,
+        /// Next page: `before_id` from `next`
+        #[arg(long, requires = "before")]
+        before_id: Option<String>,
     },
     /// Approve or deny a workflow step
     #[command(
@@ -1479,7 +1845,7 @@ pub enum SocialCmd {
         #[arg(long)]
         reply_to: Option<String>,
     },
-    /// Set your contact list (NIP-02 kind:3)
+    /// Replace your whole contact list (NIP-02 kind:3). To change one friend use `kuzz friends`
     #[command(name = "set-contacts")]
     SetContactList {
         /// JSON array of contacts: [{"pubkey":"hex","relay_url":"...","petname":"..."}]
@@ -1516,7 +1882,7 @@ pub enum SocialCmd {
         #[arg(long)]
         pubkey: String,
     },
-    /// Publish a NIP-51/NIP-65 social list or set.
+    /// Publish a NIP-51/NIP-65 social list or set, replacing the whole list.
     #[command(name = "set-list")]
     SetList {
         /// Supported kind: 10000, 10001, 10002, 10003, 30000, or 30003.
@@ -2722,6 +3088,7 @@ async fn client_from_session(
 async fn watch_messages(
     relay_url: String,
     since: Option<i64>,
+    access_owner: Option<String>,
     paired: Option<Keys>,
     token_source: Option<kuzz_token_broker::TokenSource>,
     private_key: Option<String>,
@@ -2730,7 +3097,7 @@ async fn watch_messages(
 ) -> Result<(), CliError> {
     if let Some(keys) = paired {
         let client = KuzzClient::new(relay_url, keys, None, None)?;
-        return commands::watch::cmd_watch(&client, since, None).await;
+        return commands::watch::cmd_watch(&client, since, access_owner, None).await;
     }
     let key_mode = token_source.is_none() && private_key.is_some();
     let uses_session = token_source.is_none() && private_key.is_none() && session.is_some();
@@ -2764,7 +3131,7 @@ async fn watch_messages(
         },
         other => other,
     })?;
-    commands::watch::cmd_watch(&client, since, reauth).await
+    commands::watch::cmd_watch(&client, since, access_owner, reauth).await
 }
 
 async fn run(cli: Cli) -> Result<(), CliError> {
@@ -2817,6 +3184,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
+    // Local files only; it needs no credential.
+    if let Cmd::Hermes(HermesCmd::Refresh {
+        no_restart,
+        hermes_home,
+    }) = cli.command
+    {
+        return pairing::cmd_hermes_refresh(no_restart, hermes_home);
+    }
+
     let token_source = token_source_for(&cli, kuzz_token_broker::TokenSource::from_env());
     let session = stored_session_for(env);
     // A paired agent acts when nothing else is configured and no person is
@@ -2847,10 +3223,15 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         .await;
     }
 
-    if let Cmd::Messages(MessagesCmd::Watch { since }) = cli.command {
+    if let Cmd::Messages(MessagesCmd::Watch {
+        since,
+        access_owner,
+    }) = cli.command
+    {
         return watch_messages(
             relay_url,
             since,
+            access_owner,
             paired.map(|(keys, _)| keys),
             token_source,
             cli.private_key,
@@ -2884,6 +3265,20 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Reactions(sub) => commands::reactions::dispatch(sub, &client).await,
         Cmd::Emoji(sub) => commands::emoji::dispatch(sub, &client).await,
         Cmd::Gifs(sub) => commands::gifs::dispatch(sub, &client).await,
+        Cmd::Inbox {
+            limit,
+            unread,
+            before_at_us,
+            before_key,
+            full,
+        } => {
+            let before = before_at_us.zip(before_key);
+            commands::inbox::cmd_inbox(&client, limit, unread, before, full).await
+        }
+        Cmd::Report(sub) => commands::report::dispatch(sub, &client).await,
+        Cmd::Reminders(sub) => commands::reminders::dispatch(sub, &client).await,
+        Cmd::Friends(sub) => commands::friends::dispatch(sub, &client).await,
+        Cmd::Groups(sub) => commands::groups::dispatch(sub, &client).await,
         Cmd::Invitations(sub) => commands::invitations::dispatch(sub, &client).await,
         Cmd::Dms(sub) => commands::dms::dispatch(sub, &client).await,
         Cmd::Users(sub) => commands::users::dispatch(sub, &client, &cli.format).await,
@@ -2901,7 +3296,9 @@ async fn run(cli: Cli) -> Result<(), CliError> {
         Cmd::Mem(sub) => commands::mem::dispatch(sub, &client).await,
         Cmd::Teams(sub) => commands::teams::dispatch(sub, &client).await,
         Cmd::Moderation(sub) => commands::moderation::dispatch(sub, &client, &cli.format).await,
-        Cmd::Pack(_) | Cmd::Auth(_) | Cmd::Pair { .. } => unreachable!("handled above"),
+        Cmd::Pack(_) | Cmd::Guide | Cmd::Auth(_) | Cmd::Pair { .. } | Cmd::Hermes(_) => {
+            unreachable!("handled above")
+        }
     }
 }
 
@@ -3170,6 +3567,54 @@ mod tests {
     }
 
     #[test]
+    fn every_example_in_the_guide_parses() {
+        let examples: Vec<&str> = commands::guide::GUIDE
+            .lines()
+            .filter_map(|line| line.strip_prefix("  kuzz "))
+            .collect();
+        assert!(examples.len() >= 8, "{examples:?}");
+        for example in examples {
+            let args = std::iter::once("kuzz").chain(example.split(' '));
+            assert!(parse_args(args).is_ok(), "{example}");
+        }
+    }
+
+    #[test]
+    fn bot_removal_needs_yes() {
+        let bot = ["kuzz", "auth", "bots", "delete", "abc"];
+        assert!(parse_args(bot).is_err());
+        assert!(parse_args(["kuzz", "auth", "bots", "delete", "abc", "--yes"]).is_ok());
+        assert!(parse_args(["kuzz", "auth", "bots", "revoke-all"]).is_err());
+        assert!(parse_args(["kuzz", "auth", "bots", "revoke-all", "--yes"]).is_ok());
+    }
+
+    #[test]
+    fn report_reasons_match_the_relay() {
+        use clap::ValueEnum;
+        let reasons: Vec<&str> = ReportReason::value_variants()
+            .iter()
+            .map(|reason| reason.as_str())
+            .collect();
+        assert_eq!(
+            reasons,
+            [
+                "illegal",
+                "nudity",
+                "malware",
+                "spam",
+                "impersonation",
+                "profanity",
+                "other"
+            ]
+        );
+    }
+
+    #[test]
+    fn reminder_list_takes_one_view() {
+        assert!(parse_args(["kuzz", "reminders", "list", "--due", "--all"]).is_err());
+    }
+
+    #[test]
     fn set_status_clear_rejects_text_and_emoji() {
         for extra in [["--text", "busy"], ["--emoji", "🎶"]] {
             let args = ["kuzz", "users", "set-status", "--clear"]
@@ -3203,8 +3648,13 @@ mod tests {
             "dms",
             "emoji",
             "feed",
+            "friends",
             "gifs",
             "goals",
+            "groups",
+            "guide",
+            "hermes",
+            "inbox",
             "invitations",
             "issues",
             "media",
@@ -3218,6 +3668,8 @@ mod tests {
             "pr",
             "projects",
             "reactions",
+            "reminders",
+            "report",
             "repos",
             "social",
             "teams",
@@ -3273,6 +3725,7 @@ mod tests {
                 "archived",
                 "draft-create",
                 "draft-update",
+                "same-owner",
                 "unarchive"
             ]
         );
@@ -3282,6 +3735,9 @@ mod tests {
                 "delete",
                 "edit",
                 "get",
+                "mark-all-read",
+                "mark-read",
+                "mark-unread",
                 "name-thread",
                 "search",
                 "send",
@@ -3317,6 +3773,11 @@ mod tests {
             vec!["get", "history", "restore", "set"]
         );
         assert_eq!(names(&cmd, "reactions"), vec!["add", "get", "remove"]);
+        assert_eq!(names(&cmd, "report"), vec!["message", "person"]);
+        assert_eq!(
+            names(&cmd, "reminders"),
+            vec!["add", "cancel", "done", "list", "snooze"]
+        );
         assert_eq!(
             names(&cmd, "emoji"),
             vec!["export", "import", "list", "rm", "set"]
@@ -3422,7 +3883,7 @@ mod tests {
     #[test]
     fn subcommand_counts_are_stable() {
         let expected: Vec<(&str, usize)> = vec![
-            ("agents", 5),
+            ("agents", 6),
             ("auth", 7),
             ("canvas", 4),
             ("channels", 16),
@@ -3431,7 +3892,7 @@ mod tests {
             ("feed", 1),
             ("issues", 6),
             ("media", 1),
-            ("messages", 10),
+            ("messages", 13),
             ("pack", 2),
             ("patches", 4),
             ("pr", 5),
@@ -3439,7 +3900,7 @@ mod tests {
             ("reactions", 3),
             ("repos", 6),
             ("social", 7),
-            ("threads", 3),
+            ("threads", 6),
             ("upload", 1),
             ("users", 5),
             ("workflows", 8),

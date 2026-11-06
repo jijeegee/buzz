@@ -9,6 +9,7 @@ import type { ChatStateWriter } from "@/features/chats/chatStateWrites";
 import { useChatStateCapability } from "@/features/chats/useChatStateCapability";
 import { useChatStatePing } from "@/features/chats/useChatStatePing";
 import { useServerChatList } from "@/features/chats/useServerChatList";
+import { groupInvitationsQueryKey } from "@/features/groups/hooks";
 import { useRelayConnection } from "@/shared/api/useRelayConnection";
 
 export type ChatStateSyncProps = {
@@ -44,11 +45,26 @@ export function ChatStateSync({
     relayUrl,
   });
   const on = capability === "on";
-  useChatStatePing(pubkey, connected && on, () => {
-    // This device's own write already patched the list from its response.
-    if (writerRef.current?.explainsPing()) return;
-    void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY });
+  const refreshInvitations = React.useEffectEvent(() => {
+    if (!pubkey) return;
+    void queryClient.invalidateQueries({
+      queryKey: groupInvitationsQueryKey(pubkey.toLowerCase()),
+    });
   });
+  // A ping sent while offline is gone.
+  React.useEffect(() => {
+    if (connected && on) refreshInvitations();
+  }, [connected, on]);
+  useChatStatePing(
+    pubkey,
+    connected && on,
+    () => {
+      // This device's own write already patched the list from its response.
+      if (writerRef.current?.explainsPing()) return;
+      void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY });
+    },
+    refreshInvitations,
+  );
   const chatList = useServerChatList({
     capabilityKey,
     connected,

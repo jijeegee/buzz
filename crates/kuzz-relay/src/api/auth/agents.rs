@@ -17,6 +17,11 @@
 //! mode, so a device without a recorded device key cannot host an agent, and
 //! the key listing needs a sign-in from the last five minutes. `GET /agents/{pubkey}/status` (NIP-98 with a device tag) tells an
 //! admitted key which keys are its owner's and whether they can run now.
+//!
+//! Owner tools (AI tools plan, stage S1): `POST /auth/agents/{pubkey}/tool-level`
+//! sets the owner's switch, `POST /auth/agents/tool-levels` reads it,
+//! `POST /auth/agents/{pubkey}/revoke` deletes an agent key for good, and
+//! `GET /agents/me` tells a key whether it may act for its owner now.
 //! These endpoints are new; no existing route changes. Secret keys are never
 //! logged.
 
@@ -31,13 +36,18 @@ use axum::{
 use kuzz_auth::device_proof::{verify_event_device_tag, DevicePubkey};
 use kuzz_auth::key_backup::EncryptedKeyBackup;
 use kuzz_auth::TokenBinding;
-use kuzz_db::identity::{AgentKeyBackupRecord, KeyAdmission, KeyRole, RegisterAgentKey};
+use kuzz_core::TenantContext;
+use kuzz_db::identity::{
+    ActionSource, ActionStatus, AgentKeyBackupRecord, KeyAdmission, KeyRole, NewAgentAction,
+    RegisterAgentKey, RespondClass, RevokeAgentKey, SetToolLevel, ToolLevel, ToolLevelWrite,
+};
 use serde::{Deserialize, Serialize};
-use serde_json::json;
+use serde_json::{json, Value};
 use uuid::Uuid;
 use zeroize::Zeroizing;
 
 use super::{auth_error, authenticate_user_token, bad_request, rate_limit};
+use crate::identity::authority::{agent_authority, Denial};
 use crate::identity::config::DeviceAdmissionMode;
 use crate::identity::device::{self, Surface};
 use crate::identity::kv;
@@ -424,21 +434,116 @@ pub(crate) async fn status_one(
     status(&state, &headers, &uri, std::slice::from_ref(&pubkey)).await
 }
 
+/// The `pubkeys` query parameter, split on commas.
+fn pubkeys_param(uri: &Uri) -> Option<Vec<String>> {
+    uri.query().and_then(|query| {
+        url::form_urlencoded::parse(query.as_bytes())
+            .find(|(name, _)| name == "pubkeys")
+            .map(|(_, value)| value.split(',').map(str::to_owned).collect())
+    })
+}
+
+/// Canonical keys without repeats, at most [`MAX_STATUS_KEYS`].
+#[allow(clippy::result_large_err)]
+fn parse_keys(requested: &[String]) -> Result<Vec<[u8; 32]>, Response> {
+    let mut pubkeys: Vec<[u8; 32]> = Vec::with_capacity(requested.len());
+    for raw in requested {
+        match nostr::PublicKey::from_hex(raw) {
+            Ok(key) if key.to_hex() == *raw => {
+                if !pubkeys.contains(&key.to_bytes()) {
+                    pubkeys.push(key.to_bytes());
+                }
+            }
+            _ => {
+                return Err(bad_request(
+                    "pubkeys must be canonical lowercase public keys",
+                ))
+            }
+        }
+    }
+    if pubkeys.is_empty() || pubkeys.len() > MAX_STATUS_KEYS {
+        return Err(bad_request(&format!("ask about 1-{MAX_STATUS_KEYS} keys")));
+    }
+    Ok(pubkeys)
+}
+
 /// `GET /agents/status?pubkeys=<hex>,<hex>`.
 pub(crate) async fn status_many(
     State(state): State<Arc<AppState>>,
     uri: Uri,
     headers: HeaderMap,
 ) -> Response {
-    let requested = uri.query().and_then(|query| {
-        url::form_urlencoded::parse(query.as_bytes())
-            .find(|(name, _)| name == "pubkeys")
-            .map(|(_, value)| value.split(',').map(str::to_owned).collect::<Vec<_>>())
-    });
-    match requested {
+    match pubkeys_param(&uri) {
         Some(pubkeys) => status(&state, &headers, &uri, &pubkeys).await,
         None => bad_request("pubkeys is required"),
     }
+}
+
+/// `GET /agents/same-owner?pubkeys=<hex>,<hex>`: which of the keys are the
+/// caller's owner or the owner's agents, as `{"keys": [<hex>]}`. Any other key
+/// is left out, whether it has another owner or none. An agent listens to
+/// these keys as it does to its owner. Works for bearer tokens and NIP-98 keys
+/// in every admission mode; a caller with no owner counts as its own owner.
+pub(crate) async fn same_owner(
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    let Some(requested) = pubkeys_param(&uri) else {
+        return bad_request("pubkeys is required");
+    };
+    let pubkeys = match parse_keys(&requested) {
+        Ok(pubkeys) => pubkeys,
+        Err(response) => return response,
+    };
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    let Ok(tenant) = crate::tenant::bind_community(&state.db, raw_host).await else {
+        return super::not_found("no community is configured for this host");
+    };
+    let path = uri
+        .path_and_query()
+        .map_or_else(|| uri.path(), |pq| pq.as_str());
+    let caller = match crate::api::bridge::admit_get_caller(&state, &tenant, &headers, path).await {
+        Ok(caller) => caller,
+        Err(response) => return response,
+    };
+    if let Err(response) = rate_limit(
+        &state,
+        &format!("agents:same-owner:{}", caller.to_hex()),
+        60,
+        120,
+    )
+    .await
+    {
+        return response;
+    }
+    let caller = caller.to_bytes();
+    let mut lookup = pubkeys.clone();
+    if !lookup.contains(&caller) {
+        lookup.push(caller);
+    }
+    let owners = match state.db.key_owners(tenant.community(), &lookup).await {
+        Ok(owners) => owners,
+        Err(_) => return super::unavailable(),
+    };
+    let my_owner = owners
+        .iter()
+        .find(|(key, _)| *key == caller)
+        .map_or(caller.as_slice(), |(_, owner)| owner.as_slice());
+    let keys: Vec<String> = pubkeys
+        .iter()
+        .filter(|key| {
+            key.as_slice() == my_owner
+                || owners
+                    .iter()
+                    .any(|(owned, owner)| owned == *key && owner.as_slice() == my_owner)
+        })
+        .map(hex::encode)
+        .collect();
+    axum::Json(json!({"keys": keys})).into_response()
 }
 
 /// The NIP-98 event of a request whose `Authorization` already verified.
@@ -470,20 +575,10 @@ async fn status(
     uri: &Uri,
     requested: &[String],
 ) -> Response {
-    let mut pubkeys: Vec<[u8; 32]> = Vec::with_capacity(requested.len());
-    for raw in requested {
-        match nostr::PublicKey::from_hex(raw) {
-            Ok(key) if key.to_hex() == *raw => {
-                if !pubkeys.contains(&key.to_bytes()) {
-                    pubkeys.push(key.to_bytes());
-                }
-            }
-            _ => return bad_request("pubkeys must be canonical lowercase public keys"),
-        }
-    }
-    if pubkeys.is_empty() || pubkeys.len() > MAX_STATUS_KEYS {
-        return bad_request(&format!("ask about 1-{MAX_STATUS_KEYS} keys"));
-    }
+    let pubkeys = match parse_keys(requested) {
+        Ok(pubkeys) => pubkeys,
+        Err(response) => return response,
+    };
 
     let raw_host = headers
         .get(axum::http::header::HOST)
@@ -589,4 +684,346 @@ async fn status(
         }));
     }
     axum::Json(json!({"admission": mode.as_str(), "keys": keys})).into_response()
+}
+
+// ── Owner tools switch (AI tools plan §3-4, stage S1) ──────────────────────
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolLevelRequest {
+    level: String,
+    respond_class: String,
+    #[serde(default)]
+    default: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ToolLevelsRequest {
+    pubkeys: Vec<String>,
+}
+
+fn agent_not_found() -> Response {
+    auth_error(StatusCode::NOT_FOUND, "agent_not_found", "agent not found")
+}
+
+/// A canonical lowercase agent key from the path.
+fn path_agent(raw: &str) -> Option<[u8; 32]> {
+    nostr::PublicKey::from_hex(raw)
+        .ok()
+        .filter(|key| key.to_hex() == raw)
+        .map(|key| key.to_bytes())
+}
+
+/// The community of the request host: the switch counts only there.
+async fn request_community(
+    state: &AppState,
+    headers: &HeaderMap,
+) -> Result<TenantContext, Response> {
+    let raw_host = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    crate::tenant::bind_community(&state.db, raw_host)
+        .await
+        .map_err(|_| super::not_found("no community is configured for this host"))
+}
+
+/// `POST /auth/agents/{pubkey}/tool-level` `{level, respond_class, default}`:
+/// the owner sets the switch of one of its agents, from a proven device, for
+/// the community of the request host. With `default: true` it is written
+/// only over a level never set (`already_set` names the stored one). 409
+/// `full_anyone_refused` for `full` with `anyone`; 409 `respond_class_stale`
+/// when an app agent is turned on from a device other than its host and the
+/// relay's class is unknown or differs; 404 `agent_not_found` for a key that
+/// is not the caller's live agent or external key.
+pub(super) async fn set_tool_level(
+    State(state): State<Arc<AppState>>,
+    Path(pubkey): Path<String>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (binding, device, _) =
+        match authorize_device_call(&state, &headers, "auth:agents:tool-level", 120).await {
+            Ok(authorized) => authorized,
+            Err(response) => return response,
+        };
+    let Ok(request) = serde_json::from_slice::<ToolLevelRequest>(&body) else {
+        return bad_request("level and respond_class are required");
+    };
+    let (Some(level), Some(class)) = (
+        ToolLevel::parse(&request.level),
+        RespondClass::parse(&request.respond_class),
+    ) else {
+        return bad_request(
+            "level is full or limited; respond_class is owner-only, allowlist or anyone",
+        );
+    };
+    let Some(agent) = path_agent(&pubkey) else {
+        return agent_not_found();
+    };
+    let tenant = match request_community(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(response) => return response,
+    };
+    let write = ToolLevelWrite {
+        level,
+        respond_class: class,
+        default_only: request.default,
+        community: tenant.community(),
+        device,
+    };
+    let (result, level) = match state
+        .db
+        .set_agent_tool_level(&binding.principal, &agent, &write)
+        .await
+    {
+        Ok(SetToolLevel::Set(level)) => ("set", level),
+        Ok(SetToolLevel::AlreadySet(level)) => ("already_set", level),
+        Ok(SetToolLevel::NotFound) => return agent_not_found(),
+        Ok(SetToolLevel::FullAnyone) => {
+            return conflict(
+                "full_anyone_refused",
+                "an agent that answers anyone cannot use its owner's tools",
+            )
+        }
+        Ok(SetToolLevel::ClassStale) => {
+            return conflict(
+                "respond_class_stale",
+                "change this on the computer that runs the agent",
+            )
+        }
+        Err(_) => return super::unavailable(),
+    };
+    if result == "set" {
+        tracing::info!(
+            principal = %binding.principal,
+            agent = %hex::encode(&agent[..8]),
+            level = level.as_str(),
+            default = request.default,
+            "auth.agent_tool_level_set"
+        );
+        log_tool_level(&state, &binding, &tenant, agent, level, device).await;
+    }
+    axum::Json(json!({"result": result, "level": level.as_str()})).into_response()
+}
+
+/// The `tool_level.set` row of the agent action log. Best effort: the
+/// switch is already stored.
+async fn log_tool_level(
+    state: &AppState,
+    binding: &TokenBinding,
+    tenant: &TenantContext,
+    agent: [u8; 32],
+    level: ToolLevel,
+    device: Uuid,
+) {
+    let Ok(Some(owner)) = state.db.account_pubkey(&binding.principal).await else {
+        return;
+    };
+    let computer = device.to_string();
+    let action = NewAgentAction {
+        community: tenant.community(),
+        owner_pubkey: owner,
+        agent_pubkey: agent,
+        action: "tool_level.set",
+        target: Some(level.as_str()),
+        computer: Some(&computer),
+        status: ActionStatus::Ok,
+        source: ActionSource::Relay,
+    };
+    if let Err(error) = state.db.insert_agent_action(&action).await {
+        tracing::warn!(%error, "agent action log write failed");
+    }
+}
+
+/// `POST /auth/agents/{pubkey}/revoke`: the owner deletes an agent key for
+/// good, from the device that runs it (409 `not_host` from any other; a
+/// paired agent is disconnected instead). The key is refused everywhere, its
+/// copy deleted and its open sockets closed (while key sockets are on). A
+/// repeat answers 204 again.
+pub(super) async fn revoke(
+    State(state): State<Arc<AppState>>,
+    Path(pubkey): Path<String>,
+    headers: HeaderMap,
+) -> Response {
+    let (binding, device, _) =
+        match authorize_device_call(&state, &headers, "auth:agents:revoke", 60).await {
+            Ok(authorized) => authorized,
+            Err(response) => return response,
+        };
+    let Some(agent) = path_agent(&pubkey) else {
+        return agent_not_found();
+    };
+    match state
+        .db
+        .revoke_agent_key(&binding.principal, &agent, device)
+        .await
+    {
+        Ok(RevokeAgentKey::Revoked) => {
+            state.identity.admissions.evict_key(&agent);
+            crate::identity::publish_key_revocation(&state, &[], &[agent], "agent_revoked").await;
+            tracing::info!(
+                principal = %binding.principal,
+                agent = %hex::encode(&agent[..8]),
+                "auth.agent_revoked"
+            );
+            StatusCode::NO_CONTENT.into_response()
+        }
+        Ok(RevokeAgentKey::AlreadyRevoked) => StatusCode::NO_CONTENT.into_response(),
+        Ok(RevokeAgentKey::NotHost) => conflict(
+            "not_host",
+            "only the computer that runs this agent can delete its key",
+        ),
+        Ok(RevokeAgentKey::NotFound) => agent_not_found(),
+        Err(_) => super::unavailable(),
+    }
+}
+
+/// `POST /auth/agents/tool-levels` `{pubkeys}` (1-64): the switch of each of
+/// the caller's live agent and external keys among them, as
+/// `{"agents": [{pubkey, level, respond_class, here}]}`. Other keys are left
+/// out. `level` is `null` when never set or set for another community;
+/// `here` is whether the calling device runs the agent.
+pub(super) async fn tool_levels(
+    State(state): State<Arc<AppState>>,
+    headers: HeaderMap,
+    body: Bytes,
+) -> Response {
+    let (binding, device, _) =
+        match authorize_device_call(&state, &headers, "auth:agents:tool-levels", 120).await {
+            Ok(authorized) => authorized,
+            Err(response) => return response,
+        };
+    let Ok(request) = serde_json::from_slice::<ToolLevelsRequest>(&body) else {
+        return bad_request("pubkeys is required");
+    };
+    let pubkeys = match parse_keys(&request.pubkeys) {
+        Ok(pubkeys) => pubkeys,
+        Err(response) => return response,
+    };
+    let tenant = match request_community(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(response) => return response,
+    };
+    let states = match state
+        .db
+        .agent_tool_levels(&binding.principal, &pubkeys)
+        .await
+    {
+        Ok(states) => states,
+        Err(_) => return super::unavailable(),
+    };
+    let agents: Vec<Value> = pubkeys
+        .iter()
+        .filter_map(|pubkey| states.iter().find(|found| found.pubkey == *pubkey))
+        .map(|found| {
+            let level = found
+                .level
+                .filter(|_| found.community == Some(tenant.community()));
+            json!({
+                "pubkey": hex::encode(found.pubkey),
+                "level": level.map(ToolLevel::as_str),
+                "respond_class": found.respond_class.map(RespondClass::as_str),
+                "here": found.host_device_id == Some(device),
+            })
+        })
+        .collect();
+    axum::Json(json!({"agents": agents})).into_response()
+}
+
+/// `GET /agents/me` (NIP-98 with a device tag): what the calling key is and
+/// whether it may act for its owner here now ([`agent_authority`]), as
+/// `{role, owner, stored_level, effective, reason, community,
+/// host_computer, respond_class}`. `effective` is `full` or `limited`;
+/// `reason` says why not (`null` when full); `community` is the host the
+/// answer is for. Unregistered keys and keys refused on this device get an
+/// answer too: `limited`, with the reason.
+pub(crate) async fn me(
+    State(state): State<Arc<AppState>>,
+    uri: Uri,
+    headers: HeaderMap,
+) -> Response {
+    let tenant = match request_community(&state, &headers).await {
+        Ok(tenant) => tenant,
+        Err(response) => return response,
+    };
+    let path = uri
+        .path_and_query()
+        .map_or_else(|| uri.path(), |pq| pq.as_str());
+    let url = crate::api::bridge::nip98_expected_url(&state.config.relay_url, &tenant, path);
+    // A real NIP-98 event only: the dev X-Pubkey fallback carries no device.
+    let admission = match admit_nip_fi_http_on_state(&state, &headers, || {
+        crate::api::bridge::verify_bridge_auth(&headers, "GET", &url, None, true)
+            .map(|auth| Nip98Proof::new(auth.pubkey, auth.event_id_bytes))
+            .map_err(IntoResponse::into_response)
+    }) {
+        Ok(admission) => admission,
+        Err(response) => return response,
+    };
+    let caller = *admission.proven_pubkey();
+    if let Err(error) =
+        crate::api::bridge::check_nip98_replay(&state, &tenant, admission.into_extra()).await
+    {
+        return error.into_response();
+    }
+    if let Err(response) =
+        rate_limit(&state, &format!("agents:me:{}", caller.to_hex()), 60, 60).await
+    {
+        return response;
+    }
+    // A bad device signature is refused; no device tag reads as `no_device`.
+    let device = match nip98_event(&headers).map(|event| verify_event_device_tag(&event)) {
+        Some(Ok(device)) => device,
+        _ => {
+            return auth_error(
+                StatusCode::FORBIDDEN,
+                "not_admitted",
+                "the device signature is invalid",
+            )
+        }
+    };
+    let authority = match agent_authority(
+        &state,
+        &caller.to_bytes(),
+        device.as_ref().map(DevicePubkey::as_bytes),
+        tenant.community(),
+    )
+    .await
+    {
+        Ok(authority) => authority,
+        Err(_) => return super::unavailable(),
+    };
+    let facts = authority.facts.as_ref();
+    let tool = facts.and_then(|facts| facts.tool.as_ref());
+    let (role, owner) = match facts.map(|facts| facts.admission) {
+        Some(KeyAdmission::Admitted {
+            role, owner_pubkey, ..
+        }) => (Some(role), owner_pubkey),
+        Some(KeyAdmission::Refused { role, .. }) => (Some(role), None),
+        _ => (None, None),
+    };
+    // A refused agent still names its owner.
+    let owner = match (owner, tool) {
+        (Some(owner), _) => Some(owner),
+        (None, Some(tool)) => match state.db.account_pubkey(&tool.principal).await {
+            Ok(owner) => owner,
+            Err(_) => return super::unavailable(),
+        },
+        (None, None) => None,
+    };
+    axum::Json(json!({
+        "pubkey": caller.to_hex(),
+        "role": role.map(KeyRole::as_str),
+        "owner": owner.map(hex::encode),
+        "stored_level": tool.and_then(|tool| tool.level).map(ToolLevel::as_str),
+        "effective": if authority.decision.is_ok() { "full" } else { "limited" },
+        "reason": authority.decision.err().map(Denial::as_str),
+        "community": tenant.host(),
+        "host_computer": tool
+            .filter(|tool| tool.role != KeyRole::Person)
+            .and_then(|tool| tool.host_device_name.as_deref()),
+        "respond_class": tool.and_then(|tool| tool.respond_class).map(RespondClass::as_str),
+    }))
+    .into_response()
 }

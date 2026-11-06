@@ -44,14 +44,19 @@ pub(super) fn summarize_from_disk(
         crate::managed_agents::ManagedAgentPairRuntime,
     >,
 ) -> Result<ManagedAgentSummary, String> {
+    let owner = crate::managed_agents::visible_owner_hex(app, record);
     build_managed_agent_summary(
         app,
         record,
         runtimes,
         &load_personas(app).unwrap_or_default(),
-        &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
-        crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
-        crate::managed_agents::visible_owner_hex(app, record),
+        &crate::managed_agents::load_agent_config_for_record(app, record),
+        crate::managed_agents::channel_routing::load_channel_routing_for_owner(
+            app,
+            owner.as_deref(),
+        )
+        .unwrap_or_default(),
+        owner,
     )
 }
 
@@ -105,7 +110,7 @@ pub(super) async fn start_local_agent_pairs_with_preflight(
     }
     let personas_for_preflight = load_personas(app).unwrap_or_default();
     let global_for_preflight =
-        crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+        crate::managed_agents::load_agent_config_for_record(app, &record_snapshot);
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
@@ -266,7 +271,7 @@ where
     // for a global-inherited blank definition, it also folds in the global
     // default, which record-byte sniffing could never see.
     let personas = load_personas(app).unwrap_or_default();
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let global = crate::managed_agents::load_agent_config_for_record(app, &record_snapshot);
     let mesh_model_id =
         crate::managed_agents::effective_config::resolve_effective_relay_mesh_model_id(
             &record_snapshot,
@@ -351,14 +356,19 @@ where
         .iter()
         .find(|record| record.pubkey == pubkey)
         .ok_or_else(|| format!("agent {pubkey} not found"))?;
+    let owner = crate::managed_agents::visible_owner_hex(app, record);
     build_managed_agent_summary(
         app,
         record,
         &runtimes,
         &personas,
-        &crate::managed_agents::load_global_agent_config(app).unwrap_or_default(),
-        crate::managed_agents::channel_routing::load_channel_routing(app).unwrap_or_default(),
-        crate::managed_agents::visible_owner_hex(app, record),
+        &crate::managed_agents::load_agent_config_for_record(app, record),
+        crate::managed_agents::channel_routing::load_channel_routing_for_owner(
+            app,
+            owner.as_deref(),
+        )
+        .unwrap_or_default(),
+        owner,
     )
 }
 
@@ -420,10 +430,8 @@ async fn managed_agent_summaries(
         // One disk read for the whole list — build_managed_agent_summary takes
         // personas and config as parameters precisely so this poll-every-5s
         // call does not re-read them per record.
-        let global_config =
-            crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
-        let routing_mode =
-            crate::managed_agents::channel_routing::load_channel_routing(&app).unwrap_or_default();
+        let agent_configs = crate::managed_agents::AgentConfigsByOwner::load(&app, &records);
+        let mut routing_modes = std::collections::BTreeMap::new();
         let me = crate::managed_agents::active_owner_hex(&app);
         records
             .iter()
@@ -438,12 +446,19 @@ async fn managed_agent_summaries(
                     || crate::managed_agents::owned_by_viewer(owner.as_deref(), me.as_deref())
             })
             .map(|(record, owner)| {
+                let routing_mode = *routing_modes.entry(owner.clone()).or_insert_with(|| {
+                    crate::managed_agents::channel_routing::load_channel_routing_for_owner(
+                        &app,
+                        owner.as_deref(),
+                    )
+                    .unwrap_or_default()
+                });
                 build_managed_agent_summary(
                     &app,
                     record,
                     &runtimes,
                     &personas,
-                    &global_config,
+                    agent_configs.for_record(record),
                     routing_mode,
                     owner,
                 )
@@ -867,6 +882,7 @@ pub async fn create_managed_agent(
                 &state.current_auth_origin(),
                 &owner,
                 false,
+                crate::auth::agent_hosting::ToolsDefault::Quiet,
             );
         }
         // Effective owner-authored description for the kind:0 `about`.
@@ -1283,11 +1299,14 @@ pub async fn delete_managed_agent(
     app: AppHandle,
 ) -> Result<(), String> {
     let pubkey = crate::auth::bots::current_agent_pubkey(&pubkey);
-    let (stop_app, server_app) = (app.clone(), app.clone());
+    let (check_app, stop_app, server_app, revoke_app) =
+        (app.clone(), app.clone(), app.clone(), app.clone());
     delete_managed_agent_in_order(
         &pubkey,
+        || check_managed_agent_delete(check_app, pubkey.clone(), force_remote_delete),
         || stop_managed_agent_for_delete(stop_app, pubkey.clone()),
         || crate::auth::bots::delete_server_bots_for(&server_app, &pubkey),
+        || crate::auth::tool_levels::revoke_for_delete(&revoke_app, &pubkey),
         || delete_managed_agent_locally(pubkey.clone(), force_remote_delete, app),
     )
     .await
@@ -1295,36 +1314,96 @@ pub async fn delete_managed_agent(
 
 /// The order of [`delete_managed_agent`], with each step injected:
 /// 1. fence the agent (no start or watchdog restart while deleting — a late
-///    exit-78 restart would register a new server bot) and stop its process;
-/// 2. delete its server bot (Rule 1: a failure keeps the agent to retry);
-/// 3. only then delete it locally.
+///    exit-78 restart would register a new server bot) and check every local
+///    precondition (the record exists; a deployed remote agent needs
+///    `force_remote_delete`), so a refused delete touches nothing;
+/// 2. stop its process;
+/// 3. delete its server bot, then revoke its key as the last server step
+///    (Rule 1: a failure keeps the agent to retry);
+/// 4. only then delete it locally.
 pub(crate) async fn delete_managed_agent_in_order<
+    Check,
+    CheckFut,
     Stop,
     StopFut,
     Server,
     ServerFut,
+    Revoke,
+    RevokeFut,
     Local,
     LocalFut,
 >(
     pubkey: &str,
+    check: Check,
     stop: Stop,
     server: Server,
+    revoke: Revoke,
     local: Local,
 ) -> Result<(), String>
 where
+    Check: FnOnce() -> CheckFut,
+    CheckFut: std::future::Future<Output = Result<(), String>>,
     Stop: FnOnce() -> StopFut,
     StopFut: std::future::Future<Output = Result<(), String>>,
     Server: FnOnce() -> ServerFut,
     ServerFut: std::future::Future<Output = Result<(), String>>,
+    Revoke: FnOnce() -> RevokeFut,
+    RevokeFut: std::future::Future<Output = Result<(), String>>,
     Local: FnOnce() -> LocalFut,
     LocalFut: std::future::Future<Output = Result<(), String>>,
 {
     let _fence = crate::auth::bots::DeleteFence::begin(pubkey);
+    check().await?;
     stop().await?;
-    crate::auth::bots::server_then_local(server(), local).await
+    let server_steps = async {
+        server().await?;
+        revoke().await
+    };
+    crate::auth::bots::server_then_local(server_steps, local).await
 }
 
-/// Step 1 of [`delete_managed_agent`]: stop every pair of the agent.
+/// The local preconditions of a delete: the record exists, and a deployed
+/// remote agent is deleted only with `force_remote_delete` (the frontend
+/// sends it after the user confirms the orphan warning). Pure.
+pub(crate) fn delete_preconditions(
+    records: &[ManagedAgentRecord],
+    pubkey: &str,
+    force_remote_delete: Option<bool>,
+) -> Result<(), String> {
+    let Some(record) = records.iter().find(|record| record.pubkey == pubkey) else {
+        return Err(format!("agent {pubkey} not found"));
+    };
+    if record.backend != BackendKind::Local
+        && record.backend_agent_id.is_some()
+        && !force_remote_delete.unwrap_or(false)
+    {
+        return Err(
+            "cannot delete a deployed remote agent without force_remote_delete: true".to_string(),
+        );
+    }
+    Ok(())
+}
+
+/// Step 1 of [`delete_managed_agent`]: [`delete_preconditions`] on disk.
+async fn check_managed_agent_delete(
+    app: AppHandle,
+    pubkey: String,
+    force_remote_delete: Option<bool>,
+) -> Result<(), String> {
+    use tauri::Manager;
+    tokio::task::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let _store_guard = state
+            .managed_agents_store_lock
+            .lock()
+            .map_err(|error| error.to_string())?;
+        delete_preconditions(&load_managed_agents(&app)?, &pubkey, force_remote_delete)
+    })
+    .await
+    .map_err(|e| format!("spawn_blocking failed: {e}"))?
+}
+
+/// Step 2 of [`delete_managed_agent`]: stop every pair of the agent.
 async fn stop_managed_agent_for_delete(app: AppHandle, pubkey: String) -> Result<(), String> {
     use tauri::Manager;
     tokio::task::spawn_blocking(move || {
@@ -1395,23 +1474,9 @@ async fn delete_managed_agent_locally(
             // Guard: reject deletion of deployed remote agents unless explicitly forced.
             // This turns "don't orphan remote infra" from a UI convention into a backend
             // invariant — a buggy or compromised IPC caller cannot silently orphan a live
-            // remote deployment. The frontend sends force_remote_delete: true only after
-            // the user confirms the orphan warning.
-            if let Some(record) = records.iter().find(|r| r.pubkey == pubkey) {
-                if record.backend != BackendKind::Local
-                    && record.backend_agent_id.is_some()
-                    && !force_remote_delete.unwrap_or(false)
-                {
-                    return Err(
-                        "cannot delete a deployed remote agent without force_remote_delete: true"
-                            .to_string(),
-                    );
-                }
-            }
-
-            if !records.iter().any(|record| record.pubkey == pubkey) {
-                return Err(format!("agent {pubkey} not found"));
-            }
+            // remote deployment. Checked first in step 1 too (before any server step);
+            // again here in case the record changed since.
+            delete_preconditions(&records, &pubkey, force_remote_delete)?;
             run_managed_agent_deletion(&base_dir, &pubkey, &mut records, |records| {
                 if let Some(record) = records.iter_mut().find(|record| record.pubkey == pubkey) {
                     stop_managed_agent_process(&app, record, &mut runtimes)?;

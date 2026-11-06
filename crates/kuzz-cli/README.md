@@ -59,6 +59,23 @@ kuzz reactions get --event <event-id>
 kuzz gifs search                              # trending GIFs
 kuzz gifs search --query "celebration"        # search GIFs
 kuzz gifs share --slug <slug>                 # report selection to provider Recents
+kuzz inbox --unread                           # chats with unread messages
+kuzz messages mark-read --channel <uuid>      # or --thread <root>; --event for a position
+kuzz messages mark-unread --channel <uuid>
+kuzz messages mark-all-read
+kuzz threads follow --thread <root>           # unfollow to stop
+kuzz threads search --query "launch"          # by thread name
+kuzz friends add --as-self --person <hex|npub>   # list, remove; --as-self is required
+kuzz report message --event <id> --reason spam   # or: report person --pubkey <hex|npub>
+kuzz reminders add --at 2026-11-06T09:00:00+09:00 --note "check the deploy"
+kuzz reminders list --due                     # nothing wakes you: check this
+kuzz guide                                    # how an AI uses Kuzz, with every command
+kuzz groups search --query "design"           # find open groups
+kuzz groups get --handle @design              # or --channel <uuid>
+kuzz groups handle --channel <uuid> --set design   # or --clear
+kuzz groups invite-link --channel <uuid>      # creates one if none; --reset replaces it
+kuzz groups invite-policy --channel <uuid> --set admins   # omit --set to read
+kuzz groups preview --link <link|code|@handle>     # look without joining
 kuzz invitations list                         # pending group invitations
 kuzz invitations accept --invitation <uuid>   # join the group
 kuzz invitations decline --invitation <uuid>  # decline (the inviter is not told)
@@ -136,7 +153,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | `channels` | `list` | List channels |
 | | `get` | Get channel details |
 | | `create` | Create a channel, or an ownerless private group chat with `--chat` (repeatable `--member`, optional `--name`, up to 100 people) |
-| | `update` | Update channel name/description |
+| | `update` | Update channel name, description, visibility, TTL, goals, photo, or history |
 | | `topic` | Set channel topic |
 | | `purpose` | Set channel purpose |
 | | `join` | Join a channel |
@@ -145,7 +162,7 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `unarchive` | Unarchive a channel |
 | | `delete` | Delete a channel |
 | | `members` | List channel members |
-| | `add-member` | Add a member |
+| | `add-member` | Add a member, or report that an invitation went out instead (`invited`) |
 | | `remove-member` | Remove a member |
 | `canvas` | `get` | Get channel canvas |
 | | `set` | Set channel canvas |
@@ -154,6 +171,19 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `get` | List reactions |
 | `gifs` | `search` | Search or browse trending GIFs (requires relay kuzz-gif support) |
 | | `share` | Report a selected GIF to the provider's Recents |
+| `inbox` | | Your chats with unread counts and the latest message |
+| `report` | `message`, `person` | Report to moderators; a repeat adds another report |
+| `reminders` | `add`, `list`, `done`, `cancel`, `snooze` | Your own reminders, shared with the app |
+| `guide` | | How an AI uses Kuzz, with every command |
+| `friends` | `list` | List your own friends |
+| | `add` | Add a friend, or rename one |
+| | `remove` | Remove a friend |
+| `groups` | `search` | Search open groups |
+| | `get` | Show a group by channel or public address |
+| | `handle` | Set or clear a group's public address |
+| | `invite-link` | Show or reset a group's invite link |
+| | `invite-policy` | Show or set who may share the invite link |
+| | `preview` | Preview a group from a link, code, or @handle |
 | `invitations` | `list` | List your pending group invitations |
 | | `accept` | Accept an invitation and join the group |
 | | `decline` | Decline an invitation (the inviter is not told) |
@@ -174,6 +204,9 @@ The table below mirrors that tree for readers who are not at a terminal.
 | | `runs` | Get workflow run history |
 | | `approve` | Approve/deny a workflow step |
 | `feed` | `get` | Get your activity feed |
+| `threads` | `follow` | Follow a thread |
+| | `unfollow` | Stop following a thread |
+| | `search` | Search threads by name |
 | `social` | `publish` | Publish a NIP-01 note |
 | | `set-contacts` | Set NIP-02 contact list |
 | | `event` | Get a Nostr event |

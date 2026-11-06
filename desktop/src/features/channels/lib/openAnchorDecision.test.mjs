@@ -6,7 +6,6 @@ import {
   decideOpenAnchor,
   reanchorTarget,
   roomPaintDecides,
-  threadPaintDecides,
 } from "./openAnchorDecision.ts";
 
 // Shared rules with mobile (test-fixtures/message-store-paint-first.json).
@@ -80,25 +79,17 @@ for (const testCase of fixture.reanchor) {
 
 for (const testCase of fixture.paint_gap) {
   test(`paint gap: ${testCase.name}`, () => {
-    const decides = testCase.thread
-      ? threadPaintDecides(
-          testCase.complete_from,
-          testCase.first_unread,
-          testCase.read_before,
-          testCase.has_older,
-        )
-      : roomPaintDecides(
-          testCase.complete_from,
-          testCase.first_unread === null ? null : "u1",
-          testCase.frontier,
-        );
+    const decides = roomPaintDecides(
+      testCase.complete_from,
+      testCase.first_unread === null ? null : "u1",
+      testCase.frontier,
+    );
     assert.equal(decides, testCase.expect.decides);
   });
 }
 
 test("rows that are not a store paint always decide", () => {
   assert.equal(roomPaintDecides(undefined, "u1", 150), true);
-  assert.equal(threadPaintDecides(undefined, 200, null, false), true);
 });
 
 test("a link opens elsewhere and a frontier without the read state trusts no row", () => {

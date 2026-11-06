@@ -76,6 +76,7 @@ pub const RELAY_ADMIN_TABLES: &[(&str, &str)] = &[
 /// approval and again before PostgreSQL purge. A new tenant table therefore
 /// blocks deletion until this manifest is intentionally updated.
 pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
+    "agent_actions",
     "api_tokens",
     "archived_identities",
     "artifact_heads",
@@ -88,6 +89,8 @@ pub const EXPECTED_SCOPED_TABLES: &[&str] = &[
     "event_mentions",
     "events",
     "git_repo_names",
+    "goal_links",
+    "goals",
     "group_add_settings",
     "group_invitations",
     "group_invite_links",
@@ -127,10 +130,13 @@ pub const PURGE_SCOPED_TABLES: &[&str] = &[
     "moderation_reports",
     "subscriptions",
     "api_tokens",
+    "agent_actions",
     "group_invitations",
     "group_invite_links",
     "group_add_settings",
     "channel_members",
+    "goal_links",
+    "goals",
     "thread_follows",
     "thread_state",
     "thread_metadata",

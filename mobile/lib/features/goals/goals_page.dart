@@ -12,6 +12,9 @@ import 'goal_thread_navigation.dart';
 import 'goal_tile.dart';
 import 'goal_tree.dart';
 
+/// Above this many active goals under layer 1, the page says so.
+const _topGoalsNotice = 7;
+
 /// Opens the goals of a channel or DM.
 Future<void> showGoalsPage({
   required BuildContext context,
@@ -23,7 +26,8 @@ Future<void> showGoalsPage({
   ),
 );
 
-/// Layer 1 goal card plus an indented outline of every sub-goal.
+/// Layer 1 goal card, the outline of active goals, and the quiet and done
+/// lists, read when opened.
 class GoalsPage extends ConsumerWidget {
   const GoalsPage({
     super.key,
@@ -47,7 +51,7 @@ class GoalsPage extends ConsumerWidget {
             padding: const EdgeInsets.all(Grid.gutter),
             children: [Text(context.l10n.goalsLoadError('$error'))],
           ),
-          data: (head) => _GoalsBody(channelId: channelId, tree: head.tree),
+          data: (board) => _GoalsBody(channelId: channelId, board: board),
         ),
       ),
     );
@@ -55,13 +59,14 @@ class GoalsPage extends ConsumerWidget {
 }
 
 class _GoalsBody extends ConsumerWidget {
-  const _GoalsBody({required this.channelId, required this.tree});
+  const _GoalsBody({required this.channelId, required this.board});
 
   final String channelId;
-  final GoalTree tree;
+  final GoalBoard board;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
+    final tree = board.tree;
     final root = tree.root;
     final actions = ref.read(goalActionsProvider);
     if (root == null) {
@@ -100,14 +105,21 @@ class _GoalsBody extends ConsumerWidget {
       );
     }
 
-    final rows = tree.outline().skip(1).toList();
     final linkKinds = ref
         .watch(goalLinkKindsProvider(goalLinkKindsKey(channelId, tree)))
         .value;
-    final progress = tree.progress(root.id);
+    final progress = root.progress;
     return ListView(
       padding: const EdgeInsets.all(Grid.gutter),
       children: [
+        if (root.openChildren > _topGoalsNotice) ...[
+          Text(
+            context.l10n.goalsTopGoals(root.openChildren),
+            key: const ValueKey('goals-top-notice'),
+            style: context.textTheme.bodySmall,
+          ),
+          const SizedBox(height: Grid.xs),
+        ],
         Card(
           key: const ValueKey('goals-root-card'),
           child: InkWell(
@@ -115,7 +127,6 @@ class _GoalsBody extends ConsumerWidget {
               context,
               ref,
               channelId: channelId,
-              tree: tree,
               node: root,
               layer: 1,
             ),
@@ -159,37 +170,19 @@ class _GoalsBody extends ConsumerWidget {
           ),
         ),
         const SizedBox(height: Grid.twelve),
-        for (final row in rows)
-          GoalTile(
-            key: ValueKey('goal-row-${row.node.id}'),
-            layer: row.layer,
+        GoalOutline(
+          tree: tree,
+          tops: [
+            for (final node in tree.children(root.id)) (layer: 2, node: node),
+          ],
+          rowBuilder: (row, fold) => _GoalRow(
+            channelId: channelId,
+            row: row,
+            fold: fold,
             indent: row.layer - 2,
-            node: row.node,
-            progress: tree.progress(row.node.id),
-            onTap: () => showGoalActions(
-              context,
-              ref,
-              channelId: channelId,
-              tree: tree,
-              node: row.node,
-              layer: row.layer,
-            ),
-            onToggleStatus: () => runGoalAction(
-              context,
-              () => actions.apply(
-                channelId,
-                UpdateGoal(id: row.node.id, status: row.node.status.next),
-              ),
-            ),
-            onOpenLink: (target) => openGoalLink(
-              context,
-              ref,
-              channelId: channelId,
-              target: target,
-              replaceCurrent: false,
-            ),
             linkKinds: linkKinds,
           ),
+        ),
         TextButton.icon(
           key: const ValueKey('goals-add-layer2'),
           icon: const Icon(LucideIcons.plus, size: 18),
@@ -202,7 +195,245 @@ class _GoalsBody extends ConsumerWidget {
             layer: 2,
           ),
         ),
+        _GoalListSection(
+          channelId: channelId,
+          view: GoalView.inactive,
+          count: board.counts.inactive,
+          label: context.l10n.goalsSectionQuiet,
+        ),
+        _GoalListSection(
+          channelId: channelId,
+          view: GoalView.done,
+          count: board.counts.done,
+          label: context.l10n.goalsSectionDone,
+        ),
       ],
+    );
+  }
+}
+
+/// One editable goal of this page.
+class _GoalRow extends ConsumerWidget {
+  const _GoalRow({
+    required this.channelId,
+    required this.row,
+    required this.fold,
+    required this.indent,
+    required this.linkKinds,
+  });
+
+  final String channelId;
+  final GoalRow row;
+  final GoalFold fold;
+  final int indent;
+  final Map<String, GoalLinkInfo>? linkKinds;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final node = row.node;
+    return GoalTile(
+      key: ValueKey('goal-row-${node.id}'),
+      layer: row.layer,
+      indent: indent,
+      node: node,
+      fold: fold,
+      onTap: () => showGoalActions(
+        context,
+        ref,
+        channelId: channelId,
+        node: node,
+        layer: row.layer,
+      ),
+      onToggleStatus: () => setGoalStatus(
+        context,
+        ref,
+        channelId: channelId,
+        node: node,
+        status: node.status.next,
+      ),
+      onOpenLink: (target) => openGoalLink(
+        context,
+        ref,
+        channelId: channelId,
+        target: target,
+        replaceCurrent: false,
+      ),
+      linkKinds: linkKinds,
+    );
+  }
+}
+
+/// A list that folds away and reads its goals when opened.
+class _GoalListSection extends StatefulWidget {
+  const _GoalListSection({
+    required this.channelId,
+    required this.view,
+    required this.count,
+    required this.label,
+  });
+
+  final String channelId;
+  final GoalView view;
+  final int count;
+  final String label;
+
+  @override
+  State<_GoalListSection> createState() => _GoalListSectionState();
+}
+
+class _GoalListSectionState extends State<_GoalListSection> {
+  bool _open = false;
+
+  @override
+  Widget build(BuildContext context) {
+    if (widget.count == 0) return const SizedBox.shrink();
+    final view = widget.view.name;
+    return Column(
+      key: ValueKey('goals-section-$view'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        InkWell(
+          key: ValueKey('goals-section-toggle-$view'),
+          onTap: () => setState(() => _open = !_open),
+          child: Padding(
+            padding: const EdgeInsets.symmetric(vertical: Grid.xs),
+            child: Row(
+              children: [
+                Icon(
+                  _open ? LucideIcons.chevronDown : LucideIcons.chevronRight,
+                  size: 16,
+                ),
+                const SizedBox(width: Grid.xxs),
+                Expanded(
+                  child: Text(
+                    widget.label,
+                    style: context.textTheme.labelMedium,
+                  ),
+                ),
+                Text('${widget.count}', style: context.textTheme.bodySmall),
+              ],
+            ),
+          ),
+        ),
+        if (_open)
+          _GoalListRows(
+            listKey: (channelId: widget.channelId, view: widget.view),
+          ),
+      ],
+    );
+  }
+}
+
+class _GoalListRows extends ConsumerWidget {
+  const _GoalListRows({required this.listKey});
+
+  final GoalListKey listKey;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final list = ref.watch(goalListProvider(listKey));
+    final read = list.value;
+    if (read == null) {
+      if (list.hasError) {
+        return Text(context.l10n.goalsLoadError('${list.error}'));
+      }
+      return const Padding(
+        padding: EdgeInsets.all(Grid.xs),
+        child: Center(child: CircularProgressIndicator()),
+      );
+    }
+    final channelId = listKey.channelId;
+    final tree = read.tree;
+    final linkKinds = ref
+        .watch(goalLinkKindsProvider(goalLinkKindsKey(channelId, tree)))
+        .value;
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (listKey.view == GoalView.inactive)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              key: const ValueKey('goals-drop-quiet'),
+              onPressed: () => _dropQuiet(context, ref),
+              child: Text(context.l10n.goalsDropAll),
+            ),
+          ),
+        for (final top in tree.listTops())
+          _listTop(tree, top, linkKinds, context),
+        if (read.next != null)
+          Align(
+            alignment: AlignmentDirectional.centerStart,
+            child: TextButton(
+              key: const ValueKey('goals-show-more'),
+              onPressed: () => runGoalAction(
+                context,
+                ref.read(goalListProvider(listKey).notifier).loadMore,
+              ),
+              child: Text(context.l10n.goalsShowMore),
+            ),
+          ),
+      ],
+    );
+  }
+
+  Widget _listTop(
+    GoalTree tree,
+    GoalNode top,
+    Map<String, GoalLinkInfo>? linkKinds,
+    BuildContext context,
+  ) {
+    final above = tree.between(top.id);
+    final layer = tree.path(top.id).length;
+    return Column(
+      key: ValueKey('goals-list-top-${top.id}'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        if (above.isNotEmpty)
+          Text(
+            above.map((node) => node.title).join(' › '),
+            style: context.textTheme.bodySmall,
+          ),
+        GoalOutline(
+          tree: tree,
+          tops: [(layer: layer, node: top)],
+          rowBuilder: (row, fold) => _GoalRow(
+            channelId: listKey.channelId,
+            row: row,
+            fold: fold,
+            indent: row.layer - layer,
+            linkKinds: linkKinds,
+          ),
+        ),
+      ],
+    );
+  }
+
+  Future<void> _dropQuiet(BuildContext context, WidgetRef ref) async {
+    final l10n = context.l10n;
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        content: Text(l10n.goalsDropAllConfirm),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: Text(l10n.goalsCancel),
+          ),
+          TextButton(
+            key: const ValueKey('goals-drop-quiet-confirm'),
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: Text(l10n.goalsDropAll),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true || !context.mounted) return;
+    await runGoalAction(
+      context,
+      () => ref
+          .read(goalActionsProvider)
+          .apply(listKey.channelId, const DropQuietGoals()),
     );
   }
 }

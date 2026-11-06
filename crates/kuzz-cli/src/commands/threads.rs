@@ -20,9 +20,11 @@
 //! ordinary reaction with no close meaning.
 
 use clap::Subcommand;
-use kuzz_core::goal_tree::{GoalStatus, GoalTree};
+use kuzz_core::goal_store::GoalRead;
+use kuzz_core::goal_tree::GoalStatus;
 
 use crate::client::KuzzClient;
+use crate::commands::inbox::{cmd_thread_follow, cmd_thread_search};
 use crate::commands::messages::{
     fetch_event, send_message, set_thread_name, thread_ref_from_event, SendMessageParams,
 };
@@ -97,6 +99,27 @@ pub enum ThreadsCmd {
         #[arg(long, value_name = "ROOT_ID")]
         thread: String,
     },
+    /// Follow a thread so it shows in your inbox
+    Follow {
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+    },
+    /// Stop following a thread
+    Unfollow {
+        /// Thread root event ID (64-char hex)
+        #[arg(long, value_name = "ROOT_ID")]
+        thread: String,
+    },
+    /// Search threads by name in your rooms, closed and quiet ones included
+    Search {
+        /// Text to find in the thread name (1-100 characters)
+        #[arg(long)]
+        query: String,
+        /// Maximum number of results (default 20)
+        #[arg(long, value_parser = clap::value_parser!(u32).range(1..=50))]
+        limit: Option<u32>,
+    },
 }
 
 pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliError> {
@@ -121,6 +144,9 @@ pub async fn dispatch(cmd: ThreadsCmd, client: &KuzzClient) -> Result<(), CliErr
             close(client, &channel, &thread, &summary, requester, goal_done).await
         }
         ThreadsCmd::Reopen { channel, thread } => reopen(client, &channel, &thread).await,
+        ThreadsCmd::Follow { thread } => cmd_thread_follow(client, &thread, "followed").await,
+        ThreadsCmd::Unfollow { thread } => cmd_thread_follow(client, &thread, "unfollowed").await,
+        ThreadsCmd::Search { query, limit } => cmd_thread_search(client, &query, limit).await,
     }
 }
 
@@ -347,16 +373,22 @@ enum CloseGoal {
 }
 
 impl CloseGoal {
-    fn plan(tree: &GoalTree, root_id: &str, goal_done: bool) -> Self {
-        match tree.node_for_thread(root_id) {
+    fn plan(read: &GoalRead, root_id: &str, goal_done: bool) -> Self {
+        let linked = read
+            .threads
+            .iter()
+            .find(|t| t.thread == root_id)
+            .and_then(|t| t.goal.as_deref())
+            .and_then(|id| read.row(id));
+        match linked {
             None => Self::Unlinked,
-            Some(node) if goal_done => Self::MarkedDone {
-                id: node.id.clone(),
+            Some(goal) if goal_done => Self::MarkedDone {
+                id: goal.id.clone(),
                 report: serde_json::Value::Null,
             },
-            Some(node) => Self::Left {
-                id: node.id.clone(),
-                status: node.status,
+            Some(goal) => Self::Left {
+                id: goal.id.clone(),
+                status: goal.status,
             },
         }
     }
@@ -394,14 +426,17 @@ async fn close_goal(
     root_id: &str,
     goal_done: Option<Option<String>>,
 ) -> Result<CloseGoal, CliError> {
-    let Some(head) = super::goals::fetch_head(client, channel, goal_done.is_some()).await? else {
-        return Ok(CloseGoal::Unlinked);
+    // Closing a thread does not depend on goals unless asked to finish one.
+    let read = match super::goals::read_thread(client, channel, root_id).await {
+        Ok(read) => read,
+        Err(_) if goal_done.is_none() => return Ok(CloseGoal::Unlinked),
+        Err(e) => return Err(e),
     };
-    let mut goal = CloseGoal::plan(&head.tree, root_id, goal_done.is_some());
+    let mut goal = CloseGoal::plan(&read, root_id, goal_done.is_some());
     if let (CloseGoal::MarkedDone { id, report }, Some(note)) = (&mut goal, goal_done) {
         let op = super::goals::status_note_op(id, GoalStatus::Done, note);
         *report = super::goals::update_goal(client, channel, op).await?;
-        // Keep only the tree report; the event id is not this goal's concern.
+        // Keep only the goal report; the event id is not this goal's concern.
         if let Some(r) = report.as_object_mut() {
             r.remove("event_id");
             r.remove("accepted");
@@ -574,39 +609,29 @@ mod tests {
 
     #[test]
     fn close_marks_or_warns_about_the_linked_goal() {
-        use kuzz_core::goal_tree::GoalOp;
-        let ed = "a".repeat(64);
         let thread = "b".repeat(64);
-        let mut tree = GoalTree::empty();
-        for op in [
-            GoalOp::SetRoot {
-                id: "r".into(),
-                title: "Root".into(),
-                note: None,
-            },
-            GoalOp::Add {
-                id: "g".into(),
-                parent: "r".into(),
-                title: "Goal".into(),
-                note: None,
-                assignees: vec![],
-            },
-            GoalOp::Link {
-                id: "g".into(),
-                thread: thread.clone(),
-            },
-        ] {
-            tree.apply(&op, &ed, 1).unwrap();
-        }
+        let read: GoalRead = serde_json::from_value(serde_json::json!({
+            "counts": { "active": 1, "inactive": 0, "done": 0 },
+            "rows": [{
+                "id": "g", "parent": "r", "title": "Goal", "note": "",
+                "status": "in_progress", "order": 1, "assignees": [],
+                "links": [thread], "updated_by": null, "updated_at": 1,
+                "matched": true, "inactive": false, "is_thread": true,
+                "progress": { "done": 0, "total": 0 }, "open_children": 0,
+            }],
+            "threads": [{ "thread": thread, "goal": "g" }],
+            "next": null,
+        }))
+        .unwrap();
         assert_eq!(
-            CloseGoal::plan(&tree, &thread, true),
+            CloseGoal::plan(&read, &thread, true),
             CloseGoal::MarkedDone {
                 id: "g".into(),
                 report: serde_json::Value::Null
             }
         );
-        // Linking started the goal, so closing without --goal-done warns.
-        let left = CloseGoal::plan(&tree, &thread, false);
+        // The goal is still in progress, so closing without --goal-done warns.
+        let left = CloseGoal::plan(&read, &thread, false);
         let open = CloseGoal::Left {
             id: "g".into(),
             status: GoalStatus::Open,
@@ -617,7 +642,7 @@ mod tests {
             .unwrap()
             .contains("linked goal g is still in_progress"));
         assert_eq!(left.json()["id"], "g");
-        let unlinked = CloseGoal::plan(&tree, &"c".repeat(64), false);
+        let unlinked = CloseGoal::plan(&read, &"c".repeat(64), false);
         assert_eq!(unlinked, CloseGoal::Unlinked);
         assert!(unlinked.warning().is_none() && unlinked.json().is_null());
         let done = CloseGoal::Left {

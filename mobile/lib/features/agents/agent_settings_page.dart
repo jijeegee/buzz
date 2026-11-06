@@ -13,6 +13,7 @@ import '../../shared/widgets/load_error_view.dart';
 import 'agent_settings.dart';
 import 'agent_settings_provider.dart';
 import 'my_agent_status_card.dart';
+import 'owner_tools_row.dart';
 
 part 'agent_settings_page/agent_settings_form.dart';
 
@@ -78,6 +79,10 @@ class _ReadOnly extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: Grid.sm),
               child: MyAgentStatusCard(agentPubkey: agentPubkey, name: name),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: Grid.sm),
+              child: OwnerToolsRow(agentPubkey: agentPubkey),
             ),
             AppListCard(
               key: const Key('agent-settings-read-only'),

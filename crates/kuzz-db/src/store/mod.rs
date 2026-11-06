@@ -39,6 +39,8 @@ pub mod event;
 pub mod feed;
 /// Git repository name registry (NIP-34 kind:30617).
 pub mod git_repo;
+/// Goal rows, written by kind 40111 events.
+pub mod goals;
 /// Group search, public addresses, invite links and invitations.
 pub mod groups;
 /// Room history cut (`since_join`) lookups.
@@ -129,6 +131,8 @@ mod thread_search_postgres_tests;
 
 #[cfg(test)]
 mod chat_state_postgres_tests;
+#[cfg(test)]
+mod goals_postgres_tests;
 
 #[cfg(test)]
 mod chat_stored_state_postgres_tests;

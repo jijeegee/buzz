@@ -19,8 +19,8 @@ use kuzz_core::kind::{
     KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_FOLLOW_SET, KIND_FORUM_COMMENT, KIND_FORUM_POST,
     KIND_FORUM_VOTE, KIND_GIFT_WRAP, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
     KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_REPO_STATE, KIND_GIT_STATUS_CLOSED,
-    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_TREE,
-    KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
+    KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN, KIND_GOAL_OPS,
+    KIND_GOAL_TREE, KIND_HUDDLE_ENDED, KIND_HUDDLE_GUIDELINES, KIND_HUDDLE_PARTICIPANT_JOINED,
     KIND_HUDDLE_PARTICIPANT_LEFT, KIND_HUDDLE_STARTED, KIND_IA_ARCHIVE_REQUEST,
     KIND_IA_UNARCHIVE_REQUEST, KIND_LONG_FORM, KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION,
     KIND_MEMBER_REMOVED_NOTIFICATION, KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT,
@@ -649,7 +649,9 @@ fn required_scope_for_kind(kind: u32, event: &Event) -> Result<Scope, &'static s
                 Ok(Scope::ChannelsWrite)
             }
         }
-        KIND_NIP29_CREATE_GROUP | KIND_CANVAS | KIND_GOAL_TREE => Ok(Scope::ChannelsWrite),
+        KIND_NIP29_CREATE_GROUP | KIND_CANVAS | KIND_GOAL_TREE | KIND_GOAL_OPS => {
+            Ok(Scope::ChannelsWrite)
+        }
         KIND_NIP29_JOIN_REQUEST | KIND_NIP29_LEAVE_REQUEST | KIND_NIP43_LEAVE_REQUEST => {
             Ok(Scope::ChannelsRead)
         }
@@ -916,6 +918,7 @@ pub(crate) fn requires_h_channel_scope(kind: u32) -> bool {
             | KIND_STREAM_MESSAGE_DIFF
             | KIND_CANVAS
             | KIND_GOAL_TREE
+            | KIND_GOAL_OPS
             | KIND_FORUM_POST
             | KIND_FORUM_VOTE
             | KIND_FORUM_COMMENT
@@ -2606,6 +2609,27 @@ fn write_restriction_denial(
     }
 }
 
+/// A paired agent's `kind:30177` is its access setting, which only its owner
+/// may write. Readers check the author themselves; this refuses it clearly.
+/// App agents have no pairing, so they pass as before. A disconnected agent
+/// still has its owner, who can narrow the setting.
+async fn check_paired_agent_setting(state: &AppState, event: &Event) -> Result<(), IngestError> {
+    let Some(agent) = kuzz_db::event::extract_d_tag(event).and_then(|d| hex::decode(d).ok()) else {
+        return Ok(());
+    };
+    let owner = state
+        .db
+        .paired_agent_owner(&agent, false)
+        .await
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?;
+    if owner.is_some_and(|owner| owner != event.pubkey.to_bytes()) {
+        return Err(IngestError::AuthFailed(
+            "restricted: only the agent's owner can set this".into(),
+        ));
+    }
+    Ok(())
+}
+
 /// Community ban / timeout write-block (COMMUNITY_MODERATION_PLAN.md §0
 /// decision 4), shared by ingest and the WebSocket ephemeral and observer
 /// paths that never reach ingest.
@@ -2919,6 +2943,10 @@ async fn ingest_event_inner(
     // Ban / timeout write-block. Runs before every kind-specific branch below
     // (commands, feedback, reports, moderation) so no write returns ahead of it.
     enforce_write_restriction(state, tenant, kind_u32, auth.pubkey()).await?;
+
+    if kind_u32 == KIND_MANAGED_AGENT {
+        check_paired_agent_setting(state, &event).await?;
+    }
 
     // Command kinds are routed AFTER signature verification, timestamp check,
     // pubkey/auth match, and scope validation — never before.
@@ -3311,8 +3339,21 @@ async fn ingest_event_inner(
         }
     }
 
+    // One store at a time: the switch decides which write is the real one, so
+    // an old app cannot change goals the new store no longer reads.
+    if kind_u32 == KIND_GOAL_TREE && state.config.goal_store {
+        return Err(IngestError::Rejected(
+            "invalid: goals have moved; update the app to change them".into(),
+        ));
+    }
+    if kind_u32 == KIND_GOAL_OPS && !state.config.goal_store {
+        return Err(IngestError::Rejected(
+            "invalid: goal edits are not on yet".into(),
+        ));
+    }
+
     // A conversation with goals off keeps its tree but takes no new writes.
-    if kind_u32 == KIND_GOAL_TREE {
+    if matches!(kind_u32, KIND_GOAL_TREE | KIND_GOAL_OPS) {
         if let Some(channel) = &channel_row {
             if !channel.goals_enabled {
                 return Err(IngestError::Rejected(
@@ -3320,6 +3361,32 @@ async fn ingest_event_inner(
                 ));
             }
         }
+    }
+
+    // Goal edits passed the same gates; the store owns the rest of the write.
+    if kind_u32 == KIND_GOAL_OPS {
+        let channel = channel_id
+            .ok_or_else(|| IngestError::Rejected("invalid: goal event missing channel".into()))?;
+        let (result, inserted) =
+            super::goals::accept(state, tenant, &event, channel, threaded_visibility.clone())
+                .await?;
+        let msg_id = msg_id_label(event.id.as_bytes());
+        let claimed_community = claimed_community_from_event(&event);
+        let action = if inserted {
+            TraceAction::WriteInsert {
+                msg_id,
+                channel: channel_label(channel),
+                claimed_community,
+            }
+        } else {
+            TraceAction::WriteDuplicate {
+                msg_id,
+                channel: channel_label(channel),
+                claimed_community,
+            }
+        };
+        emit(tracer, action, state_for_request(tenant, auth.pubkey()));
+        return Ok(result);
     }
 
     // Artifact revisions passed the same home-channel write gates as kind 9
@@ -3548,6 +3615,10 @@ async fn ingest_event_inner(
                 accepted: false,
                 message: "duplicate: channel already exists".into(),
             });
+        }
+        // `hidden_invites` were never stored, so nobody hears of those.
+        for invitee in &people.invitees {
+            super::side_effects::ping_new_invitation(tenant, state, invitee).await;
         }
         pre_created_channel = Some(client_uuid);
         accepted_message = people.ok_message();
@@ -3958,11 +4029,20 @@ async fn ingest_event_inner(
                 kuzz_db::event::D_TAG_MAX_LEN,
             )));
         }
-        state
-            .db
-            .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+        if kind_u32 == KIND_MANAGED_AGENT {
+            // The owner's managed-agent record also keeps the relay's copy
+            // of who the agent answers in step (AI tools plan, stage S1).
+            state
+                .db
+                .replace_managed_agent_event(tenant.community(), &event, &d_tag, channel_id)
+                .await
+        } else {
+            state
+                .db
+                .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
+                .await
+        }
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?
     } else if let Some(spec) = canvas_revision_spec.as_ref() {
         // Canvas write carrying an optimistic-concurrency precondition. Plain
         // canvas writes (no `expected-revision` tag) fall through to the generic
@@ -7654,6 +7734,7 @@ mod postgres_tests {
     #[test]
     fn goal_tree_is_channel_scoped_and_needs_channel_write() {
         assert!(requires_h_channel_scope(KIND_GOAL_TREE));
+        assert!(requires_h_channel_scope(KIND_GOAL_OPS));
         assert!(matches!(
             required_scope_for_kind(KIND_GOAL_TREE, &goal_tree_event(ONE_GOAL, vec![])),
             Ok(Scope::ChannelsWrite)

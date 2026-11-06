@@ -31,6 +31,8 @@ pub(crate) mod install_id;
 pub(crate) mod key_recovery;
 pub(crate) mod login_attempt;
 pub(crate) mod loopback;
+pub(crate) mod external_access;
+pub(crate) mod hermes_gateway;
 pub(crate) mod pairing;
 pub(crate) mod people;
 pub(crate) mod pkce;
@@ -40,6 +42,7 @@ pub(crate) mod restore;
 pub(crate) mod saved_session;
 pub(crate) mod service;
 pub(crate) mod signed_out;
+pub(crate) mod tool_levels;
 pub(crate) mod watchdog;
 
 use std::collections::HashMap;

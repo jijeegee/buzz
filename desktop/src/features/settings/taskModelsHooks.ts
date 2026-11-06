@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { useIdentityQuery } from "@/shared/api/hooks";
 import {
   getTaskModels,
   MESSAGE_ROUTING_TASK_ID,
@@ -34,6 +35,7 @@ export function useMessageRoutingModelQuery() {
 /** One user action = one `set_task_model`. */
 export function useSetTaskModelMutation() {
   const queryClient = useQueryClient();
+  const owner = useIdentityQuery().data?.pubkey;
   return useMutation({
     mutationFn: ({
       taskId,
@@ -43,7 +45,7 @@ export function useSetTaskModelMutation() {
       taskId: string;
       provider: string | null;
       model: string | null;
-    }) => setTaskModel(taskId, provider, model),
+    }) => setTaskModel(taskId, provider, model, owner),
     onSuccess: (statuses) => {
       queryClient.setQueryData(taskModelsQueryKey, statuses);
     },

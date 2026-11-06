@@ -43,7 +43,9 @@ type SetupStepProps = {
   direction: OnboardingTransitionDirection;
   initialMethod?: HarnessConnectionMethod | null;
   onInitialListBack?: () => void;
-  onBackActionChange?: (backAction: () => void) => void;
+  /** Setup opened on its own: nothing comes before the first stage. */
+  noBackFromFirstStage?: boolean;
+  onBackActionChange?: (backAction: (() => void) | undefined) => void;
   onMethodChange?: (method: HarnessConnectionMethod | null) => void;
   onReadyRuntimeIdsChange: (runtimeIds: readonly string[]) => void;
 };
@@ -1002,6 +1004,7 @@ function SetupStepContent({
   actions,
   direction,
   initialMethod = null,
+  noBackFromFirstStage,
   onInitialListBack,
   onBackActionChange,
   onMethodChange,
@@ -1092,8 +1095,10 @@ function SetupStepContent({
   }, [onInitialListBack, onMethodChange, stage]);
 
   React.useEffect(() => {
-    onBackActionChange?.(navigateBack);
-  }, [navigateBack, onBackActionChange]);
+    onBackActionChange?.(
+      noBackFromFirstStage && stage === "method" ? undefined : navigateBack,
+    );
+  }, [navigateBack, noBackFromFirstStage, onBackActionChange, stage]);
 
   React.useLayoutEffect(() => {
     if (stage !== "detail" || !selectedRuntime || !selectedRuntimeIsReady) {
@@ -1203,6 +1208,7 @@ export function SetupStep({
   actions,
   direction,
   initialMethod,
+  noBackFromFirstStage,
   onInitialListBack,
   onBackActionChange,
   onMethodChange,
@@ -1214,6 +1220,7 @@ export function SetupStep({
       actions={actions}
       direction={direction}
       initialMethod={initialMethod}
+      noBackFromFirstStage={noBackFromFirstStage}
       onInitialListBack={onInitialListBack}
       onBackActionChange={onBackActionChange}
       onMethodChange={onMethodChange}

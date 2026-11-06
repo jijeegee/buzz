@@ -280,7 +280,10 @@ pub(crate) async fn rearm_relay_mesh_for_running_agents(app: &AppHandle) -> Resu
     // path as spawn/restore (#1968): definition → global fallback. A linked
     // instance's own bytes never contribute.
     let personas = crate::managed_agents::load_personas(app).unwrap_or_default();
-    let global = crate::managed_agents::load_global_agent_config(app).unwrap_or_default();
+    let agent_configs = crate::managed_agents::AgentConfigsByOwner::load(
+        app,
+        &crate::managed_agents::load_managed_agents(app).unwrap_or_default(),
+    );
 
     match recovery {
         MeshRuntimeRecovery::Live
@@ -296,7 +299,13 @@ pub(crate) async fn rearm_relay_mesh_for_running_agents(app: &AppHandle) -> Resu
             }
             let records = crate::managed_agents::load_managed_agents(app).unwrap_or_default();
             if !records.iter().any(|record| {
-                running_relay_mesh_model_id(record, &active_pubkeys, &personas, &global).is_some()
+                running_relay_mesh_model_id(
+                    record,
+                    &active_pubkeys,
+                    &personas,
+                    agent_configs.for_record(record),
+                )
+                .is_some()
             }) {
                 // A foreground save may still be bringing up its first ingress.
                 // Only an already-running consumer justifies an automatic app
@@ -317,7 +326,13 @@ pub(crate) async fn rearm_relay_mesh_for_running_agents(app: &AppHandle) -> Resu
         MeshRuntimeRecovery::Absent => {
             let records = crate::managed_agents::load_managed_agents(app).unwrap_or_default();
             if !records.iter().any(|record| {
-                running_relay_mesh_model_id(record, &active_pubkeys, &personas, &global).is_some()
+                running_relay_mesh_model_id(
+                    record,
+                    &active_pubkeys,
+                    &personas,
+                    agent_configs.for_record(record),
+                )
+                .is_some()
             }) {
                 return Ok(());
             }
@@ -329,8 +344,13 @@ pub(crate) async fn rearm_relay_mesh_for_running_agents(app: &AppHandle) -> Resu
     let mesh_records: Vec<_> = records
         .into_iter()
         .filter_map(|record| {
-            running_relay_mesh_model_id(&record, &active_pubkeys, &personas, &global)
-                .map(|mesh_model_id| (record, mesh_model_id))
+            running_relay_mesh_model_id(
+                &record,
+                &active_pubkeys,
+                &personas,
+                agent_configs.for_record(&record),
+            )
+            .map(|mesh_model_id| (record, mesh_model_id))
         })
         .collect();
     let mut first_error = None;

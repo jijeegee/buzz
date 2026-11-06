@@ -122,6 +122,25 @@ fn plugin_roots_match_where_kuzz_looks() {
 }
 
 #[test]
+fn the_macos_app_keeps_the_plugin_in_resources() {
+    let contents = PathBuf::from(USER).join("Kuzz.app").join("Contents");
+    let kuzz = contents.join("MacOS").join("kuzz");
+    assert_eq!(
+        hermes_plugin_roots(&kuzz, None),
+        vec![contents.join("MacOS"), contents.join("Resources")]
+    );
+}
+
+#[test]
+fn only_a_needed_restart_is_taken_over() {
+    let output = |restart: &str| format!(r#"{{"updated":[],"restart":"{restart}"}}"#).into_bytes();
+    assert!(refresh_needs_restart(&output("needed")));
+    assert!(!refresh_needs_restart(&output("none")));
+    assert!(!refresh_needs_restart(b"not json"));
+    assert!(!refresh_needs_restart(b""));
+}
+
+#[test]
 fn the_old_hermes_key_file_is_removed() {
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join(LEGACY_HERMES_FILE);
@@ -130,16 +149,6 @@ fn the_old_hermes_key_file_is_removed() {
     assert!(!file.exists());
     // Nothing to remove is fine.
     remove_legacy_hermes_file(dir.path());
-}
-
-#[test]
-fn a_restarted_gateway_gets_no_kuzz_settings() {
-    for name in ["KUZZ_PRIVATE_KEY", "kuzz_relay_url", "BUZZ_HOME_CHANNEL"] {
-        assert!(is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
-    }
-    for name in ["PATH", "HERMES_HOME", "XKUZZ_A"] {
-        assert!(!is_kuzz_setting(std::ffi::OsStr::new(name)), "{name}");
-    }
 }
 
 #[test]

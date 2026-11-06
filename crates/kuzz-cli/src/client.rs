@@ -1160,9 +1160,29 @@ impl KuzzClient {
         path: &str,
         body: &serde_json::Value,
     ) -> Result<String, CliError> {
+        self.send_json_once_authed(reqwest::Method::POST, path, body)
+            .await
+    }
+
+    /// PUT counterpart of [`Self::post_json_once_authed`].
+    pub async fn put_json_once_authed(
+        &self,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<String, CliError> {
+        self.send_json_once_authed(reqwest::Method::PUT, path, body)
+            .await
+    }
+
+    async fn send_json_once_authed(
+        &self,
+        method: reqwest::Method,
+        path: &str,
+        body: &serde_json::Value,
+    ) -> Result<String, CliError> {
         let url = format!("{}{path}", self.relay_url);
         let body = serde_json::to_vec(body).map_err(|e| CliError::Other(e.to_string()))?;
-        let auth = self.auth_header("POST", &url, Some(&body)).await?;
+        let auth = self.auth_header(method.as_str(), &url, Some(&body)).await?;
         let unknown = |detail: String| CliError::DeliveryUnknown(detail);
         let http = reqwest::Client::builder()
             .redirect(reqwest::redirect::Policy::none())
@@ -1171,7 +1191,7 @@ impl KuzzClient {
             .build()?;
         let response = self
             .with_auth_tag(
-                http.post(&url)
+                http.request(method, &url)
                     .header("Authorization", auth)
                     .header("Content-Type", "application/json")
                     .body(body),

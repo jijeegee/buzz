@@ -1,5 +1,6 @@
 import { useT } from "@/shared/i18n";
 import * as React from "react";
+import { flushSync } from "react-dom";
 import { AlertTriangle } from "lucide-react";
 import {
   depthGuideActionsEqual,
@@ -73,6 +74,56 @@ export type ThreadDepthGuideAction = {
   label: string;
   message: TimelineMessage;
 };
+/** Below `sm` the bar shows without a hover (see `MessageActionBar`). */
+function actionBarAlwaysVisible() {
+  return (
+    typeof window.matchMedia !== "function" ||
+    !window.matchMedia("(min-width: 640px)").matches
+  );
+}
+
+function subscribeActionBarAlwaysVisible(onChange: () => void) {
+  if (typeof window.matchMedia !== "function") {
+    return () => {};
+  }
+  const query = window.matchMedia("(min-width: 640px)");
+  query.addEventListener("change", onChange);
+  return () => query.removeEventListener("change", onChange);
+}
+
+const actionBarMounters = new WeakMap<Element, () => void>();
+let actionBarListening = false;
+
+/**
+ * The bar shows for its whole `group/message`, which reaches past the row when
+ * it wraps a thread summary, and a live reply can add that wrapper later. So
+ * the row is looked up when the pointer or focus arrives.
+ */
+function mountActionBarFromEvent(event: Event) {
+  if (!(event.target instanceof Element)) {
+    return;
+  }
+  const group = event.target.closest('[class~="group/message"]');
+  const row = group?.matches("article")
+    ? group
+    : group?.querySelector("article");
+  if (row) {
+    actionBarMounters.get(row)?.();
+  }
+}
+
+function watchActionBar(row: Element, mount: () => void) {
+  if (!actionBarListening) {
+    actionBarListening = true;
+    document.addEventListener("pointerover", mountActionBarFromEvent);
+    document.addEventListener("focusin", mountActionBarFromEvent);
+  }
+  actionBarMounters.set(row, mount);
+  return () => {
+    actionBarMounters.delete(row);
+  };
+}
+
 export const MessageRow = React.memo(
   function MessageRow({
     channelId = null,
@@ -171,6 +222,48 @@ export const MessageRow = React.memo(
     videoReviewContext?: VideoReviewContext;
   }) {
     const t = useT();
+    // The bar is most of a row's mount cost (its tooltips, menus and dialogs),
+    // so it waits for the first hover or focus.
+    const [actionBarMounted, setActionBarMounted] = React.useState(
+      actionBarAlwaysVisible,
+    );
+    const actionBarVisibleUnhovered = React.useSyncExternalStore(
+      subscribeActionBarAlwaysVisible,
+      actionBarAlwaysVisible,
+    );
+    if (actionBarVisibleUnhovered && !actionBarMounted) {
+      setActionBarMounted(true);
+    }
+    const rowRef = React.useRef<HTMLElement>(null);
+    const mountActionBar = React.useCallback(
+      () => setActionBarMounted(true),
+      [],
+    );
+    const focusActionBar = React.useCallback(
+      (
+        event:
+          | React.FocusEvent<HTMLButtonElement>
+          | React.MouseEvent<HTMLButtonElement>,
+      ) => {
+        const holder = event.currentTarget.parentElement;
+        const from = event.relatedTarget;
+        flushSync(mountActionBar);
+        const buttons = holder?.querySelectorAll("button");
+        // Shift+Tab comes from below and lands on the bar's last button.
+        const fromBelow =
+          from instanceof Node &&
+          holder?.compareDocumentPosition(from) ===
+            Node.DOCUMENT_POSITION_FOLLOWING;
+        (fromBelow ? buttons?.[buttons.length - 1] : buttons?.[0])?.focus();
+      },
+      [mountActionBar],
+    );
+    React.useEffect(() => {
+      const row = rowRef.current;
+      if (!actionBarMounted && row) {
+        return watchActionBar(row, mountActionBar);
+      }
+    }, [actionBarMounted, mountActionBar]);
     // A pending own message is drawn exactly as it will look once sent, so
     // the acknowledgement never moves it.
     const isDisplayedAsContinuation = isContinuation;
@@ -589,34 +682,45 @@ export const MessageRow = React.memo(
             : "sm:top-1 sm:translate-y-0",
         )}
       >
-        <MessageActionBar
-          channelId={channelId}
-          isFollowingThread={isFollowingThread}
-          isUnread={isUnread}
-          message={message}
-          onDelete={onDelete}
-          onEdit={onEdit}
-          onFollowThread={onFollowThread}
-          onMarkUnread={onMarkUnread}
-          onMarkRead={onMarkRead}
-          onReactionBadgeBurstRequest={
-            reactionPending ? undefined : setBadgeBurstEmoji
-          }
-          onReactionSelect={
-            canToggleReactions ? handleReactionSelect : undefined
-          }
-          onRemindLater={handleRemindLater}
-          onReply={onReply}
-          onSendToChannel={
-            onSendToChannel && sendToChannelAllowed
-              ? handleSendToChannel
-              : undefined
-          }
-          onUnfollowThread={onUnfollowThread}
-          profiles={profiles}
-          reactionErrorMessage={reactionErrorMessage}
-          reactions={reactions}
-        />
+        {actionBarMounted || message.pending ? (
+          <MessageActionBar
+            channelId={channelId}
+            isFollowingThread={isFollowingThread}
+            isUnread={isUnread}
+            message={message}
+            onDelete={onDelete}
+            onEdit={onEdit}
+            onFollowThread={onFollowThread}
+            onMarkUnread={onMarkUnread}
+            onMarkRead={onMarkRead}
+            onReactionBadgeBurstRequest={
+              reactionPending ? undefined : setBadgeBurstEmoji
+            }
+            onReactionSelect={
+              canToggleReactions ? handleReactionSelect : undefined
+            }
+            onRemindLater={handleRemindLater}
+            onReply={onReply}
+            onSendToChannel={
+              onSendToChannel && sendToChannelAllowed
+                ? handleSendToChannel
+                : undefined
+            }
+            onUnfollowThread={onUnfollowThread}
+            profiles={profiles}
+            reactionErrorMessage={reactionErrorMessage}
+            reactions={reactions}
+          />
+        ) : (
+          <button
+            aria-label={t("messages.actions.more")}
+            className="sr-only"
+            data-testid={`row-actions-focus-${message.id}`}
+            onClick={focusActionBar}
+            onFocus={focusActionBar}
+            type="button"
+          />
+        )}
       </div>
     );
 
@@ -965,6 +1069,7 @@ export const MessageRow = React.memo(
           data-own-message={isOwnMessage ? "" : undefined}
           data-testid="message-row"
           onAnimationEnd={handleEntranceAnimationEnd}
+          ref={rowRef}
         >
           {avatarGutterNode}
           <div

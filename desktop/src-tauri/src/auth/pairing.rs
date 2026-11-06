@@ -11,7 +11,7 @@
 //!   saves the pairing and installs the Hermes plugin; the app keeps no
 //!   agent key and then reads the pairing list like the connect screen.
 //!   The app then restarts the Hermes gateway itself
-//!   ([`restart_hermes_gateway`]): one started inside the pair command
+//!   ([`super::hermes_gateway`]): one started inside the pair command
 //!   would die with that command's job.
 //!   Offered only when Hermes, a `kuzz` with `--hermes` and the plugin files
 //!   are all on this computer ([`hermes_installer`]).
@@ -29,6 +29,7 @@ use tauri::{AppHandle, Manager};
 use zeroize::Zeroizing;
 
 use super::api;
+use super::hermes_gateway::{self, HermesGatewayView};
 use crate::app_state::AppState;
 
 /// The Hermes agent keys older builds kept in the app data folder; removed
@@ -40,6 +41,11 @@ const DEVICE_WAIT: Duration = Duration::from_secs(3);
 const HELP_PROBE_LIMIT: Duration = Duration::from_secs(5);
 /// Longest `kuzz pair --hermes` (claim and plugin install) may take.
 const HERMES_PAIR_LIMIT: Duration = Duration::from_secs(180);
+/// The connector refresh at app start. It only copies files: the app restarts
+/// the gateway itself.
+const HERMES_REFRESH_LIMIT: Duration = Duration::from_secs(60);
+/// Only the released app changes a real Hermes, never a dev build.
+const RELEASE_IDENTIFIER: &str = "app.kuzz.app";
 /// Where `kuzz pair --hermes` finds the plugin installer under each of its
 /// install roots (`crates/kuzz-cli/src/pairing.rs`, `HERMES_INSTALLER`).
 const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
@@ -47,7 +53,7 @@ const HERMES_INSTALLER: &str = "plugins/platforms/kuzz/install.py";
 /// agent key to bind, or pairing switched off.
 const CLEARED_ENV: [&str; 2] = ["KUZZ_PRIVATE_KEY", "KUZZ_DISABLE_STORED_SESSION"];
 /// Hermes's name for the profile in its home folder.
-const DEFAULT_PROFILE: &str = "default";
+pub(super) const DEFAULT_PROFILE: &str = "default";
 
 /// What the connect screen shows for a new code.
 #[derive(Debug, Serialize)]
@@ -77,6 +83,10 @@ pub struct HermesProfileView {
     owner: Option<String>,
     /// Why Hermes would not run this profile, in Hermes's words.
     blocked_reason: Option<String>,
+    /// Its gateway, from Hermes's state file.
+    gateway: Option<HermesGatewayView>,
+    /// This app is getting its gateway to load the connector.
+    settling: bool,
 }
 
 /// Whether Hermes is on this computer and whether this app can connect it.
@@ -149,6 +159,21 @@ pub async fn disconnect_external_device(app: AppHandle, device_id: String) -> Re
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
+    // Read fresh: the card's list can miss an agent connected since.
+    let agents = async {
+        let devices = api::list_devices(&state.http_client, &origin, &session.access)
+            .await
+            .map_err(api_error)?;
+        Ok(devices
+            .into_iter()
+            .find(|device| device.id == device_id)
+            .map_or_else(Vec::new, |device| device.agents)
+            .into_iter()
+            .map(|agent| agent.pubkey)
+            .collect())
+    };
+    super::external_access::narrow_before_disconnect(&state, &origin, &session.access, agents)
+        .await;
     api::revoke_device(&state.http_client, &origin, &session.access, &device_id)
         .await
         .map_err(api_error)
@@ -165,6 +190,10 @@ pub async fn disconnect_external_agent(
     let state = app.state::<AppState>();
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
+    super::external_access::narrow_before_disconnect(&state, &origin, &session.access, async {
+        Ok(vec![pubkey.clone()])
+    })
+    .await;
     api::disconnect_agent(
         &state.http_client,
         &origin,
@@ -202,10 +231,11 @@ pub async fn get_hermes_status() -> HermesStatus {
 /// caller reads the pairing list for the result.
 #[tauri::command]
 pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPairingRun, String> {
+    let chosen = profile.clone();
     let (kuzz, target, name) = tokio::task::spawn_blocking(move || {
         let root = hermes_home()?;
-        let target = hermes_profile_target(&root, &profile)?;
-        let name = hermes_display_name(target.as_deref().unwrap_or(&root), &profile);
+        let target = hermes_profile_target(&root, &chosen)?;
+        let name = hermes_display_name(target.as_deref().unwrap_or(&root), &chosen);
         Some((hermes_installer()?, target, name))
     })
     .await
@@ -238,12 +268,67 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     .unwrap_or(false);
     eprintln!("kuzz-desktop: hermes: kuzz pair finished (ok: {finished})");
     if finished {
-        restart_hermes_gateway();
+        hermes_gateway::settle(&profile);
     }
     Ok(HermesPairingRun {
         pairing_id: started.pairing_id,
         finished,
     })
+}
+
+/// "Restart Hermes" on a connected profile whose gateway hasn't loaded the
+/// connector.
+#[tauri::command]
+pub async fn restart_hermes(profile: String) -> Result<(), String> {
+    let chosen = profile.clone();
+    tokio::task::spawn_blocking(move || hermes_profile_target(&hermes_home()?, &chosen))
+        .await
+        .ok()
+        .flatten()
+        .ok_or("Hermes can't be connected from this app yet.")?;
+    hermes_gateway::settle(&profile);
+    Ok(())
+}
+
+/// At app start, so after every update: bring the Hermes connector up to the
+/// version this app ships. `--no-restart`: a gateway started under the bounded
+/// child would die with this app, so [`hermes_gateway::settle`] does it.
+pub(crate) fn refresh_hermes_connector<R: tauri::Runtime>(app: &AppHandle<R>) {
+    if cfg!(debug_assertions) || app.config().identifier != RELEASE_IDENTIFIER {
+        return;
+    }
+    std::thread::spawn(|| {
+        let Some(kuzz) = bundled_kuzz() else {
+            return;
+        };
+        let mut refresh = std::process::Command::new(kuzz);
+        refresh.args(["hermes", "refresh", "--no-restart"]);
+        for name in CLEARED_ENV {
+            refresh.env_remove(name);
+        }
+        let Some(output) =
+            crate::managed_agents::output_with_timeout(refresh, HERMES_REFRESH_LIMIT)
+        else {
+            eprintln!("kuzz-desktop: hermes: connector refresh did not finish");
+            return;
+        };
+        eprintln!(
+            "kuzz-desktop: hermes: connector refresh: {} {}",
+            String::from_utf8_lossy(&output.stdout).trim(),
+            String::from_utf8_lossy(&output.stderr).trim(),
+        );
+        // Also on a failed exit: another profile may have been updated.
+        if refresh_needs_restart(&output.stdout) {
+            hermes_gateway::settle(DEFAULT_PROFILE);
+        }
+    });
+}
+
+/// Whether `kuzz hermes refresh --no-restart` left the restart to the caller.
+/// Pure.
+fn refresh_needs_restart(stdout: &[u8]) -> bool {
+    serde_json::from_slice::<serde_json::Value>(stdout)
+        .is_ok_and(|result| result.get("restart").and_then(|v| v.as_str()) == Some("needed"))
 }
 
 /// The `kuzz` argv for a Hermes pairing (no shell). Pure. `--no-restart`:
@@ -283,17 +368,18 @@ fn hermes_profiles(root: &Path) -> Vec<HermesProfileView> {
         .filter(|name| !root.join("profiles/.deleted").join(name).exists())
         .collect();
     names.sort();
-    let default = profile_view(DEFAULT_PROFILE, root, true, None);
+    let default = profile_view(DEFAULT_PROFILE, root, root, true, None);
     std::iter::once(default)
         .chain(names.into_iter().map(|name| {
             let home = root.join("profiles").join(&name);
-            profile_view(&name, &home, false, blocked.clone())
+            profile_view(&name, root, &home, false, blocked.clone())
         }))
         .collect()
 }
 
 fn profile_view(
     name: &str,
+    root: &Path,
     home: &Path,
     is_default: bool,
     blocked_reason: Option<String>,
@@ -308,6 +394,8 @@ fn profile_view(
         paired_agent: env_pubkey(env, "KUZZ_PAIRED_AGENT"),
         owner: env_pubkey(env, "KUZZ_OWNER_PUBKEY"),
         blocked_reason,
+        gateway: hermes_gateway::gateway_view(root, name),
+        settling: hermes_gateway::is_settling(name),
     }
 }
 
@@ -390,76 +478,6 @@ fn hermes_profile_target(root: &Path, profile: &str) -> Option<Option<PathBuf>> 
     Some((!view.is_default).then(|| root.join("profiles").join(&view.name)))
 }
 
-/// Start `hermes gateway restart --detach` so the gateway loads the new
-/// plugin and home channel, and leave it running: outside any job of this
-/// app, no pipes, no window, without Kuzz settings or secrets in its env
-/// (Hermes reads them from its own `.env`). Hermes refuses while it has
-/// live work; the owner then restarts it later. Only the exit is logged.
-fn restart_hermes_gateway() {
-    let Some(home) = hermes_home() else {
-        return;
-    };
-    let Some(hermes) = hermes_launcher(&home) else {
-        eprintln!("kuzz-desktop: hermes: no hermes launcher; gateway not restarted");
-        return;
-    };
-    let mut restart = std::process::Command::new(hermes);
-    restart
-        .args(["gateway", "restart", "--detach"])
-        .env("HERMES_HOME", &home)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
-    for (name, _) in std::env::vars_os() {
-        if is_kuzz_setting(&name) {
-            restart.env_remove(name);
-        }
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        restart.creation_flags(CREATE_NO_WINDOW);
-    }
-    match restart.spawn() {
-        Ok(mut child) => {
-            std::thread::spawn(move || {
-                let status = child.wait().ok().and_then(|status| status.code());
-                eprintln!("kuzz-desktop: hermes: gateway restart exited ({status:?})");
-            });
-        }
-        Err(error) => eprintln!("kuzz-desktop: hermes: gateway restart failed to start: {error}"),
-    }
-}
-
-/// The `hermes` launcher: on `PATH`, else under the Hermes home. On Windows
-/// only `hermes.exe` (a `.cmd`/`.bat` is never run), as the plugin installer.
-fn hermes_launcher(home: &Path) -> Option<PathBuf> {
-    let name = format!("hermes{}", std::env::consts::EXE_SUFFIX);
-    let on_path = std::env::var_os("PATH")
-        .map(|path| std::env::split_paths(&path).collect::<Vec<_>>())
-        .unwrap_or_default();
-    let in_home = [
-        home.join("bin"),
-        home.join("hermes-agent").join("venv").join("Scripts"),
-        home.join("hermes-agent").join("venv").join("bin"),
-    ];
-    on_path
-        .into_iter()
-        .chain(in_home)
-        .map(|dir| dir.join(&name))
-        .find(|path| path.is_file())
-}
-
-/// Whether an inherited variable is a Kuzz/Buzz setting a restarted gateway
-/// must not inherit. Pure.
-fn is_kuzz_setting(name: &std::ffi::OsStr) -> bool {
-    name.to_str().is_some_and(|name| {
-        let upper = name.to_ascii_uppercase();
-        upper.starts_with("KUZZ_") || upper.starts_with("BUZZ_")
-    })
-}
-
 /// Hermes's home on this computer, when that folder exists: `$HERMES_HOME`,
 /// else `%LOCALAPPDATA%\hermes` on Windows, else `~/.hermes` (where
 /// `kuzz pair --hermes` installs).
@@ -529,13 +547,17 @@ fn bundled_kuzz() -> Option<PathBuf> {
 
 /// Where `kuzz` at `kuzz` looks for `plugins/`, as its
 /// `hermes_installer_roots`: its own folder, `<prefix>/share/kuzz` beside a
-/// `<prefix>/bin`, and `<local data>/kuzz`. Pure.
+/// `<prefix>/bin`, `Contents/Resources` beside `Contents/MacOS`, and
+/// `<local data>/kuzz`. Pure.
 fn hermes_plugin_roots(kuzz: &Path, local_data: Option<&Path>) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = kuzz.parent() {
         roots.push(dir.to_path_buf());
         if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
             roots.push(prefix.join("share").join("kuzz"));
+        }
+        if let Some(contents) = dir.parent().filter(|_| dir.ends_with("Contents/MacOS")) {
+            roots.push(contents.join("Resources"));
         }
     }
     if let Some(data) = local_data {

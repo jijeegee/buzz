@@ -21,6 +21,7 @@ use crate::identity::AuthTokenConfig;
 use crate::state::AppState;
 
 mod agent_keys;
+mod agent_tools;
 mod app_sign_in;
 mod audio;
 mod device_http;

@@ -188,7 +188,7 @@ kuzz auth bots create --name "home bot"        # {"bot_id":"<hex>"} (headless by
 kuzz auth bots headless-token <bot_id>         # {"token":"bzk_…","hash_prefix":"…"} shown once
 kuzz auth bots revoke-headless <bot_id> <hash_prefix>   # second step of a rotation
 kuzz auth bots profile <bot_id> --display-name "Home"
-kuzz auth bots revoke-all                      # every bot token you own
+kuzz auth bots revoke-all --yes                # every bot token you own
 kuzz auth logout                # revokes this device + bots it hosts, then forgets it
 kuzz channels list; echo "exit=$?"             # exit=3, "run `kuzz auth login`"
 ```
@@ -513,7 +513,7 @@ kuzz workflows trigger --workflow "$WF_ID" | jq .
 
 # workflows runs
 kuzz workflows runs --workflow "$WF_ID" | jq .
-# Expected: [] — relay stores runs in DB, not as Nostr events; empty is normal
+# Expected: {"runs":[...],"next":null} — newest first; `next` holds the next page cursor
 
 # workflows approve — requires a workflow run waiting for approval
 # This is hard to test ad-hoc without a workflow that has an approval gate.

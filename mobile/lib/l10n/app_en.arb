@@ -3258,15 +3258,6 @@
   "@goalsStatusDropped": {
     "description": "Goal status, tooltip of the status button on a goal. Short."
   },
-  "goalsRemoveWithSubGoals": "Remove with {count} sub-goals",
-  "@goalsRemoveWithSubGoals": {
-    "description": "Goal actions sheet, menu item that removes the goal and its sub-goals. Short.",
-    "placeholders": {
-      "count": {
-        "type": "int"
-      }
-    }
-  },
   "goalsRemove": "Remove",
   "@goalsRemove": {
     "description": "Goal actions sheet menu item and remove-goal dialog button. Short."
@@ -3275,18 +3266,54 @@
   "@goalsRemoveConfirmTitle": {
     "description": "Remove-goal confirmation dialog, title."
   },
-  "goalsRemoveConfirmSubGoals": "This also removes its {count} sub-goals. History keeps them.",
-  "@goalsRemoveConfirmSubGoals": {
-    "description": "Remove-goal confirmation dialog, body when the goal has sub-goals.",
+  "goalsRemoveConfirm": "Remove this goal and everything under it?",
+  "@goalsRemoveConfirm": {
+    "description": "Remove-goal confirmation dialog. Removal cannot be undone."
+  },
+  "goalsFinishConfirmTitle": "Finish this goal?",
+  "@goalsFinishConfirmTitle": {
+    "description": "Title of the confirmation before finishing a thread goal that has tasks. Short."
+  },
+  "goalsFinishConfirmBody": "The tasks under it are deleted. This cannot be undone.",
+  "@goalsFinishConfirmBody": {
+    "description": "Confirmation before finishing a thread goal: finishing deletes the small tasks under it."
+  },
+  "goalsTopGoals": "{count} top-level goals",
+  "@goalsTopGoals": {
+    "description": "Goals page, notice when many goals sit directly under the conversation's top goal. Not a limit; goals can still be added.",
     "placeholders": {
       "count": {
         "type": "int"
       }
     }
   },
-  "goalsRemoveConfirmBody": "History keeps it.",
-  "@goalsRemoveConfirmBody": {
-    "description": "Remove-goal confirmation dialog, body when the goal has no sub-goals."
+  "goalsSectionQuiet": "Quiet",
+  "@goalsSectionQuiet": {
+    "description": "Goals page, heading of the folded list of unfinished goals nobody touched for a long time. Short."
+  },
+  "goalsSectionDone": "Done",
+  "@goalsSectionDone": {
+    "description": "Goals page, heading of the folded list of finished goals. Short."
+  },
+  "goalsShowMore": "Show more",
+  "@goalsShowMore": {
+    "description": "Goals page, button that reads the next goals of a folded list. Short."
+  },
+  "goalsDropAll": "Drop all",
+  "@goalsDropAll": {
+    "description": "Goals page, button that gives up every goal in the quiet list. Short."
+  },
+  "goalsDropAllConfirm": "Drop all quiet goals? Tasks among them are deleted.",
+  "@goalsDropAllConfirm": {
+    "description": "Confirmation before giving up every goal in the quiet list."
+  },
+  "goalsCollapse": "Hide sub-goals",
+  "@goalsCollapse": {
+    "description": "Goal row, tooltip of the button that folds its sub-goals. Short."
+  },
+  "goalsExpand": "Show sub-goals",
+  "@goalsExpand": {
+    "description": "Goal row, tooltip of the button that unfolds its sub-goals. Short."
   },
   "goalsCancel": "Cancel",
   "@goalsCancel": {
@@ -3311,38 +3338,6 @@
   "goalsSignInToEdit": "Sign in to edit goals.",
   "@goalsSignInToEdit": {
     "description": "Error when editing goals while not signed in."
-  },
-  "goalsSaveConflict": "The goals kept changing while saving. Try again.",
-  "@goalsSaveConflict": {
-    "description": "Error when saving goals failed because others kept editing them."
-  },
-  "goalsTooLarge": "The goals are too large to save.",
-  "@goalsTooLarge": {
-    "description": "Error when the goals of a conversation exceed the size limit."
-  },
-  "goalsTooMany": "Too many goals.",
-  "@goalsTooMany": {
-    "description": "Error when a conversation has more goals than allowed."
-  },
-  "goalsNoteTooLong": "Keep the note shorter.",
-  "@goalsNoteTooLong": {
-    "description": "Error when a goal's note is too long."
-  },
-  "goalsThreadOneGoal": "A thread can work on only one goal.",
-  "@goalsThreadOneGoal": {
-    "description": "Error when linking a thread that is already linked to another goal."
-  },
-  "goalsOneRoot": "There must be exactly one layer 1 goal.",
-  "@goalsOneRoot": {
-    "description": "Error when the goals would not have exactly one top goal."
-  },
-  "goalsTooDeep": "Goals are nested too deeply.",
-  "@goalsTooDeep": {
-    "description": "Error when sub-goals go too many layers deep."
-  },
-  "goalsRemoveSubGoalsToo": "Remove its sub-goals too.",
-  "@goalsRemoveSubGoalsToo": {
-    "description": "Error when removing a goal that still has sub-goals."
   },
   "goalsTitleEmpty": "Write the goal in one sentence.",
   "@goalsTitleEmpty": {
@@ -4452,6 +4447,116 @@
   "agentsActions": "Agent actions",
   "@agentsActions": {
     "description": "Agents tab, tooltip of the … button on an agent. Short."
+  },
+  "agentAccessBody": "Choose who can send instructions to {name}.",
+  "@agentAccessBody": {
+    "description": "Paired agent sheet, line above the access options.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentAccessOnlyMe": "Only me",
+  "@agentAccessOnlyMe": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessSelected": "Selected people",
+  "@agentAccessSelected": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessAnyone": "Anyone",
+  "@agentAccessAnyone": {
+    "description": "Paired agent sheet, access option. Short."
+  },
+  "agentAccessAlwaysYou": "You can always use this agent.",
+  "@agentAccessAlwaysYou": {
+    "description": "Paired agent sheet, note above the selected people."
+  },
+  "agentAccessSearch": "Search by name",
+  "@agentAccessSearch": {
+    "description": "Paired agent sheet, hint of the people search field."
+  },
+  "agentAccessNoMatches": "No matching users.",
+  "@agentAccessNoMatches": {
+    "description": "Paired agent sheet, the people search found nobody."
+  },
+  "agentAccessRemovePerson": "Remove {name}",
+  "@agentAccessRemovePerson": {
+    "description": "Paired agent sheet, tooltip of the remove button.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "agentAccessUnnamed": "Unnamed",
+  "@agentAccessUnnamed": {
+    "description": "Paired agent sheet, a person with no display name."
+  },
+  "agentAccessSaveFailed": "Couldn't save. Try again.",
+  "@agentAccessSaveFailed": {
+    "description": "Paired agent sheet, the setting could not be saved."
+  },
+  "agentAccessSave": "Save access",
+  "@agentAccessSave": {
+    "description": "Paired agent sheet, save button. Short."
+  },
+  "agentAccessUnavailable": "This account can't change agent access.",
+  "@agentAccessUnavailable": {
+    "description": "Paired agent sheet, saving is refused for an account without a key."
+  },
+  "agentAccessLoadFailed": "Couldn't load this agent's access.",
+  "@agentAccessLoadFailed": {
+    "description": "Paired agent sheet, the current setting could not be read."
+  },
+  "ownerToolsLabel": "Owner tools",
+  "@ownerToolsLabel": {
+    "description": "Agent settings: name of the per-agent switch that lets the agent act for its owner. Korean product name: 주인 권한 도구. Short."
+  },
+  "ownerToolsOn": "On",
+  "@ownerToolsOn": {
+    "description": "Owner tools switch state. Short."
+  },
+  "ownerToolsOff": "Off",
+  "@ownerToolsOff": {
+    "description": "Owner tools switch state. Short."
+  },
+  "ownerToolsHint": "Lets this agent act for you and manage your other agents.",
+  "@ownerToolsHint": {
+    "description": "Owner tools row: what the switch does."
+  },
+  "ownerToolsAnyoneDisabled": "Not available while anyone can talk to this agent.",
+  "@ownerToolsAnyoneDisabled": {
+    "description": "Owner tools row: why the switch is off and locked."
+  },
+  "ownerToolsUnknown": "Couldn't check owner tools right now.",
+  "@ownerToolsUnknown": {
+    "description": "Owner tools row: the current level could not be read."
+  },
+  "ownerToolsAllowlistWarning": "People you allow can ask this agent to act as you.",
+  "@ownerToolsAllowlistWarning": {
+    "description": "Owner tools row: warning while on for an agent that answers selected people."
+  },
+  "ownerToolsConfirmTitle": "Turn on owner tools?",
+  "@ownerToolsConfirmTitle": {
+    "description": "Confirm dialog title before turning owner tools on for an agent that answers selected people."
+  },
+  "ownerToolsConfirmBody": "Other people can talk to this agent. With owner tools on, what they ask it can be done as you, with your account.",
+  "@ownerToolsConfirmBody": {
+    "description": "Confirm dialog body: strong warning."
+  },
+  "ownerToolsConfirmAction": "Turn on",
+  "@ownerToolsConfirmAction": {
+    "description": "Confirm dialog action. Short."
+  },
+  "ownerToolsChangeOnComputer": "Change this on the computer that runs this agent.",
+  "@ownerToolsChangeOnComputer": {
+    "description": "Owner tools: the phone can't change it for an agent run by the desktop app."
+  },
+  "ownerToolsSaveFailed": "Couldn't change owner tools. Try again.",
+  "@ownerToolsSaveFailed": {
+    "description": "Owner tools: the change failed."
   },
   "agentsMessage": "Message",
   "@agentsMessage": {

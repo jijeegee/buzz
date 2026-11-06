@@ -193,13 +193,17 @@ fn resolve_agent_owner(config: &Config) -> Option<String> {
 /// Owner is now provided via `--agent-owner` config flag (no REST lookup).
 /// Cache for the agent's owner pubkey + sibling lookups.
 ///
-/// Siblings are other agents whose NIP-OA auth tag proves the same owner.
-/// Lookup results are cached for the process lifetime (attestations are immutable).
+/// Siblings are other agents of the same owner: their NIP-OA auth tag proves
+/// it, or the relay says so. A paired agent can be disconnected, so answers
+/// expire: yes after [`SIBLING_TTL`], no after [`NOT_SIBLING_TTL`].
 struct OwnerCache {
     pubkey: Option<String>,
-    /// author_hex → is_sibling (true = same owner, false = not)
-    siblings: std::sync::Mutex<HashMap<String, bool>>,
+    /// author_hex → (is_sibling, valid until)
+    siblings: std::sync::Mutex<HashMap<String, (bool, tokio::time::Instant)>>,
 }
+
+const SIBLING_TTL: Duration = Duration::from_secs(300);
+const NOT_SIBLING_TTL: Duration = Duration::from_secs(60);
 
 impl OwnerCache {
     fn new(initial: Option<String>) -> Self {
@@ -216,7 +220,9 @@ impl OwnerCache {
 
     /// Check if author is a known sibling (cached result).
     fn is_known_sibling(&self, author: &str) -> Option<bool> {
-        self.siblings.lock().ok()?.get(author).copied()
+        let map = self.siblings.lock().ok()?;
+        let (is_sibling, until) = map.get(author)?;
+        (tokio::time::Instant::now() < *until).then_some(*is_sibling)
     }
 
     /// Cache a sibling lookup result.
@@ -226,15 +232,21 @@ impl OwnerCache {
             if map.len() >= 256 {
                 map.clear();
             }
-            map.insert(author, is_sibling);
+            let ttl = if is_sibling {
+                SIBLING_TTL
+            } else {
+                NOT_SIBLING_TTL
+            };
+            map.insert(author, (is_sibling, tokio::time::Instant::now() + ttl));
         }
     }
 }
 
-/// Check if `author` is the owner OR a sibling (same owner via NIP-OA).
+/// Check if `author` is the owner OR a sibling (same owner).
 ///
-/// For unknown authors, queries their kind:0 profile to extract the NIP-OA
-/// auth tag and verify the owner matches. Result is cached.
+/// For unknown authors, looks for a NIP-OA auth tag on their kind:0 profile
+/// naming the owner and asks the relay, which also knows paired agents. An
+/// answer is cached; a failed lookup is not, and denies.
 async fn is_owner_or_sibling(
     author: &str,
     owner_cache: &OwnerCache,
@@ -255,8 +267,22 @@ async fn is_owner_or_sibling(
         return cached;
     }
 
-    // Query the author's kind:0 profile to check for NIP-OA auth tag.
-    let is_sibling = check_sibling_via_profile(author, my_owner, rest_client).await;
+    let (by_profile, by_relay) = tokio::join!(
+        check_sibling_via_profile(author, my_owner, rest_client),
+        tokio::time::timeout(Duration::from_millis(2000), rest_client.same_owner(author)),
+    );
+    let is_sibling = match (by_profile, by_relay) {
+        (true, _) => true,
+        (false, Ok(Ok(same_owner))) => same_owner,
+        (false, Ok(Err(e))) => {
+            tracing::debug!(author, "same-owner lookup failed: {e}");
+            return false;
+        }
+        (false, Err(_)) => {
+            tracing::debug!(author, "same-owner lookup timed out");
+            return false;
+        }
+    };
     owner_cache.cache_sibling(author.to_string(), is_sibling);
     is_sibling
 }
@@ -8503,6 +8529,55 @@ mod owner_cache_tests {
             .trusted_authors([owner.as_str(), stranger.as_str()], false, &rest)
             .await;
         assert_eq!(trusted, HashSet::from([owner]));
+    }
+
+    #[tokio::test]
+    async fn sibling_answers_expire() {
+        let cache = OwnerCache::new(Some("a".repeat(64)));
+        cache.cache_sibling("yes".into(), true);
+        cache.cache_sibling("no".into(), false);
+        assert_eq!(cache.is_known_sibling("yes"), Some(true));
+        assert_eq!(cache.is_known_sibling("no"), Some(false));
+        assert_eq!(cache.is_known_sibling("unknown"), None);
+
+        let now = tokio::time::Instant::now();
+        cache
+            .siblings
+            .lock()
+            .unwrap()
+            .insert("yes".into(), (true, now));
+        assert_eq!(cache.is_known_sibling("yes"), None);
+    }
+
+    #[tokio::test]
+    async fn relay_names_a_paired_sibling_and_failures_are_not_cached() {
+        let author = "b".repeat(64);
+        let cache = OwnerCache::new(Some("a".repeat(64)));
+
+        // The profile lookup gets the same scripted body and finds no tag.
+        let (rest, server) =
+            super::author_gate_tests::nip11_server(serde_json::json!({"keys": [author]})).await;
+        assert!(is_owner_or_sibling(&author, &cache, &rest).await);
+        assert_eq!(cache.is_known_sibling(&author), Some(true));
+        server.abort();
+
+        let cache = OwnerCache::new(Some("a".repeat(64)));
+        let (rest, server) =
+            super::author_gate_tests::nip11_server(serde_json::json!({"keys": []})).await;
+        assert!(!is_owner_or_sibling(&author, &cache, &rest).await);
+        assert_eq!(cache.is_known_sibling(&author), Some(false));
+        server.abort();
+
+        let cache = OwnerCache::new(Some("a".repeat(64)));
+        let (rest, server) =
+            super::author_gate_tests::nip11_scripted_server(std::collections::VecDeque::from([
+                Err(()),
+                Err(()),
+            ]))
+            .await;
+        assert!(!is_owner_or_sibling(&author, &cache, &rest).await);
+        assert_eq!(cache.is_known_sibling(&author), None);
+        server.abort();
     }
 }
 

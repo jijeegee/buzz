@@ -29,7 +29,9 @@ use std::net::{IpAddr, TcpStream};
 use std::path::PathBuf;
 use std::time::Duration;
 
-pub use kuzz_device_key::{DeviceKey, DeviceKeyError, FileStore, DEVICE_KEY_SCOPE};
+pub use kuzz_device_key::{
+    DeviceKey, DeviceKeyError, DeviceKeyKind, FileStore, SoftwareKeyStore, DEVICE_KEY_SCOPE,
+};
 use nostr::{JsonUtil as _, PublicKey, Tag, UnsignedEvent};
 use serde::{Deserialize, Serialize};
 use zeroize::Zeroizing;
@@ -85,7 +87,7 @@ pub fn default_store_dir() -> Option<PathBuf> {
 pub enum OpenMode {
     /// Open an existing key only (every tool, every managed-agent process).
     ExistingOnly,
-    /// Create the key when there is none (`kuzz auth login` only).
+    /// Create the key when there is none (`kuzz auth login`, `kuzz pair`).
     CreateIfMissing,
 }
 
@@ -99,6 +101,43 @@ pub fn open_shared(mode: OpenMode) -> Result<Option<DeviceKey>, DeviceKeyError> 
     match mode {
         OpenMode::ExistingOnly => DeviceKey::open(DEVICE_KEY_SCOPE, &store),
         OpenMode::CreateIfMissing => DeviceKey::open_or_create(DEVICE_KEY_SCOPE, &store).map(Some),
+    }
+}
+
+/// The key `kuzz` uses on macOS when the app holds a Secure Enclave key: a
+/// bundled CLI can't have the keychain group that reaches it, and a gateway
+/// has to run with the app closed, so the app signer can't stand in.
+pub const EXTERNAL_KEY_SCOPE: &str = "kuzz-external-v1";
+
+/// [`open_shared`] for a `kuzz` run by a person or by a paired agent. On
+/// macOS only, its own software key stands in for a Secure Enclave key out
+/// of reach. Never for a process with a signer of its own: `kuzz-acp` and its
+/// children keep [`open_shared`].
+pub fn open_for_cli(mode: OpenMode) -> Result<Option<DeviceKey>, DeviceKeyError> {
+    let dir = default_store_dir()
+        .ok_or_else(|| DeviceKeyError::Store("no local data directory".into()))?;
+    or_external_key(
+        open_shared(mode),
+        &FileStore::new(dir),
+        mode,
+        cfg!(target_os = "macos"),
+    )
+}
+
+/// `shared`, or with `allowed` the [`EXTERNAL_KEY_SCOPE`] key when `shared`
+/// says only that the hardware key is out of reach. Real failures (a locked
+/// keychain) stay errors.
+fn or_external_key(
+    shared: Result<Option<DeviceKey>, DeviceKeyError>,
+    store: &dyn SoftwareKeyStore,
+    mode: OpenMode,
+    allowed: bool,
+) -> Result<Option<DeviceKey>, DeviceKeyError> {
+    match shared {
+        Err(DeviceKeyError::HardwareOutOfReach(_)) if allowed => {
+            DeviceKey::open_software(EXTERNAL_KEY_SCOPE, store, mode == OpenMode::CreateIfMissing)
+        }
+        other => other,
     }
 }
 
@@ -193,6 +232,19 @@ impl DeviceSigner {
             |name| std::env::var(name).ok(),
             || open_shared(OpenMode::ExistingOnly),
         )
+    }
+
+    /// [`Self::from_env`] for `kuzz`: [`open_for_cli`], except in a
+    /// managed-agent child, whose broker stays the signer.
+    pub fn from_env_for_cli() -> (Option<Self>, Option<String>) {
+        let lookup = |name: &str| std::env::var(name).ok();
+        Self::resolve(lookup, || {
+            if stored_session_disabled(lookup) {
+                open_shared(OpenMode::ExistingOnly)
+            } else {
+                open_for_cli(OpenMode::ExistingOnly)
+            }
+        })
     }
 
     /// The local key, when this process holds one.
@@ -508,6 +560,66 @@ mod tests {
                 .find(|(k, _)| *k == name)
                 .map(|(_, v)| (*v).to_owned())
         }
+    }
+
+    #[test]
+    fn only_an_out_of_reach_hardware_key_gives_way_to_the_external_key() {
+        let dir = tempfile::tempdir().unwrap();
+        let store = FileStore::new(dir.path().to_path_buf());
+        let out_of_reach = || {
+            Err(DeviceKeyError::HardwareOutOfReach(Box::new(
+                DeviceKeyError::SecureEnclave {
+                    op: "SecKeyCreateRandomKey",
+                    code: -34018,
+                },
+            )))
+        };
+        // Not macOS: nothing changes.
+        assert!(matches!(
+            or_external_key(out_of_reach(), &store, OpenMode::CreateIfMissing, false),
+            Err(DeviceKeyError::HardwareOutOfReach(_))
+        ));
+        // Tools never create it.
+        assert!(
+            or_external_key(out_of_reach(), &store, OpenMode::ExistingOnly, true)
+                .unwrap()
+                .is_none()
+        );
+        let made = or_external_key(out_of_reach(), &store, OpenMode::CreateIfMissing, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(made.kind(), DeviceKeyKind::Software);
+        let opened = or_external_key(out_of_reach(), &store, OpenMode::ExistingOnly, true)
+            .unwrap()
+            .unwrap();
+        assert_eq!(made.pubkey(), opened.pubkey());
+        // A locked keychain stays an error.
+        assert!(matches!(
+            or_external_key(
+                Err(DeviceKeyError::SecureEnclave {
+                    op: "SecItemCopyMatching",
+                    code: -25308,
+                }),
+                &store,
+                OpenMode::CreateIfMissing,
+                true,
+            ),
+            Err(DeviceKeyError::SecureEnclave { .. })
+        ));
+        // The app's key wins whenever it opens.
+        let shared = file_key(&dir);
+        assert_eq!(
+            or_external_key(
+                Ok(Some(shared.clone())),
+                &store,
+                OpenMode::ExistingOnly,
+                true
+            )
+            .unwrap()
+            .unwrap()
+            .pubkey(),
+            shared.pubkey()
+        );
     }
 
     #[test]

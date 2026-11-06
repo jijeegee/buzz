@@ -19,6 +19,7 @@
 pub(crate) mod admission;
 #[cfg(test)]
 mod admission_routes;
+pub(crate) mod authority;
 pub mod client_ip;
 pub mod client_version;
 pub mod config;
@@ -34,6 +35,7 @@ use std::sync::{Arc, OnceLock, RwLock};
 use kuzz_auth::oidc::OidcProvider;
 use kuzz_auth::{TokenBinding, TokenKind, TokenSecret};
 use kuzz_core::principal::{AccessTokenKind, PrincipalId};
+use kuzz_core::tenant::CommunityId;
 use kuzz_db::identity::AccessTokenRejection;
 use kuzz_pubsub::AuthRevocation;
 
@@ -85,6 +87,9 @@ impl TokenRejection {
     }
 }
 
+/// Most paired agents one process remembers as bound.
+const BOUND_EXTERNAL_OWNERS: u64 = 100_000;
+
 /// Per-process centralized-identity runtime held on [`AppState`].
 pub struct IdentityRuntime {
     config: AuthTokenConfig,
@@ -100,6 +105,9 @@ pub struct IdentityRuntime {
     pub(crate) devices: device::DeviceRuntime,
     /// Recently admitted (message key, device key) pairs.
     pub(crate) admissions: admission::AdmissionCache,
+    /// Paired agents whose `users` row names this owner already, so a
+    /// reconnect writes nothing. Filled only after a successful bind.
+    pub(crate) bound_external_owners: moka::sync::Cache<(CommunityId, [u8; 32]), [u8; 32]>,
     /// Open key-authenticated sockets (NIP-42 AUTH, huddle audio).
     pub(crate) key_sockets: key_sockets::KeySocketRegistry,
 }
@@ -151,6 +159,7 @@ impl IdentityRuntime {
             publish_slots: profile::PublishSlots::default(),
             devices: device::DeviceRuntime::default(),
             admissions: admission::AdmissionCache::default(),
+            bound_external_owners: moka::sync::Cache::new(BOUND_EXTERNAL_OWNERS),
             key_sockets: key_sockets::KeySocketRegistry::default(),
         }
     }

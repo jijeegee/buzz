@@ -1854,7 +1854,7 @@ pub(crate) async fn channels_with_goals_off(
     events: impl Iterator<Item = (u32, Option<uuid::Uuid>)>,
 ) -> Result<HashSet<uuid::Uuid>, kuzz_db::DbError> {
     let channels: std::collections::BTreeSet<uuid::Uuid> = events
-        .filter(|(kind, _)| *kind == kuzz_core::kind::KIND_GOAL_TREE)
+        .filter(|(kind, _)| is_goal_kind(*kind))
         .filter_map(|(_, channel)| channel)
         .collect();
     let mut off = HashSet::new();
@@ -1870,13 +1870,21 @@ pub(crate) async fn channels_with_goals_off(
     Ok(off)
 }
 
-/// Whether this event is a goal tree of a conversation with goals off.
+/// Whether this event is goal content of a conversation with goals off.
 pub(crate) fn goal_tree_hidden(
     goals_off: &HashSet<uuid::Uuid>,
     kind: u32,
     channel: Option<uuid::Uuid>,
 ) -> bool {
-    kind == kuzz_core::kind::KIND_GOAL_TREE && channel.is_some_and(|c| goals_off.contains(&c))
+    is_goal_kind(kind) && channel.is_some_and(|c| goals_off.contains(&c))
+}
+
+/// Kinds that carry goal text, in documents or as edits.
+fn is_goal_kind(kind: u32) -> bool {
+    matches!(
+        kind,
+        kuzz_core::kind::KIND_GOAL_TREE | kuzz_core::kind::KIND_GOAL_OPS
+    )
 }
 
 /// Pre-filter authorization for filters that exclusively target author-only kinds.

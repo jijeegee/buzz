@@ -31,7 +31,7 @@ Future<void> showThreadGoalsPage({
 
 /// A thread's goal: the linked goal with its sub-goal tree (add sub-goals,
 /// change status, relink or unlink), or a picker that links the thread to a
-/// goal or adds a new goal for it and links it in one revision.
+/// goal or adds a new goal for it and links it in one event.
 class ThreadGoalsPage extends ConsumerWidget {
   const ThreadGoalsPage({
     super.key,
@@ -44,18 +44,20 @@ class ThreadGoalsPage extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final headAsync = ref.watch(goalTreeProvider(channelId));
+    final key = threadGoalsKey(channelId, [threadRootId]);
+    final treeAsync = ref.watch(threadGoalTreeProvider(key));
     return Scaffold(
       appBar: AppBar(title: Text(context.l10n.goalsThreadGoalTitle)),
       body: RefreshIndicator(
         onRefresh: () => ref.refresh(goalTreeProvider(channelId).future),
-        child: headAsync.when(
+        child: treeAsync.when(
+          skipLoadingOnReload: true,
           loading: () => const Center(child: CircularProgressIndicator()),
           error: (error, _) => ListView(
             padding: const EdgeInsets.all(Grid.gutter),
             children: [Text(context.l10n.goalsLoadError('$error'))],
           ),
-          data: (head) => _body(context, ref, head.tree),
+          data: (tree) => _body(context, ref, tree),
         ),
       ),
     );
@@ -129,7 +131,7 @@ class _ThreadLinks {
   );
 
   /// Adds a goal under [parent] (on [layer]) and links this thread to it,
-  /// as one revision.
+  /// as one event.
   Future<void> createAndLink(
     BuildContext context,
     WidgetRef ref,

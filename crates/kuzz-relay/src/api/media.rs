@@ -754,6 +754,7 @@ async fn admit_media_key(
         crate::identity::device::Surface::Media,
     )
     .await
+    .map(|_| ())
     .map_err(crate::identity::admission::KeyRefused::http_error)
 }
 

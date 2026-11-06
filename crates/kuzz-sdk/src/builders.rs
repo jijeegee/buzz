@@ -6,13 +6,13 @@
 use kuzz_core::{
     kind::{
         KIND_AGENT_OBSERVER_FRAME, KIND_APPROVAL_DENY, KIND_APPROVAL_GRANT, KIND_DELETION,
-        KIND_DM_OPEN, KIND_EMOJI_SET, KIND_GIT_ISSUE, KIND_GIT_PATCH, KIND_GIT_PR_UPDATE,
-        KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT, KIND_GIT_STATUS_CLOSED,
-        KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED, KIND_GIT_STATUS_OPEN,
-        KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST, KIND_MODERATION_BAN,
-        KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT, KIND_MODERATION_UNBAN,
-        KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT, KIND_USER_STATUS,
-        KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
+        KIND_DM_OPEN, KIND_EMOJI_SET, KIND_EVENT_REMINDER, KIND_GIT_ISSUE, KIND_GIT_PATCH,
+        KIND_GIT_PR_UPDATE, KIND_GIT_PULL_REQUEST, KIND_GIT_REPO_ANNOUNCEMENT,
+        KIND_GIT_STATUS_CLOSED, KIND_GIT_STATUS_DRAFT, KIND_GIT_STATUS_MERGED,
+        KIND_GIT_STATUS_OPEN, KIND_IA_ARCHIVE_REQUEST, KIND_IA_UNARCHIVE_REQUEST,
+        KIND_MODERATION_BAN, KIND_MODERATION_RESOLVE_REPORT, KIND_MODERATION_TIMEOUT,
+        KIND_MODERATION_UNBAN, KIND_MODERATION_UNTIMEOUT, KIND_PRESENCE_UPDATE, KIND_PROJECT,
+        KIND_REPORT, KIND_USER_STATUS, KIND_WORKFLOW_DEF, KIND_WORKFLOW_TRIGGER,
     },
     observer::{
         content_looks_like_nip44, OBSERVER_AGENT_TAG, OBSERVER_FRAME_CONTROL, OBSERVER_FRAME_TAG,
@@ -630,6 +630,21 @@ pub fn build_set_canvas_unconditional_after_head(
         .custom_created_at(nostr::Timestamp::from(created_at)))
 }
 
+/// Build a goal edit (kind 40111) for a channel or DM. The relay applies the
+/// ops in order, all or none.
+pub fn build_goal_ops(
+    channel_id: Uuid,
+    ops: &[kuzz_core::goal_tree::GoalOp],
+) -> Result<EventBuilder, SdkError> {
+    let content = serde_json::to_string(&kuzz_core::goal_store::GoalOps { ops: ops.to_vec() })
+        .map_err(|e| SdkError::InvalidInput(e.to_string()))?;
+    Ok(EventBuilder::new(
+        Kind::Custom(kuzz_core::kind::KIND_GOAL_OPS as u16),
+        content,
+    )
+    .tags(vec![tag(&["h", &channel_id.to_string()])?]))
+}
+
 /// Build a goal tree write (kind 40110) for a channel or DM.
 ///
 /// The relay requires every goal tree write to name the head it was composed
@@ -921,6 +936,24 @@ pub fn build_set_channel_picture(
     Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
 }
 
+/// Build a NIP-29 edit-metadata event that sets whether new members see
+/// earlier messages (kind 9002): `"all"` or `"since_join"`.
+pub fn build_set_channel_history(
+    channel_id: Uuid,
+    history: &str,
+) -> Result<EventBuilder, SdkError> {
+    if history != "all" && history != "since_join" {
+        return Err(SdkError::InvalidTag(
+            "history must be \"all\" or \"since_join\"".into(),
+        ));
+    }
+    let tags = vec![
+        tag(&["h", &channel_id.to_string()])?,
+        tag(&["history", history])?,
+    ];
+    Ok(EventBuilder::new(Kind::Custom(9002), "").tags(tags))
+}
+
 /// Build a NIP-29 edit-metadata event for topic (kind 9002).
 pub fn build_set_topic(channel_id: Uuid, topic: &str) -> Result<EventBuilder, SdkError> {
     let tags = vec![
@@ -1092,6 +1125,55 @@ const MAX_CONTACTS: usize = 10_000;
 pub fn build_contact_list(
     contacts: &[(&str, Option<&str>, Option<&str>)],
 ) -> Result<EventBuilder, SdkError> {
+    build_contact_list_keeping(contacts, "", &[])
+}
+
+/// Report a message to moderators (NIP-56). `note` may be empty.
+pub fn build_report_message(
+    author: &str,
+    event_id: &str,
+    report_type: &str,
+    note: &str,
+) -> Result<EventBuilder, SdkError> {
+    let tags = vec![tag(&["p", author])?, tag(&["e", event_id, report_type])?];
+    Ok(EventBuilder::new(Kind::Custom(KIND_REPORT as u16), note.trim()).tags(tags))
+}
+
+/// Report a person to moderators (NIP-56). `note` may be empty.
+pub fn build_report_person(
+    person: &str,
+    report_type: &str,
+    note: &str,
+) -> Result<EventBuilder, SdkError> {
+    let tags = vec![tag(&["p", person, report_type])?];
+    Ok(EventBuilder::new(Kind::Custom(KIND_REPORT as u16), note.trim()).tags(tags))
+}
+
+/// An event reminder (NIP-ER). The caller encrypts the content to itself.
+pub fn build_event_reminder(
+    id: &str,
+    encrypted_content: &str,
+    not_before: Option<u64>,
+    expiration: Option<u64>,
+) -> Result<EventBuilder, SdkError> {
+    let mut tags = vec![tag(&["d", id])?];
+    if let Some(not_before) = not_before {
+        tags.push(tag(&["not_before", &not_before.to_string()])?);
+    }
+    if let Some(expiration) = expiration {
+        tags.push(tag(&["expiration", &expiration.to_string()])?);
+    }
+    Ok(EventBuilder::new(Kind::Custom(KIND_EVENT_REMINDER as u16), encrypted_content).tags(tags))
+}
+
+/// [`build_contact_list`] carrying over what the previous list held besides
+/// its `p` tags, so editing one friend does not wipe it. `p` entries in
+/// `other_tags` are ignored.
+pub fn build_contact_list_keeping(
+    contacts: &[(&str, Option<&str>, Option<&str>)],
+    content: &str,
+    other_tags: &[Vec<String>],
+) -> Result<EventBuilder, SdkError> {
     if contacts.len() > MAX_CONTACTS {
         return Err(SdkError::InvalidInput(format!(
             "contact list exceeds maximum of {} contacts (got {})",
@@ -1135,7 +1217,10 @@ pub fn build_contact_list(
             petname.unwrap_or(""),
         ])?);
     }
-    Ok(EventBuilder::new(Kind::Custom(3), "").tags(tags))
+    for other in other_tags.iter().filter(|t| t.first().is_some_and(|n| n != "p")) {
+        tags.push(tag(&other.iter().map(String::as_str).collect::<Vec<_>>())?);
+    }
+    Ok(EventBuilder::new(Kind::Custom(3), content).tags(tags))
 }
 
 /// Extract the channel UUID from an event's `h` tag.
@@ -2708,6 +2793,65 @@ mod tests {
         })
     }
 
+    fn tag_lists(event: &nostr::Event) -> Vec<Vec<String>> {
+        event.tags.iter().map(|t| t.as_slice().to_vec()).collect()
+    }
+
+    #[test]
+    fn report_events_match_the_relay_shape() {
+        let keys = nostr::Keys::generate();
+        let person = "a".repeat(64);
+        let message = "b".repeat(64);
+        let event = build_report_message(&person, &message, "spam", " look ")
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(event.kind.as_u16() as u32, KIND_REPORT);
+        assert_eq!(event.content, "look");
+        assert_eq!(
+            tag_lists(&event),
+            vec![
+                vec!["p".to_string(), person.clone()],
+                vec!["e".to_string(), message, "spam".to_string()],
+            ]
+        );
+        let event = build_report_person(&person, "other", "")
+            .unwrap()
+            .sign_with_keys(&keys)
+            .unwrap();
+        assert_eq!(
+            tag_lists(&event),
+            vec![vec!["p".to_string(), person, "other".to_string()]]
+        );
+    }
+
+    #[test]
+    fn reminder_tags_follow_its_state() {
+        let keys = nostr::Keys::generate();
+        let tags = |not_before, expiration| {
+            let event = build_event_reminder("id", "cipher", not_before, expiration)
+                .unwrap()
+                .sign_with_keys(&keys)
+                .unwrap();
+            assert_eq!(event.kind.as_u16() as u32, KIND_EVENT_REMINDER);
+            tag_lists(&event)
+        };
+        assert_eq!(
+            tags(Some(5), None),
+            vec![
+                vec!["d".to_string(), "id".to_string()],
+                vec!["not_before".to_string(), "5".to_string()],
+            ]
+        );
+        assert_eq!(
+            tags(None, Some(9)),
+            vec![
+                vec!["d".to_string(), "id".to_string()],
+                vec!["expiration".to_string(), "9".to_string()],
+            ]
+        );
+    }
+
     #[test]
     fn message_happy_path() {
         let cid = uuid();
@@ -3695,6 +3839,15 @@ mod tests {
     }
 
     #[test]
+    fn set_channel_history_accepts_only_relay_values() {
+        let cid = Uuid::new_v4();
+        let ev = sign(build_set_channel_history(cid, "since_join").unwrap());
+        assert_eq!(ev.kind.as_u16(), 9002);
+        assert!(has_tag(&ev, "history", "since_join"));
+        assert!(build_set_channel_history(cid, "since-join").is_err());
+    }
+
+    #[test]
     fn set_channel_picture_sets_and_removes() {
         let cid = uuid();
         let url = format!("https://relay.example/media/{}.jpg", "a".repeat(64));
@@ -3907,6 +4060,20 @@ mod tests {
         assert_eq!(event.kind, Kind::Custom(1));
         assert_eq!(event.content, "");
         assert!(event.tags.is_empty());
+    }
+
+    #[test]
+    fn build_contact_list_keeping_carries_content_and_other_tags() {
+        let pk = "a".repeat(64);
+        let other = vec![
+            vec!["t".to_string(), "kuzz".to_string()],
+            vec!["p".to_string(), "b".repeat(64)],
+            vec![],
+        ];
+        let ev = sign(build_contact_list_keeping(&[(&pk, None, None)], "{}", &other).unwrap());
+        assert_eq!(ev.content, "{}");
+        assert!(has_tag(&ev, "t", "kuzz"));
+        assert_eq!(ev.tags.len(), 2);
     }
 
     #[test]

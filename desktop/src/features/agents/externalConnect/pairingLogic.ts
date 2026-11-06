@@ -335,10 +335,26 @@ export function parseRemembered(raw: string | null): RememberedPairing[] {
 export type HermesRowState =
   | "connect"
   | "connected"
+  | "settling"
+  | "busy"
+  | "offline"
   | "otherAccount"
   | "blocked";
 
 export type HermesRow = { profile: HermesProfile; state: HermesRowState };
+
+/**
+ * A connected profile, as far as its gateway has come: paired alone is not
+ * connected. A gateway that doesn't report on Kuzz leaves it connected. Pure.
+ */
+function connectedState(profile: HermesProfile): HermesRowState {
+  const { gateway, settling } = profile;
+  if (settling) return gateway?.busy ? "busy" : "settling";
+  if (!gateway) return "connected";
+  return gateway.running && gateway.kuzz === "connected"
+    ? "connected"
+    : "offline";
+}
 
 /**
  * What each Hermes profile can do for this account. `connectedPubkeys`: this
@@ -361,12 +377,12 @@ export function hermesRows(
     const pinned = pin !== null && connectedPubkeys.has(pin) && !seen.has(pin);
     if (pinned) seen.add(pin);
     if (profile.blockedReason) return { profile, state: "blocked" };
-    if (pinned) return { profile, state: "connected" };
+    if (pinned) return { profile, state: connectedState(profile) };
     if (profile.owner && profile.owner !== account) {
       return { profile, state: "otherAccount" };
     }
     if (profile.isDefault && profile.owner && !pin && hermesDeviceConnected) {
-      return { profile, state: "connected" };
+      return { profile, state: connectedState(profile) };
     }
     return { profile, state: "connect" };
   });

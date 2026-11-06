@@ -36,7 +36,7 @@ fn http_url(inst: &Instance, path: &str) -> String {
 
 /// POST /query signed by `keys` from `device_key` (`None`: no device tag);
 /// returns (status, body).
-async fn bridge_query(
+pub(super) async fn bridge_query(
     inst: &Instance,
     keys: &nostr::Keys,
     device_key: Option<&p256::ecdsa::SigningKey>,

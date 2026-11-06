@@ -319,6 +319,10 @@ pub struct UpdateManagedAgentRequest {
     /// the record-scope alias sweep runs atomically with the column write.
     #[serde(default, deserialize_with = "crate::util::double_option")]
     pub effort_level: Option<Option<String>>,
+    /// Absent = keep. Present = the owner turned owner tools on (`full`) or
+    /// off (`limited`); sent to the relay before anything is saved.
+    #[serde(default)]
+    pub tool_level: Option<crate::auth::tool_levels::ToolLevel>,
 }
 
 #[cfg(test)]

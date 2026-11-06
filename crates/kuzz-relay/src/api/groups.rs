@@ -128,7 +128,7 @@ pub(crate) async fn authenticate(
                 bridge::check_nip98_replay(state, &tenant, event_id_bytes)
                     .await
                     .map_err(IntoResponse::into_response)?;
-                bridge::admit_bridge_key(state, headers, &pubkey)
+                bridge::admit_bridge_key(state, &tenant, headers, &pubkey)
                     .await
                     .map_err(IntoResponse::into_response)?;
                 (

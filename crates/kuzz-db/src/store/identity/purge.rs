@@ -8,7 +8,7 @@
 //! devices with their sessions and tokens, key backups, pairing requests,
 //! name, photo and username, and in every community the account's own
 //! profile, friend list and other personal lists, block lists and push
-//! registrations. Owned agents are deleted the same way as `delete_bot` and
+//! registrations, and the log of what its agents did. Owned agents are deleted the same way as `delete_bot` and
 //! lose their names and profiles too; key-mode agent keys stay registered
 //! but revoked, so they stay refused. Messages, reactions and files in rooms,
 //! and other people's lists that name the account, stay.
@@ -163,7 +163,8 @@ pub(super) async fn purge_account(
 
     // Key-mode agents stay registered but revoked, so their keys stay refused.
     let agent_keys: Vec<Vec<u8>> = sqlx::query_scalar(
-        "UPDATE key_registry SET revoked_at = COALESCE(revoked_at, now()) \
+        "UPDATE key_registry SET revoked_at = COALESCE(revoked_at, now()), tool_level = NULL, \
+                tool_community_id = NULL, respond_class = NULL, tool_set_at = NULL \
          WHERE principal_id = $1 RETURNING pubkey",
     )
     .bind(id)
@@ -256,6 +257,11 @@ pub(super) async fn purge_account(
         "DELETE FROM push_leases WHERE author = ANY($1)",
         "DELETE FROM group_add_settings WHERE pubkey = ANY($1)",
         "DELETE FROM thread_follows WHERE pubkey = ANY($1)",
+        // The log of what the account's agents did for it. A community being
+        // deleted is purged whole by its deletion.
+        "DELETE FROM agent_actions a USING communities c \
+          WHERE c.id = a.community_id AND c.deletion_state = 'active' \
+            AND (a.owner_pubkey = ANY($1) OR a.agent_pubkey = ANY($1))",
     ] {
         counts.community_rows += sqlx::query(statement)
             .bind(&keys)

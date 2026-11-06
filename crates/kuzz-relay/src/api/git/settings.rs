@@ -208,7 +208,7 @@ async fn authenticate(
         .await
         .map_err(IntoResponse::into_response)?;
     // Device-bound keys, after the replay check (a replay costs no lookup).
-    bridge::admit_bridge_key(state, headers, &pubkey)
+    bridge::admit_bridge_key(state, &tenant, headers, &pubkey)
         .await
         .map_err(IntoResponse::into_response)?;
     let tag = relay_members::extract_auth_tag_header(headers);

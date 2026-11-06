@@ -72,6 +72,11 @@ import {
 } from "./runtimeModelProviderSelection";
 import { AgentCreationPreview } from "./AgentCreationPreview";
 import { OwnerOnlyAccessField } from "./OwnerOnlyAccessField";
+import { OwnerToolsField } from "./OwnerToolsField";
+import {
+  agentToolLevelQueryKey,
+  useAgentToolLevelQuery,
+} from "@/features/agents/useAgentToolLevel";
 import type { EnvVarsValue } from "./EnvVarsEditor";
 import { useRequiredCredentialState } from "./useRequiredCredentialState";
 import { RunOnSummarySection } from "./RunOnSummarySection";
@@ -173,6 +178,15 @@ export function AgentInstanceEditDialog({
   const [respondTo, setRespondTo] = React.useState<RespondToMode>(
     agent.respondTo,
   );
+  const toolLevelQuery = useAgentToolLevelQuery(agent.pubkey, {
+    enabled: open,
+  });
+  const savedToolLevel = toolLevelQuery.data ?? null;
+  // Owner tools on/off as edited; `null` while the saved level is unknown.
+  const [ownerTools, setOwnerTools] = React.useState<boolean | null>(null);
+  React.useEffect(() => {
+    setOwnerTools(savedToolLevel === null ? null : savedToolLevel === "full");
+  }, [savedToolLevel]);
   const [respondToAllowlist, setRespondToAllowlist] = React.useState<string[]>(
     agent.respondToAllowlist,
   );
@@ -215,6 +229,7 @@ export function AgentInstanceEditDialog({
       setSetterError(null);
       setRespondTo(agent.respondTo);
       setRespondToAllowlist(agent.respondToAllowlist);
+      setOwnerTools(savedToolLevel === null ? null : savedToolLevel === "full");
       setAvatarUrl(agent.avatarUrl ?? "");
       setShowAdvancedFields(false);
       setIsAvatarUploadPending(false);
@@ -765,6 +780,17 @@ export function AgentInstanceEditDialog({
             ? respondToAllowlist
             : undefined,
       };
+      // Owner tools only when the owner changed them; the backend sends the
+      // level to the relay before anything is saved.
+      const editedToolLevel =
+        ownerTools === null || respondTo === "anyone"
+          ? null
+          : ownerTools
+            ? "full"
+            : "limited";
+      if (editedToolLevel !== null && editedToolLevel !== savedToolLevel) {
+        input.toolLevel = editedToolLevel;
+      }
 
       // Resolve effort before the update so access-change restarts can
       // snapshot and launch the NEW effort value atomically.
@@ -780,6 +806,9 @@ export function AgentInstanceEditDialog({
       }
 
       const result = await updateMutation.mutateAsync(input);
+      void queryClient.invalidateQueries({
+        queryKey: agentToolLevelQueryKey(agent.pubkey),
+      });
 
       // Standalone setters — sequenced after the locked update resolves so the
       // dialog remains fully gated (isSaving) for the COMPLETE Save transaction.
@@ -1034,6 +1063,13 @@ export function AgentInstanceEditDialog({
               mode={respondTo}
               onAllowlistChange={setRespondToAllowlist}
               onModeChange={setRespondTo}
+            />
+            <OwnerToolsField
+              checked={ownerTools}
+              disabled={isSaving}
+              idPrefix="edit-agent"
+              mode={agentAccessOwnerOnly === true ? "owner-only" : respondTo}
+              onCheckedChange={setOwnerTools}
             />
             <RunOnSummarySection backend={agent.backend} />
 

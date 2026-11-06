@@ -528,11 +528,10 @@ async fn agent_chat_list(
     mut query: ChatListQuery,
 ) -> Result<Json<Value>, QueryError> {
     let owner_bytes = owner.to_bytes();
-    let owns = state
-        .db
-        .is_agent_owner(tenant.community(), &agent.to_bytes(), &owner_bytes)
-        .await
-        .map_err(|e| internal_error(&format!("agent owner lookup: {e}")))?;
+    let owns =
+        crate::handlers::side_effects::owns_agent(tenant, state, &agent.to_bytes(), &owner_bytes)
+            .await
+            .map_err(|e| internal_error(&format!("agent owner lookup: {e}")))?;
     if !owns {
         return Err(api_error(
             StatusCode::FORBIDDEN,
@@ -1351,6 +1350,82 @@ mod postgres_tests {
             ])
             .sign_with_keys(actor)
             .expect("sign")
+    }
+
+    /// A paired agent's chats, listed and read by its owner, disconnected or
+    /// not. No `users` owner is set: `key_registry` is the only link.
+    /// Mutation: back to `is_agent_owner` -> RED.
+    #[tokio::test]
+    #[ignore = "requires Postgres"]
+    async fn owner_reads_a_paired_agents_chats() {
+        let f = Fixture::new(true).await;
+        let (owner, agent, person, stranger) = (
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+            Keys::generate(),
+        );
+        for key in [&owner, &agent, &person, &stranger] {
+            f.state
+                .db
+                .ensure_user(f.community, &key.public_key().to_bytes())
+                .await
+                .expect("user");
+        }
+        let account = owner.public_key().to_bytes().to_vec();
+        let pool = f.state.db.pool();
+        sqlx::query(
+            "INSERT INTO principals (id, kind, identity_mode, display_name) \
+             VALUES ($1, 'user', 'key_backup', 'owner')",
+        )
+        .bind(&account)
+        .execute(pool)
+        .await
+        .expect("principal");
+        sqlx::query(
+            "INSERT INTO account_key_backups \
+             (account_id, pubkey, version, key_id, nonce, ciphertext) \
+             VALUES ($1, $1, 1, 'k1', $2, $3)",
+        )
+        .bind(&account)
+        .bind([0u8; 12].as_slice())
+        .bind([0u8; 48].as_slice())
+        .execute(pool)
+        .await
+        .expect("key backup");
+        // No host device: the state of a disconnected agent.
+        sqlx::query(
+            "INSERT INTO key_registry (pubkey, principal_id, role) VALUES ($1, $2, 'external')",
+        )
+        .bind(agent.public_key().to_bytes().as_slice())
+        .bind(&account)
+        .execute(pool)
+        .await
+        .expect("registry");
+
+        let watched = f.room(&person, &[&agent]).await;
+        sqlx::query("UPDATE channels SET group_chat = true WHERE id = $1")
+            .bind(watched)
+            .execute(pool)
+            .await
+            .expect("group chat");
+        let said = f.sign(watched, &agent, 100, Vec::new());
+        f.publish(&said, &agent).await;
+
+        let as_agent = json!({"chat_list": 1, "as_agent": agent.public_key().to_hex()});
+        let (status, body) = f.query(&owner, as_agent.clone()).await;
+        assert_eq!(status, StatusCode::OK, "{body}");
+        let rows = body["rows"].as_array().expect("rows");
+        assert_eq!(rows.len(), 1, "{body}");
+        assert_eq!(rows[0]["channel_id"], watched.to_string());
+        let (status, _) = f.query(&stranger, as_agent).await;
+        assert_eq!(status, StatusCode::FORBIDDEN);
+
+        let history = json!({"kinds": [9], "#h": [watched]});
+        let (_, body) = f.query(&owner, history.clone()).await;
+        assert!(body.to_string().contains(&said.id.to_hex()), "{body}");
+        let (_, body) = f.query(&stranger, history).await;
+        assert!(!body.to_string().contains(&said.id.to_hex()), "{body}");
     }
 
     #[tokio::test]

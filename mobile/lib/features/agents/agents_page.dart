@@ -6,6 +6,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
@@ -21,6 +22,7 @@ import '../../shared/widgets/kuzz_view_switch.dart';
 import '../profile/presence_cache_provider.dart';
 import 'agent_row.dart';
 import 'agent_team_page.dart';
+import 'external_agent_sheet.dart';
 import 'my_agent_actions.dart';
 import 'my_agent_status_dot.dart';
 import 'my_agent_tile.dart';
@@ -35,7 +37,8 @@ part 'agents_page/team_row.dart';
 /// desktop's Agents page, with the same two tabs. "My agents": only the
 /// owner's real agents, grouped by the computer each runs on (with that
 /// computer's robot); tapping one opens its settings, its menu starts, stops
-/// or edits it; then the owner's teams of those agents. "Presets": the
+/// or edits it; agents connected from paired computers join their computer,
+/// with their own sheet; then the owner's teams of those agents. "Presets": the
 /// templates agents are made from, and team presets, with no status. Agents
 /// run on computers, so they are created there.
 class AgentsPage extends HookConsumerWidget {
@@ -46,7 +49,26 @@ class AgentsPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final agents = ref.watch(myAgentsProvider);
+    final runnerAgents = ref.watch(myAgentsProvider);
+    final runnerPubkeys = {for (final agent in runnerAgents) agent.pubkey};
+    // Paired agents the runner map already lists stay runner agents.
+    final externals = {
+      for (final external in ref.watch(myExternalAgentsProvider))
+        if (!runnerPubkeys.contains(external.agent.pubkey))
+          external.agent.pubkey: external,
+    };
+    final agents = [
+      ...runnerAgents,
+      for (final external in externals.values) external.agent,
+    ];
+    final origin = ref.watch(accountOriginProvider);
+    final devicesLoading =
+        origin != null &&
+        ref.watch(
+          accountDevicesProvider(
+            origin,
+          ).select((d) => d.isLoading && !d.hasValue),
+        );
     final users = ref.watch(userCacheProvider);
     final deviceNames = ref.watch(agentHostDeviceNamesProvider);
     final currentDevice = ref.watch(currentAccountDeviceIdProvider);
@@ -101,7 +123,12 @@ class AgentsPage extends HookConsumerWidget {
     String nameOf(MyAgent agent) {
       final name = users[agent.pubkey]?.displayName?.trim();
       if (name != null && name.isNotEmpty) return name;
-      return agent.directoryName ?? shortPubkey(agent.pubkey);
+      if (agent.directoryName case final directory?) return directory;
+      if (externals.containsKey(agent.pubkey)) {
+        return externals[agent.pubkey]!.runtime ??
+            context.l10n.settingsDevicesExternalAgent;
+      }
+      return shortPubkey(agent.pubkey);
     }
 
     final needle = filter.value.trim().toLowerCase();
@@ -188,6 +215,7 @@ class AgentsPage extends HookConsumerWidget {
 
     Future<void> refresh() async {
       ref.invalidate(agentDirectoryProvider);
+      if (origin != null) ref.invalidate(accountDevicesProvider(origin));
       refreshMyAgentDefinitions(ref);
       if (pubkeys.isNotEmpty) {
         ref.read(presenceCacheProvider.notifier).track(pubkeys);
@@ -279,7 +307,7 @@ class AgentsPage extends HookConsumerWidget {
                 note: note,
               )
             else ...[
-              if (agents.isEmpty && directoryLoading)
+              if (agents.isEmpty && (directoryLoading || devicesLoading))
                 const Padding(
                   padding: EdgeInsets.all(Grid.sm),
                   child: Center(child: KuzzLoadingIndicator()),
@@ -301,7 +329,22 @@ class AgentsPage extends HookConsumerWidget {
                   ),
                 ),
                 for (final agent in groups[deviceId]!)
-                  MyAgentTile(agent: agent, name: nameOf(agent)),
+                  if (externals.containsKey(agent.pubkey))
+                    MyAgentTile(
+                      agent: agent,
+                      name: nameOf(agent),
+                      external: true,
+                      onActions: () => unawaited(
+                        showExternalAgentSheet(
+                          context,
+                          ref,
+                          agentPubkey: agent.pubkey,
+                          name: nameOf(agent),
+                        ),
+                      ),
+                    )
+                  else
+                    MyAgentTile(agent: agent, name: nameOf(agent)),
               ],
               if (teams.isNotEmpty) ...[
                 AgentsSectionTitle(context.l10n.agentsSectionTeams),

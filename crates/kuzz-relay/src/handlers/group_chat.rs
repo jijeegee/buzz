@@ -198,6 +198,23 @@ pub(crate) async fn is_agent_pubkey(
     Ok(owned || state.db.is_bot_principal(pubkey).await?)
 }
 
+/// Whether `actor` is the owner adding their own connected paired agent, for
+/// the short time before its `users` row names them (it binds at pairing and
+/// on every connection): the owner adds it like any owned agent.
+pub(crate) async fn owner_adds_paired_agent(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    actor: &[u8],
+    agent: &[u8],
+) -> anyhow::Result<bool> {
+    let owner = state.db.paired_agent_owner(agent, true).await?;
+    Ok(owner.as_deref() == Some(actor)
+        && !state
+            .db
+            .is_blocked_by(tenant.community(), agent, actor)
+            .await?)
+}
+
 /// Resolve every initial person of a new group chat (`channel_id`, not yet
 /// created) for `creator`. Reads only; the caller writes the result in one
 /// transaction.
@@ -219,15 +236,20 @@ pub async fn plan_initial_people(
     for target in people {
         let blocked = state.db.is_blocked_by(community, target, creator).await?;
         let agent_policy = state.db.get_agent_channel_policy(community, target).await?;
+        let paired_by_creator = owner_adds_paired_agent(tenant, state, creator, target).await?;
         let add_policy_allows = match &agent_policy {
-            Some((policy, owner)) => {
-                channel_authz::decide_channel_add_policy(policy, owner.as_deref(), creator).is_ok()
-            }
+            Some((policy, owner)) => channel_authz::decide_channel_add_policy(
+                policy,
+                owner.as_deref().or(paired_by_creator.then_some(creator)),
+                creator,
+            )
+            .is_ok(),
             None => true,
         };
-        let is_agent = agent_policy
-            .as_ref()
-            .is_some_and(|(_, owner)| owner.is_some())
+        let is_agent = paired_by_creator
+            || agent_policy
+                .as_ref()
+                .is_some_and(|(_, owner)| owner.is_some())
             || state.db.is_bot_principal(target).await?;
         let admitted = if blocked || !add_policy_allows || is_agent {
             false

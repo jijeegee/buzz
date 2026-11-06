@@ -12,6 +12,7 @@ use kuzz_core::kind::{
     KIND_IA_UNARCHIVED, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_NEW_SIGNIN_NOTICE, KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS,
     KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
+    PING_GROUP_INVITATION,
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
@@ -519,6 +520,21 @@ pub(crate) async fn is_friend_of(
     }))
 }
 
+/// Whether `actor` owns the agent `target`, by `users` or by pairing. A paired
+/// agent stays removable by its owner after being disconnected.
+pub(crate) async fn owns_agent(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+    actor: &[u8],
+) -> anyhow::Result<bool> {
+    Ok(state
+        .db
+        .is_agent_owner(tenant.community(), target, actor)
+        .await?
+        || state.db.paired_agent_owner(target, false).await?.as_deref() == Some(actor))
+}
+
 /// Group invite policy and the target's "who can add me" setting for a
 /// third-party add of a person who is not yet a member. Refused adds by a
 /// member become a pending invitation and fail with [`InvitationSent`]; when
@@ -586,16 +602,29 @@ async fn check_person_add(
                     return Err(InvitationRateLimited.into())
                 }
                 channel_authz::InvitationWrite::Upsert => {
-                    // TODO(groups): push the invitation live; v1 clients
-                    // refresh the invitation list on focus / Chats open.
                     state
                         .db
                         .upsert_group_invitation(community, channel_id, actor, target)
                         .await?;
+                    if !write_state.already_pending {
+                        ping_new_invitation(tenant, state, target).await;
+                    }
                 }
             }
             Err(InvitationSent.into())
         }
+    }
+}
+
+/// Tell `target`'s apps about a new group invitation. The invitation is
+/// stored either way, so a failed ping only logs: apps also refresh on focus.
+pub(crate) async fn ping_new_invitation(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    target: &[u8],
+) {
+    if let Err(e) = publish_user_ping(tenant, state, target, Some(PING_GROUP_INVITATION)).await {
+        warn!("group invitation ping failed: {e}");
     }
 }
 
@@ -664,7 +693,14 @@ pub async fn validate_admin_event(
             // GROUP_CHAT_MAX_MEMBERS (re-checked under the lock in add_member).
             if channel.group_chat {
                 let target_is_agent =
-                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?;
+                    super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?
+                        || super::group_chat::owner_adds_paired_agent(
+                            tenant,
+                            state,
+                            &actor_bytes,
+                            &target_pubkey,
+                        )
+                        .await?;
                 channel_authz::decide_group_chat_role(requested_role, target_is_agent)?;
                 let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
                 if !already_member
@@ -694,10 +730,22 @@ pub async fn validate_admin_event(
                         .db
                         .get_agent_channel_policy(tenant.community(), &target_pubkey)
                         .await?;
-                    if let Some((policy, owner)) = &agent_policy {
+                    let paired_by_actor = super::group_chat::owner_adds_paired_agent(
+                        tenant,
+                        state,
+                        &actor_bytes,
+                        &target_pubkey,
+                    )
+                    .await?;
+                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
+                    // The policy is about who may add an agent, so a member's
+                    // role change does not read it.
+                    if let (Some((policy, owner)), false) = (&agent_policy, already_member) {
                         channel_authz::decide_channel_add_policy(
                             policy,
-                            owner.as_deref(),
+                            owner
+                                .as_deref()
+                                .or(paired_by_actor.then_some(actor_bytes.as_slice())),
                             &actor_bytes,
                         )?;
                     }
@@ -707,11 +755,11 @@ pub async fn validate_admin_event(
                     // only their channel_add_policy above; role changes of
                     // existing members are unaffected.
                     let is_group = matches!(channel.channel_type.as_str(), "stream" | "forum");
-                    let already_member = members.iter().any(|m| m.pubkey == target_pubkey);
                     if is_group && !already_member {
-                        let target_is_agent = agent_policy
-                            .as_ref()
-                            .is_some_and(|(_, owner)| owner.is_some())
+                        let target_is_agent = paired_by_actor
+                            || agent_policy
+                                .as_ref()
+                                .is_some_and(|(_, owner)| owner.is_some())
                             || state.db.is_bot_principal(&target_pubkey).await?;
                         if !target_is_agent {
                             check_person_add(
@@ -751,11 +799,7 @@ pub async fn validate_admin_event(
                 match decision {
                     RemoveOtherDecision::Allow => Ok(()),
                     RemoveOtherDecision::CheckAgentOwner => {
-                        if state
-                            .db
-                            .is_agent_owner(tenant.community(), &target_pubkey, &actor_bytes)
-                            .await?
-                        {
+                        if owns_agent(tenant, state, &target_pubkey, &actor_bytes).await? {
                             Ok(())
                         } else {
                             Err(ChannelAuthzError::ActorNotAuthorized.into())
@@ -766,10 +810,7 @@ pub async fn validate_admin_event(
                     // read-only owner view); elsewhere you must be in the channel.
                     RemoveOtherDecision::Deny
                         if (channel.channel_type == "dm" || channel.group_chat)
-                            && state
-                                .db
-                                .is_agent_owner(tenant.community(), &target_pubkey, &actor_bytes)
-                                .await? =>
+                            && owns_agent(tenant, state, &target_pubkey, &actor_bytes).await? =>
                     {
                         Ok(())
                     }
@@ -1900,7 +1941,14 @@ async fn handle_put_user(
         // Group chats: people are members, agents bots.
         _ if group_chat => channel_authz::decide_group_chat_role(
             requested,
-            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?,
+            super::group_chat::is_agent_pubkey(tenant, state, &target_pubkey).await?
+                || super::group_chat::owner_adds_paired_agent(
+                    tenant,
+                    state,
+                    event.pubkey.as_bytes(),
+                    &target_pubkey,
+                )
+                .await?,
         )?,
         Some(role) => role,
         None => state
@@ -4247,14 +4295,31 @@ pub async fn publish_chat_state_ping(
     state: &Arc<AppState>,
     user: &[u8],
 ) -> anyhow::Result<()> {
+    publish_user_ping(tenant, state, user, None).await
+}
+
+/// [`publish_chat_state_ping`], with a `reason` tag when it is about
+/// something other than the chats list.
+async fn publish_user_ping(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    user: &[u8],
+    reason: Option<&str>,
+) -> anyhow::Result<()> {
     let user_hex = hex::encode(user);
+    let mut tags = vec![
+        Tag::parse(["p", &user_hex]).map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
+        Tag::parse(["nonce", &Uuid::new_v4().simple().to_string()])
+            .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
+    ];
+    if let Some(reason) = reason {
+        tags.push(
+            Tag::parse(["reason", reason])
+                .map_err(|e| anyhow::anyhow!("failed to build reason tag: {e}"))?,
+        );
+    }
     let event = EventBuilder::new(Kind::Custom(KIND_CHAT_STATE_PING as u16), "")
-        .tags([
-            Tag::parse(["p", &user_hex])
-                .map_err(|e| anyhow::anyhow!("failed to build p tag: {e}"))?,
-            Tag::parse(["nonce", &Uuid::new_v4().simple().to_string()])
-                .map_err(|e| anyhow::anyhow!("failed to build nonce tag: {e}"))?,
-        ])
+        .tags(tags)
         .sign_with_keys(&state.relay_keypair)
         .map_err(|e| anyhow::anyhow!("failed to sign kind:{KIND_CHAT_STATE_PING}: {e}"))?;
     state.mark_local_event(tenant.community(), &event.id);

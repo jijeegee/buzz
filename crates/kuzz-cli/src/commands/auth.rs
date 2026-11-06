@@ -119,6 +119,9 @@ pub enum BotsCmd {
     Delete {
         /// Bot id (hex)
         bot_id: String,
+        /// Confirm: this cannot be undone
+        #[arg(long, required = true)]
+        yes: bool,
     },
     /// Issue a 1-hour token for a bot this device hosts (revokes earlier ones)
     Token {
@@ -143,7 +146,11 @@ pub enum BotsCmd {
         bot_id: String,
     },
     /// Revoke every token of every bot you own (bots are kept)
-    RevokeAll,
+    RevokeAll {
+        /// Confirm: every bot stops until it gets a new token
+        #[arg(long, required = true)]
+        yes: bool,
+    },
     /// Update a bot's display name or avatar
     Profile {
         /// Bot id (hex)
@@ -234,7 +241,11 @@ pub async fn dispatch(
             if env_source.is_none() && private_key.is_some() {
                 let keys = nostr::Keys::parse(private_key.as_deref().unwrap_or_default())
                     .map_err(|e| CliError::Key(format!("invalid KUZZ_PRIVATE_KEY: {e}")))?;
-                print_json(&json!({ "mode": "key", "pubkey": keys.public_key().to_hex() }));
+                let mut me = json!({ "mode": "key", "pubkey": keys.public_key().to_hex() });
+                if let Value::Object(map) = &mut me {
+                    map.extend(crate::pairing::fetch_tool_level(&relay_url, &keys).await);
+                }
+                print_json(&me);
                 return Ok(());
             }
             let source = match &env_source {
@@ -344,7 +355,7 @@ async fn bots(api: &AuthApi, cmd: BotsCmd) -> Result<(), CliError> {
             )
             .await?
         }
-        BotsCmd::Delete { bot_id } => {
+        BotsCmd::Delete { bot_id, yes: _ } => {
             let id = validate_bot_id(&bot_id)?;
             api.call(Method::DELETE, &format!("/auth/bots/{id}"), None)
                 .await?;
@@ -401,7 +412,7 @@ async fn bots(api: &AuthApi, cmd: BotsCmd) -> Result<(), CliError> {
             .await?;
             accepted("bot tokens revoked", &[("bot_id", json!(id))])
         }
-        BotsCmd::RevokeAll => {
+        BotsCmd::RevokeAll { yes: _ } => {
             api.call(Method::POST, "/auth/bots/revoke-all", Some(json!({})))
                 .await?;
             accepted("all bot tokens revoked", &[])
@@ -488,10 +499,27 @@ pub fn host_name() -> String {
             std::fs::read_to_string("/etc/hostname")
                 .ok()
                 .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
         })
+        .or_else(mac_computer_name)
         .unwrap_or_default();
     let name: String = raw.chars().filter(|c| !c.is_control()).take(48).collect();
     name.trim().to_owned()
+}
+
+/// The Mac's name from System Settings: macOS sets no `HOSTNAME` for apps
+/// and launchd jobs and has no `/etc/hostname`.
+fn mac_computer_name() -> Option<String> {
+    if !cfg!(target_os = "macos") {
+        return None;
+    }
+    let output = std::process::Command::new("/usr/sbin/scutil")
+        .args(["--get", "ComputerName"])
+        .stderr(std::process::Stdio::null())
+        .output()
+        .ok()?;
+    let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+    (output.status.success() && !name.is_empty()).then_some(name)
 }
 
 /// The host name, bounded to what the relay accepts (64 printable chars).
@@ -647,7 +675,7 @@ pub async fn login(
 /// without one, as before.
 async fn login_device_key() -> Option<kuzz_token_broker::device::DeviceKey> {
     #[cfg(not(test))]
-    use kuzz_token_broker::device::{open_shared, OpenMode};
+    use kuzz_token_broker::device::{open_for_cli, OpenMode};
     #[cfg(test)]
     {
         crate::device::process_signer()
@@ -655,7 +683,7 @@ async fn login_device_key() -> Option<kuzz_token_broker::device::DeviceKey> {
             .and_then(|signer| signer.key().cloned())
     }
     #[cfg(not(test))]
-    match tokio::task::spawn_blocking(|| open_shared(OpenMode::CreateIfMissing)).await {
+    match tokio::task::spawn_blocking(|| open_for_cli(OpenMode::CreateIfMissing)).await {
         Ok(Ok(key)) => key,
         Ok(Err(error)) => {
             crate::device::warn(&format!("device key unavailable: {error}"));

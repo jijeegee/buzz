@@ -22,6 +22,8 @@ pub mod event;
 pub mod filter;
 /// Git permission types — ref patterns, protection rules, policy evaluation.
 pub mod git_perms;
+/// Goal rows: deletion rule and inactivity, shared by the store and its tests.
+pub mod goal_store;
 /// Goal tree (kind 40110) — per-conversation goal hierarchy, validation and edits.
 pub mod goal_tree;
 /// Shared invite-link contract constants.

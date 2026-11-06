@@ -20,8 +20,8 @@ mod huddle;
 mod identity_storage;
 mod initial_window;
 mod key_backup;
-mod link_preview_tags;
 mod launch_at_login;
+mod link_preview_tags;
 mod linux_media;
 #[cfg(target_os = "macos")]
 mod macos_notifications;
@@ -325,6 +325,8 @@ pub fn run() {
                         // Let the saved sign-ins come back first.
                         tokio::time::sleep(std::time::Duration::from_secs(15)).await;
                         crate::auth::agent_hosting::spawn_restore_pending(&ready_app);
+                        // Owner tools: defaults once for agents never set.
+                        crate::auth::tool_levels::spawn_launch_sweep(&ready_app);
                         // A software key moves to the TPM / Secure Enclave
                         // once every signed-in account is back.
                         crate::auth::device_upgrade::spawn(&ready_app);
@@ -411,6 +413,7 @@ pub fn run() {
             // unusable (exit 78), within the restart cap. Inert in key mode.
             tauri::async_runtime::spawn(crate::auth::watchdog::run(app_handle.clone()));
             crate::auth::pairing::remove_legacy_hermes_keys(&app_handle);
+            crate::auth::pairing::refresh_hermes_connector(&app_handle);
 
             let (tts_settings, tts_settings_load_error) =
                 huddle::tts_settings::load_for_app(&app_handle);
@@ -728,8 +731,12 @@ pub fn run() {
             auth::pairing::list_agent_pairings,
             auth::pairing::get_hermes_status,
             auth::pairing::connect_hermes,
+            auth::pairing::restart_hermes,
             auth::pairing::disconnect_external_device,
             auth::pairing::disconnect_external_agent,
+            auth::tool_levels::get_agent_tool_levels,
+            auth::external_access::get_external_agent_access,
+            auth::external_access::set_external_agent_access,
             auth::commands::rename_device,
             auth::commands::revoke_other_sessions,
             auth::commands::revoke_all_bot_tokens,
@@ -772,11 +779,10 @@ pub fn run() {
             get_canvas,
             get_canvas_history,
             set_canvas,
-            get_goal_tree,
-            apply_goal_op,
+            get_goals,
+            get_thread_goals,
             apply_goal_ops,
-            get_goal_tree_history,
-            restore_goal_tree,
+            get_goal_history,
             get_layer0_goal,
             set_layer0_goal,
             get_public_goal,
@@ -908,6 +914,8 @@ pub fn run() {
             put_agent_session_config,
             get_global_agent_config,
             set_global_agent_config,
+            get_agent_setup_pending,
+            finish_agent_setup_pending,
             mesh_start_node,
             mesh_stop_node,
             mesh_node_status,

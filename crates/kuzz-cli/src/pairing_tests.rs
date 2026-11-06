@@ -101,6 +101,18 @@ async fn fake_relay(answer: (StatusCode, Value)) -> (String, Arc<Mutex<Vec<Value
                 }))
             }),
         )
+        // The relay's answer to a key asking whether it may use its owner's tools.
+        .route(
+            "/agents/me",
+            get(|| async {
+                Json(json!({
+                    "pubkey": "ignored", "role": "external", "owner": OWNER,
+                    "stored_level": "full", "effective": "limited", "reason": "wrong_host",
+                    "community": "team.example", "host_computer": "PC",
+                    "respond_class": "owner-only",
+                }))
+            }),
+        )
         .with_state(fake);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -415,6 +427,35 @@ async fn whoami_names_the_owner_and_remembers_it() {
     assert_eq!(me["pubkey"], pairing.agent_pubkey);
     assert_eq!(me["owner"], OWNER);
     assert_eq!(store.list()[0].owner.as_deref(), Some(OWNER));
+    // What `/agents/me` says about the owner's tools.
+    assert_eq!(me["tool_level"], "limited");
+    assert_eq!(me["tool_level_reason"], "wrong_host");
+    assert_eq!(me["community"], "team.example");
+    assert_eq!(me["host_computer"], "PC");
+}
+
+#[tokio::test]
+async fn whoami_says_unknown_when_the_relay_cannot_say() {
+    // A relay without `/agents/me` (every path 404), and none at all.
+    let app = Router::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let keys = Keys::generate();
+    let fields = fetch_tool_level(&format!("http://{addr}"), &keys).await;
+    assert_eq!(Value::Object(fields), json!({ "tool_level": "unknown" }));
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = PairingStore::new(dir.path().join("pairings"));
+    let relay = format!("http://{addr}");
+    let pairing = pairing_at(&relay_origin(&relay).unwrap(), "Hermes", 1, true);
+    let keys = pairing.keys().unwrap();
+    let me = whoami(&relay, &keys, pairing.clone(), Some(&store)).await;
+    assert_eq!(me["mode"], "paired");
+    assert_eq!(me["tool_level"], "unknown");
+    assert_eq!(me["owner"], Value::Null);
 }
 
 #[tokio::test]
@@ -493,6 +534,47 @@ fn the_hermes_installer_is_looked_for_only_in_install_roots() {
     );
     assert!(!roots.iter().any(|root| root.starts_with("/home/me/repo")
         && root != std::path::Path::new("/home/me/repo/target/release")));
+}
+
+#[test]
+fn the_macos_app_ships_the_plugin_in_resources() {
+    let exe = std::path::Path::new("/Applications/Kuzz.app/Contents/MacOS/kuzz");
+    let roots = hermes_installer_roots(exe);
+    assert_eq!(
+        roots[1],
+        std::path::Path::new("/Applications/Kuzz.app/Contents/Resources")
+    );
+}
+
+#[test]
+fn hermes_root_is_the_default_profile() {
+    let root = std::path::Path::new("/home/me/.hermes");
+    assert_eq!(hermes_root(root), root);
+    assert_eq!(hermes_root(&root.join("profiles").join("work")), root);
+}
+
+#[test]
+fn hermes_connector_is_found_in_a_profile_only() {
+    let root = tempfile::tempdir().unwrap();
+    assert!(!has_hermes_connector(root.path()));
+    let profile = root.path().join("profiles").join("work");
+    std::fs::create_dir_all(profile.join("plugins")).unwrap();
+    assert!(!has_hermes_connector(root.path()));
+    std::fs::create_dir(profile.join("plugins").join("kuzz")).unwrap();
+    assert!(has_hermes_connector(root.path()));
+}
+
+#[test]
+fn hermes_own_python_comes_first() {
+    let root = tempfile::tempdir().unwrap();
+    assert_eq!(python_candidates(root.path()), ["python3", "python", "py"]);
+    let bin = root.path().join("hermes-agent").join("venv").join("bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::write(bin.join("python"), b"").unwrap();
+    assert_eq!(
+        python_candidates(root.path())[0],
+        bin.join("python").into_os_string()
+    );
 }
 
 #[test]

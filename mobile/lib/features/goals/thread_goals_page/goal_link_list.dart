@@ -1,8 +1,8 @@
 part of '../thread_goals_page.dart';
 
-/// Every goal of the conversation: tap one to link the thread to it, or +
-/// to add a new goal under it and link to that. A [scope] limits both (a
-/// message's link); goals offering neither are left out.
+/// The conversation's goals: tap one to link the thread to it, or + to add a
+/// new goal under it and link to that. Layer 1 takes no links. A [scope]
+/// limits both (a message's link); goals offering neither are left out.
 class _GoalLinkList extends StatelessWidget {
   const _GoalLinkList({
     required this.tree,
@@ -72,7 +72,8 @@ class _GoalLinkList extends StatelessWidget {
     );
   }
 
-  bool _canLink(GoalRow row) => scope?.canLink(row.node.id, row.layer) ?? true;
+  bool _canLink(GoalRow row) =>
+      scope?.canLink(row.node.id, row.layer) ?? row.layer >= 2;
 
   bool _canAddUnder(GoalRow row) => scope?.canAddUnder(row.node.id) ?? true;
 }

@@ -1,9 +1,9 @@
 use std::collections::{HashMap, HashSet};
 
+use chrono::DateTime;
 use kuzz_core::kind::{
     KIND_MANAGED_AGENT, KIND_PRESENCE_SNAPSHOT, KIND_PRESENCE_UPDATE, KIND_TEAM,
 };
-use chrono::DateTime;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -22,6 +22,7 @@ fn extract_channel_metadata(e: &serde_json::Value) -> serde_json::Value {
         "channel_id": extract_d_tag(e),
         "name": extract_tag_value(e, "name"),
         "description": extract_tag_value(e, "about"),
+        "channel_type": extract_tag_value(e, "t"),
         "created_at": e.get("created_at").and_then(|v| v.as_u64()).unwrap_or(0),
     })
 }
@@ -1537,9 +1538,10 @@ pub async fn cmd_create_channel_from_template(
     // last-write-wins on the relay (see channelAgents.ts), so parallel adds
     // here would race each other for no benefit.
     let mut members_added: Vec<serde_json::Value> = Vec::new();
+    let mut members_invited: Vec<serde_json::Value> = Vec::new();
     let mut member_failures: Vec<serde_json::Value> = Vec::new();
     for agent in &resolved.agents {
-        let outcome: Result<(), CliError> = async {
+        let outcome: Result<bool, CliError> = async {
             let builder = kuzz_sdk::build_add_member(
                 channel_uuid,
                 &agent.pubkey,
@@ -1547,15 +1549,25 @@ pub async fn cmd_create_channel_from_template(
             )
             .map_err(|e| CliError::Other(format!("build_add_member failed: {e}")))?;
             let event = client.sign_event(builder)?;
-            client.submit_event(event).await?;
-            Ok(())
+            match client.submit_event(event).await {
+                Ok(_) => Ok(false),
+                Err(error) if invite_sent_message(&error).is_some() => Ok(true),
+                Err(error) => Err(error),
+            }
         }
         .await;
         match outcome {
-            Ok(()) => members_added.push(serde_json::json!({
-                "persona_id": agent.persona_id,
-                "pubkey": agent.pubkey,
-            })),
+            Ok(invited) => {
+                let member = serde_json::json!({
+                    "persona_id": agent.persona_id,
+                    "pubkey": agent.pubkey,
+                });
+                if invited {
+                    members_invited.push(member);
+                } else {
+                    members_added.push(member);
+                }
+            }
             Err(e) => member_failures.push(serde_json::json!({
                 "persona_id": agent.persona_id,
                 "pubkey": agent.pubkey,
@@ -1569,7 +1581,7 @@ pub async fn cmd_create_channel_from_template(
     } else {
         "partial"
     };
-    let report = build_template_report(
+    let mut report = build_template_report(
         &channel_uuid.to_string(),
         &template.name,
         status,
@@ -1578,6 +1590,9 @@ pub async fn cmd_create_channel_from_template(
         member_failures,
         &resolved,
     );
+    if !members_invited.is_empty() {
+        report["members_invited"] = serde_json::Value::Array(members_invited);
+    }
     println!("{report}");
     Ok(())
 }
@@ -1639,7 +1654,7 @@ fn validate_update_channel_fields(
         && goals.is_none()
     {
         return Err(CliError::Usage(
-            "at least one field required (--name, --description, --visibility, --ttl, --no-ttl, --goals)"
+            "at least one field required (--name, --description, --visibility, --ttl, --no-ttl, --goals, --picture, --no-picture, --history)"
                 .into(),
         ));
     }
@@ -1677,6 +1692,38 @@ pub async fn cmd_update_channel(
         goals,
     )
     .map_err(|e| CliError::Other(format!("build_update_channel failed: {e}")))?;
+
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&resp));
+    Ok(())
+}
+
+pub async fn cmd_set_channel_picture(
+    client: &KuzzClient,
+    channel_id: &str,
+    picture: Option<&str>,
+) -> Result<(), CliError> {
+    let channel_uuid = parse_uuid(channel_id)?;
+
+    let builder = kuzz_sdk::build_set_channel_picture(channel_uuid, picture)
+        .map_err(|e| CliError::Usage(format!("invalid picture: {e}")))?;
+
+    let event = client.sign_event(builder)?;
+    let resp = client.submit_event(event).await?;
+    println!("{}", normalize_write_response(&resp));
+    Ok(())
+}
+
+pub async fn cmd_set_channel_history(
+    client: &KuzzClient,
+    channel_id: &str,
+    history: &str,
+) -> Result<(), CliError> {
+    let channel_uuid = parse_uuid(channel_id)?;
+
+    let builder = kuzz_sdk::build_set_channel_history(channel_uuid, history)
+        .map_err(|e| CliError::Other(format!("build_set_channel_history failed: {e}")))?;
 
     let event = client.sign_event(builder)?;
     let resp = client.submit_event(event).await?;
@@ -1802,9 +1849,44 @@ pub async fn cmd_add_channel_member(
         .map_err(|e| CliError::Other(format!("build_add_member failed: {e}")))?;
 
     let event = client.sign_event(builder)?;
-    let resp = client.submit_event(event).await?;
-    println!("{}", normalize_write_response(&resp));
+    let output = match client.submit_event(event).await {
+        Ok(resp) => add_member_output(&resp),
+        Err(error) => match invite_sent_message(&error) {
+            Some(message) => serde_json::json!({
+                "added": false,
+                "invited": true,
+                "message": message,
+            }),
+            None => return Err(error),
+        },
+    };
+    println!("{output}");
     Ok(())
+}
+
+fn add_member_output(resp: &str) -> serde_json::Value {
+    let mut output: serde_json::Value = serde_json::from_str(&normalize_write_response(resp))
+        .unwrap_or_else(|_| serde_json::json!({ "message": resp }));
+    let added = output["accepted"].as_bool().unwrap_or(false);
+    output["added"] = serde_json::json!(added);
+    output["invited"] = serde_json::json!(false);
+    output
+}
+
+/// The relay refuses an add it turned into an invitation, so the person is not
+/// in the room but nothing went wrong.
+fn invite_sent_message(error: &CliError) -> Option<String> {
+    let CliError::Relay { status: 400, body } = error else {
+        return None;
+    };
+    let parsed: Option<serde_json::Value> = serde_json::from_str(body).ok();
+    let message = parsed
+        .as_ref()
+        .and_then(|v| v["message"].as_str().or(v["error"].as_str()))
+        .unwrap_or(body);
+    message
+        .starts_with("invite-sent:")
+        .then(|| message.to_string())
 }
 
 pub async fn cmd_remove_channel_member(
@@ -1990,7 +2072,16 @@ pub async fn dispatch(
             ttl,
             no_ttl,
             goals,
+            picture,
+            no_picture,
+            history,
         } => {
+            if picture.is_some() || no_picture {
+                return cmd_set_channel_picture(client, &channel, picture.as_deref()).await;
+            }
+            if let Some(history) = history {
+                return cmd_set_channel_history(client, &channel, history.as_str()).await;
+            }
             let visibility = visibility.as_ref().map(|v| v.to_string());
             cmd_update_channel(
                 client,
@@ -2602,6 +2693,47 @@ mod tests {
             err.to_string().contains("untrusted"),
             "error detail should carry the trust warning: {err}"
         );
+    }
+
+    #[test]
+    fn an_add_turned_invitation_is_recognised() {
+        let refused = |body: &str| CliError::Relay {
+            status: 400,
+            body: body.to_string(),
+        };
+        let message = "invite-sent: they were not added";
+        let json = serde_json::json!({ "error": "invalid", "message": message });
+        assert_eq!(
+            super::invite_sent_message(&refused(&json.to_string())).as_deref(),
+            Some(message)
+        );
+        let json = serde_json::json!({ "error": message });
+        assert!(super::invite_sent_message(&refused(&json.to_string())).is_some());
+        assert!(super::invite_sent_message(&refused(message)).is_some());
+    }
+
+    #[test]
+    fn other_refusals_stay_errors() {
+        for body in ["rate-limited: too many", r#"{"error":"restricted: no"}"#] {
+            let error = CliError::Relay {
+                status: 400,
+                body: body.to_string(),
+            };
+            assert_eq!(super::invite_sent_message(&error), None);
+        }
+        let error = CliError::Relay {
+            status: 500,
+            body: "invite-sent: x".to_string(),
+        };
+        assert_eq!(super::invite_sent_message(&error), None);
+    }
+
+    #[test]
+    fn a_real_add_says_added_and_keeps_its_fields() {
+        let output = super::add_member_output(r#"{"event_id":"e","accepted":true,"message":""}"#);
+        assert_eq!(output["added"], true);
+        assert_eq!(output["invited"], false);
+        assert_eq!(output["event_id"], "e");
     }
 
     #[test]

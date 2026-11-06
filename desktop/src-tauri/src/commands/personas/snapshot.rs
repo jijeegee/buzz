@@ -274,7 +274,7 @@ pub(crate) async fn materialize_snapshot_bytes(
         // provider, and model configuration, not a pointer to the sender's
         // machine-wide defaults. This does not translate or substitute values
         // for a different recipient setup.
-        let global = crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
+        let global = crate::managed_agents::load_active_agent_config(&app).unwrap_or_default();
         materialize_portable_runtime_defaults(&mut def_record, &global);
 
         let memory_pubkey = if memory_level != MemoryLevel::None {

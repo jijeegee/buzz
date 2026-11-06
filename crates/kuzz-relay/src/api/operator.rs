@@ -165,6 +165,7 @@ async fn admit_operator_key(
         crate::identity::device::Surface::Admin,
     )
     .await
+    .map(|_| ())
     .map_err(crate::identity::admission::KeyRefused::http_error)
 }
 

@@ -20,7 +20,18 @@
 //! would otherwise move the cursor past messages not yet received. An idle
 //! connection is probed every [`IDLE_PING`]. In token mode the token is
 //! renewed before every reconnect. Status goes to stderr; stdout holds only
-//! messages.
+//! messages, plus access lines with `--access-owner`.
+//!
+//! With `--access-owner` the agent's access setting is read first on every
+//! connection, so no message outruns it, then again every
+//! [`MEMBERS_REFRESH`]. Each read prints a `{"type":"access",...}` line, as
+//! does a live change. Whatever can't be read or verified prints owner-only.
+//!
+//! While it runs, the watch reports this identity online the way `kuzz-acp`
+//! does: a `kind:20001` once a connection is subscribed, then every
+//! [`PRESENCE_EVERY`] on the same socket. Ctrl+C, SIGTERM or a closed stdout
+//! report offline, best effort. Presence never ends the watch: a failure is
+//! a line on stderr and the next beat tries again.
 
 use std::collections::{BTreeSet, HashMap, HashSet, VecDeque};
 use std::future::Future;
@@ -29,10 +40,11 @@ use std::pin::Pin;
 use std::time::{Duration, Instant};
 
 use kuzz_core::kind::{
-    KIND_MEMBER_ADDED_NOTIFICATION, KIND_STREAM_MESSAGE, KIND_STREAM_MESSAGE_DIFF,
-    KIND_STREAM_MESSAGE_V2,
+    KIND_MANAGED_AGENT, KIND_MEMBER_ADDED_NOTIFICATION, KIND_PRESENCE_UPDATE, KIND_STREAM_MESSAGE,
+    KIND_STREAM_MESSAGE_DIFF, KIND_STREAM_MESSAGE_V2,
 };
 use kuzz_ws_client::{NostrWsConnection, RelayMessage, WsClientError};
+use nostr::{EventBuilder, Kind};
 use serde_json::{json, Value};
 
 use crate::client::KuzzClient;
@@ -47,6 +59,9 @@ pub const MESSAGE_KINDS: [u32; 3] = [
 /// NIP-29 member list (`d` = channel id).
 const KIND_MEMBER_LIST: u32 = 39002;
 const MEMBERS_SUB: &str = "kuzz-watch-members";
+const ACCESS_SUB: &str = "kuzz-watch-access";
+/// How long one read of the access setting may take.
+const ACCESS_READ_LIMIT: Duration = Duration::from_secs(10);
 const MENTIONS_SUB: &str = "kuzz-watch-mentions";
 const CHANNELS_SUB_PREFIX: &str = "kuzz-watch-channels-";
 const PING_SUB: &str = "kuzz-watch-ping";
@@ -71,6 +86,12 @@ const MAX_AUTH_REFUSALS: u32 = 3;
 /// Remembered message ids (dedupe across reconnects).
 const SEEN_CAP: usize = 4096;
 const NAME_CACHE_CAP: usize = 4096;
+/// How often a running watch repeats "online" (as `kuzz-acp` does; the relay
+/// forgets presence after 180 s).
+pub const PRESENCE_EVERY: Duration = Duration::from_secs(60);
+/// Budget for "offline" on the way out: a fresh connection, within the 5 s
+/// the Hermes plugin grants after SIGTERM.
+const OFFLINE_TIMEOUT: Duration = Duration::from_secs(3);
 
 fn now_secs() -> i64 {
     chrono::Utc::now().timestamp()
@@ -138,6 +159,121 @@ fn membership_channel(event: &nostr::Event) -> Option<String> {
     channel
         .filter(|id| uuid::Uuid::parse_str(id).is_ok())
         .map(str::to_owned)
+}
+
+/// What this agent's owner has set, as far as the watch can tell.
+#[derive(Clone, Debug, Default, PartialEq)]
+enum Access {
+    #[default]
+    OwnerOnly,
+    Allowlist(Vec<String>),
+    Anyone,
+}
+
+impl Access {
+    fn line(&self) -> Value {
+        let (mode, allowlist) = match self {
+            Self::OwnerOnly => ("owner-only", &[][..]),
+            Self::Allowlist(people) => ("allowlist", &people[..]),
+            Self::Anyone => ("anyone", &[][..]),
+        };
+        json!({ "type": "access", "mode": mode, "allowlist": allowlist })
+    }
+
+    /// The setting in a `kind:30177`, or `None` unless the owner really signed
+    /// it for this agent. `verify` turns down server-stamped events too.
+    fn from_event(event: &nostr::Event, owner: &str, me: &str) -> Option<Self> {
+        let genuine = u32::from(event.kind.as_u16()) == KIND_MANAGED_AGENT
+            && event.pubkey.to_hex() == owner
+            && tag_values(event, "d").next() == Some(me)
+            && event.verify().is_ok();
+        if !genuine {
+            return None;
+        }
+        let content: Value = serde_json::from_str(&event.content).unwrap_or(Value::Null);
+        Some(match content["respond_to"].as_str() {
+            Some("anyone") => Self::Anyone,
+            Some("allowlist") => Self::Allowlist(
+                content["respond_to_allowlist"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(Value::as_str)
+                    .filter(|person| crate::validate::validate_hex64(person).is_ok())
+                    .map(str::to_ascii_lowercase)
+                    .collect(),
+            ),
+            _ => Self::OwnerOnly,
+        })
+    }
+}
+
+/// Reading the access setting of `owner`.
+struct AccessWatch {
+    owner: String,
+    current: Access,
+    /// Newest `created_at` taken: a lagging replica can't undo a change.
+    newest: u64,
+    /// While a read runs: when it started, and what it has seen.
+    reading: Option<Instant>,
+    seen: Option<Access>,
+}
+
+impl AccessWatch {
+    fn new(owner: String) -> Self {
+        Self {
+            owner,
+            current: Access::default(),
+            newest: 0,
+            reading: None,
+            seen: None,
+        }
+    }
+
+    /// Start a read: the REQ to send.
+    fn begin_read(&mut self, me: &str) -> Value {
+        self.reading = Some(Instant::now());
+        self.seen = None;
+        json!([
+            "REQ",
+            ACCESS_SUB,
+            { "kinds": [KIND_MANAGED_AGENT], "authors": [self.owner], "#d": [me], "limit": 1 },
+        ])
+    }
+
+    /// Take an event. During a read it waits for the read's end; outside one
+    /// it applies now, and the line to print is returned.
+    fn on_event(&mut self, event: &nostr::Event, me: &str) -> Option<Value> {
+        let created_at = event.created_at.as_secs();
+        let access = match Access::from_event(event, &self.owner, me) {
+            Some(_) if created_at < self.newest => {
+                self.seen.clone().unwrap_or_else(|| self.current.clone())
+            }
+            Some(access) => {
+                self.newest = created_at;
+                access
+            }
+            None => Access::OwnerOnly,
+        };
+        if self.reading.is_some() {
+            self.seen = Some(access);
+            return None;
+        }
+        self.current = access;
+        Some(self.current.line())
+    }
+
+    /// End a read: what it saw, or owner-only if nothing. The line to print.
+    fn finish_read(&mut self) -> Value {
+        self.reading = None;
+        self.current = self.seen.take().unwrap_or_default();
+        self.current.line()
+    }
+
+    fn read_overdue(&self) -> bool {
+        self.reading
+            .is_some_and(|started| started.elapsed() >= ACCESS_READ_LIMIT)
+    }
 }
 
 /// The membership REQ.
@@ -253,6 +389,7 @@ struct Watch {
     seen: HashSet<String>,
     seen_order: VecDeque<String>,
     names: HashMap<String, Option<String>>,
+    access: Option<AccessWatch>,
 }
 
 impl Watch {
@@ -331,11 +468,67 @@ async fn send(conn: &mut NostrWsConnection, frame: &Value) -> Result<(), End> {
     conn.send_raw(frame).await.map_err(ws_lost)
 }
 
+/// End the access read and print it, then on a new connection open the rest.
+async fn finish_access_read(
+    conn: &mut NostrWsConnection,
+    watch: &mut Watch,
+    subscribed: &mut bool,
+) -> Result<(), End> {
+    if let Some(access) = watch.access.as_mut() {
+        emit(&access.finish_read())?;
+    }
+    if !*subscribed {
+        *subscribed = true;
+        send(conn, &members_req(&watch.me)).await?;
+        send(conn, &mentions_req(&watch.me, watch.since())).await?;
+    }
+    Ok(())
+}
+
 async fn subscribe_channels(conn: &mut NostrWsConnection, watch: &Watch) -> Result<(), End> {
     for req in channel_reqs(&watch.channels, watch.since()) {
         send(conn, &req).await?;
     }
     Ok(())
+}
+
+/// The `kind:20001` for `status`: the bare status as content and no tags, as
+/// `kuzz-acp` publishes it.
+fn presence_event(client: &KuzzClient, status: &str) -> Result<nostr::Event, CliError> {
+    client.sign_event(EventBuilder::new(
+        Kind::Custom(KIND_PRESENCE_UPDATE as u16),
+        status,
+    ))
+}
+
+/// Report online on `conn` without waiting: the relay's answer arrives in the
+/// read loop. A failure is only logged; a dead socket shows up there too.
+async fn announce_online(client: &KuzzClient, conn: &mut NostrWsConnection) {
+    let sent = match presence_event(client, "online") {
+        Ok(event) => conn
+            .send_raw(&json!(["EVENT", event]))
+            .await
+            .map_err(|error| error.to_string()),
+        Err(error) => Err(error.to_string()),
+    };
+    if let Err(error) = sent {
+        eprintln!("kuzz watch: could not report online: {error}");
+    }
+}
+
+/// Report offline on a connection of its own (the watch's socket may be gone
+/// by now), within [`OFFLINE_TIMEOUT`].
+async fn announce_offline(client: &KuzzClient) {
+    let published = async {
+        client
+            .publish_ephemeral_event(presence_event(client, "offline")?)
+            .await
+    };
+    match tokio::time::timeout(OFFLINE_TIMEOUT, published).await {
+        Ok(Ok(_)) => {}
+        Ok(Err(error)) => eprintln!("kuzz watch: could not report offline: {error}"),
+        Err(_) => eprintln!("kuzz watch: reporting offline timed out"),
+    }
 }
 
 /// Print one line and flush; a closed stdout ends the watch.
@@ -346,21 +539,48 @@ fn emit(line: &Value) -> Result<(), End> {
         .map_err(|e| End::Fatal(CliError::Other(format!("stdout closed: {e}"))))
 }
 
-/// One connection: subscribe, then print messages until it is lost.
-async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
+/// One connection: subscribe, report online every `presence_every`, and print
+/// messages until it is lost.
+async fn run_connection(client: &KuzzClient, watch: &mut Watch, presence_every: Duration) -> End {
     let mut conn = match tokio::time::timeout(CONNECT_TIMEOUT, client.ws_connect()).await {
         Ok(Ok(conn)) => conn,
         Ok(Err(error)) => return ws_lost(error),
         Err(_) => return End::Lost("connect timed out".into()),
     };
     let result = async {
-        send(&mut conn, &members_req(&watch.me)).await?;
-        send(&mut conn, &mentions_req(&watch.me, watch.since())).await?;
+        // Members and mentions wait for the access read, so nothing outruns it.
+        let mut subscribed = false;
+        if let Some(access) = watch.access.as_mut() {
+            send(&mut conn, &access.begin_read(&watch.me)).await?;
+        } else {
+            finish_access_read(&mut conn, watch, &mut subscribed).await?;
+        }
         let mut members_ready = false;
         let mut last_frame = Instant::now();
         let mut members_at = Instant::now();
+        let mut access_at = Instant::now();
         let mut ping_sent: Option<Instant> = None;
+        // Set once subscribed: online means messages are being received.
+        let mut presence_at: Option<Instant> = None;
         loop {
+            // Here, not in the timeout arm below: a busy channel never idles.
+            if presence_at.is_some_and(|at| at.elapsed() >= presence_every) {
+                announce_online(client, &mut conn).await;
+                presence_at = Some(Instant::now());
+            }
+            if watch.access.as_ref().is_some_and(AccessWatch::read_overdue) {
+                finish_access_read(&mut conn, watch, &mut subscribed).await?;
+            }
+            if members_ready && members_at.elapsed() > MEMBERS_REFRESH {
+                send(&mut conn, &members_req(&watch.me)).await?;
+                members_at = Instant::now();
+            }
+            if subscribed && access_at.elapsed() > MEMBERS_REFRESH {
+                if let Some(access) = watch.access.as_mut() {
+                    send(&mut conn, &access.begin_read(&watch.me)).await?;
+                }
+                access_at = Instant::now();
+            }
             let message = match conn.next_event(TICK).await {
                 Ok(message) => message,
                 Err(WsClientError::Timeout) => {
@@ -376,10 +596,6 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                         ]);
                         send(&mut conn, &probe).await?;
                         ping_sent = Some(Instant::now());
-                    }
-                    if members_ready && members_at.elapsed() > MEMBERS_REFRESH {
-                        send(&mut conn, &members_req(&watch.me)).await?;
-                        members_at = Instant::now();
                     }
                     continue;
                 }
@@ -397,6 +613,16 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                         if watch.channels.insert(channel) && members_ready {
                             subscribe_channels(&mut conn, watch).await?;
                         }
+                    }
+                }
+                RelayMessage::Event {
+                    subscription_id,
+                    event,
+                } if subscription_id == ACCESS_SUB => {
+                    let me = &watch.me;
+                    let line = watch.access.as_mut().and_then(|a| a.on_event(&event, me));
+                    if let Some(line) = line {
+                        emit(&line)?;
                     }
                 }
                 RelayMessage::Event {
@@ -420,6 +646,12 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                     }
                 }
                 RelayMessage::Eose { subscription_id }
+                    if subscription_id == ACCESS_SUB
+                        && watch.access.as_ref().is_some_and(|a| a.reading.is_some()) =>
+                {
+                    finish_access_read(&mut conn, watch, &mut subscribed).await?;
+                }
+                RelayMessage::Eose { subscription_id }
                     if subscription_id == MEMBERS_SUB && !members_ready =>
                 {
                     members_ready = true;
@@ -429,10 +661,16 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                         "kuzz watch: connected; watching {} channel(s) and mentions",
                         watch.channels.len()
                     );
+                    announce_online(client, &mut conn).await;
+                    presence_at = Some(Instant::now());
                 }
                 RelayMessage::Eose { subscription_id } if subscription_id == PING_SUB => {
                     ping_sent = None;
                     send(&mut conn, &json!(["CLOSE", PING_SUB])).await?;
+                }
+                // Presence is the only thing a watch publishes.
+                RelayMessage::Ok(ok) if !ok.accepted => {
+                    eprintln!("kuzz watch: relay refused presence: {}", ok.message);
                 }
                 RelayMessage::Closed {
                     subscription_id,
@@ -441,6 +679,13 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
                     eprintln!("kuzz watch: relay closed {subscription_id}: {message}");
                     if subscription_id == PING_SUB {
                         ping_sent = None;
+                    }
+                    if subscription_id == ACCESS_SUB {
+                        // Nothing more will come: owner-only until the next read.
+                        if let Some(access) = watch.access.as_mut() {
+                            access.seen = None;
+                        }
+                        finish_access_read(&mut conn, watch, &mut subscribed).await?;
                     }
                 }
                 RelayMessage::Notice { message } => {
@@ -464,7 +709,69 @@ async fn run_connection(client: &KuzzClient, watch: &mut Watch) -> End {
 pub async fn cmd_watch(
     client: &KuzzClient,
     since: Option<i64>,
+    access_owner: Option<String>,
     reauth: Option<Reauth>,
+) -> Result<(), CliError> {
+    if let Some(owner) = &access_owner {
+        crate::validate::validate_hex64(owner)?;
+    }
+    let access = access_owner.map(|owner| AccessWatch::new(owner.to_ascii_lowercase()));
+    watch_until(client, since, access, reauth, stop_requested()).await
+}
+
+/// Ctrl+C or, on Unix, SIGTERM. Listening replaces the default exit, so every
+/// path out of a watch comes through here. A handler that cannot be installed
+/// just never fires.
+async fn stop_requested() {
+    #[cfg(unix)]
+    let terminate = async {
+        use tokio::signal::unix::{signal, SignalKind};
+        match signal(SignalKind::terminate()) {
+            Ok(mut terminate) => {
+                terminate.recv().await;
+            }
+            Err(_) => std::future::pending::<()>().await,
+        }
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+    let interrupt = async {
+        if tokio::signal::ctrl_c().await.is_err() {
+            std::future::pending::<()>().await;
+        }
+    };
+    tokio::select! {
+        () = terminate => {}
+        () = interrupt => {}
+    }
+}
+
+/// Watch until `stop` resolves, then report offline and return `Ok`.
+async fn watch_until(
+    client: &KuzzClient,
+    since: Option<i64>,
+    access: Option<AccessWatch>,
+    reauth: Option<Reauth>,
+    stop: impl Future<Output = ()>,
+) -> Result<(), CliError> {
+    // Out here so the newest login is still at hand once the watch is dropped.
+    let mut renewed: Option<KuzzClient> = None;
+    tokio::select! {
+        result = watch_loop(client, since, access, reauth, &mut renewed) => return result,
+        () = stop => {}
+    }
+    announce_offline(renewed.as_ref().unwrap_or(client)).await;
+    Ok(())
+}
+
+/// Connect and reconnect until a final error. `renewed` holds the newest
+/// client in token mode.
+async fn watch_loop(
+    client: &KuzzClient,
+    since: Option<i64>,
+    access: Option<AccessWatch>,
+    reauth: Option<Reauth>,
+    renewed: &mut Option<KuzzClient>,
 ) -> Result<(), CliError> {
     let mut watch = Watch {
         me: client.pubkey().to_hex(),
@@ -473,15 +780,15 @@ pub async fn cmd_watch(
         seen: HashSet::new(),
         seen_order: VecDeque::new(),
         names: HashMap::new(),
+        access,
     };
-    let mut renewed: Option<KuzzClient> = None;
     let mut attempt: u32 = 0;
     let mut refusals: u32 = 0;
     let mut first = true;
     loop {
         if let (false, Some(reauth)) = (first, &reauth) {
             match reauth().await {
-                Ok(fresh) => renewed = Some(fresh),
+                Ok(fresh) => *renewed = Some(fresh),
                 Err(CliError::Auth(message)) if credential_word(&message).is_some() => {
                     let word = credential_word(&message).unwrap_or("signed_out");
                     return Err(CliError::Auth(format!("{word}: {message}")));
@@ -494,8 +801,11 @@ pub async fn cmd_watch(
         first = false;
         let current = renewed.as_ref().unwrap_or(client);
         let started = Instant::now();
-        let reason = match run_connection(current, &mut watch).await {
-            End::Fatal(error) => return Err(error),
+        let reason = match run_connection(current, &mut watch, PRESENCE_EVERY).await {
+            End::Fatal(error) => {
+                announce_offline(current).await;
+                return Err(error);
+            }
             End::Refused(message) => {
                 if let Some(word) = parked_reason(&message) {
                     return Err(CliError::Auth(format!(
@@ -533,7 +843,9 @@ pub async fn cmd_watch(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nostr::{EventBuilder, Keys, Kind, Tag};
+    use axum::extract::ws::{Message, WebSocket, WebSocketUpgrade};
+    use nostr::{Keys, Tag};
+    use tokio::sync::mpsc;
 
     fn event(kind: u16, tags: &[&[&str]], keys: &Keys) -> nostr::Event {
         let tags: Vec<Tag> = tags
@@ -724,6 +1036,7 @@ mod tests {
             seen: HashSet::new(),
             seen_order: VecDeque::new(),
             names: HashMap::new(),
+            access: None,
         };
         // A `--since` (or any cursor) in the future is clamped to now.
         assert!(watch.since() <= now_secs());
@@ -749,6 +1062,356 @@ mod tests {
         assert!(backoff_delay(30) >= BACKOFF_MAX / 2);
     }
 
+    /// What a [`fake_relay`] does beyond the handshake.
+    #[derive(Clone, Copy)]
+    struct RelayScript {
+        /// Answer EVENTs with a refusal.
+        refuse: bool,
+        /// Send a frame every few ms, so the read loop never idles.
+        busy: bool,
+    }
+
+    /// A relay that challenges, accepts AUTH, ends the membership
+    /// subscription and hands every EVENT it receives to the channel.
+    async fn fake_relay(script: RelayScript) -> (String, mpsc::UnboundedReceiver<nostr::Event>) {
+        let (events, received) = mpsc::unbounded_channel();
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(move |ws: WebSocketUpgrade| {
+                let events = events.clone();
+                async move { ws.on_upgrade(move |socket| fake_session(socket, script, events)) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        (url, received)
+    }
+
+    async fn fake_session(
+        mut socket: WebSocket,
+        script: RelayScript,
+        events: mpsc::UnboundedSender<nostr::Event>,
+    ) {
+        let frame = |value: Value| Message::Text(value.to_string().into());
+        let _ = socket.send(frame(json!(["AUTH", "challenge"]))).await;
+        let mut noise = tokio::time::interval(Duration::from_millis(5));
+        loop {
+            let incoming = tokio::select! {
+                incoming = socket.recv() => incoming,
+                _ = noise.tick(), if script.busy => {
+                    let _ = socket.send(frame(json!(["EOSE", "noise"]))).await;
+                    continue;
+                }
+            };
+            let Some(Ok(Message::Text(text))) = incoming else {
+                return;
+            };
+            let value: Value = serde_json::from_str(text.as_str()).unwrap();
+            let reply = match value[0].as_str() {
+                Some("AUTH") => json!(["OK", value[1]["id"], true, ""]),
+                Some("REQ") if value[1] == MEMBERS_SUB => json!(["EOSE", MEMBERS_SUB]),
+                Some("EVENT") => {
+                    let event: nostr::Event = serde_json::from_value(value[1].clone()).unwrap();
+                    let id = event.id.to_hex();
+                    let _ = events.send(event);
+                    if script.refuse {
+                        json!(["OK", id, false, "restricted: no presence today"])
+                    } else {
+                        json!(["OK", id, true, ""])
+                    }
+                }
+                _ => continue,
+            };
+            let _ = socket.send(frame(reply)).await;
+        }
+    }
+
+    fn assert_presence(event: &nostr::Event, status: &str, keys: &Keys) {
+        assert_eq!(u32::from(event.kind.as_u16()), KIND_PRESENCE_UPDATE);
+        assert_eq!(event.content, status);
+        assert_eq!(event.pubkey, keys.public_key());
+        assert!(event.tags.is_empty(), "the shape kuzz-acp publishes");
+        event.verify().expect("a valid signature");
+    }
+
+    #[tokio::test]
+    async fn online_repeats_on_a_busy_socket_and_survives_refusals() {
+        let (url, mut events) = fake_relay(RelayScript {
+            refuse: true,
+            busy: true,
+        })
+        .await;
+        let keys = Keys::generate();
+        let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
+        let mut watch = Watch {
+            me: keys.public_key().to_hex(),
+            cursor: now_secs(),
+            channels: BTreeSet::new(),
+            seen: HashSet::new(),
+            seen_order: VecDeque::new(),
+            names: HashMap::new(),
+            access: None,
+        };
+        let run = run_connection(&client, &mut watch, Duration::from_millis(20));
+        tokio::pin!(run);
+        for _ in 0..3 {
+            let event = tokio::select! {
+                _ = &mut run => panic!("presence must not end the connection"),
+                event = tokio::time::timeout(Duration::from_secs(4), events.recv()) => {
+                    event.expect("the beat keeps going while frames arrive").unwrap()
+                }
+            };
+            assert_presence(&event, "online", &keys);
+        }
+    }
+
+    #[tokio::test]
+    async fn stopping_reports_offline_after_online() {
+        let (url, mut events) = fake_relay(RelayScript {
+            refuse: false,
+            busy: false,
+        })
+        .await;
+        let keys = Keys::generate();
+        let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
+        let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+        let run = watch_until(&client, None, None, None, async {
+            let _ = stopped.await;
+        });
+        tokio::pin!(run);
+        let online = tokio::select! {
+            result = &mut run => panic!("ended early: {:?}", result.err()),
+            event = tokio::time::timeout(Duration::from_secs(4), events.recv()) => {
+                event.expect("online once subscribed").unwrap()
+            }
+        };
+        assert_presence(&online, "online", &keys);
+        stop.send(()).unwrap();
+        let (result, offline) = tokio::join!(
+            run,
+            tokio::time::timeout(Duration::from_secs(4), events.recv())
+        );
+        assert!(result.is_ok());
+        assert_presence(
+            &offline.expect("offline on stop").unwrap(),
+            "offline",
+            &keys,
+        );
+    }
+
+    /// A `kind:30177` for agent `me`, signed by `keys`.
+    fn setting(keys: &Keys, me: &str, content: &str, at: u64) -> nostr::Event {
+        EventBuilder::new(Kind::Custom(KIND_MANAGED_AGENT as u16), content)
+            .tags([Tag::parse(["d", me]).unwrap()])
+            .custom_created_at(nostr::Timestamp::from(at))
+            .sign_with_keys(keys)
+            .unwrap()
+    }
+
+    fn access_watch(owner: &Keys) -> AccessWatch {
+        AccessWatch::new(owner.public_key().to_hex())
+    }
+
+    #[test]
+    fn a_setting_counts_only_from_the_owner_for_this_agent() {
+        let owner = Keys::generate();
+        let hex = owner.public_key().to_hex();
+        let read = |event: &nostr::Event| Access::from_event(event, &hex, ALICE);
+        let anyone = r#"{"respond_to":"anyone"}"#;
+        assert_eq!(
+            read(&setting(&owner, ALICE, anyone, 1)),
+            Some(Access::Anyone)
+        );
+        assert_eq!(read(&setting(&Keys::generate(), ALICE, anyone, 1)), None);
+        assert_eq!(read(&setting(&owner, ROOT, anyone, 1)), None);
+        let other_kind = EventBuilder::new(Kind::Custom(30175), anyone)
+            .tags([Tag::parse(["d", ALICE]).unwrap()])
+            .sign_with_keys(&owner)
+            .unwrap();
+        assert_eq!(read(&other_kind), None);
+
+        // The relay can't change it, and its stamp on a server draft is no signature.
+        let mut changed = serde_json::to_value(setting(&owner, ALICE, "{}", 1)).unwrap();
+        changed["content"] = json!(anyone);
+        let changed: nostr::Event = serde_json::from_value(changed).unwrap();
+        assert_eq!(read(&changed), None);
+    }
+
+    #[test]
+    fn a_setting_reads_its_mode_narrowly() {
+        let owner = Keys::generate();
+        let hex = owner.public_key().to_hex();
+        let read = |content: &str| {
+            Access::from_event(&setting(&owner, ALICE, content, 1), &hex, ALICE).unwrap()
+        };
+        let list = format!(
+            r#"{{"respond_to":"allowlist","respond_to_allowlist":["{}","79be667e",7]}}"#,
+            ALICE.to_ascii_uppercase()
+        );
+        assert_eq!(read(&list), Access::Allowlist(vec![ALICE.to_owned()]));
+        assert_eq!(
+            read(r#"{"respond_to":"allowlist"}"#),
+            Access::Allowlist(vec![])
+        );
+        assert_eq!(read(r#"{"respond_to":"owner-only"}"#), Access::OwnerOnly);
+        assert_eq!(read(r#"{"respond_to":"everyone"}"#), Access::OwnerOnly);
+        assert_eq!(read(r#"{"respond_to":7}"#), Access::OwnerOnly);
+        assert_eq!(read("not json"), Access::OwnerOnly);
+    }
+
+    #[test]
+    fn a_read_prints_what_it_saw_or_owner_only() {
+        let owner = Keys::generate();
+        let anyone = setting(&owner, ALICE, r#"{"respond_to":"anyone"}"#, 10);
+        let mut access = access_watch(&owner);
+
+        let req = access.begin_read(ALICE);
+        assert_eq!(req[1], ACCESS_SUB);
+        assert_eq!(req[2]["kinds"], json!([KIND_MANAGED_AGENT]));
+        assert_eq!(req[2]["authors"], json!([owner.public_key().to_hex()]));
+        assert_eq!(req[2]["#d"], json!([ALICE]));
+        assert_eq!(
+            access.on_event(&anyone, ALICE),
+            None,
+            "waits for the read's end"
+        );
+        assert_eq!(access.finish_read()["mode"], "anyone");
+
+        // A deleted setting: the next read finds nothing.
+        access.begin_read(ALICE);
+        assert_eq!(
+            access.finish_read(),
+            json!({ "type": "access", "mode": "owner-only", "allowlist": [] })
+        );
+    }
+
+    #[test]
+    fn a_live_change_prints_at_once_and_a_stale_copy_changes_nothing() {
+        let owner = Keys::generate();
+        let at = |content: &str, at: u64| setting(&owner, ALICE, content, at);
+        let mut access = access_watch(&owner);
+        let newer = at(r#"{"respond_to":"anyone"}"#, 20);
+        assert_eq!(access.on_event(&newer, ALICE).unwrap()["mode"], "anyone");
+        let narrowed = at(r#"{"respond_to":"owner-only"}"#, 30);
+        assert_eq!(
+            access.on_event(&narrowed, ALICE).unwrap()["mode"],
+            "owner-only"
+        );
+
+        // A lagging replica serves the wider one again, live or in a read.
+        assert_eq!(
+            access.on_event(&newer, ALICE).unwrap()["mode"],
+            "owner-only"
+        );
+        access.begin_read(ALICE);
+        assert_eq!(access.on_event(&newer, ALICE), None);
+        assert_eq!(access.finish_read()["mode"], "owner-only");
+
+        // A change during a read survives the old copy the read then returns.
+        access.current = Access::Anyone;
+        access.begin_read(ALICE);
+        access.on_event(&at(r#"{"respond_to":"owner-only"}"#, 35), ALICE);
+        access.on_event(&newer, ALICE);
+        assert_eq!(access.finish_read()["mode"], "owner-only");
+
+        // A bad event never widens.
+        access.current = Access::Anyone;
+        let forged = setting(&Keys::generate(), ALICE, r#"{"respond_to":"anyone"}"#, 40);
+        assert_eq!(
+            access.on_event(&forged, ALICE).unwrap()["mode"],
+            "owner-only"
+        );
+    }
+
+    #[test]
+    fn an_overdue_read_uses_what_it_saw() {
+        let owner = Keys::generate();
+        let mut access = access_watch(&owner);
+        assert!(!access.read_overdue(), "no read, nothing overdue");
+        access.begin_read(ALICE);
+        assert!(!access.read_overdue());
+        access.reading = Some(Instant::now() - ACCESS_READ_LIMIT);
+        assert!(access.read_overdue());
+        let anyone = setting(&owner, ALICE, r#"{"respond_to":"anyone"}"#, 10);
+        access.on_event(&anyone, ALICE);
+        assert_eq!(access.finish_read()["mode"], "anyone");
+        assert!(!access.read_overdue());
+    }
+
+    /// A relay that answers the access REQ with `answer` ("" = silence) and
+    /// reports every REQ's subscription id.
+    async fn access_relay(answer: &'static str) -> (String, mpsc::UnboundedReceiver<String>) {
+        let (reqs, received) = mpsc::unbounded_channel();
+        let app = axum::Router::new().route(
+            "/",
+            axum::routing::get(move |ws: WebSocketUpgrade| {
+                let reqs = reqs.clone();
+                async move { ws.on_upgrade(move |socket| access_session(socket, answer, reqs)) }
+            }),
+        );
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let url = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await });
+        (url, received)
+    }
+
+    async fn access_session(
+        mut socket: WebSocket,
+        answer: &'static str,
+        reqs: mpsc::UnboundedSender<String>,
+    ) {
+        let frame = |value: Value| Message::Text(value.to_string().into());
+        let _ = socket.send(frame(json!(["AUTH", "challenge"]))).await;
+        while let Some(Ok(Message::Text(text))) = socket.recv().await {
+            let value: Value = serde_json::from_str(text.as_str()).unwrap();
+            match value[0].as_str() {
+                Some("AUTH") => {
+                    let ok = json!(["OK", value[1]["id"], true, ""]);
+                    let _ = socket.send(frame(ok)).await;
+                }
+                Some("REQ") => {
+                    let _ = reqs.send(value[1].as_str().unwrap().to_owned());
+                    if value[1] == ACCESS_SUB && !answer.is_empty() {
+                        let reply = json!([answer, ACCESS_SUB, "no"]);
+                        let _ = socket.send(frame(reply)).await;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn the_access_read_comes_before_messages_on_every_connection() {
+        for answer in ["EOSE", "CLOSED", ""] {
+            let (url, mut reqs) = access_relay(answer).await;
+            let keys = Keys::generate();
+            let client = KuzzClient::new(url, keys.clone(), None, None).unwrap();
+            let mut watch = Watch {
+                me: keys.public_key().to_hex(),
+                cursor: now_secs(),
+                channels: BTreeSet::new(),
+                seen: HashSet::new(),
+                seen_order: VecDeque::new(),
+                names: HashMap::new(),
+                access: Some(access_watch(&Keys::generate())),
+            };
+            let run = run_connection(&client, &mut watch, PRESENCE_EVERY);
+            tokio::pin!(run);
+            let mut order = Vec::new();
+            while order.len() < 3 {
+                tokio::select! {
+                    _ = &mut run => panic!("the connection ended"),
+                    req = tokio::time::timeout(ACCESS_READ_LIMIT + 2 * TICK, reqs.recv()) => {
+                        order.push(req.expect("the watch goes on").unwrap());
+                    }
+                }
+            }
+            assert_eq!(order, [ACCESS_SUB, MEMBERS_SUB, MENTIONS_SUB], "{answer}");
+        }
+    }
+
     #[test]
     fn seen_ids_are_bounded_and_deduplicated() {
         let mut watch = Watch {
@@ -758,6 +1421,7 @@ mod tests {
             seen: HashSet::new(),
             seen_order: VecDeque::new(),
             names: HashMap::new(),
+            access: None,
         };
         assert!(watch.first_sighting("a".into()));
         assert!(!watch.first_sighting("a".into()));

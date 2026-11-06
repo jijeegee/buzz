@@ -4,6 +4,7 @@
 //! authenticated via NIP-98 signed events.
 
 mod chat_state;
+mod goals;
 mod inbox_summary;
 mod read_state_snapshot;
 
@@ -373,19 +374,65 @@ async fn check_nip98_replay_with_guard(
 /// authenticated by NIP-98 (or the `X-Pubkey` dev header) on the `http`
 /// surface. No work at all while the surface is off. Call it after NIP-FI
 /// admission, never for the `Bearer` branch (closed as a token path).
+///
+/// A paired key's owner link is recorded here too, for an agent that only
+/// ever uses HTTP. A failure does not refuse the request: the next one tries
+/// again.
 pub(crate) async fn admit_bridge_key(
     state: &AppState,
+    tenant: &TenantContext,
     headers: &HeaderMap,
     pubkey: &nostr::PublicKey,
 ) -> Result<(), (StatusCode, Json<Value>)> {
-    crate::identity::admission::admit_key_for_nip98(
+    let external_owner = crate::identity::admission::admit_key_for_nip98(
         state,
         headers,
         pubkey,
         crate::identity::device::Surface::Http,
     )
     .await
-    .map_err(crate::identity::admission::KeyRefused::http_error)
+    .map_err(crate::identity::admission::KeyRefused::http_error)?;
+    if let Some(owner) = external_owner {
+        super::relay_members::bind_external_owner(state, tenant, pubkey, &owner).await;
+    }
+    Ok(())
+}
+
+/// The proven caller of a bodyless `GET`: a message token, or a NIP-98 key
+/// held to the bridge's quota, replay and device checks. `path` includes the
+/// query string.
+pub(crate) async fn admit_get_caller(
+    state: &Arc<AppState>,
+    tenant: &TenantContext,
+    headers: &HeaderMap,
+    path: &str,
+) -> Result<nostr::PublicKey, axum::response::Response> {
+    use axum::response::IntoResponse as _;
+    if let Some(pubkey) = verify_bridge_bearer(state, headers, tenant).await? {
+        enforce_http_admission(state, tenant, &pubkey)
+            .await
+            .map_err(IntoResponse::into_response)?;
+        return Ok(pubkey);
+    }
+    let url = nip98_expected_url(&state.config.relay_url, tenant, path);
+    // A real NIP-98 event only: the dev X-Pubkey fallback carries no device.
+    let admission = admit_nip_fi_http_on_state(state, headers, || {
+        verify_bridge_auth(headers, "GET", &url, None, true)
+            .map(|auth| Nip98Proof::new(auth.pubkey, auth.event_id_bytes))
+            .map_err(IntoResponse::into_response)
+    })?;
+    let pubkey = *admission.proven_pubkey();
+    let event_id_bytes = admission.into_extra();
+    enforce_http_admission(state, tenant, &pubkey)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    check_nip98_replay(state, tenant, event_id_bytes)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    admit_bridge_key(state, tenant, headers, &pubkey)
+        .await
+        .map_err(IntoResponse::into_response)?;
+    Ok(pubkey)
 }
 
 /// Construct the NIP-98 `u`-tag expected URL for a request bound to `tenant`.
@@ -1273,7 +1320,7 @@ async fn submit_event_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if !server_stamped {
-        if let Err(e) = admit_bridge_key(state, headers, &pubkey).await {
+        if let Err(e) = admit_bridge_key(state, tenant, headers, &pubkey).await {
             return SubmitOutcome::Err {
                 status: e.0,
                 response: e,
@@ -1567,7 +1614,7 @@ async fn query_events_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if key_signed {
-        admit_bridge_key(state, headers, &pubkey).await?;
+        admit_bridge_key(state, tenant, headers, &pubkey).await?;
     }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -1594,6 +1641,9 @@ async fn query_events_authed(
     }
     if let Some(envelope) = chat_state::requested(&raw_filters) {
         return chat_state::query(state, tenant, &pubkey, &raw_filters, envelope).await;
+    }
+    if goals::requested(&raw_filters) {
+        return goals::query(state, tenant, &pubkey, &raw_filters).await;
     }
     let thread_windows = thread_window::parse(&raw_filters)?;
     let filters: Vec<nostr::Filter> = raw_filters
@@ -2114,8 +2164,8 @@ pub(crate) async fn hide_blocked_dm_authors(
         .map_err(|e| db_read_error("block list lookup error", &e))
 }
 
-/// Drop goal trees (kind:40110) of conversations that turned goals off, so
-/// agents that predate the setting stop receiving them too.
+/// Drop goal trees and edits (kinds 40110, 40111) of conversations that turned
+/// goals off, so agents that predate the setting stop receiving them too.
 async fn hide_goal_trees_of_conversations_with_goals_off(
     state: &AppState,
     tenant: &TenantContext,
@@ -2311,7 +2361,7 @@ async fn count_events_authed(
     // Device-bound keys for a key-signed request (not the closed Bearer
     // branch), after the replay check.
     if key_signed {
-        admit_bridge_key(state, headers, &pubkey).await?;
+        admit_bridge_key(state, tenant, headers, &pubkey).await?;
     }
     let pubkey_bytes = pubkey.to_bytes().to_vec();
 
@@ -3086,7 +3136,7 @@ async fn authorize_moderation_read(
     check_nip98_replay(state, &tenant, event_id_bytes)
         .await
         .map_err(|e| e.into_response())?;
-    admit_bridge_key(state, headers, &pubkey)
+    admit_bridge_key(state, &tenant, headers, &pubkey)
         .await
         .map_err(|e| e.into_response())?;
     let pubkey_bytes = pubkey.to_bytes().to_vec();
@@ -3286,6 +3336,9 @@ fn ban_json(b: &kuzz_db::moderation::BanRecord) -> Value {
     })
 }
 
+#[cfg(test)]
+#[path = "goals_postgres_tests.rs"]
+mod goals_postgres_tests;
 #[cfg(test)]
 #[path = "artifact_postgres_tests.rs"]
 mod artifact_postgres_tests;

@@ -23,8 +23,8 @@ String get invitationNoLongerValidMessage =>
     appL10n.groupsInvitationNoLongerValid;
 
 /// My pending group invitations. Loaded when first watched (app start, as
-/// Chats is the first tab); [refresh] runs on resume and when Chats opens.
-/// There is no push for invitations yet.
+/// Chats is the first tab); [refresh] runs on resume, when Chats opens, and on
+/// the relay's invitation ping.
 class GroupInvitationsNotifier extends AsyncNotifier<List<GroupInvitation>> {
   int _serial = 0;
 

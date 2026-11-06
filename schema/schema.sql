@@ -634,6 +634,71 @@ CREATE TABLE thread_state (
         REFERENCES channels (community_id, id) ON DELETE CASCADE
 );
 
+-- ── Goals (migration 0097) ─────────────────────────────────────────────────────
+-- Goals as rows (one per goal) instead of one document per conversation, so a
+-- room has no size cap and a write touches only what it changes. A finished
+-- small goal is deleted outright; signed kind 40111 events keep the change log.
+CREATE TABLE goals (
+    community_id  UUID NOT NULL REFERENCES communities(id),
+    channel_id    UUID NOT NULL,
+    id            TEXT NOT NULL,
+    parent_id     TEXT,
+    title         TEXT NOT NULL,
+    note          TEXT NOT NULL DEFAULT '',
+    status        TEXT NOT NULL DEFAULT 'open'
+        CHECK (status IN ('open', 'in_progress', 'done', 'dropped')),
+    order_key     BIGINT NOT NULL DEFAULT 0,
+    assignees     TEXT[] NOT NULL DEFAULT '{}',
+    updated_by    TEXT,
+    updated_at    TIMESTAMPTZ NOT NULL,
+    created_at    TIMESTAMPTZ NOT NULL,
+    PRIMARY KEY (community_id, channel_id, id),
+    FOREIGN KEY (community_id, channel_id)
+        REFERENCES channels (community_id, id) ON DELETE CASCADE,
+    -- NO ACTION, not CASCADE: which branches survive is the deletion rule's
+    -- decision. Checked at statement end, so one DELETE may take a whole branch.
+    FOREIGN KEY (community_id, channel_id, parent_id)
+        REFERENCES goals (community_id, channel_id, id)
+);
+
+CREATE INDEX idx_goals_parent ON goals (community_id, channel_id, parent_id);
+-- One layer 1 goal per conversation.
+CREATE UNIQUE INDEX idx_goals_one_root ON goals (community_id, channel_id)
+    WHERE parent_id IS NULL;
+
+-- A thread root or single message linked to a goal; each links to one goal.
+CREATE TABLE goal_links (
+    community_id  UUID NOT NULL,
+    channel_id    UUID NOT NULL,
+    event_id      BYTEA NOT NULL CHECK (length(event_id) = 32),
+    goal_id       TEXT NOT NULL,
+    PRIMARY KEY (community_id, channel_id, event_id),
+    FOREIGN KEY (community_id, channel_id, goal_id)
+        REFERENCES goals (community_id, channel_id, id) ON DELETE CASCADE
+);
+
+CREATE INDEX idx_goal_links_goal ON goal_links (community_id, channel_id, goal_id);
+
+-- ── Agent actions (migration 0100) ───────────────────────────────────────────
+-- One row per thing an agent did for its owner (or tried to): who, what, on
+-- which computer, how it ended. No payload. Kept 90 days.
+CREATE TABLE agent_actions (
+    community_id UUID NOT NULL,
+    id           UUID NOT NULL DEFAULT gen_random_uuid(),
+    owner_pubkey BYTEA NOT NULL CHECK (length(owner_pubkey) = 32),
+    agent_pubkey BYTEA NOT NULL CHECK (length(agent_pubkey) = 32),
+    action       TEXT NOT NULL CHECK (char_length(action) BETWEEN 1 AND 64),
+    target       TEXT CHECK (char_length(target) <= 256),
+    computer     TEXT CHECK (char_length(computer) <= 128),
+    status       TEXT NOT NULL CHECK (status IN ('ok', 'refused', 'failed')),
+    source       TEXT NOT NULL CHECK (source IN ('relay', 'app')),
+    created_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
+    PRIMARY KEY (community_id, id)
+);
+
+CREATE INDEX agent_actions_owner_time ON agent_actions (community_id, owner_pubkey, created_at);
+CREATE INDEX agent_actions_time ON agent_actions (created_at);
+
 -- ── Blocks ────────────────────────────────────────────────────────────────────
 -- Silent blocks (migration 0071): `blocker` no longer receives `blocked`'s DM
 -- events (live, history, unread, push). Private to the blocker.
@@ -1969,6 +2034,7 @@ $$;
 -- these explicit calls as first-class catalog declarations. They also make the
 -- fence contract visible to migration linting instead of hiding it only in the
 -- dynamic bootstrap loop above.
+SELECT attach_community_write_fence('agent_actions');
 SELECT attach_community_write_fence('api_tokens');
 SELECT attach_community_write_fence('archived_identities');
 SELECT attach_community_write_fence('audit_log');
@@ -1997,6 +2063,8 @@ SELECT attach_community_write_fence('relay_invites');
 SELECT attach_community_write_fence('relay_members');
 SELECT attach_community_write_fence('scheduled_workflow_fires');
 SELECT attach_community_write_fence('subscriptions');
+SELECT attach_community_write_fence('goal_links');
+SELECT attach_community_write_fence('goals');
 SELECT attach_community_write_fence('thread_follows');
 SELECT attach_community_write_fence('thread_metadata');
 SELECT attach_community_write_fence('thread_state');
@@ -2182,7 +2250,19 @@ CREATE TABLE key_registry (
     host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL,
     created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at     TIMESTAMPTZ,
-    runtime        TEXT CHECK (char_length(runtime) BETWEEN 1 AND 64)
+    runtime        TEXT CHECK (char_length(runtime) BETWEEN 1 AND 64),
+    -- Owner tools on/off (migration 0100): NULL acts as limited; counts only
+    -- in tool_community_id; full never with respond_class anyone.
+    tool_level        TEXT CONSTRAINT key_registry_tool_level_check
+                      CHECK (tool_level IN ('full', 'limited')),
+    tool_community_id UUID,
+    respond_class     TEXT CONSTRAINT key_registry_respond_class_check
+                      CHECK (respond_class IN ('owner-only', 'allowlist', 'anyone')),
+    tool_set_at       TIMESTAMPTZ,
+    CONSTRAINT key_registry_tool_shape
+        CHECK (tool_level IS NULL OR tool_community_id IS NOT NULL),
+    CONSTRAINT key_registry_full_never_anyone
+        CHECK (NOT (tool_level = 'full' AND respond_class = 'anyone'))
 );
 CREATE INDEX key_registry_principal ON key_registry (principal_id);
 CREATE INDEX key_registry_host ON key_registry (host_device_id) WHERE host_device_id IS NOT NULL;
@@ -2591,6 +2671,18 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
            AND (hc.history_policy = 'since_join' OR hc.group_chat))
 $$;
 
+-- The agents paired to the person with account key `p_owner`, disconnected ones
+-- included. Most readers have none, so this is one lookup per query, not one
+-- per room member, and it doesn't need a `users` row: pairing writes none.
+CREATE OR REPLACE FUNCTION paired_agents_of(p_owner BYTEA)
+RETURNS SETOF BYTEA
+LANGUAGE sql STABLE PARALLEL SAFE AS $$
+    SELECT r.pubkey
+      FROM account_key_backups b
+      JOIN key_registry r ON r.principal_id = b.account_id
+     WHERE b.pubkey = p_owner AND r.role = 'external' AND r.revoked_at IS NULL
+$$;
+
 CREATE OR REPLACE FUNCTION channel_history_floor(p_cid UUID, p_chid UUID, p_reader BYTEA)
 RETURNS BIGINT
 LANGUAGE sql STABLE PARALLEL SAFE AS $$
@@ -2602,11 +2694,12 @@ LANGUAGE sql STABLE PARALLEL SAFE AS $$
                AND hm.pubkey = p_reader AND hm.removed_at IS NULL),
             (SELECT MIN(CASE WHEN am.join_cutoff_is_legacy THEN 0 ELSE am.join_sequence END)
                FROM channel_members am
-               JOIN users au ON au.community_id = am.community_id AND au.pubkey = am.pubkey
+               LEFT JOIN users au ON au.community_id = am.community_id AND au.pubkey = am.pubkey
                JOIN channels ac ON ac.community_id = am.community_id AND ac.id = am.channel_id
               WHERE am.community_id = p_cid AND am.channel_id = p_chid
                 AND am.removed_at IS NULL
-                AND au.agent_owner_pubkey = p_reader
+                AND (au.agent_owner_pubkey = p_reader
+                     OR am.pubkey IN (SELECT paired_agents_of(p_reader)))
                 AND (ac.channel_type = 'dm' OR ac.group_chat)),
             9223372036854775807)
     END

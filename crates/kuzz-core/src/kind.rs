@@ -523,7 +523,12 @@ pub const KIND_AGENT_OBSERVER_FRAME: u32 = 24200;
 /// chats list (`chat_list` query). Carries only `["p", <user>]` and a nonce;
 /// never sent for other people's messages. Owner-only: delivered solely to
 /// connections authenticated as the `p` pubkey, and clients cannot publish it.
+///
+/// Also sent when that user gets a new group invitation, with a `reason` tag
+/// of [`PING_GROUP_INVITATION`] so apps refresh their invitations.
 pub const KIND_CHAT_STATE_PING: u32 = 24210;
+/// `reason` tag of a [`KIND_CHAT_STATE_PING`] about a new group invitation.
+pub const PING_GROUP_INVITATION: &str = "group_invitation";
 /// Ephemeral, relay-signed: "a new device signed in to your account"
 /// (device-bound keys plan §5, PR A4). Sent once when a login creates a
 /// device row, never for a re-login of a known device. Content is the
@@ -565,6 +570,9 @@ pub const KIND_CANVAS: u32 = 40100;
 /// Same head-per-channel storage as [`KIND_CANVAS`]; every write must carry an
 /// `expected-revision` precondition.
 pub const KIND_GOAL_TREE: u32 = 40110;
+/// Goal edits (`{"ops":[...]}`): applied to goal rows inside the event's own
+/// write transaction, and the signed change log of a conversation's goals.
+pub const KIND_GOAL_OPS: u32 = 40111;
 /// System message for channel state changes (join, leave, rename, etc.).
 pub const KIND_SYSTEM_MESSAGE: u32 = 40099;
 
@@ -795,6 +803,7 @@ pub const ALL_KINDS: &[u32] = &[
     KIND_STREAM_MESSAGE_DIFF,
     KIND_CANVAS,
     KIND_GOAL_TREE,
+    KIND_GOAL_OPS,
     KIND_PUBLIC_GOAL,
     KIND_SYSTEM_MESSAGE,
     KIND_CHANNEL_SUMMARY,

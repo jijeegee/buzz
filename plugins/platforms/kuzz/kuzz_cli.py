@@ -23,7 +23,7 @@ import time
 from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Awaitable, Callable, Dict, Mapping, Optional, Sequence, Tuple
+from typing import Any, Awaitable, Callable, Dict, FrozenSet, Mapping, Optional, Sequence, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -68,9 +68,13 @@ def no_login_session_file(home: Optional[Path] = None) -> str:
     """A person's stored login (`kuzz auth login`) outranks the paired agent for its relay.
     Children get this session file, which nothing creates, so they act as the agent. It lives
     in the Hermes home (this OS user's), not in a shared temp folder."""
-    return str(Path(home or hermes_home_dir()) / "buzz" / "kuzz-no-login" / "session.json")
+    return str(Path(home or hermes_home_dir()) / "kuzz" / "no-login" / "session.json")
 
 CLI_TIMEOUT = 30.0
+# A Windows update asks every profile on this computer to let go of kuzz.exe, which can't be
+# replaced while it runs. A signal older than this is a crashed installer: ignore it.
+UPDATE_PAUSE_MAX_AGE = 300.0
+UPDATE_PAUSE_POLL = 1.0
 # Largest accepted watch line; a longer line restarts the watch.
 WATCH_LINE_LIMIT = 4 * 1024 * 1024
 _MAX_DETAIL_CHARS = 500
@@ -84,8 +88,9 @@ _PARK_WORDS = (
     ("revoked", "The owner disconnected this agent. Pair it again with `kuzz pair`."),
     ("not_paired", "This computer is not paired. Run the `kuzz pair` command from the app (Connect external agent) first."),
 )
-# An old CLI without `messages watch` (clap usage error, any exit code).
-_NO_WATCH = ("unrecognized subcommand", "This kuzz CLI has no `messages watch`. Update Kuzz.")
+# An old CLI without `messages watch` or one of its flags (clap usage error, any exit code).
+_OLD_CLI = ("unrecognized subcommand", "unexpected argument")
+_OLD_CLI_MESSAGE = "This kuzz CLI is too old for this connector. Update Kuzz."
 
 _HEX64 = re.compile(r"^[0-9a-f]{64}$")
 _SECRET_PATTERNS = (
@@ -170,16 +175,12 @@ def normalize_pubkey(ref: Any) -> Optional[str]:
 
 def resolve_cli_path(*configured: str) -> str:
     """The CLI binary. The first non-empty configured path decides alone (missing -> "").
-    Otherwise: ``buzz`` on PATH, ``~/bin/buzz`` (the bundled plugin's lookup), then
-    ``kuzz`` on PATH and the Kuzz desktop app's copy."""
+    Otherwise ``kuzz`` on PATH and the Kuzz desktop app's copy. Never ``buzz``, another app."""
     for path in configured:
         if path and path.strip():
             path = path.strip()
             found = path if Path(path).expanduser().is_file() else shutil.which(path)
             return str(found) if found and is_runnable(str(found)) else ""
-    for candidate in (which_program("buzz"), str(Path.home() / "bin" / _program("buzz"))):
-        if candidate and is_runnable(candidate):
-            return candidate
     return find_kuzz()
 
 
@@ -229,6 +230,34 @@ def child_env(
     return env
 
 
+def update_pause_file() -> Optional[Path]:
+    """The installer's signal, the same path as ``KuzzPauseHermes`` in the desktop installer.nsi.
+    None off Windows, where a running file can be replaced."""
+    local = os.environ.get("LOCALAPPDATA", "").strip()
+    return Path(local) / "kuzz" / "update-pause" if local else None
+
+
+def update_paused() -> bool:
+    """A Windows update is replacing kuzz.exe: start no child until it ends."""
+    path = update_pause_file()
+    if path is None:
+        return False
+    try:
+        return abs(time.time() - path.stat().st_mtime) < UPDATE_PAUSE_MAX_AGE
+    except OSError:
+        return False
+
+
+async def hold_for_update(limit: Optional[float] = None) -> bool:
+    """Wait out an update pause. False if ``limit`` seconds passed with the pause still on."""
+    deadline = None if limit is None else time.monotonic() + limit
+    while update_paused():
+        if deadline is not None and time.monotonic() >= deadline:
+            return False
+        await asyncio.sleep(UPDATE_PAUSE_POLL)
+    return True
+
+
 def redact(text: str) -> str:
     """Bound CLI output for logs and strip anything shaped like a secret."""
     text = _PAIR_COMMAND.sub(_redact_pair_args, text)
@@ -248,15 +277,24 @@ async def run_cli(
     timeout: float = CLI_TIMEOUT,
     env: Optional[Mapping[str, str]] = None,
 ) -> Tuple[int, str, str]:
-    """Run ``kuzz`` (argv, never a shell) -> ``(rc, stdout, stderr)``."""
-    proc = await asyncio.create_subprocess_exec(
-        *cli,
-        *args,
-        stdin=asyncio.subprocess.PIPE if input_text is not None else asyncio.subprocess.DEVNULL,
-        stdout=asyncio.subprocess.PIPE,
-        stderr=asyncio.subprocess.PIPE,
-        env=dict(env) if env is not None else child_env(),
-    )
+    """Run ``kuzz`` (argv, never a shell) -> ``(rc, stdout, stderr)``. Waits out an update pause,
+    so a reply made meanwhile goes out afterwards."""
+    while True:
+        await hold_for_update()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                *cli,
+                *args,
+                stdin=asyncio.subprocess.PIPE if input_text is not None else asyncio.subprocess.DEVNULL,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                env=dict(env) if env is not None else child_env(),
+            )
+            break
+        except OSError:
+            # The signal came up just after the check and the file is being replaced.
+            if not update_paused():
+                raise
     stdin_bytes = input_text.encode("utf-8") if input_text is not None else None
     try:
         out, err = await asyncio.wait_for(proc.communicate(stdin_bytes), timeout=timeout)
@@ -370,6 +408,32 @@ class WatchMessage:
     mentions: Tuple[str, ...]
 
 
+@dataclass(frozen=True)
+class WatchAccess:
+    """The owner's access setting, as `kuzz messages watch` read it."""
+
+    mode: str = "owner-only"
+    allowlist: FrozenSet[str] = frozenset()
+
+
+def parse_access_line(line: Any) -> Optional[WatchAccess]:
+    """An access line -> its setting, and owner-only if it makes no sense. None for any other line."""
+    if isinstance(line, (bytes, bytearray)):
+        line = bytes(line).decode("utf-8", errors="replace")
+    try:
+        data = json.loads(line)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(data, dict) or data.get("type") != "access":
+        return None
+    mode, people = data.get("mode"), data.get("allowlist")
+    if mode == "anyone":
+        return WatchAccess(mode)
+    if mode == "allowlist" and isinstance(people, list):
+        return WatchAccess(mode, frozenset(pk for pk in map(normalize_pubkey, people) if pk))
+    return WatchAccess()
+
+
 def parse_watch_line(line: Any) -> Optional[WatchMessage]:
     """Validate one watch line; None when it is blank or not a message. Extra fields are ignored."""
     if isinstance(line, (bytes, bytearray)):
@@ -419,18 +483,20 @@ def classify_exit(rc: Optional[int], detail: str) -> Optional[Tuple[str, str]]:
         for word, message in _PARK_WORDS:
             if re.search(rf"\b{word}\b", lowered):
                 return word, message
-    if rc and _NO_WATCH[0] in lowered:
-        return "unrecognized_subcommand", _NO_WATCH[1]
+    if rc and any(words in lowered for words in _OLD_CLI):
+        return "unrecognized_subcommand", _OLD_CLI_MESSAGE
     return None
 
 
 OnMessage = Callable[[WatchMessage], Awaitable[None]]
 OnPark = Callable[[str, str], Awaitable[None]]
 OnStart = Callable[[], Awaitable[None]]
+OnAccess = Callable[[WatchAccess], None]
 
 
 class WatchSupervisor:
-    """Keep one ``kuzz messages watch`` running: restart with backoff, park on fatal exits."""
+    """Keep one ``kuzz messages watch`` running: restart with backoff, park on fatal exits,
+    step aside during an update pause."""
 
     def __init__(
         self,
@@ -439,25 +505,30 @@ class WatchSupervisor:
         *,
         on_park: Optional[OnPark] = None,
         on_start: Optional[OnStart] = None,
+        on_access: Optional[OnAccess] = None,
         env_factory: Callable[[], Mapping[str, str]] = child_env,
         args_factory: Callable[[], Sequence[str]] = tuple,
         min_backoff: float = 1.0,
         max_backoff: float = 60.0,
         healthy_after: float = 60.0,
         stop_timeout: float = 5.0,
+        pause_poll: float = UPDATE_PAUSE_POLL,
     ) -> None:
         self._cli = list(cli)
         self._on_message = on_message
         self._on_park = on_park
         self._on_start = on_start
+        self._on_access = on_access
         self._env_factory = env_factory
         self._args_factory = args_factory
         self._min_backoff = min_backoff
         self._max_backoff = max_backoff
         self._healthy_after = healthy_after
         self._stop_timeout = stop_timeout
+        self._pause_poll = pause_poll
         self._stop = asyncio.Event()
         self._proc: Optional[asyncio.subprocess.Process] = None
+        self._ended_for_update = False
         self.restarts = 0
         self.parked: Optional[Tuple[str, str]] = None
 
@@ -468,13 +539,23 @@ class WatchSupervisor:
     async def run(self) -> None:
         backoff = self._min_backoff
         while not self._stop.is_set():
+            await self._hold_for_update()
+            if self._stop.is_set():
+                return
             started = time.monotonic()
+            self._ended_for_update = False
+            pause_check = asyncio.ensure_future(self._end_watch_on_update())
             try:
                 rc, detail = await self._run_once()
             except OSError as exc:
                 rc, detail = None, f"could not start kuzz: {exc}"
+            finally:
+                pause_check.cancel()
             if self._stop.is_set():
                 return
+            if self._ended_for_update:
+                logger.info("Kuzz: watch paused for an app update")
+                continue
             detail = redact(detail)
             park = classify_exit(rc, detail)
             if park is not None:
@@ -493,6 +574,22 @@ class WatchSupervisor:
             except asyncio.TimeoutError:
                 pass
             backoff = min(backoff * 2, self._max_backoff)
+
+    async def _hold_for_update(self) -> None:
+        while update_paused() and not self._stop.is_set():
+            try:
+                await asyncio.wait_for(self._stop.wait(), timeout=self._pause_poll)
+            except asyncio.TimeoutError:
+                pass
+
+    async def _end_watch_on_update(self) -> None:
+        while True:
+            await asyncio.sleep(self._pause_poll)
+            proc = self._proc
+            if proc is not None and update_paused():
+                self._ended_for_update = True
+                await self._terminate(proc)
+                return
 
     async def _run_once(self) -> Tuple[Optional[int], str]:
         proc = await asyncio.create_subprocess_exec(
@@ -525,7 +622,10 @@ class WatchSupervisor:
                     break
                 message = parse_watch_line(line)
                 if message is None:
-                    if line.strip():
+                    access = parse_access_line(line)
+                    if access is not None and self._on_access is not None:
+                        self._on_access(access)
+                    elif line.strip():
                         logger.debug("Kuzz: ignored a watch line that is not a message")
                     continue
                 try:

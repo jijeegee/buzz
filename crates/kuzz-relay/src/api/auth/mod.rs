@@ -49,7 +49,10 @@ use tower_http::limit::RequestBodyLimitLayer;
 use crate::identity::{verify_access_token, verify_session_token, TokenRejection};
 use crate::state::AppState;
 
-pub(crate) use agents::{status_many as agent_status_many, status_one as agent_status_one};
+pub(crate) use agents::{
+    me as agent_me, same_owner as agent_same_owner, status_many as agent_status_many,
+    status_one as agent_status_one,
+};
 
 /// Bound on `/auth/*` request bodies.
 const AUTH_BODY_LIMIT: usize = 16 * 1024;
@@ -66,6 +69,12 @@ pub(crate) fn router(state: Arc<AppState>) -> Router {
         .route("/auth/agents/challenge", post(agents::challenge))
         .route("/auth/agents/register", post(agents::register))
         .route("/auth/agents/keys", get(agents::keys))
+        .route("/auth/agents/tool-levels", post(agents::tool_levels))
+        .route(
+            "/auth/agents/{pubkey}/tool-level",
+            post(agents::set_tool_level),
+        )
+        .route("/auth/agents/{pubkey}/revoke", post(agents::revoke))
         .route("/auth/pairing/start", post(pairing::start))
         .route("/auth/pairing", get(pairing::list))
         // An external agent claims a pairing code (no account session).

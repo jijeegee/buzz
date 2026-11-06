@@ -1,27 +1,27 @@
-"""Buzz platform adapter for Hermes Agent, rebuilt on the Kuzz CLI (device-bound keys).
+"""Kuzz platform adapter for Hermes Agent, built on the Kuzz CLI (device-bound keys).
 
-A drop-in replacement for Hermes' bundled ``buzz`` platform: the same platform
-name, the same ``BUZZ_*`` env vars and ``gateway.platforms.buzz.extra`` keys,
-the same cursor file (``$HERMES_HOME/buzz/channel-cursors.json``) and the same
-``buzz`` binary lookup, falling back to ``kuzz``. Its manifest name equals the
-bundled plugin's (``buzz-platform``), so once installed in
-``$HERMES_HOME/plugins/`` Hermes loads this copy instead of the bundled one.
+Its own Hermes platform, ``kuzz``, beside the bundled ``buzz``: one Hermes can use both.
+Settings are ``KUZZ_*`` and ``gateway.platforms.kuzz.extra`` keys only, never ``BUZZ_*``,
+which belong to Buzz. State lives in ``$HERMES_HOME/kuzz/``. Installed in
+``$HERMES_HOME/plugins/kuzz/`` by `kuzz pair --hermes`.
 
 Transport: a supervised ``kuzz messages watch`` (every channel and DM, new ones
-included) replaces the WebSocket/poll loop. Replies, edits, deletes, reactions
-and files go through ``kuzz messages send|edit|delete`` and ``kuzz reactions add``.
+included). Replies, edits, deletes, reactions and files go through
+``kuzz messages send|edit|delete`` and ``kuzz reactions add``.
 
-Identity:
-- paired: ``kuzz auth whoami`` reports an ``owner``. Every child runs without
-  keys and the CLI signs with the identity bound to this computer.
-- legacy: not paired, but BUZZ_PRIVATE_KEY (or BUZZ_CREDENTIALS_FILE) is set.
-  The key reaches the CLI through the child env as before. Kuzz refuses this
-  once device keys are enforced, so a warning asks to run ``kuzz pair``.
-- neither: the adapter does not start.
+Identity: ``kuzz auth whoami`` must report a paired agent. Every child runs without
+keys and the CLI signs with the identity bound to this computer. Unpaired, the
+adapter does not start.
 
-Access: the owner (``KUZZ_OWNER_PUBKEY``, else the paired owner, else the
-NIP-OA auth tag's owner) is always allowed; BUZZ_ALLOWED_USERS adds people.
-There is no allow-all: BUZZ_ALLOW_ALL_USERS / KUZZ_ALLOW_ALL_USERS are ignored
+Replies: a message in a thread is answered in that thread, anything else stays flat,
+the same as app agents. Hermes threads progress lines only for platforms it names, so
+this adapter never opens a thread itself.
+
+Access: this adapter is the only gate. The owner (``KUZZ_OWNER_PUBKEY``, else the paired
+owner) and the owner's other agents are always allowed. Other people pass by the owner's
+setting, which the watch reports and which starts as owner-only on every watch: they must
+@mention the agent in a stream or forum, never a DM, and get no gateway control.
+KUZZ_ALLOWED_USERS narrows that setting and adds nobody. KUZZ_ALLOW_ALL_USERS is ignored
 and removed from every child's environment. Keys are never logged.
 """
 
@@ -34,7 +34,7 @@ import os
 import re
 import time
 from collections import OrderedDict
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
@@ -44,7 +44,7 @@ from gateway.platforms.base import BasePlatformAdapter, SendResult
 from gateway.platforms.event import MessageEvent, MessageType
 
 from . import kuzz_cli
-from .kuzz_cli import WatchMessage, WatchSupervisor, normalize_pubkey
+from .kuzz_cli import WatchAccess, WatchMessage, WatchSupervisor, normalize_pubkey
 
 try:
     from gateway.platforms._shared import profile_scoped as _profile_scoped
@@ -76,7 +76,7 @@ def _secret(name: str) -> str:
 
 logger = logging.getLogger(__name__)
 
-PLATFORM_NAME = "buzz"
+PLATFORM_NAME = "kuzz"
 PAIRED_AGENT_ENV = "KUZZ_PAIRED_AGENT"
 _SEEN_CAP = 500  # per channel, as in the bundled plugin's cursor file
 _ID_CAP = 2000
@@ -87,13 +87,32 @@ _REPLAY_SLACK_SECS = 60
 # Longest catch-up after a restart (`kuzz messages watch --since`).
 _MAX_CATCH_UP_SECS = 86400
 _DM_REFRESH_SECS = 60.0
+# Hermes gives connect 30s.
+CONNECT_UPDATE_HOLD = 20.0
+# Hermes queues a parked watch for reconnection with no delay, and a successful connect clears the
+# queue, so a watch that parks right after connect would cycle every few seconds. For this long
+# after a park, connect fails with the park's reason instead, and Hermes's own backoff applies.
+PARK_HOLD = 300.0
+# The last park in this process (code, message, monotonic time); a gateway restart forgets it.
+_last_park: Optional[Tuple[str, str, float]] = None
+# `kuzz agents same-owner`: its time limit and how long an answer is remembered.
+_SAME_OWNER_TIMEOUT_SECS = 3.0
+_SAME_OWNER_HIT_SECS = 300.0
+_SAME_OWNER_MISS_SECS = 60.0
+# `kuzz channels get`: its time limit. The answer decides only for people other than the owner's.
+_CHANNEL_TYPE_TIMEOUT_SECS = 3.0
+_OPEN_CHANNEL_TYPES = ("stream", "forum")
+# Other people's messages older than this are dropped: a catch-up must not judge them by a later setting.
+_OTHERS_MAX_AGE_SECS = 120
+# Older Hermes can't keep a message from running commands, so other people stay out there.
+_CAN_LIMIT_CONTROL = "allow_gateway_control" in {item.name for item in fields(MessageEvent)}
 _CURSOR_SAVE_SECS = 5.0
 # `kuzz messages edit` takes the text as an argument (no stdin); stay under the Windows limit.
 _EDIT_ARG_LIMIT = 24000
 _SEEN_REACTION = "\U0001f440"
-_CURSOR_SUBDIR, _CURSOR_FILENAME = "buzz", "channel-cursors.json"
-_KEY_FIELDS = ("nsec", "private_key_hex", "private_key")
+_CURSOR_SUBDIR, _CURSOR_FILENAME = "kuzz", "channel-cursors.json"
 _MISSING = object()
+_CHANNEL_ID_RE = re.compile(r"^\s*[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\s*$", re.IGNORECASE)
 
 
 # ── Settings ────────────────────────────────────────────────────────────────
@@ -125,49 +144,9 @@ def _flag(raw: Any, default: bool) -> bool:
     return str(raw).strip().lower() not in ("false", "0", "no", "off")
 
 
-def _reply_to_mode(config, extra: dict) -> str:
-    """Same rule as the bundled plugin: "first"/"all" thread, "off" posts flat."""
-    mode = str(_secret("BUZZ_REPLY_TO_MODE") or getattr(config, "reply_to_mode", "first") or "first").strip().lower()
-    rit = _secret("BUZZ_REPLY_IN_THREAD") or extra.get("reply_in_thread")
-    return "off" if rit is not None and not _flag(rit, True) else mode
-
-
-def _relay_url(extra: dict) -> str:
-    return str(_setting(("BUZZ_RELAY_URL",), extra, "relay_url", "") or "").strip()
-
-
 def _cli_path(extra: dict) -> str:
-    """KUZZ_CLI_PATH, then BUZZ_CLI_PATH / cli_path, then buzz, ~/bin/buzz, kuzz."""
-    return kuzz_cli.resolve_cli_path(
-        _secret("KUZZ_CLI_PATH"), str(_setting(("BUZZ_CLI_PATH",), extra, "cli_path", "") or "")
-    )
-
-
-def _legacy_credentials(extra: dict) -> Tuple[str, str]:
-    """(raw key, auth tag) from BUZZ_PRIVATE_KEY / BUZZ_AUTH_TAG or the credentials file. Never logged."""
-    key = _secret("BUZZ_PRIVATE_KEY")
-    tag = _secret("BUZZ_AUTH_TAG")
-    path = _secret("BUZZ_CREDENTIALS_FILE") or str(extra.get("credentials_file", "") or "").strip()
-    if not key and path:
-        try:
-            data = json.loads(Path(path).expanduser().read_text(encoding="utf-8"))
-        except (OSError, ValueError):
-            data = None
-        if isinstance(data, dict):
-            key = next((data[f].strip() for f in _KEY_FIELDS if isinstance(data.get(f), str) and data[f].strip()), "")
-            raw_tag = data.get("auth_tag")
-            if not tag and raw_tag:
-                tag = raw_tag if isinstance(raw_tag, str) else json.dumps(raw_tag, separators=(",", ":"))
-    return key, tag
-
-
-def _auth_tag_owner(tag: str) -> Optional[str]:
-    """Owner pubkey of a NIP-OA ``["auth", <owner>, <conditions>, <sig>]`` tag."""
-    try:
-        data = json.loads(tag)
-    except ValueError:
-        return None
-    return normalize_pubkey(data[1]) if isinstance(data, list) and len(data) > 1 else None
+    """KUZZ_CLI_PATH or ``cli_path``, else the installed kuzz."""
+    return kuzz_cli.resolve_cli_path(str(_setting(("KUZZ_CLI_PATH",), extra, "cli_path", "") or ""))
 
 
 def _hermes_home() -> Optional[Path]:
@@ -192,7 +171,6 @@ def _child_env(add: Optional[Dict[str, str]] = None) -> Dict[str, str]:
 
 @dataclass(frozen=True)
 class Identity:
-    mode: str  # "paired" | "legacy"
     env_add: Dict[str, str] = field(default_factory=dict)
     self_pubkey: str = ""
     owner: Optional[str] = None
@@ -204,7 +182,7 @@ async def _cli_json(cli: Sequence[str], args: List[str], env: Dict[str, str]) ->
     except OSError:
         return None
     if rc != 0:
-        logger.debug("Buzz: `%s` failed: %s", " ".join(args[:2]), kuzz_cli.cli_error_message(err, rc))
+        logger.debug("Kuzz: `%s` failed: %s", " ".join(args[:2]), kuzz_cli.cli_error_message(err, rc))
         return None
     try:
         return json.loads(out)
@@ -213,7 +191,7 @@ async def _cli_json(cli: Sequence[str], args: List[str], env: Dict[str, str]) ->
 
 
 async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity]:
-    """Paired identity if the CLI reports an owner, else legacy raw-key mode if configured, else None.
+    """The paired identity, else None.
 
     The agent pinned in this profile's .env is the one acted as. A secondary profile without a pin
     has no paired identity: the CLI would pick the newest pairing, another profile's agent. Once
@@ -227,21 +205,8 @@ async def resolve_identity(cli: Sequence[str], extra: dict) -> Optional[Identity
     # A paired CLI answers {"mode": "paired", "pubkey", "owner", ...}; owner may be null until the relay says.
     if isinstance(me, dict) and me.get("mode") == "paired" and normalize_pubkey(me.get("pubkey")):
         pubkey = normalize_pubkey(me.get("pubkey")) or ""
-        return Identity(
-            "paired", {PAIRED_AGENT_ENV: pubkey}, pubkey, configured_owner or normalize_pubkey(me.get("owner"))
-        )
-    key, tag = _legacy_credentials(extra)
-    if not key:
-        return None
-    add = {"KUZZ_PRIVATE_KEY": key, "BUZZ_PRIVATE_KEY": key}
-    if tag:
-        add.update(KUZZ_AUTH_TAG=tag, BUZZ_AUTH_TAG=tag)
-    relay = _relay_url(extra)
-    if relay:
-        add.update(KUZZ_RELAY_URL=relay, BUZZ_RELAY_URL=relay)
-    me = await _cli_json(cli, ["auth", "whoami"], _child_env(add=add))
-    self_pubkey = normalize_pubkey(me.get("pubkey")) if isinstance(me, dict) else None
-    return Identity("legacy", add, self_pubkey or "", configured_owner or _auth_tag_owner(tag))
+        return Identity({PAIRED_AGENT_ENV: pubkey}, pubkey, configured_owner or normalize_pubkey(me.get("owner")))
+    return None
 
 
 class _Bounded(OrderedDict):
@@ -263,25 +228,21 @@ class _Bounded(OrderedDict):
 # ── Adapter ─────────────────────────────────────────────────────────────────
 
 
-class BuzzAdapter(BasePlatformAdapter):
-    """Hermes ``buzz`` platform over the Kuzz CLI."""
+class KuzzAdapter(BasePlatformAdapter):
+    """Hermes ``kuzz`` platform over the Kuzz CLI."""
 
     def __init__(self, config, **kwargs) -> None:
         super().__init__(config=config, platform=Platform(PLATFORM_NAME))
         extra = getattr(config, "extra", None)
         # Keep the config's own dict: the gateway's allowlist check reads it from the live adapter.
         self._extra: dict = extra if isinstance(extra, dict) else {}
-        self.relay_url = _relay_url(self._extra)
-        self.channels: Set[str] = set(_csv(_setting(("BUZZ_CHANNELS",), self._extra, "channels", [])))
-        self.home_channel = str(_setting(("BUZZ_HOME_CHANNEL",), self._extra, "home_channel", "") or "").strip()
-        self.require_mention = _flag(_setting(("KUZZ_REQUIRE_MENTION", "BUZZ_REQUIRE_MENTION"), self._extra, "require_mention"), True)
-        # Read by Hermes core (gateway/run_turn.py) for buzz progress threading.
-        self._reply_to_mode = _reply_to_mode(config, self._extra)
-        self._allowed_extra = _pubkeys(
-            _csv(_setting(("BUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
-            + _csv(_setting(("KUZZ_ALLOWED_USERS",), {}, "", []))
-        )
-        self._reaction_only = _pubkeys(_csv(_setting(("BUZZ_REACTION_ONLY_USERS",), self._extra, "reaction_only_users", [])))
+        self.channels: Set[str] = set(_csv(_setting(("KUZZ_CHANNELS",), self._extra, "channels", [])))
+        self.home_channel = str(_setting(("KUZZ_HOME_CHANNEL",), self._extra, "home_channel", "") or "").strip()
+        self.require_mention = _flag(_setting(("KUZZ_REQUIRE_MENTION",), self._extra, "require_mention"), True)
+        limit_to = _csv(_setting(("KUZZ_ALLOWED_USERS",), self._extra, "allowed_users", []))
+        # Set but with no valid key, it limits to nobody: a typo must not open the agent.
+        self._limit_to: Optional[Set[str]] = _pubkeys(limit_to) if limit_to else None
+        self._reaction_only = _pubkeys(_csv(_setting(("KUZZ_REACTION_ONLY_USERS",), self._extra, "reaction_only_users", [])))
         self._identity: Optional[Identity] = None
         self._cli: List[str] = []
         self._display_name = ""
@@ -299,11 +260,19 @@ class BuzzAdapter(BasePlatformAdapter):
         self._dm_channels: Set[str] = set()
         self._dm_checked_at = 0.0
         self._channel_names: Dict[str, str] = {}
+        # sender -> (shares our owner, valid until, monotonic); failed lookups are not kept.
+        self._same_owner_answers = _Bounded(_ID_CAP)
+        self._same_owner_lookups: Dict[str, asyncio.Task] = {}
+        self._admissions: Set[asyncio.Task] = set()
+        self._access = WatchAccess()
+        # channel -> its type; failed lookups are not kept.
+        self._channel_types = _Bounded(_ID_CAP)
+        self._channel_type_lookups: Dict[str, asyncio.Task] = {}
         self._sync_allowlist()
 
     @property
     def name(self) -> str:
-        return "Buzz"
+        return "Kuzz"
 
     @staticmethod
     def normalize_user_id(user_id: str) -> Optional[str]:
@@ -315,8 +284,13 @@ class BuzzAdapter(BasePlatformAdapter):
         return self._identity.owner if self._identity else None
 
     @property
+    def authorization_is_upstream(self) -> bool:
+        """``_handle`` admits every sender, the owner's other agents included, which no allowlist can name."""
+        return True
+
+    @property
     def allowed_pubkeys(self) -> Set[str]:
-        return ({self.owner} if self.owner else set()) | self._allowed_extra
+        return {self.owner} if self.owner else set()
 
     def _sync_allowlist(self) -> None:
         """Mirror the allowlist into ``config.extra`` so the gateway's own check agrees with ours."""
@@ -338,6 +312,14 @@ class BuzzAdapter(BasePlatformAdapter):
     async def connect(self, *, is_reconnect: bool = False) -> bool:
         if self._supervisor is not None:
             await self.disconnect()
+        if not await kuzz_cli.hold_for_update(limit=CONNECT_UPDATE_HOLD):
+            # kuzz.exe may be half written. Hermes retries a retryable failure in the background.
+            logger.info("Kuzz: an app update is still running; connecting later")
+            self._set_fatal_error("update_running", "Kuzz is updating.", retryable=True)
+            return False
+        parked = _last_park
+        if parked is not None and time.monotonic() - parked[2] < PARK_HOLD:
+            return self._fail(parked[0], parked[1])
         cli_path = _cli_path(self._extra)
         if not cli_path:
             return self._fail("cli_missing", "The kuzz CLI was not found. Install Kuzz or set KUZZ_CLI_PATH.")
@@ -350,32 +332,32 @@ class BuzzAdapter(BasePlatformAdapter):
                 "wrong_identity", "The kuzz CLI acts as the owner, not as an agent. Pair the agent with the `kuzz pair` command from the app (Connect external agent)."
             )
         self._identity = identity
-        if not self.allowed_pubkeys:
-            return self._fail("owner_missing", "No owner or allowed user is known, so nobody could talk to the agent.")
-        if identity.mode == "legacy":
-            logger.warning(
-                "Buzz: this computer is not paired with Kuzz; using the configured key, which Kuzz refuses once "
-                "device keys are enforced. Run the `kuzz pair` command from the app (Connect external agent)."
-            )
+        if not self.owner:
+            return self._fail("owner_missing", "No owner is known, so nobody could talk to the agent.")
+        # One signed relay call before reporting connected: a refused device or a revoked agent fails
+        # here, where Hermes backs off, not a second later in the watch, which would loop.
+        refused = await self._load_dms()
+        if refused:
+            return self._fail("relay_refused", f"The Kuzz relay refused this agent: {refused}")
         self._sync_allowlist()
         if not self._acquire_lock():
             return self._fail("lock_conflict", "This agent is already running in another Hermes profile.")
         await self._load_profile()
         self._connected_at = time.time()
         self._load_cursors()
-        await self._refresh_dms(force=True)
         self._supervisor = WatchSupervisor(
             self._cli,
             self._on_message,
             on_park=self._on_park,
             on_start=self._on_watch_start,
+            on_access=self._on_access,
             env_factory=self._env,
             args_factory=self._watch_args,
         )
         self._watch_task = asyncio.ensure_future(self._supervisor.run())
         self._mark_connected()
         owner = self.owner[:8] + "…" if self.owner else "unknown"
-        logger.info("Buzz: watching Kuzz messages (%s mode, owner %s)", identity.mode, owner)
+        logger.info("Kuzz: watching messages (owner %s)", owner)
         return True
 
     async def disconnect(self) -> None:
@@ -389,34 +371,50 @@ class BuzzAdapter(BasePlatformAdapter):
                 await asyncio.wait_for(task, timeout=10)
             except (asyncio.TimeoutError, asyncio.CancelledError):
                 task.cancel()
+        # After the watch: its last lines may have started admissions. A cancelled one is replayed.
+        pending = (*self._admissions, *self._same_owner_lookups.values(), *self._channel_type_lookups.values())
+        for waiting in pending:
+            waiting.cancel()
+        await asyncio.gather(*pending, return_exceptions=True)
         self._save_cursors()
         self._release_lock()
 
+    # Every Kuzz failure is retryable. Hermes queues a retryable platform and keeps the gateway up;
+    # a non-retryable one stops the whole gateway when no other platform has connected yet (Telegram
+    # still connecting), taking the person's other platforms down with Kuzz.
     def _fail(self, code: str, message: str) -> bool:
-        logger.error("Buzz: %s", message)
-        self._set_fatal_error(code, message, retryable=False)
+        logger.error("Kuzz: %s", message)
+        self._set_fatal_error(code, message, retryable=True)
         return False
 
     async def _on_park(self, code: str, message: str) -> None:
+        global _last_park
+        _last_park = (code, message, time.monotonic())
         self._save_cursors()
         self._release_lock()
-        self._set_fatal_error(code, message, retryable=False)
+        self._set_fatal_error(code, message, retryable=True)
         await self._notify_fatal_error()
 
     def _watch_args(self) -> List[str]:
-        """``--since`` from the newest message seen (cursor file or this run), so a restart
-        catches up on what arrived while Hermes was down. Capped at a day; never in the future."""
+        """``--access-owner``, and ``--since`` from the newest message seen (cursor file or this
+        run), so a restart catches up on what arrived while Hermes was down. Capped at a day; never
+        in the future."""
+        access = ["--access-owner", str(self.owner)]
         newest = max(
             [s["last_ts"] for s in self._channel_state.values()] + [r["last_ts"] for r in self._restored.values()] + [0]
         )
         if not newest:
-            return []
+            return access
         now = int(time.time())
         since = min(max(int(newest) - _REPLAY_SLACK_SECS, now - _MAX_CATCH_UP_SECS), now)
-        return ["--since", str(since)]
+        return [*access, "--since", str(since)]
 
     async def _on_watch_start(self) -> None:
+        self._access = WatchAccess()  # before this watch's first line
         await self._refresh_dms(force=True)
+
+    def _on_access(self, access: WatchAccess) -> None:
+        self._access = access
 
     def _acquire_lock(self) -> bool:
         identity = self._identity.self_pubkey if self._identity and self._identity.self_pubkey else f"cli:{self._cli[0]}"
@@ -458,12 +456,26 @@ class BuzzAdapter(BasePlatformAdapter):
         if isinstance(dms, list):
             self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
 
+    async def _load_dms(self) -> str:
+        """Load the DM list; the CLI's error when it fails, else ""."""
+        self._dm_checked_at = time.monotonic()
+        rc, out, err = await self._run(["dms", "list"])
+        if rc != 0:
+            return kuzz_cli.cli_error_message(err, rc)
+        try:
+            dms = json.loads(out)
+        except ValueError:
+            dms = None
+        if isinstance(dms, list):
+            self._dm_channels = {str(dm.get("dm_id")) for dm in dms if isinstance(dm, dict) and dm.get("dm_id")}
+        return ""
+
     async def _is_dm(self, channel: str) -> bool:
         if channel not in self._dm_channels:
             await self._refresh_dms()
         return channel in self._dm_channels
 
-    # ── Cursors ($HERMES_HOME/buzz/channel-cursors.json, bundled format) ─
+    # ── Cursors ($HERMES_HOME/kuzz/channel-cursors.json) ─
 
     @staticmethod
     def _cursor_path() -> Path:
@@ -475,7 +487,7 @@ class BuzzAdapter(BasePlatformAdapter):
         return self._identity.self_pubkey if self._identity else ""
 
     def _load_cursors(self) -> None:
-        """Restore cursors written for this identity and relay; anything else is ignored."""
+        """Restore cursors written for this identity; anything else is ignored."""
         self._restored = {}
         try:
             data = json.loads(self._cursor_path().read_text(encoding="utf-8"))
@@ -483,7 +495,7 @@ class BuzzAdapter(BasePlatformAdapter):
             return
         if not isinstance(data, dict) or not self._cursor_identity():
             return
-        if data.get("identity") != self._cursor_identity() or data.get("relay") != self.relay_url:
+        if data.get("identity") != self._cursor_identity():
             return
         for channel, entry in (data.get("channels") or {}).items() if isinstance(data.get("channels"), dict) else ():
             if isinstance(entry, dict):
@@ -518,7 +530,7 @@ class BuzzAdapter(BasePlatformAdapter):
         }
         for channel, restored in self._restored.items():
             channels.setdefault(channel, restored)
-        payload = {"identity": self._cursor_identity(), "relay": self.relay_url, "channels": channels}
+        payload = {"identity": self._cursor_identity(), "channels": channels}
         try:
             path = self._cursor_path()
             path.parent.mkdir(parents=True, exist_ok=True)
@@ -528,7 +540,7 @@ class BuzzAdapter(BasePlatformAdapter):
             os.replace(tmp, path)
             self._cursor_saved_at = time.monotonic()
         except Exception:
-            logger.debug("Buzz: could not save channel cursors", exc_info=True)
+            logger.debug("Kuzz: could not save channel cursors", exc_info=True)
 
     def _maybe_save_cursors(self) -> None:
         if time.monotonic() - self._cursor_saved_at >= _CURSOR_SAVE_SECS:
@@ -568,7 +580,8 @@ class BuzzAdapter(BasePlatformAdapter):
         if msg.id in state["seen"]:
             return
         state["seen"].put(msg.id)
-        state["last_ts"] = max(state["last_ts"], msg.created_at)
+        # Senders pick created_at: one in the future must not cost the owner's messages at restart.
+        state["last_ts"] = max(state["last_ts"], min(msg.created_at, int(time.time())))
         self._roots.put(msg.id, msg.thread_root)
         try:
             await self._handle(msg, state)
@@ -582,11 +595,117 @@ class BuzzAdapter(BasePlatformAdapter):
             return
         is_dm = await self._is_dm(msg.channel)
         state["chat_type"] = "dm" if is_dm else "group"
-        if msg.author not in self.allowed_pubkeys:
-            if msg.author in self._reaction_only and self._mentions_me(msg):
-                await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)
-            logger.debug("Buzz: ignored a message from a sender who is not allowed (%s…)", msg.author[:8])
+        if msg.author in self.allowed_pubkeys:
+            await self._deliver(msg, state, is_dm)
             return
+        if not self._is_addressed(msg, is_dm):
+            return
+        if self._known_same_owner(msg.author):
+            await self._deliver(msg, state, is_dm)
+            return
+        # CLI calls: the read loop goes on, or one slow lookup would hold back the owner's messages.
+        task = asyncio.ensure_future(self._admit(msg, state, is_dm))
+        self._admissions.add(task)
+        task.add_done_callback(self._admissions.discard)
+
+    async def _admit(self, msg: WatchMessage, state: dict, is_dm: bool) -> None:
+        try:
+            try:
+                same_owner = await self._same_owner(msg.author)
+                # Read the setting again after the lookup: narrowing it meanwhile must win.
+                other = (
+                    not same_owner
+                    and self._setting_admits(msg)
+                    and await self._in_open_channel(msg)
+                    and self._setting_admits(msg)
+                )
+            except asyncio.CancelledError:
+                # Not answered yet, so the replay brings it back. After this point it must not.
+                state["seen"].pop(msg.id, None)
+                raise
+            if same_owner:
+                await self._deliver(msg, state, is_dm)
+            elif other:
+                await self._deliver(msg, state, is_dm, control=False)
+            else:
+                await self._refuse(msg)
+        except Exception:
+            logger.exception("Kuzz: could not admit %s", msg.id[:12])
+
+    def _setting_admits(self, msg: WatchMessage) -> bool:
+        """Whether someone who isn't the owner's may be heard here, by the owner's setting."""
+        access = self._access
+        admitted = access.mode == "anyone" or (access.mode == "allowlist" and msg.author in access.allowlist)
+        return (
+            admitted
+            and (self._limit_to is None or msg.author in self._limit_to)
+            and self._mentions_me(msg)
+            and msg.created_at >= time.time() - _OTHERS_MAX_AGE_SECS
+            and _CAN_LIMIT_CONTROL
+        )
+
+    async def _in_open_channel(self, msg: WatchMessage) -> bool:
+        """A stream or forum, by the relay. No answer counts as no: a DM stays closed to other people."""
+        channel = msg.channel
+        channel_type = self._channel_types.get(channel)
+        if channel_type is None:
+            lookup = self._channel_type_lookups.get(channel)
+            if lookup is None:
+                lookup = asyncio.ensure_future(self._lookup_channel_type(channel))
+                self._channel_type_lookups[channel] = lookup
+                lookup.add_done_callback(lambda _: self._channel_type_lookups.pop(channel, None))
+            channel_type = await lookup
+        return channel_type in _OPEN_CHANNEL_TYPES
+
+    async def _lookup_channel_type(self, channel: str) -> Optional[str]:
+        args = ["channels", "get", "--channel", channel]
+        try:
+            rc, out, _err = await kuzz_cli.run_cli(self._cli, args, timeout=_CHANNEL_TYPE_TIMEOUT_SECS, env=self._env())
+        except OSError:
+            return None
+        channel_type = _json_dict(out).get("channel_type") if rc == 0 else None
+        if not isinstance(channel_type, str) or not channel_type:
+            return None
+        self._channel_types.put(channel, channel_type)
+        return channel_type
+
+    async def _refuse(self, msg: WatchMessage) -> None:
+        if msg.author in self._reaction_only and self._mentions_me(msg):
+            await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)
+        logger.debug("Kuzz: ignored a message from a sender who is not allowed (%s…)", msg.author[:8])
+
+    def _known_same_owner(self, author: str) -> Optional[bool]:
+        answer = self._same_owner_answers.get(author)
+        return answer[0] if answer and time.monotonic() < answer[1] else None
+
+    async def _same_owner(self, author: str) -> bool:
+        """Whether the relay says ``author`` shares our owner. A burst from one sender shares a lookup."""
+        known = self._known_same_owner(author)
+        if known is not None:
+            return known
+        lookup = self._same_owner_lookups.get(author)
+        if lookup is None:
+            lookup = asyncio.ensure_future(self._lookup_same_owner(author))
+            self._same_owner_lookups[author] = lookup
+            lookup.add_done_callback(lambda _: self._same_owner_lookups.pop(author, None))
+        return await lookup
+
+    async def _lookup_same_owner(self, author: str) -> bool:
+        args = ["agents", "same-owner", "--pubkeys", author]
+        try:
+            rc, out, err = await kuzz_cli.run_cli(self._cli, args, timeout=_SAME_OWNER_TIMEOUT_SECS, env=self._env())
+        except OSError:
+            return False
+        keys = _json_dict(out).get("keys") if rc == 0 else None
+        if not isinstance(keys, list):
+            logger.debug("Kuzz: same-owner lookup failed: %s", kuzz_cli.cli_error_message(err, rc))
+            return False
+        same_owner = author in keys
+        keep = _SAME_OWNER_HIT_SECS if same_owner else _SAME_OWNER_MISS_SECS
+        self._same_owner_answers.put(author, (same_owner, time.monotonic() + keep))
+        return same_owner
+
+    async def _deliver(self, msg: WatchMessage, state: dict, is_dm: bool, *, control: bool = True) -> None:
         if not self._is_addressed(msg, is_dm) or not self._message_handler:
             return
         user_name = msg.author_name or msg.author[:8]
@@ -615,6 +734,8 @@ class BuzzAdapter(BasePlatformAdapter):
             message_id=msg.id,
             timestamp=datetime.fromtimestamp(msg.created_at) if msg.created_at else datetime.now(),
         )
+        if not control:
+            event.allow_gateway_control = False
         await self.handle_message(event)
         # "Seen" reaction, as the bundled plugin does.
         await self.send_reaction(msg.channel, msg.id, _SEEN_REACTION)
@@ -622,16 +743,11 @@ class BuzzAdapter(BasePlatformAdapter):
     # ── Outbound ────────────────────────────────────────────────────────
 
     def _thread_for(self, chat_id: str, reply_to: Optional[str], metadata: Optional[Dict[str, Any]]) -> Optional[str]:
-        """Thread root for a reply. An explicit thread is kept; otherwise channel replies open a
-        thread under the message they answer and DM replies stay flat."""
-        if self._reply_to_mode == "off":
-            return None
+        """Thread root for a reply: the thread it was asked in, else flat. Never opens one."""
         meta = metadata or {}
         if meta.get("thread_id"):
             return self._resolve_root(meta["thread_id"])
-        if str(chat_id) in self._dm_channels:
-            return None
-        return self._resolve_root(meta.get("reply_to_message_id") or reply_to)
+        return self._roots.get(str(meta.get("reply_to_message_id") or reply_to), None)
 
     def _record_sent(self, chat_id: str, event_id: str, thread: Optional[str]) -> None:
         self._sent.put(event_id)
@@ -642,7 +758,7 @@ class BuzzAdapter(BasePlatformAdapter):
         self, chat_id: str, content: str, reply_to: Optional[str], metadata: Optional[Dict[str, Any]], files: Sequence[str] = ()
     ) -> SendResult:
         if not self._cli:
-            return SendResult(success=False, error="Buzz is not connected", retryable=True)
+            return SendResult(success=False, error="Kuzz is not connected", retryable=True)
         thread = self._thread_for(chat_id, reply_to, metadata)
         outcome = await kuzz_cli.send_message(self._cli, str(chat_id), content, thread=thread, files=files, env=self._env())
         if outcome.event_id is None:
@@ -712,7 +828,7 @@ class BuzzAdapter(BasePlatformAdapter):
             return False
         rc, _out, err = await self._run(["reactions", "add", "--event", str(message_id), "--emoji", emoji])
         if rc != 0:
-            logger.debug("Buzz: reaction failed for %s: %s", str(message_id)[:12], kuzz_cli.cli_error_message(err, rc))
+            logger.debug("Kuzz: reaction failed for %s: %s", str(message_id)[:12], kuzz_cli.cli_error_message(err, rc))
         return rc == 0
 
     async def send_typing(self, chat_id: str, metadata=None) -> None:
@@ -740,29 +856,32 @@ def _json_dict(text: str) -> dict:
 
 
 def check_requirements() -> bool:
-    """Passive probe: is a buzz/kuzz CLI installed?"""
+    """Passive probe: is the kuzz CLI installed?"""
     return bool(_cli_path({}))
 
 
+def _owner_setting(extra: dict) -> Optional[str]:
+    return normalize_pubkey(_setting(("KUZZ_OWNER_PUBKEY",), extra, "owner"))
+
+
 def validate_config(config) -> bool:
-    return bool(_cli_path(getattr(config, "extra", None) or {}))
+    """A CLI alone is not a connection: `kuzz pair` also writes the owner."""
+    extra = getattr(config, "extra", None) or {}
+    return bool(_cli_path(extra) and _owner_setting(extra))
 
 
 def _env_enablement() -> Optional[dict]:
-    """Enable from env (the bundled plugin's variables, or the owner written by `kuzz pair`)."""
-    if not check_requirements():
+    """Enable from the owner written by `kuzz pair`."""
+    owner = _owner_setting({})
+    if not (owner and check_requirements()):
         return None
-    relay = _secret("BUZZ_RELAY_URL")
-    owner = normalize_pubkey(_secret("KUZZ_OWNER_PUBKEY"))
-    if not (relay or owner):
-        return None
-    seed: dict = {"relay_url": relay} if relay else {"owner": owner}
-    channels = _csv(_secret("BUZZ_CHANNELS"))
+    seed: dict = {"owner": owner}
+    channels = _csv(_secret("KUZZ_CHANNELS"))
     if channels:
         seed["channels"] = channels
-    home = _secret("BUZZ_HOME_CHANNEL") or (channels[0] if channels else "")
+    home = _secret("KUZZ_HOME_CHANNEL") or (channels[0] if channels else "")
     if home:
-        seed["home_channel"] = {"chat_id": home, "name": _secret("BUZZ_HOME_CHANNEL_NAME") or home}
+        seed["home_channel"] = {"chat_id": home, "name": _secret("KUZZ_HOME_CHANNEL_NAME") or home}
     return seed
 
 
@@ -770,44 +889,59 @@ async def _standalone_send(
     pconfig, chat_id: str, message: str, *, thread_id: Optional[str] = None,
     media_files: Optional[List[Any]] = None, force_document: bool = False,
 ) -> Dict[str, Any]:
-    """One-shot send without a live adapter (out-of-process ``deliver=buzz`` cron)."""
+    """One-shot send without a live adapter (out-of-process ``deliver=kuzz`` cron)."""
     extra = getattr(pconfig, "extra", None) or {}
     cli_path = _cli_path(extra)
     if not cli_path:
-        return {"error": "Buzz standalone send: kuzz CLI not found"}
+        return {"error": "Kuzz standalone send: kuzz CLI not found"}
     identity = await resolve_identity([cli_path], extra)
     if identity is None:
-        return {"error": "Buzz standalone send: this computer is not paired with Kuzz"}
+        return {"error": "Kuzz standalone send: this computer is not paired with Kuzz"}
     home = extra.get("home_channel")
     home = home.get("chat_id") if isinstance(home, dict) else home
-    target = (chat_id or "").strip() or str(_setting(("BUZZ_HOME_CHANNEL",), {}, "", "") or home or "").strip()
+    target = (chat_id or "").strip() or str(_setting(("KUZZ_HOME_CHANNEL",), {}, "", "") or home or "").strip()
     if not target:
-        return {"error": "Buzz standalone send: no target channel (set BUZZ_HOME_CHANNEL)"}
-    thread = thread_id if thread_id and _reply_to_mode(pconfig, extra) != "off" else None
+        return {"error": "Kuzz standalone send: no target channel (set KUZZ_HOME_CHANNEL)"}
     files = [str(m[0] if isinstance(m, (list, tuple)) and m else m) for m in media_files or []]
     outcome = await kuzz_cli.send_message(
-        [cli_path], target, message, thread=thread, files=files, env=_child_env(add=identity.env_add)
+        [cli_path], target, message, thread=thread_id, files=files, env=_child_env(add=identity.env_add)
     )
     if outcome.event_id is None:
-        return {"error": f"Buzz standalone send failed: {outcome.error}"}
+        return {"error": f"Kuzz standalone send failed: {outcome.error}"}
     result: Dict[str, Any] = {"success": True, "message_id": outcome.event_id}
     if files:
         result["media_delivered"] = True
     return result
 
 
+def _send_options() -> Dict[str, Any]:
+    """Send features a newer Hermes offers. An older one connects without them: its
+    `register_platform` refuses a field it does not know."""
+    try:
+        from gateway.platform_registry import PlatformEntry
+        from gateway.platforms.send_targets import StandaloneSendPolicy, regex_stripped_parser
+    except ImportError:
+        return {}
+    options = {
+        "standalone_send": StandaloneSendPolicy(label="Kuzz", media=True),
+        "target_ref_syntax_fn": regex_stripped_parser(_CHANNEL_ID_RE),
+    }
+    known = {item.name for item in fields(PlatformEntry)}
+    return {name: value for name, value in options.items() if name in known}
+
+
 def register(ctx) -> None:
     ctx.register_platform(
         name=PLATFORM_NAME,
-        label="Buzz",
-        adapter_factory=lambda cfg: BuzzAdapter(cfg),
+        label="Kuzz",
+        adapter_factory=lambda cfg: KuzzAdapter(cfg),
         check_fn=check_requirements,
         validate_config=validate_config,
         is_connected=validate_config,
         required_env=[],
         install_hint="Install Kuzz, then pair this computer with the `kuzz pair` command from the app (Connect external agent).",
         env_enablement_fn=_env_enablement,
-        cron_deliver_env_var="BUZZ_HOME_CHANNEL",
+        cron_deliver_env_var="KUZZ_HOME_CHANNEL",
         standalone_sender_fn=_standalone_send,
         emoji="\U0001f41d",
         pii_safe=False,  # identities are pubkeys, not phone numbers
@@ -817,4 +951,5 @@ def register(ctx) -> None:
             "supported. Users address you by @-mentioning your name in channels and threads; "
             "direct messages reach you without a mention. Keep responses conversational."
         ),
+        **_send_options(),
     )

@@ -517,30 +517,85 @@ pub(crate) async fn fetch_owner(relay_url: &str, keys: &Keys) -> Option<String> 
         .map(str::to_owned)
 }
 
+/// What `GET /agents/me` says about this key, as `whoami` fields:
+/// `tool_level` (`full` when it may use its owner's tools here now, else
+/// `limited`), `tool_level_reason` (why not; `null` when full), `community`,
+/// `host_computer` and `owner`. Only `"tool_level": "unknown"` when the relay
+/// cannot be asked or gives no usable answer.
+pub(crate) async fn fetch_tool_level(
+    relay_url: &str,
+    keys: &Keys,
+) -> serde_json::Map<String, Value> {
+    let answer = async {
+        let client =
+            crate::client::KuzzClient::new(relay_url.to_owned(), keys.clone(), None, None).ok()?;
+        let raw = client.get_authed("/agents/me").await.ok()?;
+        serde_json::from_str::<Value>(&raw).ok()
+    }
+    .await;
+    let mut fields = serde_json::Map::new();
+    let level = answer
+        .as_ref()
+        .and_then(|answer| answer["effective"].as_str())
+        .filter(|level| matches!(*level, "full" | "limited"));
+    let (Some(answer), Some(level)) = (answer.as_ref(), level) else {
+        fields.insert("tool_level".into(), json!("unknown"));
+        return fields;
+    };
+    let text = |name: &str| {
+        answer[name]
+            .as_str()
+            .map_or(Value::Null, |text| json!(text))
+    };
+    fields.insert("tool_level".into(), json!(level));
+    fields.insert("tool_level_reason".into(), text("reason"));
+    fields.insert("community".into(), text("community"));
+    fields.insert("host_computer".into(), text("host_computer"));
+    let owner = answer["owner"]
+        .as_str()
+        .filter(|owner| is_hex_pubkey(owner));
+    fields.insert(
+        "owner".into(),
+        owner.map_or(Value::Null, |owner| json!(owner)),
+    );
+    fields
+}
+
 /// `kuzz auth whoami` for a paired agent: who it is, on which computer, for
-/// which owner (looked up once and remembered when the pairing lacks it).
+/// which owner (looked up once and remembered when the pairing lacks it), and
+/// whether it may use its owner's tools ([`fetch_tool_level`]).
 pub(crate) async fn whoami(
     relay_url: &str,
     keys: &Keys,
     mut pairing: Pairing,
     store: Option<&PairingStore>,
 ) -> Value {
+    let tools = fetch_tool_level(relay_url, keys).await;
     if pairing.owner.is_none() {
-        if let Some(owner) = fetch_owner(relay_url, keys).await {
+        let owner = match tools.get("owner").and_then(Value::as_str) {
+            Some(owner) => Some(owner.to_owned()),
+            None => fetch_owner(relay_url, keys).await,
+        };
+        if let Some(owner) = owner {
             pairing.owner = Some(owner);
             if let Some(store) = store {
                 let _ = store.save(&pairing);
             }
         }
     }
-    json!({
+    let mut me = json!({
         "mode": "paired",
         "pubkey": pairing.agent_pubkey,
         "agent_name": pairing.agent_name,
         "device_name": pairing.device_name,
         "relay": pairing.relay,
-        "owner": pairing.owner,
-    })
+    });
+    if let Value::Object(map) = &mut me {
+        map.extend(tools);
+        // The pairing's owner is the one this agent was paired for.
+        map.insert("owner".into(), json!(pairing.owner));
+    }
+    me
 }
 
 /// The Hermes plugin installer, relative to an install root
@@ -567,15 +622,19 @@ fn hermes_home() -> Option<PathBuf> {
 }
 
 /// Where an installed `kuzz` ships `plugins/`: the binary's own directory,
-/// `<prefix>/share/kuzz` next to a `<prefix>/bin/kuzz` (Unix packages), and
-/// this user's `<local data dir>/kuzz`. Never other ancestors: a `plugins/`
-/// folder anywhere above the binary is not trusted to run.
+/// `<prefix>/share/kuzz` next to a `<prefix>/bin/kuzz` (Unix packages),
+/// `Contents/Resources` beside `Contents/MacOS` (the macOS app), and this
+/// user's `<local data dir>/kuzz`. Never other ancestors: a `plugins/` folder
+/// anywhere above the binary is not trusted to run.
 pub(crate) fn hermes_installer_roots(exe: &Path) -> Vec<PathBuf> {
     let mut roots = Vec::new();
     if let Some(dir) = exe.parent() {
         roots.push(dir.to_path_buf());
         if let Some(prefix) = dir.parent().filter(|_| dir.ends_with("bin")) {
             roots.push(prefix.join("share").join("kuzz"));
+        }
+        if let Some(contents) = dir.parent().filter(|_| dir.ends_with("Contents/MacOS")) {
+            roots.push(contents.join("Resources"));
         }
     }
     if let Some(data) = dirs::data_local_dir() {
@@ -592,8 +651,22 @@ fn find_hermes_installer() -> Option<PathBuf> {
         .find(|path| path.is_file())
 }
 
-fn find_python() -> Option<&'static str> {
-    ["python3", "python", "py"].into_iter().find(|python| {
+/// Pythons to try, in order: Hermes's own under its `root` home, then `PATH`.
+fn python_candidates(root: &Path) -> Vec<std::ffi::OsString> {
+    let venv = root.join("hermes-agent").join("venv");
+    [
+        venv.join("Scripts").join("python.exe"),
+        venv.join("bin").join("python"),
+    ]
+    .into_iter()
+    .filter(|python| python.is_file())
+    .map(PathBuf::into_os_string)
+    .chain(["python3", "python", "py"].map(Into::into))
+    .collect()
+}
+
+fn find_python(root: &Path) -> Option<std::ffi::OsString> {
+    python_candidates(root).into_iter().find(|python| {
         std::process::Command::new(python)
             .arg("--version")
             .stdout(std::process::Stdio::null())
@@ -601,6 +674,14 @@ fn find_python() -> Option<&'static str> {
             .status()
             .is_ok_and(|status| status.success())
     })
+}
+
+/// The default profile's home, for a named profile's `<root>/profiles/<name>`.
+fn hermes_root(home: &Path) -> &Path {
+    home.parent()
+        .filter(|parent| parent.file_name().is_some_and(|name| name == "profiles"))
+        .and_then(Path::parent)
+        .unwrap_or(home)
 }
 
 /// What `kuzz pair --hermes` calls the agent.
@@ -638,14 +719,17 @@ fn install_hermes(
         .home
         .or_else(hermes_home)
         .filter(|home| home.is_dir());
-    let (Some(installer), Some(home), Some(python), Some(owner)) =
-        (installer, home, find_python(), owner)
+    let python = home
+        .as_deref()
+        .and_then(|home| find_python(hermes_root(home)));
+    let (Some(installer), Some(home), Some(python), Some(owner)) = (installer, home, python, owner)
     else {
         eprintln!("{manual}");
         return false;
     };
     let mut command = std::process::Command::new(python);
     command
+        .arg("-B")
         .arg(&installer)
         .arg("--owner")
         .arg(owner)
@@ -655,6 +739,15 @@ fn install_hermes(
         .arg(&home);
     for default_agent in default_agents {
         command.arg("--default-agent").arg(default_agent);
+    }
+    // The macOS app's plugin root holds no `kuzz` for the installer to find.
+    if let Ok(exe) = std::env::current_exe() {
+        if exe
+            .parent()
+            .is_some_and(|dir| dir.ends_with("Contents/MacOS"))
+        {
+            command.arg("--cli-path").arg(exe);
+        }
     }
     if !options.restart {
         command.arg("--no-restart");
@@ -674,6 +767,63 @@ fn install_hermes(
             eprintln!("warning: could not run the Hermes installer ({error}). {manual}");
             false
         }
+    }
+}
+
+/// Whether Hermes's home at `root` or one of its profiles has the plugin.
+fn has_hermes_connector(root: &Path) -> bool {
+    let connector = |home: &Path| home.join("plugins").join("kuzz").is_dir();
+    connector(root)
+        || std::fs::read_dir(root.join("profiles"))
+            .into_iter()
+            .flatten()
+            .flatten()
+            .any(|profile| connector(&profile.path()))
+}
+
+/// `kuzz hermes refresh`: the installer's `--refresh`, which prints the result
+/// on stdout. Without a connector here there is nothing to do, so no Python is
+/// looked for (on macOS that alone can prompt to install developer tools).
+pub(crate) fn cmd_hermes_refresh(no_restart: bool, home: Option<PathBuf>) -> Result<(), CliError> {
+    let nothing = || {
+        println!(
+            "{}",
+            json!({"updated": [], "current": [], "failed": [], "restart": "none"})
+        );
+        Ok(())
+    };
+    let root = home
+        .or_else(hermes_home)
+        .map(|home| hermes_root(&home).to_path_buf())
+        .filter(|root| has_hermes_connector(root));
+    let (Some(root), Some(installer)) = (root, find_hermes_installer()) else {
+        return nothing();
+    };
+    let Some(python) = find_python(&root) else {
+        eprintln!("warning: no Python found, so the Hermes plugin was not updated");
+        return nothing();
+    };
+    let mut command = std::process::Command::new(python);
+    command
+        .arg("-B")
+        .arg(&installer)
+        .arg("--refresh")
+        .arg("--hermes-home")
+        .arg(&root);
+    if no_restart {
+        command.arg("--no-restart");
+    }
+    let output = command
+        .output()
+        .map_err(|error| CliError::Other(format!("could not run the Hermes installer: {error}")))?;
+    print!("{}", String::from_utf8_lossy(&output.stdout));
+    eprint!("{}", String::from_utf8_lossy(&output.stderr));
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err(CliError::Other(
+            "the Hermes plugin was not fully updated".into(),
+        ))
     }
 }
 
@@ -722,8 +872,8 @@ async fn pair_device_key() -> Result<DeviceKey, CliError> {
     }
     #[cfg(not(test))]
     {
-        use kuzz_token_broker::device::{open_shared, OpenMode};
-        match tokio::task::spawn_blocking(|| open_shared(OpenMode::CreateIfMissing)).await {
+        use kuzz_token_broker::device::{open_for_cli, OpenMode};
+        match tokio::task::spawn_blocking(|| open_for_cli(OpenMode::CreateIfMissing)).await {
             Ok(Ok(Some(key))) => Ok(key),
             Ok(Ok(None)) => Err(CliError::Other("device key could not be created".into())),
             Ok(Err(error)) => Err(CliError::Other(format!(

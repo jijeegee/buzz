@@ -297,7 +297,7 @@ pub async fn get_agent_config_surface(
         ),
     )?;
     let session_cache = state.get_session_cache(&runtime_key);
-    let global = crate::managed_agents::load_global_agent_config(&app).unwrap_or_default();
+    let global = crate::managed_agents::load_agent_config_for_record(&app, &record);
 
     // #3493: for claude agents, resolve the settings.json and .claude.json paths
     // from the agent's effective CLAUDE_CONFIG_DIR env var (if set), falling

@@ -173,6 +173,27 @@ for (const testCase of fixture.comparator) {
   });
 }
 
+test("comparator: a chunk-only event is told apart by age and kind", () => {
+  const comparator = new ShadowComparator(["a"], () => new Set(["a"]));
+  comparator.streamEose(100_000);
+  comparator.observe("chunk", "old", "a", 101_000, {
+    kind: 9,
+    created_at: 50,
+  });
+  comparator.observe("chunk", "new", "a", 101_000, {
+    kind: 7,
+    created_at: 101,
+  });
+  comparator.end(200_000);
+  assert.equal(comparator.counters.chunkOnly, 2);
+  assert.deepEqual(comparator.chunkOnlyDetail, {
+    chunkOnlyOld: 1,
+    chunkOnlyKind9: 1,
+    chunkOnlyNew: 1,
+    chunkOnlyKind7: 1,
+  });
+});
+
 // ── The session runtime (relayUserStream.ts) ────────────────────────────────
 
 const { UserStreamSession } = await import("./relayUserStream.ts");

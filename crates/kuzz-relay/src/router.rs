@@ -331,8 +331,11 @@ pub fn build_router(state: Arc<AppState>) -> Router {
         .route("/query", post(api::bridge::query_events))
         .route("/count", post(api::bridge::count_events))
         // Kuzz agent key status for an admitted key of the same owner (NIP-98).
+        .route("/agents/me", get(api::auth::agent_me))
         .route("/agents/status", get(api::auth::agent_status_many))
         .route("/agents/{pubkey}/status", get(api::auth::agent_status_one))
+        // Which keys share the caller's owner (NIP-98 or bearer token).
+        .route("/agents/same-owner", get(api::auth::agent_same_owner))
         // Relay-owned third-party GIF metadata proxy (NIP-98 auth).
         .route(api::gifs::SEARCH_PATH, post(api::gifs::search))
         .route(api::gifs::SHARE_PATH, post(api::gifs::share))
