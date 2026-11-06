@@ -17,6 +17,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use uuid::Uuid;
 
+use super::devices_ping::{spawn_devices_ping, PingTo};
 use super::oidc::{issue_session_tokens, refresh_cookie};
 use super::{
     auth_error, authenticate_session, authenticate_user_session, authenticate_user_token,
@@ -280,6 +281,7 @@ pub(super) async fn logout(State(state): State<Arc<AppState>>, headers: HeaderMa
             // Key sockets signed in from this device close too (A4b).
             publish_key_revocation(&state, &[device_id], &[], RevokeReason::Logout.as_str()).await;
             tracing::info!(principal = %binding.principal, device = %device_id, "auth.logout");
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
             (StatusCode::NO_CONTENT, clear_cookie()).into_response()
         }
         Ok(None) => not_found("device not found"),
@@ -381,7 +383,10 @@ pub(super) async fn rename_device(
         .rename_device(&binding.principal, device_id, name)
         .await
     {
-        Ok(Some(device)) => axum::Json(device_json(&device, binding.device_id)).into_response(),
+        Ok(Some(device)) => {
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
+            axum::Json(device_json(&device, binding.device_id)).into_response()
+        }
         Ok(None) => not_found("device not found"),
         Err(error) => internal("rename_device", &error),
     }
@@ -412,6 +417,7 @@ pub(super) async fn revoke_device(
             )
             .await;
             tracing::info!(principal = %binding.principal, device = %device_id, "auth.device_revoked");
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(None) => not_found("device not found"),
@@ -448,6 +454,7 @@ pub(super) async fn disconnect_agent(
                 publish_key_revocation(&state, &[device_id], &[], reason).await;
             }
             tracing::info!(principal = %binding.principal, device = %device_id, "auth.agent_disconnected");
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(None) => not_found("agent not found"),
@@ -476,6 +483,7 @@ pub(super) async fn revoke_others(
             publish_revocations(&state, &revoked, RevokeReason::RevokeAll.as_str(), None).await;
             publish_key_revocation(&state, &devices, &[], RevokeReason::RevokeAll.as_str()).await;
             tracing::info!(principal = %binding.principal, "auth.sessions_revoke_others");
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
             StatusCode::NO_CONTENT.into_response()
         }
         Err(error) => internal("revoke_other_sessions", &error),
@@ -588,6 +596,8 @@ pub(super) async fn rotate_device_key(
                 new = %&new.to_hex()[..16],
                 "auth.device_rotate"
             );
+            // External devices are grouped under a login device by key.
+            spawn_devices_ping(&state, &headers, PingTo::Principal(binding.principal));
             StatusCode::NO_CONTENT.into_response()
         }
         Ok(DeviceKeyRotation::NotFound) => not_found("device not found"),

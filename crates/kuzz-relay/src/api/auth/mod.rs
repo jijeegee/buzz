@@ -18,6 +18,7 @@
 
 mod agents;
 mod bots;
+mod devices_ping;
 mod key_backup;
 mod oidc;
 mod operators;

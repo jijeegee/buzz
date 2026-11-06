@@ -284,6 +284,11 @@ pub(super) async fn claim(
             // A refusal cached before the pairing must not outlive it.
             state.identity.admissions.evict_key(&agent_bytes);
             bind_owner(&state, &headers, &agent, &owner_pubkey).await;
+            super::devices_ping::spawn_devices_ping(
+                &state,
+                &headers,
+                super::devices_ping::PingTo::Key(owner_pubkey),
+            );
             tracing::info!(pairing = %pairing_id, device = %device_id, "auth.pairing_connected");
             axum::Json(json!({
                 "pairing_id": pairing_id,

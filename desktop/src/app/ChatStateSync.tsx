@@ -9,7 +9,9 @@ import type { ChatStateWriter } from "@/features/chats/chatStateWrites";
 import { useChatStateCapability } from "@/features/chats/useChatStateCapability";
 import { useChatStatePing } from "@/features/chats/useChatStatePing";
 import { useServerChatList } from "@/features/chats/useServerChatList";
+import { AGENT_PAIRINGS_KEY } from "@/features/agents/externalConnect/useExternalAgents";
 import { groupInvitationsQueryKey } from "@/features/groups/hooks";
+import { AUTH_DEVICES_QUERY_KEY } from "@/shared/api/useAuthDeviceNames";
 import { useRelayConnection } from "@/shared/api/useRelayConnection";
 
 export type ChatStateSyncProps = {
@@ -64,6 +66,16 @@ export function ChatStateSync({
       void queryClient.invalidateQueries({ queryKey: CHAT_LIST_QUERY_KEY });
     },
     refreshInvitations,
+    () => {
+      // Another of my devices connected, disconnected or renamed something.
+      // Cancel first: a refetch would only join a retry sitting out its wait.
+      void queryClient
+        .cancelQueries({ queryKey: AUTH_DEVICES_QUERY_KEY })
+        .then(() =>
+          queryClient.invalidateQueries({ queryKey: AUTH_DEVICES_QUERY_KEY }),
+        );
+      void queryClient.invalidateQueries({ queryKey: AGENT_PAIRINGS_KEY });
+    },
   );
   const chatList = useServerChatList({
     capabilityKey,

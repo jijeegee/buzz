@@ -529,6 +529,10 @@ pub const KIND_AGENT_OBSERVER_FRAME: u32 = 24200;
 pub const KIND_CHAT_STATE_PING: u32 = 24210;
 /// `reason` tag of a [`KIND_CHAT_STATE_PING`] about a new group invitation.
 pub const PING_GROUP_INVITATION: &str = "group_invitation";
+/// `reason` tag of a [`KIND_CHAT_STATE_PING`] sent when the user's device
+/// list (`/auth/devices`: devices, their grouping and external agents)
+/// changed, so their other devices reread it.
+pub const PING_DEVICES: &str = "devices";
 /// Ephemeral, relay-signed: "a new device signed in to your account"
 /// (device-bound keys plan §5, PR A4). Sent once when a login creates a
 /// device row, never for a re-login of a known device. Content is the

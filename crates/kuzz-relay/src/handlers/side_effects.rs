@@ -12,7 +12,7 @@ use kuzz_core::kind::{
     KIND_IA_UNARCHIVED, KIND_MEMBER_ADDED_NOTIFICATION, KIND_MEMBER_REMOVED_NOTIFICATION,
     KIND_NEW_SIGNIN_NOTICE, KIND_NIP29_GROUP_ADMINS, KIND_NIP29_GROUP_MEMBERS,
     KIND_NIP29_GROUP_METADATA, KIND_NIP43_MEMBERSHIP_LIST, KIND_REACTION, KIND_THREAD_SUMMARY,
-    PING_GROUP_INVITATION,
+    PING_DEVICES, PING_GROUP_INVITATION,
 };
 use kuzz_core::StoredEvent;
 use kuzz_db::channel::{MemberRecord, MemberRole};
@@ -4296,6 +4296,17 @@ pub async fn publish_chat_state_ping(
     user: &[u8],
 ) -> anyhow::Result<()> {
     publish_user_ping(tenant, state, user, None).await
+}
+
+/// Tell `user`'s own devices that their device list changed (kind:24210 with
+/// reason [`PING_DEVICES`]), so they reread it. Same delivery as
+/// [`publish_chat_state_ping`].
+pub async fn publish_devices_ping(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    user: &[u8],
+) -> anyhow::Result<()> {
+    publish_user_ping(tenant, state, user, Some(PING_DEVICES)).await
 }
 
 /// [`publish_chat_state_ping`], with a `reason` tag when it is about
