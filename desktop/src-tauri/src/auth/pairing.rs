@@ -131,7 +131,7 @@ pub async fn start_agent_pairing(app: AppHandle) -> Result<PairingStartView, Str
     let session = super::commands::fresh_session(&state, &origin).await?;
     // The relay checks this device's proof; open the key if it is not yet.
     let _ = crate::device_key::ensure_within(DEVICE_WAIT).await;
-    let started = api::pairing_start(&state.http_client, &origin, &session.access)
+    let started = api::pairing_start(&state.http_client, &origin, &session.access, false)
         .await
         .map_err(api_error)?;
     Ok(PairingStartView {
@@ -246,7 +246,7 @@ pub async fn connect_hermes(app: AppHandle, profile: String) -> Result<HermesPai
     let origin = state.current_auth_origin();
     let session = super::commands::fresh_session(&state, &origin).await?;
     let _ = crate::device_key::ensure_within(DEVICE_WAIT).await;
-    let started = api::pairing_start(&state.http_client, &origin, &session.access)
+    let started = api::pairing_start(&state.http_client, &origin, &session.access, true)
         .await
         .map_err(api_error)?;
     let relay = started

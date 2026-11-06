@@ -816,17 +816,23 @@ pub(crate) struct PairingInfo {
 }
 
 /// `POST /auth/pairing/start`.
+/// `same_computer`: this app pairs an agent on its own computer, so the relay
+/// shows that computer's external device under this device.
 pub(crate) async fn pairing_start(
     client: &reqwest::Client,
     origin: &str,
     access: &str,
+    same_computer: bool,
 ) -> Result<PairingStarted, ApiError> {
-    send_json(
-        client
-            .post(format!("{origin}/auth/pairing/start"))
-            .header("Authorization", bearer(access)),
-    )
-    .await
+    let request = client
+        .post(format!("{origin}/auth/pairing/start"))
+        .header("Authorization", bearer(access));
+    let request = if same_computer {
+        request.json(&serde_json::json!({ "same_computer": true }))
+    } else {
+        request
+    };
+    send_json(request).await
 }
 
 /// `GET /auth/pairing`: this account's pairings of the last day.

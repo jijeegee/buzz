@@ -197,6 +197,40 @@ async fn a_claimed_code_connects_the_agent_on_its_computer_only() {
 
 #[tokio::test]
 #[ignore = "requires Postgres + Redis"]
+async fn the_apps_own_computer_pairing_lists_under_the_app() {
+    let inst = agents_instance(DeviceAdmissionMode::Enforce).await;
+    let (pc, _) = owner(&inst).await;
+    let path = "/auth/pairing/start";
+    let bad = call(&inst, &pc, "POST", path, Some(json!({ "same_computer": "yes" }))).await;
+    assert_eq!(bad.0, 400, "{}", bad.1);
+
+    // The app's Connect: a CLI with its own device key, shown under the app.
+    let (status, body) = call(
+        &inst,
+        &pc,
+        "POST",
+        path,
+        Some(json!({ "same_computer": true })),
+    )
+    .await;
+    assert_eq!(status, 200, "{body}");
+    let agent = external();
+    let (status, body) = claim(&inst, body["code"].as_str().unwrap(), &agent).await;
+    assert_eq!(status, 200, "{body}");
+    let external_device = body["device_id"].as_str().unwrap().to_owned();
+    let (status, body) = call(&inst, &pc, "GET", "/auth/devices", None).await;
+    assert_eq!(status, 200, "{body}");
+    let row = body
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|device| device["id"] == external_device)
+        .unwrap();
+    assert_eq!(row["login_device_id"], pc.device_id.to_string());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres + Redis"]
 async fn claims_expire_and_refuse_bad_or_taken_keys() {
     let inst = agents_instance(DeviceAdmissionMode::Enforce).await;
     let (pc, _) = owner(&inst).await;

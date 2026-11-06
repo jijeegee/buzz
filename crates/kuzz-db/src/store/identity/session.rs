@@ -59,8 +59,9 @@ pub struct DeviceRecord {
     pub platform: String,
     /// Last login or refresh on this device.
     pub last_seen_at: DateTime<Utc>,
-    /// For an external device: the account's live login device with the same
-    /// device key, the same computer.
+    /// For an external device: the account's live login device on the same
+    /// computer: the one with the same device key, else the one whose app
+    /// paired it there.
     pub login_device_id: Option<Uuid>,
     /// For an external device: the agents connected on it, oldest first.
     pub agents: Vec<HostedAgent>,
@@ -698,11 +699,17 @@ async fn live_devices(
 ) -> Result<Vec<DeviceRecord>> {
     let rows = sqlx::query(
         "SELECT d.id, d.name, d.platform, d.last_seen_at, \
-                (SELECT l.id FROM devices l \
-                  WHERE d.kind = 'external' AND l.kind = 'login' \
-                    AND l.principal_id = d.principal_id \
-                    AND l.device_pubkey = d.device_pubkey \
-                    AND l.revoked_at IS NULL) AS login_device_id, \
+                COALESCE( \
+                  (SELECT l.id FROM devices l \
+                    WHERE d.kind = 'external' AND l.kind = 'login' \
+                      AND l.principal_id = d.principal_id \
+                      AND l.device_pubkey = d.device_pubkey \
+                      AND l.revoked_at IS NULL), \
+                  (SELECT l.id FROM devices l \
+                    WHERE d.kind = 'external' AND l.kind = 'login' \
+                      AND l.principal_id = d.principal_id \
+                      AND l.id = d.host_device_id \
+                      AND l.revoked_at IS NULL)) AS login_device_id, \
                 (SELECT COALESCE(json_agg(json_build_object( \
                             'pubkey', encode(r.pubkey, 'hex'), 'runtime', r.runtime) \
                             ORDER BY r.created_at), '[]') \

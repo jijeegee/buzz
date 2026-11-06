@@ -74,8 +74,25 @@ async fn login(db: &Db, account: &PrincipalId, key: &[u8; 33]) -> Uuid {
 
 async fn start(db: &Db, owner: &PrincipalId, device: Uuid) -> (Uuid, [u8; 32]) {
     let code_hash: [u8; 32] = rand::random();
-    match db.start_pairing(owner, device, &code_hash).await.unwrap() {
+    match db
+        .start_pairing(owner, device, &code_hash, false)
+        .await
+        .unwrap()
+    {
         StartPairing::Started { id, .. } => (id, code_hash),
+        other => panic!("start: {other:?}"),
+    }
+}
+
+/// A pairing the app starts to pair an agent on its own computer.
+async fn start_here(db: &Db, owner: &PrincipalId, device: Uuid) -> [u8; 32] {
+    let code_hash: [u8; 32] = rand::random();
+    match db
+        .start_pairing(owner, device, &code_hash, true)
+        .await
+        .unwrap()
+    {
+        StartPairing::Started { .. } => code_hash,
         other => panic!("start: {other:?}"),
     }
 }
@@ -464,6 +481,65 @@ async fn an_external_device_names_its_computer_and_agents() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn an_app_pairing_on_its_computer_groups_a_different_key_under_it() {
+    let db = database().await;
+    let (owner, _, pc, _) = owner(&db).await;
+    let host_of = |devices: Vec<crate::identity::DeviceRecord>, id: Uuid| {
+        devices
+            .into_iter()
+            .find(|device| device.id == id)
+            .unwrap()
+            .login_device_id
+    };
+
+    // A pasted command on another computer (its own key) stands alone.
+    let other = device_key();
+    let (_, code) = start(&db, &owner, pc).await;
+    let elsewhere = connect(&db, &code, &agent_key(), &other).await;
+    assert_eq!(
+        host_of(db.list_devices(&owner).await.unwrap(), elsewhere),
+        None
+    );
+
+    // The app's Connect on a computer whose CLI has its own key: under the app.
+    let cli = device_key();
+    let code = start_here(&db, &owner, pc).await;
+    let here = connect(&db, &code, &agent_key(), &cli).await;
+    assert_eq!(
+        host_of(db.list_devices(&owner).await.unwrap(), here),
+        Some(pc)
+    );
+    // A later pasted pairing of that computer keeps the link.
+    let (_, code) = start(&db, &owner, pc).await;
+    assert_eq!(connect(&db, &code, &agent_key(), &cli).await, here);
+    assert_eq!(
+        host_of(db.list_devices(&owner).await.unwrap(), here),
+        Some(pc)
+    );
+
+    // The same key as a signed-in device still wins over the link.
+    let laptop = login(&db, &owner, &cli).await;
+    assert_eq!(
+        host_of(db.list_devices(&owner).await.unwrap(), here),
+        Some(laptop)
+    );
+    db.revoke_device(&owner, laptop, RevokeReason::Logout)
+        .await
+        .unwrap();
+    assert_eq!(
+        host_of(db.list_devices(&owner).await.unwrap(), here),
+        Some(pc)
+    );
+
+    // Signed out where it was paired: it stands alone.
+    db.revoke_device(&owner, pc, RevokeReason::Logout)
+        .await
+        .unwrap();
+    assert_eq!(host_of(db.list_devices(&owner).await.unwrap(), here), None);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn one_agent_disconnects_and_pairs_again() {
     let db = database().await;
     let (owner_id, _, pc, pc_key) = owner(&db).await;
@@ -540,7 +616,9 @@ async fn open_pairings_are_capped_per_owner() {
         start(&db, &owner, pc).await;
     }
     assert_eq!(
-        db.start_pairing(&owner, pc, &rand::random()).await.unwrap(),
+        db.start_pairing(&owner, pc, &rand::random(), false)
+            .await
+            .unwrap(),
         StartPairing::TooMany
     );
     // Expired ones free their slot.

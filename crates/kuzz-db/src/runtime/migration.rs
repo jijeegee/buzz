@@ -727,6 +727,12 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[93].version, 101);
+        let pair_host = migrations[93].sql.as_str();
+        assert!(pair_host.contains("ADD COLUMN same_computer BOOLEAN NOT NULL DEFAULT false"));
+        assert!(pair_host.contains("ADD COLUMN host_device_id UUID"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("host_device_id UUID REFERENCES devices(id) ON DELETE SET NULL"));
         assert_eq!(migrations[92].version, 100);
         let agent_tools = migrations[92].sql.as_str();
         assert!(agent_tools.contains("ADD COLUMN tool_level TEXT"));
@@ -756,7 +762,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 93);
+        assert_eq!(migrations.len(), 94);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql

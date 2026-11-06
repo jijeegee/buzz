@@ -220,6 +220,7 @@ impl Db {
         owner: &PrincipalId,
         device: Uuid,
         code_hash: &[u8; 32],
+        same_computer: bool,
     ) -> Result<StartPairing> {
         let owner_bytes = owner.as_bytes().as_slice();
         let mut tx = begin(&self.pool).await?;
@@ -243,13 +244,15 @@ impl Db {
             return Ok(StartPairing::TooMany);
         }
         let (id, expires_at): (Uuid, DateTime<Utc>) = sqlx::query_as(
-            "INSERT INTO pairing_requests (principal_id, started_device_id, code_hash, expires_at) \
-             VALUES ($1, $2, $3, now() + make_interval(secs => $4)) RETURNING id, expires_at",
+            "INSERT INTO pairing_requests \
+               (principal_id, started_device_id, code_hash, expires_at, same_computer) \
+             VALUES ($1, $2, $3, now() + make_interval(secs => $4), $5) RETURNING id, expires_at",
         )
         .bind(owner_bytes)
         .bind(device)
         .bind(code_hash.as_slice())
         .bind(PAIRING_TTL_SECS as f64)
+        .bind(same_computer)
         .fetch_one(&mut *tx)
         .await?;
         tx.commit().await?;
@@ -331,8 +334,32 @@ impl Db {
         .bind(claim.device_pubkey.as_slice())
         .fetch_optional(&mut *tx)
         .await?;
+        // Paired by the app on its own computer: the external device's agents
+        // run on the signed-in device that started it (shown under it when
+        // the keys differ). Any other pairing leaves the link as it is.
+        let host: Option<Uuid> = if row.try_get::<bool, _>("same_computer")? {
+            sqlx::query_scalar(
+                "SELECT id FROM devices WHERE id = $1 AND principal_id = $2 AND kind = 'login' \
+                   AND platform = 'desktop'",
+            )
+            .bind(started)
+            .bind(owner_bytes.as_slice())
+            .fetch_optional(&mut *tx)
+            .await?
+        } else {
+            None
+        };
         let device_id = match existing {
-            Some(device_id) => device_id,
+            Some(device_id) => {
+                if host.is_some() {
+                    sqlx::query("UPDATE devices SET host_device_id = $2 WHERE id = $1")
+                        .bind(device_id)
+                        .bind(host)
+                        .execute(&mut *tx)
+                        .await?;
+                }
+                device_id
+            }
             None => {
                 let live: i64 = sqlx::query_scalar(
                     "SELECT count(*) FROM devices WHERE principal_id = $1 \
@@ -345,14 +372,15 @@ impl Db {
                     return Ok(ClaimPairing::DeviceLimit);
                 }
                 sqlx::query_scalar(
-                    "INSERT INTO devices \
-                       (principal_id, name, platform, kind, device_pubkey, device_key_kind) \
-                     VALUES ($1, $2, 'external', 'external', $3, $4) RETURNING id",
+                    "INSERT INTO devices (principal_id, name, platform, kind, device_pubkey, \
+                                          device_key_kind, host_device_id) \
+                     VALUES ($1, $2, 'external', 'external', $3, $4, $5) RETURNING id",
                 )
                 .bind(owner_bytes.as_slice())
                 .bind(claim.device_name.unwrap_or("External agent"))
                 .bind(claim.device_pubkey.as_slice())
                 .bind(claim.device_key_kind)
+                .bind(host)
                 .fetch_one(&mut *tx)
                 .await?
             }
