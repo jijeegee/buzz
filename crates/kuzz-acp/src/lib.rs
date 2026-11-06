@@ -193,9 +193,9 @@ fn resolve_agent_owner(config: &Config) -> Option<String> {
 /// Owner is now provided via `--agent-owner` config flag (no REST lookup).
 /// Cache for the agent's owner pubkey + sibling lookups.
 ///
-/// Siblings are other agents of the same owner: their NIP-OA auth tag proves
-/// it, or the relay says so. A paired agent can be disconnected, so answers
-/// expire: yes after [`SIBLING_TTL`], no after [`NOT_SIBLING_TTL`].
+/// Siblings are other agents of the same owner, as the relay says. A paired
+/// agent can be disconnected, so answers expire: yes after [`SIBLING_TTL`], no
+/// after [`NOT_SIBLING_TTL`].
 struct OwnerCache {
     pubkey: Option<String>,
     /// author_hex → (is_sibling, valid until)
@@ -244,9 +244,10 @@ impl OwnerCache {
 
 /// Check if `author` is the owner OR a sibling (same owner).
 ///
-/// For unknown authors, looks for a NIP-OA auth tag on their kind:0 profile
-/// naming the owner and asks the relay, which also knows paired agents. An
-/// answer is cached; a failed lookup is not, and denies.
+/// For unknown authors, asks the relay, which also knows paired agents and
+/// stops vouching for a removed key. A profile's NIP-OA tag never expires, so
+/// it is not evidence here. An answer is cached; a failed lookup is not, and
+/// denies.
 async fn is_owner_or_sibling(
     author: &str,
     owner_cache: &OwnerCache,
@@ -267,18 +268,15 @@ async fn is_owner_or_sibling(
         return cached;
     }
 
-    let (by_profile, by_relay) = tokio::join!(
-        check_sibling_via_profile(author, my_owner, rest_client),
-        tokio::time::timeout(Duration::from_millis(2000), rest_client.same_owner(author)),
-    );
-    let is_sibling = match (by_profile, by_relay) {
-        (true, _) => true,
-        (false, Ok(Ok(same_owner))) => same_owner,
-        (false, Ok(Err(e))) => {
+    let lookup =
+        tokio::time::timeout(Duration::from_millis(2000), rest_client.same_owner(author)).await;
+    let is_sibling = match lookup {
+        Ok(Ok(same_owner)) => same_owner,
+        Ok(Err(e)) => {
             tracing::debug!(author, "same-owner lookup failed: {e}");
             return false;
         }
-        (false, Err(_)) => {
+        Err(_) => {
             tracing::debug!(author, "same-owner lookup timed out");
             return false;
         }
@@ -1089,81 +1087,6 @@ fn dm_from_channel_type(channel_id: Uuid, channel_type: Option<&str>) -> bool {
             true
         }
     }
-}
-
-/// Query an author's kind:0 profile and check if their NIP-OA auth tag
-/// proves the same owner as us.
-async fn check_sibling_via_profile(
-    author: &str,
-    expected_owner: &str,
-    rest_client: &relay::RestClient,
-) -> bool {
-    let filter = nostr::Filter::new()
-        .kind(nostr::Kind::Metadata)
-        .author(match nostr::PublicKey::from_hex(author) {
-            Ok(pk) => pk,
-            Err(_) => return false,
-        })
-        .limit(1);
-
-    let resp = match tokio::time::timeout(Duration::from_millis(2000), rest_client.query(&[filter]))
-        .await
-    {
-        Ok(Ok(v)) => v,
-        _ => return false, // timeout or error — fail closed
-    };
-
-    // Look for an "auth" tag in the profile event.
-    let events = match resp.as_array() {
-        Some(arr) => arr,
-        None => return false,
-    };
-    let event = match events.first() {
-        Some(e) => e,
-        None => return false,
-    };
-    let tags = match event.get("tags").and_then(|t| t.as_array()) {
-        Some(t) => t,
-        None => return false,
-    };
-
-    // Find ["auth", owner_pk, conditions, sig] and verify the Schnorr signature.
-    // Don't trust the relay — verify ourselves.
-    let agent_pk = match nostr::PublicKey::from_hex(author) {
-        Ok(pk) => pk,
-        Err(_) => return false,
-    };
-
-    for tag in tags {
-        let parts = match tag.as_array() {
-            Some(p) if p.len() >= 4 => p,
-            _ => continue,
-        };
-        if parts[0].as_str() != Some("auth") {
-            continue;
-        }
-        let tag_owner = match parts[1].as_str() {
-            Some(o) => o,
-            None => continue,
-        };
-        // Only verify if the owner field matches ours.
-        if !tag_owner.eq_ignore_ascii_case(expected_owner) {
-            continue;
-        }
-        // Cryptographically verify the NIP-OA attestation signature.
-        let tag_json = serde_json::to_string(tag).unwrap_or_default();
-        match kuzz_sdk::nip_oa::verify_auth_tag(&tag_json, &agent_pk) {
-            Ok(_) => {
-                tracing::debug!(author, expected_owner, "sibling verified via NIP-OA");
-                return true;
-            }
-            Err(e) => {
-                tracing::debug!(author, "NIP-OA auth tag verification failed: {e}");
-            }
-        }
-    }
-
-    false
 }
 
 /// Observer frames are published at a global rate of AT MOST ONE relay frame
@@ -8554,7 +8477,6 @@ mod owner_cache_tests {
         let author = "b".repeat(64);
         let cache = OwnerCache::new(Some("a".repeat(64)));
 
-        // The profile lookup gets the same scripted body and finds no tag.
         let (rest, server) =
             super::author_gate_tests::nip11_server(serde_json::json!({"keys": [author]})).await;
         assert!(is_owner_or_sibling(&author, &cache, &rest).await);
