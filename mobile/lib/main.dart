@@ -8,6 +8,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'app.dart';
 import 'features/age_gate/age_signal_push_bootstrap.dart';
 import 'features/invites/invite_join_provider.dart';
+import 'shared/error_reporting/error_reporting.dart';
 import 'shared/push/android_push.dart';
 import 'shared/push/push_bridge.dart';
 import 'shared/push/push_fcm_background.dart';
@@ -15,7 +16,7 @@ import 'shared/relay/relay_closed_policy.dart';
 import 'shared/relay/service_scope_migration.dart';
 import 'shared/theme/theme_provider.dart';
 
-void main() => runKuzzApp(const App());
+void main() => runWithErrorReporting(() => runKuzzApp(const App()));
 
 /// Run by the Android wake engine when a push arrives with the app off
 /// screen (KuzzPushMessagingService; builds with KUZZ_ANDROID_PUSH only).

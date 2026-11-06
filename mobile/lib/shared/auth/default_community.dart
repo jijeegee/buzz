@@ -47,6 +47,9 @@ class _KuzzEnvDefine {
 
 const _kuzzEnv = _KuzzEnvDefine(String.fromEnvironment('KUZZ_ENV'));
 
+/// This build's environment, for code without a provider ref (crash reports).
+KuzzEnvironment appKuzzEnvironment() => parseKuzzEnvironment(_kuzzEnv.value);
+
 /// This build's server address, `--dart-define=KUZZ_RELAY_URL=wss://...`
 /// (or `config/prod.json`). Release and profile builds fail to compile
 /// without it, like desktop's `build.rs`.
