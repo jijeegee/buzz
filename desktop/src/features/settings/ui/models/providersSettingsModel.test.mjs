@@ -286,8 +286,9 @@ test("defaultOptions lists every provider × path with a harness, one selected",
     ],
   );
   assert.equal(options.filter((option) => option.selected).length, 1);
-  assert.equal(options[0].label, "Anthropic · Subscription");
+  assert.equal(options[0].label, "Anthropic · Claude Code");
   assert.equal(options[0].detail, "Claude Code sign-in");
+  assert.equal(options[2].label, "OpenAI · Codex");
   assert.equal(options[2].detail, "Codex sign-in — not installed");
   assert.equal(options[1].detail, "Kuzz Agent with ANTHROPIC_API_KEY");
   assert.equal(options[6].label, "Databricks · Workspace");

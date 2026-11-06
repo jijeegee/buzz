@@ -13567,9 +13567,9 @@
   "@settings.taskModels.loadFailed": {
     "description": "Settings > Models > App tasks, red error."
   },
-  "settings.providers.optionSubscription": "{provider} · Subscription",
-  "@settings.providers.optionSubscription": {
-    "description": "Settings > Models > Default for new agents, option label. {provider} is the provider name, e.g. Anthropic. Short."
+  "settings.providers.optionRuntime": "{provider} · {runtime}",
+  "@settings.providers.optionRuntime": {
+    "description": "Settings > Models > Default for new agents, option label for an agent tool that uses its own sign-in. {provider} is the provider name, e.g. Anthropic; {runtime} is an agent tool name, e.g. Claude Code. Short."
   },
   "settings.providers.optionChatgptSubscription": "{provider} · ChatGPT subscription",
   "@settings.providers.optionChatgptSubscription": {
@@ -13631,9 +13631,9 @@
   "@settings.providers.codexCliHeading": {
     "description": "Settings > Models > Connections, OpenAI group, small heading above the Codex sign-in row. Keep 'Codex'. Short."
   },
-  "settings.providers.subscriptionHeading": "Subscription",
-  "@settings.providers.subscriptionHeading": {
-    "description": "Settings > Models > Connections, small heading above a provider's subscription sign-in row. Short."
+  "settings.providers.cliHeading": "{runtime} CLI · used by {runtime} agents",
+  "@settings.providers.cliHeading": {
+    "description": "Settings > Models > Connections, small heading above an agent tool's sign-in row. {runtime} is an agent tool name, e.g. Claude Code. Short."
   },
   "settings.providers.workspaceSignIn": "Workspace sign-in",
   "@settings.providers.workspaceSignIn": {
