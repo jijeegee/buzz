@@ -152,7 +152,9 @@ export function ProvidersSettingsTab() {
             <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
               {primary.providerId === "openai"
                 ? t("settings.providers.codexCliHeading")
-                : t("settings.providers.subscriptionHeading")}
+                : t("settings.providers.cliHeading", {
+                    runtime: subscription.label,
+                  })}
             </p>
             <HarnessRow
               embedded

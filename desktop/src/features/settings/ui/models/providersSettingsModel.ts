@@ -76,7 +76,7 @@ export type DefaultOption = {
   id: string;
   providerId: string;
   path: ProviderPath;
-  /** "Anthropic · Subscription" */
+  /** "Anthropic · Claude Code" */
   label: string;
   /** What choosing it launches, e.g. "Claude Code sign-in". */
   detail: string;
@@ -212,12 +212,13 @@ export function defaultOptions(rows: readonly ProviderRow[]): DefaultOption[] {
         providerId: row.providerId,
         path: "subscription",
         label:
-          row.providerId === "openai"
+          row.providerId === "openai" && runtime.supportsChatgptSubscription
             ? t("settings.providers.optionChatgptSubscription", {
                 provider: row.label,
               })
-            : t("settings.providers.optionSubscription", {
+            : t("settings.providers.optionRuntime", {
                 provider: row.label,
+                runtime: runtime.label,
               }),
         detail: available
           ? row.providerId === "openai" && runtime.supportsChatgptSubscription
