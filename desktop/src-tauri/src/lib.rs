@@ -325,6 +325,8 @@ pub fn run() {
                         // Let the saved sign-ins come back first.
                         tokio::time::sleep(std::time::Duration::from_secs(15)).await;
                         crate::auth::agent_hosting::spawn_restore_pending(&ready_app);
+                        // Owner tools: defaults once for agents never set.
+                        crate::auth::tool_levels::spawn_launch_sweep(&ready_app);
                         // A software key moves to the TPM / Secure Enclave
                         // once every signed-in account is back.
                         crate::auth::device_upgrade::spawn(&ready_app);
@@ -732,6 +734,7 @@ pub fn run() {
             auth::pairing::restart_hermes,
             auth::pairing::disconnect_external_device,
             auth::pairing::disconnect_external_agent,
+            auth::tool_levels::get_agent_tool_levels,
             auth::external_access::get_external_agent_access,
             auth::external_access::set_external_agent_access,
             auth::commands::rename_device,

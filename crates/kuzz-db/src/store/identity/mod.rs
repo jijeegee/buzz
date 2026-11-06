@@ -12,6 +12,7 @@
 mod access_token;
 mod admission;
 mod agent_keys;
+mod agent_tools;
 mod bot;
 mod key_backup;
 mod pairing;
@@ -22,6 +23,9 @@ mod session;
 
 #[cfg(test)]
 mod agent_keys_postgres_tests;
+
+#[cfg(test)]
+mod agent_tools_postgres_tests;
 
 #[cfg(test)]
 mod key_backup_postgres_tests;
@@ -46,6 +50,10 @@ use crate::error::{DbError, Result};
 pub use access_token::{AccessTokenRecord, AccessTokenRejection};
 pub use admission::{KeyAdmission, KeyRefusal, KeyRole};
 pub use agent_keys::{AgentKeyBackupRecord, OwnedKey, RegisterAgentKey, MAX_AGENT_KEYS_PER_DEVICE};
+pub use agent_tools::{
+    ActionSource, ActionStatus, AgentToolState, KeyAuthority, NewAgentAction, RespondClass,
+    RevokeAgentKey, SetToolLevel, ToolLevel, ToolLevelWrite,
+};
 pub use bot::{BotRecord, ExchangeOutcome};
 pub use key_backup::{
     InitializeKeyBackup, KeyBackupRecord, KeyBackupReencryption, KEY_BACKUP_VERSION,

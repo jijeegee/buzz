@@ -241,7 +241,11 @@ pub async fn dispatch(
             if env_source.is_none() && private_key.is_some() {
                 let keys = nostr::Keys::parse(private_key.as_deref().unwrap_or_default())
                     .map_err(|e| CliError::Key(format!("invalid KUZZ_PRIVATE_KEY: {e}")))?;
-                print_json(&json!({ "mode": "key", "pubkey": keys.public_key().to_hex() }));
+                let mut me = json!({ "mode": "key", "pubkey": keys.public_key().to_hex() });
+                if let Value::Object(map) = &mut me {
+                    map.extend(crate::pairing::fetch_tool_level(&relay_url, &keys).await);
+                }
+                print_json(&me);
                 return Ok(());
             }
             let source = match &env_source {

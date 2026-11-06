@@ -88,6 +88,7 @@ class _AgentSettingsForm extends HookConsumerWidget {
               agentPubkey: loaded.agentPubkey,
               name: loaded.agentName,
             ),
+            OwnerToolsRow(agentPubkey: loaded.agentPubkey),
             if (error.value case final message?)
               Padding(
                 padding: const EdgeInsets.only(bottom: Grid.xs),

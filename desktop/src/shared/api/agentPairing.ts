@@ -110,18 +110,21 @@ export function getExternalAgentAccess(
   });
 }
 
-/** Resolves once the relay accepted the owner-signed setting. */
+/** Resolves once the relay accepted the owner-signed setting. `toolLevel`:
+ * the owner turned owner tools on or off in this save. */
 export function setExternalAgentAccess(
   pubkey: string,
   name: string,
   respondTo: RespondToMode,
   allowlist: string[],
+  toolLevel?: "full" | "limited",
 ): Promise<void> {
   return invokeTauri<void>("set_external_agent_access", {
     pubkey,
     name,
     respondTo,
     allowlist,
+    ...(toolLevel ? { toolLevel } : {}),
   });
 }
 

@@ -4510,6 +4510,54 @@
   "@agentAccessLoadFailed": {
     "description": "Paired agent sheet, the current setting could not be read."
   },
+  "ownerToolsLabel": "Owner tools",
+  "@ownerToolsLabel": {
+    "description": "Agent settings: name of the per-agent switch that lets the agent act for its owner. Korean product name: 주인 권한 도구. Short."
+  },
+  "ownerToolsOn": "On",
+  "@ownerToolsOn": {
+    "description": "Owner tools switch state. Short."
+  },
+  "ownerToolsOff": "Off",
+  "@ownerToolsOff": {
+    "description": "Owner tools switch state. Short."
+  },
+  "ownerToolsHint": "Lets this agent act for you and manage your other agents.",
+  "@ownerToolsHint": {
+    "description": "Owner tools row: what the switch does."
+  },
+  "ownerToolsAnyoneDisabled": "Not available while anyone can talk to this agent.",
+  "@ownerToolsAnyoneDisabled": {
+    "description": "Owner tools row: why the switch is off and locked."
+  },
+  "ownerToolsUnknown": "Couldn't check owner tools right now.",
+  "@ownerToolsUnknown": {
+    "description": "Owner tools row: the current level could not be read."
+  },
+  "ownerToolsAllowlistWarning": "People you allow can ask this agent to act as you.",
+  "@ownerToolsAllowlistWarning": {
+    "description": "Owner tools row: warning while on for an agent that answers selected people."
+  },
+  "ownerToolsConfirmTitle": "Turn on owner tools?",
+  "@ownerToolsConfirmTitle": {
+    "description": "Confirm dialog title before turning owner tools on for an agent that answers selected people."
+  },
+  "ownerToolsConfirmBody": "Other people can talk to this agent. With owner tools on, what they ask it can be done as you, with your account.",
+  "@ownerToolsConfirmBody": {
+    "description": "Confirm dialog body: strong warning."
+  },
+  "ownerToolsConfirmAction": "Turn on",
+  "@ownerToolsConfirmAction": {
+    "description": "Confirm dialog action. Short."
+  },
+  "ownerToolsChangeOnComputer": "Change this on the computer that runs this agent.",
+  "@ownerToolsChangeOnComputer": {
+    "description": "Owner tools: the phone can't change it for an agent run by the desktop app."
+  },
+  "ownerToolsSaveFailed": "Couldn't change owner tools. Try again.",
+  "@ownerToolsSaveFailed": {
+    "description": "Owner tools: the change failed."
+  },
   "agentsMessage": "Message",
   "@agentsMessage": {
     "description": "Agent sheet, button that opens a direct message with the agent. Short."

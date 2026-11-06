@@ -1580,6 +1580,9 @@ async fn run_relay_main(boot: BootTracker) -> anyhow::Result<()> {
     // Purge of self-deleted accounts once their 30 days pass (KUZZ_ACCOUNT_PURGE).
     kuzz_relay::account_purge::spawn(Arc::clone(&state));
 
+    // 90-day retention of the agent action log (always on).
+    kuzz_relay::agent_actions_retention::spawn(Arc::clone(&state));
+
     serve(
         router,
         health_router,

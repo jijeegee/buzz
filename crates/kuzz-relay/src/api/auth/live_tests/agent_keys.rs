@@ -252,7 +252,7 @@ fn register_body(agent: &nostr::Keys, who: &Owner, challenge: &str) -> Value {
     })
 }
 
-async fn register(
+pub(super) async fn register(
     inst: &Instance,
     who: &Owner,
     agent: &nostr::Keys,
@@ -542,7 +542,7 @@ async fn agent_endpoints_need_the_device_proof_in_every_auth_mode() {
 }
 
 /// NIP-98 GET of `path` by `keys` with a device tag from `device`.
-async fn status_call(
+pub(super) async fn status_call(
     inst: &Instance,
     keys: &nostr::Keys,
     device: &SigningKey,
@@ -742,7 +742,7 @@ async fn status_names_log_mode_on_a_wrong_host_refusal() {
 }
 
 /// Records `agent` as `who`'s paired agent hosted on `who`'s device.
-async fn pair_agent(inst: &Instance, who: &Owner, agent: &nostr::Keys) {
+pub(super) async fn pair_agent(inst: &Instance, who: &Owner, agent: &nostr::Keys) {
     sqlx::query(
         "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id) \
          SELECT $1, principal_id, 'external', id FROM devices WHERE id = $2",

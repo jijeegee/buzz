@@ -357,6 +357,8 @@ impl Db {
                 .await?
             }
         };
+        // A re-pair starts the owner tools switch over (never set); a new
+        // key starts that way.
         let bound = match key {
             KeyUse::Free => sqlx::query(
                 "INSERT INTO key_registry (pubkey, principal_id, role, host_device_id, runtime) \
@@ -367,7 +369,9 @@ impl Db {
             .bind(device_id)
             .bind(claim.runtime),
             KeyUse::Disconnected => sqlx::query(
-                "UPDATE key_registry SET host_device_id = $3, runtime = COALESCE($4, runtime) \
+                "UPDATE key_registry SET host_device_id = $3, runtime = COALESCE($4, runtime), \
+                        tool_level = NULL, tool_community_id = NULL, respond_class = NULL, \
+                        tool_set_at = NULL \
                  WHERE pubkey = $1 AND principal_id = $2 AND role = 'external' \
                    AND revoked_at IS NULL \
                    AND NOT EXISTS (SELECT 1 FROM devices h \
@@ -379,7 +383,9 @@ impl Db {
             .bind(device_id)
             .bind(claim.runtime),
             _ => sqlx::query(
-                "UPDATE key_registry SET role = 'external', host_device_id = $3, runtime = $4 \
+                "UPDATE key_registry SET role = 'external', host_device_id = $3, runtime = $4, \
+                        tool_level = NULL, tool_community_id = NULL, respond_class = NULL, \
+                        tool_set_at = NULL \
                  WHERE pubkey = $1 AND principal_id = $2 AND role = 'agent' \
                    AND host_device_id IS NULL AND revoked_at IS NULL",
             )

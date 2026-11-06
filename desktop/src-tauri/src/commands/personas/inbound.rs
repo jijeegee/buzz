@@ -29,6 +29,9 @@ mod catalog_reconcile_tests;
 struct InboundFollowUp {
     runtime_refresh: Option<InboundRuntimeRefresh>,
     profile_syncs: super::update::ProfileSyncParams,
+    /// An agent whose access another device changed: owner tools are kept
+    /// or lowered, never raised, from here.
+    access_changed: Option<ManagedAgentRecord>,
 }
 
 #[derive(Debug)]
@@ -93,6 +96,7 @@ pub async fn reconcile_inbound_persona_event(
     let InboundFollowUp {
         runtime_refresh,
         profile_syncs,
+        access_changed,
     } = tokio::task::spawn_blocking(move || {
         reconcile_inbound_persona_event_blocking(event_json, arrival_relay_url, blocking_app)
     })
@@ -102,6 +106,9 @@ pub async fn reconcile_inbound_persona_event(
     // A rename made on another device renamed this computer's agents too;
     // their relay profiles follow, like after a local edit.
     super::update::publish_linked_profiles(&app, profile_syncs, "inbound persona edit").await;
+    if let Some(record) = access_changed {
+        crate::auth::tool_levels::lower_after_inbound(&app, &record).await;
+    }
 
     match runtime_refresh {
         Some(InboundRuntimeRefresh::Local { pubkey, relay_urls }) => {
@@ -289,6 +296,7 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
     // never attempted for a skipped event.
     let mut runtime_refresh = None;
     let mut profile_syncs = Vec::new();
+    let mut access_changed_record = None;
     match kind {
         KIND_PERSONA => {
             let mut identity_change = None;
@@ -388,6 +396,7 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
                     .iter_mut()
                     .find(|record| record.pubkey == d_tag)
                     .ok_or_else(|| format!("agent {d_tag} disappeared during inbound apply"))?;
+                access_changed_record = Some(record.clone());
                 match &record.backend {
                     crate::managed_agents::BackendKind::Local => {
                         let mut runtimes = state
@@ -453,6 +462,7 @@ fn reconcile_inbound_persona_event_blocking<R: tauri::Runtime>(
     Ok(InboundFollowUp {
         runtime_refresh,
         profile_syncs,
+        access_changed: access_changed_record,
     })
 }
 

@@ -23791,6 +23791,54 @@
   "@agents.edit.customCommand": {
     "description": "Edit agent dialog (one running agent): harness option to type a command. Short."
   },
+  "agents.ownerTools.label": "Owner tools",
+  "@agents.ownerTools.label": {
+    "description": "Agent settings: name of the per-agent switch that lets the agent act for its owner. Korean product name: 주인 권한 도구."
+  },
+  "agents.ownerTools.on": "On",
+  "@agents.ownerTools.on": {
+    "description": "Owner tools switch state."
+  },
+  "agents.ownerTools.off": "Off",
+  "@agents.ownerTools.off": {
+    "description": "Owner tools switch state."
+  },
+  "agents.ownerTools.hint": "Lets this agent act for you and manage your other agents.",
+  "@agents.ownerTools.hint": {
+    "description": "Owner tools row: what the switch does."
+  },
+  "agents.ownerTools.anyoneDisabled": "Not available while anyone can talk to this agent.",
+  "@agents.ownerTools.anyoneDisabled": {
+    "description": "Owner tools row: why the switch is off and disabled."
+  },
+  "agents.ownerTools.unknown": "Couldn't check owner tools right now.",
+  "@agents.ownerTools.unknown": {
+    "description": "Owner tools row: the current level could not be read."
+  },
+  "agents.ownerTools.allowlistWarning": "People you allow can ask this agent to act as you.",
+  "@agents.ownerTools.allowlistWarning": {
+    "description": "Owner tools row: warning shown while on for an allowlist agent."
+  },
+  "agents.ownerTools.confirmTitle": "Turn on owner tools?",
+  "@agents.ownerTools.confirmTitle": {
+    "description": "Confirm dialog title before turning owner tools on for an allowlist agent."
+  },
+  "agents.ownerTools.confirmBody": "Other people can talk to this agent. With owner tools on, what they ask it can be done as you, with your account.",
+  "@agents.ownerTools.confirmBody": {
+    "description": "Confirm dialog body: strong warning."
+  },
+  "agents.ownerTools.confirmAction": "Turn on",
+  "@agents.ownerTools.confirmAction": {
+    "description": "Confirm dialog action."
+  },
+  "agents.ownerTools.defaultedNotice": "Owner tools are on for {names}.",
+  "@agents.ownerTools.defaultedNotice": {
+    "description": "One-time notice after owner tools were turned on by default. {names} is a comma-separated list of agent names."
+  },
+  "agents.ownerTools.defaultedNoticeBody": "Agents only you can talk to can now act for you. Turn it off in each agent's settings.",
+  "@agents.ownerTools.defaultedNoticeBody": {
+    "description": "One-time notice description."
+  },
   "agents.edit.saveFailed": "Failed to save",
   "@agents.edit.saveFailed": {
     "description": "Edit agent dialog (one running agent): error."

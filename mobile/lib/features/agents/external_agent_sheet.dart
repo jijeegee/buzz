@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
+import '../../shared/auth/account/account_api.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/relay/relay.dart';
@@ -15,6 +16,7 @@ import '../channels/mentions/mention_candidates_provider.dart';
 import 'agent_settings_provider.dart';
 import 'external_agent_access.dart';
 import 'my_agent_actions.dart';
+import 'owner_tools_row.dart';
 
 /// A paired agent from Devices: its chat, and who it answers.
 Future<void> showExternalAgentSheet(
@@ -77,10 +79,20 @@ class _ExternalAgentSheet extends ConsumerWidget {
           ),
           const SizedBox(height: Grid.xxs),
           access.when(
-            data: (loaded) => _AccessForm(
-              agentPubkey: agentPubkey,
-              name: name,
-              initial: loaded,
+            data: (loaded) => Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _AccessForm(
+                  agentPubkey: agentPubkey,
+                  name: name,
+                  initial: loaded,
+                ),
+                OwnerToolsRow(
+                  agentPubkey: agentPubkey,
+                  respondClass: loaded.mode.wire,
+                ),
+              ],
             ),
             loading: () => const Padding(
               padding: EdgeInsets.all(Grid.xs),
@@ -157,6 +169,19 @@ class _AccessForm extends HookConsumerWidget {
       saving.value = true;
       error.value = null;
       try {
+        // Owner tools first: with the level on, a failed call fails the save.
+        final origin = ref.read(accountOriginProvider);
+        if (origin != null) {
+          await writeToolLevelBeforeSave(
+            ref.read(accountApiProvider(origin)),
+            agentPubkey,
+            current: ref
+                .read(agentToolLevelProvider(agentPubkey))
+                .asData
+                ?.value,
+            respondClass: mode.value.wire,
+          );
+        }
         await saveExternalAgentAccess(
           ref.read(agentSettingsRelayProvider),
           owner: owner,
@@ -166,7 +191,13 @@ class _AccessForm extends HookConsumerWidget {
           allowlist: people.value,
         );
         ref.invalidate(externalAgentAccessProvider(agentPubkey));
+        ref.invalidate(agentToolLevelProvider(agentPubkey));
         navigator.pop();
+      } on AccountApiException catch (failure) {
+        if (context.mounted) {
+          error.value = toolLevelErrorMessage(context, failure);
+          saving.value = false;
+        }
       } catch (failure) {
         if (context.mounted) {
           debugPrint('[ExternalAgentAccess] save failed: $failure');

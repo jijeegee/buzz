@@ -101,6 +101,18 @@ async fn fake_relay(answer: (StatusCode, Value)) -> (String, Arc<Mutex<Vec<Value
                 }))
             }),
         )
+        // The relay's answer to a key asking whether it may use its owner's tools.
+        .route(
+            "/agents/me",
+            get(|| async {
+                Json(json!({
+                    "pubkey": "ignored", "role": "external", "owner": OWNER,
+                    "stored_level": "full", "effective": "limited", "reason": "wrong_host",
+                    "community": "team.example", "host_computer": "PC",
+                    "respond_class": "owner-only",
+                }))
+            }),
+        )
         .with_state(fake);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let addr: SocketAddr = listener.local_addr().unwrap();
@@ -415,6 +427,35 @@ async fn whoami_names_the_owner_and_remembers_it() {
     assert_eq!(me["pubkey"], pairing.agent_pubkey);
     assert_eq!(me["owner"], OWNER);
     assert_eq!(store.list()[0].owner.as_deref(), Some(OWNER));
+    // What `/agents/me` says about the owner's tools.
+    assert_eq!(me["tool_level"], "limited");
+    assert_eq!(me["tool_level_reason"], "wrong_host");
+    assert_eq!(me["community"], "team.example");
+    assert_eq!(me["host_computer"], "PC");
+}
+
+#[tokio::test]
+async fn whoami_says_unknown_when_the_relay_cannot_say() {
+    // A relay without `/agents/me` (every path 404), and none at all.
+    let app = Router::new();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr: SocketAddr = listener.local_addr().unwrap();
+    tokio::spawn(async move {
+        axum::serve(listener, app).await.unwrap();
+    });
+    let keys = Keys::generate();
+    let fields = fetch_tool_level(&format!("http://{addr}"), &keys).await;
+    assert_eq!(Value::Object(fields), json!({ "tool_level": "unknown" }));
+
+    let dir = tempfile::tempdir().unwrap();
+    let store = PairingStore::new(dir.path().join("pairings"));
+    let relay = format!("http://{addr}");
+    let pairing = pairing_at(&relay_origin(&relay).unwrap(), "Hermes", 1, true);
+    let keys = pairing.keys().unwrap();
+    let me = whoami(&relay, &keys, pairing.clone(), Some(&store)).await;
+    assert_eq!(me["mode"], "paired");
+    assert_eq!(me["tool_level"], "unknown");
+    assert_eq!(me["owner"], Value::Null);
 }
 
 #[tokio::test]

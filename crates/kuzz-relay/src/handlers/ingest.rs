@@ -4029,11 +4029,20 @@ async fn ingest_event_inner(
                 kuzz_db::event::D_TAG_MAX_LEN,
             )));
         }
-        state
-            .db
-            .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
-            .await
-            .map_err(|e| IngestError::Internal(format!("error: {e}")))?
+        if kind_u32 == KIND_MANAGED_AGENT {
+            // The owner's managed-agent record also keeps the relay's copy
+            // of who the agent answers in step (AI tools plan, stage S1).
+            state
+                .db
+                .replace_managed_agent_event(tenant.community(), &event, &d_tag, channel_id)
+                .await
+        } else {
+            state
+                .db
+                .replace_parameterized_event(tenant.community(), &event, &d_tag, channel_id)
+                .await
+        }
+        .map_err(|e| IngestError::Internal(format!("error: {e}")))?
     } else if let Some(spec) = canvas_revision_spec.as_ref() {
         // Canvas write carrying an optimistic-concurrency precondition. Plain
         // canvas writes (no `expected-revision` tag) fall through to the generic

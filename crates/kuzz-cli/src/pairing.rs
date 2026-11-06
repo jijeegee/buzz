@@ -517,30 +517,85 @@ pub(crate) async fn fetch_owner(relay_url: &str, keys: &Keys) -> Option<String> 
         .map(str::to_owned)
 }
 
+/// What `GET /agents/me` says about this key, as `whoami` fields:
+/// `tool_level` (`full` when it may use its owner's tools here now, else
+/// `limited`), `tool_level_reason` (why not; `null` when full), `community`,
+/// `host_computer` and `owner`. Only `"tool_level": "unknown"` when the relay
+/// cannot be asked or gives no usable answer.
+pub(crate) async fn fetch_tool_level(
+    relay_url: &str,
+    keys: &Keys,
+) -> serde_json::Map<String, Value> {
+    let answer = async {
+        let client =
+            crate::client::KuzzClient::new(relay_url.to_owned(), keys.clone(), None, None).ok()?;
+        let raw = client.get_authed("/agents/me").await.ok()?;
+        serde_json::from_str::<Value>(&raw).ok()
+    }
+    .await;
+    let mut fields = serde_json::Map::new();
+    let level = answer
+        .as_ref()
+        .and_then(|answer| answer["effective"].as_str())
+        .filter(|level| matches!(*level, "full" | "limited"));
+    let (Some(answer), Some(level)) = (answer.as_ref(), level) else {
+        fields.insert("tool_level".into(), json!("unknown"));
+        return fields;
+    };
+    let text = |name: &str| {
+        answer[name]
+            .as_str()
+            .map_or(Value::Null, |text| json!(text))
+    };
+    fields.insert("tool_level".into(), json!(level));
+    fields.insert("tool_level_reason".into(), text("reason"));
+    fields.insert("community".into(), text("community"));
+    fields.insert("host_computer".into(), text("host_computer"));
+    let owner = answer["owner"]
+        .as_str()
+        .filter(|owner| is_hex_pubkey(owner));
+    fields.insert(
+        "owner".into(),
+        owner.map_or(Value::Null, |owner| json!(owner)),
+    );
+    fields
+}
+
 /// `kuzz auth whoami` for a paired agent: who it is, on which computer, for
-/// which owner (looked up once and remembered when the pairing lacks it).
+/// which owner (looked up once and remembered when the pairing lacks it), and
+/// whether it may use its owner's tools ([`fetch_tool_level`]).
 pub(crate) async fn whoami(
     relay_url: &str,
     keys: &Keys,
     mut pairing: Pairing,
     store: Option<&PairingStore>,
 ) -> Value {
+    let tools = fetch_tool_level(relay_url, keys).await;
     if pairing.owner.is_none() {
-        if let Some(owner) = fetch_owner(relay_url, keys).await {
+        let owner = match tools.get("owner").and_then(Value::as_str) {
+            Some(owner) => Some(owner.to_owned()),
+            None => fetch_owner(relay_url, keys).await,
+        };
+        if let Some(owner) = owner {
             pairing.owner = Some(owner);
             if let Some(store) = store {
                 let _ = store.save(&pairing);
             }
         }
     }
-    json!({
+    let mut me = json!({
         "mode": "paired",
         "pubkey": pairing.agent_pubkey,
         "agent_name": pairing.agent_name,
         "device_name": pairing.device_name,
         "relay": pairing.relay,
-        "owner": pairing.owner,
-    })
+    });
+    if let Value::Object(map) = &mut me {
+        map.extend(tools);
+        // The pairing's owner is the one this agent was paired for.
+        map.insert("owner".into(), json!(pairing.owner));
+    }
+    me
 }
 
 /// The Hermes plugin installer, relative to an install root

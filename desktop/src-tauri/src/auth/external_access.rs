@@ -158,14 +158,20 @@ async fn narrow(state: &AppState, agent: &str) -> Result<(), String> {
     publish(state, agent, content, previous).await
 }
 
-/// Narrow the agents `agents` lists before a disconnect. Logged, never in the
-/// way of it: the disconnect must work when this can't.
-pub(super) async fn narrow_before_disconnect<F>(state: &AppState, agents: F)
-where
+/// Narrow the agents `agents` lists before a disconnect, owner tools off
+/// first. Logged, never in the way of it: the disconnect must work when this
+/// can't.
+pub(super) async fn narrow_before_disconnect<F>(
+    state: &AppState,
+    origin: &str,
+    access: &str,
+    agents: F,
+) where
     F: Future<Output = Result<Vec<String>, String>>,
 {
     let work = async {
         for agent in agents.await? {
+            super::tool_levels::lower_before_disconnect(state, origin, access, &agent).await;
             // One failure must not leave the others wide.
             if let Err(error) = narrow(state, &agent).await {
                 eprintln!("kuzz-desktop: narrowing a disconnected agent's access failed: {error}");
@@ -199,6 +205,7 @@ pub async fn set_external_agent_access(
     name: String,
     respond_to: RespondTo,
     allowlist: Vec<String>,
+    tool_level: Option<super::tool_levels::ToolLevel>,
 ) -> Result<(), String> {
     if crate::commands::agent_access_owner_only() && respond_to != RespondTo::OwnerOnly {
         return Err("This build allows owner-only access.".to_string());
@@ -212,6 +219,8 @@ pub async fn set_external_agent_access(
     let previous = read_head(&state, &agent)
         .await?
         .map(|head| head.created_at.as_secs());
+    // Owner tools first: with the level on, a failed call fails the save.
+    super::tool_levels::before_external_save(&state, &agent, respond_to, tool_level).await?;
     let content = access_content(&name, respond_to, allowlist)?;
     publish(&state, &agent, content, previous).await
 }

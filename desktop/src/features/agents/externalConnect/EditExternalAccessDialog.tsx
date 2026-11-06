@@ -3,6 +3,11 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import { useAgentAccessOwnerOnlyQuery } from "@/features/agents/useAgentAccessOwnerOnly";
 import {
+  agentToolLevelQueryKey,
+  useAgentToolLevelQuery,
+} from "@/features/agents/useAgentToolLevel";
+import { OwnerToolsField } from "@/features/agents/ui/OwnerToolsField";
+import {
   CreateAgentRespondToField,
   ownerOnlyAccessDisabledReason,
 } from "@/features/agents/ui/RespondToField";
@@ -45,6 +50,9 @@ export function EditExternalAccessDialog({
   const [allowlist, setAllowlist] = React.useState<string[]>([]);
   const [saving, setSaving] = React.useState(false);
   const [saveError, setSaveError] = React.useState<string | null>(null);
+  const toolLevel = useAgentToolLevelQuery(agent.pubkey);
+  const savedToolLevel = toolLevel.data ?? null;
+  const [ownerTools, setOwnerTools] = React.useState<boolean | null>(null);
 
   React.useEffect(() => {
     if (access.data) {
@@ -52,6 +60,10 @@ export function EditExternalAccessDialog({
       setAllowlist([...access.data.respondToAllowlist]);
     }
   }, [access.data]);
+
+  React.useEffect(() => {
+    setOwnerTools(savedToolLevel === null ? null : savedToolLevel === "full");
+  }, [savedToolLevel]);
 
   const valid = respondTo !== "allowlist" || allowlist.length > 0;
   const disabled = !access.data || saving || accessLocked;
@@ -61,14 +73,27 @@ export function EditExternalAccessDialog({
   async function save() {
     setSaving(true);
     setSaveError(null);
+    // Owner tools only when the owner changed them.
+    const editedToolLevel =
+      ownerTools === null || respondTo === "anyone"
+        ? null
+        : ownerTools
+          ? "full"
+          : "limited";
     try {
       await setExternalAgentAccess(
         agent.pubkey,
         agent.name,
         respondTo,
         respondTo === "allowlist" ? allowlist : [],
+        editedToolLevel !== null && editedToolLevel !== savedToolLevel
+          ? editedToolLevel
+          : undefined,
       );
       void queryClient.invalidateQueries({ queryKey });
+      void queryClient.invalidateQueries({
+        queryKey: agentToolLevelQueryKey(agent.pubkey),
+      });
       onOpenChange(false);
     } catch (failure) {
       setSaveError(
@@ -101,6 +126,13 @@ export function EditExternalAccessDialog({
           onAllowlistChange={setAllowlist}
           onModeChange={setRespondTo}
           ownerPubkey={currentPubkey}
+        />
+        <OwnerToolsField
+          checked={ownerTools}
+          disabled={disabled}
+          idPrefix="external-agent"
+          mode={accessLocked ? "owner-only" : respondTo}
+          onCheckedChange={setOwnerTools}
         />
         {error ? <p className="text-sm text-destructive">{error}</p> : null}
         <div className="flex justify-end gap-2">

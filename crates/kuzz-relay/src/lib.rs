@@ -4,6 +4,7 @@
 
 pub mod account_purge;
 mod admission;
+pub mod agent_actions_retention;
 mod build_info;
 pub mod ip_connection_limit;
 pub mod media_access;

@@ -25,6 +25,41 @@ class AccountApiException implements Exception {
   String toString() => message;
 }
 
+/// One agent's owner tools (`POST /auth/agents/tool-levels`): `full` (on),
+/// `limited` (off), or `null` when never set, which acts as off.
+class AgentToolLevel {
+  const AgentToolLevel({
+    required this.pubkey,
+    this.level,
+    this.respondClass,
+    this.here = false,
+  });
+
+  final String pubkey;
+  final String? level;
+
+  /// Who the agent answers, as the relay last stored it.
+  final String? respondClass;
+
+  /// Whether the calling device hosts the agent.
+  final bool here;
+
+  bool get on => level == 'full';
+
+  static AgentToolLevel? fromJson(Map<String, Object?> json) {
+    final pubkey = json['pubkey'];
+    if (pubkey is! String || pubkey.isEmpty) return null;
+    final level = json['level'];
+    final respondClass = json['respond_class'];
+    return AgentToolLevel(
+      pubkey: pubkey.toLowerCase(),
+      level: level is String ? level : null,
+      respondClass: respondClass is String ? respondClass : null,
+      here: json['here'] == true,
+    );
+  }
+}
+
 /// The signed-in principal's global profile (`GET /auth/me`,
 /// `PATCH /auth/profile`).
 class AccountProfile {
@@ -390,6 +425,57 @@ class AccountApi {
       body: {'name': name},
     );
     return AccountDevice.fromJson(_object(response));
+  }
+
+  /// Set agent [pubkey]'s owner tools: [level] `full` or `limited`, with the
+  /// class it answers ([respondClass]). Returns `set` or `already_set`.
+  /// Refused with 409 `full_anyone_refused` or `respond_class_stale`.
+  Future<String> setToolLevel(
+    String pubkey, {
+    required String level,
+    required String respondClass,
+    bool isDefault = false,
+  }) async {
+    final response = await _send(
+      'POST',
+      '/auth/agents/${Uri.encodeComponent(pubkey.toLowerCase())}/tool-level',
+      body: {
+        'level': level,
+        'respond_class': respondClass,
+        'default': isDefault,
+      },
+    );
+    final result = _object(response)['result'];
+    return result is String ? result : 'set';
+  }
+
+  /// Owner tools of [pubkeys] (batches of 64), by lowercase key. A key
+  /// missing from the answer is unknown, read as off.
+  Future<Map<String, AgentToolLevel>> toolLevels(List<String> pubkeys) async {
+    final levels = <String, AgentToolLevel>{};
+    for (var start = 0; start < pubkeys.length; start += 64) {
+      final batch = pubkeys.sublist(
+        start,
+        start + 64 > pubkeys.length ? pubkeys.length : start + 64,
+      );
+      final response = await _send(
+        'POST',
+        '/auth/agents/tool-levels',
+        body: {
+          'pubkeys': [for (final key in batch) key.toLowerCase()],
+        },
+      );
+      final agents = _object(response)['agents'];
+      if (agents is! List) {
+        throw const AccountApiException('Malformed relay response: agents');
+      }
+      for (final item in agents) {
+        if (item is! Map<String, Object?>) continue;
+        final level = AgentToolLevel.fromJson(item);
+        if (level != null) levels[level.pubkey] = level;
+      }
+    }
+    return levels;
   }
 
   /// Sign out every other human session; bots are untouched.
