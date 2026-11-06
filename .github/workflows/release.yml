@@ -138,8 +138,23 @@ jobs:
           path: ${{ github.workspace }}/.cache/mesh-llama
           key: mesh-llama-${{ runner.os }}-metal-${{ steps.mesh_rev.outputs.rev }}
 
+      # A Mac release without the profile has no Secure Enclave device key and
+      # every session is refused (docs/apple-device-keys.md). Never fall back.
+      - name: Install Developer ID provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.KUZZ_MACOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROFILE_BASE64" ]]; then
+            echo "::error::KUZZ_MACOS_PROVISION_PROFILE_BASE64 is not set"
+            exit 1
+          fi
+          mkdir -p desktop/src-tauri/profiles
+          printf '%s' "$PROFILE_BASE64" | base64 --decode \
+            > desktop/src-tauri/profiles/kuzz-developer-id.provisionprofile
+
       - name: Build unsigned Tauri app
-        run: cd desktop && pnpm tauri build --verbose --no-sign --features mesh-llm --config src-tauri/tauri.release.conf.json
+        run: cd desktop && pnpm tauri build --verbose --no-sign --features mesh-llm --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.macos-signed.conf.json
         env:
           KUZZ_UPDATER_PUBLIC_KEY: ${{ secrets.KUZZ_UPDATER_PUBLIC_KEY || secrets.SPROUT_UPDATER_PUBLIC_KEY }}
           KUZZ_UPDATER_ENDPOINT: https://github.com/block/buzz/releases/download/kuzz-desktop-latest/latest.json
@@ -171,7 +186,7 @@ jobs:
 
       # mdx-ios-codesign-helper discovers this file by its exact lowercase basename.
       - name: Stage signing entitlements
-        run: cp desktop/src-tauri/Entitlements.plist "${RUNNER_TEMP}/entitlements.plist"
+        run: cp desktop/src-tauri/Entitlements.signed.plist "${RUNNER_TEMP}/entitlements.plist"
 
       - name: Codesign and Notarize
         id: codesign
@@ -217,7 +232,7 @@ jobs:
             desktop/src-tauri/target/release/bundle/macos/Kuzz.app
           spctl --assess --type execute --verbose=4 \
             desktop/src-tauri/target/release/bundle/macos/Kuzz.app
-          desktop/scripts/verify-macos-entitlements.sh \
+          desktop/scripts/verify-macos-entitlements.sh --secure-enclave \
             desktop/src-tauri/target/release/bundle/macos/Kuzz.app
 
       - name: Locate build artifacts
@@ -315,8 +330,23 @@ jobs:
           cargo build --release --target "$TARGET" -p kuzz-acp -p kuzz-agent -p kuzz-backend-kubernetes -p kuzz-dev-mcp -p git-credential-nostr -p kuzz-cli
           ./scripts/bundle-sidecars.sh "$TARGET"
 
+      # A Mac release without the profile has no Secure Enclave device key and
+      # every session is refused (docs/apple-device-keys.md). Never fall back.
+      - name: Install Developer ID provisioning profile
+        env:
+          PROFILE_BASE64: ${{ secrets.KUZZ_MACOS_PROVISION_PROFILE_BASE64 }}
+        run: |
+          set -euo pipefail
+          if [[ -z "$PROFILE_BASE64" ]]; then
+            echo "::error::KUZZ_MACOS_PROVISION_PROFILE_BASE64 is not set"
+            exit 1
+          fi
+          mkdir -p desktop/src-tauri/profiles
+          printf '%s' "$PROFILE_BASE64" | base64 --decode \
+            > desktop/src-tauri/profiles/kuzz-developer-id.provisionprofile
+
       - name: Build unsigned Tauri app
-        run: cd desktop && pnpm tauri build --verbose --no-sign --target "$TARGET" --config src-tauri/tauri.release.conf.json
+        run: cd desktop && pnpm tauri build --verbose --no-sign --target "$TARGET" --config src-tauri/tauri.release.conf.json --config src-tauri/tauri.macos-signed.conf.json
         env:
           KUZZ_UPDATER_PUBLIC_KEY: ${{ secrets.KUZZ_UPDATER_PUBLIC_KEY || secrets.SPROUT_UPDATER_PUBLIC_KEY }}
           KUZZ_UPDATER_ENDPOINT: https://github.com/block/buzz/releases/download/kuzz-desktop-latest/latest.json
@@ -345,7 +375,7 @@ jobs:
 
       # mdx-ios-codesign-helper discovers this file by its exact lowercase basename.
       - name: Stage signing entitlements
-        run: cp desktop/src-tauri/Entitlements.plist "${RUNNER_TEMP}/entitlements.plist"
+        run: cp desktop/src-tauri/Entitlements.signed.plist "${RUNNER_TEMP}/entitlements.plist"
 
       - name: Codesign and Notarize
         id: codesign
@@ -389,7 +419,7 @@ jobs:
           APP_DIR="desktop/src-tauri/target/${TARGET}/release/bundle/macos/Kuzz.app"
           codesign --verify --deep --strict --verbose=2 "$APP_DIR"
           spctl --assess --type execute --verbose=4 "$APP_DIR"
-          desktop/scripts/verify-macos-entitlements.sh "$APP_DIR"
+          desktop/scripts/verify-macos-entitlements.sh --secure-enclave "$APP_DIR"
 
       - name: Locate updater archive
         id: artifacts
