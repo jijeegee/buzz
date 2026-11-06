@@ -162,7 +162,7 @@ function CommunityButton({
                     src={iconUrl}
                   />
                 ) : (
-                  getInitials(community.name) || "🐝"
+                  getInitials(community.name) || "K"
                 )}
               </span>
               {showBadge ? (
@@ -214,7 +214,7 @@ function CommunityDragOverlay({
           src={iconUrl}
         />
       ) : (
-        getInitials(community.name) || "🐝"
+        getInitials(community.name) || "K"
       )}
     </div>
   );

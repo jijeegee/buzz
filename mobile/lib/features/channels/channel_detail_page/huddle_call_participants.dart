@@ -73,7 +73,7 @@ class _HuddleCallParticipants extends StatelessWidget {
     }
 
     if (!connected) {
-      return const Center(child: _HuddleLoadingBee());
+      return const Center(child: _HuddleLoadingMark());
     }
 
     final reducedMotion = MediaQuery.disableAnimationsOf(context);
@@ -168,39 +168,19 @@ class _HuddleCallParticipants extends StatelessWidget {
   }
 }
 
-class _HuddleLoadingBee extends HookWidget {
-  const _HuddleLoadingBee();
+class _HuddleLoadingMark extends StatelessWidget {
+  const _HuddleLoadingMark();
 
   @override
   Widget build(BuildContext context) {
-    final reducedMotion = MediaQuery.disableAnimationsOf(context);
-    final flapController = useAnimationController(
-      duration: const Duration(milliseconds: 480),
-    );
-    final flapProgress = useAnimation(flapController);
-    useEffect(() {
-      if (reducedMotion) {
-        flapController
-          ..stop()
-          ..reset();
-      } else {
-        flapController.repeat();
-      }
-      return null;
-    }, [flapController, reducedMotion]);
-    final flapAmount = reducedMotion
-        ? 0.0
-        : 0.5 - (0.5 * cos(flapProgress * 4 * pi));
-
     return Semantics(
       label: context.l10n.huddleJoining,
       liveRegion: true,
       child: ExcludeSemantics(
-        child: FlappingBee(
-          key: const ValueKey('huddle-loading-bee'),
-          width: 60,
+        child: KuzzLoadingMark(
+          key: const ValueKey('huddle-loading-mark'),
+          height: 40,
           color: context.colors.primary,
-          flapAmount: flapAmount,
         ),
       ),
     );

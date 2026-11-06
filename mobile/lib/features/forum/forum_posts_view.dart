@@ -11,7 +11,7 @@ import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/load_error_view.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../channels/channel.dart';
 import '../channels/compose_bar.dart';
 import 'forum_local_sends.dart';
@@ -81,7 +81,7 @@ class ForumPostsView extends HookConsumerWidget {
 
     Widget postsList(List<ForumPost> posts, {bool loadFailed = false}) {
       final header = loadFailed ? 1 : 0;
-      return BeeRefreshIndicator(
+      return KuzzRefreshIndicator(
         onRefresh: () async {
           ref.invalidate(forumPostsProvider(channel.id));
           await ref.read(forumPostsProvider(channel.id).future);

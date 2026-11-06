@@ -19,7 +19,7 @@ import 'package:kuzz/features/chats/thread_pins_provider.dart';
 import 'package:kuzz/features/people/blocked_users_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
-import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
+import 'package:kuzz/shared/widgets/kuzz_refresh_indicator.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 const _general = '11111111-1111-4111-8111-111111111111';
@@ -523,8 +523,8 @@ void main() {
     );
 
     var finished = false;
-    final indicator = tester.widget<BeeRefreshIndicator>(
-      find.byType(BeeRefreshIndicator),
+    final indicator = tester.widget<KuzzRefreshIndicator>(
+      find.byType(KuzzRefreshIndicator),
     );
     unawaited(indicator.onRefresh().then((_) => finished = true));
     await tester.pump();

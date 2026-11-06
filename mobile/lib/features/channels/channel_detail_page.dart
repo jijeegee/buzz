@@ -1,6 +1,6 @@
 import 'dart:async';
 import '../../shared/read_aloud/read_aloud_message.dart';
-import 'dart:math' show cos, max, min, pi;
+import 'dart:math' show max, min;
 import 'dart:ui' show ImageFilter, lerpDouble;
 
 import 'package:flutter/foundation.dart';
@@ -30,13 +30,13 @@ import '../chats/chats_page.dart' show AgentConversationsList;
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
 import '../groups/group_preview.dart' show GroupJoinBar;
+import '../../shared/widgets/kuzz_mark.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';
 import '../../shared/widgets/concentric_sheet_surface.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
-import '../../shared/widgets/flapping_bee.dart';
 import '../../shared/widgets/keyboard_dismiss_on_drag.dart';
 import '../../shared/widgets/kuzz_view_switch.dart';
 import '../../shared/widgets/load_error_view.dart';

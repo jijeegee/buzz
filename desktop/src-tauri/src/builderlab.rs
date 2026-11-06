@@ -59,7 +59,7 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
       box-shadow: 8px 8px 0 #231e1e;
     }
 
-    .bee {
+    .mark {
       display: block;
       width: 72px;
       height: auto;
@@ -108,7 +108,7 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
         box-shadow: 6px 6px 0 #231e1e;
       }
 
-      .bee {
+      .mark {
         width: 60px;
         margin-bottom: 32px;
       }
@@ -117,20 +117,8 @@ const AUTH_COMPLETE_HTML: &str = r#"<!doctype html>
 </head>
 <body>
   <main>
-    <svg class="bee" viewBox="0 0 466 309" role="img" aria-label="Kuzz">
-      <defs>
-        <mask id="bee-mask">
-          <rect width="466" height="309" fill="black"/>
-          <circle cx="91.7" cy="154.5" r="91.7" fill="white"/>
-          <circle cx="374.3" cy="154.5" r="91.7" fill="white"/>
-          <rect x="128" width="210" height="309" rx="34" fill="white"/>
-          <ellipse cx="193.3" cy="84.4" rx="27" ry="27" fill="black"/>
-          <ellipse cx="276" cy="84.4" rx="27" ry="27" fill="black"/>
-          <rect x="166.3" y="157.2" width="136.9" height="38.3" rx="5" fill="black"/>
-          <rect x="166.9" y="235.1" width="136.2" height="37.6" rx="5" fill="black"/>
-        </mask>
-      </defs>
-      <rect width="466" height="309" fill="currentColor" mask="url(#bee-mask)"/>
+    <svg class="mark" viewBox="80 -1490 1413 1490" role="img" aria-label="Kuzz">
+      <path fill="currentColor" d="M387 -213V-718Q437 -783 487.5 -848.0Q538 -913 588.0 -977.5Q638 -1042 688 -1107L984 -1490H1465L842 -723H804ZM80 0V-1490H496V-1170V-741V-544V0ZM1017 0 658 -599 906 -911 1493 0Z"/>
     </svg>
     <div class="eyebrow">Authentication complete</div>
     <h1>You&rsquo;re signed in.</h1>

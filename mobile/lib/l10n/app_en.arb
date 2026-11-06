@@ -155,14 +155,6 @@
   "@loadErrorRetry": {
     "description": "Button under an error message when a list or screen failed to load; loads it again. Short."
   },
-  "beeLabel": "Kuzz bee",
-  "@beeLabel": {
-    "description": "Screen-reader label of the animated bee mascot picture (empty states, splash). 'Kuzz' is the app name."
-  },
-  "beeHint": "Tap to make its wings flutter",
-  "@beeHint": {
-    "description": "Screen-reader hint on the animated bee mascot: what tapping it does."
-  },
   "clipboardCopied": "Copied to clipboard",
   "@clipboardCopied": {
     "description": "Short pop-up message at the bottom of the screen after text was copied."

@@ -49,6 +49,7 @@ import {
 import { writeTextToClipboard } from "@/shared/lib/clipboard";
 import { type MessageKey, useT } from "@/shared/i18n";
 import { Button } from "@/shared/ui/button";
+import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
 import { useActiveCommunityIcon } from "@/features/communities/useCommunityIcons";
 import { EditCommunityDialog } from "./EditCommunityDialog";
 
@@ -107,7 +108,7 @@ export function CommunityEmojiIcon({
   }
   return (
     <span aria-hidden="true" className={className}>
-      <span className="-translate-y-px leading-normal">🐝</span>
+      <KuzzMark className="h-3 w-auto" />
     </span>
   );
 }

@@ -144,7 +144,7 @@ class AgentConversationsList extends HookConsumerWidget {
         onTap: () => unawaited(open(row)),
       );
 
-      body = BeeRefreshIndicator(
+      body = KuzzRefreshIndicator(
         edgeOffset: topInset,
         onRefresh: refresh,
         child: CustomScrollView(

@@ -588,4 +588,4 @@ their sign-off. When in doubt, check with your legal team.
 ---
 
 *Thank you for contributing to Kuzz. Every bug report, documentation fix,
-and code contribution makes the project better for everyone. 🐝*
+and code contribution makes the project better for everyone.*
