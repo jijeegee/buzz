@@ -89,6 +89,12 @@ _MAX_CATCH_UP_SECS = 86400
 _DM_REFRESH_SECS = 60.0
 # Hermes gives connect 30s.
 CONNECT_UPDATE_HOLD = 20.0
+# Hermes queues a parked watch for reconnection with no delay, and a successful connect clears the
+# queue, so a watch that parks right after connect would cycle every few seconds. For this long
+# after a park, connect fails with the park's reason instead, and Hermes's own backoff applies.
+PARK_HOLD = 300.0
+# The last park in this process (code, message, monotonic time); a gateway restart forgets it.
+_last_park: Optional[Tuple[str, str, float]] = None
 # `kuzz agents same-owner`: its time limit and how long an answer is remembered.
 _SAME_OWNER_TIMEOUT_SECS = 3.0
 _SAME_OWNER_HIT_SECS = 300.0
@@ -311,6 +317,9 @@ class KuzzAdapter(BasePlatformAdapter):
             logger.info("Kuzz: an app update is still running; connecting later")
             self._set_fatal_error("update_running", "Kuzz is updating.", retryable=True)
             return False
+        parked = _last_park
+        if parked is not None and time.monotonic() - parked[2] < PARK_HOLD:
+            return self._fail(parked[0], parked[1])
         cli_path = _cli_path(self._extra)
         if not cli_path:
             return self._fail("cli_missing", "The kuzz CLI was not found. Install Kuzz or set KUZZ_CLI_PATH.")
@@ -379,6 +388,8 @@ class KuzzAdapter(BasePlatformAdapter):
         return False
 
     async def _on_park(self, code: str, message: str) -> None:
+        global _last_park
+        _last_park = (code, message, time.monotonic())
         self._save_cursors()
         self._release_lock()
         self._set_fatal_error(code, message, retryable=True)

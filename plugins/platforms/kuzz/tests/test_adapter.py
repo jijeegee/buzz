@@ -55,6 +55,8 @@ class AdapterTest(unittest.TestCase):
         # Hermes may still be writing gateway_state.json right after a disconnect.
         self._home = tempfile.TemporaryDirectory(ignore_cleanup_errors=True)
         self.addCleanup(self._home.cleanup)
+        adapter_module._last_park = None
+        self.addCleanup(setattr, adapter_module, "_last_park", None)
 
     @staticmethod
     def _adapter(**extra):
@@ -123,6 +125,12 @@ class AdapterTest(unittest.TestCase):
                 self.assertTrue(await adapter.connect())
                 self.assertEqual((await self._until_parked(adapter))[0], "signed_out")
                 self.assertTrue(adapter.has_fatal_error)
+                self.assertTrue(adapter.fatal_error_retryable)
+                # Right after a park, a reconnect fails at once, so Hermes backs off.
+                again = self._adapter()
+                self.assertFalse(await again.connect())
+                self.assertEqual(again.fatal_error_code, "signed_out")
+                self.assertTrue(again.fatal_error_retryable)
                 for chat, reply_to in [(CHANNEL, event_id(1)), (DM, event_id(4))]:
                     result = await adapter.send(chat, "answer", reply_to=reply_to)
                     self.assertTrue(result.success, result.error)

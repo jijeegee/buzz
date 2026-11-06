@@ -499,6 +499,7 @@ pub fn host_name() -> String {
             std::fs::read_to_string("/etc/hostname")
                 .ok()
                 .map(|s| s.trim().to_owned())
+                .filter(|s| !s.is_empty())
         })
         .or_else(mac_computer_name)
         .unwrap_or_default();
