@@ -38,6 +38,10 @@ Future<void> runWithErrorReporting(FutureOr<void> Function() appRunner) async {
       ..enableMetrics = false
       ..attachScreenshot = false
       ..reportPackages = false
+      // iOS reports failed URLSession requests natively, with the URL and
+      // query, past beforeSend.
+      ..captureFailedRequests = false
+      ..captureNativeFailedRequests = false
       ..beforeSend = (event, hint) {
         final scrubbed = scrubReportEvent(event);
         return admit(scrubbed) ? scrubbed : null;

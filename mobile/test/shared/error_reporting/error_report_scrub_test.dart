@@ -55,6 +55,20 @@ void main() {
         'my message',
       ]);
       expect(scrubbed, contains('/Users/[user]/Library'));
+      expect(
+        scrubReportText(r'open C:\Users\Jiho Kim\AppData\x failed'),
+        r'open C:\Users\[user]\AppData\x failed',
+      );
+    });
+
+    test('removes open and escaped quotes', () {
+      final escaped = scrubReportText(r'bad "a \"b secret\" c" and 「비밀」 end');
+      expectGone(escaped, ['b secret', '비밀']);
+      expect(escaped, endsWith(' end'));
+      final open = scrubReportText(
+        'Unexpected end of input {"content":"hello my secret',
+      );
+      expectGone(open, ['hello my secret']);
     });
 
     test('drops URL queries and keeps hosts', () {
@@ -94,7 +108,10 @@ void main() {
         exceptions: [
           SentryException(type: 'StateError', value: 'bad `my message`'),
         ],
-        contexts: Contexts(device: SentryDevice(name: "Jiho's iPhone")),
+        contexts: Contexts(device: SentryDevice(name: "Jiho's iPhone"))
+          ..['flutter_error_details'] = {
+            'information': 'Image provider: https://x.test/media/a.jpg?t=1',
+          },
         debugMeta: DebugMeta(
           images: [
             DebugImage(
@@ -114,6 +131,7 @@ void main() {
       expect(scrubbed.extra, isNull);
       expect(scrubbed.tags, isNull);
       expect(scrubbed.contexts.device?.name, isNull);
+      expect(scrubbed.contexts['flutter_error_details'], isNull);
       expect(scrubbed.message?.formatted, 'send failed for [quoted]');
       expect(scrubbed.exceptions!.single.value, 'bad [quoted]');
       expect(scrubbed.debugMeta!.images.single.codeFile, 'libapp.so');

@@ -16,7 +16,11 @@ const maxReportTextChars = 300;
 /// cannot stall the app in the regexes.
 const _maxInputChars = 2000;
 
-final _quoted = RegExp('`[^`]*`|"[^"]*"|\'[^\']{2,}\'|“[^”]*”|‘[^’]{2,}’');
+// A quote left open (cut JSON) runs to the end; escaped quotes stay inside.
+final _quoted = RegExp(
+  r'`[^`]*(?:`|$)|"(?:[^"\\]|\\.)*(?:"|$)|'
+  r"'[^']{2,}'|“[^”]*(?:”|$)|‘[^’]{2,}’|「[^」]*(?:」|$)|«[^»]*(?:»|$)",
+);
 final _userDir = RegExp(
   r'(\b[a-z]:[\\/]+users[\\/]+|/home/|/users/)[^\\/\r\n]+',
   caseSensitive: false,
@@ -71,6 +75,9 @@ SentryEvent scrubReportEvent(SentryEvent event) {
     ..extra = null
     ..tags = null;
   event.contexts.device?.name = null;
+  // FlutterError details: diagnostics text such as image provider URLs or
+  // rendered paragraph text (chat text).
+  event.contexts.remove('flutter_error_details');
   final message = event.message;
   if (message != null) {
     event.message = SentryMessage(scrubReportText(message.formatted));
