@@ -445,15 +445,13 @@ Future<List<KuzzPushEndpointGrant>> readKuzzPushEndpointGrants() async {
   }
 }
 
-/// Enrolls the endpoint and optionally rewrites the NSE snapshot afterward.
-///
-/// The rewrite propagates NIP-11 `self` rotations even when the opaque grant
-/// and accepted relay lease remain reusable and their generations do not move.
+/// Enrolls the endpoint. The caller rewrites the NSE snapshot afterward
+/// (with the active account), which propagates NIP-11 `self` rotations even
+/// when the opaque grant and accepted relay lease remain reusable.
 Future<KuzzPushEndpointGrant> enrollKuzzPush(
   String relayUrl,
-  String gatewayUrl, {
-  List<Community>? communitiesForSnapshotRefresh,
-}) async {
+  String gatewayUrl,
+) async {
   if (androidPushActive) {
     final token = apnsDeviceToken.value;
     if (token == null) throw StateError('No FCM token yet.');
@@ -480,14 +478,6 @@ Future<KuzzPushEndpointGrant> enrollKuzzPush(
   }
   final grant = KuzzPushEndpointGrant.fromMap(raw);
   await readKuzzPushEndpointGrants();
-  if (communitiesForSnapshotRefresh != null) {
-    try {
-      await registerKuzzPushCommunitySnapshot(communitiesForSnapshotRefresh);
-      pushCommunitySnapshotError.value = null;
-    } catch (error, stackTrace) {
-      reportPushCommunitySnapshotError(error, stackTrace);
-    }
-  }
   return grant;
 }
 

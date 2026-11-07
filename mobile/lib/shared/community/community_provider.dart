@@ -337,13 +337,15 @@ Future<Community?> revokeLeftAccountPushLease(Ref ref, String? id) async {
     if (left == null || left.signedOut || !left.pushNotificationsEnabled) {
       return null;
     }
-    if (!await ref.read(communityPushLeaseRevocationEnqueuerProvider)(left)) {
-      return null;
-    }
+    // The block first: a queued revocation must never outrank a cursor that
+    // was not saved. A block with nothing queued only skips generations.
     final updated = left.copyWith(
       pushSubscriptionState: left.pushSubscriptionState.withRevocationBlock(),
     );
     await storage.save(updated);
+    if (!await ref.read(communityPushLeaseRevocationEnqueuerProvider)(left)) {
+      return null;
+    }
     return updated;
   } catch (error, stackTrace) {
     reportPushLeaseCleanupError(error, stackTrace);
@@ -574,10 +576,12 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           .firstOrNull;
       if (target != null) _requireAllowedServer(ref, target.relayUrl);
       await ref.read(communityTransitionProvider).run();
-      final left = await revokeLeftAccountPushLease(ref, activeId);
       final used = target?.copyWith(lastUsedAt: DateTime.now());
       if (used != null) await storage.save(used);
       await storage.saveActiveId(id);
+      // Only once the switch is saved: a failed write leaves the account
+      // active, and its lease must not be revoked under it.
+      final left = await revokeLeftAccountPushLease(ref, activeId);
       await syncStoredCommunitySnapshot(ref);
       // Reassign list state to trigger activeCommunityProvider (which watches
       // communityListProvider.future) to rebuild and pick up the new active ID.
@@ -647,9 +651,16 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           !community.pushNotificationsEnabled) {
         throw StateError('Push notifications are disabled.');
       }
-      final withdrawn = await ref.read(
-        communityPushLeaseRevocationWithdrawerProvider,
-      )(community);
+      // An unreadable outbox must not stop this account's publications: the
+      // cursor already covers any block reserved for its revocation.
+      int? withdrawn;
+      try {
+        withdrawn = await ref.read(
+          communityPushLeaseRevocationWithdrawerProvider,
+        )(community);
+      } catch (error, stackTrace) {
+        reportPushLeaseCleanupError(error, stackTrace);
+      }
       final cursor = max(
         community.pushSubscriptionState.generationCursor ??
             community.pushSubscriptionState.acceptedGeneration ??

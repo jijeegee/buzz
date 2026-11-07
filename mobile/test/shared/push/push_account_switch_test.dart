@@ -30,8 +30,10 @@ void main() {
     notificationClass: 'default',
   );
 
-  late CommunityStorage communityStorage;
+  late _Storage communityStorage;
+  late FakeSecureStorage revocationSecure;
   late KuzzPushLeaseRevocationStorage revocations;
+  late List<int?> cursorsAtEnqueue;
   late _Relay relay;
   late _Clock clock;
   late int triggers;
@@ -55,8 +57,10 @@ void main() {
       );
 
   setUp(() async {
-    communityStorage = CommunityStorage(secure: FakeSecureStorage());
-    revocations = KuzzPushLeaseRevocationStorage(secure: FakeSecureStorage());
+    communityStorage = _Storage();
+    revocationSecure = FakeSecureStorage();
+    revocations = KuzzPushLeaseRevocationStorage(secure: revocationSecure);
+    cursorsAtEnqueue = [];
     relay = _Relay();
     clock = _Clock(1_000_000);
     triggers = 0;
@@ -108,12 +112,18 @@ void main() {
         communityPushLeaseDeactivatorProvider.overrideWithValue(
           (_, {generation}) async {},
         ),
-        communityPushLeaseRevocationEnqueuerProvider.overrideWithValue(
-          (community) => outbox.enqueueCommunity(
+        communityPushLeaseRevocationEnqueuerProvider.overrideWithValue((
+          community,
+        ) async {
+          final saved = (await communityStorage.loadAll()).singleWhere(
+            (c) => c.id == community.id,
+          );
+          cursorsAtEnqueue.add(saved.pushSubscriptionState.generationCursor);
+          return outbox.enqueueCommunity(
             community,
             readGrants: () async => [grant],
-          ),
-        ),
+          );
+        }),
         communityPushLeaseRevocationTriggerProvider.overrideWithValue(
           () async => triggers += 1,
         ),
@@ -162,6 +172,46 @@ void main() {
     expect(relay.isActive(b), isTrue);
     await outbox.trigger();
     expect(relay.isActive(a), isFalse);
+  });
+
+  test(
+    'the revocation block is saved before the revocation is queued',
+    () async {
+      await start();
+
+      await notifier().switchCommunity(b.id);
+
+      expect(cursorsAtEnqueue, [4 + kuzzPushLeaseRevocationBlock]);
+    },
+  );
+
+  test('a switch that is not saved revokes nothing', () async {
+    await start();
+    communityStorage.failActiveId = true;
+
+    await expectLater(
+      notifier().switchCommunity(b.id),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(await communityStorage.loadActiveId(), a.id);
+    expect(await revocations.loadAll(), isEmpty);
+    expect(triggers, 0);
+  });
+
+  test('an unreadable revocation outbox does not stop a publication', () async {
+    await start();
+    await notifier().switchCommunity(b.id);
+    await notifier().switchCommunity(a.id);
+    await revocationSecure.write(
+      key: 'kuzz_push_lease_revocations_v1',
+      value: 'not json',
+    );
+
+    await publishActive(a);
+
+    expect(relay.isActive(a), isTrue);
+    expect(relay.generationOf(a), greaterThan(6));
   });
 
   test('an account that is no longer active cannot publish', () async {
@@ -337,6 +387,18 @@ class _Relay {
   int? generationOf(Community community) =>
       _leases[_address(community.pubkey!, community.pushLeaseInstallationId!)]
           ?.generation;
+}
+
+class _Storage extends CommunityStorage {
+  _Storage() : super(secure: FakeSecureStorage());
+
+  bool failActiveId = false;
+
+  @override
+  Future<void> saveActiveId(String id) {
+    if (failActiveId) throw StateError('storage full');
+    return super.saveActiveId(id);
+  }
 }
 
 class _Clock {
