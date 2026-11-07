@@ -22,6 +22,7 @@ export function ProviderApiKeyRow({
   onRemove,
   onSave,
   row,
+  showEnvVarName = true,
 }: {
   /** Providers that read the same key, named in the row's footnote. */
   companions: readonly ProviderRow[];
@@ -31,6 +32,11 @@ export function ProviderApiKeyRow({
   /** Resolves true when the key was persisted so the draft can clear. */
   onSave: (value: string) => Promise<boolean>;
   row: ProviderRow;
+  /**
+   * Show the backing env var name (e.g. `ANTHROPIC_API_KEY`) under the label.
+   * Tools & accounts opts out: people there pick an account, not a variable.
+   */
+  showEnvVarName?: boolean;
 }) {
   const t = useT();
   const [draft, setDraft] = React.useState("");
@@ -54,7 +60,7 @@ export function ProviderApiKeyRow({
       </p>
       <PersonaProviderApiKeyField
         disabled={disabled}
-        envVarName={envVar}
+        envVarName={showEnvVarName ? envVar : undefined}
         inheritedLabel={t("settings.providers.apiKeySaved")}
         isInherited={row.apiKeyIsSet}
         isRequired={false}

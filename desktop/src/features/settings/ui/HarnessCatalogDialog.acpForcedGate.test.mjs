@@ -4,10 +4,10 @@
  * P2: isColdError (isError && data===undefined) drives the error branch;
  * isRefreshing (isFetching && !isLoading) drives the refresh-indicator branch.
  * Both elements carry data-testid selectors that distinguish them from the
- * generic "No runtimes match" fallback.
+ * generic "No harnesses match" fallback.
  *
  * Mutation proof: revert only the HarnessCatalogDialog.tsx hunk and both
- * tests go RED — cold rejection shows "No runtimes match" instead of the
+ * tests go RED — cold rejection shows "No harnesses match" instead of the
  * error element; cached + pending shows no refresh indicator.
  */
 
@@ -459,7 +459,7 @@ describe("HarnessCatalogDialog forced-probe rendering — P2 regression (mounted
     // Cached successful empty catalog (data !== undefined but zero entries), so
     // filtered.length === 0. A rejected forced refresh is still a WARM error;
     // the status row must render independently of whether the filter has rows,
-    // not be swallowed by the "No runtimes match" branch.
+    // not be swallowed by the "No harnesses match" branch.
     queryClient.setQueryData(acpRuntimesQueryKey, []);
 
     discoverHandler = (args) =>
@@ -480,18 +480,18 @@ describe("HarnessCatalogDialog forced-probe rendering — P2 regression (mounted
       document.body.querySelector(
         '[data-testid="harness-catalog-refresh-error"]',
       ),
-      "warm-error status must render over a cached empty catalog, not be hidden by 'No runtimes match'",
+      "warm-error status must render over a cached empty catalog, not be hidden by 'No harnesses match'",
     );
 
     const emptyCatalogText = document.body.querySelector(
       '[data-testid="harness-catalog-list"]',
     )?.textContent;
     assert.ok(
-      emptyCatalogText?.includes("No runtimes found."),
+      emptyCatalogText?.includes("No harnesses found."),
       "an empty catalog with no active search must show the truthful empty-catalog copy",
     );
     assert.ok(
-      !emptyCatalogText?.includes("No runtimes match."),
+      !emptyCatalogText?.includes("No harnesses match."),
       "the search-specific copy must not appear when no search is active",
     );
 
@@ -536,7 +536,7 @@ describe("HarnessCatalogDialog forced-probe rendering — P2 regression (mounted
     assert.ok(
       document.body
         .querySelector('[data-testid="harness-catalog-list"]')
-        ?.textContent?.includes("No runtimes match"),
+        ?.textContent?.includes("No harnesses match"),
       "the filtered-empty message and the status row coexist",
     );
 

@@ -501,6 +501,21 @@ export function getProviderApiKeyEnvVar(providerId: string): string | null {
 }
 
 /**
+ * Every provider API-key env var (`ANTHROPIC_API_KEY`, …), derived from the
+ * provider list through `getProviderApiKeyEnvVar` — no second list. Settings
+ * › AI connections › Tools & accounts owns these keys; the defaults editor
+ * keeps them out of its generic env rows.
+ */
+export function getAllProviderApiKeyEnvVars(): readonly string[] {
+  const keys = new Set<string>();
+  for (const option of PERSONA_LLM_PROVIDER_OPTIONS) {
+    const key = getProviderApiKeyEnvVar(option.id);
+    if (key) keys.add(key);
+  }
+  return [...keys];
+}
+
+/**
  * Returns the display label for the provider's API key field, if any.
  * Derived from PROVIDER_CREDENTIAL_CONFIG.apiKeyLabel — single source of truth
  * for all credential field labels so every surface stays in sync.

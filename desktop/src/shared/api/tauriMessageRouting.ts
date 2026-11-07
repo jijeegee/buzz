@@ -103,7 +103,7 @@ export async function routeMessage(
  */
 export type TaskModelRouteKind = "api-key" | "subscription";
 
-/** One route a task can use, e.g. "Codex (ChatGPT subscription)". */
+/** One route a task can use, e.g. "Codex (its own sign-in)". */
 export type TaskModelProviderOption = {
   id: string;
   label: string;

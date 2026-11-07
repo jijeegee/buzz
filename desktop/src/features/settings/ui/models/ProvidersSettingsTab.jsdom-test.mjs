@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { afterEach, test } from "node:test";
 
-// Settings › Models › Providers against the Tauri IPC: one user action is one
+// Settings › AI connections › Tools & accounts against the Tauri IPC: one user action is one
 // `set_global_agent_config` carrying the whole record, an API-key save never
 // touches `model`, the single "Default for new agents" radio group writes the
 // harness switch the way Agent defaults does, and the tabs/radios carry
@@ -373,22 +373,48 @@ test("the OpenAI key row names OpenAI-compatible as a reader instead of a second
     3,
     "anthropic, openai, openrouter",
   );
-  // Subscription rows reuse HarnessRow for the login-billed harness only.
-  assert.ok(
-    container.querySelector(
-      '[data-testid="settings-models-anthropic-subscription"] [data-testid="doctor-runtime-claude"]',
-    ),
+  // Harness sign-in lives only in the harness list on top; the account
+  // groups no longer repeat a per-provider HarnessRow or Check again button.
+  const accounts = container.querySelector(
+    '[data-testid="settings-models-accounts"]',
   );
-  assert.ok(
-    container.querySelector(
-      '[data-testid="settings-models-openai-subscription"] [data-testid="doctor-runtime-codex"]',
-    ),
-  );
+  assert.ok(accounts, "Accounts Kuzz uses directly renders");
+  assert.match(accounts.textContent, /Accounts Kuzz uses directly/);
   assert.equal(
-    container.querySelector(
-      '[data-testid="settings-models-openrouter-subscription"]',
-    ),
+    accounts.querySelector('[data-testid^="doctor-runtime-"]'),
     null,
+  );
+  assert.equal(container.querySelector('[data-testid$="-subscription"]'), null);
+  assert.ok(
+    !/Check again/.test(accounts.textContent),
+    "no per-provider Check again",
+  );
+  // Env var names stay out of this screen.
+  assert.ok(
+    !/ANTHROPIC_API_KEY|OPENAI_COMPAT_API_KEY|OPENROUTER_API_KEY/.test(
+      accounts.textContent,
+    ),
+  );
+});
+
+test("Tools & accounts shows the harness list above the accounts", async () => {
+  resetConfig();
+  mounted = await mount(ProvidersSettingsTab);
+  const { container } = mounted;
+  const harnesses = await waitFor(
+    container,
+    '[data-testid="settings-harnesses"]',
+  );
+  assert.match(harnesses.textContent, /Harnesses on this computer/);
+  assert.match(harnesses.textContent, /Add harness/);
+  await waitFor(container, '[data-testid="doctor-runtime-claude"]');
+  const accounts = container.querySelector(
+    '[data-testid="settings-models-accounts"]',
+  );
+  assert.ok(
+    harnesses.compareDocumentPosition(accounts) &
+      globalThis.window.Node.DOCUMENT_POSITION_FOLLOWING,
+    "harnesses render before accounts",
   );
 });
 
@@ -472,17 +498,17 @@ test("writes stay locked while the global config is still loading, then open onc
   assert.equal(saves[0].args.config.model, "claude-sonnet");
 });
 
-test("Models renders an accessible tablist; App tasks lists Message routing and links back to Connections", async () => {
+test("AI connections renders an accessible tablist; App tasks lists Message routing and links back to Tools & accounts", async () => {
   resetConfig();
   mounted = await mount(ModelsSettingsPanel);
   const { container } = mounted;
   const tablist = container.querySelector('[role="tablist"]');
   assert.ok(tablist, "tabs expose role=tablist");
-  assert.equal(tablist.getAttribute("aria-label"), "Models settings");
+  assert.equal(tablist.getAttribute("aria-label"), "AI connections settings");
   const tabs = [...tablist.querySelectorAll('[role="tab"]')];
   assert.deepEqual(
     tabs.map((tab) => tab.textContent),
-    ["Connections", "Default for new agents", "App tasks"],
+    ["Tools & accounts", "Default for new agents", "App tasks"],
   );
   assert.equal(tabs[0].getAttribute("aria-selected"), "true");
   await waitFor(container, '[data-testid="settings-models-providers"]');

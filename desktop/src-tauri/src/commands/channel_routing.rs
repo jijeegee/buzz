@@ -164,7 +164,7 @@ pub async fn set_channel_routing(
         if mode == ChannelRoutingMode::DesktopRouter {
             if let Some(reason) = super::router_not_ready(&app)? {
                 return Err(format!(
-                    "Smart routing can't call a model: {}. Set it up in Settings › Models.",
+                    "Smart routing can't call a model: {}. Set it up in Settings › AI connections.",
                     reason.message()
                 ));
             }

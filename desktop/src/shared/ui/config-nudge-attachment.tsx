@@ -7,6 +7,7 @@ import {
 } from "@/features/agents/openEditAgentEvent";
 import { useAppShell } from "@/app/AppShellContext";
 import type { ConfigNudgePayload } from "@/shared/lib/configNudge";
+import { requestModelsSettingsTab } from "@/features/settings/lib/modelsSettingsTabRequest";
 import { cn } from "@/shared/lib/cn";
 import { useProfilePanel } from "@/shared/context/ProfilePanelContext";
 import {
@@ -44,9 +45,9 @@ function requirementKey(
 }
 
 /**
- * Requirements owned by runtime discovery route to Agent runtimes. This covers
+ * Requirements owned by runtime discovery route to AI connections. This covers
  * Git Bash, unresolved binaries, and all-CLI-login cards with installation work.
- * Auth-only cards remain informational because Agent runtimes cannot log in to
+ * Auth-only cards remain informational because AI connections cannot log in to
  * an external CLI for the user.
  */
 function hasGitBashRequirement(
@@ -156,7 +157,7 @@ function firstFocusTarget(
  * Mirrors `firstFocusTarget` but operates on one row — used so per-row
  * Edit Agent CTAs focus the field that row describes, not the first editable
  * field on the card.
- * Returns `undefined` for `cli_login` requirements (Agent runtimes, not Edit Agent).
+ * Returns `undefined` for `cli_login` requirements (AI connections, not Edit Agent).
  */
 export function focusTargetForRequirement(
   req: ConfigNudgePayload["requirements"][number],
@@ -180,16 +181,16 @@ export function focusTargetForRequirement(
  *
  * Routing:
  * (A) Any card with a `git_bash` or `missing_binary` requirement, or one whose
- *     requirements are all install-state `cli_login`, opens Settings → Agent
- *     runtimes. A card-level Agent runtimes label in `AttachmentActions` confirms
- *     the action at rest.
+ *     requirements are all install-state `cli_login`, opens Settings → AI
+ *     connections (Tools & accounts, the harness list). A card-level AI
+ *     connections label in `AttachmentActions` confirms the action at rest.
  * (A-auth) A card whose requirements are all available `cli_login` surfaces is
- *     purely informational: Agent runtimes cannot authenticate a CLI, and `setup_copy`
+ *     purely informational: AI connections cannot authenticate a CLI, and `setup_copy`
  *     already gives the needed command.
  * (B) Other mixed cards open Edit Agent as the card-level fallback. Their rows
  *     carry inline CTAs for the matching destination: install-state `cli_login`
- *     opens Agent runtimes; `env_key` and `normalized_field` open Edit Agent. A
- *     `git_bash` row is covered by the card-level Agent runtimes route, so it does not
+ *     opens AI connections; `env_key` and `normalized_field` open Edit Agent. A
+ *     `git_bash` row is covered by the card-level AI connections route, so it does not
  *     render a redundant row action.
  */
 export function ConfigNudgeCard({
@@ -214,10 +215,11 @@ export function ConfigNudgeCard({
   const openDoctor = () => {
     if (!onOpenSettings) {
       console.warn(
-        "[ConfigNudgeCard] onOpenSettings is null — Agent runtimes deep-link unavailable on this surface",
+        "[ConfigNudgeCard] onOpenSettings is null — AI connections deep-link unavailable on this surface",
       );
     }
-    onOpenSettings?.("agents");
+    requestModelsSettingsTab("providers");
+    onOpenSettings?.("models");
   };
 
   const openEditAgent = (focus?: EditAgentFocusTarget) => {
@@ -227,7 +229,7 @@ export function ConfigNudgeCard({
 
   const handleOpen = () => {
     if (shouldOpenDoctor(nudge.requirements)) {
-      // Runtime installation and discovery requirements resolve in Agent runtimes.
+      // Runtime installation and discovery requirements resolve in AI connections.
       // Informational-only cards never mount this trigger.
       openDoctor();
     } else {
@@ -237,7 +239,7 @@ export function ConfigNudgeCard({
   };
 
   const handleOpenDoctor = (e: React.MouseEvent) => {
-    // (B) Per-row Agent runtimes CTA — stop propagation so the card trigger doesn't
+    // (B) Per-row AI connections CTA — stop propagation so the card trigger doesn't
     // double-fire to Edit Agent on mixed cards.
     e.stopPropagation();
     openDoctor();
@@ -376,11 +378,11 @@ function RequirementRow({
           <span className="flex-1 [overflow-wrap:anywhere]">
             {cliLoginMessage(requirement)}
           </span>
-          {/* (B) Per-row Agent runtimes CTA — shown only on mixed cards where the
+          {/* (B) Per-row AI connections CTA — shown only on mixed cards where the
               card-level trigger opens Edit Agent (not auth-only cards). When
-              allCliLogin is true the card trigger already routes to Agent runtimes; the
+              allCliLogin is true the card trigger already routes to AI connections; the
               per-row button is redundant and is suppressed. Also suppressed for
-              `available` cli_login rows — Agent runtimes has no auth functionality and
+              `available` cli_login rows — AI connections has no auth functionality and
               the setup_copy already provides the exact login command.
               stopPropagation prevents double-fire on mixed cards where both
               card and row CTAs are visible. */}
@@ -404,7 +406,7 @@ function RequirementRow({
         </div>
       );
     case "missing_binary": {
-      // Agent runtimes owns installation guidance and the re-check action. The
+      // AI connections owns installation guidance and the re-check action. The
       // restart guidance remains visible here because a normal agent restart does
       // not invalidate Desktop's negative command-resolution cache.
       return (
@@ -420,7 +422,7 @@ function RequirementRow({
     }
     case "cli_config_invalid": {
       // Config-invalid rows are purely informational — the user must edit an
-      // external file. No Agent runtimes CTA (Kuzz can't repair ~/.codex/config.toml)
+      // external file. No AI connections CTA (Kuzz can't repair ~/.codex/config.toml)
       // and no Edit Agent CTA (the field isn't managed by Kuzz).
       const cli = requirement.probe_args[0] ?? t("ui.configNudge.cliFallback");
       const configFile = `~/.${cli}/config.toml`;

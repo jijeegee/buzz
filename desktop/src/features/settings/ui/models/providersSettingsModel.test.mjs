@@ -300,7 +300,7 @@ test("defaultOptions lists every provider × path with a harness, one selected",
   assert.equal(noProviderHarness[1].available, false);
   assert.equal(
     noProviderHarness[1].detail,
-    "Needs an installed runtime that takes a provider",
+    "Needs an installed harness that takes a provider",
   );
 });
 

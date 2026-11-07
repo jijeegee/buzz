@@ -1,5 +1,5 @@
 import * as React from "react";
-import { AlertCircle, RefreshCw } from "lucide-react";
+import { AlertCircle } from "lucide-react";
 
 import {
   useAcpRuntimesQueryForced,
@@ -11,10 +11,8 @@ import { BLOCK_BUILD_HIDDEN_PROVIDER_IDS } from "@/features/agents/ui/agentConfi
 import { useGlobalAgentConfig } from "@/features/agents/useGlobalAgentConfig";
 import type { GlobalAgentConfig } from "@/shared/api/types";
 import { t as translate, useT } from "@/shared/i18n";
-import { cn } from "@/shared/lib/cn";
-import { Button } from "@/shared/ui/button";
 
-import { HarnessRow } from "../HarnessRow";
+import { HarnessesSettingsPanel } from "../HarnessesSettingsPanel";
 import {
   SettingsOptionGroup,
   SettingsOptionGroupList,
@@ -35,13 +33,16 @@ type ScopedNotice = SaveNotice & { scope: string };
 const NO_HIDDEN_PROVIDERS: ReadonlySet<string> = new Set();
 
 /**
- * Settings › Models › Providers.
+ * Settings › AI connections › Tools & accounts.
  *
- * One `SettingsOptionGroup` per provider — its subscription sign-in row (the
- * unmodified `HarnessRow` for the harness whose CLI login bills that
- * provider, found through the catalog's `subscriptionProvider` fact) and its
- * API-key row — followed by the single "Default for new agents" group. Every
- * control writes the whole `GlobalAgentConfig` in one
+ * Two parts:
+ * - **Harnesses on this computer** — the unmodified `HarnessesSettingsPanel`
+ *   (install, update, connect and sign in to each harness, plus Add harness).
+ * - **Accounts Kuzz uses directly** — one block per provider with the
+ *   ChatGPT plan row (OpenAI) and the API-key row. Harness sign-in is not
+ *   repeated here; it lives in the harness list above.
+ *
+ * Every account control writes the whole `GlobalAgentConfig` in one
  * `set_global_agent_config`, and the result line says when that restarted
  * running agents.
  */
@@ -55,9 +56,6 @@ export function ProvidersSettingsTab() {
     isReady: isConfigReady,
   } = useGlobalAgentConfig();
   const saveMutation = useSetGlobalAgentConfigMutation();
-  // Bumped by "Check again" so HarnessRow drops stale install results, the
-  // same way the Agent runtimes panel does.
-  const [resetEpoch, setResetEpoch] = React.useState(0);
   const [notice, setNotice] = React.useState<ScopedNotice | null>(null);
 
   const catalog = runtimesQuery.data;
@@ -74,7 +72,6 @@ export function ProvidersSettingsTab() {
   );
   const groups = React.useMemo(() => groupProviderRows(rows), [rows]);
 
-  const isRefreshing = runtimesQuery.isFetching;
   // Every write spreads `globalConfig` back into `set_global_agent_config`,
   // so nothing may write until the real record is loaded: the hook's
   // placeholder (and its post-error fallback) is an empty config that would
@@ -107,60 +104,27 @@ export function ProvidersSettingsTab() {
   const noticeFor = (scope: string) =>
     notice && notice.scope === scope ? notice : null;
 
-  function handleCheckAgain() {
-    setResetEpoch((epoch) => epoch + 1);
-    void runtimesQuery.forceRefresh();
-  }
-
   function renderGroup(group: ProviderGroup) {
     const { primary, companions } = group;
-    const subscription = primary.subscriptionRuntime;
+    const headingId = `settings-models-provider-${primary.providerId}-heading`;
     return (
-      <SettingsOptionGroup
+      <section
+        aria-labelledby={headingId}
         data-testid={`settings-models-provider-${primary.providerId}`}
-        headerAction={
-          subscription ? (
-            <Button
-              disabled={isRefreshing}
-              onClick={handleCheckAgain}
-              size="sm"
-              type="button"
-              variant="outline"
-            >
-              <RefreshCw
-                className={cn("h-4 w-4", isRefreshing && "animate-spin")}
-              />
-              {t("settings.harnesses.checkAgain")}
-            </Button>
-          ) : undefined
-        }
         key={primary.providerId}
-        title={primary.label}
       >
+        <h3
+          className="px-4 pt-3.5 text-sm font-semibold text-foreground"
+          id={headingId}
+        >
+          {primary.label}
+        </h3>
         {primary.providerId === "openai" ? (
           <div>
             <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
               {t("settings.providers.chatgptPlanHeading")}
             </p>
             <ChatGptPlanSettingsRow />
-          </div>
-        ) : null}
-        {subscription ? (
-          <div
-            data-testid={`settings-models-${primary.providerId}-subscription`}
-          >
-            <p className="px-4 pt-3 text-xs font-medium text-muted-foreground/70">
-              {primary.providerId === "openai"
-                ? t("settings.providers.codexCliHeading")
-                : t("settings.providers.cliHeading", {
-                    runtime: subscription.label,
-                  })}
-            </p>
-            <HarnessRow
-              embedded
-              resetEpoch={resetEpoch}
-              runtime={subscription}
-            />
           </div>
         ) : null}
         {primary.apiKeyEnvVar ? (
@@ -189,6 +153,7 @@ export function ProvidersSettingsTab() {
               )
             }
             row={primary}
+            showEnvVarName={false}
           />
         ) : (
           <SettingsOptionRow
@@ -209,7 +174,7 @@ export function ProvidersSettingsTab() {
             </div>
           </SettingsOptionRow>
         )}
-      </SettingsOptionGroup>
+      </section>
     );
   }
 
@@ -226,7 +191,14 @@ export function ProvidersSettingsTab() {
         </p>
       ) : null}
       <SettingsOptionGroupList>
-        {groups.map(renderGroup)}
+        <HarnessesSettingsPanel />
+        <SettingsOptionGroup
+          data-testid="settings-models-accounts"
+          description={t("settings.providers.accountsDescription")}
+          title={t("settings.providers.accountsTitle")}
+        >
+          {groups.map(renderGroup)}
+        </SettingsOptionGroup>
       </SettingsOptionGroupList>
     </div>
   );

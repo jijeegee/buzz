@@ -420,7 +420,9 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
     "onboarding-harness-method-subscription",
   );
   const apiMethod = page.getByTestId("onboarding-harness-method-api");
-  await expect(subscriptionMethod).toContainText("Log in with a subscription");
+  await expect(subscriptionMethod).toContainText(
+    "Use a harness on this computer",
+  );
   await expect(apiMethod).toContainText("Use an API key");
   await expect(subscriptionMethod).not.toHaveCSS(
     "background-color",
@@ -434,7 +436,7 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
 
   await page.getByTestId("onboarding-harness-method-subscription").click();
   await expect(
-    page.getByRole("heading", { name: "Continue with an AI subscription" }),
+    page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
   await expectHorizontalCardTransition(page, "onboarding-page-2", "forward");
   await expect(page.getByText(/More harnesses can be added in/)).toHaveCount(0);
@@ -472,7 +474,7 @@ test("machine onboarding: landing, backup, setup docked CTAs", async ({
 
   await page.getByTestId("onboarding-back").click();
   await expect(
-    page.getByRole("heading", { name: "Continue with an AI subscription" }),
+    page.getByRole("heading", { name: "Choose a harness" }),
   ).toBeVisible();
   await expectHorizontalCardTransition(page, "onboarding-page-2", "backward");
   await page.getByTestId("onboarding-back").click();

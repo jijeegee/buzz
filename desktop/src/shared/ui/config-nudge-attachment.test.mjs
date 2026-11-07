@@ -65,7 +65,7 @@ test("shouldOpenDoctor_missingBinary_routesToAgentRuntimes", () => {
   assert.equal(
     shouldOpenDoctor([{ surface: "missing_binary", command: "buzz-pi-acp" }]),
     true,
-    "a missing runtime binary must route to Agent runtimes",
+    "a missing runtime binary must route to the harness list (AI connections)",
   );
 });
 

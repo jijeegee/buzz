@@ -141,7 +141,7 @@ test("after: consolidated harnesses panel + catalog dialog", async ({
   await page.setViewportSize({ width: 1280, height: 2400 });
   await installMockBridge(page, { acpRuntimesCatalog: CATALOG });
   await page.goto("/", { waitUntil: "domcontentloaded" });
-  await openSettings(page, "agents");
+  await openSettings(page, "models");
   await expect(page.getByTestId("settings-harnesses")).toBeVisible({
     timeout: 10_000,
   });

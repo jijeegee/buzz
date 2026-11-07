@@ -176,6 +176,18 @@ type EnvVarsEditorProps = {
    * help users distinguish two keys with similar names.
    */
   keyAnnotations?: Readonly<Record<string, string>>;
+  /**
+   * Keys this editor must not set (opt-in; the defaults surfaces pass the
+   * provider API-key env vars, which belong to Settings › AI connections ›
+   * Tools & accounts). A row whose key is one of these shows
+   * `blockedKeyMessage` and is left out of the emitted record, so a saved
+   * value under a hidden key of the same name is never overwritten or
+   * dropped. `onBlockedRowsChange` reports whether such a row exists so the
+   * parent can block Save.
+   */
+  blockedKeys?: readonly string[];
+  blockedKeyMessage?: string;
+  onBlockedRowsChange?: (hasBlockedRows: boolean) => void;
 };
 
 type Row = { id: string; key: string; value: string };
@@ -224,6 +236,9 @@ export function EnvVarsEditor({
   inheritedRows = [],
   inheritedRowsLabel: inheritedRowsLabelProp,
   keyAnnotations,
+  blockedKeys = [],
+  blockedKeyMessage,
+  onBlockedRowsChange,
 }: EnvVarsEditorProps) {
   const t = useT();
   const inheritedLabel = inheritedLabelProp ?? t("agents.envVars.inherited");
@@ -309,9 +324,31 @@ export function EnvVarsEditor({
     return () => cancelAnimationFrame(id);
   }, [focusKey, requiredKeys]);
 
+  const blockedKeySet = React.useMemo(
+    () => new Set(blockedKeys.map((key) => key.toUpperCase())),
+    [blockedKeys],
+  );
+  // Case-insensitive: Windows env names are.
+  const isBlockedRow = (row: { key: string }) =>
+    blockedKeySet.has(row.key.trim().toUpperCase());
+  const hasBlockedRows = rows.some(isBlockedRow);
+  React.useEffect(() => {
+    onBlockedRowsChange?.(hasBlockedRows);
+  }, [hasBlockedRows, onBlockedRowsChange]);
+  // An unmounted editor (e.g. Advanced collapsed) has no rows left to block.
+  React.useEffect(
+    () => () => onBlockedRowsChange?.(false),
+    [onBlockedRowsChange],
+  );
+
   function emit(next: Row[]) {
     setRows(next);
-    const record = buildRecord(next, value, requiredKeys, hiddenKeys);
+    const record = buildRecord(
+      next.filter((row) => !isBlockedRow(row)),
+      value,
+      requiredKeys,
+      hiddenKeys,
+    );
     lastEmitted.current = record;
     onChange(record);
   }
@@ -648,6 +685,15 @@ export function EnvVarsEditor({
                   </p>
                 );
               })()}
+              {isBlockedRow(row) && blockedKeyMessage ? (
+                <p
+                  className="ml-1 text-xs text-destructive"
+                  data-testid="env-vars-blocked-key"
+                  role="alert"
+                >
+                  {blockedKeyMessage}
+                </p>
+              ) : null}
               {row.key.length > 0 && keyAnnotations?.[row.key] ? (
                 <p
                   className="ml-1 text-xs text-muted-foreground"

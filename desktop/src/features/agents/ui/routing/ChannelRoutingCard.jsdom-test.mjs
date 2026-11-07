@@ -597,7 +597,7 @@ test("Smart routing with a ready router model: named model line, one save with n
     '[data-testid="agents-channel-routing-smart-model"]',
   );
   assert.match(line.textContent, /Uses Claude Haiku 4\.5/);
-  assert.match(line.textContent, /Change in Models/);
+  assert.match(line.textContent, /Change in AI connections/);
   assert.equal(
     radio(container, "desktop-router").labels.length,
     1,
@@ -620,7 +620,7 @@ test("Smart routing with a ready router model: named model line, one save with n
   assert.equal(readRequestedModelsSettingsTab(), "tasks");
 });
 
-test("Smart routing with no route set up is disabled, names what's missing, and links to Providers", async () => {
+test("Smart routing with no route set up is disabled, names what's missing, and links to AI connections", async () => {
   taskModels = routerModel(false);
   routing = baseRouting({ mode: "off", applied: { state: "off" } });
   const container = await mount();
@@ -630,7 +630,7 @@ test("Smart routing with no route set up is disabled, names what's missing, and 
   );
   assert.match(
     line.textContent,
-    /Sign in to Codex or Claude Code, or add an API key·Models/,
+    /Sign in to Codex or Claude Code, or add an API key·AI connections/,
   );
   assert.equal(radio(container, "desktop-router").disabled, true);
 

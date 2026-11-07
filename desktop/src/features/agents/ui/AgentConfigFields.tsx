@@ -36,6 +36,7 @@ import {
   BLOCK_BUILD_HIDDEN_PROVIDER_IDS,
   CARD_MINT_KEY_ANNOTATIONS,
   CUSTOM_PROVIDER_DROPDOWN_VALUE,
+  getAllProviderApiKeyEnvVars,
   getPersonaProviderOptions,
   getProviderApiKeyEnvVar,
   getProviderApiKeyLabel,
@@ -360,8 +361,22 @@ export function AgentConfigFields({
     runtimeFileConfig,
     runtimeId: credentialRuntimeId,
   });
+  // The defaults surfaces (`progressive-defaults`) never take API keys:
+  // those live in Settings › AI connections › Tools & accounts. Saved keys
+  // stay in `env_vars` untouched (hidden from the generic rows), and a row
+  // the user types for one of them blocks Save with an inline message
+  // instead of being silently dropped.
+  const apiKeysManagedElsewhere = disclosure === "progressive-defaults";
+  const accountApiKeyEnvVars = React.useMemo(
+    () => (apiKeysManagedElsewhere ? getAllProviderApiKeyEnvVars() : []),
+    [apiKeysManagedElsewhere],
+  );
+  const [hasBlockedApiKeyRows, setHasBlockedApiKeyRows] = React.useState(false);
   const configIsValid =
-    selectedRuntimeId.length > 0 && modelIsValid && credentialsValid;
+    selectedRuntimeId.length > 0 &&
+    modelIsValid &&
+    credentialsValid &&
+    !hasBlockedApiKeyRows;
   React.useEffect(() => {
     onValidityChange?.(configIsValid);
   }, [configIsValid, onValidityChange]);
@@ -807,15 +822,19 @@ export function AgentConfigFields({
   const advancedEditorBlock = (
     <>
       <EnvVarsEditor
+        blockedKeyMessage={t("agents.defaults.apiKeyRowBlocked")}
+        blockedKeys={accountApiKeyEnvVars}
         fileSatisfiedKeys={advancedFileSatisfiedEnvKeys}
         hiddenKeys={[
           ...(apiKeyEnvVar ? [apiKeyEnvVar] : []),
+          ...accountApiKeyEnvVars,
           ...allStructuredKeys,
         ]}
         inheritedRows={bakedGenericRows}
         inheritedRowsLabel={t("agents.envVars.build")}
         keyAnnotations={CARD_MINT_KEY_ANNOTATIONS}
         label={t("agents.envVars.label")}
+        onBlockedRowsChange={setHasBlockedApiKeyRows}
         onChange={handleEnvVarsChange}
         requiredKeys={advancedRequiredEnvKeys}
         value={config.env_vars}
@@ -962,7 +981,24 @@ export function AgentConfigFields({
 
   const dependentContent = (
     <>
-      {providerFieldVisible && apiKeyEnvVar ? (
+      {providerFieldVisible && apiKeyEnvVar && apiKeysManagedElsewhere ? (
+        <div className={blockClassName}>
+          <ApiKeyInAccountsNote
+            inheritedLabel={
+              apiKeyInherited
+                ? apiKeyFileSatisfied
+                  ? t("agents.apiKey.setInRuntimeConfig")
+                  : t("agents.apiKey.providedByBuild")
+                : null
+            }
+            isSet={apiKeyValue.trim().length > 0}
+            label={
+              getProviderApiKeyLabel(effectiveProvider) ??
+              t("agents.apiKey.label")
+            }
+          />
+        </div>
+      ) : providerFieldVisible && apiKeyEnvVar ? (
         <div className={blockClassName}>
           <PersonaProviderApiKeyField
             disabled={false}
@@ -1105,5 +1141,43 @@ export function AgentConfigFields({
     <SettingsOptionGroup data-testid="global-agent-config-fields">
       {content}
     </SettingsOptionGroup>
+  );
+}
+
+/**
+ * Stands in for the API-key field on the defaults surfaces: the key itself
+ * is entered in Settings › AI connections › Tools & accounts, so this only
+ * says whether one is there. A missing key keeps Save disabled through the
+ * same `credentialsValid` gate the field used.
+ */
+function ApiKeyInAccountsNote({
+  inheritedLabel,
+  isSet,
+  label,
+}: {
+  /** Set when a build or runtime config file supplies the key. */
+  inheritedLabel: string | null;
+  isSet: boolean;
+  label: string;
+}) {
+  const t = useT();
+  const missing = inheritedLabel === null && !isSet;
+  return (
+    <div className="space-y-1" data-testid="global-agent-api-key-in-accounts">
+      <p className="text-sm font-medium text-foreground">{label}</p>
+      <p
+        className={cn(
+          "text-sm",
+          missing
+            ? "text-amber-700 dark:text-amber-400"
+            : "text-muted-foreground",
+        )}
+      >
+        {inheritedLabel ??
+          (isSet
+            ? t("agents.defaults.apiKeyInAccounts")
+            : t("agents.defaults.apiKeyAddInAccounts"))}
+      </p>
+    </div>
   );
 }

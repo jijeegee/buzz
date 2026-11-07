@@ -529,7 +529,7 @@ fn kuzz_agent_requirements(effective: &EffectiveAgentEnv) -> Vec<Requirement> {
                 missing.push(Requirement::CliLogin {
                     probe_args: vec!["ChatGPT".into()],
                     setup_copy:
-                        "Continue with ChatGPT in Settings › Models › Providers to use your ChatGPT plan"
+                        "Continue with ChatGPT in Settings › AI connections › Tools & accounts to use your ChatGPT plan"
                             .into(),
                     availability: AcpAvailabilityStatus::Available,
                 });

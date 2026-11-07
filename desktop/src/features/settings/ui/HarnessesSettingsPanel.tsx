@@ -78,15 +78,16 @@ function GitBashCard({
 }
 
 /**
- * Consolidated "Agent runtimes" surface for Settings → Agents.
+ * "Harnesses on this computer" — the top part of Settings › AI connections ›
+ * Tools & accounts.
  *
  * Replaces the old "Agent runtimes" (DoctorSettingsPanel) + "Bring your own
  * harness" (HarnessManagementCard) pair with one operational area:
  *
- * - **Your runtimes** — stable rows for ready (or one-click-ready) runtimes
- *   and everything the user authored. Row order never changes when a runtime
+ * - **Your harnesses** — stable rows for ready (or one-click-ready) harnesses
+ *   and everything the user authored. Row order never changes when a harness
  *   installs (stableRowOrder), so the page doesn't jump under the pointer.
- * - **Add runtimes** — a master-detail catalog dialog for everything that
+ * - **Add harness** — a master-detail catalog dialog for everything that
  *   needs multi-step setup, plus the custom-harness form.
  */
 export function HarnessesSettingsPanel() {

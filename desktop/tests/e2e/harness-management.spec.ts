@@ -133,7 +133,7 @@ async function openHarnessSettings(page: import("@playwright/test").Page) {
   await page.getByTestId("open-settings").click();
   await page.getByTestId("profile-popover-settings").click();
   await expect(page.getByTestId("settings-view")).toBeVisible();
-  await page.getByTestId("settings-nav-agents").click();
+  await page.getByTestId("settings-nav-models").click();
   await expect(page.getByTestId("settings-harnesses")).toBeVisible({
     timeout: 10_000,
   });
@@ -264,7 +264,7 @@ test.describe("your harnesses split", () => {
   test("catalog Update for an outdated adapter requires confirmation before installing", async ({
     page,
   }) => {
-    // Wes's review blocker: Add runtimes → Setup → Update must honor the
+    // Wes's review blocker: Add harness → Setup → Update must honor the
     // same machine-wide replacement confirmation the runtime row shows —
     // never mutate straight from the catalog CTA.
     await installMockBridge(page, {
