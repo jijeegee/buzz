@@ -182,10 +182,9 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
 
   for (const starter of WELCOME_TEAM_STARTERS) {
     const input = await buildWelcomeStarterCreateInput(
-      starter,
       {
         id: starter.personaId,
-        displayName: starter.name,
+        displayName: "Kuzi",
         systemPrompt: `${starter.name} prompt`,
         model: null,
         provider: null,
@@ -203,6 +202,8 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
     assert.equal(input.agentCommand, "claude-code-acp");
     assert.equal(input.harnessOverride, true);
     assert.equal(input.personaId, starter.personaId);
+    // The persona's own display name, with no override.
+    assert.equal(input.name, "Kuzi");
     assert.equal(input.teamId, WELCOME_TEAM_ID);
     assert.equal(input.relayUrl, RELAY_A);
     assert.equal(input.spawnAfterCreate, false);
@@ -294,7 +295,7 @@ test("existing Welcome starter needs no update when runtime already matches", ()
 test("welcome team starter definitions and role identities are stable", () => {
   assert.equal(WELCOME_TEAM_ID, "builtin-team:welcome");
   assert.deepEqual(WELCOME_TEAM_STARTERS, [
-    { name: "Kuzi", personaId: "builtin:fizz", role: "lead" },
+    { name: "Kuzi", personaId: "builtin:kuzi", role: "lead" },
   ]);
 });
 
@@ -313,9 +314,8 @@ test("starter matching ignores user agents with a Welcome persona", () => {
 
 test("starter matching uses persona identity rather than display name", () => {
   const kuzi = WELCOME_TEAM_STARTERS[0];
-  // An upgraded install keeps its starter agent under the old "Fizz" name.
   const renamedKuzi = makeAgent({
-    name: "Fizz",
+    name: "Kuzi the Helper",
     personaId: kuzi.personaId,
   });
   const nameOnlyKuzi = makeAgent({

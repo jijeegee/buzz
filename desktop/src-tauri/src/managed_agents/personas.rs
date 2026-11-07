@@ -57,11 +57,10 @@ const HOST_SYSTEM_PROMPT: &str =
     "You are Host. Routing is your whole job; follow the dispatcher rules above exactly.\n\
 Keep each routing message to one or two lines.";
 
-// The one starter agent. Its id stays `builtin:fizz` so persisted references
-// (agents, teams, published persona coordinates) keep resolving.
+// The one starter agent, plus Host.
 const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
     BuiltInPersona {
-        id: "builtin:fizz",
+        id: "builtin:kuzi",
         display_name: "Kuzi",
         avatar_url: Some(KUZI_AVATAR),
         system_prompt: KUZI_SYSTEM_PROMPT,
@@ -86,9 +85,8 @@ const BUILT_IN_PERSONAS: &[BuiltInPersona] = &[
 ];
 
 /// The stock starter personas as seeded before Kuzi replaced them (Fizz,
-/// Honey, Pollen). Frozen: boot migrations for older stores compare against
-/// these exact definitions. Stored copies of Honey and Pollen are demoted to
-/// normal personas by `merge_personas` and keep working unchanged.
+/// Honey, Pollen). Frozen and no longer seeded: only boot migrations for
+/// older stores compare against these exact definitions.
 const LEGACY_STOCK_PERSONAS: &[BuiltInPersona] = &[
     BuiltInPersona {
         id: "builtin:fizz",

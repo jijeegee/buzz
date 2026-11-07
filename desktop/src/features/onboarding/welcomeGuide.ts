@@ -27,7 +27,7 @@ import { normalizePubkey } from "@/shared/lib/pubkey";
 import { isWelcomeTeamOwed, setWelcomeTeamOwed } from "./welcome";
 
 export const WELCOME_GUIDE_AGENT_NAME = "Kuzi";
-export const WELCOME_GUIDE_PERSONA_ID = "builtin:fizz";
+export const WELCOME_GUIDE_PERSONA_ID = "builtin:kuzi";
 export const WELCOME_TEAM_ID = "builtin-team:welcome";
 export const WELCOME_GUIDE_INTRO_MARKER = "kuzz-welcome-intro.v1";
 const LEGACY_WELCOME_GUIDE_AGENT_NAME = "Kit";
@@ -46,11 +46,10 @@ export type WelcomeTeamStarterDefinition = Readonly<{
 
 /**
  * Stable identities used to provision the Rust-seeded Welcome Team: the one
- * Kuzi starter (persona id `builtin:fizz`). Honey and Pollen agents from
- * older installs are left as they are and are no longer provisioned.
+ * Kuzi starter.
  */
 export const WELCOME_TEAM_STARTERS = [
-  { name: "Kuzi", personaId: "builtin:fizz", role: "lead" },
+  { name: "Kuzi", personaId: WELCOME_GUIDE_PERSONA_ID, role: "lead" },
 ] as const satisfies readonly WelcomeTeamStarterDefinition[];
 
 /** The lead first, then any teammates. */
@@ -216,7 +215,6 @@ async function ensureWelcomeTeamMembership(
 }
 
 export async function buildWelcomeStarterCreateInput(
-  starter: WelcomeTeamStarterDefinition,
   persona: AgentPersona,
   runtimes: readonly AcpRuntime[],
   preferredRuntimeId: string | null,
@@ -229,7 +227,6 @@ export async function buildWelcomeStarterCreateInput(
   );
   return {
     ...(await buildInstanceInputForDefinition(persona, runtime)),
-    name: starter.name,
     teamId: WELCOME_TEAM_ID,
     relayUrl: relayUrl ?? undefined,
     spawnAfterCreate: false,
@@ -410,7 +407,6 @@ async function provisionWelcomeTeam(
       throw new Error(`${starter.name} agent not found.`);
     }
     const desired = await buildWelcomeStarterCreateInput(
-      starter,
       persona,
       runtimes,
       globalConfig.preferred_runtime,

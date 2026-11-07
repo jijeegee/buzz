@@ -2721,6 +2721,12 @@ function resetMockPersonas(config?: E2eConfig) {
   const activePersonaIds = new Set(config?.mock?.activePersonaIds ?? []);
   const builtInPersonas = [
     {
+      id: "builtin:kuzi",
+      display_name: "Kuzi",
+      avatar_url: null,
+      system_prompt: "You are Kuzi.",
+    },
+    {
       id: "builtin:fizz",
       display_name: "Fizz",
       avatar_url: null,

@@ -486,7 +486,7 @@ async function expectWelcomeComposerBannerCompletesAfterPersonaMention(
     Array<{ pubkey: string; persona_id: string | null; status: string }>
   >(page, "list_managed_agents");
   const sameNameAgents = agents.filter(
-    (agent) => agent.persona_id === "builtin:fizz",
+    (agent) => agent.persona_id === "builtin:kuzi",
   );
   expect(sameNameAgents).toHaveLength(2);
   // Onboarding starts the new member's starter; the pre-existing mock stays
@@ -632,7 +632,7 @@ async function expectWelcomeGuideIntro(
         >(page, "list_managed_agents"),
       ]);
       const fizz = agents.find(
-        (agent) => agent.name === "Kuzi" && agent.persona_id === "builtin:fizz",
+        (agent) => agent.name === "Kuzi" && agent.persona_id === "builtin:kuzi",
       );
       const fizzMember = fizz
         ? members.members.find((member) => member.pubkey === fizz.pubkey)
@@ -655,7 +655,7 @@ async function expectWelcomeGuideIntro(
     })
     .toEqual({
       fizzIsBot: true,
-      fizzPersonaId: "builtin:fizz",
+      fizzPersonaId: "builtin:kuzi",
       profileAvatarUrl: null,
     });
 

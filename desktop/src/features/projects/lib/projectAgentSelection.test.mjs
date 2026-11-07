@@ -3,13 +3,13 @@ import test from "node:test";
 
 import { pickDefaultProjectsAgent } from "./projectAgentSelection.ts";
 
-test("prefers Fizz over the first running agent", () => {
+test("prefers Kuzi over the first running agent", () => {
   const implementationPartner = {
     name: "Implementation Partner",
     personaId: "custom:implementation",
   };
-  const fizz = { name: "Fizz", personaId: "builtin:fizz" };
-  assert.equal(pickDefaultProjectsAgent([implementationPartner, fizz]), fizz);
+  const kuzi = { name: "Kuzi", personaId: "builtin:kuzi" };
+  assert.equal(pickDefaultProjectsAgent([implementationPartner, kuzi]), kuzi);
 });
 
 test("ignores an unmanaged agent using the Fizz display name", () => {

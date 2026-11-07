@@ -346,7 +346,7 @@ fn welcome_team_is_seeded_and_idempotent() {
         welcome.description.as_deref(),
         Some("A friendly starter agent ready to help you plan, create, and ship.")
     );
-    assert_eq!(welcome.persona_ids, vec!["builtin:fizz".to_string()]);
+    assert_eq!(welcome.persona_ids, vec!["builtin:kuzi".to_string()]);
     assert!(welcome.is_builtin);
 
     let expected = serde_json::to_value(&records).unwrap();

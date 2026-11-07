@@ -18,11 +18,11 @@ use super::{builtin_record, signed_event_with_content, team};
 
 #[test]
 fn test_a_reuse_hash_covering_different_fields_than_the_member_is_rejected() {
-    // A publisher pairs fizz's slug and fizz's GENUINE projection hash with a
+    // A publisher pairs kuzi's slug and kuzi's GENUINE projection hash with a
     // member carrying unrelated reviewed fields. The boundary must recompute
     // the hint-free hash from the member's own fields and reject the mismatch,
-    // so `reusable_builtin` never substitutes fizz for the reviewed projection.
-    let genuine_fizz_hash = local_member_projection_hash(&builtin_record("builtin:fizz"));
+    // so `reusable_builtin` never substitutes kuzi for the reviewed projection.
+    let genuine_kuzi_hash = local_member_projection_hash(&builtin_record("builtin:kuzi"));
     let tampered = TeamCatalogMember {
         session_policy: Default::default(),
         acp_command: None,
@@ -35,8 +35,8 @@ fn test_a_reuse_hash_covering_different_fields_than_the_member_is_rejected() {
         provider: None,
         name_pool: Vec::new(),
         parallelism: None,
-        builtin_slug: Some("fizz".to_string()),
-        projection_hash: Some(genuine_fizz_hash),
+        builtin_slug: Some("kuzi".to_string()),
+        projection_hash: Some(genuine_kuzi_hash),
     };
     let content = TeamCatalogContent {
         v: TEAM_CATALOG_SCHEMA_VERSION,
@@ -60,7 +60,7 @@ fn test_an_honest_builtin_projection_still_passes_the_boundary() {
     // The recompute gate must not reject a legitimate publisher: the hash it
     // stamps is computed from the same fields it publishes, so it always
     // matches on the recipient's recompute.
-    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:fizz")]).unwrap();
+    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:kuzi")]).unwrap();
     let body = team_catalog_content_json(&content).unwrap();
 
     assert!(
@@ -75,7 +75,7 @@ fn test_uppercase_reuse_hash_of_the_true_projection_is_accepted() {
     // an uppercased form of a publisher's genuine hash still passes the boundary.
     // That the uppercase hint also drives built-in reuse (not a copy) is asserted
     // at the adoption seam in `commands/teams/adopt/tests/reuse.rs`.
-    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:fizz")]).unwrap();
+    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:kuzi")]).unwrap();
     let mut upper = content;
     upper.members[0].projection_hash = upper.members[0]
         .projection_hash

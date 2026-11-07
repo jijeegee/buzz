@@ -14,6 +14,7 @@ import {
   takePendingWelcomeChannelForDirectEntry,
   WELCOME_SURFACE_READY_EVENT,
 } from "@/features/onboarding/welcome";
+import { WELCOME_GUIDE_PERSONA_ID } from "@/features/onboarding/welcomeGuide";
 import { useAvatarPresentation } from "@/features/profile/avatarPresentationStore";
 import { registerAvatarWhenReady } from "@/features/profile/avatarProfileSync";
 import { profileQueryKey } from "@/features/profile/hooks";
@@ -53,7 +54,7 @@ function isRelayMembershipDeniedError(error: unknown): boolean {
 }
 
 const STARTER_PERSONA_ANIMATIONS: Record<string, string> = {
-  Kuzi: "/onboarding/starter-team/kuzi.png",
+  [WELCOME_GUIDE_PERSONA_ID]: "/onboarding/starter-team/kuzi.png",
 };
 
 /** Fade duration for the "entering" curtain over the mounting app. */
@@ -223,10 +224,8 @@ export function CommunityOnboardingFlow({
     void listPersonas()
       .then((personas) =>
         setStarterPersonas(
-          ["Kuzi"].flatMap((name) => {
-            const persona = personas.find(
-              (candidate) => candidate.displayName === name,
-            );
+          [WELCOME_GUIDE_PERSONA_ID].flatMap((id) => {
+            const persona = personas.find((candidate) => candidate.id === id);
             return persona ? [persona] : [];
           }),
         ),
@@ -805,7 +804,7 @@ export function CommunityOnboardingFlow({
                     <div className="flex w-full justify-center gap-6">
                       {starterPersonas.map((persona) => {
                         const animationUrl =
-                          STARTER_PERSONA_ANIMATIONS[persona.displayName];
+                          STARTER_PERSONA_ANIMATIONS[persona.id];
                         return (
                           <div
                             className="flex min-w-0 flex-col items-center gap-2"

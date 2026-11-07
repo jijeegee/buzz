@@ -1,4 +1,4 @@
-const WELCOME_GUIDE_PERSONA_ID = "builtin:fizz";
+const WELCOME_GUIDE_PERSONA_ID = "builtin:kuzi";
 
 /** Prefers the built-in welcome lead for a new Projects conversation. */
 export function pickDefaultProjectsAgent<
