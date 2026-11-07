@@ -4,11 +4,13 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show KeepAliveLink;
 
 import '../../shared/message_store/store_compare.dart';
+import '../../shared/push/push_inbox_events.dart';
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
 import 'channel_messages_provider.dart';
 import 'pending_local_messages_provider.dart';
 import 'relay_cut.dart';
+import 'thread_saved_replies.dart';
 import 'thread_window.dart';
 import 'window_anchor.dart';
 
@@ -143,6 +145,9 @@ final threadRepliesProvider = FutureProvider.autoDispose
         // Lifecycle callbacks may not touch providers; decide right after.
         scheduleMicrotask(() {
           if (!ref.mounted || !listened) return;
+          // Kept replies show now; the store is read again behind them for
+          // rows written without a drain.
+          ref.invalidate(storedThreadRepliesProvider(args));
           // Sends still awaiting proof (ACK or deletion) are settled only by
           // a scan, so a thread holding them rescans on reopen as before.
           final channel = channelMessagesProvider(args.channelId);
@@ -166,6 +171,17 @@ final threadRepliesProvider = FutureProvider.autoDispose
       // The window store lives as long as this query; folding a page into it
       // must not rebuild (and refetch) the query.
       ref.listen(threadWindowProvider(args), (_, _) {});
+      // The store's replies live as long as these. A drain reads them again
+      // even while the thread is closed, so a reopen draws the pushed replies
+      // on its first frame (docs/message-sync.md#push-inbox).
+      final stored = storedThreadRepliesProvider(args);
+      ref.listen(stored, (_, _) {});
+      ref.listen(pushInboxRevisionProvider, (_, _) {
+        if (listened) return;
+        // Whichever saw the bump first, the read starts over now.
+        ref.invalidate(stored);
+        unawaited(ref.read(stored.future));
+      });
       // A reply missed while the socket is stale cannot invalidate this
       // one-shot query. Refresh threads when the session recovers.
       ref.listen(relaySessionProvider, (previous, next) {
