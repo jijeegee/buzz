@@ -797,10 +797,42 @@ async fn query_all_pages(
     Ok(events)
 }
 
+/// The strict boolean `check` extension of a window filter (NIP-CW): absent
+/// is `false`; any non-boolean value is a client error.
+pub(super) fn extract_check(raw: &Value) -> Result<bool, ()> {
+    match raw.get("check") {
+        None => Ok(false),
+        Some(Value::Bool(check)) => Ok(*check),
+        Some(_) => Err(()),
+    }
+}
+
+/// The `check` object of a window-bounds overlay: the window's oldest row
+/// (last in page order), its row count, the room sequence read in the same
+/// snapshot, and the relay's current check mode.
+pub(super) fn window_check_content(
+    oldest: Option<(&nostr::EventId, nostr::Timestamp)>,
+    count: usize,
+    room_seq: i64,
+    mode: kuzz_core::window_check::WindowCheckMode,
+) -> Value {
+    serde_json::json!({
+        "oldest_id": oldest.map(|(id, _)| id.to_hex()),
+        "oldest_created_at": oldest.map(|(_, created_at)| created_at.as_secs()),
+        "count": count,
+        "room_seq": room_seq,
+        "mode": mode.as_str(),
+    })
+}
+
 /// Serve one `top_level: true` channel-window filter on the bridge `/query`
 /// path (docs/bridge-channel-window.md). Appends, in order: row events, the
 /// aux closure (`include_aux`), `39005` thread-summary overlays
 /// (`include_summaries`), and exactly one `39006` window-bounds overlay.
+///
+/// With `check: true` the same page query runs on the writer and only the
+/// `39006` overlay is appended, its content carrying a `check` object
+/// (oldest row id, row count, room sequence, mode); no rows, aux or summaries.
 ///
 /// Validation errors (missing `#h`, half a cursor) are deterministic client
 /// mistakes and return `400`; an inaccessible channel is an access-scope skip
@@ -814,7 +846,7 @@ async fn handle_channel_window_filter(
     reader: &[u8],
     events: &mut Vec<Value>,
 ) -> Result<(), (StatusCode, Json<Value>)> {
-    use kuzz_core::kind::{KIND_THREAD_SUMMARY, KIND_WINDOW_BOUNDS};
+    use kuzz_core::kind::KIND_THREAD_SUMMARY;
 
     let Some(ch_id) = extract_channel_from_filter(filter) else {
         return Err(api_error(
@@ -858,6 +890,14 @@ async fn handle_channel_window_filter(
         return Err(api_error(
             StatusCode::BAD_REQUEST,
             "top_level: until/before_id and since/after_id conflict",
+        ));
+    }
+    let check = extract_check(raw)
+        .map_err(|()| api_error(StatusCode::BAD_REQUEST, "top_level: check must be boolean"))?;
+    if check && newer {
+        return Err(api_error(
+            StatusCode::BAD_REQUEST,
+            "top_level: check supports older pages only",
         ));
     }
     let (bound, id) = if newer {
@@ -904,6 +944,51 @@ async fn handle_channel_window_filter(
         .as_ref()
         .map(|ks| ks.iter().map(|k| k.as_u16() as u32).collect());
 
+    // Silent blocks apply inside the page query, before LIMIT, so a page
+    // still fills up; `None` when the reader never blocked anyone.
+    let blocked_dm_reader = state.blocked_dm_reader(tenant.community(), reader).await;
+    let blocked_dm_reader = blocked_dm_reader.as_deref();
+
+    if check {
+        let (window, room_seq) = state
+            .db
+            .check_channel_window(
+                tenant.community(),
+                ch_id,
+                limit,
+                cursor.clone(),
+                kind_filter.as_deref(),
+                Some(reader),
+                blocked_dm_reader,
+            )
+            .await
+            .map_err(|e| db_read_error("channel window check error", &e))?;
+        // Count exactly the rows the page would send: the same response
+        // filters the page runs after the query (goal trees of conversations
+        // with goals off, silent blocks) apply to the checked rows too.
+        let mut rows = window
+            .rows
+            .iter()
+            .map(|row| serde_json::to_value(&row.stored_event.event))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| internal_error(&format!("window row serialize: {e}")))?;
+        hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut rows).await?;
+        hide_blocked_dm_authors(state, tenant, reader, &mut rows).await?;
+        let mode = state.window_check_mode().await;
+        let oldest = rows
+            .last()
+            .map(|row| serde_json::from_value::<nostr::Event>(row.clone()))
+            .transpose()
+            .map_err(|e| internal_error(&format!("window row parse: {e}")))?;
+        let check = window_check_content(
+            oldest.as_ref().map(|event| (&event.id, event.created_at)),
+            rows.len(),
+            room_seq,
+            mode,
+        );
+        return push_window_bounds(state, ch_id, &cursor, false, &window, Some(check), events);
+    }
+
     let window = match (&cursor, newer) {
         (Some(cursor), true) => {
             state
@@ -915,6 +1000,7 @@ async fn handle_channel_window_filter(
                     cursor.clone(),
                     kind_filter.as_deref(),
                     Some(reader),
+                    blocked_dm_reader,
                 )
                 .await
         }
@@ -928,12 +1014,13 @@ async fn handle_channel_window_filter(
                     cursor.clone(),
                     kind_filter.as_deref(),
                     Some(reader),
+                    blocked_dm_reader,
                 )
                 .await
         }
     };
     let (mut window, mut session) =
-        window.map_err(|e| internal_error(&format!("channel window error: {e}")))?;
+        window.map_err(|e| db_read_error("channel window error", &e))?;
 
     // 1. Rows, in keyset order.
     let mut row_ids_hex = Vec::with_capacity(window.rows.len());
@@ -1036,12 +1123,31 @@ async fn handle_channel_window_filter(
         }
     }
 
-    // 4. Window bounds: exactly one 39006 per window response — the only
-    //    authority on exhaustion. `rows < limit` proves nothing on an
-    //    exact-multiple final page.
-    //    A newer page names its direction in both `d` and content; an older
-    //    page's bounds stay byte-identical to before the newer direction.
-    let cursor_suffix = match &cursor {
+    // 4. Window bounds: exactly one 39006 per window response.
+    push_window_bounds(state, ch_id, &cursor, newer, &window, None, events)
+}
+
+/// Append the window's one `39006` bounds overlay — the only authority on
+/// exhaustion (`rows < limit` proves nothing on an exact-multiple final
+/// page). A newer page names its direction in both `d` and content; an older
+/// page's bounds stay byte-identical to before the newer direction. A check
+/// answer adds only its `check` object to the content.
+fn push_window_bounds(
+    state: &AppState,
+    ch_id: uuid::Uuid,
+    cursor: &Option<(chrono::DateTime<chrono::Utc>, Vec<u8>)>,
+    newer: bool,
+    window: &kuzz_db::thread::ChannelWindow,
+    check: Option<Value>,
+    events: &mut Vec<Value>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    use kuzz_core::kind::KIND_WINDOW_BOUNDS;
+
+    let parse_tag = |parts: [&str; 2]| {
+        nostr::Tag::parse(parts).map_err(|e| internal_error(&format!("window overlay tag: {e}")))
+    };
+    let ch_hex = ch_id.to_string();
+    let cursor_suffix = match cursor {
         Some((ts, id)) if newer => format!("after:{}:{}", ts.timestamp(), hex::encode(id)),
         Some((ts, id)) => format!("{}:{}", ts.timestamp(), hex::encode(id)),
         None => "head".to_owned(),
@@ -1053,7 +1159,7 @@ async fn handle_channel_window_filter(
             "id": hex::encode(id),
         })
     });
-    let content = if newer {
+    let mut content = if newer {
         serde_json::json!({
             "direction": "newer",
             "has_more": window.has_more,
@@ -1065,8 +1171,17 @@ async fn handle_channel_window_filter(
             "next_cursor": next_cursor,
         })
     };
+    if let Some(check) = check {
+        content["check"] = check;
+    }
     let tags = vec![parse_tag(["d", &d_val])?, parse_tag(["h", &ch_hex])?];
-    let overlay = sign_overlay(KIND_WINDOW_BOUNDS, tags, content.to_string())?;
+    let overlay = nostr::EventBuilder::new(
+        nostr::Kind::Custom(KIND_WINDOW_BOUNDS as u16),
+        content.to_string(),
+    )
+    .tags(tags)
+    .sign_with_keys(&state.relay_keypair)
+    .map_err(|e| internal_error(&format!("window overlay sign: {e}")))?;
     let v = serde_json::to_value(&overlay)
         .map_err(|e| internal_error(&format!("window overlay serialize: {e}")))?;
     events.push(v);
@@ -1696,6 +1811,7 @@ async fn query_events_authed(
                 "thread window deadline exceeded",
             )
         })??;
+        // Replies were already filtered before LIMIT; this still covers aux.
         hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
         return Ok(Json(Value::Array(events)));
     }
@@ -2142,6 +2258,8 @@ async fn query_events_authed(
     }
 
     hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
+    // Window rows already left out silently blocked DM rows before LIMIT;
+    // this pass still covers their aux closure and every other filter path.
     hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
     Ok(Json(Value::Array(events)))
 }

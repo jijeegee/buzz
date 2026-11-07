@@ -106,6 +106,30 @@ message, then scrolling down):
 - A replica's older-cursor coverage proof does not cover rows above the
   cursor; newer pages MUST be served with head-page freshness.
 
+### Window check
+
+A relay that advertises `nip-cw-check` also accepts `"check": true` on an
+older-direction room window (head or `until` + `before_id`) and on a thread
+window (§Thread Mode). A check asks whether a client's stored copy of that
+page is still current:
+
+- The relay evaluates exactly the page query the same filter without `check`
+  would serve (access, deletion, top-level rule, kinds, reader floors, block
+  filters, `limit`) and MUST read primary (writer) state, never a replica.
+- It returns only the bounds event (`39006` room, `39007` thread): no rows,
+  auxiliary events or summaries. The bounds keep their tags, binding and
+  content fields and add a `check` object:
+  `{"oldest_id":"<hex>"|null,"oldest_created_at":<seconds>|null,"count":n,"room_seq":n,"mode":"off"|"shadow"|"on"}`.
+  `count` is the number of rows the page would return; `oldest_id` and
+  `oldest_created_at` identify its last (oldest) row and are `null` iff
+  `count` is `0`. Thread windows count replies only, never the root.
+- `room_seq` is the channel's accepted sequence read in the same snapshot as
+  the rows. `mode` is the relay's rollout setting for clients: `off` (page as
+  without checks), `shadow` (check and page, compare), `on` (check, page only
+  on mismatch).
+- `check` MUST be a boolean; any other type, and `check` with a newer cursor,
+  MUST be rejected.
+
 ## Channel-mode Top-level Classification
 
 The row set must be reproducible from wire data alone, so the reply/top-level distinction is defined by tags, not by any relay's storage schema.
@@ -371,6 +395,11 @@ pagination state and MUST NOT reuse a descending cursor. Invalid signatures,
 authorization failures, timeouts, corruption, or incomplete auxiliary closure
 MUST NOT trigger compatibility fallback. Kuzz currently ships no thread-mode
 client opt-in or fallback implementation.
+
+A relay advertising `nip-cw-check` accepts `"check": true` on an older thread
+window (§Window check): the reply page is evaluated on the writer and only the
+`kind:39007` bounds are returned, with the `check` object added to the content.
+`check` does not enter the binding, so a check and its page share one `d` tag.
 
 ## Degradation
 

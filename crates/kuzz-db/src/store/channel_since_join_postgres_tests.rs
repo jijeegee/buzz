@@ -238,6 +238,7 @@ async fn channel_windows_hide_rows_from_before_the_join() {
         None,
         Direction::Older,
         reader,
+        None,
     )
     .await
     .unwrap();
@@ -252,6 +253,7 @@ async fn channel_windows_hide_rows_from_before_the_join() {
         None,
         None,
         Direction::Older,
+        None,
         None,
     )
     .await
@@ -357,6 +359,7 @@ async fn thread_reads_hide_replies_and_aux_from_before_the_join() {
             f.scope,
             &req,
             reader,
+            None,
             &mut ScanBudget::default(),
         )
         .await
@@ -1705,6 +1708,7 @@ async fn a_mention_lets_a_later_member_into_an_old_thread_from_that_reply() {
             f.scope,
             &req,
             Some(me.as_slice()),
+            None,
             &mut ScanBudget::default(),
         )
         .await
@@ -1761,7 +1765,10 @@ async fn a_mention_lets_a_later_member_into_an_old_thread_from_that_reply() {
     assert!(thread.root.is_none(), "root stays hidden");
     // Ordered by second-resolution time: either post-entry reply may lead.
     let latest = thread.latest.as_ref().unwrap()["content"].clone();
-    assert!(latest == "after entry" || latest == "@member look", "{latest}");
+    assert!(
+        latest == "after entry" || latest == "@member look",
+        "{latest}"
+    );
 
     // Follow state and read position can be set.
     let follow = |state| {
@@ -1912,6 +1919,7 @@ async fn a_window_at_floor_zero_still_leaves_out_sequence_zero_rows() {
         None,
         Direction::Older,
         Some(owner.as_slice()),
+        None,
     )
     .await
     .unwrap();

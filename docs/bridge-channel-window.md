@@ -62,6 +62,32 @@ Newer pages route like head pages (writer by default), since a replica's
 cursor proof only covers rows at or below the cursor. Advertised as
 `nip-cw-newer` in NIP-11. See docs/nips/NIP-CW.md §Newer direction.
 
+`"check": true` (boolean; any other type is `400`) asks whether a stored
+copy of this window is still current, without sending the rows. The relay
+runs the same page query (same `#h`, kinds, `limit`, cursor, reader floors
+and DM block filter) on the **writer**, never a replica, and returns only
+the `39006` bounds event. Its content keeps every field above and adds:
+
+```json
+"check": {"oldest_id": "<hex>|null", "oldest_created_at": 1751500000,
+          "count": 50, "room_seq": 1234, "mode": "off|shadow|on"}
+```
+
+`count` is the number of rows the page would return, `oldest_id` /
+`oldest_created_at` are its last (oldest) row (`null` when empty), and
+`room_seq` is `channels.accepted_sequence` read in the same snapshot.
+`count` and `oldest_*` describe the rows the page sends, after the same
+response filters (goal trees of conversations with goals off, silent
+blocks).
+`mode` is the relay's current `window_check_mode` setting, which tells
+devices how to use checks (`off` = page as before, `shadow` = check and
+page, `on` = check instead of page). Operators change it without a restart
+(`kuzz-admin settings set window_check_mode shadow`); relays pick it up
+within 30 s (a relay that cannot read it answers `off` and retries
+after 5 s). `include_summaries`/`include_aux` are ignored, the `d` tag is
+unchanged, and `check` with a newer cursor is `400` (older pages only).
+Advertised as `nip-cw-check` in NIP-11.
+
 ## Top-level predicate
 
 A row is top-level iff `depth IS NULL OR depth = 0 OR (depth = 1 AND
@@ -69,6 +95,8 @@ broadcast = true)` in `thread_metadata` (v1 ruling: `NULL` — an event
 ingested before thread metadata existed — counts as top-level; the harness
 `legacyReply` scenario decides whether a backfill migration is needed).
 Deleted rows (`deleted_at IS NOT NULL`) are excluded before the limit.
+In a 1:1 DM, rows the reader silently hides by a block period are excluded
+before the limit too, so a page still holds `limit` rows when more exist.
 
 ## Ordering and cursor
 
