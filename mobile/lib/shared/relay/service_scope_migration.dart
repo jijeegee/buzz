@@ -28,6 +28,9 @@ const serviceScopeSecureMigratedKey = 'kuzz.service-scope-migrated.secure.v1';
 ///   skipped, so an entry later deleted under the scoped key (a cleared
 ///   draft, a sign-out) is never resurrected from the old key.
 /// - Copies only when the scoped key is absent and never deletes an old key.
+///   Refresh tokens are the exception: they are single-use, so
+///   `SecureRefreshTokenStore` deletes their old keys when a record moves to
+///   its account.
 /// - Matches every form the old key builders wrote: `https`/`wss` (or
 ///   `http`/`ws`), raw or `Uri.encodeComponent`-encoded, explicit default
 ///   port, an optional trailing slash, any letter case, inside JSON or not.
@@ -62,8 +65,7 @@ Future<void> migrateServiceScopedStorage({
 }
 
 /// [key] with every address of [origin] replaced by [scope], or `null` when
-/// [key] embeds none. Exposed for tests.
-@visibleForTesting
+/// [key] embeds none.
 String? serviceScopedKey(String key, String origin, String scope) {
   final pattern = _originPattern(origin);
   if (!pattern.hasMatch(key)) return null;

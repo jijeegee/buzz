@@ -8426,10 +8426,6 @@
       "text": "无法在服务器上退出登录",
       "from": "db861bc748fc"
     },
-    "communitySignInBeforeChanging": {
-      "text": "请先登录此社区，然后再更改。",
-      "from": "33f15d7ac622"
-    },
     "ephemeralTooltipAfterDays": {
       "text": "临时群组，闲置 {count, plural, other{{count} 天}}后自动清理。",
       "from": "75bd06c12ade"
@@ -8705,10 +8701,6 @@
     "settingsAccountSharedNote": {
       "text": "你的名称、用户名和头像会在此服务器上的所有社区中共享。",
       "from": "3f3a931f5e34"
-    },
-    "signInExistingIdentityConflict": {
-      "text": "本设备在此服务器上已有签名身份，现有令牌账号无法替换它。请使用 Google 密钥恢复。",
-      "from": "5ae11689d80e"
     },
     "signInReconnectingBanner": {
       "text": "正在重新连接服务器…",

@@ -15,6 +15,7 @@ import '../../shared/community/community_storage_test.dart';
 
 const tokenOrigin = 'https://relay.test';
 final tokenPrincipal = 'ab' * 32;
+final tokenSession = SessionKey(tokenOrigin, tokenPrincipal);
 
 /// A signed-in token community: real auth, community, token-session and
 /// account providers over fake HTTP and storage.
@@ -48,7 +49,7 @@ class TokenSettingsHarness {
     final prefs = await SharedPreferences.getInstance();
     await storage.save(community);
     await storage.saveActiveId(community.id);
-    tokens.data[tokenOrigin] = StoredTokenSession(
+    tokens.data[tokenSession] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: tokenPrincipal,
     );

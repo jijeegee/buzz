@@ -114,6 +114,19 @@ class ActivityNotifier extends AsyncNotifier<HomeFeedResponse> {
     final currentScope =
         '${ref.read(relayConfigProvider).baseUrl}\u0000$currentPubkey';
     if (_dmResurfaceScope != currentScope) {
+      // The last account's feed must not stay on screen until this one loads.
+      // Loading alone would keep it: a rebuild carries the last value along.
+      if (_dmResurfaceScope != null && state.hasValue) {
+        state = AsyncData(
+          HomeFeedResponse(
+            mentions: const [],
+            needsAction: const [],
+            activity: const [],
+            agentActivity: const [],
+          ),
+        );
+        state = const AsyncLoading();
+      }
       _dmResurfaceScope = currentScope;
       _pendingDmResurfaceRetry.clear();
       _droppedAt = null;

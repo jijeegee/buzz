@@ -8,11 +8,12 @@ import 'package:kuzz/shared/relay/relay_socket.dart';
 
 import 'token/token_auth_test_fakes.dart';
 
-const _origin = 'https://relay.test';
+final _session = SessionKey('https://relay.test', 'p');
 
 class _RecordingAuth extends AuthNotifier {
   final signOuts = <bool>[];
   final communitySignOuts = <(String, bool)>[];
+  final fences = <bool Function()?>[];
 
   @override
   Future<AuthState> build() async =>
@@ -27,8 +28,11 @@ class _RecordingAuth extends AuthNotifier {
   Future<void> signOutCommunity(
     String communityId, {
     bool deviceOnly = false,
+    bool Function()? isCurrent,
+    bool unfinishedOnly = false,
   }) async {
     communitySignOuts.add((communityId, deviceOnly));
+    fences.add(isCurrent);
   }
 }
 
@@ -56,9 +60,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(() => auth),
-        accountOriginProvider.overrideWithValue(_origin),
-        activeGoogleKeyOriginProvider.overrideWithValue(_origin),
-        accountApiProvider(_origin).overrideWithValue(api),
+        accountSessionProvider.overrideWithValue(_session),
+        activeGoogleKeySessionProvider.overrideWithValue(_session),
+        accountApiProvider(_session).overrideWithValue(api),
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
         ),
@@ -81,12 +85,34 @@ void main() {
     await c.read(authProvider.future);
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
-      origin: _origin,
+      session: _session,
+      isCurrent: () => true,
     );
     expect(api.calls, 1);
     // Only the refused community, never every account.
     expect(auth.communitySignOuts, [('community-a', true)]);
     expect(auth.signOuts, isEmpty);
+  });
+
+  test('the sign-out carries the fence of the session asked about', () async {
+    var current = true;
+    final api = _FakeAccountApi(
+      () async => throw const AccountApiException(
+        'revoked',
+        statusCode: 401,
+        code: 'token_revoked',
+      ),
+    );
+    final c = container(api);
+    await c.read(authProvider.future);
+    await c.read(remoteSignOutCheckProvider)(
+      communityId: 'community-a',
+      session: _session,
+      isCurrent: () => current,
+    );
+    expect(auth.fences.single!(), isTrue);
+    current = false;
+    expect(auth.fences.single!(), isFalse);
   });
 
   test('a live account session keeps this phone signed in', () async {
@@ -97,7 +123,8 @@ void main() {
     await c.read(authProvider.future);
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
-      origin: _origin,
+      session: _session,
+      isCurrent: () => true,
     );
     expect(auth.communitySignOuts, isEmpty);
   });
@@ -124,7 +151,8 @@ void main() {
       await c.read(authProvider.future);
       await c.read(remoteSignOutCheckProvider)(
         communityId: 'community-a',
-        origin: _origin,
+        session: _session,
+        isCurrent: () => true,
       );
       expect(auth.communitySignOuts, isEmpty);
     }

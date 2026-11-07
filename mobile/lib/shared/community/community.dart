@@ -77,6 +77,12 @@ class Community {
   /// but only explicit, identity-verified sign-in may resume this community.
   final bool signedOut;
 
+  /// A sign-out of this account has begun and not finished. Written before
+  /// the session is ended, so a sign-out cut short (the app killed halfway)
+  /// is finished on the next launch instead of being taken for a lost
+  /// session. Cleared by the sign-out itself and by any sign-in.
+  final bool signingOut;
+
   /// Google account authorizing custody only; messaging still uses [nsec].
   final String? googleBackupAccountId;
 
@@ -84,6 +90,17 @@ class Community {
   /// recorded locally at sign-in. Absent on older records, which were all
   /// Google: read it through [signInMethod].
   final String? signInProvider;
+
+  /// When this account last signed in or was switched to on this phone.
+  /// Absent on older records. Read by [mostRecentlyUsedCommunity].
+  final DateTime? lastUsedAt;
+
+  /// This account's name, photo and email as last loaded, so the account list
+  /// can draw every account from this phone. Absent until the account's
+  /// profile first loads while it is active.
+  final String? displayName;
+  final String? avatarUrl;
+  final String? email;
   final DateTime addedAt;
 
   const Community({
@@ -101,8 +118,13 @@ class Community {
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
     this.signedOut = false,
+    this.signingOut = false,
     this.googleBackupAccountId,
     this.signInProvider,
+    this.lastUsedAt,
+    this.displayName,
+    this.avatarUrl,
+    this.email,
     required this.addedAt,
   });
 
@@ -148,8 +170,13 @@ class Community {
     bool? starterSetupIncomplete,
     bool? tokenAuth,
     bool? signedOut,
+    bool? signingOut,
     String? googleBackupAccountId,
     String? signInProvider,
+    DateTime? lastUsedAt,
+    Object? displayName = _sentinel,
+    Object? avatarUrl = _sentinel,
+    Object? email = _sentinel,
   }) {
     return Community(
       id: id,
@@ -174,9 +201,16 @@ class Community {
           starterSetupIncomplete ?? this.starterSetupIncomplete,
       tokenAuth: tokenAuth ?? this.tokenAuth,
       signedOut: signedOut ?? this.signedOut,
+      signingOut: signingOut ?? this.signingOut,
       googleBackupAccountId:
           googleBackupAccountId ?? this.googleBackupAccountId,
       signInProvider: signInProvider ?? this.signInProvider,
+      lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+      displayName: displayName == _sentinel
+          ? this.displayName
+          : displayName as String?,
+      avatarUrl: avatarUrl == _sentinel ? this.avatarUrl : avatarUrl as String?,
+      email: email == _sentinel ? this.email : email as String?,
       addedAt: addedAt,
     );
   }
@@ -197,9 +231,14 @@ class Community {
     'starterSetupIncomplete': starterSetupIncomplete,
     if (tokenAuth) 'authMode': 'token',
     if (signedOut) 'signedOut': true,
+    if (signingOut) 'signingOut': true,
     if (googleBackupAccountId != null)
       'googleBackupAccountId': googleBackupAccountId,
     if (signInProvider != null) 'signInProvider': signInProvider,
+    if (lastUsedAt != null) 'lastUsedAt': lastUsedAt!.toIso8601String(),
+    if (displayName != null) 'displayName': displayName,
+    if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    if (email != null) 'email': email,
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -250,14 +289,22 @@ class Community {
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
       tokenAuth: json['authMode'] == 'token',
       signedOut: json['signedOut'] == true,
+      signingOut: json['signingOut'] == true,
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
       signInProvider: json['signInProvider'] as String?,
+      lastUsedAt: DateTime.tryParse(json['lastUsedAt'] as String? ?? ''),
+      displayName: json['displayName'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
+      email: json['email'] as String?,
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }
 
-  /// The sign-in method to show and to resume with: [signInProvider], or
-  /// `google` for records made before it was recorded.
+  /// The public key of this account's signing identity.
+  String? get accountPubkey => pubkey ?? _accountOf(nsec);
+
+  /// The sign-in method to show: [signInProvider], or `google` for records
+  /// made before it was recorded.
   String get signInMethod => signInProvider ?? 'google';
 
   /// Gives the resumed session its own push lease, separate from old cleanup.
@@ -303,6 +350,26 @@ class Community {
           : newPushInboxToken(),
     );
   }
+
+  /// This record with [name] and [avatar] as the cached profile. A blank name
+  /// keeps the cached one. A photo stored inline can be large, and this
+  /// record is read whole everywhere, so one over [maxCachedAvatarLength] is
+  /// not kept.
+  Community withCachedProfile({
+    required String? name,
+    required String? avatar,
+  }) {
+    final trimmed = name?.trim();
+    return copyWith(
+      displayName: trimmed == null || trimmed.isEmpty ? displayName : trimmed,
+      avatarUrl: avatar != null && avatar.length <= maxCachedAvatarLength
+          ? avatar
+          : null,
+    );
+  }
+
+  /// Longest photo address kept in the record.
+  static const maxCachedAvatarLength = 2048;
 
   /// Derive a human-friendly community name from a relay URL.
   static String nameFromUrl(String url) {

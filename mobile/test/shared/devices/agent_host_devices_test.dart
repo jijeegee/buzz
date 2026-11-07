@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/auth/token/token_session_provider.dart';
 import 'package:kuzz/shared/devices/agent_badge_widgets.dart';
 import 'package:kuzz/shared/devices/agent_host_devices.dart';
@@ -355,12 +356,12 @@ void main() {
     // An account signed in with Google holding its key has no token relay,
     // but its relay still lists the devices (with their names).
     test('come from the Google key relay without a token relay', () async {
-      const origin = 'https://relay.example';
+      final session = SessionKey('https://relay.example', 'p');
       final container = ProviderContainer(
         overrides: [
-          activeTokenOriginProvider.overrideWithValue(null),
-          activeGoogleKeyOriginProvider.overrideWithValue(origin),
-          accountDevicesProvider(origin).overrideWith(
+          activeTokenSessionProvider.overrideWithValue(null),
+          activeGoogleKeySessionProvider.overrideWithValue(session),
+          accountDevicesProvider(session).overrideWith(
             (ref) async => const [
               AccountDevice(
                 id: 'Device-1',
@@ -384,7 +385,7 @@ void main() {
         currentAccountDeviceIdProvider,
         (_, _) {},
       );
-      await container.read(accountDevicesProvider(origin).future);
+      await container.read(accountDevicesProvider(session).future);
 
       expect(names.read(), {'device-1': 'Home PC', 'device-2': 'Phone'});
       expect(current.read(), 'device-2');

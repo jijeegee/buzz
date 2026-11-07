@@ -98,17 +98,20 @@ public struct KuzzPushPresentationCacheSnapshot: Codable, Equatable, Sendable {
 
   public let version: Int
   public var communities: [PushLeaseCommunity]
+  public var activeCommunityId: String?
   public var profiles: [KuzzPushCachedProfile]
   public var channels: [KuzzPushCachedChannel]
 
   public init(
     version: Int = currentVersion,
     communities: [PushLeaseCommunity] = [],
+    activeCommunityId: String? = nil,
     profiles: [KuzzPushCachedProfile] = [],
     channels: [KuzzPushCachedChannel] = []
   ) {
     self.version = version
     self.communities = communities
+    self.activeCommunityId = activeCommunityId
     self.profiles = profiles
     self.channels = channels
   }
@@ -180,12 +183,16 @@ public final class KuzzPushPresentationCacheStore: @unchecked Sendable {
   }
 
   /// Replaces the app's flattened, relay-accepted community query policy.
-  public func replaceCommunities(_ communities: [PushLeaseCommunity]) throws {
+  public func replaceCommunities(
+    _ communities: [PushLeaseCommunity],
+    activeCommunityId: String? = nil
+  ) throws {
     guard communities.count <= Self.maximumCommunities else { return }
     lock.lock()
     defer { lock.unlock() }
     var snapshot = loadLocked()
     snapshot.communities = communities
+    snapshot.activeCommunityId = activeCommunityId
     let retained = Set(communities.map(\.id))
     snapshot.profiles.removeAll { !retained.contains($0.communityID) }
     snapshot.channels.removeAll { !retained.contains($0.communityID) }

@@ -2,6 +2,7 @@ import 'package:kuzz/features/settings/settings_page.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
 import 'package:kuzz/shared/auth/auth.dart';
 import 'package:kuzz/shared/auth/default_community.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/community/community_membership_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
@@ -15,6 +16,8 @@ import 'package:package_info_plus/package_info_plus.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../../helpers/widget_helpers.dart';
+
+final _googleSession = SessionKey('https://relay.test', 'google-account');
 
 void main() {
   testWidgets('an account Google does not hold yet is asked to protect it', (
@@ -128,7 +131,7 @@ void main() {
                   signInProvider: method,
                 ),
               ),
-              accountProfileProvider('https://relay.test').overrideWith(
+              accountProfileProvider(_googleSession).overrideWith(
                 (ref) async => AccountProfile(
                   principalId: 'google-account',
                   displayName: 'Ji Ho',

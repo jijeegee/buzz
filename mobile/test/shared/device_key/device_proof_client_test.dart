@@ -221,7 +221,7 @@ void main() {
         origin: 'https://relay.example',
         client: http_testing.MockClient(
           (_) async =>
-              http.Response(jsonEncode({'code': 'invalid_grant'}), 401),
+              http.Response(jsonEncode({'code': 'token_revoked'}), 401),
         ),
       );
       await expectLater(

@@ -130,6 +130,9 @@ class HomePage extends HookConsumerWidget {
         SettingsPageRoute(
           builder: builder,
           onTransitionProgress: (progress) {
+            // Settings may still be closing after this Home is gone (an
+            // account switch rebuilds it), and its notifier with it.
+            if (!context.mounted) return;
             if (settingsTransitionProgress.value != progress) {
               settingsTransitionProgress.value = progress;
             }

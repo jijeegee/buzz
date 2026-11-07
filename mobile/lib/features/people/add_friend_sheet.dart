@@ -50,7 +50,7 @@ class AddFriendSheet extends HookConsumerWidget {
     final found = useState<PersonSummary?>(null);
     final message = useState<String?>(null);
     final generation = useRef(0);
-    final origin = ref.watch(accountOriginProvider);
+    final sessionKey = ref.watch(accountSessionProvider);
     final me = ref.watch(currentPubkeyProvider)?.toLowerCase();
     final friends = ref.watch(friendIdsProvider).value ?? const <String>{};
     final blocked = ref.watch(blockedPubkeysProvider);
@@ -59,14 +59,14 @@ class AddFriendSheet extends HookConsumerWidget {
 
     Future<void> find() async {
       final query = controller.text.trim();
-      if (query.isEmpty || origin == null) return;
+      if (query.isEmpty || sessionKey == null) return;
       final mine = ++generation.value;
       searching.value = true;
       found.value = null;
       message.value = null;
       String? failure;
       PersonSummary? person;
-      final api = ref.read(accountApiProvider(origin));
+      final api = ref.read(accountApiProvider(sessionKey));
       try {
         person = await api.lookupPerson(query);
       } catch (error) {
@@ -170,7 +170,7 @@ class AddFriendSheet extends HookConsumerWidget {
                 onPressed:
                     searching.value ||
                         value.text.trim().isEmpty ||
-                        origin == null
+                        sessionKey == null
                     ? null
                     : () => unawaited(find()),
                 child: searching.value

@@ -12,6 +12,12 @@ const kuzzPushMaxSubscriptions = 16;
 const kuzzPushMaxIgnoreFilters = 8;
 const kuzzPushHellthreadParticipantLimit = 20;
 
+/// Generations set aside when an account stops being active and its lease is
+/// revoked. The tombstone uses the low end, one more per attempt, and the
+/// account's next publication starts above all of them. Attempts are at least
+/// 15 seconds apart and 3 hours at the slowest, so a grant expires first.
+const kuzzPushLeaseRevocationBlock = 1024;
+
 const _supportedNotificationClasses = {'default'};
 const _filterKeys = {'kinds', 'authors', '#p', '#h', '#e'};
 final _exactHexPattern = RegExp(r'^[0-9a-f]{64}$');
@@ -316,6 +322,13 @@ class KuzzPushLeaseSubscriptionState {
         ),
     };
   }
+
+  /// Reserves [kuzzPushLeaseRevocationBlock] generations for a revocation.
+  KuzzPushLeaseSubscriptionState withRevocationBlock() =>
+      withReservedGeneration(
+        (generationCursor ?? acceptedGeneration ?? 0) +
+            kuzzPushLeaseRevocationBlock,
+      );
 
   KuzzPushLeaseSubscriptionState withPendingTombstone(int generation) {
     if (generation <= (generationCursor ?? acceptedGeneration ?? 0)) {

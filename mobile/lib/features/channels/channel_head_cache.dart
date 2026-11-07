@@ -51,7 +51,7 @@ class ChannelHeadCache {
   // File work runs one operation at a time, so a clear cannot interleave with
   // a write that would recreate the directory it just removed.
   Future<void> _tail = Future.value();
-  int _clearGeneration = 0;
+  final Map<String, int> _clearGenerations = {};
 
   Future<T> _serial<T>(Future<T> Function() task) {
     final result = _tail.then((_) => task());
@@ -74,42 +74,38 @@ class ChannelHeadCache {
         return _readStoredAt(path);
       });
 
-  /// Writes are dropped when a clear was requested after this call.
+  /// Writes are dropped when a clear of [scope] was requested after this
+  /// call.
   Future<void> store(
     ChannelHeadScope scope,
     String channelId,
     List<NostrEvent> events,
   ) {
-    final generation = _clearGeneration;
+    final account = _accountPath(scope);
+    final generation = _clearGenerations[account];
     return _serial(() async {
-      if (generation != _clearGeneration) return;
+      if (generation != _clearGenerations[account]) return;
       final dir = await _scopeDir(scope);
       await _writeInIsolate(dir, channelId, events, maxChannels);
     });
   }
 
-  /// Removes every account's heads for [relayUrl].
-  Future<void> clearRelay(String relayUrl) {
-    _clearGeneration++;
+  /// Removes the heads of one account; other accounts keep theirs, also on
+  /// the same server.
+  Future<void> clearAccount(ChannelHeadScope scope) {
+    final account = _accountPath(scope);
+    _clearGenerations[account] = (_clearGenerations[account] ?? 0) + 1;
     return _serial(() async {
-      final dir = Directory(
-        '${(await _root()).path}/${_hash(storageScopeFor(relayUrl))}',
-      );
+      final dir = Directory(await _scopeDir(scope));
       if (await dir.exists()) await dir.delete(recursive: true);
     });
   }
 
-  Future<void> clearAll() {
-    _clearGeneration++;
-    return _serial(() async {
-      final dir = await _root();
-      if (await dir.exists()) await dir.delete(recursive: true);
-    });
-  }
+  String _accountPath(ChannelHeadScope scope) =>
+      '${_hash(storageScopeFor(scope.relayUrl))}/${_hash(scope.pubkey)}';
 
   Future<String> _scopeDir(ChannelHeadScope scope) async =>
-      '${(await _root()).path}/${_hash(storageScopeFor(scope.relayUrl))}/'
-      '${_hash(scope.pubkey)}';
+      '${(await _root()).path}/${_accountPath(scope)}';
 }
 
 // Top-level so the isolate closures capture only their arguments, not the

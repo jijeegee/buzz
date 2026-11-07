@@ -14,6 +14,7 @@ import '../../shared/community/community_storage_test.dart';
 const _origin = 'https://relay.test';
 const _otherOrigin = 'https://other.test';
 final _principal = 'p' * 64;
+final _session = SessionKey(_origin, _principal);
 
 Future<void> frames(WidgetTester tester) async {
   for (var i = 0; i < 10; i++) {
@@ -33,6 +34,8 @@ void main() {
   late ProviderContainer container;
   late Community stalled;
   late Community other;
+  late FakeClock clock;
+  late FakeWebAuthLauncher launcher;
 
   Future<void> pump(
     WidgetTester tester, {
@@ -58,7 +61,8 @@ void main() {
     await storage.save(other);
     await storage.saveActiveId(stalled.id);
     arrange?.call();
-    final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
+    clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
+    launcher = FakeWebAuthLauncher(FakeWebAuthLauncher.success);
     container = ProviderContainer(
       overrides: [
         if (builtIn) defaultCommunityOriginProvider.overrideWithValue(_origin),
@@ -72,9 +76,10 @@ void main() {
         ),
         authHttpClientProvider.overrideWithValue(server.client),
         refreshTokenStoreProvider.overrideWithValue(tokens),
-        webAuthLauncherProvider.overrideWithValue(
-          FakeWebAuthLauncher(FakeWebAuthLauncher.success),
+        installIdStoreProvider.overrideWithValue(
+          InstallIdStore(storage: FakeSecureStorage()),
         ),
+        webAuthLauncherProvider.overrideWithValue(launcher),
         sessionClockProvider.overrideWithValue(clock.call),
         sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
         authDeviceNameProvider.overrideWithValue('Test phone'),
@@ -85,13 +90,43 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: TokenSessionGate(origin: _origin, child: home),
+        child: MaterialApp(
+          home: TokenSessionGate(sessionKey: _session, child: home),
         ),
       ),
     );
     await frames(tester);
   }
+
+  testWidgets('sign in again runs once and shows it is running', (
+    tester,
+  ) async {
+    await pump(tester);
+    tokens.readError = StateError('keychain locked');
+    container.invalidate(tokenSessionControllerProvider(_session));
+    await frames(tester);
+    final browser = launcher.gate = Completer<void>();
+    launcher.error = const WebAuthCancelledException();
+
+    final signIn = find.byKey(const Key('token-session-sign-in-again'));
+    await tester.tap(signIn);
+    await frames(tester);
+
+    expect(signIn, findsNothing);
+    expect(
+      find.byKey(const Key('token-session-sign-in-again-busy')),
+      findsOneWidget,
+    );
+    final retry = tester.widget<FilledButton>(
+      find.byKey(const Key('token-session-retry')),
+    );
+    expect(retry.onPressed, isNull);
+    expect(launcher.opened, hasLength(1));
+
+    browser.complete();
+    await frames(tester);
+    expect(signIn, findsOneWidget);
+  });
 
   testWidgets('a saved sign-in of the shown account draws the app before '
       'the rotation, with no banner; a refused rotation signs out', (
@@ -100,7 +135,7 @@ void main() {
     await pump(
       tester,
       arrange: () {
-        tokens.data[_origin] = StoredTokenSession(
+        tokens.data[_session] = StoredTokenSession(
           refreshToken: 'bzr_1',
           principalId: _principal,
         );
@@ -111,12 +146,12 @@ void main() {
     );
     // The refresh was refused at once: signed out, sign-in page.
     expect(
-      container.read(tokenSessionProvider(_origin)).status,
+      container.read(tokenSessionProvider(_session)).status,
       TokenSessionStatus.signedOut,
     );
     expect(find.byKey(const Key('gated-home')), findsNothing);
 
-    tokens.data[_origin] = StoredTokenSession(
+    tokens.data[_session] = StoredTokenSession(
       refreshToken: 'bzr_1',
       principalId: _principal,
     );
@@ -124,10 +159,10 @@ void main() {
       (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
     );
     final persist = tokens.writeGate = Completer<void>();
-    container.invalidate(tokenSessionControllerProvider(_origin));
+    container.invalidate(tokenSessionControllerProvider(_session));
     await frames(tester);
     expect(
-      container.read(tokenSessionProvider(_origin)).status,
+      container.read(tokenSessionProvider(_session)).status,
       TokenSessionStatus.resuming,
     );
     expect(find.byKey(const Key('gated-home')), findsOneWidget);
@@ -136,7 +171,7 @@ void main() {
     persist.complete();
     await frames(tester);
     expect(
-      container.read(tokenSessionProvider(_origin)).status,
+      container.read(tokenSessionProvider(_session)).status,
       TokenSessionStatus.signedIn,
     );
     expect(find.byKey(const Key('gated-home')), findsOneWidget);
@@ -147,11 +182,11 @@ void main() {
   ) async {
     await pump(tester);
     tokens.readError = StateError('keychain locked');
-    container.invalidate(tokenSessionControllerProvider(_origin));
+    container.invalidate(tokenSessionControllerProvider(_session));
     await frames(tester);
 
     expect(
-      container.read(tokenSessionProvider(_origin)).status,
+      container.read(tokenSessionProvider(_session)).status,
       TokenSessionStatus.stalled,
     );
     expect(find.byKey(const Key('gated-home')), findsNothing);
@@ -174,7 +209,7 @@ void main() {
   ) async {
     await pump(tester);
     tokens.readError = StateError('keychain locked');
-    container.invalidate(tokenSessionControllerProvider(_origin));
+    container.invalidate(tokenSessionControllerProvider(_session));
     await frames(tester);
 
     await tester.tap(find.byKey(Key('community-recovery-switch-${other.id}')));
@@ -212,7 +247,7 @@ void main() {
     ) async {
       await pump(tester, builtIn: true);
       tokens.readError = StateError('keychain locked');
-      container.invalidate(tokenSessionControllerProvider(_origin));
+      container.invalidate(tokenSessionControllerProvider(_session));
       await frames(tester);
 
       expect(find.byKey(const Key('token-session-retry')), findsOneWidget);
@@ -230,10 +265,11 @@ void main() {
       await tester.tap(find.byKey(const Key('community-recovery-sign-out')));
       await frames(tester);
 
-      // Ordinary sign-out: every community stays stored, signed out.
+      // Ordinary sign-out: this account only, and it stays stored.
       final remaining = await storage.loadAll();
       expect(remaining.length, 2);
-      expect(remaining.every((community) => community.signedOut), isTrue);
+      expect(remaining.firstWhere((c) => c.id == stalled.id).signedOut, isTrue);
+      expect(remaining.firstWhere((c) => c.id == other.id).signedOut, isFalse);
     });
 
     testWidgets('sign out works on this device with the server unreachable', (
@@ -243,7 +279,7 @@ void main() {
         tester,
         builtIn: true,
         arrange: () {
-          tokens.data[_origin] = StoredTokenSession(
+          tokens.data[_session] = StoredTokenSession(
             refreshToken: 'bzr_saved',
             principalId: 'q' * 64,
           );
@@ -253,7 +289,7 @@ void main() {
         },
       );
       expect(
-        container.read(tokenSessionProvider(_origin)).status,
+        container.read(tokenSessionProvider(_session)).status,
         TokenSessionStatus.retrying,
       );
       expect(find.byKey(const Key('token-session-retry')), findsOneWidget);
@@ -270,7 +306,7 @@ void main() {
       // Signed out here without waiting on the server; nothing is removed.
       final remaining = await storage.loadAll();
       expect(remaining.length, 2);
-      expect(remaining.every((community) => community.signedOut), isTrue);
+      expect(remaining.firstWhere((c) => c.id == stalled.id).signedOut, isTrue);
       expect(tokens.data, isEmpty);
       expect(find.byKey(const Key('community-recovery-error')), findsNothing);
 

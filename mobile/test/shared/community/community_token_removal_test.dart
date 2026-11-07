@@ -14,6 +14,7 @@ import 'community_storage_test.dart';
 
 const _origin = 'https://relay.test';
 final _principal = 'p' * 64;
+final _session = SessionKey(_origin, _principal);
 
 /// Removing a token community must revoke this device's relay session before
 /// any local state is erased (AGENTS.md rule 1).
@@ -63,6 +64,12 @@ void main() {
 
   tearDown(() => container.dispose());
 
+  Future<void> seed(Community community) async {
+    await storage.save(community);
+    container.invalidate(communityListProvider);
+    await container.read(communityListProvider.future);
+  }
+
   Future<Community> addTokenCommunity() async {
     final community = Community.create(
       name: 'Relay',
@@ -71,10 +78,8 @@ void main() {
       tokenAuth: true,
     );
     await container.read(communityListProvider.future);
-    await container
-        .read(communityListProvider.notifier)
-        .addCommunity(community);
-    tokens.data[_origin] = StoredTokenSession(
+    await seed(community);
+    tokens.data[_session] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: _principal,
     );
@@ -95,15 +100,13 @@ void main() {
         googleBackupAccountId: _principal,
       );
       await container.read(communityListProvider.future);
-      await container
-          .read(communityListProvider.notifier)
-          .addCommunity(community);
-      backupTokens.data[_origin] = StoredTokenSession(
+      await seed(community);
+      backupTokens.data[_session] = StoredTokenSession(
         refreshToken: 'bzr_backup',
         principalId: _principal,
         identityMode: 'key_backup',
       );
-      tokens.data[_origin] = const StoredTokenSession(
+      tokens.data[SessionKey(_origin, 'old-token')] = const StoredTokenSession(
         refreshToken: 'untouched',
         principalId: 'old-token',
       );
@@ -116,7 +119,10 @@ void main() {
           .removeCommunity(community.id);
       expect(await pending.read(_origin, _principal), isNull);
       expect(backupTokens.data, isEmpty);
-      expect(tokens.data[_origin]!.refreshToken, 'untouched');
+      expect(
+        tokens.data[SessionKey(_origin, 'old-token')]!.refreshToken,
+        'untouched',
+      );
       expect(await storage.loadAll(), isEmpty);
     },
   );
@@ -156,7 +162,7 @@ void main() {
     );
 
     expect(paths(), isNot(contains('/auth/logout')));
-    expect(tokens.data[_origin]?.refreshToken, 'bzr_old');
+    expect(tokens.data[_session]?.refreshToken, 'bzr_old');
     expect((await storage.loadAll()).map((c) => c.id), [community.id]);
     expect(journaled, isEmpty);
   });
@@ -175,7 +181,7 @@ void main() {
       throwsA(isA<TokenSessionException>()),
     );
 
-    expect(tokens.data[_origin]?.refreshToken, 'bzr_new');
+    expect(tokens.data[_session]?.refreshToken, 'bzr_new');
     expect((await storage.loadAll()).map((c) => c.id), [community.id]);
   });
 
@@ -190,7 +196,7 @@ void main() {
     expect(tokens.data, isEmpty);
     expect(await storage.loadAll(), isEmpty);
     expect(
-      container.read(tokenSessionControllerProvider(_origin)).state.status,
+      container.read(tokenSessionControllerProvider(_session)).state.status,
       TokenSessionStatus.restoring,
       reason: 'a fresh controller replaces the forgotten one',
     );
@@ -205,7 +211,7 @@ void main() {
       );
       final gate = tokens.writeGate = Completer<void>();
       final restoring = container
-          .read(tokenSessionControllerProvider(_origin))
+          .read(tokenSessionControllerProvider(_session))
           .restore();
       await settle();
       expect(server.refreshCalls, 1, reason: 'rotation write is in flight');
@@ -226,7 +232,7 @@ void main() {
   test('legacy communities are removed without auth requests', () async {
     await container.read(communityListProvider.future);
     final legacy = Community.create(name: 'Legacy', relayUrl: _origin);
-    await container.read(communityListProvider.notifier).addCommunity(legacy);
+    await seed(legacy);
 
     await container
         .read(communityListProvider.notifier)

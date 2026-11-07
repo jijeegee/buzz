@@ -24,8 +24,8 @@ class PeopleSettings extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final origin = ref.watch(accountOriginProvider);
-    if (origin == null) {
+    final sessionKey = ref.watch(accountSessionProvider);
+    if (sessionKey == null) {
       // Without an account only the relay-side group setting applies.
       return AppListCard(
         key: const ValueKey('settings-people'),
@@ -34,7 +34,7 @@ class PeopleSettings extends HookConsumerWidget {
         children: const [GroupAddPolicyRow()],
       );
     }
-    final profile = ref.watch(accountProfileProvider(origin));
+    final profile = ref.watch(accountProfileProvider(sessionKey));
     final loaded = profile.value;
     // The switch shows the requested value while the server saves it.
     final pending = useState<bool?>(null);
@@ -43,13 +43,13 @@ class PeopleSettings extends HookConsumerWidget {
     Future<void> setDiscoverable(bool value) async {
       final messenger = ScaffoldMessenger.maybeOf(context);
       final container = ProviderScope.containerOf(context, listen: false);
-      final api = ref.read(accountApiProvider(origin));
+      final api = ref.read(accountApiProvider(sessionKey));
       final failedMessage = context.l10n.settingsPeopleChangeFailed;
       pending.value = value;
       try {
         await api.setDiscoverable(value);
-        container.invalidate(accountProfileProvider(origin));
-        await container.read(accountProfileProvider(origin).future);
+        container.invalidate(accountProfileProvider(sessionKey));
+        await container.read(accountProfileProvider(sessionKey).future);
       } catch (error) {
         messenger?.showSnackBar(
           SnackBar(
@@ -109,9 +109,9 @@ class KuzzIdSettings extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final origin = ref.watch(accountOriginProvider);
-    if (origin == null) return const SizedBox.shrink();
-    final loaded = ref.watch(accountProfileProvider(origin)).value;
+    final sessionKey = ref.watch(accountSessionProvider);
+    if (sessionKey == null) return const SizedBox.shrink();
+    final loaded = ref.watch(accountProfileProvider(sessionKey)).value;
     final username = loaded?.username;
     return AppListCard(
       key: const ValueKey('profile-kuzz-id'),
@@ -134,7 +134,7 @@ class KuzzIdSettings extends ConsumerWidget {
               : () => unawaited(
                   Navigator.of(context).push(
                     MaterialPageRoute<void>(
-                      builder: (_) => KuzzIdPage(origin: origin),
+                      builder: (_) => KuzzIdPage(sessionKey: sessionKey),
                     ),
                   ),
                 ),

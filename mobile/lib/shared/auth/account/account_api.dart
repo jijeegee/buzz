@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
+import '../../community/community.dart';
+import '../../community/community_provider.dart';
 import '../token/token.dart';
 import '../../l10n/l10n.dart';
 
@@ -594,16 +596,27 @@ class AccountApi {
   }
 }
 
-/// Account endpoints for the token relay at `origin`.
-final accountApiProvider = Provider.family<AccountApi, String>((ref, origin) {
-  final googleKey = ref.watch(activeGoogleKeyOriginProvider) == origin;
+/// Whether the account [key] names is a Google-held key account. Asked of
+/// its row, not of the active community: a caller may name an account that is
+/// no longer the active one.
+final _keyBackupAccountProvider = Provider.family<bool, SessionKey>((ref, key) {
+  if (ref.watch(activeGoogleKeySessionProvider) == key) return true;
+  final rows = ref.watch(communityListProvider).value ?? const <Community>[];
+  return rows.any(
+    (row) => !row.tokenAuth && SessionKey.ofCommunity(row) == key,
+  );
+});
+
+/// Account endpoints of the account [SessionKey] names.
+final accountApiProvider = Provider.family<AccountApi, SessionKey>((ref, key) {
+  final googleKey = ref.watch(_keyBackupAccountProvider(key));
   return AccountApi(
-    origin: origin,
+    origin: key.origin,
     client: ref.watch(authHttpClientProvider),
     session: ref.watch(
       googleKey
-          ? keyBackupSessionControllerProvider(origin)
-          : tokenSessionControllerProvider(origin),
+          ? keyBackupSessionControllerProvider(key)
+          : tokenSessionControllerProvider(key),
     ),
   );
 });
@@ -614,23 +627,23 @@ Duration? _noRetry(int retryCount, Object error) => null;
 
 /// The signed-in principal's global profile. Invalidate to reload.
 final accountProfileProvider = FutureProvider.autoDispose
-    .family<AccountProfile, String>(
-      (ref, origin) => ref.watch(accountApiProvider(origin)).me(),
+    .family<AccountProfile, SessionKey>(
+      (ref, key) => ref.watch(accountApiProvider(key)).me(),
       retry: _noRetry,
     );
 
-/// The account origin of the active community: its token relay, or the
-/// relay holding its Google key backup. `null` when the community has no
+/// The account session of the active community: its token session, or the
+/// session of its Google key backup. `null` when the community has no
 /// account (an older key-only community), which hides account features.
-final accountOriginProvider = Provider<String?>(
+final accountSessionProvider = Provider<SessionKey?>(
   (ref) =>
-      ref.watch(activeTokenOriginProvider) ??
-      ref.watch(activeGoogleKeyOriginProvider),
+      ref.watch(activeTokenSessionProvider) ??
+      ref.watch(activeGoogleKeySessionProvider),
 );
 
 /// This account's signed-in devices. Invalidate to reload.
 final accountDevicesProvider = FutureProvider.autoDispose
-    .family<List<AccountDevice>, String>(
-      (ref, origin) => ref.watch(accountApiProvider(origin)).listDevices(),
+    .family<List<AccountDevice>, SessionKey>(
+      (ref, key) => ref.watch(accountApiProvider(key)).listDevices(),
       retry: _noRetry,
     );

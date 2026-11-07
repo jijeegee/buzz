@@ -445,15 +445,13 @@ Future<List<KuzzPushEndpointGrant>> readKuzzPushEndpointGrants() async {
   }
 }
 
-/// Enrolls the endpoint and optionally rewrites the NSE snapshot afterward.
-///
-/// The rewrite propagates NIP-11 `self` rotations even when the opaque grant
-/// and accepted relay lease remain reusable and their generations do not move.
+/// Enrolls the endpoint. The caller rewrites the NSE snapshot afterward
+/// (with the active account), which propagates NIP-11 `self` rotations even
+/// when the opaque grant and accepted relay lease remain reusable.
 Future<KuzzPushEndpointGrant> enrollKuzzPush(
   String relayUrl,
-  String gatewayUrl, {
-  List<Community>? communitiesForSnapshotRefresh,
-}) async {
+  String gatewayUrl,
+) async {
   if (androidPushActive) {
     final token = apnsDeviceToken.value;
     if (token == null) throw StateError('No FCM token yet.');
@@ -480,14 +478,6 @@ Future<KuzzPushEndpointGrant> enrollKuzzPush(
   }
   final grant = KuzzPushEndpointGrant.fromMap(raw);
   await readKuzzPushEndpointGrants();
-  if (communitiesForSnapshotRefresh != null) {
-    try {
-      await registerKuzzPushCommunitySnapshot(communitiesForSnapshotRefresh);
-      pushCommunitySnapshotError.value = null;
-    } catch (error, stackTrace) {
-      reportPushCommunitySnapshotError(error, stackTrace);
-    }
-  }
   return grant;
 }
 
@@ -509,18 +499,26 @@ void reportPushLeaseCleanupError(Object error, StackTrace stackTrace) {
   debugPrintStack(stackTrace: stackTrace);
 }
 
-Future<void> registerKuzzPushCommunitySnapshot(List<Community> communities) =>
-    _registerKuzzPushCommunitySnapshot(communities, strict: false);
+Future<void> registerKuzzPushCommunitySnapshot(
+  List<Community> communities, {
+  String? activeCommunityId,
+}) => _registerKuzzPushCommunitySnapshot(
+  communities,
+  strict: false,
+  activeCommunityId: activeCommunityId,
+);
 
 /// Writes the age-gate snapshot through a native path that must acknowledge
 /// both the app-group store and signing-key update.
 Future<void> registerKuzzPushCommunitySnapshotStrict(
   List<Community> communities, {
   required bool settleFence,
+  String? activeCommunityId,
 }) => _registerKuzzPushCommunitySnapshot(
   communities,
   strict: true,
   settleFence: settleFence,
+  activeCommunityId: activeCommunityId,
 );
 
 /// Restores notification presentation without reading community storage.
@@ -556,6 +554,7 @@ Future<void> _registerKuzzPushCommunitySnapshot(
   List<Community> communities, {
   required bool strict,
   bool settleFence = false,
+  String? activeCommunityId,
 }) async {
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
   try {
@@ -593,6 +592,7 @@ Future<void> _registerKuzzPushCommunitySnapshot(
         'section': 'communities',
         'communities': [for (final snapshot in snapshots) snapshot.toJson()],
         'signingKeys': signingKeys,
+        kuzzPushActiveCommunityKey: ?activeCommunityId,
         if (strict) 'settleFence': settleFence,
       },
     );

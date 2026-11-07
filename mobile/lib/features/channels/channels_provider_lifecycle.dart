@@ -35,7 +35,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       for (final channel in channels)
         if (channel.isMember && !channel.isArchived) channel.id,
     };
-    final relayBaseUrl = _lifecycleRef.read(relayConfigProvider).baseUrl;
+    final liveScope = _currentLiveScope();
     _desiredLiveChannelIds = channelIds;
     _attachUserStream(channels, fence);
     _coverageRouter
@@ -55,7 +55,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
 
     final sync = _liveSubscriptionQueue.then(
       (_) => _syncLiveSubscriptions(
-        relayBaseUrl,
+        liveScope,
         subscriptionVersion,
         channels,
         fence,
@@ -79,7 +79,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
   }
 
   Future<void> _syncLiveSubscriptions(
-    String relayBaseUrl,
+    String liveScope,
     int subscriptionVersion,
     List<Channel> channels,
     _ChannelRefreshFence fence,
@@ -93,11 +93,11 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       return;
     }
 
-    if (_subscriptionRelayBaseUrl != relayBaseUrl) {
+    if (_subscriptionScope != liveScope) {
       _clearRetainedLiveChunks();
-      _subscriptionRelayBaseUrl = relayBaseUrl;
+      _subscriptionScope = liveScope;
     }
-    if (_lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl) return;
+    if (_currentLiveScope() != liveScope) return;
 
     final desiredChunks = chunkChannelIdsForLiveSubscriptions(_chunkRoomIds);
     // Keep existing coverage while replacements are installed. Cleanup runs
@@ -177,8 +177,8 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
         if (subscriptionVersion != _subscriptionVersion ||
             _lifecycleRef.read(relaySessionProvider).status !=
                 SessionStatus.connected ||
-            _lifecycleRef.read(relayConfigProvider).baseUrl != relayBaseUrl ||
-            _subscriptionRelayBaseUrl != relayBaseUrl ||
+            _currentLiveScope() != liveScope ||
+            _subscriptionScope != liveScope ||
             !chunk.every(_chunkRoomIds.contains)) {
           _liveSubscriptionsByChunk.remove(chunkKey);
           unsubscribe();
@@ -309,6 +309,12 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
     });
   }
 
+  /// The server and account live subscriptions belong to: another account
+  /// on the same server never inherits them.
+  String _currentLiveScope() =>
+      '${_lifecycleRef.read(relayConfigProvider).baseUrl}|'
+      '${_lifecycleRef.read(myPubkeyProvider)}';
+
   void _clearLiveSubscriptions() {
     _detachUserStream();
     _subscriptionVersion++;
@@ -319,7 +325,7 @@ extension _ChannelsNotifierLiveSubscriptions on ChannelsNotifier {
       ..setBundleRooms(const {});
     _terminallyClosedLiveChunks.clear();
     _clearRetainedLiveChunks();
-    _subscriptionRelayBaseUrl = null;
+    _subscriptionScope = null;
     _backstopTimer?.cancel();
     _backstopTimer = null;
   }

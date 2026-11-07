@@ -1,18 +1,22 @@
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../app_update/app_update.dart';
+import '../auth_provider.dart';
+import '../default_community.dart';
 import '../../community/community.dart';
 import '../../community/community_provider.dart';
+import '../../relay/app_lifecycle_provider.dart';
 import '../../device_key/device_key.dart';
 import '../../device_key/device_proof_client.dart';
 import 'auth_api.dart';
 import 'install_id_store.dart';
 import 'refresh_token_store.dart';
-import 'relay_origin.dart';
+import 'session_key.dart';
 import 'token_session.dart';
 import 'google_account_picker.dart';
 import 'web_auth_launcher.dart';
@@ -38,8 +42,9 @@ final installIdStoreProvider = Provider<InstallIdStore>(
 
 /// Custody grants cannot overwrite a pre-existing token messaging session.
 final keyBackupRefreshTokenStoreProvider = Provider<RefreshTokenStore>(
-  (ref) =>
-      SecureRefreshTokenStore(keyPrefix: 'kuzz.auth.key-backup.refresh.v1'),
+  (ref) => SecureRefreshTokenStore(
+    keyPrefix: SecureRefreshTokenStore.keyBackupKeyPrefix,
+  ),
 );
 
 /// System-browser launcher for OIDC. Override in tests.
@@ -70,88 +75,101 @@ final authDeviceNameProvider = Provider<String>(
   },
 );
 
-/// The token session controller for one canonical relay origin.
+/// The token session controller of one account.
 ///
 /// Kept alive for the app's lifetime so its refresh timer keeps running
 /// while no widget watches it; disposed with the container.
 final tokenSessionControllerProvider =
-    Provider.family<TokenSessionController, String>((ref, origin) {
+    Provider.family<TokenSessionController, SessionKey>((ref, key) {
       final controller = TokenSessionController(
-        origin: origin,
+        key: key,
         api: AuthApi(
-          origin: origin,
+          origin: key.origin,
           client: ref.watch(authHttpClientProvider),
           deviceKey: DeviceKey.instance,
         ),
         store: ref.watch(refreshTokenStoreProvider),
-        launcher: ref.watch(webAuthLauncherProvider),
-        accountPicker: ref.watch(googleAccountPickerProvider),
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
-        deviceName: ref.watch(authDeviceNameProvider),
-        installIds: ref.watch(installIdStoreProvider),
-        canResumeQuietly: (principal) => _showsAccount(
-          ref.read(activeCommunityProvider).value,
-          origin,
-          principal,
-        ),
+        canResumeQuietly: (principal) =>
+            _showsAccount(ref.read(activeCommunityProvider).value, key),
       );
       ref.onDispose(controller.dispose);
       return controller;
     });
 
-/// Whether [active] is the token community of [origin] signed in as exactly
-/// [principal]: then its stored content may be drawn before the first
-/// rotation (TokenSessionStatus.resuming).
-bool _showsAccount(Community? active, String origin, String principal) {
-  if (active == null ||
-      !active.tokenAuth ||
-      active.signedOut ||
-      active.pubkey != principal) {
-    return false;
-  }
-  try {
-    return normalizeRelayOrigin(active.relayUrl) == origin;
-  } on FormatException {
-    return false;
-  }
-}
+/// Whether [active] is the token community of exactly [key]: then its stored
+/// content may be drawn before the first rotation
+/// (TokenSessionStatus.resuming).
+bool _showsAccount(Community? active, SessionKey key) =>
+    active != null &&
+    active.tokenAuth &&
+    !active.signedOut &&
+    SessionKey.ofCommunity(active) == key;
 
 final keyBackupSessionControllerProvider =
-    Provider.family<TokenSessionController, String>((ref, origin) {
+    Provider.family<TokenSessionController, SessionKey>((ref, key) {
       final controller = TokenSessionController(
-        origin: origin,
+        key: key,
         api: AuthApi(
-          origin: origin,
+          origin: key.origin,
           client: ref.watch(authHttpClientProvider),
           deviceKey: DeviceKey.instance,
         ),
         store: ref.watch(keyBackupRefreshTokenStoreProvider),
-        launcher: ref.watch(webAuthLauncherProvider),
-        accountPicker: ref.watch(googleAccountPickerProvider),
         clock: ref.watch(sessionClockProvider),
         timerFactory: ref.watch(sessionTimerFactoryProvider),
-        deviceName: ref.watch(authDeviceNameProvider),
-        installIds: ref.watch(installIdStoreProvider),
       );
       ref.onDispose(controller.dispose);
       return controller;
     });
 
-/// UI-facing state of one origin's token session. Building it starts the
+/// The controller provider holding [community]'s session under [key].
+Provider<TokenSessionController> sessionControllerProviderOf(
+  Community community,
+  SessionKey key,
+) => community.tokenAuth
+    ? tokenSessionControllerProvider(key)
+    : keyBackupSessionControllerProvider(key);
+
+/// Starts one sign-in attempt at an origin (see
+/// [TokenSessionController.attempt]). The caller owns the attempt: it either
+/// hands it to the account or discards it, and then disposes it.
+typedef TokenSignInAttemptFactory =
+    TokenSessionController Function(String origin);
+
+final tokenSignInAttemptProvider = Provider<TokenSignInAttemptFactory>(
+  (ref) =>
+      (origin) => TokenSessionController.attempt(
+        origin: origin,
+        api: AuthApi(
+          origin: SessionKey(origin, '').origin,
+          client: ref.read(authHttpClientProvider),
+          deviceKey: DeviceKey.instance,
+        ),
+        launcher: ref.read(webAuthLauncherProvider),
+        accountPicker: ref.read(googleAccountPickerProvider),
+        clock: ref.read(sessionClockProvider),
+        timerFactory: ref.read(sessionTimerFactoryProvider),
+        deviceName: ref.read(authDeviceNameProvider),
+        installIds: ref.read(installIdStoreProvider),
+      ),
+);
+
+/// UI-facing state of one account's token session. Building it starts the
 /// restore (stored refresh → rotation) automatically.
 class TokenSessionNotifier extends Notifier<TokenSessionState> {
-  TokenSessionNotifier(this.origin, {this.keyBackup = false});
+  TokenSessionNotifier(this.sessionKey, {this.keyBackup = false});
 
-  final String origin;
+  final SessionKey sessionKey;
   final bool keyBackup;
 
   @override
   TokenSessionState build() {
     final controller = ref.watch(
       keyBackup
-          ? keyBackupSessionControllerProvider(origin)
-          : tokenSessionControllerProvider(origin),
+          ? keyBackupSessionControllerProvider(sessionKey)
+          : tokenSessionControllerProvider(sessionKey),
     );
     final removeListener = controller.addListener((next) => state = next);
     ref.onDispose(removeListener);
@@ -163,56 +181,173 @@ class TokenSessionNotifier extends Notifier<TokenSessionState> {
 
   TokenSessionController get controller => ref.read(
     keyBackup
-        ? keyBackupSessionControllerProvider(origin)
-        : tokenSessionControllerProvider(origin),
+        ? keyBackupSessionControllerProvider(sessionKey)
+        : tokenSessionControllerProvider(sessionKey),
   );
 }
 
 final tokenSessionProvider =
-    NotifierProvider.family<TokenSessionNotifier, TokenSessionState, String>(
-      TokenSessionNotifier.new,
-    );
+    NotifierProvider.family<
+      TokenSessionNotifier,
+      TokenSessionState,
+      SessionKey
+    >(TokenSessionNotifier.new);
 
 final keyBackupSessionProvider =
-    NotifierProvider.family<TokenSessionNotifier, TokenSessionState, String>(
-      (origin) => TokenSessionNotifier(origin, keyBackup: true),
-    );
+    NotifierProvider.family<
+      TokenSessionNotifier,
+      TokenSessionState,
+      SessionKey
+    >((key) => TokenSessionNotifier(key, keyBackup: true));
 
-/// Canonical origin of the active community when Google holds its key
-/// (signed in with Google on this device), otherwise `null`. Its account
-/// endpoints are called with the Google session that signed it in.
-final activeGoogleKeyOriginProvider = Provider<String?>((ref) {
-  final community = ref.watch(
+/// The session of the active community when Google holds its key (signed in
+/// with Google on this device), otherwise `null`. Its account endpoints are
+/// called with the Google session that signed it in.
+final activeGoogleKeySessionProvider = Provider<SessionKey?>(
+  (ref) => ref.watch(
     activeCommunityProvider.select((value) {
       final active = value.value;
-      return active == null ||
-              active.tokenAuth ||
-              active.googleBackupAccountId == null
+      return active == null || active.tokenAuth
           ? null
-          : active.relayUrl;
+          : SessionKey.ofCommunity(active);
     }),
-  );
-  if (community == null) return null;
-  try {
-    return normalizeRelayOrigin(community);
-  } on FormatException {
-    return null;
-  }
-});
+  ),
+);
 
-/// Canonical origin of the active community when it uses token auth,
-/// otherwise `null` (legacy nsec community or none).
-final activeTokenOriginProvider = Provider<String?>((ref) {
-  final community = ref.watch(
+/// The session of the active community when it uses token auth, otherwise
+/// `null` (legacy nsec community or none).
+final activeTokenSessionProvider = Provider<SessionKey?>(
+  (ref) => ref.watch(
     activeCommunityProvider.select((value) {
       final active = value.value;
-      return active == null || !active.tokenAuth ? null : active.relayUrl;
+      return active == null || !active.tokenAuth
+          ? null
+          : SessionKey.ofCommunity(active);
+    }),
+  ),
+);
+
+/// Keeps every signed-in account's session alive, not only the active one.
+/// Watch it from the app root.
+///
+/// Restores each account's controller, the active account first and then the
+/// others one at a time; from there each keeps its own refresh timer. Timers
+/// do not run in the background, so on app resume any account near expiry is
+/// refreshed in the same order.
+///
+/// An account whose session ended is signed out here, and only that one,
+/// unless its gate shows the sign-in page: an active token account has one.
+/// Signing out deletes the key and messages, so a key account (Google holds
+/// its key) is only signed out when the relay said its session is over (a
+/// [refreshEndedCodes] code). With no stored session and no such code (a
+/// phone restored from a backup brings the rows but not the
+/// this-device-only session) its key stays: messaging still works, and its
+/// account pages say it is signed out. A passing failure is never
+/// [TokenSessionStatus.signedOut], it keeps the session.
+///
+/// A sign-out cut short (the app killed halfway) left its row marked
+/// [Community.signingOut]; it is finished here, whatever the session says.
+///
+/// The session may be replaced before the queued sign-out runs: a sign-in
+/// already in progress wins (see [TokenSessionController.sessionFence]).
+final accountSessionKeeperProvider = Provider<void>((ref) {
+  final rows = ref.watch(communityListProvider);
+  final active = ref.watch(activeCommunityProvider);
+  if (!rows.hasValue || !active.hasValue) return;
+  final activeId = active.value?.id;
+  final builtInOrigin = ref.watch(defaultCommunityOriginProvider);
+  final signedIn = [
+    for (final community in rows.value!)
+      if (!community.signedOut &&
+          isServerAllowed(community.relayUrl, builtInOrigin: builtInOrigin))
+        if (SessionKey.ofCommunity(community) case final key?)
+          (
+            id: community.id,
+            tokenAuth: community.tokenAuth,
+            signingOut: community.signingOut,
+            provider: sessionControllerProviderOf(community, key),
+          ),
+  ];
+  final ordered = [
+    for (final account in signedIn)
+      if (account.id == activeId && !account.signingOut) account.provider,
+    for (final account in signedIn)
+      if (account.id != activeId && !account.signingOut) account.provider,
+  ];
+
+  for (final account in signedIn) {
+    final active = account.id == activeId;
+    final controller = ref.read(account.provider);
+    void signOut({bool unfinishedOnly = false}) {
+      unawaited(
+        ref
+            .read(authProvider.notifier)
+            .signOutCommunity(
+              account.id,
+              deviceOnly: true,
+              isCurrent: controller.sessionFence(),
+              unfinishedOnly: unfinishedOnly,
+            )
+            .catchError((Object error) {
+              debugPrint('Could not sign out an ended account: $error');
+            }),
+      );
+    }
+
+    if (account.signingOut) {
+      signOut(unfinishedOnly: true);
+      continue;
+    }
+    if (active && account.tokenAuth) continue;
+    void signOutIfEnded(TokenSessionState session) {
+      if (session.status != TokenSessionStatus.signedOut) return;
+      if (!account.tokenAuth &&
+          !refreshEndedCodes.contains(session.endedCode)) {
+        return;
+      }
+      // On screen, `DeviceKeyNotice` signs this one out and says why.
+      if (active && session.endedCode == 'device_key_required') return;
+      signOut();
+    }
+
+    ref.onDispose(controller.addListener(signOutIfEnded));
+    signOutIfEnded(controller.state);
+  }
+
+  // The controllers are read before the first wait: this provider rebuilds
+  // whenever the list or active row changes, and that must not end a pass
+  // halfway through the accounts.
+  Future<void> forEachAccount(
+    Future<void> Function(TokenSessionController controller) action,
+  ) async {
+    final controllers = [for (final account in ordered) ref.read(account)];
+    for (final controller in controllers) {
+      try {
+        await action(controller);
+      } catch (error) {
+        debugPrint('Could not refresh an account session: $error');
+      }
+    }
+  }
+
+  ref.listen(appLifecycleProvider, (_, next) {
+    if (next != AppLifecycleState.resumed) return;
+    unawaited(
+      forEachAccount(
+        (controller) => controller.state.status == TokenSessionStatus.restoring
+            ? controller.restore()
+            : controller.refreshIfExpiring(),
+      ),
+    );
+  });
+
+  // Only a controller nothing has restored yet does any work here, so the
+  // list changing (push state, renames) costs nothing.
+  unawaited(
+    forEachAccount((controller) async {
+      if (controller.state.status == TokenSessionStatus.restoring) {
+        await controller.restore();
+      }
     }),
   );
-  if (community == null) return null;
-  try {
-    return normalizeRelayOrigin(community);
-  } on FormatException {
-    return null;
-  }
 });

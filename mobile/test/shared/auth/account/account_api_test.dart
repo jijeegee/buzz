@@ -9,6 +9,7 @@ import '../token/token_auth_test_fakes.dart';
 import 'fake_account_server.dart';
 
 const _origin = 'https://relay.test';
+final _session = SessionKey(_origin, 'p' * 64);
 
 void main() {
   late FakeAccountServer server;
@@ -35,20 +36,20 @@ void main() {
   });
 
   Future<AccountApi> signedIn() async {
-    store.data[_origin] = StoredTokenSession(
+    store.data[_session] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: 'p' * 64,
     );
     server.auth.refreshResponses.add(
       (_) => FakeAuthServer.rotated('bzs_1', 'bzr_1'),
     );
-    await container.read(tokenSessionControllerProvider(_origin)).restore();
-    return container.read(accountApiProvider(_origin));
+    await container.read(tokenSessionControllerProvider(_session)).restore();
+    return container.read(accountApiProvider(_session));
   }
 
   test('a Google key account calls with its Google session', () async {
     final keyStore = FakeRefreshTokenStore()
-      ..data[_origin] = StoredTokenSession(
+      ..data[_session] = StoredTokenSession(
         refreshToken: 'bzr_key',
         principalId: 'p' * 64,
         identityMode: 'key_backup',
@@ -65,7 +66,7 @@ void main() {
         sessionClockProvider.overrideWithValue(clock.call),
         sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
         authDeviceNameProvider.overrideWithValue('Test phone'),
-        activeGoogleKeyOriginProvider.overrideWithValue(_origin),
+        activeGoogleKeySessionProvider.overrideWithValue(_session),
       ],
     );
     addTearDown(google.dispose);
@@ -73,13 +74,13 @@ void main() {
       (_) => FakeAuthServer.rotated('bzs_key', 'bzr_key2'),
     );
 
-    await google.read(accountApiProvider(_origin)).me();
+    await google.read(accountApiProvider(_session)).me();
 
     expect(
       server.calls('GET', '/auth/me').single.headers['Authorization'],
       'Bearer bzs_key',
     );
-    expect(keyStore.data[_origin]?.refreshToken, 'bzr_key2');
+    expect(keyStore.data[_session]?.refreshToken, 'bzr_key2');
     expect(store.data, isEmpty);
   });
 
@@ -157,8 +158,8 @@ void main() {
   test(
     'signed out: fails without sending an unauthenticated request',
     () async {
-      final api = container.read(accountApiProvider(_origin));
-      await container.read(tokenSessionControllerProvider(_origin)).restore();
+      final api = container.read(accountApiProvider(_session));
+      await container.read(tokenSessionControllerProvider(_session)).restore();
 
       await expectLater(api.me(), throwsA(isA<AccountApiException>()));
       expect(server.accountRequests, isEmpty);
@@ -198,7 +199,7 @@ void main() {
       );
 
       expect(
-        container.read(tokenSessionProvider(_origin)).status,
+        container.read(tokenSessionProvider(_session)).status,
         TokenSessionStatus.signedOut,
       );
       expect(store.data, isEmpty);

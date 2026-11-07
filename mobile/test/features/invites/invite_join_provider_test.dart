@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
+import 'package:kuzz/shared/auth/token/token_session.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 
@@ -15,6 +16,44 @@ import 'package:kuzz/shared/deeplink/deep_link.dart';
 import '../../shared/community/community_storage_test.dart';
 
 void main() {
+  test('an invite goes to the active account of that server', () async {
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    Community row(String name) {
+      final keys = nostr.Keys.generate();
+      return Community.create(
+        name: name,
+        relayUrl: 'https://relay.example.com',
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: name,
+      );
+    }
+
+    final signedOut = row('Signed out').copyWith(signedOut: true);
+    final active = row('Active');
+    await storage.saveAll([signedOut, row('Other'), active]);
+    await storage.saveActiveId(active.id);
+    final container = ProviderContainer(
+      overrides: [
+        communityStorageProvider.overrideWithValue(storage),
+        communitySnapshotWriterProvider.overrideWithValue((_) async {}),
+        inviteTokenAuthDetectorProvider.overrideWithValue((_) async => null),
+      ],
+    );
+    addTearDown(container.dispose);
+    await container
+        .read(inviteJoinProvider.notifier)
+        .prepare(
+          const InviteDeepLink(
+            relayUrl: 'wss://relay.example.com',
+            code: 'invite',
+          ),
+        );
+    final state = container.read(inviteJoinProvider);
+    expect(state.status, InviteJoinStatus.confirming);
+    expect(state.communityName, 'Active');
+  });
+
   test(
     'an invite cannot use the key retained by a signed-out community',
     () async {
@@ -652,7 +691,7 @@ class _RecordingAuthNotifier extends AuthNotifier {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     final storage = ref.read(communityStorageProvider);
     await storage.save(community);

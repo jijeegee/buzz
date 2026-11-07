@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/auth/token/session_key.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
@@ -19,14 +20,14 @@ final _usernamePattern = RegExp(r'^[a-z0-9_]{3,32}$');
 /// The global account profile of a token relay (`PATCH /auth/profile`):
 /// display name, username and photo, shared by every community on it.
 class AccountPage extends ConsumerWidget {
-  const AccountPage({super.key, required this.origin});
+  const AccountPage({super.key, required this.sessionKey});
 
-  /// Canonical origin of the token relay.
-  final String origin;
+  /// The account of the token relay.
+  final SessionKey sessionKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(accountProfileProvider(origin));
+    final profile = ref.watch(accountProfileProvider(sessionKey));
     // A reload after saving keeps the form (and its edits) mounted.
     final loaded = profile.value;
     return Scaffold(
@@ -35,12 +36,12 @@ class AccountPage extends ConsumerWidget {
         child: switch (profile) {
           _ when loaded != null => _AccountForm(
             key: ValueKey(loaded.principalId),
-            origin: origin,
+            sessionKey: sessionKey,
             profile: loaded,
           ),
           AsyncError(:final error) => _LoadFailure(
             message: '$error',
-            onRetry: () => ref.invalidate(accountProfileProvider(origin)),
+            onRetry: () => ref.invalidate(accountProfileProvider(sessionKey)),
           ),
           _ => Center(
             child: KuzzLoadingIndicator(
@@ -90,9 +91,13 @@ class _LoadFailure extends StatelessWidget {
 }
 
 class _AccountForm extends HookConsumerWidget {
-  const _AccountForm({super.key, required this.origin, required this.profile});
+  const _AccountForm({
+    super.key,
+    required this.sessionKey,
+    required this.profile,
+  });
 
-  final String origin;
+  final SessionKey sessionKey;
   final AccountProfile profile;
 
   @override
@@ -143,7 +148,7 @@ class _AccountForm extends HookConsumerWidget {
       final AccountProfile saved;
       try {
         saved = await ref
-            .read(accountApiProvider(origin))
+            .read(accountApiProvider(sessionKey))
             .updateProfile(
               displayName: displayName,
               avatarUrl: avatarUrl.value,
@@ -174,7 +179,7 @@ class _AccountForm extends HookConsumerWidget {
               ownerPubkey: previous?.ownerPubkey,
             ),
           );
-      container.invalidate(accountProfileProvider(origin));
+      container.invalidate(accountProfileProvider(sessionKey));
       if (!context.mounted) return;
       saving.value = false;
       ScaffoldMessenger.of(context).showSnackBar(

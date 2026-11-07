@@ -29,7 +29,7 @@ Future<TokenSettingsHarness> _pumpDevices(
   _session = FakeOwnDeviceSession();
   await h.pump(
     tester,
-    DevicesPage(origin: tokenOrigin, agents: agents),
+    DevicesPage(sessionKey: tokenSession, agents: agents),
     overrides: [
       relaySessionProvider.overrideWith(() => _session),
       ...overrides,

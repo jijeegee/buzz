@@ -6,7 +6,7 @@ import 'package:flutter/widgets.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart'
-    show accountDevicesProvider, accountOriginProvider;
+    show accountDevicesProvider, accountSessionProvider;
 import '../../shared/message_store/message_store.dart' show MessageStoreLease;
 import '../../shared/message_store/message_store_provider.dart';
 import '../../shared/profile/user_cache_provider.dart';
@@ -274,10 +274,10 @@ class ChatListNotifier extends AsyncNotifier<ChatListState> {
 
   /// The owner may have changed an external agent's name or photo elsewhere.
   Future<void> _refreshExternalAgentProfiles() async {
-    final origin = ref.read(accountOriginProvider);
-    if (origin == null) return;
+    final sessionKey = ref.read(accountSessionProvider);
+    if (sessionKey == null) return;
     try {
-      final devices = await ref.read(accountDevicesProvider(origin).future);
+      final devices = await ref.read(accountDevicesProvider(sessionKey).future);
       final agents = [
         for (final device in devices)
           for (final agent in device.agents) agent.pubkey,

@@ -77,17 +77,17 @@ final agentDirectoryProvider = FutureProvider<List<AgentDirectoryEntry>>((
 /// Best effort: a list that can't be read adds none, and never errors or
 /// holds up the screens that wait on [agentOwnersProvider].
 Future<Map<String, String>> _pairedAgentOwners(Ref ref) async {
-  final origin = ref.watch(accountOriginProvider);
+  final sessionKey = ref.watch(accountSessionProvider);
   final me = ref.watch(myPubkeyProvider)?.toLowerCase();
-  if (origin == null || me == null) return const {};
+  if (sessionKey == null || me == null) return const {};
   // A list that arrives after the wait still counts.
   var late = false;
-  ref.listen(accountDevicesProvider(origin), (_, next) {
+  ref.listen(accountDevicesProvider(sessionKey), (_, next) {
     if (late && next.hasValue) ref.invalidateSelf();
   });
   try {
     final devices = await ref
-        .watch(accountDevicesProvider(origin).future)
+        .watch(accountDevicesProvider(sessionKey).future)
         .timeout(_pairedAgentsTimeout);
     return {
       for (final device in devices)

@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:kuzz/shared/auth/token/refresh_token_store.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/relay/service_address.dart';
 import 'package:kuzz/shared/relay/service_scope_migration.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -162,7 +163,9 @@ void main() {
       );
       debugServiceAddressesOverride = _moved();
       final store = SecureRefreshTokenStore(storage: secure);
-      final session = await store.read('https://jihobuzz.duckdns.org');
+      final session = await store.read(
+        SessionKey('https://jihobuzz.duckdns.org', 'p1'),
+      );
       expect(session?.refreshToken, 'r1');
     });
 

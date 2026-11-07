@@ -8,6 +8,7 @@ export 'oidc_login.dart';
 export 'pkce.dart';
 export 'refresh_token_store.dart';
 export 'relay_origin.dart';
+export 'session_key.dart';
 export 'token_auth_descriptor.dart';
 export 'token_session.dart';
 export 'token_session_provider.dart';

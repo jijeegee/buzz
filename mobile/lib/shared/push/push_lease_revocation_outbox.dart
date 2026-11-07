@@ -330,6 +330,34 @@ class KuzzPushLeaseRevocationOutbox {
     return true;
   }
 
+  /// Drops the queued revocation of [community]'s lease, now that the account
+  /// is publishing it again, and returns the generation that record had
+  /// reserved. Every attempt so far used a lower one, including one still in
+  /// flight. A record for an older installation stays: that lease is gone for
+  /// good. Without a recorded installation any of this member's records match.
+  Future<int?> withdrawCommunity(Community community) async {
+    final nsec = community.nsec;
+    if (nsec == null || nsec.isEmpty) return null;
+    final memberPubkey = nostr.Keys(
+      nostr.Nip19.decode(payload: nsec).data,
+    ).public;
+    final relayOrigin = canonicalKuzzPushRelayOrigin(community.relayUrl);
+    final installationId = community.pushLeaseInstallationId;
+    return _serialize(() async {
+      final records = await storage.loadAll();
+      bool withdrawn(KuzzPushLeaseRevocationRecord record) =>
+          record.memberPubkey == memberPubkey &&
+          record.relayOrigin == relayOrigin &&
+          (installationId == null || record.installationId == installationId);
+      final generations = records.where(withdrawn).map((r) => r.generation);
+      if (generations.isEmpty) return null;
+      final highest = generations.reduce(max);
+      records.removeWhere(withdrawn);
+      await storage.replaceAll(records);
+      return highest;
+    });
+  }
+
   Future<void> start() async {
     if (_disposed) throw StateError('Push revocation outbox is disposed.');
     if (_started) return trigger();

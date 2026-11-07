@@ -131,15 +131,15 @@ class _ProfileForm extends HookConsumerWidget {
     });
 
     Future<void> save() => run(() async {
-      final origin = ref.read(accountOriginProvider);
-      if (origin == null) {
+      final sessionKey = ref.read(accountSessionProvider);
+      if (sessionKey == null) {
         error.value = context.l10n.agentAccessUnavailable;
         return;
       }
       final navigator = Navigator.of(context);
       final about = aboutField.text.trim();
       await ref
-          .read(accountApiProvider(origin))
+          .read(accountApiProvider(sessionKey))
           .setExternalAgentProfile(
             key,
             displayName: nameField.text.trim(),

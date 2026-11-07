@@ -46,6 +46,9 @@ void main() {
       addTearDown(container.dispose);
       // The app restores authentication before displaying the invite.
       await container.read(authProvider.future);
+      // The list's push snapshot reads the active id too; let it finish so
+      // the paused read is the projection's.
+      await container.read(communityListProvider.future);
       storage.pauseNextRead = true;
       final oldProjection = container.read(activeCommunityProvider.future);
       await storage.readStarted.future;

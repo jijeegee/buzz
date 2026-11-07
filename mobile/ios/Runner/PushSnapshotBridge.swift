@@ -207,7 +207,10 @@ final class KuzzPushSnapshotBridge {
         let data = try JSONSerialization.data(withJSONObject: enriched, options: [.sortedKeys])
         let decoded = try JSONDecoder().decode([PushLeaseCommunity].self, from: data)
         // Ordinary snapshot maintenance never changes age access.
-        try store.replaceCommunities(decoded)
+        try store.replaceCommunities(
+          decoded,
+          activeCommunityId: arguments["activeCommunityId"] as? String
+        )
         try KuzzPushKeychain.replace(
           signingKeys: signingKeys,
           accessGroup: self.keychainAccessGroup

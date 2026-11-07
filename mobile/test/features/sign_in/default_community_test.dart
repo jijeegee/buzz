@@ -61,6 +61,9 @@ class _Fixture {
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
         ),
+        installIdStoreProvider.overrideWithValue(
+          InstallIdStore(storage: FakeSecureStorage()),
+        ),
         pendingBackupKeyStoreProvider.overrideWithValue(
           PendingBackupKeyStore(storage: FakeSecureStorage()),
         ),
@@ -215,7 +218,7 @@ void main() {
     },
   );
 
-  testWidgets('selection changed during admission is preserved', (
+  testWidgets('an account added during admission is left alone', (
     tester,
   ) async {
     final f = _Fixture()..wait = true;
@@ -234,8 +237,14 @@ void main() {
         .authenticateWithCommunity(other);
     f.gate.complete();
     await frames(tester);
-    expect((await f.storage.loadAll()).single.id, other.id);
-    expect(await f.storage.loadActiveId(), other.id);
+    final rows = await f.storage.loadAll();
+    expect(rows, hasLength(2));
+    final kept = rows.singleWhere((row) => row.id == other.id);
+    expect(kept.nsec, otherKey.nsec);
+    expect(
+      rows.singleWhere((row) => row.id != other.id).nsec,
+      isNot(otherKey.nsec),
+    );
   });
 
   for (final accepted in [false, true]) {

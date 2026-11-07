@@ -149,7 +149,19 @@ class ChannelPreloader {
   final Ref _ref;
   final DateTime Function() _now;
   final StorePreloadBridge? _store;
-  final Map<String, DateTime> _attemptedAt = {};
+  final Map<String, DateTime> _attempts = {};
+  ChannelHeadScope? _attemptsScope;
+
+  /// When each room or thread was last tried, for the account on screen
+  /// only: another account's tries say nothing about this one's rooms.
+  Map<String, DateTime> get _attemptedAt {
+    final scope = _ref.read(channelHeadScopeProvider);
+    if (scope != _attemptsScope) {
+      _attempts.clear();
+      _attemptsScope = scope;
+    }
+    return _attempts;
+  }
 
   /// Whether a background request may go out now: the session is connected
   /// and the relay is not pushing back.
@@ -276,7 +288,9 @@ class ChannelPreloader {
       }
       cold.add(channelId);
     }
-    if (cold.isEmpty) return const [];
+    if (cold.isEmpty || _ref.read(channelHeadScopeProvider) != scope) {
+      return const [];
+    }
     final attemptedAt = _now();
     for (final channelId in cold) {
       _attemptedAt['room:$channelId'] = attemptedAt;
@@ -348,6 +362,7 @@ class ChannelPreloader {
       start += maxThreadWindowsPerRequest
     ) {
       if (beforeRequest != null && !await beforeRequest()) return loaded;
+      final scope = _ref.read(channelHeadScopeProvider);
       final chunk = cold.sublist(
         start,
         (start + maxThreadWindowsPerRequest).clamp(0, cold.length),
@@ -362,6 +377,8 @@ class ChannelPreloader {
             .queryRelayWithStoreHeads([
               for (final thread in chunk) threadPreloadFilter(thread),
             ]);
+        // Replies fetched for the last account are not this one's.
+        if (_ref.read(channelHeadScopeProvider) != scope) return loaded;
         final windows = splitThreadWindows(events, chunk);
         final store = _ref.read(preloadedThreadsProvider.notifier);
         for (final MapEntry(key: thread, value: replies) in windows.entries) {
@@ -400,7 +417,10 @@ class PreloadedThreadsNotifier
   final DateTime Function() _now;
 
   @override
-  Map<ThreadRepliesArgs, PreloadedThread> build() => const {};
+  Map<ThreadRepliesArgs, PreloadedThread> build() {
+    ref.watch(channelHeadScopeProvider);
+    return const {};
+  }
 
   void seed(ThreadRepliesArgs thread, List<NostrEvent> replies) {
     final now = _now();

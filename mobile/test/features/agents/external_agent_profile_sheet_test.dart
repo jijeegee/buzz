@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/agents/external_agent_profile_sheet.dart';
 import 'package:kuzz/l10n/app_localizations.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
 import 'package:mocktail/mocktail.dart';
@@ -37,7 +38,7 @@ Future<void> _open(WidgetTester tester, _Api api, _Cache cache) async {
   await tester.pumpWidget(
     ProviderScope(
       overrides: [
-        accountOriginProvider.overrideWithValue(_origin),
+        accountSessionProvider.overrideWithValue(SessionKey(_origin, 'me')),
         accountApiProvider.overrideWith((ref, _) => api),
         userCacheProvider.overrideWith(() => cache),
       ],

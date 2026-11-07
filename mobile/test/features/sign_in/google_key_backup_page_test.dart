@@ -24,14 +24,14 @@ class RecordingAuth extends AuthNotifier {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async => saved = community;
   @override
   Future<void> authenticateWithTokenSession({
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) => throw StateError('Google custody must never select token messaging');
 }
 
@@ -42,7 +42,7 @@ class ReturningTokenAuth extends RecordingAuth {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     tokenPrincipal = principalId;
   }
@@ -60,8 +60,10 @@ Future<ProviderContainer> _pumpSignedOut(
   WidgetTester tester, {
   required CommunityStorage storage,
   required backup.BackupServer server,
+  FakeAuthServer? auth,
+  FakeRefreshTokenStore? backupStore,
 }) async {
-  final authServer = FakeAuthServer();
+  final authServer = auth ?? FakeAuthServer();
   authServer.nip11 = (_) => jsonResponse({
     'kuzz_key_backup': {
       'version': 1,
@@ -100,7 +102,7 @@ Future<ProviderContainer> _pumpSignedOut(
         InstallIdStore(storage: FakeSecureStorage()),
       ),
       keyBackupRefreshTokenStoreProvider.overrideWithValue(
-        FakeRefreshTokenStore(),
+        backupStore ?? FakeRefreshTokenStore(),
       ),
       pendingBackupKeyStoreProvider.overrideWithValue(
         PendingBackupKeyStore(storage: FakeSecureStorage()),
@@ -154,7 +156,7 @@ Future<Community> _retainedKeyCommunity(
 
 void main() {
   testWidgets(
-    'signed-out key community continues with Google by linking its key',
+    'a Google account with no row leaves the signed-out key row alone',
     (tester) async {
       final keys = nostr.Keys.generate();
       final storage = CommunityStorage(secure: FakeSecureStorage());
@@ -185,28 +187,70 @@ void main() {
         container.read(authProvider).value?.status,
         AuthStatus.authenticated,
       );
-      // The retained key itself was linked: no replacement was generated.
-      expect(server.secret, keys.secret);
+      // Linking a key is Connect Google only: this is a new account.
+      expect(server.secret, isNot(keys.secret));
       expect(server.proofs, hasLength(1));
-      final saved = (await storage.loadAll()).single;
-      expect(saved.id, retained.id);
-      expect(saved.signedOut, isFalse);
-      expect(saved.nsec, keys.nsec);
-      expect(saved.pubkey, keys.public);
-      expect(saved.googleBackupAccountId, backup.account);
+      final rows = await storage.loadAll();
+      expect(rows, hasLength(2));
+      final kept = rows.singleWhere((row) => row.id == retained.id);
+      expect(kept.signedOut, isTrue);
+      expect(kept.nsec, keys.nsec);
+      expect(kept.googleBackupAccountId, isNull);
+      final added = rows.singleWhere((row) => row.id != retained.id);
+      expect(added.signedOut, isFalse);
+      expect(added.pubkey, isNot(keys.public));
+      expect(added.googleBackupAccountId, backup.account);
       // The method it signed in with is recorded on this phone.
-      expect(saved.signInProvider, 'google');
+      expect(added.signInProvider, 'google');
     },
   );
 
   testWidgets(
-    'a Google account linked to another Kuzz account offers a different one',
+    'a failed resolve ends the attempt and stores no session or row change',
     (tester) async {
       final keys = nostr.Keys.generate();
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      await _retainedKeyCommunity(storage, keys);
-      final server = backup.BackupServer()
-        ..secret = nostr.Keys.generate().secret;
+      final retained = await _retainedKeyCommunity(storage, keys);
+      final auth = FakeAuthServer();
+      final backupStore = FakeRefreshTokenStore();
+      final server = backup.BackupServer()..failStatus = true;
+      final container = await _pumpSignedOut(
+        tester,
+        storage: storage,
+        server: server,
+        auth: auth,
+        backupStore: backupStore,
+      );
+
+      final google = find.byKey(const Key('token-sign-in-google'));
+      await tester.ensureVisible(google);
+      await tester.tap(google);
+      await frames(tester);
+
+      expect(backupStore.writes, 0);
+      expect(backupStore.data, isEmpty);
+      final paths = auth.requests.map((request) => request.url.path);
+      expect(paths, contains('/auth/sessions/end'));
+      expect(paths, isNot(contains('/auth/logout')));
+      final saved = (await storage.loadAll()).single;
+      expect(saved.id, retained.id);
+      expect(saved.signedOut, isTrue);
+      expect(saved.googleBackupAccountId, isNull);
+      expect(
+        container.read(authProvider).value?.status,
+        AuthStatus.unauthenticated,
+      );
+    },
+  );
+
+  testWidgets(
+    'a signed-out page sign-in with another account opens that account',
+    (tester) async {
+      final keys = nostr.Keys.generate();
+      final paired = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final retained = await _retainedKeyCommunity(storage, keys);
+      final server = backup.BackupServer()..secret = paired.secret;
       final container = await _pumpSignedOut(
         tester,
         storage: storage,
@@ -218,33 +262,16 @@ void main() {
       await frames(tester);
 
       expect(
-        find.text(
-          'This sign-in is linked to a different Kuzz account. '
-          'Try a different account.',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: google,
-          matching: find.text('Use a different Google account'),
-        ),
-        findsOneWidget,
-      );
-      // A way out remains (rule 6), but never a switch to the other identity.
-      expect(
-        find.byKey(const Key('community-recovery-remove')),
-        findsOneWidget,
-      );
-      expect(
         container.read(authProvider).value?.status,
-        AuthStatus.unauthenticated,
+        AuthStatus.authenticated,
       );
-      final saved = (await storage.loadAll()).single;
-      expect(saved.signedOut, isTrue);
-      expect(saved.nsec, keys.nsec);
-      expect(saved.pubkey, keys.public);
-      expect(saved.googleBackupAccountId, isNull);
+      final rows = await storage.loadAll();
+      final kept = rows.singleWhere((row) => row.id == retained.id);
+      expect(kept.signedOut, isTrue);
+      expect(kept.nsec, keys.nsec);
+      expect(kept.googleBackupAccountId, isNull);
+      final added = rows.singleWhere((row) => row.id != retained.id);
+      expect(added.pubkey, paired.public);
       expect(server.proofs, isEmpty);
     },
   );
@@ -412,31 +439,24 @@ void main() {
         await tester.ensureVisible(returning);
         await tester.tap(returning);
         await frames(tester);
-        if (existingBackup) {
-          expect(find.textContaining('cannot replace'), findsOneWidget);
-          expect(launcher.opened, isEmpty);
-          expect(auth.tokenPrincipal, isNull);
-          expect((await storage.loadAll()).single.nsec, keys.nsec);
-        } else {
-          await tester.ensureVisible(
-            find.byKey(const Key('token-sign-in-google')),
-          );
-          await tester.tap(find.byKey(const Key('token-sign-in-google')));
-          await frames(tester);
-          expect(
-            launcher.opened.single.queryParameters['identity_mode'],
-            'token',
-          );
-          expect(auth.tokenPrincipal, 'p' * 64);
-          expect(auth.saved, isNull);
-          expect(backupStore.data, isEmpty);
-          expect(
-            server.requests.where(
-              (r) => r.url.path.startsWith('/auth/key-backup'),
-            ),
-            isEmpty,
-          );
-        }
+        await tester.ensureVisible(
+          find.byKey(const Key('token-sign-in-google')),
+        );
+        await tester.tap(find.byKey(const Key('token-sign-in-google')));
+        await frames(tester);
+        expect(
+          launcher.opened.single.queryParameters['identity_mode'],
+          'token',
+        );
+        expect(auth.tokenPrincipal, 'p' * 64);
+        expect(auth.saved, isNull);
+        expect(backupStore.data, isEmpty);
+        expect(
+          server.requests.where(
+            (r) => r.url.path.startsWith('/auth/key-backup'),
+          ),
+          isEmpty,
+        );
       },
     );
   }
@@ -478,7 +498,8 @@ void main() {
       final auth = RecordingAuth();
       final clock = FakeClock(DateTime.now());
       final tokenStore = FakeRefreshTokenStore();
-      tokenStore.data[backup.origin] = const StoredTokenSession(
+      final oldToken = SessionKey(backup.origin, 'old-token-account');
+      tokenStore.data[oldToken] = const StoredTokenSession(
         refreshToken: 'keep-old-token',
         principalId: 'old-token-account',
       );
@@ -538,7 +559,7 @@ void main() {
       expect(auth.saved!.tokenAuth, isFalse);
       expect(auth.saved!.nsec, isNotNull);
       expect(auth.saved!.pubkey, isNot(backup.account));
-      expect(tokenStore.data[backup.origin]!.refreshToken, 'keep-old-token');
+      expect(tokenStore.data[oldToken]!.refreshToken, 'keep-old-token');
     },
   );
 }

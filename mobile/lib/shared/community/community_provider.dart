@@ -8,7 +8,6 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
-import '../l10n/l10n.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
@@ -19,6 +18,7 @@ import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
 import 'community.dart';
+import 'community_accounts.dart';
 import 'community_storage.dart';
 import 'community_token_session.dart';
 
@@ -102,17 +102,34 @@ final communityStorageProvider = Provider<CommunityStorage>((ref) {
 typedef CommunitySnapshotWriter =
     Future<void> Function(List<Community> communities);
 
-/// Exports persisted communities to the notification service extension.
+/// Exports persisted communities to the notification service extension,
+/// with the id of the active one, the only account it may show.
 final communitySnapshotWriterProvider = Provider<CommunitySnapshotWriter>((
   ref,
 ) {
-  return registerKuzzPushCommunitySnapshot;
+  return (communities) async => registerKuzzPushCommunitySnapshot(
+    communities,
+    activeCommunityId: await _snapshotActiveId(
+      ref.read(communityStorageProvider),
+    ),
+  );
 });
+
+/// The active id for the extension's snapshot. Unreadable, it is left out and
+/// the extension keeps every account eligible, as before accounts.
+Future<String?> _snapshotActiveId(CommunityStorage storage) async {
+  try {
+    return await storage.loadActiveId();
+  } catch (_) {
+    return null;
+  }
+}
 
 final _communitySnapshotSyncProvider = Provider<_CommunitySnapshotSync>((ref) {
   return _CommunitySnapshotSync(
     ref.read(communitySnapshotWriterProvider),
     ref.read(communityStorageProvider).loadAll,
+    () => _snapshotActiveId(ref.read(communityStorageProvider)),
   );
 });
 
@@ -131,6 +148,14 @@ typedef CommunityPushLeaseRevocationEnqueuer =
 final communityPushLeaseRevocationEnqueuerProvider =
     Provider<CommunityPushLeaseRevocationEnqueuer>((ref) {
       return ref.read(kuzzPushLeaseRevocationOutboxProvider).enqueueCommunity;
+    });
+
+typedef CommunityPushLeaseRevocationWithdrawer =
+    Future<int?> Function(Community community);
+
+final communityPushLeaseRevocationWithdrawerProvider =
+    Provider<CommunityPushLeaseRevocationWithdrawer>((ref) {
+      return ref.read(kuzzPushLeaseRevocationOutboxProvider).withdrawCommunity;
     });
 
 typedef CommunityPushLeaseRevocationTrigger = Future<void> Function();
@@ -210,10 +235,11 @@ Future<void> _deactivateCommunityPushLease(
 }
 
 class _CommunitySnapshotSync {
-  _CommunitySnapshotSync(this._writer, this._read);
+  _CommunitySnapshotSync(this._writer, this._read, this._readActiveId);
 
   final CommunitySnapshotWriter _writer;
   final Future<List<Community>> Function() _read;
+  final Future<String?> Function() _readActiveId;
   String? _lastSuccessfulSnapshot;
   Future<void> _mutationTail = Future.value();
 
@@ -236,6 +262,7 @@ class _CommunitySnapshotSync {
     await registerKuzzPushCommunitySnapshotStrict(
       communities,
       settleFence: false,
+      activeCommunityId: await _readActiveId(),
     );
     _lastSuccessfulSnapshot = null;
   });
@@ -246,7 +273,7 @@ class _CommunitySnapshotSync {
     final effectiveCommunities = (await _read())
         .where((community) => !community.signedOut)
         .toList();
-    final contentFingerprint = effectiveCommunities
+    final communitiesFingerprint = effectiveCommunities
         .map(
           (community) => [
             community.id,
@@ -262,6 +289,8 @@ class _CommunitySnapshotSync {
           ].join('\u0000'),
         )
         .join('\u0001');
+    final contentFingerprint =
+        '${await _readActiveId()}\u0002$communitiesFingerprint';
     if (contentFingerprint == _lastSuccessfulSnapshot) return;
     await _writer(effectiveCommunities);
     _lastSuccessfulSnapshot = contentFingerprint;
@@ -286,6 +315,43 @@ Future<void> syncStoredCommunitySnapshot(Ref ref) async {
 /// Errors propagate; persisted signed-out records make this retryable at startup.
 Future<void> settleSignedOutCommunitySnapshot(Ref ref) =>
     ref.read(_communitySnapshotSyncProvider).settleSignOut();
+
+/// Ends push for account [id], which just stopped being active: notifications
+/// show for the active account only. Its push preference stays, and
+/// `KuzzPushBootstrap` publishes again when it comes back, at the same
+/// installation: the relay reactivates that address for a newer generation,
+/// and a new installation would be refused while the old lease still holds
+/// the endpoint. The row reserves the tombstone's generations, so that later
+/// publication outranks every attempt, and it withdraws what is still queued.
+///
+/// Local only: the caller fires the outbox afterwards. A failure leaves the
+/// lease to expire and never stops the switch, since only the active account
+/// shows anything. Returns the updated row when a revocation was queued.
+Future<Community?> revokeLeftAccountPushLease(Ref ref, String? id) async {
+  if (id == null) return null;
+  final storage = ref.read(communityStorageProvider);
+  try {
+    final left = (await storage.loadAll())
+        .where((community) => community.id == id)
+        .firstOrNull;
+    if (left == null || left.signedOut || !left.pushNotificationsEnabled) {
+      return null;
+    }
+    // The block first: a queued revocation must never outrank a cursor that
+    // was not saved. A block with nothing queued only skips generations.
+    final updated = left.copyWith(
+      pushSubscriptionState: left.pushSubscriptionState.withRevocationBlock(),
+    );
+    await storage.save(updated);
+    if (!await ref.read(communityPushLeaseRevocationEnqueuerProvider)(left)) {
+      return null;
+    }
+    return updated;
+  } catch (error, stackTrace) {
+    reportPushLeaseCleanupError(error, stackTrace);
+    return null;
+  }
+}
 
 class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   final Map<String, Future<void>> _tombstoneAttempts = {};
@@ -369,43 +435,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     return filled;
   }
 
-  /// Add a community. If one with the same relay URL already exists, update
-  /// its credentials instead. Returns the effective community ID.
-  Future<String> addCommunity(Community community) =>
-      ref.read(communityTransitionProvider).runExclusive(() async {
-        _requireAllowedServer(ref, community.relayUrl);
-        final storage = ref.read(communityStorageProvider);
-        final current = await storage.loadAll();
-
-        // If a community with the same relay URL exists, update its credentials
-        // instead of creating a duplicate entry.
-        final existingIndex = current.indexWhere(
-          (w) => w.relayUrl == community.relayUrl,
-        );
-        if (existingIndex >= 0) {
-          final existing = current[existingIndex];
-          if (existing.signedOut) {
-            throw StateError(appL10n.communitySignInBeforeChanging);
-          }
-          final updated = existing.withCredentials(
-            pubkey: community.pubkey,
-            nsec: community.nsec,
-          );
-          await storage.save(updated);
-          final updatedList = [...current];
-          updatedList[existingIndex] = updated;
-          state = AsyncData(updatedList);
-          await syncCommunitySnapshot(ref, updatedList);
-          return existing.id;
-        }
-
-        await storage.save(community);
-        final updatedList = [...current, community];
-        state = AsyncData(updatedList);
-        await syncCommunitySnapshot(ref, updatedList);
-        return community.id;
-      });
-
   /// Removes community [id]. A token community's device session is revoked
   /// on the relay first; when that fails (`TokenSessionException`) nothing
   /// is removed. [deviceOnly] skips the relay and only forgets the session
@@ -417,14 +446,17 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         deviceOnly: deviceOnly,
       );
 
-  /// Removes the active community through the same local-first path as the
-  /// community list while allowing [AuthNotifier] to publish its final state.
-  Future<void> removeActiveCommunityForSignOut({bool deviceOnly = false}) =>
-      _removeCommunity(
-        null,
-        invalidateAuthentication: false,
-        deviceOnly: deviceOnly,
-      );
+  /// Removes community [id], or without one the active community, through the
+  /// same local-first path as the community list while allowing [AuthNotifier]
+  /// to publish its final state.
+  Future<void> removeActiveCommunityForSignOut({
+    String? id,
+    bool deviceOnly = false,
+  }) => _removeCommunity(
+    id,
+    invalidateAuthentication: false,
+    deviceOnly: deviceOnly,
+  );
 
   Future<void> _removeCommunity(
     String? requestedId, {
@@ -462,14 +494,24 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       }
       await storage.remove(id);
       if (removedIndex >= 0) {
-        final relayUrl = RelayConfig(
-          baseUrl: current[removedIndex].relayUrl,
-        ).baseUrl;
         final removed = current[removedIndex];
         final account = removed.pubkey ?? pubkeyFromNsec(removed.nsec);
         if (account != null) {
           unawaited(
             ref.read(messageStoreProvider).forget(removed.relayUrl, account),
+          );
+          unawaited(
+            ref
+                .read(channelHeadCacheProvider)
+                .clearAccount(
+                  ChannelHeadScope(
+                    relayUrl: RelayConfig(baseUrl: removed.relayUrl).baseUrl,
+                    pubkey: account,
+                  ),
+                )
+                .catchError((Object error) {
+                  developer.log('Failed to clear channel heads: $error');
+                }),
           );
         }
         // The NSE snapshot no longer has it (above): its inbox goes too.
@@ -477,13 +519,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           deletePushInboxFolders(ref.read(pushInboxRootProvider), [
             removed.pushInboxToken,
           ]),
-        );
-        unawaited(
-          ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
-            Object error,
-          ) {
-            developer.log('Failed to clear channel heads: $error');
-          }),
         );
       }
 
@@ -495,28 +530,39 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       if (activeId == id) {
         final remaining = state.value ?? [];
         if (remaining.isNotEmpty) {
-          await storage.saveActiveId(remaining.first.id);
+          final next =
+              selectActiveCommunity(
+                remaining,
+                null,
+                builtInOrigin: ref.read(defaultCommunityOriginProvider),
+              ) ??
+              remaining.first;
+          await storage.saveActiveId(next.id);
+          await syncCommunitySnapshot(ref, remaining);
           // Reassign list state so activeCommunityProvider picks up the new ID.
           state = AsyncData([...remaining]);
           if (invalidateAuthentication) ref.invalidate(authProvider);
         } else {
           await storage.clearActiveId();
+          await syncCommunitySnapshot(ref, remaining);
           // Invalidate auth so it re-evaluates against the now-empty storage
           // and transitions to unauthenticated.
           if (invalidateAuthentication) ref.invalidate(authProvider);
         }
       }
-      if (revocationJournaled) {
-        unawaited(
-          ref.read(communityPushLeaseRevocationTriggerProvider)().catchError((
-            Object error,
-            StackTrace stackTrace,
-          ) {
-            reportPushLeaseCleanupError(error, stackTrace);
-          }),
-        );
-      }
+      if (revocationJournaled) _triggerPushLeaseRevocation();
     });
+  }
+
+  void _triggerPushLeaseRevocation() {
+    unawaited(
+      ref.read(communityPushLeaseRevocationTriggerProvider)().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        reportPushLeaseCleanupError(error, stackTrace);
+      }),
+    );
   }
 
   Future<void> switchCommunity(String id) {
@@ -524,19 +570,35 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final storage = ref.read(communityStorageProvider);
       final activeId = await storage.loadActiveId();
       if (activeId == id) return;
-      final target = (await storage.loadAll())
+      final stored = await storage.loadAll();
+      final target = stored
           .where((community) => community.id == id)
           .firstOrNull;
       if (target != null) _requireAllowedServer(ref, target.relayUrl);
       await ref.read(communityTransitionProvider).run();
+      final used = target?.copyWith(lastUsedAt: DateTime.now());
+      if (used != null) await storage.save(used);
       await storage.saveActiveId(id);
+      // Only once the switch is saved: a failed write leaves the account
+      // active, and its lease must not be revoked under it.
+      final left = await revokeLeftAccountPushLease(ref, activeId);
+      await syncStoredCommunitySnapshot(ref);
       // Reassign list state to trigger activeCommunityProvider (which watches
       // communityListProvider.future) to rebuild and pick up the new active ID.
       // We can't use ref.invalidate(activeCommunityProvider) here because that
       // creates a circular dependency — activeCommunityProvider watches us.
-      state = AsyncData([...state.value ?? []]);
+      state = AsyncData([
+        for (final community in state.value ?? const <Community>[])
+          if (community.id == used?.id)
+            used!
+          else if (community.id == left?.id)
+            left!
+          else
+            community,
+      ]);
       // Invalidate auth so AuthState.community reflects the new active community.
       ref.invalidate(authProvider);
+      if (left != null) _triggerPushLeaseRevocation();
     });
   }
 
@@ -578,16 +640,33 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       if (index < 0) throw StateError('Push community is unavailable.');
 
       final community = current[index];
+      final activeId = await storage.loadActiveId();
+      // A publication that outlives a switch would outrank its revocation.
+      if (activeId != null && activeId != id) {
+        throw StateError('Push account is no longer active.');
+      }
       if (community.signedOut ||
           (installationId != _unspecifiedInstallation &&
               community.pushLeaseInstallationId != installationId) ||
           !community.pushNotificationsEnabled) {
         throw StateError('Push notifications are disabled.');
       }
-      final cursor =
-          community.pushSubscriptionState.generationCursor ??
-          community.pushSubscriptionState.acceptedGeneration ??
-          0;
+      // An unreadable outbox must not stop this account's publications: the
+      // cursor already covers any block reserved for its revocation.
+      int? withdrawn;
+      try {
+        withdrawn = await ref.read(
+          communityPushLeaseRevocationWithdrawerProvider,
+        )(community);
+      } catch (error, stackTrace) {
+        reportPushLeaseCleanupError(error, stackTrace);
+      }
+      final cursor = max(
+        community.pushSubscriptionState.generationCursor ??
+            community.pushSubscriptionState.acceptedGeneration ??
+            0,
+        withdrawn ?? 0,
+      );
       final generation = cursor + 1;
       final updated = community.copyWith(
         pushSubscriptionState: community.pushSubscriptionState
@@ -787,6 +866,28 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     await syncCommunitySnapshot(ref, updatedList);
   });
 
+  /// Applies [update] to the cached profile of row [id], unless it has gone
+  /// or signed out since. Nothing else on the row changes, so a live session
+  /// is left alone (see `relayConfigProvider`).
+  Future<void> cacheProfile(
+    String id,
+    Community Function(Community row) update,
+  ) => ref.read(communityTransitionProvider).runExclusive(() async {
+    final storage = ref.read(communityStorageProvider);
+    final current = await storage.loadAll();
+    final index = current.indexWhere((row) => row.id == id);
+    if (index < 0 || current[index].signedOut) return;
+    final row = current[index];
+    final updated = update(row);
+    if (updated.displayName == row.displayName &&
+        updated.avatarUrl == row.avatarUrl &&
+        updated.email == row.email) {
+      return;
+    }
+    await storage.save(updated);
+    state = AsyncData([...current]..[index] = updated);
+  });
+
   Future<void> renameCommunity(String id, String name) =>
       ref.read(communityTransitionProvider).runExclusive(() async {
         final storage = ref.read(communityStorageProvider);
@@ -833,14 +934,16 @@ final activeCommunityProvider = FutureProvider<Community?>((ref) async {
 /// Picks the community to use from [communities].
 ///
 /// With a built-in server ([builtInOrigin], see `hasBuiltInServerProvider`)
-/// only entries for that server (same host and port) are candidates: the
-/// stored [activeId] wins when it is one of them, otherwise the first one.
-/// Entries for other servers stay stored but are never selected, so they
-/// are never connected. Returns `null` when there is no candidate; the
-/// Google sign-in for the built-in server then creates its entry.
+/// only entries for that server (same host and port) are candidates. Entries
+/// for other servers stay stored but are never selected, so they are never
+/// connected. Without one (test harness only) every entry is a candidate.
+/// Returns `null` when there is no candidate; the Google sign-in for the
+/// built-in server then creates its entry.
 ///
-/// Without a built-in server (test harness only) this is the upstream rule:
-/// [activeId], otherwise the first stored community.
+/// The stored [activeId] wins while it is signed in, otherwise the most
+/// recently used signed-in account ([mostRecentlyUsedCommunity]). With none
+/// signed in it is the stored [activeId] or the first candidate, which shows
+/// the signed-out page.
 Community? selectActiveCommunity(
   List<Community> communities,
   String? activeId, {
@@ -854,10 +957,11 @@ Community? selectActiveCommunity(
               community,
         ];
   if (candidates.isEmpty) return null;
-  return candidates.firstWhere(
-    (community) => community.id == activeId,
-    orElse: () => candidates.first,
-  );
+  final stored = candidates
+      .where((community) => community.id == activeId)
+      .firstOrNull;
+  if (stored != null && !stored.signedOut) return stored;
+  return mostRecentlyUsedCommunity(candidates) ?? stored ?? candidates.first;
 }
 
 /// Refuses any server other than the built-in one (see

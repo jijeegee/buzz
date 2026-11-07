@@ -227,7 +227,7 @@ class ReportSheet extends HookConsumerWidget {
     );
     // Blocking lives on the account; an older key-only community has none.
     final canBlock =
-        !alreadyBlocked && ref.watch(accountOriginProvider) != null;
+        !alreadyBlocked && ref.watch(accountSessionProvider) != null;
 
     Future<void> send() async {
       final chosen = reason.value;

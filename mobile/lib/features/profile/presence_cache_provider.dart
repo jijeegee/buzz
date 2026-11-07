@@ -40,7 +40,9 @@ class PresenceCacheNotifier extends Notifier<Map<String, String>> {
     final sessionState = ref.watch(relaySessionProvider);
     final lifecycle = ref.watch(appLifecycleProvider);
     final scope = ref.watch(
-      relayConfigProvider.select((config) => (config.baseUrl, config.nsec)),
+      relayConfigProvider.select(
+        (config) => (config.baseUrl, config.communityId),
+      ),
     );
     if (_scope != scope) _tracked.clear();
     _scope = scope;

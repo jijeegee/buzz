@@ -16,6 +16,9 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
   late CommunityThemeStorage _storage;
   String? _pubkey;
   String? _relayUrl;
+
+  /// A token account has no signing key: its theme stays on this phone.
+  bool _localOnly = false;
   Future<void> _persistenceQueue = Future<void>.value();
   int _localRevision = 0;
   CommunityThemePreference? _scopedLocalPreference;
@@ -30,11 +33,14 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
     _storage = ref.watch(communityThemeStorageProvider);
     final config = ref.watch(relayConfigProvider);
     final session = ref.watch(relaySessionProvider);
-    final pubkey = pubkeyFromNsec(config.nsec);
+    final pubkey = config.tokenAuth
+        ? config.principalId
+        : pubkeyFromNsec(config.nsec);
     _pubkey = pubkey;
     _relayUrl = config.baseUrl;
+    _localOnly = config.tokenAuth;
 
-    if (pubkey == null || config.nsec == null) {
+    if (pubkey == null || (config.nsec == null && !config.tokenAuth)) {
       final legacy = _storage.legacyPreference();
       unawaited(_storage.writeLegacy(legacy));
       return legacy;
@@ -51,7 +57,7 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
       _scopedLocalPubkey = pubkey;
       _scopedLocalRelayUrl = config.baseUrl;
     }
-    final fallback = _storage.hasMigrated(pubkey)
+    final fallback = config.tokenAuth || _storage.hasMigrated(pubkey)
         ? defaultCommunityTheme
         : _storage.legacyPreference();
     final synced = inMemoryLocal ?? dirty ?? cached ?? fallback;
@@ -61,7 +67,7 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
     if (deviceMode == null) unawaited(_storage.writeDeviceMode(synced.mode));
     final initial = synced.withDeviceMode(deviceMode ?? synced.mode);
 
-    if (session.status == SessionStatus.connected) {
+    if (session.status == SessionStatus.connected && !config.tokenAuth) {
       late final CommunityThemeSyncManager manager;
       manager = CommunityThemeSyncManager(
         pubkey: pubkey,
@@ -170,7 +176,7 @@ class CommunityThemeNotifier extends Notifier<CommunityThemePreference> {
       return;
     }
     // Light/dark/system is per device: keep it local and publish nothing.
-    if (modeOnly) {
+    if (modeOnly || _localOnly) {
       unawaited(_storage.write(pubkey, relayUrl, preference));
       return;
     }

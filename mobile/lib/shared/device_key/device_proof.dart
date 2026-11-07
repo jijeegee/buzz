@@ -92,6 +92,10 @@ String requestProofBinding(String method, Uri url) {
 String loginProofBinding(String loginCode) =>
     'login:${hexEncode(sha256Bytes(utf8.encode(loginCode)))}';
 
+/// The binding of a signup proof: `signup:<sha256(signup token) hex>`.
+String signupProofBinding(String signupToken) =>
+    'signup:${hexEncode(sha256Bytes(utf8.encode(signupToken)))}';
+
 /// The exact text a device signs for an auth event: the domain, a newline,
 /// then the NIP-01 id serialization `[0, pubkey, created_at, kind, tags,
 /// content]` with the signature field of the `device` tag blanked.

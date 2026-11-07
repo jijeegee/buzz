@@ -8422,10 +8422,6 @@
       "text": "無法在伺服器上登出",
       "from": "db861bc748fc"
     },
-    "communitySignInBeforeChanging": {
-      "text": "請先登入此社群再進行變更。",
-      "from": "33f15d7ac622"
-    },
     "ephemeralTooltipAfterDays": {
       "text": "臨時群組。閒置 {count, plural, other{{count} 天}}後會自動清除。",
       "from": "75bd06c12ade"
@@ -8701,10 +8697,6 @@
     "settingsAccountSharedNote": {
       "text": "你的名稱、使用者名稱和相片會在此伺服器上的所有社群中共用。",
       "from": "3f3a931f5e34"
-    },
-    "signInExistingIdentityConflict": {
-      "text": "這部裝置在此伺服器上已有簽署身分，現有的權杖帳號無法取代它。請使用 Google 金鑰救援。",
-      "from": "5ae11689d80e"
     },
     "signInReconnectingBanner": {
       "text": "正在重新連線到伺服器…",

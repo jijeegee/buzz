@@ -3,7 +3,6 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/default_community.dart';
-import '../../shared/auth/token/token.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -49,11 +48,8 @@ class InviteJoinSheet extends ConsumerWidget {
     final host = state.host ?? l10n.inviteUnknownHost;
     final derivedName = state.communityName;
     final tokenOrigin = state.tokenRelayOrigin;
-    final tokenStatus = tokenOrigin == null
-        ? null
-        : ref.watch(tokenSessionProvider(tokenOrigin)).status;
-    final needsSignIn =
-        tokenStatus != null && tokenStatus != TokenSessionStatus.signedIn;
+    // A token relay this device has no account on: joining signs in first.
+    final needsSignIn = tokenOrigin != null;
     final primaryLabel = switch ((
       isClaiming,
       isStarterSetupRecovery,
@@ -141,7 +137,7 @@ class InviteJoinSheet extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.sm),
             ],
-            if (tokenStatus != null) ...[
+            if (tokenOrigin != null) ...[
               Text(
                 hasBuiltInServer
                     ? l10n.inviteGoogleMembership
@@ -152,15 +148,7 @@ class InviteJoinSheet extends ConsumerWidget {
               ),
               const SizedBox(height: Grid.xxs),
               Text(
-                switch (tokenStatus) {
-                  TokenSessionStatus.signedIn => l10n.inviteSessionSignedIn,
-                  TokenSessionStatus.signingIn => l10n.inviteSessionSigningIn,
-                  TokenSessionStatus.restoring ||
-                  TokenSessionStatus.resuming => l10n.inviteSessionChecking,
-                  TokenSessionStatus.retrying || TokenSessionStatus.stalled =>
-                    l10n.inviteSessionNeedsConnection,
-                  TokenSessionStatus.signedOut => l10n.inviteSessionSignedOut,
-                },
+                l10n.inviteSessionSignedOut,
                 style: context.textTheme.bodySmall?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),

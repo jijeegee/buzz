@@ -304,10 +304,6 @@
   "@communityRemovalTryAgain": {
     "description": "Dialog button: retry signing this device out on the server, then remove the community. Short."
   },
-  "communitySignInBeforeChanging": "Sign in to this community before changing it.",
-  "@communitySignInBeforeChanging": {
-    "description": "Error when the user tries to change a community they are signed out of."
-  },
   "authSignOutFinishing": "Finishing sign-out…",
   "@authSignOutFinishing": {
     "description": "Status text on the signed-out screen while sign-out is still being completed."
@@ -336,14 +332,6 @@
   "@googleBackupAccountLinkedElsewhere": {
     "description": "Sign-in error (Google or Apple) when the chosen Google account or Apple ID belongs to another Kuzz account."
   },
-  "googleBackupReadSignInFailed": "Couldn’t read your sign-in on this device. Try again.",
-  "@googleBackupReadSignInFailed": {
-    "description": "Sign-in error (Google or Apple) when the saved sign-in on the phone could not be read."
-  },
-  "googleBackupDifferentSignIn": "This community already has a different sign-in on this device. Nothing was changed.",
-  "@googleBackupDifferentSignIn": {
-    "description": "Sign-in error (Google or Apple) when another kind of sign-in already exists for this community on the phone."
-  },
   "googleBackupSignInChanged": "Sign-in changed or was cancelled. Try again.",
   "@googleBackupSignInChanged": {
     "description": "Sign-in error (Google or Apple) when the sign-in was interrupted."
@@ -363,10 +351,6 @@
   "googleBackupRestoreFailed": "Couldn’t restore this account. Try again later.",
   "@googleBackupRestoreFailed": {
     "description": "Sign-in error (Google or Apple) when the account could not be restored from the server."
-  },
-  "googleBackupAccountNotConnected": "This account isn’t connected to this community. Try a different account.",
-  "@googleBackupAccountNotConnected": {
-    "description": "Sign-in error (Google or Apple) when the chosen Google account or Apple ID has no account in this community."
   },
   "googleBackupAccountChanged": "The account changed. Sign in again.",
   "@googleBackupAccountChanged": {
@@ -1430,6 +1414,61 @@
   "@settingsSignOut": {
     "description": "Settings page, Sign out row and the confirm button of its dialog. Short."
   },
+  "settingsSignOutOf": "Sign out of {name}",
+  "@settingsSignOutOf": {
+    "description": "Settings page, Sign out row; {name} is the account on screen.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOfTitle": "Sign out of {name}?",
+  "@settingsSignOutOfTitle": {
+    "description": "Sign out confirmation dialog, title; {name} is the account on screen.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOtherStays": "{name} stays signed in on this phone.",
+  "@settingsSignOutOtherStays": {
+    "description": "Sign out confirmation dialog, body when one other account is signed in; {name} is that account.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOthersStay": "{name} and {count, plural, =1{1 other} other{{count} others}} stay signed in on this phone.",
+  "@settingsSignOutOthersStay": {
+    "description": "Sign out confirmation dialog, body when several other accounts are signed in; {name} is the one used last, {count} the rest.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsAccountsSection": "Accounts",
+  "@settingsAccountsSection": {
+    "description": "Settings page, title of the list of accounts signed in on this phone. Short."
+  },
+  "settingsAddAccount": "Add account",
+  "@settingsAddAccount": {
+    "description": "Settings page, last row of the account list; opens sign-in. Short."
+  },
+  "settingsSwitchAccountFailed": "Couldn’t switch accounts. Try again.",
+  "@settingsSwitchAccountFailed": {
+    "description": "Settings page, short message at the bottom of the screen when tapping another account in the account list fails."
+  },
+  "settingsAccountNoName": "Account",
+  "@settingsAccountNoName": {
+    "description": "Settings page, name of an account whose profile has not loaded yet. Short."
+  },
   "settingsSignOutSubtitle": "Your communities stay on this device",
   "@settingsSignOutSubtitle": {
     "description": "Settings page, grey text under the Sign out row."
@@ -1438,11 +1477,11 @@
   "@settingsSignOutTitle": {
     "description": "Sign out confirmation dialog, title. Short."
   },
-  "settingsSignOutBody": "You’ll be signed out on this device. Sign in to come back — your messages stay here.",
+  "settingsSignOutBody": "You’ll be signed out on this device. Your messages are removed from it and come back when you sign in again.",
   "@settingsSignOutBody": {
     "description": "Sign out confirmation dialog, body."
   },
-  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in to come back — your communities and messages stay here.",
+  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Your messages are removed from it and come back when you sign in again.",
   "@settingsSignOutBodyCommunities": {
     "description": "Sign out confirmation dialog, body when the user has several communities."
   },
@@ -2159,6 +2198,10 @@
   "@signInWelcome": {
     "description": "Sign-in page, big heading for a new user. 'Kuzz' is the app name."
   },
+  "signInAddAccountTitle": "Add an account",
+  "@signInAddAccountTitle": {
+    "description": "Sign-in page opened from Settings > Add account, big heading. Another account is already signed in on this phone. Short."
+  },
   "signInExistingAccountTitle": "Existing account sign-in",
   "@signInExistingAccountTitle": {
     "description": "Sign-in page, heading when signing in to an older account."
@@ -2224,14 +2267,6 @@
   "@signInRelayNoGoogleConfigured": {
     "description": "Sign-in page, error when the server has Google sign-in turned off."
   },
-  "signInExistingIdentityConflict": "This device has a signing identity on this relay. An existing token account cannot replace it. Use Google key recovery.",
-  "@signInExistingIdentityConflict": {
-    "description": "Sign-in page, error when choosing an older account on a server this device already uses another way."
-  },
-  "signInIdentityCheckFailed": "Could not check the saved identity. Try again.",
-  "@signInIdentityCheckFailed": {
-    "description": "Sign-in page, error when the saved accounts on this device could not be read."
-  },
   "signInFinishFailed": "Couldn’t finish signing in. Nothing was changed; try again.",
   "@signInFinishFailed": {
     "description": "Sign-in page, error when the last step of signing in failed."
@@ -2240,18 +2275,6 @@
   "@signInContinue": {
     "description": "Sign-in page, button that checks the server address. Short."
   },
-  "signInContinueSaved": "Continue with saved sign-in",
-  "@signInContinueSaved": {
-    "description": "Sign-in page, button that reuses a sign-in already stored on this device."
-  },
-  "signInUseDifferentGoogle": "Use a different Google account",
-  "@signInUseDifferentGoogle": {
-    "description": "Sign-in page, button shown after signing in with the wrong Google account."
-  },
-  "signInUseDifferentApple": "Use a different Apple ID",
-  "@signInUseDifferentApple": {
-    "description": "Sign-in page, button shown after signing in with the wrong Apple ID. Use Apple's name for 'Apple ID' in this language."
-  },
   "signInWithGoogle": "Sign in with Google",
   "@signInWithGoogle": {
     "description": "Sign-in page, main Google sign-in button. Short."
@@ -2259,6 +2282,26 @@
   "signInWithApple": "Sign in with Apple",
   "@signInWithApple": {
     "description": "Sign-in page, button below the Google one. Short."
+  },
+  "signInCreateAccountTitle": "Create your Kuzz account",
+  "@signInCreateAccountTitle": {
+    "description": "Confirm screen before a new account is created, title"
+  },
+  "signInCreateAccountBody": "There’s no Kuzz account for this Google account yet.",
+  "@signInCreateAccountBody": {
+    "description": "Confirm screen before a new account is created, body, above the chosen email"
+  },
+  "signInCreateAccountBodyApple": "There’s no Kuzz account for this Apple ID yet.",
+  "@signInCreateAccountBodyApple": {
+    "description": "Confirm screen before a new account is created, body, above the chosen email"
+  },
+  "signInCreateAccountConfirm": "Create account",
+  "@signInCreateAccountConfirm": {
+    "description": "Confirm screen before a new account is created, main button. Short."
+  },
+  "signInCreateAccountDifferent": "Use a different account",
+  "@signInCreateAccountDifferent": {
+    "description": "Confirm screen before a new account is created, second button: sign in again with another account. Short."
   },
   "signInContinueWithApple": "Continue with Apple",
   "@signInContinueWithApple": {
@@ -2295,23 +2338,6 @@
   "signInPrivacyPolicy": "Privacy Policy",
   "@signInPrivacyPolicy": {
     "description": "Sign-in page, the second underlined link text inside 'By continuing you agree to the … and …'."
-  },
-  "signInUpdatingAccount": "Updating your account",
-  "@signInUpdatingAccount": {
-    "description": "Screen-reader label of the full-screen spinner while the app switches to another signed-in account."
-  },
-  "signInSwitchAccountFailedTitle": "Couldn’t switch accounts",
-  "@signInSwitchAccountFailedTitle": {
-    "description": "Full-screen error heading when the app could not switch to the account just signed in."
-  },
-  "signInSwitchAccountFailedBody": "You signed in with a different account, but this device could not save it: {error}",
-  "@signInSwitchAccountFailedBody": {
-    "description": "Full-screen error text under 'Couldn’t switch accounts'; {error} is a technical error message.",
-    "placeholders": {
-      "error": {
-        "type": "String"
-      }
-    }
   },
   "signInReconnectingBanner": "Reconnecting to your relay…",
   "@signInReconnectingBanner": {
@@ -2525,22 +2551,6 @@
   "inviteGoogleMembershipCommunity": "This community uses your Google sign-in. Your membership belongs to your account, not this phone.",
   "@inviteGoogleMembershipCommunity": {
     "description": "Invite join sheet, explanation of Google sign-in for a community on another server."
-  },
-  "inviteSessionSignedIn": "Signed in",
-  "@inviteSessionSignedIn": {
-    "description": "Invite join sheet, sign-in status. Short."
-  },
-  "inviteSessionSigningIn": "Signing in…",
-  "@inviteSessionSigningIn": {
-    "description": "Invite join sheet, sign-in status. Short."
-  },
-  "inviteSessionChecking": "Checking sign-in…",
-  "@inviteSessionChecking": {
-    "description": "Invite join sheet, sign-in status while the saved sign-in is checked. Short."
-  },
-  "inviteSessionNeedsConnection": "Sign-in needs a connection",
-  "@inviteSessionNeedsConnection": {
-    "description": "Invite join sheet, sign-in status when offline. Short."
   },
   "inviteSessionSignedOut": "Not signed in",
   "@inviteSessionSignedOut": {

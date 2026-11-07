@@ -15,9 +15,9 @@ Future<TokenSettingsHarness> _pumpActions(WidgetTester tester) async {
     tester,
     Scaffold(
       body: ListView(
-        children: const [
-          DisconnectAgentsRow(origin: tokenOrigin),
-          AccountDeletionSection(origin: tokenOrigin),
+        children: [
+          DisconnectAgentsRow(sessionKey: tokenSession),
+          AccountDeletionSection(sessionKey: tokenSession),
         ],
       ),
     ),
@@ -136,7 +136,7 @@ void main() {
     await _deleteAccount(tester);
 
     expect(find.textContaining('relay unavailable'), findsOneWidget);
-    expect(h.tokens.data[tokenOrigin], isNotNull);
+    expect(h.tokens.data[tokenSession], isNotNull);
     expect(await h.storage.loadAll(), hasLength(1));
   });
 

@@ -156,15 +156,9 @@ void main() {
       await storage.save(community);
       container = open();
       await container.read(communityListProvider.future);
-      await container
-          .read(communityListProvider.notifier)
-          .addCommunity(
-            Community.create(
-              name: 'C',
-              relayUrl: 'https://relay.example',
-              pubkey: 'b' * 64,
-            ),
-          );
+      await storage.save(community.withCredentials(pubkey: 'b' * 64));
+      container.invalidate(communityListProvider);
+      await container.read(communityListProvider.future);
       final saved = (await storage.loadAll()).single;
       expect(saved.pushInboxToken, matches(_hex32));
       expect(saved.pushInboxToken, isNot(community.pushInboxToken));

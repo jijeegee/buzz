@@ -62,10 +62,12 @@ void main() {
       'completeLogin posts the code and verifier and parses the grant',
       () async {
         final server = FakeAuthServer();
-        final grant = await AuthApi(
-          origin: origin,
-          client: server.client,
-        ).completeLogin(loginCode: 'bzl_x', codeVerifier: 'v' * 43);
+        final grant =
+            await AuthApi(
+                  origin: origin,
+                  client: server.client,
+                ).completeLogin(loginCode: 'bzl_x', codeVerifier: 'v' * 43)
+                as LoginGrant;
         final request = server.requests.single;
         expect(request.method, 'POST');
         expect(request.url.toString(), '$origin/auth/oidc/complete');
@@ -86,7 +88,9 @@ void main() {
         ..refreshResponses.addAll([
           (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2', ttl: 600),
           (_) => FakeAuthServer.authError(401, 'refresh_reused'),
+          (_) => FakeAuthServer.authError(400, 'invalid_token'),
           (_) => FakeAuthServer.authError(400, 'invalid_request'),
+          (_) => http.Response('Unauthorized', 401),
           (_) => FakeAuthServer.authError(503, 'unavailable'),
           (_) => FakeAuthServer.authError(429, 'rate_limited'),
           (_) => jsonResponse({'access': 'only'}),
@@ -113,6 +117,9 @@ void main() {
         (AuthFailureKind.terminal, 401, 'refresh_reused'),
       );
       expect((await failure()).kind, AuthFailureKind.terminal);
+      // No session-ended code: this may be a proxy, not the relay's verdict.
+      expect((await failure()).kind, AuthFailureKind.transient);
+      expect((await failure()).kind, AuthFailureKind.transient);
       expect((await failure()).kind, AuthFailureKind.transient);
       expect((await failure()).kind, AuthFailureKind.transient);
       final malformed = await failure();
@@ -280,31 +287,32 @@ void main() {
       final store = SecureRefreshTokenStore(storage: secure);
       const a = StoredTokenSession(refreshToken: 'bzr_a', principalId: 'pa');
       const b = StoredTokenSession(refreshToken: 'bzr_b', principalId: 'pb');
-      await store.write('https://a.example', a);
-      await store.write('https://b.example', b);
-      expect(await store.read('https://a.example'), a);
-      expect(await store.read('https://b.example'), b);
+      final keyA = SessionKey('https://a.example', 'pa');
+      final keyB = SessionKey('https://b.example', 'pb');
+      await store.write(keyA, a);
+      await store.write(keyB, b);
+      expect(await store.read(keyA), a);
+      expect(await store.read(keyB), b);
       expect(
-        await secure.read(
-          key: SecureRefreshTokenStore.keyFor('https://a.example'),
-        ),
+        await secure.read(key: SecureRefreshTokenStore.keyFor(keyA)),
         isNotNull,
       );
-      await store.delete('https://a.example');
-      expect(await store.read('https://a.example'), isNull);
-      expect(await store.read('https://b.example'), b);
+      await store.delete(keyA);
+      expect(await store.read(keyA), isNull);
+      expect(await store.read(keyB), b);
     });
 
     test('a corrupt record reads as absent and is removed', () async {
       final secure = FakeSecureStorage();
+      final key = SessionKey(origin, 'p');
       await secure.write(
-        key: SecureRefreshTokenStore.keyFor(origin),
+        key: SecureRefreshTokenStore.keyFor(key),
         value: '{not json',
       );
       final store = SecureRefreshTokenStore(storage: secure);
-      expect(await store.read(origin), isNull);
+      expect(await store.read(key), isNull);
       expect(
-        await secure.read(key: SecureRefreshTokenStore.keyFor(origin)),
+        await secure.read(key: SecureRefreshTokenStore.keyFor(key)),
         isNull,
       );
     });

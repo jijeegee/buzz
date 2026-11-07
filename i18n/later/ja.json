@@ -8422,10 +8422,6 @@
       "text": "サーバーからログアウトできませんでした",
       "from": "db861bc748fc"
     },
-    "communitySignInBeforeChanging": {
-      "text": "変更する前にこのコミュニティにログインしてください。",
-      "from": "33f15d7ac622"
-    },
     "ephemeralTooltipAfterDays": {
       "text": "一時グループです。{count, plural, one{{count}日} other{{count}日}}やり取りがないと削除されます。",
       "from": "75bd06c12ade"
@@ -8701,10 +8697,6 @@
     "settingsAccountSharedNote": {
       "text": "名前、ユーザー名、写真は、このサーバー上のすべてのコミュニティで共有されます。",
       "from": "3f3a931f5e34"
-    },
-    "signInExistingIdentityConflict": {
-      "text": "この端末には、このサーバーで使用中の別のアカウントがあります。既存のトークンアカウントでは置き換えられません。Googleでの復元を使用してください。",
-      "from": "5ae11689d80e"
     },
     "signInReconnectingBanner": {
       "text": "サーバーに再接続しています…",

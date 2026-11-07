@@ -2,9 +2,13 @@ import Foundation
 
 public struct PushLeaseSnapshot: Codable, Equatable, Sendable {
   public let communities: [PushLeaseCommunity]
+  /// The only community that may show a notification. Absent in a snapshot
+  /// from an older app: every community stays eligible.
+  public let activeCommunityId: String?
 
-  public init(communities: [PushLeaseCommunity]) {
+  public init(communities: [PushLeaseCommunity], activeCommunityId: String? = nil) {
     self.communities = communities
+    self.activeCommunityId = activeCommunityId
   }
 }
 

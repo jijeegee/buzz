@@ -355,9 +355,9 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
   final owner = ref.watch(myPubkeyProvider)?.toLowerCase();
   if (owner == null || owner.isEmpty) return;
   if (ref.watch(ownDeviceEventsLoadedProvider) != owner) return;
-  final origin = ref.watch(accountOriginProvider);
-  if (origin == null) return;
-  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  final sessionKey = ref.watch(accountSessionProvider);
+  if (sessionKey == null) return;
+  final devices = ref.watch(accountDevicesProvider(sessionKey)).value;
   if (devices == null || devices.isEmpty) return;
   final assignments = nextDeviceRobotAssignments([
     for (final device in devices)
@@ -376,10 +376,10 @@ final deviceRobotAutoAssignProvider = Provider<void>((ref) {
 final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
   final owner = ref.watch(myPubkeyProvider);
   if (owner == null || owner.isEmpty) return const {};
-  final origin = ref.watch(accountOriginProvider);
-  final devices = origin == null
+  final sessionKey = ref.watch(accountSessionProvider);
+  final devices = sessionKey == null
       ? null
-      : ref.watch(accountDevicesProvider(origin)).value;
+      : ref.watch(accountDevicesProvider(sessionKey)).value;
   final hosts = agentHostDevicesFromEvents(
     ref.watch(ownDeviceEventsProvider).values,
     owner: owner,
@@ -390,7 +390,7 @@ final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
   // A device listing agents that the device list does not know yet most
   // likely just signed in: refetch the list once for it, so its agents are
   // not hidden as if it were signed out.
-  if (origin != null && live.isNotEmpty) {
+  if (sessionKey != null && live.isNotEmpty) {
     final known = {for (final id in live) id.trim().toLowerCase()};
     final unknown = hosts.values
         .where((id) => !known.contains(id) && _refetchedForDevices.add(id))
@@ -398,7 +398,7 @@ final agentHostDevicesProvider = Provider<Map<String, String>>((ref) {
     if (unknown.isNotEmpty) {
       Future.microtask(() {
         if (ref.mounted) {
-          ref.invalidate(accountDevicesProvider(origin));
+          ref.invalidate(accountDevicesProvider(sessionKey));
         } else {
           // Rebuilt meanwhile: let the next build ask again.
           _refetchedForDevices.removeAll(unknown);
@@ -448,9 +448,9 @@ final deviceRobotOverridesProvider = Provider<Map<String, DeviceRobotVariant>>((
 final agentHostDeviceNamesProvider = Provider.autoDispose<Map<String, String>>((
   ref,
 ) {
-  final origin = ref.watch(accountOriginProvider);
-  if (origin == null) return const {};
-  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  final sessionKey = ref.watch(accountSessionProvider);
+  if (sessionKey == null) return const {};
+  final devices = ref.watch(accountDevicesProvider(sessionKey)).value;
   return {
     for (final device in devices ?? const <AccountDevice>[])
       device.id.trim().toLowerCase(): device.name,
@@ -460,9 +460,9 @@ final agentHostDeviceNamesProvider = Provider.autoDispose<Map<String, String>>((
 /// The relay device id (lowercase) this app is signed in on, from the token
 /// relay's device list; `null` without a token relay or on failure.
 final currentAccountDeviceIdProvider = Provider.autoDispose<String?>((ref) {
-  final origin = ref.watch(accountOriginProvider);
-  if (origin == null) return null;
-  final devices = ref.watch(accountDevicesProvider(origin)).value;
+  final sessionKey = ref.watch(accountSessionProvider);
+  if (sessionKey == null) return null;
+  final devices = ref.watch(accountDevicesProvider(sessionKey)).value;
   for (final device in devices ?? const <AccountDevice>[]) {
     if (device.current) return device.id.trim().toLowerCase();
   }

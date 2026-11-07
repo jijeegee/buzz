@@ -149,12 +149,29 @@ Reminder? decodeReminderEvent(
 /// Fetches the user's NIP-ER reminders (kind 30300, self-encrypted). These
 /// are the same relay events Kuzz Desktop reads and writes, so reminders
 /// created on Desktop appear here and vice versa.
+///
+/// The list belongs to the signed-in account: another account's reminders
+/// are never shown while this one's load.
 class RemindersNotifier extends AsyncNotifier<List<Reminder>> {
+  String? _account;
+
+  String _accountScope() =>
+      '${ref.read(relayConfigProvider).baseUrl}\u0000'
+      '${ref.read(myPubkeyProvider)}';
+
   @override
   Future<List<Reminder>> build() {
     ref.watch(relayConfigProvider);
+    ref.watch(myPubkeyProvider);
     // Once per usable connection, not per session status step.
     ref.watch(relayConnectionEpochProvider);
+    final account = _accountScope();
+    if (_account != null && _account != account && state.hasValue) {
+      // Loading alone would keep the last account's list on screen.
+      state = const AsyncData([]);
+      state = const AsyncLoading();
+    }
+    _account = account;
     return _fetch();
   }
 
@@ -209,7 +226,10 @@ class RemindersNotifier extends AsyncNotifier<List<Reminder>> {
   }
 
   Future<void> refresh() async {
-    state = await AsyncValue.guard(_fetch);
+    final account = _account;
+    final next = await AsyncValue.guard(_fetch);
+    if (!ref.mounted || account != _account) return;
+    state = next;
   }
 }
 

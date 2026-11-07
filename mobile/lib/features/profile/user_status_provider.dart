@@ -13,9 +13,16 @@ import 'user_status_cache_provider.dart';
 /// needed — user status events are parameterised replaceable, not ephemeral.
 class UserStatusNotifier extends AsyncNotifier<UserStatus?> {
   Timer? _expirationTimer;
+  String? _account;
 
   @override
   Future<UserStatus?> build() async {
+    final account = ref.watch(myPubkeyProvider);
+    if (_account != null && _account != account && state.hasValue) {
+      state = const AsyncData(null);
+      state = const AsyncLoading();
+    }
+    _account = account;
     ref.watch(relayClientProvider);
     ref.watch(relaySessionProvider);
     ref.onDispose(() {

@@ -126,6 +126,8 @@ class KuzzPushAttemptGate {
 /// What a lease publication depends on. Lease bookkeeping (reserved and
 /// accepted generations) is left out, so writing it never looks like a new
 /// attempt. [userRetry] changes when the person turns push off or on.
+/// [leaseEpoch] moves when a revocation jumps the generation, so the account
+/// publishes again even if the switch away and back was never built here.
 @visibleForTesting
 String kuzzPushPublicationAttemptKey({
   required String communityId,
@@ -134,6 +136,7 @@ String kuzzPushPublicationAttemptKey({
   required KuzzPushLeaseDescriptor descriptor,
   required List<KuzzPushSubscription> subscriptions,
   int userRetry = 0,
+  int leaseEpoch = 0,
 }) => [
   communityId,
   relayBaseUrl,
@@ -149,6 +152,7 @@ String kuzzPushPublicationAttemptKey({
   descriptor.maxStringLength,
   kuzzPushSubscriptionsFingerprint(subscriptions),
   userRetry,
+  leaseEpoch,
 ].join('|');
 
 @visibleForTesting
@@ -459,6 +463,8 @@ class KuzzPushBootstrap extends HookConsumerWidget {
           descriptor: activeDescriptor,
           subscriptions: state.desired,
           userRetry: userRetry,
+          leaseEpoch:
+              (state.generationCursor ?? 0) ~/ kuzzPushLeaseRevocationBlock,
         );
         if (!publicationAttempt.tryBegin(attempt)) return null;
         final relay = SignedEventRelay(

@@ -92,14 +92,13 @@ void main() {
 
     test('a clear drops writes that were requested before it', () async {
       final write = cache.store(_scope, _channelId, [_event(id: 'a')]);
-      final clear = cache.clearAll();
+      final clear = cache.clearAccount(_scope);
       await Future.wait([write, clear]);
 
       expect(await cache.load(_scope, _channelId), isNull);
-      expect(root.existsSync(), isFalse);
     });
 
-    test('clears one relay or everything', () async {
+    test('clears one account and leaves every other one', () async {
       const otherRelay = ChannelHeadScope(
         relayUrl: 'https://other.example',
         pubkey: 'alice',
@@ -108,14 +107,22 @@ void main() {
       await cache.store(_otherAccount, _channelId, [_event(id: 'b')]);
       await cache.store(otherRelay, _channelId, [_event(id: 'c')]);
 
-      await cache.clearRelay(_scope.relayUrl);
-      expect(await cache.load(_scope, _channelId), isNull);
-      expect(await cache.load(_otherAccount, _channelId), isNull);
-      expect(await cache.load(otherRelay, _channelId), isNotNull);
+      await cache.clearAccount(_scope);
 
-      await cache.clearAll();
-      expect(await cache.load(otherRelay, _channelId), isNull);
+      expect(await cache.load(_scope, _channelId), isNull);
+      expect(await cache.load(_otherAccount, _channelId), isNotNull);
+      expect(await cache.load(otherRelay, _channelId), isNotNull);
     });
+
+    test(
+      "clearing one account keeps another account's pending write",
+      () async {
+        final write = cache.store(_otherAccount, _channelId, [_event(id: 'b')]);
+        await Future.wait([write, cache.clearAccount(_scope)]);
+
+        expect(await cache.load(_otherAccount, _channelId), isNotNull);
+      },
+    );
   });
 
   group('ChannelMessagesNotifier with a cached head', () {

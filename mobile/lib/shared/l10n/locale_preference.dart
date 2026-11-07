@@ -63,14 +63,14 @@ class _AccountLocaleSyncState extends ConsumerState<AccountLocaleSync> {
 
   @override
   Widget build(BuildContext context) {
-    final origin = ref.watch(accountOriginProvider);
+    final sessionKey = ref.watch(accountSessionProvider);
     final locale = Localizations.maybeLocaleOf(context);
-    if (origin != null && locale != null) {
+    if (sessionKey != null && locale != null) {
       final tag = locale.toLanguageTag();
-      final key = '$origin $tag';
+      final key = '$sessionKey $tag';
       if (_synced != key) {
         _synced = key;
-        final api = ref.read(accountApiProvider(origin));
+        final api = ref.read(accountApiProvider(sessionKey));
         unawaited(_save(api, tag));
       }
     }

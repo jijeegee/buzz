@@ -6,6 +6,10 @@ import 'push_subscription.dart';
 /// extension writes nothing and the app's drain finds no folders.
 const pushInboxEnabled = String.fromEnvironment('KUZZ_PUSH_INBOX') != 'off';
 
+/// Snapshot field naming the active community, the only one the extension may
+/// show. Without it (an older snapshot) every community stays eligible.
+const kuzzPushActiveCommunityKey = 'activeCommunityId';
+
 /// The minimum community state shared with the iOS notification extension.
 class KuzzPushCommunitySnapshot {
   final String id;

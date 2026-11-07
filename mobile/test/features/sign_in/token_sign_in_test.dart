@@ -13,6 +13,7 @@ import '../../shared/community/community_storage_test.dart';
 
 const _origin = 'https://relay.test';
 final _principal = 'p' * 64;
+final _session = SessionKey(_origin, _principal);
 
 class _RecordingAuthNotifier extends AuthNotifier {
   final List<({String relayUrl, String principalId})> tokenSignIns = [];
@@ -26,9 +27,13 @@ class _RecordingAuthNotifier extends AuthNotifier {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     tokenSignIns.add((relayUrl: relayUrl, principalId: principalId));
+    if (attempt == null) return;
+    await ref
+        .read(tokenSessionControllerProvider(SessionKey(relayUrl, principalId)))
+        .adopt(await attempt.handoff());
   }
 }
 
@@ -53,6 +58,9 @@ class _Harness {
       sessionClockProvider.overrideWithValue(clock.call),
       sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
       authDeviceNameProvider.overrideWithValue('Test phone'),
+      installIdStoreProvider.overrideWithValue(
+        InstallIdStore(storage: FakeSecureStorage()),
+      ),
       authProvider.overrideWith(() => auth),
       communityStorageProvider.overrideWithValue(
         CommunityStorage(secure: FakeSecureStorage()),
@@ -144,10 +152,7 @@ void main() {
       await tester.tap(find.byKey(const Key('token-sign-in-check')));
       await frames(tester);
       expect(h.server.requests.first.url.toString(), '$_origin/');
-      expect(
-        h.container.read(tokenSessionProvider(_origin)).status,
-        TokenSessionStatus.signedOut,
-      );
+      expect(h.store.data, isEmpty);
 
       await tester.tap(find.byKey(const Key('token-sign-in-google')));
       await frames(tester);
@@ -158,15 +163,15 @@ void main() {
       expect(opened.queryParameters['redirect_uri'], 'app.kuzz://auth/cb');
       expect(h.launcher.schemes.single, 'app.kuzz');
       expect(
-        h.store.data[_origin],
+        h.store.data[_session],
         StoredTokenSession(refreshToken: 'bzr_login', principalId: _principal),
       );
-      final session = h.container.read(tokenSessionProvider(_origin));
+      final session = h.container.read(tokenSessionProvider(_session));
       expect(session.status, TokenSessionStatus.signedIn);
       expect(session.principalId, _principal);
       expect(
         h.container
-            .read(tokenSessionControllerProvider(_origin))
+            .read(tokenSessionControllerProvider(_session))
             .currentAccessToken,
         'bzs_login',
       );
@@ -185,40 +190,16 @@ void main() {
     expect(find.text('Sign in with Apple'), findsOneWidget);
   });
 
-  testWidgets('an Apple account signs back in with Apple only', (tester) async {
-    final h = _Harness(builtInOrigin: _origin);
-    await h.pump(
-      tester,
-      const TokenSignInPage(
-        lockedOrigin: _origin,
-        resumeSignedOut: true,
-        signInProvider: 'apple',
-      ),
-    );
-    expect(find.byKey(const Key('token-sign-in-google')), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('token-sign-in-apple')),
-        matching: find.text('Continue with Apple'),
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('a Google account signs back in with Google only', (
+  testWidgets('signing back in is not locked to the old provider', (
     tester,
   ) async {
     final h = _Harness(builtInOrigin: _origin);
     await h.pump(
       tester,
-      const TokenSignInPage(
-        lockedOrigin: _origin,
-        resumeSignedOut: true,
-        signInProvider: 'google',
-      ),
+      const TokenSignInPage(lockedOrigin: _origin, resumeSignedOut: true),
     );
-    expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.byKey(const Key('token-sign-in-apple')), findsNothing);
+    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    expect(find.byKey(const Key('token-sign-in-apple')), findsOneWidget);
   });
 
   testWidgets('a legacy relay offers no Google sign-in', (tester) async {
@@ -265,10 +246,6 @@ void main() {
     await tester.tap(find.byKey(const Key('token-sign-in-google')));
     await frames(tester);
 
-    expect(
-      h.container.read(tokenSessionProvider(_origin)).status,
-      TokenSessionStatus.signedOut,
-    );
     expect(h.store.data, isEmpty);
     expect(h.auth.tokenSignIns, isEmpty);
     final button = tester.widget<FilledButton>(
@@ -284,35 +261,29 @@ void main() {
       tester,
     ) async {
       final h = _Harness();
-      h.store.data[_origin] = StoredTokenSession(
+      h.store.data[_session] = StoredTokenSession(
         refreshToken: 'bzr_old',
         principalId: _principal,
       );
       h.server.refreshResponses.add(
         (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),
       );
-      await h.pump(
-        tester,
-        const TokenSessionGate(origin: _origin, child: home),
-      );
+      await h.pump(tester, TokenSessionGate(sessionKey: _session, child: home));
 
       expect(find.byKey(const Key('gated-home')), findsOneWidget);
-      expect(h.store.data[_origin]?.refreshToken, 'bzr_new');
+      expect(h.store.data[_session]?.refreshToken, 'bzr_new');
     });
 
     testWidgets('a revoked session lands on the sign-in page', (tester) async {
       final h = _Harness();
-      h.store.data[_origin] = StoredTokenSession(
+      h.store.data[_session] = StoredTokenSession(
         refreshToken: 'bzr_old',
         principalId: _principal,
       );
       h.server.refreshResponses.add(
         (_) => FakeAuthServer.authError(401, 'token_revoked'),
       );
-      await h.pump(
-        tester,
-        const TokenSessionGate(origin: _origin, child: home),
-      );
+      await h.pump(tester, TokenSessionGate(sessionKey: _session, child: home));
 
       expect(find.byKey(const Key('gated-home')), findsNothing);
       expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
@@ -323,17 +294,14 @@ void main() {
       tester,
     ) async {
       final h = _Harness();
-      h.store.data[_origin] = StoredTokenSession(
+      h.store.data[_session] = StoredTokenSession(
         refreshToken: 'bzr_old',
         principalId: _principal,
       );
       h.server.refreshResponses
         ..add((_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'))
         ..add((_) => FakeAuthServer.authError(401, 'token_revoked'));
-      await h.pump(
-        tester,
-        const TokenSessionGate(origin: _origin, child: home),
-      );
+      await h.pump(tester, TokenSessionGate(sessionKey: _session, child: home));
       expect(find.byKey(const Key('gated-home')), findsOneWidget);
 
       // The proactive refresh fires 5 minutes before the hour-long token
@@ -351,17 +319,14 @@ void main() {
       tester,
     ) async {
       final h = _Harness();
-      h.store.data[_origin] = StoredTokenSession(
+      h.store.data[_session] = StoredTokenSession(
         refreshToken: 'bzr_old',
         principalId: _principal,
       );
       h.server.refreshResponses.add(
         (_) => jsonResponse({'error': 'unavailable'}, status: 503),
       );
-      await h.pump(
-        tester,
-        const TokenSessionGate(origin: _origin, child: home),
-      );
+      await h.pump(tester, TokenSessionGate(sessionKey: _session, child: home));
 
       // The saved principal keeps the app usable (cached content, settings,
       // switching or removing the community) under a non-blocking banner.
@@ -372,7 +337,7 @@ void main() {
         find.byKey(const Key('token-session-sign-in-again')),
         findsOneWidget,
       );
-      expect(h.store.data[_origin]?.refreshToken, 'bzr_old');
+      expect(h.store.data[_session]?.refreshToken, 'bzr_old');
 
       h.server.refreshResponses.add(
         (_) => FakeAuthServer.rotated('bzs_new', 'bzr_new'),

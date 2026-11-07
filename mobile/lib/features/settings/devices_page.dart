@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/auth/token/session_key.dart';
 import '../../shared/devices/agent_host_devices.dart';
 import '../../shared/devices/device_robot.dart';
 import '../../shared/devices/device_robot_icon.dart';
@@ -30,10 +31,10 @@ const _narrowLimit = Duration(seconds: 10);
 /// external agents under the computer they run on, signing out every other
 /// device, and disconnecting every agent.
 class DevicesPage extends HookConsumerWidget {
-  const DevicesPage({super.key, required this.origin, this.agents = true});
+  const DevicesPage({super.key, required this.sessionKey, this.agents = true});
 
-  /// Canonical origin of the token relay.
-  final String origin;
+  /// The account of the token relay.
+  final SessionKey sessionKey;
 
   /// Offer disconnecting every agent. Off for a Google key account, whose
   /// agents the relay cannot cut off yet (desktop leaves it out too).
@@ -41,7 +42,7 @@ class DevicesPage extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final devices = ref.watch(accountDevicesProvider(origin));
+    final devices = ref.watch(accountDevicesProvider(sessionKey));
     final busy = useState(false);
     final error = useState<String?>(null);
 
@@ -55,7 +56,7 @@ class DevicesPage extends HookConsumerWidget {
       error.value = null;
       busy.value = true;
       try {
-        await action(ref.read(accountApiProvider(origin)));
+        await action(ref.read(accountApiProvider(sessionKey)));
       } catch (failure) {
         if (context.mounted) error.value = '$failure';
         return false;
@@ -63,7 +64,7 @@ class DevicesPage extends HookConsumerWidget {
         if (context.mounted) busy.value = false;
       }
       if (!context.mounted) return true;
-      if (refresh) ref.invalidate(accountDevicesProvider(origin));
+      if (refresh) ref.invalidate(accountDevicesProvider(sessionKey));
       if (done != null) {
         ScaffoldMessenger.of(
           context,
@@ -116,7 +117,7 @@ class DevicesPage extends HookConsumerWidget {
         await act(api);
       });
       if (!done && context.mounted) {
-        ref.invalidate(accountDevicesProvider(origin));
+        ref.invalidate(accountDevicesProvider(sessionKey));
       }
     }
 
@@ -275,7 +276,7 @@ class DevicesPage extends HookConsumerWidget {
                     FilledButton(
                       key: const Key('devices-load-retry'),
                       onPressed: () =>
-                          ref.invalidate(accountDevicesProvider(origin)),
+                          ref.invalidate(accountDevicesProvider(sessionKey)),
                       child: Text(context.l10n.commonTryAgain),
                     ),
                   ],
@@ -299,7 +300,7 @@ class DevicesPage extends HookConsumerWidget {
                   title: context.l10n.settingsDevicesSignOutOthers,
                   onTap: busy.value ? null : () => unawaited(signOutOthers()),
                 ),
-                if (agents) DisconnectAgentsRow(origin: origin),
+                if (agents) DisconnectAgentsRow(sessionKey: sessionKey),
               ],
             ),
           ],

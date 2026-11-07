@@ -214,7 +214,7 @@ void main() {
     },
   );
 
-  test('N10: the sender profile is not kept for another community', () async {
+  test('N10: without an active community the profile is not kept', () async {
     final message = signed(alice, at: nowSeconds - 5);
     final profile = signed(
       alice,
@@ -225,12 +225,55 @@ void main() {
     final mock = relay(
       (filters) => isProfileQuery(filters) ? [profile] : [message],
     );
-    final notice = await wake(mock.client, activeId: 'other').run();
+    final notice = await wake(mock.client, activeId: null).run();
     expect(notice!.title, 'Alice');
     expect(
       [for (final e in inboxFiles().single['events'] as List) (e as Map)['id']],
       [message['id']],
     );
+  });
+
+  group('only the active account', () {
+    /// c1 on relay.example (empty) and c2 on other.example (a message).
+    ({http.Client client, List<String> hosts}) twoRelays() {
+      final message = signed(alice, at: nowSeconds - 5);
+      final hosts = <String>[];
+      final client = MockClient((request) async {
+        hosts.add(request.url.host);
+        final rows = request.url.host == 'other.example' ? [message] : [];
+        return http.Response(jsonEncode(rows), 200);
+      });
+      return (client: client, hosts: hosts);
+    }
+
+    List<Community> both() => [
+      community(),
+      community(
+        id: 'c2',
+        name: 'Other',
+        inboxToken: 'ef' * 16,
+      ).copyWith(relayUrl: 'wss://other.example'),
+    ];
+
+    test('a wake for an inactive account shows nothing', () async {
+      final mock = twoRelays();
+      final notice = await wake(mock.client, communities: both).run();
+      expect(notice, isNull);
+      expect(mock.hosts, isNotEmpty);
+      expect(mock.hosts, everyElement('relay.example'));
+      expect(Directory('${root.path}/${'ef' * 16}').existsSync(), isFalse);
+    });
+
+    test('without an active id every account is fetched as before', () async {
+      final mock = twoRelays();
+      final notice = await wake(
+        mock.client,
+        communities: both,
+        activeId: null,
+      ).run();
+      expect(notice!.communityId, 'c2');
+      expect(mock.hosts, containsAll(['relay.example', 'other.example']));
+    });
   });
 
   test('without a profile the community name is the title', () async {

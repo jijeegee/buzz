@@ -41,6 +41,11 @@ class OidcLoginException implements Exception {
 /// With [accountPicker], a Google login first offers the Google accounts
 /// already on the phone; the browser opens only when the phone cannot show
 /// them or the relay does not offer app sign-in.
+///
+/// With [confirmSignup], an account that does not exist yet is created only
+/// once the person answers [SignupChoice.create]; nothing exists before that.
+/// [SignupChoice.different] signs in again, [SignupChoice.close] throws
+/// [WebAuthCancelledException].
 Future<LoginGrant> runOidcLogin({
   required AuthApi api,
   required WebAuthLauncher launcher,
@@ -51,8 +56,9 @@ Future<LoginGrant> runOidcLogin({
   String identityMode = 'token',
   String callbackScheme = kuzzMobileCallbackScheme,
   Random? random,
+  SignupConfirm? confirmSignup,
 }) async {
-  Future<LoginGrant> attempt() => _runOidcLoginOnce(
+  Future<LoginOutcome> attempt() => _runOidcLoginOnce(
     api: api,
     launcher: launcher,
     accountPicker: accountPicker,
@@ -62,17 +68,44 @@ Future<LoginGrant> runOidcLogin({
     identityMode: identityMode,
     callbackScheme: callbackScheme,
     random: random,
+    confirmSignup: confirmSignup != null,
   );
-  try {
-    return await attempt();
-  } on AuthApiException catch (error) {
-    if (error.code != 'device_proof_stale') rethrow;
-    // The refusal carried the relay time; sign in again with it.
-    return attempt();
+  var clockCorrected = false;
+  // Already answered "create" for this email: a stale proof must not ask
+  // twice. Without an email nothing shows it is the same account, so it asks.
+  String? confirmedEmail;
+  while (true) {
+    try {
+      switch (await attempt()) {
+        case final LoginGrant grant:
+          return grant;
+        case final SignupRequired signup:
+          final choice =
+              confirmedEmail != null && signup.email == confirmedEmail
+              ? SignupChoice.create
+              : await _askSignup(confirmSignup, signup);
+          switch (choice) {
+            case SignupChoice.create:
+              confirmedEmail = signup.email;
+              return await api.completeSignup(signup);
+            case SignupChoice.different:
+              confirmedEmail = null;
+            case SignupChoice.close:
+              throw const WebAuthCancelledException();
+          }
+      }
+    } on AuthApiException catch (error) {
+      if (error.code != 'device_proof_stale' || clockCorrected) rethrow;
+      // The refusal carried the relay time; sign in again with it.
+      clockCorrected = true;
+    }
   }
 }
 
-Future<LoginGrant> _runOidcLoginOnce({
+Future<SignupChoice> _askSignup(SignupConfirm? ask, SignupRequired signup) =>
+    ask == null ? Future.value(SignupChoice.close) : ask(signup);
+
+Future<LoginOutcome> _runOidcLoginOnce({
   required AuthApi api,
   required WebAuthLauncher launcher,
   required GoogleAccountPicker? accountPicker,
@@ -82,6 +115,7 @@ Future<LoginGrant> _runOidcLoginOnce({
   required String identityMode,
   required String callbackScheme,
   required Random? random,
+  required bool confirmSignup,
 }) async {
   // The device key `start` binds must be the one proven at `complete`.
   final device = await api.deviceKeyInfo();
@@ -100,6 +134,7 @@ Future<LoginGrant> _runOidcLoginOnce({
       device: device,
       clock: clock,
       random: random,
+      confirmSignup: confirmSignup,
     );
     if (grant != null) return grant;
   }
@@ -116,6 +151,7 @@ Future<LoginGrant> _runOidcLoginOnce({
       identityMode: identityMode,
       devicePubkey: device?.publicKeyHex,
       kuzzClient: kuzzClient,
+      confirmSignup: confirmSignup,
     ),
     callbackUrlScheme: callbackScheme,
   );
@@ -173,7 +209,7 @@ Future<LoginGrant> _runOidcLoginOnce({
 
 /// Sign in with the phone's own account picker. `null`: the picker or the
 /// relay's app sign-in is not available, so the caller opens the browser.
-Future<LoginGrant?> _runAppSignIn({
+Future<LoginOutcome?> _runAppSignIn({
   required AuthApi api,
   required GoogleAccountPicker picker,
   required String provider,
@@ -184,6 +220,7 @@ Future<LoginGrant?> _runAppSignIn({
   required DeviceKeyInfo? device,
   required Future<void> clock,
   required Random? random,
+  required bool confirmSignup,
 }) async {
   final pkce = PkcePair.generate(random);
   final AppSignInStart start;
@@ -197,6 +234,7 @@ Future<LoginGrant?> _runAppSignIn({
       installId: installId,
       identityMode: identityMode,
       devicePubkey: device?.publicKeyHex,
+      confirmSignup: confirmSignup,
     );
   } on AuthApiException catch (error) {
     // A relay without app sign-in refuses `response=json`.

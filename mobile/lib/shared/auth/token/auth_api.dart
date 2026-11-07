@@ -5,11 +5,23 @@ import 'package:http/http.dart' as http;
 import '../../device_key/device_key.dart';
 import '../../device_key/device_proof.dart';
 
+/// Refused `/auth/refresh` codes that mean the account's session is over.
+/// Anything else may be a proxy or a bad request and must not end an account.
+const refreshEndedCodes = {
+  'device_key_required',
+  'invalid_token',
+  'principal_disabled',
+  'refresh_reused',
+  'token_expired',
+  'token_revoked',
+};
+
 /// Whether retrying the same request can succeed.
 enum AuthFailureKind {
   /// The relay rejected the credential (400/401/403/404; for a refresh only
-  /// 400/401, see [AuthApi.refresh]). Retrying with the same input will fail
-  /// again; for a refresh this means the session is gone.
+  /// 400/401 naming a [refreshEndedCodes] code, see [AuthApi.refresh]).
+  /// Retrying with the same input will fail again; for a refresh this means
+  /// the session is gone.
   terminal,
 
   /// Network failure, timeout, 429, 5xx or a malformed success body. The
@@ -40,8 +52,51 @@ class AuthApiException implements Exception {
       'AuthApiException(${kind.name}, $statusCode, $code): $message';
 }
 
-/// Tokens issued by `POST /auth/oidc/complete`.
-class LoginGrant {
+/// What `POST /auth/oidc/complete` answers.
+sealed class LoginOutcome {
+  const LoginOutcome();
+}
+
+/// The sign-in has no account yet and the relay was asked to confirm first:
+/// nothing exists on the relay or here until [AuthApi.completeSignup].
+class SignupRequired extends LoginOutcome {
+  const SignupRequired({
+    required this.signupToken,
+    required this.codeVerifier,
+    this.device,
+    this.email,
+  });
+
+  /// One-time ticket for [AuthApi.completeSignup].
+  final String signupToken;
+
+  /// The login's PKCE verifier, which the ticket is bound to.
+  final String codeVerifier;
+
+  /// The key `start` was given, proven again when the account is created.
+  final DeviceKeyInfo? device;
+
+  /// The address of the chosen account, when the provider gave one.
+  final String? email;
+}
+
+/// The answer to a [SignupRequired].
+enum SignupChoice {
+  /// Create the account.
+  create,
+
+  /// Sign in again and choose another account.
+  different,
+
+  /// Stop here. Nothing was created.
+  close,
+}
+
+/// Asks the person whether to create the account.
+typedef SignupConfirm = Future<SignupChoice> Function(SignupRequired prompt);
+
+/// Tokens issued by `POST /auth/oidc/complete` and `POST /auth/oidc/signup`.
+class LoginGrant extends LoginOutcome {
   const LoginGrant({
     required this.principalId,
     required this.deviceId,
@@ -132,6 +187,7 @@ class AuthApi {
     String identityMode = 'token',
     String? devicePubkey,
     String? kuzzClient,
+    bool confirmSignup = false,
   }) {
     final name = deviceName?.trim();
     return Uri.parse(
@@ -148,6 +204,9 @@ class AuthApi {
         'device_pubkey': ?devicePubkey,
         // The browser cannot send X-Kuzz-Client; the relay reads it here.
         'kuzz_client': ?kuzzClient,
+        // An unknown account comes back as `needs_signup` instead of being
+        // created (see [SignupRequired]).
+        if (confirmSignup) 'signup': 'confirm',
       },
     );
   }
@@ -163,6 +222,7 @@ class AuthApi {
     String? installId,
     String identityMode = 'token',
     String? devicePubkey,
+    bool confirmSignup = false,
   }) async {
     final uri = startUri(
       provider: provider,
@@ -173,6 +233,7 @@ class AuthApi {
       installId: installId,
       identityMode: identityMode,
       devicePubkey: devicePubkey,
+      confirmSignup: confirmSignup,
     );
     final json = await _get(
       uri.replace(
@@ -208,7 +269,10 @@ class AuthApi {
   /// `device_pubkey`, `device_key_kind` and `device_proof`: a `bind` proof
   /// over `login:<sha256(code)>`. If signing fails the key fields are left
   /// out, and the relay records the device without a key.
-  Future<LoginGrant> completeLogin({
+  ///
+  /// A login started with `confirmSignup` for an unknown account answers
+  /// [SignupRequired].
+  Future<LoginOutcome> completeLogin({
     required String loginCode,
     required String codeVerifier,
     DeviceKeyInfo? device,
@@ -231,40 +295,77 @@ class AuthApi {
         'device_proof': proof,
       },
     });
-    return LoginGrant(
-      principalId: _string(json, 'principal_id'),
-      deviceId: _string(json, 'device_id'),
-      accessToken: _string(json, 'access'),
-      refreshToken: _string(json, 'refresh'),
-      expiresIn: _expiresIn(json),
-      identityMode: json['identity_mode'] is String
-          ? json['identity_mode'] as String
-          : 'token',
+    if (json['needs_signup'] == true) {
+      final email = json['email'];
+      return SignupRequired(
+        signupToken: _string(json, 'signup_token'),
+        codeVerifier: codeVerifier,
+        device: device,
+        email: email is String && email.isNotEmpty ? email : null,
+      );
+    }
+    return _grant(json);
+  }
+
+  /// Create the account [signup] asked about and sign in to it. The ticket
+  /// is single-use, like a login code, so a failure is never retried with it.
+  Future<LoginGrant> completeSignup(SignupRequired signup) async {
+    final key = deviceKey;
+    final device = signup.device;
+    final proof = device == null || key == null
+        ? null
+        : await signHeaderProof(
+            device: key,
+            origin: origin,
+            purpose: proofPurposeBind,
+            binding: signupProofBinding(signup.signupToken),
+          );
+    return _grant(
+      await _post('/auth/oidc/signup', {
+        'signup_token': signup.signupToken,
+        'code_verifier': signup.codeVerifier,
+        if (device != null && proof != null) ...{
+          'device_pubkey': device.publicKeyHex,
+          'device_key_kind': device.kind,
+          'device_proof': proof,
+        },
+      }),
     );
   }
+
+  LoginGrant _grant(Map<String, Object?> json) => LoginGrant(
+    principalId: _string(json, 'principal_id'),
+    deviceId: _string(json, 'device_id'),
+    accessToken: _string(json, 'access'),
+    refreshToken: _string(json, 'refresh'),
+    expiresIn: _expiresIn(json),
+    identityMode: json['identity_mode'] is String
+        ? json['identity_mode'] as String
+        : 'token',
+  );
 
   /// Rotate [refreshToken]. The relay consumes it; persist the returned
   /// refresh before using the returned access token.
   ///
-  /// Only a 400/401 here is a credential verdict, except a 401 refusing the
-  /// device proof (`device_proof_required`/`device_proof_stale`), which is
-  /// transient like a failure to sign the proof at all. `device_key_required`
-  /// (a session that signed in before device keys) stays terminal: no proof
-  /// can fix it, only a new sign-in. The refresh handler never
-  /// answers 403/404; those come from the relay's unrouted fallback when
-  /// `AUTH_TOKEN_ENABLED` is off (e.g. a rollback or misrouted proxy), so they
-  /// are transient: the session stalls and is kept rather than wiped.
+  /// Only a 400/401 naming a [refreshEndedCodes] code is a credential verdict.
+  /// Everything else is transient: a 401 refusing the device proof
+  /// (`device_proof_required`/`device_proof_stale`), like a failure to sign
+  /// the proof at all, and any answer without a known code, which may come
+  /// from a proxy. `device_key_required` (a session that signed in before
+  /// device keys) is terminal: no proof can fix it, only a new sign-in. The
+  /// refresh handler never answers 403/404; those come from the relay's
+  /// unrouted fallback when `AUTH_TOKEN_ENABLED` is off (e.g. a rollback or
+  /// misrouted proxy). The session stalls and is kept rather than wiped.
   Future<RotatedTokens> refresh(String refreshToken) async {
     final Map<String, Object?> json;
     try {
       json = await _post('/auth/refresh', {'refresh': refreshToken});
     } on AuthApiException catch (error) {
       final status = error.statusCode;
-      // A refused device proof says nothing about the session itself (the
-      // phone's key or clock was off): keep the session and retry later.
-      final proofRefused =
-          status == 401 && _transientProofCodes.contains(error.code);
-      if (status != 403 && status != 404 && !proofRefused) rethrow;
+      final ended =
+          (status == 400 || status == 401) &&
+          refreshEndedCodes.contains(error.code);
+      if (ended || !error.isTerminal) rethrow;
       throw AuthApiException(
         AuthFailureKind.transient,
         error.message,
@@ -375,12 +476,6 @@ class AuthApi {
   /// Statuses meaning "this credential/input is rejected": retrying the
   /// same request cannot succeed. 408/429/5xx stay transient.
   static const _terminalStatuses = {400, 401, 403, 404};
-
-  /// Device-proof refusals that a refresh treats as transient.
-  static const _transientProofCodes = {
-    'device_proof_required',
-    'device_proof_stale',
-  };
 
   static Map<String, Object?>? _decodeObject(String body) {
     try {

@@ -6,12 +6,14 @@ import 'package:hooks_riverpod/misc.dart' show Override;
 import 'package:kuzz/features/people/people_favorites.dart';
 import 'package:kuzz/features/pulse/pulse_provider.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/profile/user_cache_provider.dart';
 import 'package:kuzz/shared/profile/user_profile.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:nostr/nostr.dart' as nostr;
 
 const peopleOrigin = 'https://relay.test';
+final peopleSession = SessionKey(peopleOrigin, 'me');
 final ann = 'a' * 64;
 final bob = 'b' * 64;
 final cat = 'c' * 64;
@@ -267,7 +269,7 @@ List<Override> peopleOverrides({
   ),
   relaySessionProvider.overrideWith(() => session),
   appLifecycleProvider.overrideWith(ManualLifecycle.new),
-  accountOriginProvider.overrideWithValue(api == null ? null : peopleOrigin),
+  accountSessionProvider.overrideWithValue(api == null ? null : peopleSession),
   if (api != null) accountApiProvider.overrideWith((ref, _) => api),
   peopleFavoritesProvider.overrideWith(() => MemoryFavorites(favorites)),
   agentPubkeysProvider.overrideWith((ref) async => agents),

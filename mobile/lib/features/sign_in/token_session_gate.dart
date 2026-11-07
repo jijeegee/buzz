@@ -12,7 +12,7 @@ import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
 import 'token_sign_in_page.dart';
 
-/// Shows [child] only while the token community at [origin] has a usable
+/// Shows [child] only while the token account [sessionKey] has a usable
 /// session; otherwise the restore splash, the sign-in page, or a recovery
 /// view that always offers "Retry", "Sign in again", switching to another
 /// community and removing this one.
@@ -23,53 +23,21 @@ import 'token_sign_in_page.dart';
 /// principal) keeps [child] usable under a non-blocking banner, so cached
 /// content and the app's own community switcher stay reachable
 /// (AGENTS.md rule 6).
-///
-/// A re-sign-in may be a different account. The community records the
-/// identity it shows, so [child] waits until that record matches the
-/// session's principal; a failed write is shown with a retry instead of
-/// letting the app run under the old identity (AGENTS.md rule 1).
-class TokenSessionGate extends HookConsumerWidget {
+class TokenSessionGate extends ConsumerWidget {
   const TokenSessionGate({
     super.key,
-    required this.origin,
+    required this.sessionKey,
     required this.child,
   });
 
-  final String origin;
+  final SessionKey sessionKey;
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(tokenSessionProvider(origin));
+    final session = ref.watch(tokenSessionProvider(sessionKey));
     final active = ref.watch(activeCommunityProvider).value;
     final principal = session.principalId;
-    final staleIdentity =
-        session.status == TokenSessionStatus.signedIn &&
-        principal != null &&
-        active != null &&
-        active.tokenAuth &&
-        active.pubkey != principal;
-    final attempt = useState(0);
-    final failure = useState<Object?>(null);
-    useEffect(() {
-      if (!staleIdentity) return null;
-      var current = true;
-      ref
-          .read(authProvider.notifier)
-          .authenticateWithTokenSession(
-            relayUrl: origin,
-            principalId: principal,
-          )
-          .then<void>(
-            (_) {},
-            onError: (Object error) {
-              debugPrint('Could not record the new token identity: $error');
-              if (current && context.mounted) failure.value = error;
-            },
-          );
-      return () => current = false;
-    }, [staleIdentity, principal, active?.pubkey, attempt.value]);
-
     final reconnecting =
         session.status == TokenSessionStatus.retrying ||
         session.status == TokenSessionStatus.stalled;
@@ -85,16 +53,6 @@ class TokenSessionGate extends HookConsumerWidget {
         active.pubkey == principal;
 
     return switch (session.status) {
-      TokenSessionStatus.signedIn when staleIdentity =>
-        failure.value == null
-            ? _GateSplash(semanticLabel: context.l10n.signInUpdatingAccount)
-            : _IdentityFailureView(
-                error: failure.value!,
-                onRetry: () {
-                  failure.value = null;
-                  attempt.value += 1;
-                },
-              ),
       TokenSessionStatus.signedIn => _SessionShell(child: child),
       // The stored account draws from device storage while its token
       // rotates; no banner (AGENTS.md rule 6).
@@ -104,16 +62,77 @@ class TokenSessionGate extends HookConsumerWidget {
       TokenSessionStatus.restoring || TokenSessionStatus.resuming =>
         _GateSplash(semanticLabel: context.l10n.signInSigningIn),
       TokenSessionStatus.signedOut ||
-      TokenSessionStatus.signingIn => TokenSignInPage(lockedOrigin: origin),
+      TokenSessionStatus.signingIn => TokenSignInPage(
+        lockedOrigin: sessionKey.origin,
+        lockedSession: sessionKey,
+      ),
       TokenSessionStatus.retrying || TokenSessionStatus.stalled
           when reconnecting && principalMatches =>
         _SessionShell(
-          banner: _SessionRecoveryBanner(origin: origin, session: session),
+          banner: _SessionRecoveryBanner(
+            sessionKey: sessionKey,
+            session: session,
+          ),
           child: child,
         ),
       TokenSessionStatus.retrying || TokenSessionStatus.stalled =>
-        _SessionRecoveryView(origin: origin, session: session),
+        _SessionRecoveryView(sessionKey: sessionKey, session: session),
     };
+  }
+}
+
+/// Whether "Sign in again" is running for an account. Kept outside the
+/// widgets: the session moving between the banner and the recovery view must
+/// not allow a second attempt.
+class _SignInAgainBusy extends Notifier<bool> {
+  _SignInAgainBusy(this.sessionKey);
+
+  final SessionKey sessionKey;
+
+  @override
+  bool build() => false;
+
+  bool start() {
+    if (state) return false;
+    state = true;
+    return true;
+  }
+
+  void finish() => state = false;
+}
+
+final _signInAgainBusyProvider =
+    NotifierProvider.family<_SignInAgainBusy, bool, SessionKey>(
+      _SignInAgainBusy.new,
+    );
+
+/// "Sign in again": a sign-in attempt that the account takes over. Returns
+/// the failure to show, or `null`. Single-flight per account.
+Future<String?> _signInAgain(
+  BuildContext context,
+  WidgetRef ref,
+  SessionKey sessionKey,
+) async {
+  final busy = ref.read(_signInAgainBusyProvider(sessionKey).notifier);
+  if (!busy.start()) return null;
+  final failed = context.l10n.signInFinishFailed;
+  final auth = ref.read(authProvider.notifier);
+  final attempt = ref.read(tokenSignInAttemptProvider)(sessionKey.origin);
+  try {
+    if (!await attempt.signIn()) return attempt.state.errorMessage;
+    await auth.authenticateWithTokenSession(
+      relayUrl: sessionKey.origin,
+      principalId: attempt.state.principalId!,
+      attempt: attempt,
+    );
+    return null;
+  } catch (error) {
+    debugPrint('Could not sign in again: ${error.runtimeType}');
+    return failed;
+  } finally {
+    busy.finish();
+    // Handed over, this ends nothing: the attempt holds no tokens anymore.
+    unawaited(attempt.discard().whenComplete(attempt.dispose));
   }
 }
 
@@ -128,47 +147,6 @@ class _GateSplash extends StatelessWidget {
       child: KuzzLoadingIndicator(size: 56, semanticLabel: semanticLabel),
     ),
   );
-}
-
-class _IdentityFailureView extends StatelessWidget {
-  const _IdentityFailureView({required this.error, required this.onRetry});
-
-  final Object error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(Grid.sm),
-          children: [
-            const SizedBox(height: Grid.lg),
-            Text(
-              context.l10n.signInSwitchAccountFailedTitle,
-              style: context.textTheme.headlineSmall,
-            ),
-            const SizedBox(height: Grid.xxs),
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                context.l10n.signInSwitchAccountFailedBody('$error'),
-                style: context.textTheme.bodyMedium?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            const SizedBox(height: Grid.sm),
-            FilledButton(
-              key: const Key('token-identity-retry'),
-              onPressed: onRetry,
-              child: Text(context.l10n.commonTryAgain),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Keeps [child] at a stable position so showing or hiding the banner does
@@ -199,17 +177,21 @@ class _SessionShell extends StatelessWidget {
 }
 
 class _SessionRecoveryBanner extends ConsumerWidget {
-  const _SessionRecoveryBanner({required this.origin, required this.session});
+  const _SessionRecoveryBanner({
+    required this.sessionKey,
+    required this.session,
+  });
 
-  final String origin;
+  final SessionKey sessionKey;
   final TokenSessionState session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref
-        .read(tokenSessionProvider(origin).notifier)
+        .read(tokenSessionProvider(sessionKey).notifier)
         .controller;
     final retrying = session.status == TokenSessionStatus.retrying;
+    final busy = ref.watch(_signInAgainBusyProvider(sessionKey));
     return Material(
       key: const Key('token-session-banner'),
       color: context.colors.surfaceContainerHigh,
@@ -235,16 +217,25 @@ class _SessionRecoveryBanner extends ConsumerWidget {
                   ),
                 ),
               ),
-              TextButton(
-                key: const Key('token-session-retry'),
-                onPressed: () => unawaited(controller.retryNow()),
-                child: Text(context.l10n.signInRetryNow),
-              ),
-              TextButton(
-                key: const Key('token-session-sign-in-again'),
-                onPressed: () => unawaited(controller.signIn()),
-                child: Text(context.l10n.signInSignInAgain),
-              ),
+              if (busy)
+                KuzzLoadingIndicator(
+                  key: const Key('token-session-sign-in-again-busy'),
+                  size: Grid.sm,
+                  semanticLabel: context.l10n.signInSigningIn,
+                )
+              else ...[
+                TextButton(
+                  key: const Key('token-session-retry'),
+                  onPressed: () => unawaited(controller.retryNow()),
+                  child: Text(context.l10n.signInRetryNow),
+                ),
+                TextButton(
+                  key: const Key('token-session-sign-in-again'),
+                  onPressed: () =>
+                      unawaited(_signInAgain(context, ref, sessionKey)),
+                  child: Text(context.l10n.signInSignInAgain),
+                ),
+              ],
             ],
           ),
         ),
@@ -253,18 +244,26 @@ class _SessionRecoveryBanner extends ConsumerWidget {
   }
 }
 
-class _SessionRecoveryView extends ConsumerWidget {
-  const _SessionRecoveryView({required this.origin, required this.session});
+class _SessionRecoveryView extends HookConsumerWidget {
+  const _SessionRecoveryView({required this.sessionKey, required this.session});
 
-  final String origin;
+  final SessionKey sessionKey;
   final TokenSessionState session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref
-        .read(tokenSessionProvider(origin).notifier)
+        .read(tokenSessionProvider(sessionKey).notifier)
         .controller;
     final retrying = session.status == TokenSessionStatus.retrying;
+    final signInError = useState<String?>(null);
+    final busy = ref.watch(_signInAgainBusyProvider(sessionKey));
+
+    Future<void> signInAgain() async {
+      final error = await _signInAgain(context, ref, sessionKey);
+      if (context.mounted) signInError.value = error;
+    }
+
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -281,7 +280,9 @@ class _SessionRecoveryView extends ConsumerWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                session.errorMessage ?? context.l10n.signInUnreachableBody,
+                signInError.value ??
+                    session.errorMessage ??
+                    context.l10n.signInUnreachableBody,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -290,15 +291,24 @@ class _SessionRecoveryView extends ConsumerWidget {
             const SizedBox(height: Grid.sm),
             FilledButton(
               key: const Key('token-session-retry'),
-              onPressed: () => unawaited(controller.retryNow()),
+              onPressed: busy ? null : () => unawaited(controller.retryNow()),
               child: Text(context.l10n.signInRetryNow),
             ),
             const SizedBox(height: Grid.xxs),
-            TextButton(
-              key: const Key('token-session-sign-in-again'),
-              onPressed: () => unawaited(controller.signIn()),
-              child: Text(context.l10n.signInSignInAgain),
-            ),
+            if (busy)
+              Center(
+                child: KuzzLoadingIndicator(
+                  key: const Key('token-session-sign-in-again-busy'),
+                  size: Grid.md,
+                  semanticLabel: context.l10n.signInSigningIn,
+                ),
+              )
+            else
+              TextButton(
+                key: const Key('token-session-sign-in-again'),
+                onPressed: () => unawaited(signInAgain()),
+                child: Text(context.l10n.signInSignInAgain),
+              ),
             const SizedBox(height: Grid.md),
             const CommunityRecoveryActions(),
           ],

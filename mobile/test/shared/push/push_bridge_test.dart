@@ -244,16 +244,6 @@ void main() {
       final secondGrant = await enrollKuzzPush(
         'wss://relay.example/',
         'https://gateway-two.example/',
-        communitiesForSnapshotRefresh: [
-          Community(
-            id: 'community-id',
-            name: 'Community',
-            relayUrl: 'wss://relay.example/',
-            pubkey: 'd' * 64,
-            pushNotificationsEnabled: true,
-            addedAt: DateTime.fromMillisecondsSinceEpoch(0),
-          ),
-        ],
       );
 
       expect(firstGrant.endpointGrant, 'new-grant');
@@ -273,23 +263,8 @@ void main() {
         'endpointGrants',
         'enrollPush',
         'endpointGrants',
-        'syncPushSnapshot',
       ]);
-      expect(snapshotArguments, [
-        {
-          'section': 'communities',
-          'communities': [
-            {
-              'id': 'community-id',
-              'name': 'Community',
-              'relayUrl': 'wss://relay.example/',
-              'pubkey': 'd' * 64,
-              'policies': <Object?>[],
-            },
-          ],
-          'signingKeys': <String, String>{},
-        },
-      ]);
+      expect(snapshotArguments, isEmpty);
       expect(pushEndpointGrants.value.single.endpointGrant, 'new-grant');
     },
   );

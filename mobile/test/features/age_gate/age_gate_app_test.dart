@@ -136,6 +136,9 @@ void main() {
           refreshTokenStoreProvider.overrideWithValue(FakeRefreshTokenStore()),
           webAuthLauncherProvider.overrideWithValue(launcher),
           authDeviceNameProvider.overrideWithValue('Test phone'),
+          installIdStoreProvider.overrideWithValue(
+            InstallIdStore(storage: FakeSecureStorage()),
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -510,7 +513,7 @@ class _RecordingTokenAuthNotifier extends _UnauthenticatedAuthNotifier {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     tokenSignIns += 1;
   }

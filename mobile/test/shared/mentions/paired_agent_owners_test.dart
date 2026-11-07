@@ -3,23 +3,24 @@ import 'dart:async';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/mentions/agent_identity_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 
-const _origin = 'https://relay.test';
+final _session = SessionKey('https://relay.test', 'me');
 final _me = 'ab' * 32;
 final _agent = 'cd' * 32;
 
 ProviderContainer _container({
-  String? origin = _origin,
+  bool hasAccount = true,
   required Future<List<AccountDevice>> Function() devices,
 }) {
   final container = ProviderContainer(
     overrides: [
       agentDirectoryProvider.overrideWith((ref) async => const []),
-      accountOriginProvider.overrideWithValue(origin),
+      accountSessionProvider.overrideWithValue(hasAccount ? _session : null),
       myPubkeyProvider.overrideWithValue(_me),
-      accountDevicesProvider(_origin).overrideWith((ref) => devices()),
+      accountDevicesProvider(_session).overrideWith((ref) => devices()),
     ],
   );
   addTearDown(container.dispose);
@@ -71,7 +72,10 @@ void main() {
   });
 
   test('a community without an account has none', () async {
-    final container = _container(origin: null, devices: () async => [device]);
+    final container = _container(
+      hasAccount: false,
+      devices: () async => [device],
+    );
     expect(await container.read(agentOwnersProvider.future), isEmpty);
   });
 }

@@ -46,7 +46,7 @@ class PersonPage extends HookConsumerWidget {
     final isBlocked = ref.watch(
       blockedPubkeysProvider.select((ids) => ids.contains(pk)),
     );
-    final hasAccount = ref.watch(accountOriginProvider) != null;
+    final hasAccount = ref.watch(accountSessionProvider) != null;
     final busy = useState(false);
     final opening = useState(false);
     final l10n = context.l10n;
