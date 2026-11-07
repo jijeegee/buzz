@@ -76,11 +76,15 @@ the `39006` bounds event. Its content keeps every field above and adds:
 `count` is the number of rows the page would return, `oldest_id` /
 `oldest_created_at` are its last (oldest) row (`null` when empty), and
 `room_seq` is `channels.accepted_sequence` read in the same snapshot.
+`count` and `oldest_*` describe the rows the page sends, after the same
+response filters (goal trees of conversations with goals off, silent
+blocks).
 `mode` is the relay's current `window_check_mode` setting, which tells
 devices how to use checks (`off` = page as before, `shadow` = check and
 page, `on` = check instead of page). Operators change it without a restart
 (`kuzz-admin settings set window_check_mode shadow`); relays pick it up
-within 30 s. `include_summaries`/`include_aux` are ignored, the `d` tag is
+within 30 s (a relay that cannot read it answers `off` and retries
+after 5 s). `include_summaries`/`include_aux` are ignored, the `d` tag is
 unchanged, and `check` with a newer cursor is `400` (older pages only).
 Advertised as `nip-cw-check` in NIP-11.
 

@@ -637,6 +637,25 @@ async fn channel_window_newer_pages_oldest_first_with_signed_bounds() {
     }
 }
 
+/// Advisory lock key shared with kuzz-admin's settings test: tests that write
+/// the deployment-global `window_check_mode` row hold it for their whole run,
+/// across test binaries.
+const WINDOW_CHECK_MODE_TEST_LOCK: i64 = 0x6b75_7a7a_7763; // "kuzzwc"
+
+/// Hold the window-check-mode test lock until the returned session drops.
+async fn lock_check_mode() -> sqlx::PgConnection {
+    use sqlx::Connection;
+    let mut conn = sqlx::PgConnection::connect(&crate::test_support::database_url())
+        .await
+        .unwrap();
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(WINDOW_CHECK_MODE_TEST_LOCK)
+        .execute(&mut conn)
+        .await
+        .unwrap();
+    conn
+}
+
 async fn set_check_mode(pool: &sqlx::PgPool, mode: Option<&str>) {
     let query = match mode {
         Some(_) => "INSERT INTO relay_runtime_settings (key, value) VALUES ('window_check_mode', $1) \
@@ -681,6 +700,7 @@ fn bounds_of(response: &Value, kind: u16) -> (String, Value) {
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn window_check_answers_bounds_only_with_the_page_facts() {
+    let _lock = lock_check_mode().await;
     let f = Fixture::new().await;
     set_check_mode(&f.pool, None).await;
     let base = f.root.created_at.as_secs();
@@ -780,6 +800,7 @@ async fn window_check_answers_bounds_only_with_the_page_facts() {
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn window_check_mode_follows_the_runtime_setting_through_the_cache() {
+    let _lock = lock_check_mode().await;
     let f = Fixture::new().await;
     let check = json!({"top_level":true,"#h":[f.channel],"kinds":[9],"limit":5,"check":true});
     let mode = |response: Value| only_bounds(&response, 39006).1["check"]["mode"].clone();
@@ -805,5 +826,77 @@ async fn window_check_mode_follows_the_runtime_setting_through_the_cache() {
         post(Arc::new(fresh), &f.host, &f.keys, "/query", json!([check])).await;
     assert_eq!(status, StatusCode::OK, "{response}");
     assert_eq!(mode(response), "off");
+
+    // An unreadable setting serves `off` instead of failing the check, and
+    // is read again after the short error TTL.
+    use kuzz_core::window_check::WindowCheckMode;
+    set_check_mode(&f.pool, Some("on")).await;
+    let mut broken = (*f.state).clone();
+    broken.db = kuzz_db::Db::from_pool(
+        sqlx::postgres::PgPoolOptions::new()
+            .acquire_timeout(std::time::Duration::from_secs(1))
+            .connect_lazy("postgres://kuzz:wrong@127.0.0.1:1/none")
+            .unwrap(),
+    );
+    broken.runtime_settings = Arc::new(crate::runtime_settings::RuntimeSettingsCache::with_ttls(
+        std::time::Duration::from_secs(30),
+        std::time::Duration::from_millis(300),
+    ));
+    assert_eq!(broken.window_check_mode().await, WindowCheckMode::Off);
+    broken.db = f.state.db.clone();
+    assert_eq!(
+        broken.window_check_mode().await,
+        WindowCheckMode::Off,
+        "the fallback is cached briefly"
+    );
+    tokio::time::sleep(std::time::Duration::from_millis(400)).await;
+    assert_eq!(broken.window_check_mode().await, WindowCheckMode::On);
     set_check_mode(&f.pool, None).await;
+}
+
+/// A room check counts exactly the rows the page sends: goal trees of a
+/// conversation with goals off are dropped from both.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn room_check_counts_the_rows_the_page_sends() {
+    let f = Fixture::new().await;
+    sqlx::query("UPDATE channels SET goals_enabled = false WHERE community_id = $1 AND id = $2")
+        .bind(f.community.as_uuid())
+        .bind(f.channel)
+        .execute(&f.pool)
+        .await
+        .unwrap();
+    let base = f.root.created_at.as_secs();
+    let message = event(&f.keys, f.channel, 9, "message", None, base + 1);
+    let goals = event(
+        &f.keys,
+        f.channel,
+        kuzz_core::kind::KIND_GOAL_TREE as u16,
+        "{}",
+        None,
+        base + 2,
+    );
+    for e in [&message, &goals] {
+        f.state
+            .db
+            .insert_event(f.community, e, Some(f.channel))
+            .await
+            .unwrap();
+    }
+    let head = json!({"top_level":true,"#h":[f.channel],"limit":5,
+        "kinds":[9, kuzz_core::kind::KIND_GOAL_TREE]});
+    let page = f.query(&head).await;
+    let rows = page
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|e| e["kind"] != 39006)
+        .map(|e| e["id"].as_str().unwrap().to_string())
+        .collect::<Vec<_>>();
+    assert_eq!(rows, [message.id.to_hex(), f.root.id.to_hex()]);
+    let mut check = head.clone();
+    check["check"] = json!(true);
+    let (_, content) = only_bounds(&f.query(&check).await, 39006);
+    assert_eq!(content["check"]["count"], rows.len());
+    assert_eq!(content["check"]["oldest_id"], rows[rows.len() - 1]);
 }

@@ -962,18 +962,30 @@ async fn handle_channel_window_filter(
                 blocked_dm_reader,
             )
             .await
-            .map_err(|e| internal_error(&format!("channel window check error: {e}")))?;
-        let mode = state
-            .window_check_mode()
-            .await
-            .map_err(|e| db_read_error("runtime setting lookup error", &e))?;
-        let oldest = window.rows.last().map(|row| {
-            (
-                &row.stored_event.event.id,
-                row.stored_event.event.created_at,
-            )
-        });
-        let check = window_check_content(oldest, window.rows.len(), room_seq, mode);
+            .map_err(|e| db_read_error("channel window check error", &e))?;
+        // Count exactly the rows the page would send: the same response
+        // filters the page runs after the query (goal trees of conversations
+        // with goals off, silent blocks) apply to the checked rows too.
+        let mut rows = window
+            .rows
+            .iter()
+            .map(|row| serde_json::to_value(&row.stored_event.event))
+            .collect::<Result<Vec<_>, _>>()
+            .map_err(|e| internal_error(&format!("window row serialize: {e}")))?;
+        hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut rows).await?;
+        hide_blocked_dm_authors(state, tenant, reader, &mut rows).await?;
+        let mode = state.window_check_mode().await;
+        let oldest = rows
+            .last()
+            .map(|row| serde_json::from_value::<nostr::Event>(row.clone()))
+            .transpose()
+            .map_err(|e| internal_error(&format!("window row parse: {e}")))?;
+        let check = window_check_content(
+            oldest.as_ref().map(|event| (&event.id, event.created_at)),
+            rows.len(),
+            room_seq,
+            mode,
+        );
         return push_window_bounds(state, ch_id, &cursor, false, &window, Some(check), events);
     }
 
@@ -1008,7 +1020,7 @@ async fn handle_channel_window_filter(
         }
     };
     let (mut window, mut session) =
-        window.map_err(|e| internal_error(&format!("channel window error: {e}")))?;
+        window.map_err(|e| db_read_error("channel window error", &e))?;
 
     // 1. Rows, in keyset order.
     let mut row_ids_hex = Vec::with_capacity(window.rows.len());
@@ -1799,6 +1811,7 @@ async fn query_events_authed(
                 "thread window deadline exceeded",
             )
         })??;
+        // Replies were already filtered before LIMIT; this still covers aux.
         hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
         return Ok(Json(Value::Array(events)));
     }
@@ -2245,6 +2258,8 @@ async fn query_events_authed(
     }
 
     hide_goal_trees_of_conversations_with_goals_off(state, tenant, &mut events).await?;
+    // Window rows already left out silently blocked DM rows before LIMIT;
+    // this pass still covers their aux closure and every other filter path.
     hide_blocked_dm_authors(state, tenant, &pubkey_bytes, &mut events).await?;
     Ok(Json(Value::Array(events)))
 }

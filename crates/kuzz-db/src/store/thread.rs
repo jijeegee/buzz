@@ -659,13 +659,17 @@ pub(crate) async fn get_channel_window_for_reader(
     history_reader: Option<&[u8]>,
     blocked_dm_reader: Option<&[u8]>,
 ) -> Result<ChannelWindow> {
-    let mut conn = crate::observability::acquire_writer(
+    let conn = crate::observability::acquire_writer(
         pool,
         crate::observability::WriterOperation::SubscriptionHistory,
     )
     .await?;
-    get_channel_window_on(
-        &mut conn,
+    // The block filter runs before LIMIT, so a page can scan further than
+    // `limit + 1` rows: bound it like a thread window.
+    let mut tx = sqlx::Transaction::begin(conn, None).await?;
+    crate::thread_window::set_deadline(&mut tx).await?;
+    let window = get_channel_window_on(
+        &mut tx,
         community_id,
         channel_id,
         limit,
@@ -675,7 +679,9 @@ pub(crate) async fn get_channel_window_for_reader(
         history_reader,
         blocked_dm_reader,
     )
-    .await
+    .await?;
+    tx.commit().await?;
+    Ok(window)
 }
 
 /// [`get_channel_window`] on a specific session — the replica-routing path
@@ -694,6 +700,36 @@ pub(crate) async fn get_channel_window_on(
     direction: Direction,
     history_reader: Option<&[u8]>,
     blocked_dm_reader: Option<&[u8]>,
+) -> Result<ChannelWindow> {
+    channel_window_rows_on(
+        conn,
+        community_id,
+        channel_id,
+        limit,
+        cursor,
+        kind_filter,
+        direction,
+        history_reader,
+        blocked_dm_reader,
+        true,
+    )
+    .await
+}
+
+/// [`get_channel_window_on`]; `with_participants: false` skips the thread
+/// summaries' participant batch (window checks never send summaries).
+#[allow(clippy::too_many_arguments)]
+pub(crate) async fn channel_window_rows_on(
+    conn: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    channel_id: Uuid,
+    limit: u32,
+    cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+    kind_filter: Option<&[u32]>,
+    direction: Direction,
+    history_reader: Option<&[u8]>,
+    blocked_dm_reader: Option<&[u8]>,
+    with_participants: bool,
 ) -> Result<ChannelWindow> {
     let newer = direction == Direction::Newer;
     if newer && cursor.is_none() {
@@ -861,7 +897,7 @@ pub(crate) async fn get_channel_window_on(
         .filter(|r| r.thread_summary.is_some())
         .map(|r| r.stored_event.event.id.as_bytes().to_vec())
         .collect();
-    if !roots.is_empty() {
+    if with_participants && !roots.is_empty() {
         let participant_rows = sqlx::query(
             r#"
             SELECT root_event_id, pubkey FROM (
@@ -1403,9 +1439,10 @@ impl Db {
             )),
         )
         .await?;
+        crate::thread_window::set_deadline(&mut tx).await?;
         let room_seq =
             crate::thread::room_accepted_sequence(&mut tx, community_id, channel_id).await?;
-        let window = crate::thread::get_channel_window_on(
+        let window = crate::thread::channel_window_rows_on(
             &mut tx,
             community_id,
             channel_id,
@@ -1415,6 +1452,7 @@ impl Db {
             Direction::Older,
             history_reader,
             blocked_dm_reader,
+            false,
         )
         .await?;
         tx.rollback().await?;

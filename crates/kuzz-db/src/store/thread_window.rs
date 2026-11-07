@@ -60,7 +60,8 @@ fn scan_cursor(row: &sqlx::postgres::PgRow) -> Result<Cursor> {
 
 /// Every new-mode SQL statement has a server-side deadline as well as the
 /// bridge's whole-operation deadline. SET LOCAL cannot leak to pooled callers.
-async fn set_deadline(conn: &mut PgConnection) -> Result<()> {
+/// Room windows and window checks use the same deadline.
+pub(crate) async fn set_deadline(conn: &mut PgConnection) -> Result<()> {
     sqlx::query("SET LOCAL statement_timeout = '4000ms'")
         .execute(&mut *conn)
         .await?;

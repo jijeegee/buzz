@@ -26,6 +26,16 @@ async fn settings_set_and_get_window_check_mode() {
     let url = std::env::var("KUZZ_TEST_DATABASE_URL")
         .or_else(|_| std::env::var("TEST_DATABASE_URL"))
         .expect("KUZZ_TEST_DATABASE_URL");
+    // Same advisory lock as kuzz-relay's window check mode tests: the row is
+    // deployment-global, so writers in other test binaries must wait.
+    let mut lock = <sqlx::PgConnection as sqlx::Connection>::connect(&url)
+        .await
+        .expect("lock session");
+    sqlx::query("SELECT pg_advisory_lock($1)")
+        .bind(0x6b75_7a7a_7763_i64)
+        .execute(&mut lock)
+        .await
+        .expect("window check mode test lock");
     let pool = PgPool::connect(&url).await.expect("connect");
     let clear = || async {
         sqlx::query("DELETE FROM relay_runtime_settings WHERE key = 'window_check_mode'")

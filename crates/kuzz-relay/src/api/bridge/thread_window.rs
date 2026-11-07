@@ -311,10 +311,7 @@ async fn check(
             "thread row authorization changed during selection",
         ));
     }
-    let mode = state
-        .window_check_mode()
-        .await
-        .map_err(|e| database_error("runtime setting", e))?;
+    let mode = state.window_check_mode().await;
     let oldest = window
         .rows
         .last()
