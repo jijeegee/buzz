@@ -8,7 +8,6 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../../features/channels/channel_head_cache.dart';
 import '../auth/auth_provider.dart';
 import '../auth/default_community.dart';
-import '../l10n/l10n.dart';
 import '../message_store/message_store_provider.dart';
 import '../push/dev_push_lease.dart';
 import '../push/push_bridge.dart';
@@ -368,43 +367,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     }
     return filled;
   }
-
-  /// Add a community. If one with the same relay URL already exists, update
-  /// its credentials instead. Returns the effective community ID.
-  Future<String> addCommunity(Community community) =>
-      ref.read(communityTransitionProvider).runExclusive(() async {
-        _requireAllowedServer(ref, community.relayUrl);
-        final storage = ref.read(communityStorageProvider);
-        final current = await storage.loadAll();
-
-        // If a community with the same relay URL exists, update its credentials
-        // instead of creating a duplicate entry.
-        final existingIndex = current.indexWhere(
-          (w) => w.relayUrl == community.relayUrl,
-        );
-        if (existingIndex >= 0) {
-          final existing = current[existingIndex];
-          if (existing.signedOut) {
-            throw StateError(appL10n.communitySignInBeforeChanging);
-          }
-          final updated = existing.withCredentials(
-            pubkey: community.pubkey,
-            nsec: community.nsec,
-          );
-          await storage.save(updated);
-          final updatedList = [...current];
-          updatedList[existingIndex] = updated;
-          state = AsyncData(updatedList);
-          await syncCommunitySnapshot(ref, updatedList);
-          return existing.id;
-        }
-
-        await storage.save(community);
-        final updatedList = [...current, community];
-        state = AsyncData(updatedList);
-        await syncCommunitySnapshot(ref, updatedList);
-        return community.id;
-      });
 
   /// Removes community [id]. A token community's device session is revoked
   /// on the relay first; when that fails (`TokenSessionException`) nothing
