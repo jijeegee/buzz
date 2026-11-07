@@ -217,7 +217,7 @@ fn unique_legacy_fizz_name(occupied_names: &std::collections::HashSet<String>) -
 fn stock_version_updates(now: &str) -> std::collections::HashMap<String, (String, String)> {
     let mut updates = std::collections::HashMap::new();
 
-    if let Some(mut legacy_pollen) = crate::managed_agents::built_in_persona_definition(
+    if let Some(mut legacy_pollen) = crate::managed_agents::legacy_stock_persona_definition(
         crate::managed_agents::POLLEN_PERSONA_ID,
         now,
     ) {
@@ -234,7 +234,7 @@ fn stock_version_updates(now: &str) -> std::collections::HashMap<String, (String
     }
 
     if let Some(mut legacy_fizz) =
-        crate::managed_agents::built_in_persona_definition("builtin:fizz", now)
+        crate::managed_agents::legacy_stock_persona_definition("builtin:fizz", now)
     {
         let current_fizz = persona_version(&legacy_fizz);
         legacy_fizz
@@ -497,7 +497,7 @@ mod tests {
     fn pollen_name_migration_updates_seeded_fields_and_preserves_customizations() {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("agents/managed-agents.json");
-        let mut legacy_definition = crate::managed_agents::built_in_persona_definition(
+        let mut legacy_definition = crate::managed_agents::legacy_stock_persona_definition(
             crate::managed_agents::POLLEN_PERSONA_ID,
             "before",
         )
@@ -820,7 +820,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("agents/managed-agents.json");
         let mut legacy_fizz =
-            crate::managed_agents::built_in_persona_definition("builtin:fizz", "before").unwrap();
+            crate::managed_agents::legacy_stock_persona_definition("builtin:fizz", "before")
+                .unwrap();
         legacy_fizz
             .name_pool
             .insert(4, crate::managed_agents::POLLEN_DISPLAY_NAME.to_string());

@@ -2,7 +2,7 @@ import { getCanvas, setCanvas } from "@/shared/api/tauri";
 
 export const WELCOME_CANVAS_CONTENT = `# Welcome to Kuzz
 
-This private group is your home base for getting oriented. Fizz, Honey, and Pollen can help you learn the app, troubleshoot setup, and work through something you are building.
+This private group is your home base for getting oriented. Kuzi can help you learn the app, troubleshoot setup, and work through something you are building.
 
 ## Work with your agents
 

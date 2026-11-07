@@ -24,17 +24,16 @@ import type {
   UpdateManagedAgentInput,
 } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
-import { isWelcomeTeamOwed, setWelcomeTeamOwed } from "./welcome";
 
-export const WELCOME_GUIDE_AGENT_NAME = "Fizz";
-export const WELCOME_GUIDE_PERSONA_ID = "builtin:fizz";
+export const WELCOME_GUIDE_AGENT_NAME = "Kuzi";
+export const WELCOME_GUIDE_PERSONA_ID = "builtin:kuzi";
 export const WELCOME_TEAM_ID = "builtin-team:welcome";
 export const WELCOME_GUIDE_INTRO_MARKER = "kuzz-welcome-intro.v1";
 const LEGACY_WELCOME_GUIDE_AGENT_NAME = "Kit";
 export const LEGACY_WELCOME_GUIDE_SYSTEM_PROMPT =
   "You are Kit, Sprout's friendly welcome guide. Help new users understand the community, channels, messages, and agents. Keep introductions concise, practical, and warm.";
 export const WELCOME_GUIDE_INTRO_MESSAGE =
-  "Hi, I'm Fizz. Welcome to Kuzz.\n\nI can help you get oriented, answer questions, and make the first few steps feel less mysterious.\n\nFeel free to ask me what else you can do in Kuzz, or just talk through what you want to build.";
+  "Hi, I'm Kuzi. Welcome to Kuzz.\n\nI can help you get oriented, answer questions, and make the first few steps feel less mysterious.\n\nFeel free to ask me what else you can do in Kuzz, or just talk through what you want to build.";
 
 export type WelcomeTeamRole = "lead" | "teammate";
 
@@ -44,14 +43,16 @@ export type WelcomeTeamStarterDefinition = Readonly<{
   role: WelcomeTeamRole;
 }>;
 
-/** Stable identities used to provision the Rust-seeded Welcome Team. */
+/**
+ * Stable identities used to provision the Rust-seeded Welcome Team: the one
+ * Kuzi starter.
+ */
 export const WELCOME_TEAM_STARTERS = [
-  { name: "Fizz", personaId: "builtin:fizz", role: "lead" },
-  { name: "Honey", personaId: "builtin:honey", role: "teammate" },
-  { name: "Pollen", personaId: "builtin:bumble", role: "teammate" },
+  { name: "Kuzi", personaId: WELCOME_GUIDE_PERSONA_ID, role: "lead" },
 ] as const satisfies readonly WelcomeTeamStarterDefinition[];
 
-export type WelcomeTeamAgents = [ManagedAgent, ManagedAgent, ManagedAgent];
+/** The lead first, then any teammates. */
+export type WelcomeTeamAgents = [ManagedAgent, ...ManagedAgent[]];
 
 const welcomeTeamPromises = new Map<string, Promise<WelcomeTeamAgents>>();
 
@@ -213,7 +214,6 @@ async function ensureWelcomeTeamMembership(
 }
 
 export async function buildWelcomeStarterCreateInput(
-  starter: WelcomeTeamStarterDefinition,
   persona: AgentPersona,
   runtimes: readonly AcpRuntime[],
   preferredRuntimeId: string | null,
@@ -226,7 +226,6 @@ export async function buildWelcomeStarterCreateInput(
   );
   return {
     ...(await buildInstanceInputForDefinition(persona, runtime)),
-    name: starter.name,
     teamId: WELCOME_TEAM_ID,
     relayUrl: relayUrl ?? undefined,
     spawnAfterCreate: false,
@@ -331,7 +330,8 @@ export class WelcomeTeamElsewhereError extends Error {
 
 /**
  * Whether an agent of one of the [missing] starter personas runs on another
- * of the owner's computers. A relay that cannot be read counts as no.
+ * of the owner's computers. A relay that cannot be read throws, so this
+ * computer retries later instead of making a second team.
  */
 async function welcomeStarterRunsElsewhere(
   missingPersonaIds: readonly string[],
@@ -350,15 +350,20 @@ async function welcomeStarterRunsElsewhere(
       const personaId = remoteAgentPersonaId(agent, personas);
       return personaId !== null && missing.has(personaId);
     });
-  } catch {
-    return false;
+  } catch (error) {
+    throw new Error(
+      "Could not check your other computers for the Welcome Team.",
+      {
+        cause: error,
+      },
+    );
   }
 }
 
 /**
  * Ensure the complete built-in Welcome Team is ready for kickoff.
  * The team itself is Rust-seeded; this only activates personas, creates any
- * missing relay-scoped instances, and adds all three to Welcome as bots.
+ * missing relay-scoped instances, and adds them to Welcome as bots.
  */
 async function provisionWelcomeTeam(
   channelId: string,
@@ -384,12 +389,8 @@ async function provisionWelcomeTeam(
     (starter) =>
       !pickWelcomeTeamStarterAgentForRelay(existingAgents, starter, relayUrl),
   ).map((starter) => starter.personaId);
-  if (
-    missingPersonaIds.length > 0 &&
-    !isWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl)
-  ) {
-    throw new WelcomeTeamElsewhereError();
-  }
+  // The first of the owner's computers to get here makes the team; the
+  // others find it on the relay and leave it there.
   if (
     await welcomeStarterRunsElsewhere(
       missingPersonaIds,
@@ -407,7 +408,6 @@ async function provisionWelcomeTeam(
       throw new Error(`${starter.name} agent not found.`);
     }
     const desired = await buildWelcomeStarterCreateInput(
-      starter,
       persona,
       runtimes,
       globalConfig.preferred_runtime,
@@ -431,14 +431,14 @@ async function provisionWelcomeTeam(
     const created = await createManagedAgent(desired);
     agents.push(created.agent);
   }
-  const [lead, honey, pollen] = agents;
-  if (!lead || !honey || !pollen) {
+  const [lead, ...teammates] = agents;
+  if (!lead || agents.length !== WELCOME_TEAM_STARTERS.length) {
     throw new Error("Welcome Team provisioning did not return every starter.");
   }
-  const welcomeAgents: WelcomeTeamAgents = [lead, honey, pollen];
+  const welcomeAgents: WelcomeTeamAgents = [lead, ...teammates];
   const leadPubkey = lead.pubkey;
-  for (const index of [1, 2] as const) {
-    const teammate = welcomeAgents[index];
+  for (let index = 1; index < welcomeAgents.length; index += 1) {
+    const teammate = welcomeAgents[index] as ManagedAgent;
     const accessUpdate = welcomeTeammateAccessUpdate(
       teammate,
       leadPubkey,
@@ -450,7 +450,6 @@ async function provisionWelcomeTeam(
     }
   }
   await ensureWelcomeTeamMembership(channelId, welcomeAgents);
-  setWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl, false);
   return welcomeAgents;
 }
 

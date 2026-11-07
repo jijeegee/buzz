@@ -7,10 +7,8 @@ import {
   findPrivateWelcomeChannel,
   hasEnsuredWelcomeChannel,
   isWelcomeExperienceChannel,
-  isWelcomeTeamOwed,
   markWelcomeChannelEnsured,
   rememberPendingWelcomeChannel,
-  setWelcomeTeamOwed,
   WELCOME_CHANNEL_DESCRIPTION,
   WELCOME_CHANNEL_NAME,
 } from "./welcome.ts";
@@ -335,19 +333,4 @@ test("isWelcomeExperienceChannel matches legacy Welcome and starter welcome-ever
     false,
   );
   assert.equal(isWelcomeExperienceChannel(null), false);
-});
-
-test("Welcome team is owed only to the identity and community that created Welcome", () => {
-  const { restore } = installWindowSessionStorage();
-  try {
-    assert.equal(isWelcomeTeamOwed("alice", "wss://a"), false);
-    setWelcomeTeamOwed("alice", "wss://a", true);
-    assert.equal(isWelcomeTeamOwed("alice", "wss://a"), true);
-    assert.equal(isWelcomeTeamOwed("bob", "wss://a"), false);
-    assert.equal(isWelcomeTeamOwed("alice", "wss://b"), false);
-    setWelcomeTeamOwed("alice", "wss://a", false);
-    assert.equal(isWelcomeTeamOwed("alice", "wss://a"), false);
-  } finally {
-    restore();
-  }
 });

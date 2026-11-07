@@ -344,16 +344,9 @@ fn welcome_team_is_seeded_and_idempotent() {
     assert_eq!(welcome.name, "Welcome Team");
     assert_eq!(
         welcome.description.as_deref(),
-        Some("A friendly starter trio ready to help you plan, create, and ship.")
+        Some("A friendly starter agent ready to help you plan, create, and ship.")
     );
-    assert_eq!(
-        welcome.persona_ids,
-        vec![
-            "builtin:fizz".to_string(),
-            "builtin:honey".to_string(),
-            "builtin:bumble".to_string(),
-        ]
-    );
+    assert_eq!(welcome.persona_ids, vec!["builtin:kuzi".to_string()]);
     assert!(welcome.is_builtin);
 
     let expected = serde_json::to_value(&records).unwrap();
@@ -390,6 +383,30 @@ fn welcome_team_seed_does_not_overwrite_customization() {
     );
     assert_eq!(welcome.persona_ids, vec!["builtin:honey".to_string()]);
     assert!(welcome.is_builtin);
+}
+
+#[test]
+fn welcome_team_keeps_stored_pre_kuzi_members() {
+    let (mut records, _) = merge_teams(Vec::new(), "2026-07-01T00:00:00Z");
+    let welcome = records
+        .iter_mut()
+        .find(|team| team.id == "builtin-team:welcome")
+        .expect("welcome team should be seeded");
+    let trio = vec![
+        "builtin:fizz".to_string(),
+        "builtin:honey".to_string(),
+        "builtin:bumble".to_string(),
+    ];
+    welcome.persona_ids = trio.clone();
+
+    let (records, changed) = merge_teams(records, "2026-11-07T00:00:00Z");
+
+    assert!(!changed);
+    let welcome = records
+        .iter()
+        .find(|team| team.id == "builtin-team:welcome")
+        .unwrap();
+    assert_eq!(welcome.persona_ids, trio);
 }
 
 // ── load_teams_readonly tests ──────────────────────────────────────────

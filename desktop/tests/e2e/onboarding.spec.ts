@@ -309,8 +309,8 @@ async function expectWelcomePersonaMention(page: Page) {
   const banner = page.getByTestId("welcome-composer-guide-banner");
   const personaMention = page.getByTestId("welcome-composer-persona-mention");
   await expect(personaMention).toBeVisible();
-  await expect(personaMention).toHaveAttribute("data-persona-options", "Fizz");
-  await expect(personaMention).toHaveAttribute("data-active-persona", "Fizz");
+  await expect(personaMention).toHaveAttribute("data-persona-options", "Kuzi");
+  await expect(personaMention).toHaveAttribute("data-active-persona", "Kuzi");
   await expect(personaMention).toHaveAttribute(
     "data-animation-target",
     "per-character",
@@ -486,7 +486,7 @@ async function expectWelcomeComposerBannerCompletesAfterPersonaMention(
     Array<{ pubkey: string; persona_id: string | null; status: string }>
   >(page, "list_managed_agents");
   const sameNameAgents = agents.filter(
-    (agent) => agent.persona_id === "builtin:fizz",
+    (agent) => agent.persona_id === "builtin:kuzi",
   );
   expect(sameNameAgents).toHaveLength(2);
   // Onboarding starts the new member's starter; the pre-existing mock stays
@@ -632,7 +632,7 @@ async function expectWelcomeGuideIntro(
         >(page, "list_managed_agents"),
       ]);
       const fizz = agents.find(
-        (agent) => agent.name === "Fizz" && agent.persona_id === "builtin:fizz",
+        (agent) => agent.name === "Kuzi" && agent.persona_id === "builtin:kuzi",
       );
       const fizzMember = fizz
         ? members.members.find((member) => member.pubkey === fizz.pubkey)
@@ -655,7 +655,7 @@ async function expectWelcomeGuideIntro(
     })
     .toEqual({
       fizzIsBot: true,
-      fizzPersonaId: "builtin:fizz",
+      fizzPersonaId: "builtin:kuzi",
       profileAvatarUrl: null,
     });
 
@@ -3524,7 +3524,7 @@ async function commandCount(page: Page, command: string) {
   );
 }
 
-test("first-run onboarding posts the live Fizz kickoff", async ({ page }) => {
+test("first-run onboarding posts the live Kuzi kickoff", async ({ page }) => {
   await seedActiveIdentity(page, BLANK_TYLER_IDENTITY);
   await installMockBridge(
     page,
@@ -3550,22 +3550,18 @@ test("first-run onboarding posts the live Fizz kickoff", async ({ page }) => {
     "get_presence",
     { pubkeys: team.map((agent) => agent.pubkey) },
   );
-  expect(team.map((agent) => presence[agent.pubkey])).toEqual([
-    "offline",
-    "offline",
-    "offline",
-  ]);
+  expect(team.map((agent) => presence[agent.pubkey])).toEqual(["offline"]);
   await expect(page.getByTestId("message-timeline")).not.toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Kuzz.",
+    "Hi Morty QA, I'm Kuzi. Welcome to Kuzz.",
   );
   await publishWelcomeTeamPresence(page);
   // Greeted by the name typed above — the @mention pill also files the opener
   // into the new user's Inbox mentions feed.
   await expect(page.getByTestId("message-timeline")).toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Kuzz.",
+    "Hi Morty QA, I'm Kuzi. Welcome to Kuzz.",
   );
   await expect(page.getByTestId("message-timeline")).toContainText(
-    "Honey and Pollen, introduce yourselves",
+    "What can we help you build?",
   );
 });
 
@@ -3587,10 +3583,10 @@ test("first-run onboarding lands before Welcome team bootstrap completes", async
   await expect(page.getByTestId("app-loading-gate")).toHaveCount(0);
   await publishWelcomeTeamPresence(page);
   await expect(page.getByTestId("message-timeline")).toContainText(
-    "Hi Morty QA, I'm Fizz. Welcome to Kuzz.",
+    "Hi Morty QA, I'm Kuzi. Welcome to Kuzz.",
   );
   await page.waitForTimeout(1_500);
-  expect(await commandCount(page, "create_managed_agent")).toBe(3);
+  expect(await commandCount(page, "create_managed_agent")).toBe(1);
 });
 
 test("existing relay profile with display name auto-skips onboarding without localStorage", async ({

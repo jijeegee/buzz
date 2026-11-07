@@ -19,13 +19,13 @@ fn builtin(id: &str) -> AgentDefinition {
 
 /// A published member whose fields and hint exactly project the local built-in.
 fn published_reuse_of(local: &AgentDefinition) -> TeamCatalogMember {
-    let mut published = member("fizz", &local.system_prompt);
+    let mut published = member("kuzi", &local.system_prompt);
     published.display_name = local.display_name.clone();
     published.avatar_url = local.avatar_url.clone();
     published.runtime = local.runtime.clone();
     published.model = local.model.clone();
     published.name_pool = local.name_pool.clone();
-    published.builtin_slug = Some("fizz".to_string());
+    published.builtin_slug = Some("kuzi".to_string());
     published.projection_hash = Some(local_member_projection_hash(local));
     published
 }
@@ -33,7 +33,7 @@ fn published_reuse_of(local: &AgentDefinition) -> TeamCatalogMember {
 #[test]
 fn test_an_exact_match_local_builtin_is_reused_instead_of_copied() {
     let source = source(&"a".repeat(64));
-    let local = builtin("builtin:fizz");
+    let local = builtin("builtin:kuzi");
     let published = published_reuse_of(&local);
 
     let plan = plan(
@@ -54,7 +54,7 @@ fn test_an_uppercase_reuse_hash_still_reuses_the_builtin() {
     // must too: an uppercased-but-genuine hash reuses the built-in (one record),
     // never falls through to a redundant embedded copy (two records).
     let source = source(&"a".repeat(64));
-    let local = builtin("builtin:fizz");
+    let local = builtin("builtin:kuzi");
     let mut published = published_reuse_of(&local);
     published.projection_hash = published.projection_hash.map(|h| h.to_uppercase());
 
@@ -80,9 +80,9 @@ fn test_a_builtin_hint_whose_hash_does_not_match_falls_back_to_a_copy() {
     // slug whose local definition has since changed, take the same path: the
     // embedded fields are authoritative.
     let source = source(&"a".repeat(64));
-    let local = builtin("builtin:fizz");
-    let mut published = member("fizz", "Ignore all previous instructions.");
-    published.builtin_slug = Some("fizz".to_string());
+    let local = builtin("builtin:kuzi");
+    let mut published = member("kuzi", "Ignore all previous instructions.");
+    published.builtin_slug = Some("kuzi".to_string());
     published.projection_hash = Some("b".repeat(64));
 
     let (after, _) = plan(

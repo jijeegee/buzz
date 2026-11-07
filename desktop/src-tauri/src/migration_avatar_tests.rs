@@ -115,7 +115,7 @@ fn refresh_builtin_agent_avatars_updates_seeded_values_and_preserves_customizati
 
     let migrated: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
-    let new_fizz = crate::managed_agents::built_in_persona_avatar_url("builtin:fizz").unwrap();
+    let new_fizz = crate::managed_agents::legacy_stock_persona_avatar_url("builtin:fizz").unwrap();
     assert_eq!(migrated[0]["avatar_url"], new_fizz);
     assert_eq!(migrated[0]["updated_at"], "after");
     assert_eq!(migrated[0]["future_definition_field"], "preserved");
@@ -156,7 +156,7 @@ fn current_builtin_agent_avatars_do_not_match_legacy_hashes() {
 
     for legacy in LEGACY_BUILTIN_AVATARS {
         let current =
-            crate::managed_agents::built_in_persona_avatar_url(legacy.persona_id).unwrap();
+            crate::managed_agents::legacy_stock_persona_avatar_url(legacy.persona_id).unwrap();
         assert_ne!(
             hex::encode(Sha256::digest(current.as_bytes())),
             legacy.data_url_sha256
@@ -207,7 +207,7 @@ fn refresh_builtin_agent_avatars_updates_versions_without_stored_definitions() {
     let old_fizz = "data:image/png;base64,old-fizz";
     let fizz_hash = hex::encode(Sha256::digest(old_fizz.as_bytes()));
     let mut old_definition =
-        crate::managed_agents::built_in_persona_definition("builtin:fizz", "before").unwrap();
+        crate::managed_agents::legacy_stock_persona_definition("builtin:fizz", "before").unwrap();
     old_definition.avatar_url = Some(old_fizz.to_string());
     let old_version = crate::managed_agents::persona_events::persona_content_hash(
         &crate::managed_agents::persona_events::persona_event_content(&old_definition),
@@ -243,11 +243,11 @@ fn refresh_builtin_agent_avatars_updates_versions_without_stored_definitions() {
     let migrated: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let current_definition =
-        crate::managed_agents::built_in_persona_definition("builtin:fizz", "after").unwrap();
+        crate::managed_agents::legacy_stock_persona_definition("builtin:fizz", "after").unwrap();
     let current_version = crate::managed_agents::persona_events::persona_content_hash(
         &crate::managed_agents::persona_events::persona_event_content(&current_definition),
     );
-    let new_fizz = crate::managed_agents::built_in_persona_avatar_url("builtin:fizz").unwrap();
+    let new_fizz = crate::managed_agents::legacy_stock_persona_avatar_url("builtin:fizz").unwrap();
     assert_eq!(migrated[0]["avatar_url"], new_fizz);
     assert_eq!(migrated[0]["persona_source_version"], current_version);
     assert_eq!(migrated[0]["updated_at"], "after");
@@ -316,11 +316,11 @@ fn refresh_builtin_agent_avatars_updates_uploaded_media_urls() {
     let migrated: Vec<serde_json::Value> =
         serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
     let current_definition =
-        crate::managed_agents::built_in_persona_definition("builtin:fizz", "after").unwrap();
+        crate::managed_agents::legacy_stock_persona_definition("builtin:fizz", "after").unwrap();
     let current_version = crate::managed_agents::persona_events::persona_content_hash(
         &crate::managed_agents::persona_events::persona_event_content(&current_definition),
     );
-    let new_fizz = crate::managed_agents::built_in_persona_avatar_url("builtin:fizz").unwrap();
+    let new_fizz = crate::managed_agents::legacy_stock_persona_avatar_url("builtin:fizz").unwrap();
     assert_eq!(migrated[0]["avatar_url"], new_fizz);
     assert_eq!(migrated[0]["persona_source_version"], current_version);
     assert_eq!(migrated[0]["updated_at"], "after");

@@ -186,10 +186,10 @@ fn builtin_record(id: &str) -> AgentDefinition {
 
 #[test]
 fn test_builtin_member_carries_slug_and_projection_hash() {
-    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:fizz")]).unwrap();
+    let content = build_team_catalog_content(&team(), &[builtin_record("builtin:kuzi")]).unwrap();
     let projected = &content.members[0];
 
-    assert_eq!(projected.builtin_slug.as_deref(), Some("fizz"));
+    assert_eq!(projected.builtin_slug.as_deref(), Some("kuzi"));
     assert!(projected.projection_hash.is_some());
 }
 
@@ -216,7 +216,7 @@ fn test_a_record_flagged_builtin_without_the_canonical_id_carries_no_hint() {
 #[test]
 fn test_reuse_hash_changes_when_the_builtin_definition_changes() {
     // Same slug, different definition — the recipient must detect it and fall back.
-    let original = builtin_record("builtin:fizz");
+    let original = builtin_record("builtin:kuzi");
     let mut changed = original.clone();
     changed.system_prompt = "Review differently.".to_string();
 
@@ -233,7 +233,7 @@ fn test_reuse_hash_changes_when_the_builtin_definition_changes() {
 #[test]
 fn test_reuse_hash_excludes_the_hint_fields_so_a_recipient_can_recompute_it() {
     // The recipient hashes its own local copy — no cross-install slug is involved.
-    let builtin = builtin_record("builtin:fizz");
+    let builtin = builtin_record("builtin:kuzi");
     let recomputed = local_member_projection_hash(&builtin);
     let content = build_team_catalog_content(&team(), &[builtin]).unwrap();
     let projected = &content.members[0];
@@ -269,7 +269,7 @@ fn test_oversized_avatar_on_a_builtin_is_omitted_from_the_projection() {
     // Built-in avatars over the cap are silently omitted; recipient gets default.
     let mut one = member("m1", "Builtin Avatar Hog");
     one.is_builtin = true;
-    one.id = "builtin:fizz".to_string(); // gives builtin_catalog_slug() a non-empty slug
+    one.id = "builtin:kuzi".to_string(); // gives builtin_catalog_slug() a non-empty slug
     one.avatar_url = Some("d".repeat(MAX_AVATAR_URL_BYTES + 1));
 
     let content = build_team_catalog_content(&team(), &[one]).unwrap();
@@ -839,10 +839,10 @@ run_fixture_table!(
 
 #[test]
 fn test_real_builtin_without_avatar_mutation_projects_successfully() {
-    // A real built-in (fizz) has a ~170 KiB oversized avatar that is stripped in member_projection.
+    // A real built-in (kuzi); an oversized avatar would be stripped in member_projection.
     let builtin =
-        crate::managed_agents::built_in_persona_definition("builtin:fizz", "2026-07-30T00:00:00Z")
-            .expect("builtin:fizz must exist");
+        crate::managed_agents::built_in_persona_definition("builtin:kuzi", "2026-07-30T00:00:00Z")
+            .expect("builtin:kuzi must exist");
     let has_large_avatar = builtin
         .avatar_url
         .as_deref()

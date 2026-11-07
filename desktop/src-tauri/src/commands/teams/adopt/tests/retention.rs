@@ -204,8 +204,8 @@ fn reused_builtin_is_not_retained() {
     let dir = tempfile::tempdir().unwrap();
     let scope = scope(dir.path());
 
-    let local = crate::managed_agents::built_in_persona_definition("builtin:fizz", NOW)
-        .expect("builtin:fizz must exist");
+    let local = crate::managed_agents::built_in_persona_definition("builtin:kuzi", NOW)
+        .expect("builtin:kuzi must exist");
     let t = team_fixture(vec![local.id.clone()]);
     let keys = nostr::Keys::generate();
     let event = build_team_catalog_event(&t, std::slice::from_ref(&local), true)

@@ -182,10 +182,9 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
 
   for (const starter of WELCOME_TEAM_STARTERS) {
     const input = await buildWelcomeStarterCreateInput(
-      starter,
       {
         id: starter.personaId,
-        displayName: starter.name,
+        displayName: "Kuzi",
         systemPrompt: `${starter.name} prompt`,
         model: null,
         provider: null,
@@ -203,6 +202,8 @@ test("all Welcome starters use the onboarding runtime preference", async () => {
     assert.equal(input.agentCommand, "claude-code-acp");
     assert.equal(input.harnessOverride, true);
     assert.equal(input.personaId, starter.personaId);
+    // The persona's own display name, with no override.
+    assert.equal(input.name, "Kuzi");
     assert.equal(input.teamId, WELCOME_TEAM_ID);
     assert.equal(input.relayUrl, RELAY_A);
     assert.equal(input.spawnAfterCreate, false);
@@ -294,52 +295,54 @@ test("existing Welcome starter needs no update when runtime already matches", ()
 test("welcome team starter definitions and role identities are stable", () => {
   assert.equal(WELCOME_TEAM_ID, "builtin-team:welcome");
   assert.deepEqual(WELCOME_TEAM_STARTERS, [
-    { name: "Fizz", personaId: "builtin:fizz", role: "lead" },
-    { name: "Honey", personaId: "builtin:honey", role: "teammate" },
-    { name: "Pollen", personaId: "builtin:bumble", role: "teammate" },
+    { name: "Kuzi", personaId: "builtin:kuzi", role: "lead" },
   ]);
 });
 
 test("starter matching ignores user agents with a Welcome persona", () => {
-  const honey = WELCOME_TEAM_STARTERS[1];
-  const userHoney = makeAgent({
-    personaId: honey.personaId,
+  const kuzi = WELCOME_TEAM_STARTERS[0];
+  const userKuzi = makeAgent({
+    personaId: kuzi.personaId,
     teamId: null,
   });
 
   assert.equal(
-    pickWelcomeTeamStarterAgentForRelay([userHoney], honey, RELAY_A),
+    pickWelcomeTeamStarterAgentForRelay([userKuzi], kuzi, RELAY_A),
     null,
   );
 });
 
 test("starter matching uses persona identity rather than display name", () => {
-  const honey = WELCOME_TEAM_STARTERS[1];
-  const renamedHoney = makeAgent({
-    name: "Honey the Helper",
-    personaId: honey.personaId,
+  const kuzi = WELCOME_TEAM_STARTERS[0];
+  const renamedKuzi = makeAgent({
+    name: "Kuzi the Helper",
+    personaId: kuzi.personaId,
   });
-  const nameOnlyHoney = makeAgent({ name: honey.name, pubkey: PUB_B });
+  const nameOnlyKuzi = makeAgent({
+    name: kuzi.name,
+    personaId: null,
+    pubkey: PUB_B,
+  });
 
   assert.equal(
     pickWelcomeTeamStarterAgentForRelay(
-      [nameOnlyHoney, renamedHoney],
-      honey,
+      [nameOnlyKuzi, renamedKuzi],
+      kuzi,
       RELAY_A,
     ),
-    renamedHoney,
+    renamedKuzi,
   );
 });
 
 test("starter matching is relay scoped and normalizes trailing slashes", () => {
-  const pollen = WELCOME_TEAM_STARTERS[2];
+  const kuzi = WELCOME_TEAM_STARTERS[0];
   const otherRelay = makeAgent({
-    personaId: pollen.personaId,
+    personaId: kuzi.personaId,
     relayUrl: RELAY_B,
     status: "running",
   });
   const matchingRelay = makeAgent({
-    personaId: pollen.personaId,
+    personaId: kuzi.personaId,
     relayUrl: `${RELAY_A}/`,
     pubkey: PUB_B,
   });
@@ -347,7 +350,7 @@ test("starter matching is relay scoped and normalizes trailing slashes", () => {
   assert.equal(
     pickWelcomeTeamStarterAgentForRelay(
       [otherRelay, matchingRelay],
-      pollen,
+      kuzi,
       RELAY_A,
     ),
     matchingRelay,

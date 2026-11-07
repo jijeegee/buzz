@@ -14,7 +14,6 @@ import {
   markWelcomeChannelEnsured,
   notifyWelcomeChannelReady,
   rememberPendingWelcomeChannel,
-  setWelcomeTeamOwed,
 } from "@/features/onboarding/welcome";
 import { forceFreshOnboarding } from "@/features/onboarding/devFreshOnboarding";
 import { ensureWelcomeCanvas } from "@/features/onboarding/welcomeCanvas";
@@ -59,8 +58,8 @@ function seedWelcomeExperience(
 
   const promise = (async () => {
     try {
-      // The team stays on the computer this account signed up from, so a later
-      // computer only has the canvas left to ensure.
+      // The team is made on the first computer that gets here once agents
+      // are set up; a later computer only has the canvas left to ensure.
       await ensureWelcomeTeam(channelId, communityScope).catch((error) => {
         if (!(error instanceof WelcomeTeamElsewhereError)) throw error;
       });
@@ -96,11 +95,7 @@ export async function initializeStarterChannels(
     // never automatically: on a shared server they hold strangers.
     const welcomeChannel = await ensureWelcomeChannel(
       {
-        createChannel: async (input) => {
-          const channel = await createChannel(input);
-          setWelcomeTeamOwed(pubkey, communityScope, true);
-          return channel;
-        },
+        createChannel,
         deleteChannel,
         getChannelMembers,
         getChannels: getChannelsList,
