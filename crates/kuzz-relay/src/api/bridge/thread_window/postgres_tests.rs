@@ -515,6 +515,7 @@ async fn thread_window_scope_roots_and_aggregate_budgets() {
     let (status, two) = f.post(&f.keys, "/query", json!([filter, filter])).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{two}");
     assert!(two.to_string().contains("byte budget"));
+    assert_eq!(two["code"], "window_budget", "{two}");
 }
 
 #[tokio::test]
@@ -529,6 +530,7 @@ async fn thread_window_router_aux_row_cap_and_corrupt_page() {
     let (status, body) = f.post(&f.keys, "/query", json!([f.filter()])).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
     assert!(body["error"].as_str().unwrap().contains("raw row budget"), "{body}");
+    assert_eq!(body["code"], "window_budget", "{body}");
     // Keep 1,001 rows and corrupt one guaranteed to lie on the first raw page.
     sqlx::query("DELETE FROM events WHERE community_id=$1 AND kind=40003 AND id NOT IN \
         (SELECT id FROM events WHERE community_id=$1 AND kind=40003 ORDER BY created_at DESC,id ASC LIMIT 1001)")

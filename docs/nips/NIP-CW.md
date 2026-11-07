@@ -322,7 +322,9 @@ probes consume the raw allowance too. No partial page or bounds is returned
 when a budget is exceeded.
 
 Resource exhaustion and database timeouts return HTTP `503`; malformed stored
-auxiliary data remains a separate HTTP `500`. Clients MUST discard the entire
+auxiliary data remains a separate HTTP `500`. Work/byte exhaustion carries
+`"code": "window_budget"` in its JSON body beside `error`, so clients can tell
+it from a timeout without reading the message. Clients MUST discard the entire
 failed batch without advancing any cursor. For work/byte exhaustion, reduce
 `limit`, split the batch, or explicitly request `include_aux: false` and fetch
 needed auxiliary data separately. A root's auxiliary history can exceed the

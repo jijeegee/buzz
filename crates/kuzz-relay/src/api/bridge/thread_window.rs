@@ -52,9 +52,20 @@ fn unavailable(message: &str) -> Error {
     api_error(StatusCode::SERVICE_UNAVAILABLE, message)
 }
 
+/// Stable code of a work/byte budget 503: the client reduces the window
+/// instead of retrying it as is (NIP-CW).
+const WINDOW_BUDGET_CODE: &str = "window_budget";
+
+fn over_budget(message: &str) -> Error {
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({ "error": message, "code": WINDOW_BUDGET_CODE })),
+    )
+}
+
 fn database_error(context: &str, error: kuzz_db::DbError) -> Error {
     if let kuzz_db::DbError::ThreadWindowBudgetExceeded(_) = &error {
-        return unavailable(&format!("{error}; reduce window work before retrying"));
+        return over_budget(&format!("{error}; reduce window work before retrying"));
     }
     // Pool acquisition and PostgreSQL's statement/lock budgets may expire
     // before the outer HTTP deadline. They are retryable, not internal faults.
@@ -78,7 +89,7 @@ fn append(events: &mut Vec<Value>, budget: &mut Budget, event: &nostr::Event) ->
         .map_err(|e| internal_error(&format!("thread serialize: {e}")))?;
     budget.bytes = budget.bytes.saturating_add(value.to_string().len() + 1);
     if budget.bytes > MAX_BYTES {
-        return Err(unavailable("thread window exceeds response byte budget"));
+        return Err(over_budget("thread window exceeds response byte budget"));
     }
     events.push(value);
     Ok(())
