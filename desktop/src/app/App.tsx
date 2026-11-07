@@ -91,6 +91,7 @@ import {
 } from "@/shared/deep-link";
 import { cn } from "@/shared/lib/cn";
 import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
+import { DotMorphLoader } from "@/shared/ui/dot-morph/DotMorphLoader";
 import { FuzzyLogo } from "@/shared/ui/kuzz-logo/FuzzyLogo";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
@@ -179,7 +180,7 @@ function KuzzLoader({
 }
 
 // Cold boot gate: the theme-adaptive grainient background with a single
-// centered Kuzz mark over it. Replaces the
+// centered dot loader over it. Replaces the
 // old "Setting up your community" text, which stays as an sr-only caption.
 function AppLoadingGate() {
   const t = useT();
@@ -196,7 +197,10 @@ function AppLoadingGate() {
       {caption ? null : (
         <span className="sr-only">{t("app.loading.settingUp")}</span>
       )}
-      <KuzzMark className="relative z-10 h-auto w-28" />
+      <DotMorphLoader
+        className="relative z-10"
+        loader={caption ? "accountSwitch" : "appStart"}
+      />
       {caption ? (
         <p
           className="relative z-10 mt-6 text-sm text-muted-foreground"

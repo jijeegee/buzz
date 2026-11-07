@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter_hooks/flutter_hooks.dart';
 
 /// The Kuzz "K", painted so it appears on the first frame at any size.
 ///
@@ -61,58 +60,4 @@ class _KuzzMarkPainter extends CustomPainter {
   @override
   bool shouldRepaint(_KuzzMarkPainter oldDelegate) =>
       color != oldDelegate.color;
-}
-
-/// The loading state of [KuzzMark]: a slow pulse matching the desktop app.
-///
-/// Stays still when [active] is false or the system asks for reduced motion.
-class KuzzLoadingMark extends HookWidget {
-  /// The rendered height of the K.
-  final double height;
-
-  /// The color of the K.
-  final Color color;
-
-  /// Whether the mark pulses.
-  final bool active;
-
-  const KuzzLoadingMark({
-    required this.height,
-    required this.color,
-    this.active = true,
-    super.key,
-  });
-
-  static const _minScale = 0.94;
-  static const _maxScale = 1.06;
-
-  @override
-  Widget build(BuildContext context) {
-    final pulses = active && !MediaQuery.disableAnimationsOf(context);
-    final controller = useAnimationController(
-      duration: const Duration(milliseconds: 900),
-    );
-    useEffect(() {
-      if (pulses) {
-        // Start at the resting size so the mark does not jump.
-        controller
-          ..value = 0.5
-          ..repeat(reverse: true);
-      } else {
-        controller
-          ..stop()
-          ..reset();
-      }
-      return null;
-    }, [controller, pulses]);
-
-    final mark = KuzzMark(height: height, color: color);
-    if (!pulses) return mark;
-    return ScaleTransition(
-      scale: controller
-          .drive(CurveTween(curve: Curves.easeInOut))
-          .drive(Tween(begin: _minScale, end: _maxScale)),
-      child: mark,
-    );
-  }
 }

@@ -1,0 +1,91 @@
+<!doctype html>
+<!--
+  Samples the loading-screen shapes into dot coordinates. Shapes come from
+  kuzz.app (robots, people, the K and the wordmark). Regenerate with:
+  chrome --headless=new --dump-dom file:///.../generate-dot-shapes.html
+  and save the <pre id="out"> text as dotShapes.json (desktop) and
+  mobile/lib/shared/widgets/dot_shapes.dart.
+-->
+<html lang="en"><body><pre id="out"></pre><script>
+const GEO = {
+    classic: [["rect",4,8,16,12,2],["line",12,8,12,4],["dot",12,3.5,1.5],["line",2,14,4,14],["line",20,14,22,14],["line",9,13,9,15],["line",15,13,15,15]],
+    dome: [["rect",5,8,14,13,6.5],["line",9,8.5,7,4],["line",15,8.5,17,4],["dot",9.5,14.5,1.5],["dot",14.5,14.5,1.5]],
+    boxy: [["rect",5,6,14,14,0.5],["line",2,10,2,16],["line",22,10,22,16],["line",8.5,11,10.5,11],["line",13.5,11,15.5,11],["line",9,16,15,16]],
+    visor: [["rect",3,9,18,11,5.5],["line",7.5,14.5,16.5,14.5],["line",12,9,12,5],["line",9.5,5,14.5,5]],
+    tall: [["rect",6,3,12,18,3],["line",10,8.5,10,11.5],["line",14,8.5,14,11.5],["line",10,16,14,16],["line",3,12,6,12],["line",18,12,21,12]],
+    hex: [["poly",[12,3,20,7.5,20,16.5,12,21,4,16.5,4,7.5]],["circle",9,12,1.5],["circle",15,12,1.5],["line",10.5,16.5,13.5,16.5]],
+    cyclops: [["rect",4,7,16,13,4],["circle",12,13.5,3],["line",12,7,12,4],["dot",12,3.2,1.4]],
+    tv: [["rect",3,9,18,12,2],["line",9,9,6.5,4],["line",15,9,17.5,4],["rect",6.5,12,11,6,1.5]],
+    ball: [["circle",12,13.5,7.5],["dot",9.5,12.5,1.4],["dot",14.5,12.5,1.4],["line",10,16.5,14,16.5],["line",12,6,12,3]],
+    bucket: [["poly",[7,7,17,7,20,20,4,20]],["line",9,12,11,12],["line",13,12,15,12],["line",10,16,14,16],["line",12,7,12,3.5]],
+    twin: [["rect",4,10,16,11,3.5],["line",8,10,8,6],["dot",8,5,1.4],["line",16,10,16,6],["dot",16,5,1.4],["circle",9,15.5,1.5],["circle",15,15.5,1.5]],
+    grill: [["rect",5,5,14,15,3],["dot",9.5,10,1.3],["dot",14.5,10,1.3],["line",8.5,14.5,15.5,14.5],["line",8.5,17,15.5,17],["line",2,11,5,11],["line",19,11,22,11]],
+  };
+const KUZZ_PEOPLE = [{"name": "pomade", "label": "포마드", "paths": ["M5 10V7C5 3.5 9 2.5 13 3S19 5 19 9V10", "M5 10C8 10 8 6 10 5M10 5C12 7 15 8 19 8", "M5 11H4V14H5V16L8 20H16L19 16V14H20V11H19", "M10 17H14"], "eyes": [[9, 12.5, 1.1], [15, 12.5, 1.1]]}, {"name": "beard", "label": "풍성한 수염", "paths": ["M3 15V9C3 4.5 7 3 12 3S21 4.5 21 9V15", "M6 10C6 7 9 7 12 5C15 7 18 7 18 10", "M5 13V16L8 19L9 18L12 21L15 18L16 19L19 16V13", "M8 15L12 13.5L16 15"], "eyes": [[8.5, 10.5, 1.1], [15.5, 10.5, 1.1]]}, {"name": "waves", "label": "굵은 웨이브", "paths": ["M5 19C1 18 3 15 3.5 13C1 10 4 8 4.5 6C6 2 12 2 15 3C19 2 22 6 20 9C23 11 21 13 20.5 14C23 17 21 19 19 19", "M6 10C10 10 12 7 13 6C14 8 16 9 18 10", "M6 13C6 17 8 20 12 21C16 20 18 17 18 13", "M10 17Q12 18.5 14 17"], "eyes": [[9, 12, 1.05], [15, 12, 1.05]]}, {"name": "cap", "label": "야구모자", "paths": ["M5 9V8C5 4.5 8 3 12 3S19 4.5 19 8V9", "M4 9H20M5 10L7 12H17L20 9M12 3V6", "M5 14C4 18 8 21 12 21C16 21 20 18 19 14", "M10 18H14"], "eyes": [[8.5, 14.5, 1.1], [15.5, 14.5, 1.1]]}, {"name": "bun", "label": "올림머리", "paths": ["M9 6C6 1 18 1 15 6", "M5 12V11C5 7 8 6 12 6S19 7 19 11V12", "M5 12C8 11 10 9 12 9C14 9 16 11 19 12", "M5 14C5 17 8 20 12 21C16 20 19 17 19 14", "M8 14L9 13M15 13L16 14M10 17Q12 18.5 14 17"], "eyes": []}, {"name": "bob", "label": "단발머리", "paths": ["M7 19H3V10C3 5 6 3 12 3S21 5 21 10V19H17", "M6 10H18M12 7V10", "M6 13V15C6 18 10 20 12 21C14 20 18 18 18 15V13", "M9 13V14M15 13V14M10.5 17H13.5"], "eyes": []}, {"name": "glasses", "label": "네모 뿔테", "paths": ["M4 9V7L8 3L10 5L14 3L15 5L19 5L20 9", "M3 15C3 19 7 21 12 21S21 19 21 15", "M3.5 10.5H10V15H3.5ZM14 10.5H20.5V15H14ZM10 12H14", "M10 18H14"], "eyes": []}];
+const MARK = new Path2D("M387 -213V-718Q437 -783 487.5 -848.0Q538 -913 588.0 -977.5Q638 -1042 688 -1107L984 -1490H1465L842 -723H804ZM80 0V-1490H496V-1170V-741V-544V0ZM1017 0 658 -599 906 -911 1493 0Z");
+const WORD = new Path2D("M387 -213V-718Q437 -783 487.5 -848.0Q538 -913 588.0 -977.5Q638 -1042 688 -1107L984 -1490H1465L842 -723H804ZM80 0V-1490H496V-1170V-741V-544V0ZM1017 0 658 -599 906 -911 1493 0ZM1894.04 24Q1777.04 24 1697.54 -26.5Q1618.04 -77 1578.04 -170.0Q1538.04 -263 1538.04 -390V-1056H1938.04V-480Q1938.04 -401 1976.54 -357.5Q2015.04 -314 2085.04 -314Q2132.04 -314 2165.04 -334.0Q2198.04 -354 2215.04 -394.5Q2232.04 -435 2232.04 -496V-1056H2632.04V0H2237.04V-291H2289.04Q2240.04 -153 2147.54 -64.5Q2055.04 24 1894.04 24ZM2775.08 0V-256L3252.08 -750V-752H2775.08V-1056H3717.08V-784L3253.08 -304V-302H3727.08V0ZM3882.12 0V-256L4359.12 -750V-752H3882.12V-1056H4824.12V-784L4360.12 -304V-302H4834.12V0Z");
+
+const hash = (i, k) => { const v = Math.sin(i * 12.9898 + k * 78.233) * 43758.5453; return v - Math.floor(v); };
+
+function prim(o, p) {
+  const k = p[0];
+  o.beginPath();
+  if (k === "rect") { o.roundRect(p[1], p[2], p[3], p[4], p[5]); o.stroke(); }
+  else if (k === "line") { o.moveTo(p[1], p[2]); o.lineTo(p[3], p[4]); o.stroke(); }
+  else if (k === "circle") { o.arc(p[1], p[2], p[3], 0, 7); o.stroke(); }
+  else if (k === "dot") { o.arc(p[1], p[2], p[3], 0, 7); o.fill(); }
+  else if (k === "poly") { const a = p[1]; o.moveTo(a[0], a[1]); for (let i = 2; i < a.length; i += 2) o.lineTo(a[i], a[i + 1]); o.closePath(); o.stroke(); }
+}
+function iconDrawer(draw, box) {
+  // box in 0..1 of the stage: [x, y, size]
+  return (o, w, h) => {
+    const s = box[2] * h;
+    o.save(); o.translate(box[0] * w - s / 2, box[1] * h - s / 2); o.scale(s / 24, s / 24);
+    o.lineWidth = 2.5; o.lineCap = "round"; o.lineJoin = "round";
+    draw(o); o.restore();
+  };
+}
+const robot = (name, box = [0.5, 0.5, 1]) => iconDrawer((o) => { for (const p of GEO[name]) prim(o, p); }, box);
+const person = (i, box = [0.5, 0.5, 1]) => iconDrawer((o) => {
+  const P = KUZZ_PEOPLE[i];
+  for (const d of P.paths) o.stroke(new Path2D(d));
+  for (const [x, y, r] of P.eyes) { o.beginPath(); o.arc(x, y, r, 0, 7); o.fill(); }
+}, box);
+const kMark = (o, w, h) => {
+  const s = h / 1490; o.save(); o.translate((w - 1413 * s) / 2, h); o.scale(s, s); o.translate(-80, 0); o.fill(MARK); o.restore();
+};
+const wordmark = (o, w, h) => {
+  const s = Math.min(w / 4754, h / 1514); o.save();
+  o.translate((w - 4754 * s) / 2, (h + 1466 * s) / 2); o.scale(s, s); o.translate(-80, 0); o.fill(WORD); o.restore();
+};
+const both = (a, b) => (o, w, h) => { a(o, w, h); b(o, w, h); };
+
+function sample(w, h, n, key, draw) {
+  const q = 3, W = w * q, H = h * q;
+  const c = document.createElement("canvas"); c.width = W; c.height = H;
+  const o = c.getContext("2d", { willReadFrequently: true });
+  o.fillStyle = o.strokeStyle = "#000"; draw(o, W, H);
+  const d = o.getImageData(0, 0, W, H).data, pts = [];
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) if (d[(y * W + x) * 4 + 3] > 128) pts.push([x / q, y / q]);
+  for (let i = pts.length - 1; i > 0; i--) { const j = Math.floor(hash(i, key.length + 3) * (i + 1)); [pts[i], pts[j]] = [pts[j], pts[i]]; }
+  const area = pts.length / (q * q), cell = Math.sqrt(area / n) * 0.82, seen = new Set(), keep = [], rest = [];
+  for (const p of pts) { const k = `${Math.floor(p[0] / cell)},${Math.floor(p[1] / cell)}`; if (seen.has(k)) rest.push(p); else { seen.add(k); keep.push(p); } }
+  const out = [];
+  for (let i = 0; i < n; i++) { const p = keep[i] || rest[(i - keep.length) % (rest.length || 1)] || [w / 2, h / 2]; out.push(Math.round(p[0] * 10), Math.round(p[1] * 10)); }
+  return out;
+}
+const scenes = {
+  refresh: [40, 40, 170, 1.3, 1.5, { k: kMark, r: robot("classic"), p: person(0) }],
+  huddle: [132, 60, 240, 1.2, 1, (() => { const L = person(5, [0.2, 0.5, 0.92]), R = robot("visor", [0.8, 0.5, 0.92]); return { l: L, r: R, b: both(L, R) }; })()],
+  appStart: [150, 56, 760, 1, 1.1, { w: wordmark }],
+  accountSwitch: [72, 72, 260, 1.2, 1, { a: person(0), b: person(4), c: person(6) }],
+  inviteWait: [96, 96, 420, 1.2, 1, { k: kMark, p: person(1), r: robot("tall") }],
+};
+const res = {};
+for (const [name, [w, h, n, dot, spread, shapes]] of Object.entries(scenes)) {
+  const s = {};
+  for (const [k, draw] of Object.entries(shapes)) s[k] = sample(w, h, n, k, draw);
+  res[name] = { width: w, height: h, count: n, dotSize: dot, dustSpread: spread, shapes: s };
+}
+document.getElementById("out").textContent = JSON.stringify(res);
+</script></body></html>

@@ -94,9 +94,9 @@ import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 import 'package:kuzz/shared/widgets/app_list_card.dart';
 import 'package:kuzz/shared/widgets/avatar_image.dart';
+import 'package:kuzz/shared/widgets/dot_morph.dart';
 import 'package:kuzz/shared/widgets/frosted_app_bar.dart';
 import 'package:kuzz/shared/widgets/frosted_scaffold.dart';
-import 'package:kuzz/shared/widgets/kuzz_mark.dart';
 import 'package:kuzz/shared/widgets/keyboard_dismiss_on_drag.dart';
 import 'package:kuzz/shared/widgets/ios_glass_navigation_button.dart';
 import 'package:kuzz/shared/widgets/lucide_star_icon.dart';
@@ -6259,7 +6259,7 @@ void main() {
       expect(relaySession.publishedKinds, isEmpty);
     });
 
-    testWidgets('shows the flapping bee instead of an avatar while joining', (
+    testWidgets('shows the loading dots instead of an avatar while joining', (
       tester,
     ) async {
       final now = DateTime.now().millisecondsSinceEpoch ~/ 1000;
@@ -6294,22 +6294,26 @@ void main() {
 
       final loadingMark = find.byKey(const ValueKey('huddle-loading-mark'));
       expect(loadingMark, findsOneWidget);
-      expect(tester.widget<KuzzLoadingMark>(loadingMark).height, 40);
+      expect(tester.widget<DotMorphLoader>(loadingMark).scene, DotScene.huddle);
       expect(find.bySemanticsLabel('Joining Huddle'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('huddle-participant-avatar-self')),
         findsNothing,
       );
-      final pulse = find.descendant(
-        of: loadingMark,
-        matching: find.byType(ScaleTransition),
-      );
-      final initialScale = tester.widget<ScaleTransition>(pulse).scale.value;
-      await tester.pump(const Duration(milliseconds: 300));
-      expect(
-        tester.widget<ScaleTransition>(pulse).scale.value,
-        isNot(initialScale),
-      );
+      final morph = tester
+          .widget<DotMorphView>(
+            find.descendant(
+              of: loadingMark,
+              matching: find.byType(DotMorphView),
+            ),
+          )
+          .morph;
+      final initialDots = List.of(morph.positions);
+      // The first figure holds for 800 ms before the dots cross over.
+      for (var frame = 0; frame < 60; frame++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(morph.positions, isNot(orderedEquals(initialDots)));
 
       connectGate.complete();
       await tester.pumpAndSettle();

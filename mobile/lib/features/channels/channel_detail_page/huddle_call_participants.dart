@@ -177,10 +177,11 @@ class _HuddleLoadingMark extends StatelessWidget {
       label: context.l10n.huddleJoining,
       liveRegion: true,
       child: ExcludeSemantics(
-        child: KuzzLoadingMark(
+        child: DotMorphLoader(
           key: const ValueKey('huddle-loading-mark'),
-          height: 40,
-          color: context.colors.primary,
+          scene: DotScene.huddle,
+          steps: DotMorphLoader.huddleSteps,
+          color: Theme.of(context).colorScheme.onSurface,
         ),
       ),
     );
