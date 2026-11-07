@@ -5,6 +5,7 @@ import {
   STARTED_WITHOUT_ROUTE,
 } from "@/features/sidebar/lib/sidebarListTab";
 import { hasPendingWelcomeChannel } from "@/features/onboarding/welcome";
+import type { TopChat } from "@/features/chats/topChat";
 
 let landingDone = false;
 
@@ -31,8 +32,8 @@ export function shouldLandOnChats({
 
 /**
  * Where the rail's Chats item goes: the room (and thread) last open in this
- * session, else the first sidebar chat. On a channel it only switches the
- * left list back to Chats.
+ * session, else the top of the Chats list, else the first sidebar chat. On a
+ * channel it only switches the left list back to Chats.
  */
 export function resolveChatsRailTarget(
   lastChannelId: string | null,
@@ -51,6 +52,8 @@ export function useChatsRailNavigation({
   selectedThreadRootId,
   selectedView,
   sidebarChannels,
+  topChat,
+  topChatReady,
 }: {
   /** The channel list has loaded once, so an empty list really is empty. */
   channelsLoaded: boolean;
@@ -63,10 +66,14 @@ export function useChatsRailNavigation({
   selectedThreadRootId: string | null;
   selectedView: string;
   sidebarChannels: readonly { id: string }[];
+  /** The row at the top of the Chats list (topChatTarget). */
+  topChat: TopChat | null;
+  /** The Chats list's rows are known, so topChat is what the list shows. */
+  topChatReady: boolean;
 }): (options?: { replace?: boolean }) => void {
-  // A fresh start lands on Chats (the first sidebar chat), once per launch.
+  // A fresh start lands on the top of the Chats list, once per launch.
   React.useEffect(() => {
-    if (landingDone || !channelsLoaded) return;
+    if (landingDone || !channelsLoaded || !topChatReady) return;
     landingDone = true;
     if (
       !shouldLandOnChats({
@@ -77,14 +84,13 @@ export function useChatsRailNavigation({
     ) {
       return;
     }
-    const target = resolveChatsRailTarget(
-      null,
-      sidebarChannels.map((channel) => channel.id),
-    );
-    if (!target) return;
+    if (!topChat) return;
     setSidebarListTab("chats");
-    void goChannel(target, { replace: true });
-  }, [channelsLoaded, goChannel, selectedView, sidebarChannels]);
+    void goChannel(topChat.channelId, {
+      replace: true,
+      ...(topChat.threadRootId ? { thread: topChat.threadRootId } : {}),
+    });
+  }, [channelsLoaded, goChannel, selectedView, topChat, topChatReady]);
   const lastRef = React.useRef<{
     channelId: string;
     threadRootId: string | null;
@@ -101,7 +107,7 @@ export function useChatsRailNavigation({
     (options?: { replace?: boolean }) => {
       setSidebarListTab("chats");
       if (selectedView === "channel") return;
-      const last = lastRef.current;
+      const last = lastRef.current ?? topChat;
       const target = resolveChatsRailTarget(
         last?.channelId ?? null,
         sidebarChannels.map((channel) => channel.id),
@@ -117,6 +123,6 @@ export function useChatsRailNavigation({
         ...(options?.replace === true ? { replace: true } : {}),
       });
     },
-    [goChannel, selectedView, sidebarChannels],
+    [goChannel, selectedView, sidebarChannels, topChat],
   );
 }

@@ -139,6 +139,8 @@ export function useChatStateWiring({
   mirrorFollow: (rootId: string, state: ChatFollowState) => void;
   pinThread: (rootId: string) => void;
   serverChats: ServerChats | undefined;
+  /** The Chats list's rows are known: the relay's (or kept) rows, or none. */
+  rowsSettled: boolean;
   syncProps: ChatStateSyncProps;
   unpinThread: (rootId: string) => void;
 } {
@@ -362,6 +364,7 @@ export function useChatStateWiring({
     mirrorThreadRead,
     pinThread: threadPins.add,
     serverChats,
+    rowsSettled: listedRows !== undefined || capability === "off",
     syncProps,
     unpinThread: threadPins.remove,
   };

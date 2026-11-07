@@ -127,6 +127,7 @@ import {
   isFreshStartLandingPending,
   useChatsRailNavigation,
 } from "@/app/useChatsRailNavigation";
+import { topChatTarget } from "@/features/chats/topChat";
 import {
   listTabForView,
   setSidebarListTab,
@@ -384,25 +385,9 @@ export function AppShell() {
     selectedView === "channel" && typeof locationThread === "string"
       ? locationThread
       : null;
-  const handleSelectChats = useChatsRailNavigation({
-    channelsLoaded: channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0,
-    goChannel,
-    selectedChannelId,
-    selectedThreadRootId,
-    selectedView,
-    sidebarChannels,
-  });
   const sidebarListTab = useSidebarListTab();
-  // Home is Chats: whatever still lands on the home route (an account
-  // switch, a deleted or hidden chat, a shortcut) opens the last chat
-  // instead of the hidden Inbox. A fresh launch is handled by the landing.
   const channelsLoaded =
     channelsQuery.isSuccess && channelsQuery.dataUpdatedAt > 0;
-  React.useEffect(() => {
-    if (selectedView !== "home" || settingsOpen || !channelsLoaded) return;
-    if (isFreshStartLandingPending() || hasPendingWelcomeChannel()) return;
-    handleSelectChats({ replace: true });
-  }, [channelsLoaded, handleSelectChats, selectedView, settingsOpen]);
   // A screen opened by route (a link, search, back) shows its own list.
   // Settings also reads as the home view, but it keeps the list it was
   // opened over.
@@ -626,6 +611,41 @@ export function AppShell() {
         : chatThreadRowChats,
     [chatThreadRowChats, selectedThreadRootId],
   );
+  const topChat = React.useMemo(
+    () =>
+      topChatTarget({
+        channels: sidebarChannels,
+        mutedRootIds,
+        pinnedThreadIds: chatState.serverChats?.pinnedThreadIds,
+        rows: chatState.serverChats?.rows,
+        starredChannelIds,
+      }),
+    [
+      chatState.serverChats?.pinnedThreadIds,
+      chatState.serverChats?.rows,
+      mutedRootIds,
+      sidebarChannels,
+      starredChannelIds,
+    ],
+  );
+  const handleSelectChats = useChatsRailNavigation({
+    channelsLoaded,
+    goChannel,
+    selectedChannelId,
+    selectedThreadRootId,
+    selectedView,
+    sidebarChannels,
+    topChat,
+    topChatReady: chatState.rowsSettled,
+  });
+  // Home is Chats: whatever still lands on the home route (an account
+  // switch, a deleted or hidden chat, a shortcut) opens the last chat
+  // instead of the hidden Inbox. A fresh launch is handled by the landing.
+  React.useEffect(() => {
+    if (selectedView !== "home" || settingsOpen || !channelsLoaded) return;
+    if (isFreshStartLandingPending() || hasPendingWelcomeChannel()) return;
+    handleSelectChats({ replace: true });
+  }, [channelsLoaded, handleSelectChats, selectedView, settingsOpen]);
 
   const createChannelMutation = useCreateChannelMutation(),
     createForumMutation = useCreateChannelMutation();
