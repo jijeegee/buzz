@@ -25,6 +25,9 @@ mod stream_store_tests;
 mod stream_tap;
 #[cfg(test)]
 mod tests;
+mod window;
+#[cfg(test)]
+mod window_tests;
 mod writer;
 
 pub(crate) use clock::{clock_trusted, note_server_date};
@@ -44,6 +47,7 @@ pub(crate) use head::HeadSpan;
 pub(crate) use paint::{paint_room_head, paint_thread_head, paint_thread_root};
 pub(crate) use room_seq::SeqWrite;
 pub(crate) use snapshot::{read_snapshot, write_snapshot};
+pub(crate) use window::{StoredWindow, WindowReplace};
 use writer::{Input, Writer};
 
 static STORE: OnceLock<MessageStore> = OnceLock::new();
@@ -783,6 +787,75 @@ pub(crate) fn certain_thread_head(
     let lease = store.lease(relay_url, account)?;
     let head = store.thread_head(&lease, room, root, kinds, limit, Some(live_at));
     head.certain.then_some((head.rows, head.next_cursor))
+}
+
+/// `room`'s window (`root`: that thread's) below `before` as the store
+/// holds it, to compare with the relay's check
+/// (docs/message-sync.md#window-check). Read once everything received so
+/// far is written; `None` when it cannot be (nothing to compare: fetch).
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn stored_window(
+    relay_url: &str,
+    account: &str,
+    room: &str,
+    root: Option<&str>,
+    kinds: &[u64],
+    limit: usize,
+    before: Option<(i64, &str)>,
+) -> Option<StoredWindow> {
+    let store = global()?;
+    let lease = store.lease(relay_url, account)?;
+    if !store.drained(&lease) {
+        return None;
+    }
+    store.read(&lease, "stored window", |conn| {
+        window::stored_window(conn, room, root, kinds, limit, before)
+    })
+}
+
+/// Replaces a window's stored rows with `page`, the answer to the request
+/// marked `scope` (from [`head_sent`]): whether it was applied (false when
+/// refused, failed, or not heard of in time).
+pub(crate) fn replace_window(
+    relay_url: &str,
+    account: &str,
+    scope: Option<&str>,
+    page: WindowReplace,
+) -> Result<bool, String> {
+    let Some(store) = global() else {
+        return Ok(false);
+    };
+    let lease = store
+        .lease(relay_url, account)
+        .ok_or("message store scope changed")?;
+    let captured = captured(scope, &lease)?;
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    store.submit(
+        &lease,
+        writer::Input::ReplaceWindow {
+            page,
+            captured,
+            applied: Some(reply),
+        },
+    );
+    Ok(answer.recv_timeout(DRAIN_WAIT).unwrap_or(false))
+}
+
+/// Drops the head and page spans of `rooms`, whose catch-up was skipped or
+/// cut short, so their windows are fetched again.
+/// Refused when `scope` (from [`scope_token`]) is no longer current.
+pub(crate) fn forget_windows(
+    relay_url: &str,
+    account: &str,
+    scope: Option<&str>,
+    rooms: Vec<String>,
+) {
+    let Some(store) = global() else { return };
+    if let Some(lease) = store.lease(relay_url, account) {
+        if captured(scope, &lease).is_ok() {
+            store.submit(&lease, writer::Input::ForgetWindows { rooms });
+        }
+    }
 }
 
 /// The scope of a `/query` to `api_base_url` as `account`, taken before it

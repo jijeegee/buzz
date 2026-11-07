@@ -1,3 +1,4 @@
+import { noteLiveEventActivity } from "@/shared/api/liveRoomActivity";
 import {
   noteStoreLiveEose,
   noteStoreLiveEvent,
@@ -329,6 +330,7 @@ export function flushEvents(
     ) {
       subscription.onEvent(item.event);
       noteStoreLiveEvent(subscription, generation);
+      noteLiveEventActivity(item.event);
     }
   }
 }

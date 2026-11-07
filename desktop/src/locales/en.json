@@ -13315,6 +13315,30 @@
   "@settings.experiments.agentsGroup": {
     "description": "Settings > Experiments, group title. Short."
   },
+  "settings.experiments.windowCheck": "Window check",
+  "@settings.experiments.windowCheck": {
+    "description": "Settings > Experiments, developer setting label. Whether opening a chat checks the stored messages with the server instead of downloading them again. Short."
+  },
+  "settings.experiments.windowCheckHint": "Open chats from stored messages when the server confirms they are current",
+  "@settings.experiments.windowCheckHint": {
+    "description": "Settings > Experiments, text under Window check."
+  },
+  "settings.experiments.windowCheckFollow": "Server",
+  "@settings.experiments.windowCheckFollow": {
+    "description": "Settings > Experiments > Window check, option: use the server's choice. One word."
+  },
+  "settings.experiments.windowCheckOff": "Off",
+  "@settings.experiments.windowCheckOff": {
+    "description": "Settings > Experiments > Window check, option. One word."
+  },
+  "settings.experiments.windowCheckShadow": "Shadow",
+  "@settings.experiments.windowCheckShadow": {
+    "description": "Settings > Experiments > Window check, option: check and log, but still download. One word."
+  },
+  "settings.experiments.windowCheckOn": "On",
+  "@settings.experiments.windowCheckOn": {
+    "description": "Settings > Experiments > Window check, option. One word."
+  },
   "settings.preventSleep.group": "Preferences",
   "@settings.preventSleep.group": {
     "description": "Settings > Agents, group title. Short."

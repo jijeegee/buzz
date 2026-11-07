@@ -11,8 +11,10 @@ import {
   isRateLimited,
   waitForRateLimit,
 } from "@/shared/api/relayRateLimitGate";
+import { noteLiveRoomActivity } from "@/shared/api/liveRoomActivity";
 import {
   endStreamCoverage,
+  forgetStoreWindows,
   noteStreamLiveEose,
   STORE_CATCH_UP_MAX_PAGES,
   STORE_CATCH_UP_PAGE_LIMIT,
@@ -397,6 +399,7 @@ export class UserStreamLive implements UserStreamLiveHooks {
       live.report.add("streamNoRoom");
       return;
     }
+    noteLiveRoomActivity(room, event);
     // Always stored (by the store layer); shown unless left (44101).
     if (!live.membership.renders(room, event.created_at)) return;
     if (host.bundle.dispatchStream(event, room)) return;
@@ -549,7 +552,9 @@ export class UserStreamLive implements UserStreamLiveHooks {
         return at === undefined ? [] : [[room, at] as [string, number]];
       }),
     );
-    const { batches } = planCatchUpBatches(walkResume, liveAt);
+    const { stale, batches } = planCatchUpBatches(walkResume, liveAt);
+    // Too old to walk: their windows are fetched when opened.
+    forgetStoreWindows(stale, live.scope);
     const sampled = this.auditPick(live, plan.skip, resume);
     // Walks start after every earlier connection's walks ended (`S5`).
     const release = await this.takeWalks();
@@ -575,6 +580,7 @@ export class UserStreamLive implements UserStreamLiveHooks {
         // Only a completed batch gets the stream span: a cut-short one
         // resumes from its earlier coverage on the next connection.
         if (result.completed) live.coverage.span(batch.rooms);
+        else if (!stop()) forgetStoreWindows(batch.rooms, live.scope);
         if (result.completed && !result.counted) {
           report.add("newRowUncounted", batch.rooms.length);
         }

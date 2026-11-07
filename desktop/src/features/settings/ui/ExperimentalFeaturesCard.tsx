@@ -3,6 +3,11 @@ import {
   setContextGaugeEnabled,
   useContextGaugeEnabled,
 } from "@/features/agents/lib/contextGaugePreference";
+import {
+  setWindowCheckOverride,
+  useWindowCheckOverride,
+  type WindowCheckOverride,
+} from "@/features/messages/lib/windowCheckMode";
 import { ChannelRoutingCard } from "@/features/agents/ui/routing/ChannelRoutingCard";
 import { useManagedAgentActions } from "@/features/agents/ui/useManagedAgentActions";
 import { setAgentManagedProfiles } from "@/shared/api/tauriWorkspace";
@@ -13,6 +18,7 @@ import {
 } from "@/shared/features";
 import type { FeatureDefinition } from "@/shared/features";
 import { useT } from "@/shared/i18n";
+import { SegmentedControl } from "@/shared/ui/segmented-control";
 import { Switch } from "@/shared/ui/switch";
 import { ContextHistoryExperimentGroup } from "./ContextHistoryExperimentGroup";
 import {
@@ -88,6 +94,49 @@ function ContextGaugeRow() {
   );
 }
 
+const WINDOW_CHECK_OPTIONS = [
+  { value: "follow", label: "settings.experiments.windowCheckFollow" },
+  { value: "off", label: "settings.experiments.windowCheckOff" },
+  { value: "shadow", label: "settings.experiments.windowCheckShadow" },
+  { value: "on", label: "settings.experiments.windowCheckOn" },
+] as const satisfies readonly {
+  value: WindowCheckOverride;
+  label: string;
+}[];
+
+/** Developer override of the window check mode (docs/message-sync.md#window-check). */
+function WindowCheckRow() {
+  const t = useT();
+  const value = useWindowCheckOverride();
+
+  return (
+    <SettingsOptionRow data-testid="settings-window-check">
+      <div className="min-w-0">
+        <p className="font-medium text-foreground">
+          {t("settings.experiments.windowCheck")}
+        </p>
+        <p
+          className="mt-0.5 text-sm text-muted-foreground/70"
+          data-settings-subcopy
+        >
+          {t("settings.experiments.windowCheckHint")}
+        </p>
+      </div>
+      <SegmentedControl
+        legend={t("settings.experiments.windowCheck")}
+        onValueChange={setWindowCheckOverride}
+        optionTestIdPrefix="window-check"
+        options={WINDOW_CHECK_OPTIONS.map((option) => ({
+          value: option.value,
+          label: t(option.label),
+        }))}
+        testId="window-check"
+        value={value}
+      />
+    </SettingsOptionRow>
+  );
+}
+
 function ExperimentsChannelRouting() {
   const { goSettings } = useAppNavigation();
   const agents = useManagedAgentActions();
@@ -134,6 +183,7 @@ export function ExperimentalFeaturesCard() {
           {previewFeatures.map((f) => (
             <FeatureRow feature={f} key={f.id} />
           ))}
+          <WindowCheckRow />
         </SettingsOptionGroup>
         {managedAgentsEnabled ? (
           <>

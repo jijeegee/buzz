@@ -124,12 +124,21 @@ impl Marks {
     }
 }
 
-/// Drops every head span of `room` (`head` and `head:<root>`): after a
-/// history change the relay may show rows a head said were not there.
+/// Drops every head span of `room` (`head` and `head:<root>`), and its page
+/// spans (`page` and `page:<root>`): after a history change the relay may
+/// show rows a head or page said were not there.
 pub(crate) fn forget_heads(conn: &Connection, room: &str) -> rusqlite::Result<()> {
+    use super::window::PAGE_STREAM;
     conn.execute(
-        "DELETE FROM coverage WHERE room = ?1 AND (stream = ?2 OR stream LIKE ?3)",
-        params![room, HEAD_STREAM, format!("{HEAD_STREAM}:%")],
+        "DELETE FROM coverage WHERE room = ?1 AND (stream = ?2 OR stream LIKE ?3 \
+         OR stream = ?4 OR stream LIKE ?5)",
+        params![
+            room,
+            HEAD_STREAM,
+            format!("{HEAD_STREAM}:%"),
+            PAGE_STREAM,
+            format!("{PAGE_STREAM}:%")
+        ],
     )
     .map(|_| ())
 }
