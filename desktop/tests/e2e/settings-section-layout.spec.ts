@@ -53,7 +53,6 @@ test("settings sections share the Appearance rhythm", async ({ page }) => {
     expect(gaps.every((gap) => Math.abs(gap - referenceGap) <= 1)).toBe(true);
   }
 
-  await page.getByTestId("settings-nav-agents").click();
   const headerToCardGap = async (testId: string) => {
     const group = page.getByTestId(testId);
     return group.evaluate((element) => {
@@ -73,10 +72,10 @@ test("settings sections share the Appearance rhythm", async ({ page }) => {
       );
     });
   };
-  const [titleOnlyGap, subtitleGap] = await Promise.all([
-    headerToCardGap("agents-preferences-card"),
-    headerToCardGap("settings-harnesses"),
-  ]);
+  await page.getByTestId("settings-nav-agents").click();
+  const titleOnlyGap = await headerToCardGap("agents-preferences-card");
+  await page.getByTestId("settings-nav-models").click();
+  const subtitleGap = await headerToCardGap("settings-harnesses");
   expect(titleOnlyGap).toBeGreaterThan(0);
   expect(Math.abs(titleOnlyGap - subtitleGap)).toBeLessThanOrEqual(1);
 });

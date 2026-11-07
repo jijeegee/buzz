@@ -10428,10 +10428,10 @@ function mockTaskModelStatus() {
     apiKey("anthropic", "Anthropic", true, "claude-haiku-4-5"),
     apiKey("openai", "OpenAI", false, "gpt-4.1-nano"),
     apiKey("openrouter", "OpenRouter", false, "anthropic/claude-haiku-4.5"),
-    subscription("codex", "Codex (ChatGPT subscription)", "Codex"),
+    subscription("codex", "Codex (its own sign-in)", "Codex"),
     subscription(
       "claude-code",
-      "Claude Code (Claude subscription, slower)",
+      "Claude Code (its own sign-in, slower)",
       "Claude Code",
     ),
   ];

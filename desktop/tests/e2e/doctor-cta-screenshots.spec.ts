@@ -156,7 +156,7 @@ test.describe("doctor CTA nudge card screenshots", () => {
     const card = page.locator("[data-config-nudge]").last();
     await expect(card).toBeVisible({ timeout: 10_000 });
     // Auth-only card is informational — no runtime settings CTA anywhere.
-    await expect(card.getByText("Open Agent runtimes →")).toHaveCount(0);
+    await expect(card.getByText("Open AI connections →")).toHaveCount(0);
 
     await card.scrollIntoViewIfNeeded();
     await settleAnimations(page);
@@ -168,7 +168,7 @@ test.describe("doctor CTA nudge card screenshots", () => {
 
   /**
    * 02 — not_installed state: neither adapter nor CLI found.
-   * Card shows "claude isn't installed" copy + an Agent runtimes CTA.
+   * Card shows "claude isn't installed" copy + an AI connections CTA.
    */
   test("02-cli-login-not-installed-state", async ({ page }) => {
     await installMockBridge(page, {
@@ -210,7 +210,7 @@ test.describe("doctor CTA nudge card screenshots", () => {
   /**
    * 03 — mixed card: one cli_login (adapter_missing) + one env_key requirement.
    * Each requirement row owns its CTA, right-aligned to a shared edge:
-   * the cli_login row opens Agent runtimes and the env_key row shows
+   * the cli_login row opens AI connections and the env_key row shows
    * "Edit Agent →", both at the same x (vertically aligned).
    */
   test("03-mixed-requirements-inline-doctor-cta", async ({ page }) => {
@@ -244,8 +244,8 @@ test.describe("doctor CTA nudge card screenshots", () => {
 
     const card = page.locator("[data-config-nudge]").last();
     await expect(card).toBeVisible({ timeout: 10_000 });
-    // Mixed card: cli_login opens Agent runtimes; env_key opens Edit Agent.
-    await expect(card.getByText("Open Agent runtimes →")).toBeVisible();
+    // Mixed card: cli_login opens AI connections; env_key opens Edit Agent.
+    await expect(card.getByText("Open AI connections →")).toBeVisible();
     // Both per-row CTAs share the same right edge (vertically aligned).
     await expect(card.getByText("Edit Agent →", { exact: true })).toBeVisible();
 

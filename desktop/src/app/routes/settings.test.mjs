@@ -21,9 +21,9 @@ test("?section=relay-admin is accepted as-is", () => {
   assert.equal(result.section, "relay-admin");
 });
 
-test("?section=doctor still migrates to agents", () => {
+test("?section=doctor migrates to AI connections, where the harness list lives", () => {
   const result = validateSettingsSearch({ section: "doctor" });
-  assert.equal(result.section, "agents");
+  assert.equal(result.section, "models");
 });
 
 test("valid section passes through unchanged", () => {

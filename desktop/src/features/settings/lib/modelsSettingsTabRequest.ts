@@ -10,8 +10,21 @@ export type ModelsSettingsTab = "providers" | "defaults" | "tasks";
 
 let requestedTab: ModelsSettingsTab | null = null;
 
+const listeners = new Set<(tab: ModelsSettingsTab) => void>();
+
 export function requestModelsSettingsTab(tab: ModelsSettingsTab): void {
   requestedTab = tab;
+  // An already-open panel does not remount, so tell it directly.
+  for (const listener of listeners) listener(tab);
+}
+
+export function subscribeModelsSettingsTabRequest(
+  listener: (tab: ModelsSettingsTab) => void,
+): () => void {
+  listeners.add(listener);
+  return () => {
+    listeners.delete(listener);
+  };
 }
 
 export function readRequestedModelsSettingsTab(): ModelsSettingsTab | null {

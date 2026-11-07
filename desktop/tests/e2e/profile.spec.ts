@@ -2671,22 +2671,18 @@ test("storage clear resets composed font size and keyboard zoom across windows",
   await peerPage.close();
 });
 
-test("shows agent runtimes in agent settings", async ({ page }) => {
+test("shows harnesses in AI connections", async ({ page }) => {
   await page.goto("/");
 
-  await openSettings(page, "agents");
+  await openSettings(page, "models");
 
-  const agentsPage = page.getByTestId("settings-agents");
+  const modelsPage = page.getByTestId("settings-models");
   await expect(
-    agentsPage.getByRole("heading", { name: "Agents", exact: true }),
+    modelsPage.getByRole("heading", { name: "AI connections", exact: true }),
   ).toBeVisible();
 
-  for (const testId of [
-    "agents-preferences-card",
-    "settings-harnesses",
-    "settings-global-agent-config",
-  ]) {
-    const section = agentsPage
+  for (const testId of ["settings-harnesses", "settings-models-accounts"]) {
+    const section = modelsPage
       .getByTestId(testId)
       .locator('[data-slot="settings-section-card"]');
     await expect(section).toBeVisible();
@@ -2695,14 +2691,14 @@ test("shows agent runtimes in agent settings", async ({ page }) => {
   }
 
   await expect(
-    agentsPage.getByRole("heading", {
-      name: "Agent runtimes",
+    modelsPage.getByRole("heading", {
+      name: "Harnesses on this computer",
       exact: true,
     }),
   ).toBeVisible();
   await expect(
-    agentsPage.getByRole("heading", {
-      name: "Agent defaults",
+    modelsPage.getByRole("heading", {
+      name: "Accounts Kuzz uses directly",
       exact: true,
     }),
   ).toBeVisible();
@@ -2711,6 +2707,10 @@ test("shows agent runtimes in agent settings", async ({ page }) => {
   await expect(runtimeRow).toHaveCSS("border-radius", "0px");
   await expect(runtimeRow).toHaveCSS("border-top-width", "0px");
 
+  // Agents keeps only its own preferences; the harness list moved out.
+  await page.getByTestId("settings-nav-agents").click();
+  const agentsPage = page.getByTestId("settings-agents");
+  await expect(agentsPage.getByTestId("settings-harnesses")).toHaveCount(0);
   const agentsSecondaryColor = await agentsPage
     .getByTestId("settings-automatic-agent-mentions")
     .locator("[data-settings-subcopy]")

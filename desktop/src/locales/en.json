@@ -3807,13 +3807,13 @@
   "@ui.configNudge.title": {
     "description": "Title of the agent setup card posted in a chat; {name} is the AI agent's name."
   },
-  "ui.configNudge.openRuntimes": "Open Agent runtimes →",
+  "ui.configNudge.openRuntimes": "Open AI connections →",
   "@ui.configNudge.openRuntimes": {
-    "description": "Link-style button on the agent setup card that opens the Agent runtimes settings page. Short."
+    "description": "Link-style button on the agent setup card that opens Settings › AI connections, where harnesses are installed. Short."
   },
-  "ui.configNudge.openRuntimesFor": "Open Agent runtimes for {name}",
+  "ui.configNudge.openRuntimesFor": "Open AI connections for {name}",
   "@ui.configNudge.openRuntimesFor": {
-    "description": "Screen-reader label of the agent setup card when clicking it opens the Agent runtimes settings page; {name} is the agent's name."
+    "description": "Screen-reader label of the agent setup card when clicking it opens Settings › AI connections; {name} is the agent's name."
   },
   "ui.configNudge.openEditAgentFor": "Open Edit Agent for {name}",
   "@ui.configNudge.openEditAgentFor": {
@@ -4103,9 +4103,9 @@
   "@onboarding.connectionMethod.description": {
     "description": "Onboarding, choose how agents access AI, text under the title."
   },
-  "onboarding.connectionMethod.subscription": "Log in with a subscription",
+  "onboarding.connectionMethod.subscription": "Use a harness on this computer",
   "@onboarding.connectionMethod.subscription": {
-    "description": "Onboarding, choose how agents access AI, option button: use an existing AI subscription (e.g. Claude, ChatGPT). Short."
+    "description": "Onboarding, choose how agents access AI, option button: use an agent program already on this computer (e.g. Claude Code, Codex) with its own sign-in. Short."
   },
   "onboarding.connectionMethod.apiKey": "Use an API key",
   "@onboarding.connectionMethod.apiKey": {
@@ -4123,27 +4123,27 @@
   "@onboarding.runtimeError.ariaLabel": {
     "description": "Onboarding, harness card error badge, screen-reader label joining the short error label and its detail sentence."
   },
-  "onboarding.setup.subscriptionName.amp": "Amp subscription",
+  "onboarding.setup.subscriptionName.amp": "Amp",
   "@onboarding.setup.subscriptionName.amp": {
-    "description": "Onboarding, connect harness page, card title for the Amp subscription. Short."
+    "description": "Onboarding, connect harness page, card title for the Amp harness. Product name. Short."
   },
-  "onboarding.setup.subscriptionName.claude": "Claude subscription",
+  "onboarding.setup.subscriptionName.claude": "Claude Code",
   "@onboarding.setup.subscriptionName.claude": {
-    "description": "Onboarding, connect harness page, card title for the Claude subscription. Short."
+    "description": "Onboarding, connect harness page, card title for the Claude Code harness. Product name. Short."
   },
-  "onboarding.setup.subscriptionName.codex": "ChatGPT subscription",
+  "onboarding.setup.subscriptionName.codex": "Codex",
   "@onboarding.setup.subscriptionName.codex": {
-    "description": "Onboarding, connect harness page, card title for the ChatGPT subscription. Short."
+    "description": "Onboarding, connect harness page, card title for the Codex harness. Product name. Short."
   },
-  "onboarding.setup.subscriptionName.cursor": "Cursor subscription",
+  "onboarding.setup.subscriptionName.cursor": "Cursor",
   "@onboarding.setup.subscriptionName.cursor": {
-    "description": "Onboarding, connect harness page, card title for the Cursor subscription. Short."
+    "description": "Onboarding, connect harness page, card title for the Cursor harness. Product name. Short."
   },
-  "onboarding.setup.subscriptionName.devin": "Devin account",
+  "onboarding.setup.subscriptionName.devin": "Devin",
   "@onboarding.setup.subscriptionName.devin": {
-    "description": "Onboarding, connect harness page, card title for a Devin account. Short."
+    "description": "Onboarding, connect harness page, card title for the Devin harness. Product name. Short."
   },
-  "onboarding.setup.signInRequired": "Sign in required",
+  "onboarding.setup.signInRequired": "Sign-in needed",
   "@onboarding.setup.signInRequired": {
     "description": "Onboarding, harness list row, small badge when the harness needs sign-in. Short."
   },
@@ -4227,7 +4227,7 @@
   "@onboarding.setup.configInvalid": {
     "description": "Onboarding, harness card, short red error label (tooltip shows details). Short."
   },
-  "onboarding.setup.configInvalidDetail": "Check this runtime’s configuration and try again.",
+  "onboarding.setup.configInvalidDetail": "Check this harness’s configuration and try again.",
   "@onboarding.setup.configInvalidDetail": {
     "description": "Onboarding, harness card, error tooltip detail for an invalid configuration."
   },
@@ -4259,17 +4259,17 @@
   "@onboarding.setup.loadingProviders": {
     "description": "Onboarding, harness list, loading text."
   },
-  "onboarding.setup.subscriptionTitle": "Continue with an AI subscription",
+  "onboarding.setup.subscriptionTitle": "Choose a harness",
   "@onboarding.setup.subscriptionTitle": {
-    "description": "Onboarding, harness list page (subscription path), page title."
+    "description": "Onboarding, harness list page (harness-on-this-computer path), page title."
   },
   "onboarding.setup.harnessTitle": "Choose a harness",
   "@onboarding.setup.harnessTitle": {
     "description": "Onboarding, harness list page (API key path), page title. A harness is the AI tool that runs agents."
   },
-  "onboarding.setup.subscriptionDescription": "Subscriptions connect through a compatible harness, like Claude Code or Codex. Choose yours to sign in.",
+  "onboarding.setup.subscriptionDescription": "Kuzz uses the harnesses on this computer, with their own sign-in. Choose one to check it's ready.",
   "@onboarding.setup.subscriptionDescription": {
-    "description": "Onboarding, harness list page (subscription path), text under the title."
+    "description": "Onboarding, harness list page (harness-on-this-computer path), text under the title."
   },
   "onboarding.setup.harnessDescription": "Choose how your agents will connect to AI providers. You can change this at any time.",
   "@onboarding.setup.harnessDescription": {
@@ -10079,9 +10079,9 @@
   "@settings.nav.experimental": {
     "description": "Settings sidebar, section link and tooltip for experimental features. Short."
   },
-  "settings.nav.models": "Models",
+  "settings.nav.models": "AI connections",
   "@settings.nav.models": {
-    "description": "Settings sidebar, section link and tooltip for AI models. Short."
+    "description": "Settings sidebar, section link and tooltip for the AI connections section (harnesses on this computer and AI accounts). Short."
   },
   "settings.nav.agents": "Agents",
   "@settings.nav.agents": {
@@ -10263,9 +10263,9 @@
   "@settings.agents.title": {
     "description": "Settings › Agents, page title."
   },
-  "settings.agents.description": "How agents behave in conversations and run on this computer. Their AI and models live in Settings › Models.",
+  "settings.agents.description": "How agents behave in conversations on this computer. Their harnesses, AI and models live in Settings › AI connections.",
   "@settings.agents.description": {
-    "description": "Settings › Agents, text under the page title. 'Settings › Models' names another settings page."
+    "description": "Settings › Agents, text under the page title. 'Settings › AI connections' names another settings page."
   },
   "settings.agents.conversations": "Conversations",
   "@settings.agents.conversations": {
@@ -10283,9 +10283,9 @@
   "@settings.agentDefaults.title": {
     "description": "Settings › Models, heading of the card with default settings for newly created agents."
   },
-  "settings.agentDefaults.description": "What a new agent starts with: runtime, provider, model, effort and environment. An agent's own settings always take priority. Sign-in and API keys live under Connections.",
+  "settings.agentDefaults.description": "What a new agent starts with: harness, provider, model, effort and environment. An agent's own settings always take priority. API keys live under Tools & accounts.",
   "@settings.agentDefaults.description": {
-    "description": "Settings › Models, grey text under 'Default for new agents'. 'Connections' names another settings tab."
+    "description": "Settings › AI connections, grey text under 'Default for new agents'. 'Tools & accounts' names another settings tab."
   },
   "settings.hostedCommunities.title": "Hosted communities",
   "@settings.hostedCommunities.title": {
@@ -12699,7 +12699,7 @@
   "@settings.feedback.submit": {
     "description": "Send feedback dialog, submit button. Short."
   },
-  "settings.harnessCatalog.description.kuzzAgent": "Kuzz's built-in agent runtime, bundled with the app.",
+  "settings.harnessCatalog.description.kuzzAgent": "Kuzz's built-in agent harness, bundled with the app.",
   "@settings.harnessCatalog.description.kuzzAgent": {
     "description": "Settings > Harnesses / Add runtimes catalog, one-line description of the built-in Kuzz agent runtime."
   },
@@ -12815,15 +12815,15 @@
   "@settings.harnessForm.argCommaError": {
     "description": "Custom harness form, red error under the arguments field. {arg} is the argument the user typed."
   },
-  "settings.harnessCatalog.title": "Add runtimes",
+  "settings.harnessCatalog.title": "Add harness",
   "@settings.harnessCatalog.title": {
-    "description": "Add runtimes dialog (from Settings > Harnesses), title. A runtime is an agent tool such as Claude Code or Codex. Short."
+    "description": "Add harness dialog (from Settings › AI connections), title. A harness is an agent program such as Claude Code or Codex. Short."
   },
-  "settings.harnessCatalog.searchLabel": "Search runtimes",
+  "settings.harnessCatalog.searchLabel": "Search harnesses",
   "@settings.harnessCatalog.searchLabel": {
     "description": "Add runtimes dialog, screen-reader label of the search box. Short."
   },
-  "settings.harnessCatalog.searchPlaceholder": "Search runtimes…",
+  "settings.harnessCatalog.searchPlaceholder": "Search harnesses…",
   "@settings.harnessCatalog.searchPlaceholder": {
     "description": "Add runtimes dialog, placeholder of the search box. Short."
   },
@@ -12831,19 +12831,19 @@
   "@settings.harnessCatalog.refreshing": {
     "description": "Add runtimes dialog, small status above the list while it reloads. Short."
   },
-  "settings.harnessCatalog.refreshFailed": "Couldn't refresh runtimes.",
+  "settings.harnessCatalog.refreshFailed": "Couldn't refresh harnesses.",
   "@settings.harnessCatalog.refreshFailed": {
     "description": "Add runtimes dialog, small red error above the list when reloading fails. Short."
   },
-  "settings.harnessCatalog.loadFailed": "Couldn't load runtimes.",
+  "settings.harnessCatalog.loadFailed": "Couldn't load harnesses.",
   "@settings.harnessCatalog.loadFailed": {
     "description": "Add runtimes dialog, error in the list when it fails to load. Short."
   },
-  "settings.harnessCatalog.noMatch": "No runtimes match.",
+  "settings.harnessCatalog.noMatch": "No harnesses match.",
   "@settings.harnessCatalog.noMatch": {
     "description": "Add runtimes dialog, empty list text when the search finds nothing. Short."
   },
-  "settings.harnessCatalog.empty": "No runtimes found.",
+  "settings.harnessCatalog.empty": "No harnesses found.",
   "@settings.harnessCatalog.empty": {
     "description": "Add runtimes dialog, empty list text when there are no runtimes. Short."
   },
@@ -12859,19 +12859,19 @@
   "@settings.harnessCatalog.customHarness": {
     "description": "Add runtimes dialog, list item and detail title for adding your own agent tool. Short."
   },
-  "settings.harnessCatalog.customHarnessHint": "Register any ACP-speaking agent tool as a selectable runtime.",
+  "settings.harnessCatalog.customHarnessHint": "Register any ACP-speaking agent tool as a selectable harness.",
   "@settings.harnessCatalog.customHarnessHint": {
     "description": "Add runtimes dialog, text under the Custom harness title. ACP is a protocol name; keep it."
   },
-  "settings.harnessCatalog.selectPrompt": "Select a runtime on the left, or add a custom one.",
+  "settings.harnessCatalog.selectPrompt": "Select a harness on the left, or add a custom one.",
   "@settings.harnessCatalog.selectPrompt": {
-    "description": "Add runtimes dialog, empty detail pane text."
+    "description": "Add harness dialog, empty detail pane text."
   },
-  "settings.harnessCatalog.loadingList": "Loading runtimes",
+  "settings.harnessCatalog.loadingList": "Loading harnesses",
   "@settings.harnessCatalog.loadingList": {
     "description": "Add runtimes dialog, screen-reader label of the list placeholder while loading. Short."
   },
-  "settings.harnessCatalog.loadingDetails": "Loading runtime details",
+  "settings.harnessCatalog.loadingDetails": "Loading harness details",
   "@settings.harnessCatalog.loadingDetails": {
     "description": "Add runtimes dialog, screen-reader label of the detail placeholder while loading. Short."
   },
@@ -12975,7 +12975,7 @@
   "@settings.harnessForm.name": {
     "description": "Custom harness form, field label. Short."
   },
-  "settings.harnessForm.namePlaceholder": "My Runtime",
+  "settings.harnessForm.namePlaceholder": "My Harness",
   "@settings.harnessForm.namePlaceholder": {
     "description": "Custom harness form, example placeholder in the Name field. Short."
   },
@@ -13043,9 +13043,9 @@
   "@settings.harnesses.checkAgain": {
     "description": "Settings > Agent runtimes, button that re-checks installed runtimes. Short."
   },
-  "settings.harnesses.title": "Agent runtimes",
+  "settings.harnesses.title": "Harnesses on this computer",
   "@settings.harnesses.title": {
-    "description": "Settings > Agents, section title for agent tools such as Claude Code or Codex. Short."
+    "description": "Settings › AI connections › Tools & accounts, section title for agent programs such as Claude Code or Codex. Short."
   },
   "settings.harnesses.prerequisites": "System prerequisites",
   "@settings.harnesses.prerequisites": {
@@ -13055,25 +13055,25 @@
   "@settings.harnesses.prerequisitesHint": {
     "description": "Settings > Agent runtimes, text under System prerequisites."
   },
-  "settings.harnesses.yourRuntimes": "Your runtimes",
+  "settings.harnesses.yourRuntimes": "Your harnesses",
   "@settings.harnesses.yourRuntimes": {
-    "description": "Settings > Agent runtimes, sub-section title and screen-reader label of the runtime list. Short."
+    "description": "Settings › AI connections, Harnesses on this computer: sub-section title and screen-reader label of the harness list. Short."
   },
   "settings.harnesses.yourRuntimesHint": "Ready to use, or one click from installed.",
   "@settings.harnesses.yourRuntimesHint": {
     "description": "Settings > Agent runtimes, text under Your runtimes."
   },
-  "settings.harnesses.checking": "Checking agent runtimes...",
+  "settings.harnesses.checking": "Checking harnesses...",
   "@settings.harnesses.checking": {
-    "description": "Settings > Agent runtimes, text while the list loads."
+    "description": "Settings › AI connections, Harnesses on this computer: text while the list loads."
   },
-  "settings.harnesses.noneReady": "No agent runtimes ready yet — add one below.",
+  "settings.harnesses.noneReady": "No harnesses ready yet — add one below.",
   "@settings.harnesses.noneReady": {
-    "description": "Settings > Agent runtimes, amber text when no runtime is ready."
+    "description": "Settings › AI connections, Harnesses on this computer: amber text when no harness is ready."
   },
-  "settings.harnesses.addRuntimes": "Add runtimes",
+  "settings.harnesses.addRuntimes": "Add harness",
   "@settings.harnesses.addRuntimes": {
-    "description": "Settings > Agent runtimes, button that opens the Add runtimes dialog. Short."
+    "description": "Settings › AI connections, Harnesses on this computer: button that opens the Add harness dialog. Short."
   },
   "settings.harnesses.adapterInstallGuide": "Adapter install guide",
   "@settings.harnesses.adapterInstallGuide": {
@@ -13551,9 +13551,9 @@
   "@settings.taskModels.notReady": {
     "description": "Settings > Models > App tasks, fallback reason in the amber status line. Short."
   },
-  "settings.taskModels.setUpInProviders": "Set up in Providers",
+  "settings.taskModels.setUpInProviders": "Set up in Tools & accounts",
   "@settings.taskModels.setUpInProviders": {
-    "description": "Settings > Models > App tasks, link button that opens the Connections tab. Short."
+    "description": "Settings › AI connections › App tasks, link button that opens the Tools & accounts tab. Short."
   },
   "settings.taskModels.description": "Each task Kuzz runs on its own behalf picks its provider and model here, independently of your agents. Changing one never restarts an agent.",
   "@settings.taskModels.description": {
@@ -13603,7 +13603,7 @@
   "@settings.providers.detailWithWorkspace": {
     "description": "Settings > Models > Default for new agents, small text under a workspace option. {runtime} is an agent tool name."
   },
-  "settings.providers.detailNeedsRuntime": "Needs an installed runtime that takes a provider",
+  "settings.providers.detailNeedsRuntime": "Needs an installed harness that takes a provider",
   "@settings.providers.detailNeedsRuntime": {
     "description": "Settings > Models > Default for new agents, small text under an option that cannot be used yet."
   },
@@ -13627,13 +13627,13 @@
   "@settings.providers.chatgptPlanHeading": {
     "description": "Settings > Models > Connections, OpenAI group, small heading. Keep 'ChatGPT' and 'Kuzz Agent'. Short."
   },
-  "settings.providers.codexCliHeading": "Codex CLI · used by Codex agents",
-  "@settings.providers.codexCliHeading": {
-    "description": "Settings > Models > Connections, OpenAI group, small heading above the Codex sign-in row. Keep 'Codex'. Short."
+  "settings.providers.accountsTitle": "Accounts Kuzz uses directly",
+  "@settings.providers.accountsTitle": {
+    "description": "Settings › AI connections › Tools & accounts, title of the second part listing provider accounts (ChatGPT plan, API keys). Short."
   },
-  "settings.providers.cliHeading": "{runtime} CLI · used by {runtime} agents",
-  "@settings.providers.cliHeading": {
-    "description": "Settings > Models > Connections, small heading above an agent tool's sign-in row. {runtime} is an agent tool name, e.g. Claude Code. Short."
+  "settings.providers.accountsDescription": "Kuzz Agent and app features call these themselves. Keys here are not passed to Claude Code or Codex — they use their own sign-in on this computer.",
+  "@settings.providers.accountsDescription": {
+    "description": "Settings › AI connections › Tools & accounts, text under 'Accounts Kuzz uses directly'. Keep 'Kuzz Agent', 'Claude Code' and 'Codex'."
   },
   "settings.providers.workspaceSignIn": "Workspace sign-in",
   "@settings.providers.workspaceSignIn": {
@@ -13671,21 +13671,21 @@
   "@settings.providers.removeKeyTitle": {
     "description": "Settings > Models > Connections, Remove key confirm dialog title. {keyLabel} is the key's name, e.g. 'Anthropic API key'."
   },
-  "settings.models.title": "Models",
+  "settings.models.title": "AI connections",
   "@settings.models.title": {
-    "description": "Settings > Models, section title. Short."
+    "description": "Settings › AI connections, section title. Short."
   },
-  "settings.models.description": "Connect the AI you pay for, pick what new agents start with, and choose the model for each app task.",
+  "settings.models.description": "Harnesses that run your agents on this computer, and accounts Kuzz uses itself.",
   "@settings.models.description": {
-    "description": "Settings > Models, text under the section title."
+    "description": "Settings › AI connections, text under the section title. A harness is an agent program such as Claude Code or Codex."
   },
-  "settings.models.tabsLabel": "Models settings",
+  "settings.models.tabsLabel": "AI connections settings",
   "@settings.models.tabsLabel": {
-    "description": "Settings > Models, screen-reader label of the tab bar. Short."
+    "description": "Settings › AI connections, screen-reader label of the tab bar. Short."
   },
-  "settings.models.tabConnections": "Connections",
+  "settings.models.tabConnections": "Tools & accounts",
   "@settings.models.tabConnections": {
-    "description": "Settings > Models, tab. Short."
+    "description": "Settings › AI connections, first tab: harnesses on this computer and accounts Kuzz uses. Short."
   },
   "settings.models.tabDefaults": "Default for new agents",
   "@settings.models.tabDefaults": {
@@ -14587,7 +14587,7 @@
   "@channels.addBot.description": {
     "description": "Subtitle of the add-agents dialog."
   },
-  "channels.addBot.noRuntime": "Install an agent runtime before adding an agent to this group.",
+  "channels.addBot.noRuntime": "Install a harness before adding an agent to this group.",
   "@channels.addBot.noRuntime": {
     "description": "Warning in the add-agents dialog when no agent runtime is installed."
   },
@@ -19491,7 +19491,7 @@
   "@projects.repository.accessFailed": {
     "description": "Error toast when changing a repository's access group fails."
   },
-  "projects.createForm.noRuntimes": "No agent runtimes are available. Install a runtime to add agents.",
+  "projects.createForm.noRuntimes": "No harnesses are available. Install a harness to add agents.",
   "@projects.createForm.noRuntimes": {
     "description": "Error in the create-project dialog when no AI agent program is installed. Runtime = the program that runs an AI agent."
   },
@@ -22259,7 +22259,7 @@
   "@agents.remoteStart.started": {
     "description": "Toast when another of your devices started this agent here; name is the agent."
   },
-  "agents.runtime.noneAvailable": "No agent runtimes are available. Install a runtime (e.g. Goose) to deploy agents.",
+  "agents.runtime.noneAvailable": "No harnesses are available. Install a harness (e.g. Goose) to deploy agents.",
   "@agents.runtime.noneAvailable": {
     "description": "Agent runtime (the program that runs the agent) warning when none is installed."
   },
@@ -22271,7 +22271,7 @@
   "@agents.runtime.fallback": {
     "description": "Agent runtime (the program that runs the agent) warning; configured is a runtime id, used a runtime name."
   },
-  "agents.runtime.missing": "This agent is configured for runtime \"{configured}\" but it is not available, and no other runtimes were found.",
+  "agents.runtime.missing": "This agent is configured for harness \"{configured}\" but it is not available, and no other harnesses were found.",
   "@agents.runtime.missing": {
     "description": "Agent runtime (the program that runs the agent) warning; configured is a runtime id."
   },
@@ -22291,9 +22291,9 @@
   "@agents.runtimeWarning.notInstalled": {
     "description": "Agent definition dialog, warning under the runtime picker. {runtime} is a runtime name like Goose. An install hint from the runtime may follow."
   },
-  "agents.runtimeWarning.visitSettings": "Visit Settings > Agents to set it up.",
+  "agents.runtimeWarning.visitSettings": "Visit Settings > AI connections to set it up.",
   "@agents.runtimeWarning.visitSettings": {
-    "description": "Agent definition dialog, sentence after a runtime warning, pointing to the Agents page in Settings."
+    "description": "Agent definition dialog, sentence after a harness warning, pointing to the AI connections page in Settings."
   },
   "agents.respondTo.mode.ownerOnly": "Only me",
   "@agents.respondTo.mode.ownerOnly": {
@@ -22383,7 +22383,7 @@
   "@agents.management.sharedGroupOnly": {
     "description": "Dialog when an agent asks to create or update another agent: error."
   },
-  "agents.management.chooseRuntime": "Choose an available runtime for this agent.",
+  "agents.management.chooseRuntime": "Choose an available harness for this agent.",
   "@agents.management.chooseRuntime": {
     "description": "Dialog when an agent asks to create or update another agent: error when no runtime is chosen."
   },
@@ -23143,7 +23143,7 @@
   "@agents.effort.label": {
     "description": "Agent settings: label of the thinking effort picker. Short."
   },
-  "agents.apiKey.setInRuntimeConfig": "Set in runtime config",
+  "agents.apiKey.setInRuntimeConfig": "Set in harness config",
   "@agents.apiKey.setInRuntimeConfig": {
     "description": "Agent settings, API key field: note when the key is set in the runtime config file. Short."
   },
@@ -23223,13 +23223,13 @@
   "@agents.routing.smartModel.notReady": {
     "description": "Agents page, Group routing card, line under Smart routing: what to do to enable it."
   },
-  "agents.routing.smartModel.change": "Change in Models",
+  "agents.routing.smartModel.change": "Change in AI connections",
   "@agents.routing.smartModel.change": {
-    "description": "Agents page, Group routing card, line under Smart routing: link to Settings, Models. Short."
+    "description": "Agents page, Group routing card, line under Smart routing: link to Settings › AI connections. Short."
   },
-  "agents.routing.smartModel.models": "Models",
+  "agents.routing.smartModel.models": "AI connections",
   "@agents.routing.smartModel.models": {
-    "description": "Agents page, Group routing card, line under Smart routing: link to Settings, Models. Short."
+    "description": "Agents page, Group routing card, line under Smart routing: link to Settings › AI connections. Short."
   },
   "agents.config.mode": "Mode",
   "@agents.config.mode": {
@@ -23414,6 +23414,18 @@
   "agents.defaults.saveFailed": "Couldn't save.",
   "@agents.defaults.saveFailed": {
     "description": "Agent defaults editor: save error."
+  },
+  "agents.defaults.apiKeyRowBlocked": "API keys go in AI connections › Tools & accounts.",
+  "@agents.defaults.apiKeyRowBlocked": {
+    "description": "Default for new agents, environment variable editor: red text under a row whose name is a provider API key. 'AI connections › Tools & accounts' names a settings page and tab."
+  },
+  "agents.defaults.apiKeyInAccounts": "Uses the key saved in AI connections › Tools & accounts.",
+  "@agents.defaults.apiKeyInAccounts": {
+    "description": "Default for new agents, grey text under the provider's API key name when a key is saved. 'AI connections › Tools & accounts' names a settings page and tab."
+  },
+  "agents.defaults.apiKeyAddInAccounts": "Add this key in AI connections › Tools & accounts.",
+  "@agents.defaults.apiKeyAddInAccounts": {
+    "description": "Default for new agents, amber text under the provider's API key name when no key is saved yet. 'AI connections › Tools & accounts' names a settings page and tab."
   },
   "agents.defaults.loadFailed": "Couldn't load agent defaults. Restart the app to try again.",
   "@agents.defaults.loadFailed": {

@@ -4,7 +4,7 @@
 //! Each provider's subscription policy decides its path:
 //! - **API keys** (Anthropic, OpenAI, OpenRouter) are called directly with
 //!   the key the Providers tab saved.
-//! - **Codex (ChatGPT subscription)** runs the official `codex exec`
+//! - **Codex (its own sign-in)** runs the official `codex exec`
 //!   one-shot. The Codex CLI owns its sign-in; Kuzz never reads its tokens.
 //! - **Claude Code (Claude subscription)** runs the official `claude -p`
 //!   one-shot. Anthropic does not allow third-party apps to reuse Claude
@@ -85,8 +85,8 @@ impl RouterProvider {
             Self::Anthropic => "Anthropic API key",
             Self::Openai => "OpenAI API key",
             Self::Openrouter => "OpenRouter API key",
-            Self::Codex => "Codex (ChatGPT subscription)",
-            Self::ClaudeCode => "Claude Code (Claude subscription, slower)",
+            Self::Codex => "Codex (its own sign-in)",
+            Self::ClaudeCode => "Claude Code (its own sign-in, slower)",
         }
     }
 

@@ -13,7 +13,8 @@ export function validateSettingsSearch(
   search: Record<string, unknown>,
 ): SettingsRouteSearch {
   if (search.section === "doctor") {
-    return { section: "agents" };
+    // The old runtime doctor's harness list lives in AI connections now.
+    return { section: "models" };
   }
 
   if (search.section === "moderation") {

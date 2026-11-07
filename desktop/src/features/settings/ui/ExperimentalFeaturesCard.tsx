@@ -20,6 +20,7 @@ import {
   SettingsOptionGroupList,
   SettingsOptionRow,
 } from "./SettingsOptionGroup";
+import { requestModelsSettingsTab } from "../lib/modelsSettingsTabRequest";
 import { SettingsSectionHeader } from "./SettingsSectionHeader";
 import { TaskThreadsExperimentGroup } from "./TaskThreadsExperimentGroup";
 
@@ -95,7 +96,10 @@ function ExperimentsChannelRouting() {
     <div className="space-y-2">
       <ChannelRoutingCard
         agents={agents.managedAgents}
-        onOpenModelsSettings={() => void goSettings("models")}
+        onOpenModelsSettings={() => {
+          requestModelsSettingsTab("providers");
+          void goSettings("models");
+        }}
         onRestartAgent={(pubkey) => {
           void agents.handleRestart(pubkey);
         }}
@@ -115,7 +119,7 @@ export function ExperimentalFeaturesCard() {
   // Manifest is preview-only by definition; every desktop entry is a preview
   // feature.
   const previewFeatures = desktopFeatures;
-  // Same gate as Settings › Agents and Models.
+  // Same gate as Settings › AI connections.
   const managedAgentsEnabled = useFeatureEnabled("managed-agents");
 
   return (

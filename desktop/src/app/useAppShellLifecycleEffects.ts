@@ -30,7 +30,7 @@ export function useAppShellLifecycleEffects({
   // path reports every harness as "(not installed)" until a forced pass warms
   // it. The create/edit picker and Agents > Agent defaults surfaces read that
   // cheap path, so without this warm they render all-missing (and block agent
-  // save) until the user visits Settings > Agents — the accidental workaround.
+  // save) until the user visits Settings > AI connections — the accidental workaround.
   // `startBootWarm` drives the module-level boot-warm gate (once per launch, so
   // this remounting effect never re-fires the probe) which makes those cheap
   // surfaces show loading/retryable-error instead of blessing the cold catalog,

@@ -734,7 +734,15 @@ test.describe("global agent config screenshots", () => {
   test("unset defaults persist the visible Kuzz Agent fallback", async ({
     page,
   }) => {
-    await installMockBridge(page);
+    // The key comes from AI connections › Tools & accounts; the defaults
+    // dialog only reports it.
+    await installMockBridge(page, {
+      globalAgentConfig: {
+        provider: null,
+        model: null,
+        env_vars: { ANTHROPIC_API_KEY: "sk-ant-test" },
+      },
+    });
     await openCreateDialog(page);
     await page
       .getByTestId("agent-ai-defaults-notice")
@@ -748,7 +756,10 @@ test.describe("global agent config screenshots", () => {
 
     await defaultsDialog.getByTestId("global-agent-provider").click();
     await page.getByTestId("global-agent-provider-option-anthropic").click();
-    await defaultsDialog.getByLabel("Anthropic API Key").fill("sk-ant-test");
+    await expect(
+      defaultsDialog.getByTestId("global-agent-api-key-in-accounts"),
+    ).toContainText("Uses the key saved in AI connections › Tools & accounts.");
+    await expect(defaultsDialog.getByLabel("Anthropic API Key")).toHaveCount(0);
     await expect(
       defaultsDialog.getByRole("button", { name: "Save defaults" }),
     ).toBeEnabled();
@@ -870,7 +881,7 @@ test.describe("global agent config screenshots", () => {
         .locator("p")
         .filter({ hasText: "Kuzz Agent is not installed." }),
     ).toContainText(
-      "Kuzz Agent is not installed. Ships with the Kuzz desktop app. Visit Settings > Agents to set it up.",
+      "Kuzz Agent is not installed. Ships with the Kuzz desktop app. Visit Settings > AI connections to set it up.",
     );
     await expect(page.getByTestId("persona-dialog-submit")).toBeDisabled();
   });

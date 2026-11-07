@@ -126,7 +126,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const runtimeList = page.getByTestId("doctor-runtime-list");
     await expect(runtimeList).toBeVisible({ timeout: 10_000 });
@@ -182,7 +182,10 @@ test.describe("Doctor panel state screenshots", () => {
     }
     await expect(
       page
-        .getByRole("heading", { name: "Agent runtimes", exact: true })
+        .getByRole("heading", {
+          name: "Harnesses on this computer",
+          exact: true,
+        })
         .locator("..")
         .locator(".."),
     ).toHaveCSS("align-items", "flex-end");
@@ -244,7 +247,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-claude");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -287,7 +290,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-codex");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -332,7 +335,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-claude");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -380,7 +383,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     // Node-gated entries never get a Your-harnesses row (and thus never an
     // Install button) — setup happens in the catalog.
@@ -482,7 +485,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-codex");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -564,7 +567,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const installButton = page.getByTestId("doctor-runtime-install-codex");
     await expect(installButton).toBeEnabled();
@@ -631,7 +634,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-codex");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -684,7 +687,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-claude");
     await expect(row).toBeVisible({ timeout: 10_000 });
@@ -717,7 +720,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     await expect(page.getByTestId("doctor-runtime-error-codex")).toContainText(
       "Couldn't load sign-in options: Could not inspect the Codex adapter.",
@@ -751,7 +754,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     await page.getByTestId("doctor-runtime-menu-codex").click();
     await page.getByRole("menuitem", { name: "Sign in with ChatGPT" }).click();
@@ -787,7 +790,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     await page.getByTestId("doctor-runtime-menu-codex").click();
     await page.getByRole("menuitem", { name: "Sign in from Terminal" }).click();
@@ -816,7 +819,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     await expect(page.getByTestId("doctor-runtime-status-codex")).toHaveText(
       "Update needed",
@@ -925,7 +928,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const claudeRow = page.getByTestId("doctor-runtime-claude");
     const codexRow = page.getByTestId("doctor-runtime-codex");
@@ -1011,7 +1014,7 @@ test.describe("Doctor panel state screenshots", () => {
     });
 
     await page.goto("/", { waitUntil: "domcontentloaded" });
-    await openSettings(page, "agents");
+    await openSettings(page, "models");
 
     const row = page.getByTestId("doctor-runtime-codex");
     await expect(row).toBeVisible({ timeout: 10_000 });

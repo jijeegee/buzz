@@ -33,7 +33,7 @@ const PROVIDERS = [
   },
   {
     id: "codex",
-    label: "Codex (ChatGPT subscription)",
+    label: "Codex (its own sign-in)",
     kind: "subscription",
     ready: true,
     unavailableReason: null,
@@ -43,7 +43,7 @@ const PROVIDERS = [
   },
   {
     id: "claude-code",
-    label: "Claude Code (Claude subscription, slower)",
+    label: "Claude Code (its own sign-in, slower)",
     kind: "subscription",
     ready: false,
     unavailableReason: "Sign in to Claude Code",
@@ -218,11 +218,11 @@ test("every route is listed; ones that aren't set up say why and cannot be picke
     ["", false, "Automatic"],
     ["anthropic", false, "Anthropic API key"],
     ["openai", true, "OpenAI API key — Needs an OpenAI API key"],
-    ["codex", false, "Codex (ChatGPT subscription)"],
+    ["codex", false, "Codex (its own sign-in)"],
     [
       "claude-code",
       true,
-      "Claude Code (Claude subscription, slower) — Sign in to Claude Code",
+      "Claude Code (its own sign-in, slower) — Sign in to Claude Code",
     ],
   ]);
 });
@@ -238,7 +238,7 @@ test("a subscription route offers its own models without key discovery", async (
   assert.match(model.options[0].textContent, /gpt-6-luna \(fastest\)/);
   assert.match(
     select(container, "status").textContent,
-    /Codex \(ChatGPT subscription\)\. About 5 s per pick/,
+    /Codex \(its own sign-in\)\. About 5 s per pick/,
   );
   assert.equal(
     calls.filter((call) => call.command === "discover_agent_models").length,

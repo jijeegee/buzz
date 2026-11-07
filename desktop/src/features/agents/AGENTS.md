@@ -20,9 +20,12 @@ rule: `requires_external_cli` is derived from `KnownAcpRuntime` and projected
 to the UI rather than inferred from a runtime ID in a component. So is
 billing: `subscription_provider` (`anthropic` for Claude Code, `openai` for
 Codex; `Some` iff `login_hint` is) names the provider a harness's CLI login
-pays for, and Settings › Models files that harness's sign-in row under the
-provider by reading `AcpRuntimeCatalogEntry.subscriptionProvider` — never by
-comparing runtime ids.
+pays for; `providersSettingsModel` reads it from
+`AcpRuntimeCatalogEntry.subscriptionProvider` — never by comparing runtime
+ids. Settings › AI connections › Tools & accounts shows harness sign-in only
+in its "Harnesses on this computer" list (`HarnessesSettingsPanel`); the
+"Accounts Kuzz uses directly" provider groups below it carry the ChatGPT plan
+and API keys, not a second copy of the harness row.
 
 **Second metadata source: command-keyed execution policy.**
 `harness_max_parallelism` (`managed_agents/parallelism.rs`) maps the harness's
@@ -143,7 +146,14 @@ with a TypeScript lookup table or an id comparison in a component.
    mark the collapsed Advanced toggle without opening it, and block incomplete
    saves.
    Runtime-file credentials satisfy Global Defaults just as they do Create and
-   Edit. In Edit,
+   Edit. **The defaults surfaces take no API keys** (`progressive-defaults`
+   only; onboarding and the agent dialogs keep their key field): provider
+   API keys are entered in Settings › AI connections › Tools & accounts, so
+   the defaults editor shows a status note in place of the key field, hides
+   every provider key (`getAllProviderApiKeyEnvVars`) from its generic env
+   rows, and a typed row for one of them shows an inline message and blocks
+   Save (`EnvVarsEditor` `blockedKeys`) instead of being dropped. Saved
+   values are kept as they are. In Edit,
    selecting Custom command keeps its required command field beside the harness
    picker rather than hiding it in Advanced.
 10. **Catalog visibility is community-scoped relay state, never a global
@@ -707,15 +717,15 @@ with a TypeScript lookup table or an id comparison in a component.
     roster's capability text comes from `messages/lib/routerRoster.ts`:
     persona description → kind:0 `about` → my own agent's system-prompt
     prefix → name only. The router model is the `message-routing` entry in
-    Settings › Models › Task models, stored in
+    Settings › AI connections › App tasks, stored in
     `<app-data>/agents/accounts/<owner-hex>/task-models.json` (never `GlobalAgentConfig`, so a
     change restarts nothing); its row renders provider + model through
     `ModelEffortFields` with `effort: null` (the router never thinks). Its
     Provider select lists every route explicitly, with real availability:
     API keys (Anthropic, OpenAI, OpenRouter — `kuzz-agent::complete_once`
-    over HTTP, keys from the Providers tab's `GlobalAgentConfig.env_vars`,
-    then the process env), "Codex (ChatGPT subscription)" (`codex exec`
-    one-shot) and "Claude Code (Claude subscription, slower)" (`claude -p`
+    over HTTP, keys from the Tools & accounts tab's `GlobalAgentConfig.env_vars`,
+    then the process env), "Codex (its own sign-in)" (`codex exec`
+    one-shot) and "Claude Code (its own sign-in, slower)" (`claude -p`
     one-shot). Subscription routes go only through the official CLI on its
     own sign-in (`message_routing/cli.rs`): Kuzz never reads, stores, or logs
     subscription tokens, and Claude subscription OAuth is never reused over
@@ -723,7 +733,7 @@ with a TypeScript lookup table or an id comparison in a component.
     API-key provider, other API keys, Codex, Claude Code. Smart routing is
     selectable when any route is ready; otherwise it is disabled with the
     missing piece, e.g. "Sign in to Codex or Claude Code, or add an API key ·
-    Models".
+    AI connections".
 
 ## Kuzz Agent ChatGPT subscription
 
@@ -894,11 +904,14 @@ any other result.
   (presets tests) pins `login_hint ⇔ subscription_provider` on every builtin
   and its projection through all four catalog constructors.
   `../settings/ui/models/providersSettingsModel.test.mjs` and
-  `ProvidersSettingsTab.jsdom-test.mjs` pin Settings › Models as a
+  `ProvidersSettingsTab.jsdom-test.mjs` pin Settings › AI connections as a
   provider-centric view over the same `GlobalAgentConfig` record: one
   `set_global_agent_config` per action, a harness switch routed through
   `resetConfigForHarnessChange`, one radio group for the single
   `preferred_runtime`/`provider` default, and `model` never written there.
+- `ui/EnvVarsEditor.blockedKeys.jsdom-test.mjs` — on the defaults surfaces a
+  typed provider API-key row blocks Save with the inline message and never
+  overwrites or drops the saved key.
 - Rust: `runtime_metadata_env_vars` tests pin spawn-time key application.
 - Rust: persona sharing/retention tests pin relay+owner scoping, durable
   enqueue errors, relay rejection/unavailability, and accepted publication.

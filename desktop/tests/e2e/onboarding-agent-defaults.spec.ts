@@ -116,7 +116,7 @@ test("setup filters the bundled harnesses by connection method", async ({
   ).toBeVisible();
   await expect(
     page.getByTestId("onboarding-harness-method-subscription"),
-  ).toContainText("Log in with a subscription");
+  ).toContainText("Use a harness on this computer");
   await expect(page.getByTestId("onboarding-harness-method-api")).toContainText(
     "Use an API key",
   );
@@ -500,7 +500,7 @@ test("auth discovery failure stays actionable without exposing internals", async
   const signInRequired = page.getByTestId(
     "onboarding-runtime-sign-in-required-claude",
   );
-  await expect(signInRequired).toHaveText("Sign in required");
+  await expect(signInRequired).toHaveText("Sign-in needed");
   await expect(signInRequired).not.toHaveClass(/font-mono/);
   await page.getByTestId("onboarding-runtime-details-claude").click();
   await expect(
@@ -542,7 +542,7 @@ test("terminal launch failure keeps Sign in available", async ({ page }) => {
 
   await expect(
     page.getByTestId("onboarding-runtime-sign-in-required-claude"),
-  ).toHaveText("Sign in required");
+  ).toHaveText("Sign-in needed");
   await page.getByTestId("onboarding-runtime-details-claude").click();
   const signIn = page.getByRole("button", { name: "Sign in to Claude Code" });
   await signIn.click();
@@ -583,9 +583,7 @@ test("sign in stays pending until catalog detection confirms Ready", async ({
   await navigateToSetupPage(page);
 
   await page.getByTestId("onboarding-runtime-details-claude").click();
-  await expect(
-    page.getByText("Claude subscription", { exact: true }),
-  ).toBeVisible();
+  await expect(page.getByText("Claude Code", { exact: true })).toBeVisible();
   await expect(
     page.getByText("Kuzz will open a sign-in window for Claude Code."),
   ).toBeVisible();
