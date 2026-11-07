@@ -39,23 +39,26 @@ export const MAX_THREAD_WINDOWS_PER_REQUEST = 4;
  * Fetch newest-first reply pages for up to four threads in one relay round
  * trip. Threads the relay skipped (no access) are absent from the result.
  * With `storeHead` (the page a thread opens on, and the preload), each newest
- * page also records its thread's head span in the device store.
+ * page also records its thread's head span in the device store. With
+ * `includeAux`, pages also carry their replies' reactions, edits and
+ * deletions (a page kept in the store, docs/message-sync.md#window-check).
  */
 export async function getThreadWindows(
   threads: readonly ThreadWindowRequest[],
   limitRows: number,
-  options: { storeHead?: boolean } = {},
+  options: { storeHead?: boolean; includeAux?: boolean } = {},
 ): Promise<ThreadWindowPage[]> {
+  const includeAux = options.includeAux === true;
   const heads = onceNewest(threads);
   if (heads.size === 0 || !recordsStoreHead(options, limitRows)) {
-    return fetchThreadWindows(threads, limitRows);
+    return fetchThreadWindows(threads, limitRows, includeAux);
   }
   const rooms = threads
     .filter((thread) => heads.has(headKey(thread)))
     .map((thread) => thread.channelId);
   return requestWithStoreHeads(
     [...new Set(rooms)],
-    () => fetchThreadWindows(threads, limitRows),
+    () => fetchThreadWindows(threads, limitRows, includeAux),
     (pages) =>
       onceIn(pages)
         // A page is matched to its request by channel and root only, so a
@@ -101,6 +104,7 @@ function onceIn<T extends { channelId: string; rootId: string }>(
 async function fetchThreadWindows(
   threads: readonly ThreadWindowRequest[],
   limitRows: number,
+  includeAux: boolean,
 ): Promise<ThreadWindowPage[]> {
   const pages = await invokeTauri<RawThreadWindowPage[]>("get_thread_windows", {
     threads: threads.map((thread) => ({
@@ -114,6 +118,7 @@ async function fetchThreadWindows(
         : null,
     })),
     limitRows,
+    ...(includeAux ? { includeAux } : {}),
   });
   return pages.map((page) => ({
     channelId: page.channel_id,

@@ -15,10 +15,9 @@ import {
   refreshThreadAfterStore,
   takePendingThreadRelay,
 } from "@/features/messages/lib/storeThreadHead";
-import {
-  getThreadWindows,
-  type ThreadWindowPage,
-} from "@/shared/api/threadWindow";
+import { checkedWindow } from "@/features/messages/lib/windowCheck";
+import { threadWindowIo } from "@/features/messages/lib/windowCheckIo";
+import type { ThreadWindowPage } from "@/shared/api/threadWindow";
 import type { RelayEvent, ThreadCursor } from "@/shared/api/types";
 
 /** Replies a thread opens with: about one panel of conversation. */
@@ -183,19 +182,20 @@ function sameCursor(left: ThreadCursor | null, right: ThreadCursor | null) {
   );
 }
 
-async function fetchThreadPage(
+/** One page of a thread's replies, by the window check (docs/message-sync.md#window-check). */
+function fetchThreadPage(
+  queryClient: QueryClient,
   channelId: string,
   rootId: string,
   cursor: ThreadCursor | null,
   limitRows: number,
   options: { storeHead?: boolean } = {},
 ): Promise<ThreadWindowPage | null> {
-  const [page] = await getThreadWindows(
-    [{ channelId, rootId, cursor }],
-    limitRows,
-    options,
+  return checkedWindow(
+    queryClient,
+    { roomId: channelId, rootId, cursor, limit: limitRows },
+    threadWindowIo(channelId, rootId, cursor, limitRows, options),
   );
-  return page ?? null;
 }
 
 /**
@@ -221,7 +221,9 @@ export async function loadNewestThreadReplies(
     (first
       ? undefined
       : takePendingThreadRelay(queryClient, channelId, rootId)) ??
-    fetchThreadPage(channelId, rootId, null, limitRows, { storeHead: true });
+    fetchThreadPage(queryClient, channelId, rootId, null, limitRows, {
+      storeHead: true,
+    });
   if (notLoaded) noteThreadRequest(queryClient, channelId, relay);
   const race = first
     ? await storeBeforeRelay(
@@ -268,6 +270,7 @@ export async function loadNewestThreadReplies(
     walked += 1
   ) {
     const older = await fetchThreadPage(
+      queryClient,
       channelId,
       rootId,
       state.olderCursor,
@@ -295,6 +298,7 @@ export async function loadOlderThreadReplies(
   const state = queryClient.getQueryData<ThreadWindowState>(stateKey);
   if (!state?.hasOlder || !state.olderCursor) return false;
   const page = await fetchThreadPage(
+    queryClient,
     channelId,
     rootId,
     state.olderCursor,

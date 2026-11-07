@@ -23,8 +23,9 @@ import {
 } from "@/features/messages/lib/storedWindows";
 import { refreshChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
 import { afterThreadRequest } from "@/features/messages/lib/threadFirst";
+import { checkedWindow } from "@/features/messages/lib/windowCheck";
+import { roomWindowIo } from "@/features/messages/lib/windowCheckIo";
 import { sendRoomWindow } from "@/features/messages/lib/windowLiveToken";
-import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 
@@ -40,7 +41,11 @@ type StoreRoomHeadDeps = {
     queryClient: QueryClient,
     roomId: string,
   ) => Promise<RoomPaint | null>;
-  relayWindow: (roomId: string) => Promise<RelayEvent[]>;
+  /** The room's newest window by the window check (docs/message-sync.md#window-check). */
+  relayWindow: (
+    roomId: string,
+    queryClient: QueryClient,
+  ) => Promise<RelayEvent[]>;
   relayRefresh: (queryClient: QueryClient, roomId: string) => Promise<void>;
 };
 
@@ -60,8 +65,12 @@ const defaultDeps: StoreRoomHeadDeps = {
       ? { window: paint.window, completeFrom: paint.complete_from ?? null }
       : null;
   },
-  relayWindow: (roomId) =>
-    getChannelWindowEvents(roomId, null, 50, { storeHead: true }),
+  relayWindow: (roomId, queryClient) =>
+    checkedWindow(
+      queryClient,
+      { roomId, rootId: null, cursor: null, limit: 50 },
+      roomWindowIo(roomId, null, 50, { storeHead: true }),
+    ),
   relayRefresh: (queryClient, roomId) =>
     refreshChannelWindowMessages(queryClient, roomId, false),
 };
@@ -146,7 +155,7 @@ function startRelay(queryClient: QueryClient, channelId: string) {
   noteStart(queryClient, channelId);
   return sendRoomWindow(queryClient, channelId, async () => {
     await afterThreadRequest(queryClient, channelId);
-    return deps.relayWindow(channelId);
+    return deps.relayWindow(channelId, queryClient);
   });
 }
 

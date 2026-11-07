@@ -83,6 +83,8 @@ type CoverageDeps = {
     until?: number;
     beforeId?: string;
   }) => Promise<RelayEvent[]>;
+  /** Drops the head and page spans of rooms a catch-up left a gap in. */
+  forgetWindows: (roomIds: string[]) => Promise<void>;
 };
 
 const defaultDeps: CoverageDeps = {
@@ -125,6 +127,8 @@ const defaultDeps: CoverageDeps = {
     return points && typeof points === "object" ? points : {};
   },
   requestPage: getChannelReconnectRepairEvents,
+  forgetWindows: (roomIds) =>
+    invokeTauri<void>("message_store_forget_windows", { roomIds }),
 };
 
 let deps = defaultDeps;
@@ -346,6 +350,20 @@ export function noteStoreRepairEnded(subscription: LiveSubscription) {
 }
 
 /**
+ * A catch-up skipped `roomIds` (too old) or cut them short (page cap): the
+ * store has a gap it cannot see, so their stored windows are fetched, not
+ * checked, when next opened (docs/message-sync.md#window-check).
+ */
+export function forgetStoreWindows(roomIds: readonly string[]) {
+  if (roomIds.length === 0) return;
+  try {
+    void deps.forgetWindows([...roomIds]).catch(() => {});
+  } catch {
+    // No store bridge (tests without Tauri): nothing to forget.
+  }
+}
+
+/**
  * Fetch what the store is missing for `roomIds` between their last coverage
  * and `liveAt`, into the store only (nothing is shown). Rooms never covered
  * are skipped; a gap too old or too large is left to opening the room.
@@ -362,7 +380,10 @@ export async function catchUpFromStore(
   if (covered.length === 0) return false;
   const oldest = Math.min(...covered.map((roomId) => points[roomId]));
   const since = Math.max(0, oldest - STORE_RESUME_LOOKBACK_SECS);
-  if (since < liveAt - STORE_CATCH_UP_MAX_AGE_SECS) return false;
+  if (since < liveAt - STORE_CATCH_UP_MAX_AGE_SECS) {
+    forgetStoreWindows(covered);
+    return false;
+  }
   // The first page starts at the relay's newest, not at this PC's clock: rows
   // the relay stamped after liveAt but sent before EOSE are fetched too.
   let until: number | undefined;
@@ -398,11 +419,13 @@ export async function catchUpFromStore(
       return end(true);
     }
     if (terminal.created_at === until && terminal.id === beforeId) {
+      forgetStoreWindows(covered);
       return end(false);
     }
     until = terminal.created_at;
     beforeId = terminal.id;
   }
+  forgetStoreWindows(covered);
   return end(false);
 }
 

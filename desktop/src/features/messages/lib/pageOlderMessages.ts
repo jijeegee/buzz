@@ -8,7 +8,8 @@ import { projectChannelWindowMessages } from "@/features/messages/lib/projectCha
 import { parseChannelWindowResponse } from "@/features/messages/lib/channelWindowResponse";
 import { channelWindowKey } from "@/features/messages/lib/messageQueryKeys";
 import { markRenderScopedReactionsLoaded } from "@/features/messages/lib/renderScopedReactions";
-import { getChannelWindowEvents } from "@/shared/api/channelWindow";
+import { checkedWindow } from "@/features/messages/lib/windowCheck";
+import { roomWindowIo } from "@/features/messages/lib/windowCheckIo";
 
 const CHANNEL_WINDOW_PAGE_SIZE = 50;
 export type PageOlderResult = { hasOlderMessages: boolean };
@@ -53,10 +54,10 @@ async function runPage(
   }
 
   const requestCursor = tail.nextCursor;
-  const events = await getChannelWindowEvents(
-    channelId,
-    requestCursor,
-    pageSize,
+  const events = await checkedWindow(
+    queryClient,
+    { roomId: channelId, rootId: null, cursor: requestCursor, limit: pageSize },
+    roomWindowIo(channelId, requestCursor, pageSize),
   );
   if (!shouldContinue()) return { hasOlderMessages: true };
   const page = parseChannelWindowResponse(events, channelId, requestCursor);

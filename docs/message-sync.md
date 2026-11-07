@@ -987,6 +987,41 @@ relay. Cases: `test-fixtures/thread-open-root.json`.
   before the reader joined, which the relay does not return, stays a
   placeholder row.
 
+### Window check
+
+Desktop opens a room window (newest, or older on scroll-up) and a thread
+window (newest or older) by one path (`windowCheck.ts`):
+
+1. A window no relay page holds is fetched as before (thread pages with
+   `include_aux`) and kept as a **page span** (`coverage` streams `page`
+   and `page:<root>`): inside the page's key range, stored rows the page
+   lacks are dropped (rows written after the request went out are kept), and
+   the range is recorded. A page with `has_more=false` opens the lower bound
+   to the start of the history. A newest window a head span reaches counts
+   as held too.
+2. A held window is checked: the same filter plus `"check": true`, answered
+   with the bounds only (`39006` room, `39007` thread) carrying
+   `check: {oldest_id, oldest_created_at, count, room_seq, mode}`. The store
+   counts the same kinds by the same top-level rule, without deleted rows
+   (thread windows never count the root). Reactions and edits are not
+   checked.
+3. Equal: mode `on` draws the stored window and asks for no page; `shadow`
+   still fetches and logs whether the page agreed. Different: if live rows
+   for the room arrived while the check was out, it checks once more;
+   otherwise the page is fetched and replaces the stored range as in 1. A
+   window still different right after its refetch takes the old path for 10
+   minutes (per room or thread).
+
+The mode is the relay's, from its latest check answer (a relay without the
+check counts as `off`), unless Settings > Experiments > Window check
+overrides it. The first window of a run always sends a check; `off` is the
+old path, asked again after 10 minutes. A catch-up that skips a room (7-day
+limit) or gives it up (page cap) forgets its head and page spans, so its
+windows are fetched again.
+
+Room windows page `TIMELINE_KINDS` on both platforms, including huddle ended
+(48103), which desktop does not draw as a row.
+
 ### Launch snapshots
 
 Desktop keeps small snapshots of what the first screen shows in the same
