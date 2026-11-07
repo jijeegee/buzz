@@ -24,7 +24,6 @@ import type {
   UpdateManagedAgentInput,
 } from "@/shared/api/types";
 import { normalizePubkey } from "@/shared/lib/pubkey";
-import { isWelcomeTeamOwed, setWelcomeTeamOwed } from "./welcome";
 
 export const WELCOME_GUIDE_AGENT_NAME = "Kuzi";
 export const WELCOME_GUIDE_PERSONA_ID = "builtin:kuzi";
@@ -331,7 +330,8 @@ export class WelcomeTeamElsewhereError extends Error {
 
 /**
  * Whether an agent of one of the [missing] starter personas runs on another
- * of the owner's computers. A relay that cannot be read counts as no.
+ * of the owner's computers. A relay that cannot be read throws, so this
+ * computer retries later instead of making a second team.
  */
 async function welcomeStarterRunsElsewhere(
   missingPersonaIds: readonly string[],
@@ -350,8 +350,13 @@ async function welcomeStarterRunsElsewhere(
       const personaId = remoteAgentPersonaId(agent, personas);
       return personaId !== null && missing.has(personaId);
     });
-  } catch {
-    return false;
+  } catch (error) {
+    throw new Error(
+      "Could not check your other computers for the Welcome Team.",
+      {
+        cause: error,
+      },
+    );
   }
 }
 
@@ -384,12 +389,8 @@ async function provisionWelcomeTeam(
     (starter) =>
       !pickWelcomeTeamStarterAgentForRelay(existingAgents, starter, relayUrl),
   ).map((starter) => starter.personaId);
-  if (
-    missingPersonaIds.length > 0 &&
-    !isWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl)
-  ) {
-    throw new WelcomeTeamElsewhereError();
-  }
+  // The first of the owner's computers to get here makes the team; the
+  // others find it on the relay and leave it there.
   if (
     await welcomeStarterRunsElsewhere(
       missingPersonaIds,
@@ -449,7 +450,6 @@ async function provisionWelcomeTeam(
     }
   }
   await ensureWelcomeTeamMembership(channelId, welcomeAgents);
-  setWelcomeTeamOwed((await getIdentity()).pubkey, relayUrl, false);
   return welcomeAgents;
 }
 
