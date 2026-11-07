@@ -370,11 +370,29 @@ _openThreadWindowResponse(
     return (events: await pending, stored: false, askedAt: askedAt);
   }
   final askedAt = relayAskTime();
-  final relay = queryThreadWindow(
-    session.queryRelayWithStoreHeads,
-    threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
+  final filter = threadWindowFilter(
+    channelId: args.channelId,
     rootId: args.rootId,
-    held: window.heldOverlayIds,
+  );
+  // Checked against the relay: an equal window from the store stands in for
+  // the page (window_check.dart).
+  final check = session.wantsWindowCheck(args.channelId, root: args.rootId)
+      ? await session.decideWindow(
+          filter,
+          room: args.channelId,
+          root: args.rootId,
+        )
+      : null;
+  if (check?.stored case final stored?) {
+    return (events: stored, stored: false, askedAt: askedAt);
+  }
+  final relay = check.relayed(
+    queryThreadWindow(
+      session.queryRelayWithStoreHeads,
+      filter,
+      rootId: args.rootId,
+      held: window.heldOverlayIds,
+    ),
   );
   if (window.hasLoaded) {
     return (events: await relay, stored: false, askedAt: askedAt);
@@ -646,17 +664,30 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     _loadingOlder = true;
     try {
       final session = ref.read(relaySessionProvider.notifier);
+      final filter = threadWindowFilter(
+        channelId: args.channelId,
+        rootId: args.rootId,
+        cursor: cursor,
+      );
+      // Checked against the relay, as the newest window.
+      final check = session.wantsWindowCheck(args.channelId, root: args.rootId)
+          ? await session.decideWindow(
+              filter,
+              room: args.channelId,
+              root: args.rootId,
+              before: (cursor.createdAt, cursor.eventId),
+            )
+          : null;
       final page = parseThreadWindowPage(
-        await queryThreadWindow(
-          session.queryRelay,
-          threadWindowFilter(
-            channelId: args.channelId,
-            rootId: args.rootId,
-            cursor: cursor,
-          ),
-          rootId: args.rootId,
-          held: heldOverlayIds,
-        ),
+        check?.stored ??
+            await check.relayed(
+              queryThreadWindow(
+                session.queryRelay,
+                filter,
+                rootId: args.rootId,
+                held: heldOverlayIds,
+              ),
+            ),
         channelId: args.channelId,
         rootId: args.rootId,
       );
