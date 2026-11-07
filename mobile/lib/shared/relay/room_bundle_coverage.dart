@@ -330,7 +330,11 @@ class RoomBundleCoverage {
     final since = oldest - storeResumeLookbackSecs < 0
         ? 0
         : oldest - storeResumeLookbackSecs;
-    if (since < liveAt - storeCatchUpMaxAgeSecs) return false;
+    if (since < liveAt - storeCatchUpMaxAgeSecs) {
+      // Left to opening the room: its stored windows wait for their pages.
+      scope.store.markWindowsRefetch(scope.lease, covered);
+      return false;
+    }
     final vouch = generation == null ? null : hooks?.vouch(generation, covered);
     final heads = vouch == null
         ? const <String, (int, int)>{}
@@ -349,6 +353,9 @@ class RoomBundleCoverage {
       storedBefore: mark,
     );
     if (walk.completed) hooks?.walkEnded(vouch, covered, liveAt, walk, heads);
+    if (!walk.completed && !switched()) {
+      scope.store.markWindowsRefetch(scope.lease, covered);
+    }
     return walk.completed;
   }
 }
