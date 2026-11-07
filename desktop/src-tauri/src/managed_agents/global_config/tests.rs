@@ -860,3 +860,74 @@ fn a_missing_config_file_reads_as_the_default() {
     assert_eq!(config.provider, None);
     assert!(config.env_vars.is_empty());
 }
+
+// ── Settings API keys stay out of sign-in tools ──────────────────────────────
+
+fn effective_env_for(runtime_id: &str, record: &ManagedAgentRecord) -> BTreeMap<String, String> {
+    let global = config_with_env(&[
+        ("ANTHROPIC_API_KEY", "sk-ant-settings"),
+        ("ANTHROPIC_AUTH_TOKEN", "tok-settings"),
+        ("OPENAI_API_KEY", "sk-openai-settings"),
+        ("CODEX_API_KEY", "sk-codex-settings"),
+        ("anthropic_base_url", "https://proxy.example"),
+        ("OPENAI_COMPAT_API_KEY", "sk-compat-settings"),
+        ("GIT_SSH_COMMAND", "ssh -o BatchMode=yes"),
+    ]);
+    let runtime = super::super::known_acp_runtime(runtime_id).expect("catalog runtime");
+    super::super::readiness::resolve_effective_agent_env(record, &[], Some(runtime), &global).env
+}
+
+#[test]
+fn settings_billing_keys_never_reach_sign_in_tools() {
+    for runtime_id in ["claude", "codex"] {
+        let env = effective_env_for(runtime_id, &bare_record());
+        for key in [
+            "ANTHROPIC_API_KEY",
+            "ANTHROPIC_AUTH_TOKEN",
+            "OPENAI_API_KEY",
+            "CODEX_API_KEY",
+            "anthropic_base_url",
+        ] {
+            assert!(
+                !env.contains_key(key),
+                "{runtime_id} must not get Settings {key}"
+            );
+        }
+        // Other Settings env still applies.
+        assert_eq!(
+            env.get("GIT_SSH_COMMAND").map(String::as_str),
+            Some("ssh -o BatchMode=yes"),
+            "{runtime_id}"
+        );
+    }
+}
+
+#[test]
+fn agent_level_billing_key_still_reaches_sign_in_tool() {
+    let mut record = bare_record();
+    record
+        .env_vars
+        .insert("ANTHROPIC_API_KEY".to_string(), "sk-ant-agent".to_string());
+    let env = effective_env_for("claude", &record);
+    assert_eq!(
+        env.get("ANTHROPIC_API_KEY").map(String::as_str),
+        Some("sk-ant-agent")
+    );
+}
+
+#[test]
+fn kuzz_agent_and_goose_keep_settings_keys() {
+    for runtime_id in ["kuzz-agent", "goose"] {
+        let env = effective_env_for(runtime_id, &bare_record());
+        assert_eq!(
+            env.get("ANTHROPIC_API_KEY").map(String::as_str),
+            Some("sk-ant-settings"),
+            "{runtime_id}"
+        );
+        assert_eq!(
+            env.get("OPENAI_COMPAT_API_KEY").map(String::as_str),
+            Some("sk-compat-settings"),
+            "{runtime_id}"
+        );
+    }
+}
