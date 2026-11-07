@@ -999,7 +999,8 @@ window (newest or older) by one path (`windowCheck.ts`):
    the range is recorded. A page with `has_more=false` opens the lower bound
    to the start of the history. A newest window a head span reaches counts
    as held too.
-2. A held window is checked: the same filter plus `"check": true`, answered
+2. A held window is checked (mode `on`): the same filter plus
+   `"check": true`, sent alongside the store read, answered
    with the bounds only (`39006` room, `39007` thread) carrying
    `check: {oldest_id, oldest_created_at, count, room_seq, mode}`. The store
    counts the same kinds by the same top-level rule, without deleted rows
@@ -1007,27 +1008,35 @@ window (newest or older) by one path (`windowCheck.ts`):
    checked.
 3. Equal: mode `on` answers with the stored window and asks for no page,
    recording what that page would have (its page span, and for a newest
-   window its head span). `shadow` fetches the page alongside the check
-   (never after it) and logs whether they agreed. Different: if live rows
-   for the room arrived while the check was out, it checks once more;
-   otherwise the page is fetched, replaces the stored range as in 1, and
-   the open redraws with it. A window still different right after its
-   refetch takes the old path for 10 minutes (per room or thread).
+   window its head span). `shadow` fetches the page at once, with the check
+   and the store read alongside (never before it), and logs whether they
+   agreed. Different: if live rows for the room (for a thread: that thread)
+   arrived while the check was out, it checks once more; otherwise the page
+   is fetched, replaces the stored range as in 1, and the open redraws with
+   it. A window whose stored rows at or below the page's newest still
+   differ after the refetch was applied takes the old path for 10 minutes
+   (per room or thread); that is looked at behind the answer.
 
 A newest room or thread window paints its stored rows first in every mode
 (`openChannelWindowEvents`, `loadNewestThreadReplies`); the check runs
 behind the paint, in place of the relay request that follows it today.
+An older window (scroll-up) the store fully holds is drawn as soon as it is
+read; the check's answer, or the refetch after it, then replaces it.
 
-The mode is the relay's, from its latest check answer (a relay without the
-check, or whose check fails, counts as `off`; one that answers a room check
-with the whole page has that page used), unless Settings > Experiments > Window check
-overrides it. The first window of a run always sends a check; `off` is the
-old path, asked again after 10 minutes. A catch-up that skips a room (7-day
-limit) or gives it up (page cap) forgets its head and page spans, so its
-windows are fetched again.
+The mode is the relay's, from its latest real answer (a relay that answers
+without the check counts as `off`; in mode `on` its room page is used as the
+page), unless Settings > Experiments > Window check overrides it. A failed
+or empty check (an error, a timeout, a room out of reach) says nothing
+about the relay: only that window takes the old path. While the mode is not
+known, or was `off` 10 minutes ago, a window sends today's request at once
+and a check behind it to learn the mode. A catch-up that skips a room
+(7-day limit) or gives it up (page cap) forgets its head and page spans, so
+its windows are fetched again; only while checks may run (the override, or
+a relay that answered `on` or `shadow`), so mode `off` leaves the store as
+today.
 
-Room windows page `TIMELINE_KINDS` on both platforms, including huddle ended
-(48103), which desktop does not draw as a row.
+The check carries the page's own kinds and the relay counts the request's
+kinds, so each platform's room kinds need not match.
 
 ### Launch snapshots
 

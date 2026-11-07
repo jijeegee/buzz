@@ -102,28 +102,41 @@ fn check_answer(events: &[nostr::Event], thread: bool) -> Option<WindowCheckAnsw
     })
 }
 
-/// What a check got back: the check, or, from a relay without the check
-/// that answered a room check with the whole page, that page.
+/// What a check got back: the check; or `no_check` when the relay answered
+/// with the window's bounds but no check (a relay without the check), and,
+/// for a room, that answer (the whole page). Neither for an empty answer
+/// (no access): that says nothing about the relay.
 #[derive(serde::Serialize, Debug, PartialEq)]
 pub struct WindowCheckResult {
     check: Option<WindowCheckAnswer>,
+    no_check: bool,
     page: Option<Vec<serde_json::Value>>,
 }
 
 fn check_result(events: &[nostr::Event], thread: bool) -> WindowCheckResult {
     let check = check_answer(events, thread);
+    let bounds_kind = if thread {
+        KIND_THREAD_BOUNDS
+    } else {
+        KIND_ROOM_BOUNDS
+    };
     let one_bounds = events
         .iter()
-        .filter(|event| event.kind.as_u16() == KIND_ROOM_BOUNDS)
+        .filter(|event| event.kind.as_u16() == bounds_kind)
         .count()
         == 1;
-    let page = (check.is_none() && !thread && one_bounds).then(|| {
+    let no_check = check.is_none() && one_bounds;
+    let page = (no_check && !thread).then(|| {
         events
             .iter()
             .filter_map(|event| serde_json::to_value(event).ok())
             .collect()
     });
-    WindowCheckResult { check, page }
+    WindowCheckResult {
+        check,
+        no_check,
+        page,
+    }
 }
 
 /// Asks the relay to check one window: the same page query, answered with
@@ -205,19 +218,24 @@ pub async fn message_store_window(
 /// Replaces a window's stored rows with the page the relay answered to the
 /// request marked `scope` (`message_store_head_sent`): `cursor` is the
 /// page's, `oldest` its oldest row (`None` when it had no more), `ids` every
-/// event it held.
+/// event it held. Read in the account and server the window was opened
+/// under; whether the page was applied.
 #[tauri::command]
-pub fn message_store_replace_window(
+#[allow(clippy::too_many_arguments)]
+pub async fn message_store_replace_window(
     scope: Option<String>,
     channel_id: String,
     root_id: Option<String>,
     cursor: Option<ThreadCursor>,
     oldest: Option<ThreadCursor>,
     ids: Vec<String>,
+    account: String,
+    relay_url: String,
     state: State<'_, AppState>,
-) -> Result<(), String> {
-    let account = state.user_credential()?.public_key().to_hex();
-    let relay = relay_api_base_url_with_override(&state);
+) -> Result<bool, String> {
+    let Some((relay, account)) = paint_scope(&state, &account, &relay_url)? else {
+        return Ok(false);
+    };
     let key = |cursor: ThreadCursor| (cursor.created_at, cursor.event_id.to_ascii_lowercase());
     let page = crate::message_store::WindowReplace {
         kinds: window_kinds(root_id.as_deref()),
@@ -227,19 +245,25 @@ pub fn message_store_replace_window(
         oldest: oldest.map(key),
         ids: ids.into_iter().map(|id| id.to_ascii_lowercase()).collect(),
     };
-    crate::message_store::replace_window(&relay, &account, scope.as_deref(), page)
+    off_main(move || {
+        crate::message_store::replace_window(&relay, &account, scope.as_deref(), page)
+            .unwrap_or(false)
+    })
+    .await
 }
 
 /// Drops the head and page spans of `room_ids` (their catch-up was skipped
-/// or cut short), so their windows are fetched again.
+/// or cut short), so their windows are fetched again. Refused when `scope`
+/// (the catch-up's `message_store_scope`) is no longer current.
 #[tauri::command]
 pub fn message_store_forget_windows(
     room_ids: Vec<String>,
+    scope: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let account = state.user_credential()?.public_key().to_hex();
     let relay = relay_api_base_url_with_override(&state);
-    crate::message_store::forget_windows(&relay, &account, room_ids);
+    crate::message_store::forget_windows(&relay, &account, scope.as_deref(), room_ids);
     Ok(())
 }
 
@@ -315,9 +339,17 @@ mod tests {
         // An old relay's room answer is the page itself: used as the page.
         let result = check_result(&[page.clone()], false);
         assert_eq!(result.check, None);
+        assert!(result.no_check);
         assert_eq!(result.page.as_ref().map(Vec::len), Some(1));
-        // Never for a thread, nor for an answer that is no page.
-        assert_eq!(check_result(&[page], true).page, None);
-        assert_eq!(check_result(&[], false).page, None);
+        // A thread's page is never used; it still says the relay has no check.
+        let thread = bounds(KIND_THREAD_BOUNDS, r#"{"has_more":false}"#);
+        let result = check_result(&[thread], true);
+        assert!(result.no_check);
+        assert_eq!(result.page, None);
+        // An empty answer (no access) says nothing about the relay.
+        let empty = check_result(&[], false);
+        assert!(!empty.no_check);
+        assert_eq!(empty.page, None);
+        assert!(!check_result(&[page], true).no_check);
     }
 }

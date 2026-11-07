@@ -102,6 +102,17 @@ export function effectiveWindowCheckMode(
   return override === "follow" ? answered : override;
 }
 
+/**
+ * Whether any window may open by a check now: the override says `on` or
+ * `shadow`, or (following the relay) one has answered so. With none, the
+ * store keeps today's facts untouched (mode off is today).
+ */
+export function windowChecksActive(): boolean {
+  if (override !== "follow") return override !== "off";
+  for (const { mode } of serverModes.values()) if (mode !== "off") return true;
+  return false;
+}
+
 /** Forget the relays' modes and the override (tests). */
 export function resetWindowCheckModes(next: WindowCheckOverride = "follow") {
   serverModes.clear();

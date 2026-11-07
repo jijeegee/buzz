@@ -17,6 +17,7 @@ import { invokeTauri } from "@/shared/api/tauri";
 import type { RelayEvent } from "@/shared/api/types";
 import { CHANNEL_EVENT_KINDS } from "@/shared/constants/kinds";
 import { namesUserStream } from "@/shared/api/userStreamRules";
+import { windowChecksActive } from "@/features/messages/lib/windowCheckMode";
 
 /** Same margin as reconnect repair: relay future tolerance plus storage fence. */
 export const STORE_RESUME_LOOKBACK_SECS = 900 + 960 + 5;
@@ -84,7 +85,9 @@ type CoverageDeps = {
     beforeId?: string;
   }) => Promise<RelayEvent[]>;
   /** Drops the head and page spans of rooms a catch-up left a gap in. */
-  forgetWindows: (roomIds: string[]) => Promise<void>;
+  forgetWindows: (roomIds: string[], scope: string | null) => Promise<void>;
+  /** Whether windows may open by a check (else the store is left as today). */
+  windowChecksActive: () => boolean;
 };
 
 const defaultDeps: CoverageDeps = {
@@ -127,8 +130,9 @@ const defaultDeps: CoverageDeps = {
     return points && typeof points === "object" ? points : {};
   },
   requestPage: getChannelReconnectRepairEvents,
-  forgetWindows: (roomIds) =>
-    invokeTauri<void>("message_store_forget_windows", { roomIds }),
+  forgetWindows: (roomIds, scope) =>
+    invokeTauri<void>("message_store_forget_windows", { roomIds, scope }),
+  windowChecksActive,
 };
 
 let deps = defaultDeps;
@@ -352,15 +356,21 @@ export function noteStoreRepairEnded(subscription: LiveSubscription) {
 /**
  * A catch-up skipped `roomIds` (too old) or cut them short (page cap): the
  * store has a gap it cannot see, so their stored windows are fetched, not
- * checked, when next opened (docs/message-sync.md#window-check).
+ * checked, when next opened (docs/message-sync.md#window-check). Only
+ * while checks may run: with every relay off the store stays as today. The
+ * store's `scope` (account and server) is the one the rooms were read in.
  */
-export function forgetStoreWindows(roomIds: readonly string[]) {
-  if (roomIds.length === 0) return;
-  try {
-    void deps.forgetWindows([...roomIds]).catch(() => {});
-  } catch {
-    // No store bridge (tests without Tauri): nothing to forget.
-  }
+export function forgetStoreWindows(
+  roomIds: readonly string[],
+  scope: Promise<string | null>,
+) {
+  if (roomIds.length === 0 || !deps.windowChecksActive()) return;
+  const rooms = [...roomIds];
+  void scope
+    .then((token) => deps.forgetWindows(rooms, token))
+    .catch(() => {
+      // No store bridge (tests without Tauri): nothing to forget.
+    });
 }
 
 /**
@@ -381,7 +391,7 @@ export async function catchUpFromStore(
   const oldest = Math.min(...covered.map((roomId) => points[roomId]));
   const since = Math.max(0, oldest - STORE_RESUME_LOOKBACK_SECS);
   if (since < liveAt - STORE_CATCH_UP_MAX_AGE_SECS) {
-    forgetStoreWindows(covered);
+    forgetStoreWindows(covered, scope);
     return false;
   }
   // The first page starts at the relay's newest, not at this PC's clock: rows
@@ -419,13 +429,13 @@ export async function catchUpFromStore(
       return end(true);
     }
     if (terminal.created_at === until && terminal.id === beforeId) {
-      forgetStoreWindows(covered);
+      forgetStoreWindows(covered, scope);
       return end(false);
     }
     until = terminal.created_at;
     beforeId = terminal.id;
   }
-  forgetStoreWindows(covered);
+  forgetStoreWindows(covered, scope);
   return end(false);
 }
 

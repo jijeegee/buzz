@@ -6,6 +6,7 @@ import { QueryClient } from "@tanstack/react-query";
 import { setStoreScope } from "./paintCoverage.ts";
 import {
   checkedWindow,
+  hexIdBefore,
   resetWindowCheckGuards,
   setWindowCheckDeps,
   WINDOW_CHECK_GUARD_MS,
@@ -36,40 +37,58 @@ function storedWindow(overrides = {}) {
 }
 
 /** A fake relay and store; `stores` are read one after another. */
-function setup({ stores, checks = [], live = () => 0, now = () => 1_000 }) {
+function setup({
+  stores,
+  checks = [],
+  live = () => 0,
+  now = () => 1_000,
+  applied = true,
+}) {
   const calls = {
     stored: 0,
+    storedKeys: [],
     check: 0,
     replace: [],
     release: [],
     heads: [],
     log: [],
+    order: [],
   };
   const restore = setWindowCheckDeps({
-    stored: async () => {
+    stored: async (_scope, windowKey) => {
       const next = stores[Math.min(calls.stored, stores.length - 1)];
       calls.stored += 1;
+      calls.storedKeys.push(windowKey);
+      calls.order.push("stored");
       return next;
     },
     check: async () => {
       const next = checks[Math.min(calls.check, checks.length - 1)];
       calls.check += 1;
+      calls.order.push("check");
       if (next instanceof Error) throw next;
+      // null: a relay without the check (an answer with no check in it).
+      if (next === null) return { answer: null, noCheck: true, page: null };
       return next && "page" in next
-        ? next
-        : { answer: next ?? null, page: null };
+        ? { noCheck: false, ...next }
+        : { answer: next ?? null, noCheck: false, page: null };
     },
     withHeads: async (roomIds, request, answers) => {
       const answer = await request();
       calls.heads.push(...answers(answer).map((head) => ({ roomIds, head })));
       return answer;
     },
-    mark: async () => "mark",
+    mark: async () => {
+      calls.order.push("mark");
+      return "mark";
+    },
     release: async (mark) => {
       calls.release.push(mark);
     },
-    replace: async (mark, windowKey, oldest, ids) => {
+    replace: async (mark, scope, windowKey, oldest, ids) => {
+      assert.deepEqual(scope, { pubkey: "me", relayUrl: RELAY });
       calls.replace.push({ mark, windowKey, oldest, ids });
+      return applied;
     },
     liveActivity: live,
     nowMs: now,
@@ -108,6 +127,7 @@ beforeEach(() => {
 afterEach(() => restore());
 
 const equalAnswer = { oldestId: "a", count: 3, mode: "on" };
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
 
 test("an equal check opens the stored window without a page", async () => {
   const fake = setup({ stores: [storedWindow()], checks: [equalAnswer] });
@@ -176,6 +196,7 @@ test("a row missing from the store refetches and replaces its stretch", async ()
     },
   ]);
   // The store agrees with the page now: no guard, the next open checks.
+  await tick();
   const again = setup({ stores: [storedWindow()], checks: [equalAnswer] });
   restore = again.restore;
   await checkedWindow(client(), key, io().io);
@@ -236,7 +257,13 @@ test("a window still different after its refetch takes today's path for a while"
   restore = fake.restore;
   await checkedWindow(client(), key, io().io);
   assert.equal(fake.calls.replace.length, 1);
-  assert.match(fake.calls.log.join("\n"), /still differs after a refetch/);
+  await tick();
+  assert.match(fake.calls.log.join(BR), /still differs after a refetch/);
+  // Only rows at or below the page's newest (c at 30) are compared.
+  assert.deepEqual(fake.calls.storedKeys.at(-1).cursor, {
+    createdAt: 30,
+    eventId: "b",
+  });
 
   now += WINDOW_CHECK_GUARD_MS - 1;
   const page = io();
@@ -254,7 +281,101 @@ test("a window still different after its refetch takes today's path for a while"
   assert.equal(fake.calls.check, 3, "checked again after the guard");
 });
 
-const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+test("a refetch the store did not apply guards nothing", async () => {
+  const differing = storedWindow({ oldest: { createdAt: 5, eventId: "z" } });
+  const fake = setup({
+    stores: [differing],
+    checks: [equalAnswer],
+    applied: false,
+  });
+  restore = fake.restore;
+  await checkedWindow(client(), key, io().io);
+  await tick();
+  assert.equal(fake.calls.stored, 1, "no re-read");
+  assert.deepEqual(
+    fake.calls.log.filter((line) => /still/.test(line)),
+    [],
+  );
+});
+
+test("a store that cannot be re-read after a refetch is not a difference", async () => {
+  const differing = storedWindow({ oldest: { createdAt: 5, eventId: "z" } });
+  const fake = setup({ stores: [differing, null], checks: [equalAnswer] });
+  restore = fake.restore;
+  await checkedWindow(client(), key, io().io);
+  await tick();
+  assert.equal(fake.calls.stored, 2);
+  assert.deepEqual(
+    fake.calls.log.filter((line) => /still/.test(line)),
+    [],
+  );
+  await checkedWindow(client(), key, io().io);
+  assert.equal(fake.calls.check, 2, "not guarded");
+});
+
+test("hexIdBefore is the id just before, same length", () => {
+  assert.equal(hexIdBefore("c"), "b");
+  assert.equal(hexIdBefore("a0"), "9f");
+  assert.equal(hexIdBefore("B00"), "aff");
+  assert.equal(hexIdBefore("000"), null);
+  assert.equal(hexIdBefore("xyz"), null);
+});
+
+test("the check goes out before the store is read, the mark before the read", async () => {
+  const fake = setup({ stores: [storedWindow()], checks: [equalAnswer] });
+  restore = fake.restore;
+  await checkedWindow(client(), key, io().io);
+  assert.deepEqual(fake.calls.order, ["check", "mark", "stored"]);
+});
+
+test("a stored window below a cursor is drawn before the check answers", async () => {
+  const fake = setup({ stores: [storedWindow()] });
+  restore = fake.restore;
+  let answerCheck = () => {};
+  const restoreCheck = setWindowCheckDeps({
+    check: () =>
+      new Promise((resolve) => {
+        answerCheck = () =>
+          resolve({ answer: equalAnswer, noCheck: false, page: null });
+      }),
+  });
+  const painted = [];
+  const page = io();
+  page.io.paint = (events) => painted.push(events);
+  const cursorKey = { ...key, cursor: { createdAt: 40, eventId: "d" } };
+  const opening = checkedWindow(client(), cursorKey, page.io);
+  await tick();
+  assert.deepEqual(painted, [rows], "drawn while the check is out");
+  answerCheck();
+  assert.equal(await opening, rows);
+  restoreCheck();
+});
+
+test("a newest window is not drawn by the check (its open paints)", async () => {
+  const fake = setup({ stores: [storedWindow()], checks: [equalAnswer] });
+  restore = fake.restore;
+  const painted = [];
+  const page = io();
+  page.io.paint = (events) => painted.push(events);
+  await checkedWindow(client(), key, page.io);
+  assert.deepEqual(painted, []);
+});
+
+test("a thread's check compares again only on that thread's live rows", async () => {
+  const threadKey = { ...key, rootId: "root" };
+  const asked = [];
+  const fake = setup({
+    stores: [storedWindow({ count: 2 }), storedWindow()],
+    checks: [equalAnswer],
+    live: (windowKey) => {
+      asked.push(windowKey);
+      return 0;
+    },
+  });
+  restore = fake.restore;
+  await checkedWindow(client(), threadKey, io().io);
+  assert.ok(asked.every((windowKey) => windowKey.rootId === "root"));
+});
 
 test("shadow fetches alongside the check, never after it", async () => {
   noteServerWindowCheckMode(RELAY, "shadow", 1_000);
@@ -265,7 +386,11 @@ test("shadow fetches alongside the check, never after it", async () => {
     check: () =>
       new Promise((resolve) => {
         answerCheck = () =>
-          resolve({ answer: { ...equalAnswer, mode: "shadow" }, page: null });
+          resolve({
+            answer: { ...equalAnswer, mode: "shadow" },
+            noCheck: false,
+            page: null,
+          });
       }),
   });
   const page = io();
@@ -311,7 +436,7 @@ test("a thread check that fails is today's path, without a word", async () => {
   const threadKey = { ...key, rootId: "root" };
   const fake = setup({
     stores: [storedWindow()],
-    checks: [new Error("unknown filter field")],
+    checks: [new Error("unknown filter field"), equalAnswer],
   });
   restore = fake.restore;
   const page = io();
@@ -319,31 +444,45 @@ test("a thread check that fails is today's path, without a word", async () => {
   assert.deepEqual(page.fetches, [false]);
   assert.deepEqual(fake.calls.log, []);
   assert.deepEqual(fake.calls.release, ["mark"]);
-  // Counted as off: the next open asks nothing.
+  // An error says nothing about the relay: only this window took today's
+  // path, the next open checks again.
   const next = io();
   await checkedWindow(client(), threadKey, next.io);
-  assert.deepEqual(next.fetches, [false]);
-  assert.equal(fake.calls.check, 1);
+  assert.deepEqual(next.fetches, []);
+  assert.equal(fake.calls.check, 2);
 });
 
-test("an old relay's page answer to a room check is the page", async () => {
+test("an empty answer (a room out of reach) leaves the relay's mode alone", async () => {
+  resetWindowCheckModes();
+  const fake = setup({
+    stores: [storedWindow()],
+    checks: [{ answer: null, noCheck: false, page: null }],
+  });
+  restore = fake.restore;
+  await checkedWindow(client(), key, io().io);
+  await tick();
+  assert.equal(fake.calls.check, 1);
+  // Still unknown: the next open asks again.
+  await checkedWindow(client(), key, io().io);
+  await tick();
+  assert.equal(fake.calls.check, 2);
+});
+
+test("an old relay is asked once per ten minutes, behind today's request", async () => {
   resetWindowCheckModes();
   let now = 1_000;
   const oldPage = [row("c", 30), { id: "bounds", kind: 39006 }];
   const fake = setup({
     stores: [storedWindow()],
-    checks: [{ answer: null, page: oldPage }],
+    checks: [{ answer: null, noCheck: true, page: oldPage }],
     now: () => now,
   });
   restore = fake.restore;
   const first = io();
-  first.io.fromCheckPage = (events) => events;
-  first.io.head = (events) => ({ roomId: "room", events });
-  assert.equal(await checkedWindow(client(), key, first.io), oldPage);
-  assert.deepEqual(first.fetches, [], "one request, not two");
-  assert.deepEqual(fake.calls.heads, [
-    { roomIds: ["room"], head: { roomId: "room", events: oldPage } },
-  ]);
+  assert.equal(await checkedWindow(client(), key, first.io), "relay");
+  assert.deepEqual(first.fetches, [false], "today's request, not held");
+  await tick();
+  assert.equal(fake.calls.check, 1);
 
   // Within ten minutes: today's request only.
   now += WINDOW_CHECK_REASK_MS - 1;
@@ -354,11 +493,31 @@ test("an old relay's page answer to a room check is the page", async () => {
 
   // Then asked again, once.
   now += 1;
-  const third = io();
-  third.io.fromCheckPage = (events) => events;
-  await checkedWindow(client(), key, third.io);
+  await checkedWindow(client(), key, io().io);
+  await tick();
   assert.equal(fake.calls.check, 2);
-  assert.deepEqual(third.fetches, []);
+});
+
+test("an old relay's page answer to a room check in mode on is the page", async () => {
+  const oldPage = [row("c", 30), { id: "bounds", kind: 39006 }];
+  const fake = setup({
+    stores: [storedWindow()],
+    checks: [{ answer: null, noCheck: true, page: oldPage }],
+  });
+  restore = fake.restore;
+  const first = io();
+  first.io.fromCheckPage = (events) => events;
+  first.io.head = (events) => ({ roomId: "room", events });
+  assert.equal(await checkedWindow(client(), key, first.io), oldPage);
+  assert.deepEqual(first.fetches, [], "one request, not two");
+  assert.deepEqual(fake.calls.heads, [
+    { roomIds: ["room"], head: { roomId: "room", events: oldPage } },
+  ]);
+  // Now known off: today's request, no check.
+  const next = io();
+  await checkedWindow(client(), key, next.io);
+  assert.deepEqual(next.fetches, [false]);
+  assert.equal(fake.calls.check, 1);
 });
 
 test("off is today's path, asked again after ten minutes", async () => {
@@ -384,6 +543,7 @@ test("off is today's path, asked again after ten minutes", async () => {
 
   now += 1;
   await checkedWindow(client(), key, io().io);
+  await tick();
   assert.equal(fake.calls.check, 2);
 });
 
@@ -426,7 +586,7 @@ test("live rows arriving during the check compare once more", async () => {
     check: async () => {
       fake.calls.check += 1;
       live += 1;
-      return { answer: equalAnswer, page: null };
+      return { answer: equalAnswer, noCheck: false, page: null };
     },
   });
   const page = io();
@@ -436,7 +596,7 @@ test("live rows arriving during the check compare once more", async () => {
   assert.deepEqual(page.fetches, [], "equal on the second look");
 });
 
-test("a window the store does not hold is fetched and kept, unchecked", async () => {
+test("a window the store does not hold is fetched and kept", async () => {
   const fake = setup({
     stores: [storedWindow({ fullyStored: false })],
     checks: [equalAnswer],
@@ -444,7 +604,9 @@ test("a window the store does not hold is fetched and kept, unchecked", async ()
   restore = fake.restore;
   const page = io();
   await checkedWindow(client(), key, page.io);
-  assert.equal(fake.calls.check, 0);
+  // The check went out alongside the store read; its answer only notes
+  // the relay's mode.
+  assert.equal(fake.calls.check, 1);
   assert.deepEqual(page.fetches, [true]);
   assert.equal(fake.calls.replace.length, 1);
 });
@@ -467,13 +629,18 @@ test("the first open of a run fetches as today and learns the mode", async () =>
   assert.deepEqual(next.fetches, [true], "now on: kept as a page");
 });
 
-test("a fully stored first open checks at once", async () => {
+test("a first open sends today's request at once, the check behind it", async () => {
   resetWindowCheckModes();
-  const fake = setup({ stores: [storedWindow()], checks: [equalAnswer] });
+  const fake = setup({ stores: [storedWindow()] });
   restore = fake.restore;
+  const restoreCheck = setWindowCheckDeps({
+    check: () => new Promise(() => {}),
+    stored: () => new Promise(() => {}),
+  });
   const page = io();
-  await checkedWindow(client(), key, page.io);
-  assert.deepEqual(page.fetches, []);
+  assert.equal(await checkedWindow(client(), key, page.io), "relay");
+  assert.deepEqual(page.fetches, [false]);
+  restoreCheck();
 });
 
 test("no window in the answer keeps nothing and releases the mark", async () => {
@@ -485,7 +652,8 @@ test("no window in the answer keeps nothing and releases the mark", async () => 
   const page = io(null);
   await checkedWindow(client(), key, page.io);
   assert.deepEqual(fake.calls.replace, []);
-  assert.deepEqual(fake.calls.release, ["mark"]);
+  // The check's mark and the fetch's.
+  assert.deepEqual(fake.calls.release, ["mark", "mark"]);
 });
 
 test("a failed fetch releases the mark", async () => {
@@ -504,7 +672,7 @@ test("a failed fetch releases the mark", async () => {
     }),
   );
   await new Promise((resolve) => setTimeout(resolve, 0));
-  assert.deepEqual(fake.calls.release, ["mark"]);
+  assert.deepEqual(fake.calls.release, ["mark", "mark"]);
 });
 
 test("a cache without an account and server is today's path", async () => {
@@ -516,7 +684,7 @@ test("a cache without an account and server is today's path", async () => {
   assert.equal(fake.calls.stored, 0);
 });
 
-test("a room page's rows are its window kinds, with has_more from its bounds", () => {
+test("a room page's rows are its timeline kinds, with has_more from its bounds", () => {
   const bounds = {
     id: "bounds",
     kind: 39006,
@@ -532,7 +700,7 @@ test("a room page's rows are its window kinds, with has_more from its bounds", (
   ]);
   assert.deepEqual(
     page.rows.map((event) => event.id),
-    ["c", "huddle-ended"],
+    ["c"],
   );
   assert.deepEqual(page.ids, ["c", "huddle-ended", "reaction", "summary"]);
   assert.equal(page.hasMore, false);

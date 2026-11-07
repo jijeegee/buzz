@@ -15,13 +15,15 @@ import {
 } from "@/shared/api/threadWindow";
 import type { RelayEvent } from "@/shared/api/types";
 import {
-  CHANNEL_WINDOW_ROW_KINDS,
+  CHANNEL_TIMELINE_CONTENT_KINDS,
   KIND_CHANNEL_WINDOW_BOUNDS,
   KIND_STREAM_MESSAGE,
   KIND_STREAM_MESSAGE_V2,
 } from "@/shared/constants/kinds";
 
-const ROOM_ROW_KINDS: ReadonlySet<number> = new Set(CHANNEL_WINDOW_ROW_KINDS);
+const ROOM_ROW_KINDS: ReadonlySet<number> = new Set(
+  CHANNEL_TIMELINE_CONTENT_KINDS,
+);
 /** The kinds a thread window pages (the relay's and the store's). */
 const THREAD_ROW_KINDS: ReadonlySet<number> = new Set([
   KIND_STREAM_MESSAGE,
@@ -71,10 +73,12 @@ export function roomWindowIo(
   cursor: WindowCursor | null,
   limit: number,
   options: { storeHead?: boolean } = {},
+  paint?: (events: RelayEvent[]) => void,
 ): WindowIo<RelayEvent[]> {
   const records = cursor === null && recordsStoreHead(options, limit);
   return {
     fetch: () => getChannelWindowEvents(roomId, cursor, limit, options),
+    ...(paint ? { paint } : {}),
     page: roomPageRows,
     // The store answers a room window in the relay's shape, bounds included.
     fromStore: (stored) => stored.events,
@@ -92,9 +96,11 @@ export function threadWindowIo(
   cursor: WindowCursor | null,
   limit: number,
   options: { storeHead?: boolean } = {},
+  paint?: (page: ThreadWindowPage | null) => void,
 ): WindowIo<ThreadWindowPage | null> {
   const records = cursor === null && recordsStoreHead(options, limit);
   return {
+    ...(paint ? { paint } : {}),
     fetch: async (includeAux) => {
       const [page] = await getThreadWindows(
         [{ channelId, rootId, cursor }],

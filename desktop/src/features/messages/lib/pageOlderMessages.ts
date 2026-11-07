@@ -2,6 +2,7 @@ import type { QueryClient } from "@tanstack/react-query";
 
 import {
   appendOlderChannelWindow,
+  type ChannelWindowCursor,
   type ChannelWindowStore,
 } from "@/features/messages/lib/channelWindowStore";
 import { projectChannelWindowMessages } from "@/features/messages/lib/projectChannelWindow";
@@ -10,6 +11,7 @@ import { channelWindowKey } from "@/features/messages/lib/messageQueryKeys";
 import { markRenderScopedReactionsLoaded } from "@/features/messages/lib/renderScopedReactions";
 import { checkedWindow } from "@/features/messages/lib/windowCheck";
 import { roomWindowIo } from "@/features/messages/lib/windowCheckIo";
+import type { RelayEvent } from "@/shared/api/types";
 
 const CHANNEL_WINDOW_PAGE_SIZE = 50;
 export type PageOlderResult = { hasOlderMessages: boolean };
@@ -54,23 +56,57 @@ async function runPage(
   }
 
   const requestCursor = tail.nextCursor;
+  // The stored window, when the store holds it all, is drawn at once; the
+  // open's answer then takes its place (docs/message-sync.md#window-check).
+  let painted = false;
+  const apply = (events: RelayEvent[], replacePainted: boolean) => {
+    const page = parseChannelWindowResponse(events, channelId, requestCursor);
+    const retained = queryClient.getQueryData<ChannelWindowStore>(
+      channelWindowKey(channelId),
+    );
+    if (!retained) return null;
+    const last = retained.pages[retained.pages.length - 1];
+    const base =
+      replacePainted && last && cursorsMatch(last.startCursor, requestCursor)
+        ? { ...retained, pages: retained.pages.slice(0, -1) }
+        : retained;
+    const next = appendOlderChannelWindow(base, page);
+    markRenderScopedReactionsLoaded(
+      channelId,
+      page.rows.map((row) => row.event.id),
+    );
+    queryClient.setQueryData(channelWindowKey(channelId), next);
+    projectChannelWindowMessages(queryClient, channelId);
+    return page;
+  };
+  const paint = (events: RelayEvent[]) => {
+    if (painted || !shouldContinue()) return;
+    try {
+      painted = apply(events, false) !== null;
+    } catch {
+      // A stored page that does not fit is left for the answer.
+    }
+  };
   const events = await checkedWindow(
     queryClient,
     { roomId: channelId, rootId: null, cursor: requestCursor, limit: pageSize },
-    roomWindowIo(channelId, requestCursor, pageSize),
+    roomWindowIo(channelId, requestCursor, pageSize, {}, paint),
   );
-  if (!shouldContinue()) return { hasOlderMessages: true };
-  const page = parseChannelWindowResponse(events, channelId, requestCursor);
-  markRenderScopedReactionsLoaded(
-    channelId,
-    page.rows.map((row) => row.event.id),
-  );
-  const retained = queryClient.getQueryData<ChannelWindowStore>(
-    channelWindowKey(channelId),
-  );
-  if (!retained) return { hasOlderMessages: true };
-  const next = appendOlderChannelWindow(retained, page);
-  queryClient.setQueryData(channelWindowKey(channelId), next);
-  projectChannelWindowMessages(queryClient, channelId);
+  if (!shouldContinue() && !painted) return { hasOlderMessages: true };
+  const page = apply(events, painted);
+  if (!page) return { hasOlderMessages: true };
   return { hasOlderMessages: page.hasMore };
+}
+
+function cursorsMatch(
+  left: ChannelWindowCursor | null,
+  right: ChannelWindowCursor | null,
+) {
+  return (
+    left === right ||
+    (left !== null &&
+      right !== null &&
+      left.createdAt === right.createdAt &&
+      left.eventId === right.eventId)
+  );
 }

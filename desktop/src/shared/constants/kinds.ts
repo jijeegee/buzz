@@ -166,16 +166,6 @@ export const CHANNEL_TIMELINE_CONTENT_KINDS = [
   KIND_HUDDLE_STARTED, // 48100 — huddle session card
 ] as const;
 
-// The kinds a room window pages, as the relay is asked for them (desktop's
-// `TIMELINE_KINDS` in commands/channel_window.rs, mobile's
-// `channelTimelineContentKinds`): the timeline's content kinds plus huddle
-// ended (48103), which desktop does not draw as a row. The window check
-// (docs/message-sync.md#window-check) counts these on both sides.
-export const CHANNEL_WINDOW_ROW_KINDS = [
-  ...CHANNEL_TIMELINE_CONTENT_KINDS,
-  KIND_HUDDLE_ENDED, // 48103
-] as const;
-
 // Timeline kinds that are NOT conversational: relay-signed system rows
 // (channel-created, member-joined) and job-lifecycle events. These render in
 // the timeline but must not count toward the channel's unread pill — a freshly

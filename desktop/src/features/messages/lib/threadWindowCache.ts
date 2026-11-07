@@ -190,11 +190,12 @@ function fetchThreadPage(
   cursor: ThreadCursor | null,
   limitRows: number,
   options: { storeHead?: boolean } = {},
+  paint?: (page: ThreadWindowPage | null) => void,
 ): Promise<ThreadWindowPage | null> {
   return checkedWindow(
     queryClient,
     { roomId: channelId, rootId, cursor, limit: limitRows },
-    threadWindowIo(channelId, rootId, cursor, limitRows, options),
+    threadWindowIo(channelId, rootId, cursor, limitRows, options, paint),
   );
 }
 
@@ -297,25 +298,80 @@ export async function loadOlderThreadReplies(
   const stateKey = threadWindowStateKey(channelId, rootId);
   const state = queryClient.getQueryData<ThreadWindowState>(stateKey);
   if (!state?.hasOlder || !state.olderCursor) return false;
+  const repliesKey = threadRepliesKey(channelId, rootId);
+  // The stored page, when the store holds it all, is drawn at once; the
+  // open's answer then takes its place (docs/message-sync.md#window-check).
+  let painted: { ids: Set<string>; state: ThreadWindowState } | null = null;
+  const borders = () => {
+    const current = queryClient.getQueryData<ThreadWindowState>(stateKey);
+    return current && sameCursor(current.olderCursor, state.olderCursor)
+      ? current
+      : null;
+  };
+  const paint = (stored: ThreadWindowPage | null) => {
+    const current = borders();
+    if (!stored || !current || painted) return;
+    const merged = mergeOlderThreadPage(
+      queryClient.getQueryData<RelayEvent[]>(repliesKey),
+      current,
+      stored,
+    );
+    painted = {
+      ids: new Set(stored.events.map((event) => event.id)),
+      state: merged.state,
+    };
+    queryClient.setQueryData(repliesKey, merged.events);
+    queryClient.setQueryData(stateKey, merged.state);
+  };
   const page = await fetchThreadPage(
     queryClient,
     channelId,
     rootId,
     state.olderCursor,
     limitRows,
+    {},
+    paint,
   );
-  if (!page) return false;
-  // A newest-page reload may have restarted the cache meanwhile; this page
-  // then no longer borders what is cached.
-  const current = queryClient.getQueryData<ThreadWindowState>(stateKey);
-  if (!current || !sameCursor(current.olderCursor, state.olderCursor))
+  const drawn = painted as {
+    ids: Set<string>;
+    state: ThreadWindowState;
+  } | null;
+  let current: ThreadWindowState | null | undefined;
+  let cached = queryClient.getQueryData<RelayEvent[]>(repliesKey);
+  if (drawn) {
+    // Still the painted stretch: the answer replaces it.
+    const now = queryClient.getQueryData<ThreadWindowState>(stateKey);
+    if (
+      !now ||
+      now.hasOlder !== drawn.state.hasOlder ||
+      !sameCursor(now.olderCursor, drawn.state.olderCursor)
+    ) {
+      return Boolean(page);
+    }
+    current = state;
+    if (page) {
+      const kept = new Set(page.events.map((event) => event.id));
+      cached = cached?.filter(
+        (event) => !drawn.ids.has(event.id) || kept.has(event.id),
+      );
+    }
+  } else {
+    // A newest-page reload may have restarted the cache meanwhile; this page
+    // then no longer borders what is cached.
+    current = borders();
+  }
+  if (!page) {
+    if (drawn) {
+      queryClient.setQueryData(
+        repliesKey,
+        cached?.filter((event) => !drawn.ids.has(event.id)),
+      );
+      queryClient.setQueryData(stateKey, state);
+    }
     return false;
-  const repliesKey = threadRepliesKey(channelId, rootId);
-  const merged = mergeOlderThreadPage(
-    queryClient.getQueryData<RelayEvent[]>(repliesKey),
-    current,
-    page,
-  );
+  }
+  if (!current) return false;
+  const merged = mergeOlderThreadPage(cached, current, page);
   queryClient.setQueryData(repliesKey, merged.events);
   queryClient.setQueryData(stateKey, merged.state);
   return true;

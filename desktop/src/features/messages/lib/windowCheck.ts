@@ -28,7 +28,10 @@ import {
   type WindowCheckMode,
   windowCheckModeFor,
 } from "./windowCheckMode";
-import { liveRoomActivity } from "@/shared/api/liveRoomActivity";
+import {
+  liveActivityKey,
+  liveRoomActivity,
+} from "@/shared/api/liveRoomActivity";
 import {
   requestWithStoreHeads,
   type StoreHeadAnswer,
@@ -63,9 +66,14 @@ export type WindowCheckAnswer = {
   mode: WindowCheckMode;
 };
 
-/** A check's reply: the check, or an old relay's room page. */
+/**
+ * A check's reply: the check; or `noCheck` when the relay answered without
+ * one (a relay without the check), with its room page. Neither for an error
+ * or an empty answer: they say nothing about the relay.
+ */
 export type WindowCheckReply = {
   answer: WindowCheckAnswer | null;
+  noCheck: boolean;
   page: RelayEvent[] | null;
 };
 
@@ -85,6 +93,11 @@ export type WindowIo<T> = {
   /** What the page holds; null when it is no window (no access). */
   page: (answer: T) => PageRows | null;
   fromStore: (stored: StoredWindow) => T;
+  /**
+   * Draws a stored window below a cursor at once (scroll-up), before the
+   * check answers; the open's answer then replaces it.
+   */
+  paint?: (stored: T) => void;
   /** An old relay's answer to a room check, as the page (rooms only). */
   fromCheckPage?: (events: RelayEvent[]) => T;
   /**
@@ -109,6 +122,7 @@ type RawCheckReply = {
     count: number;
     mode: WindowCheckMode;
   } | null;
+  no_check?: boolean;
   page: RelayEvent[] | null;
 };
 
@@ -125,19 +139,22 @@ type WindowCheckDeps = {
   mark: (roomId: string) => Promise<string | null>;
   /** Releases a mark no page was kept for. */
   release: (mark: string) => Promise<void>;
+  /** Whether the page was applied. */
   replace: (
     mark: string,
+    scope: StoreScope,
     key: WindowKey,
     oldest: WindowCursor | null,
     ids: string[],
-  ) => Promise<void>;
+  ) => Promise<boolean>;
   /** Sends `request`, then records the head spans `answers` reads off it. */
   withHeads: <R>(
     roomIds: readonly string[],
     request: () => Promise<R>,
     answers: (answer: R) => StoreHeadAnswer[],
   ) => Promise<R>;
-  liveActivity: (roomId: string) => number;
+  /** Live events so far for a room, or a room's thread. */
+  liveActivity: (key: WindowKey) => number;
   nowMs: () => number;
   log: (line: string) => void;
 };
@@ -182,6 +199,7 @@ const defaultDeps: WindowCheckDeps = {
             mode: raw.check.mode,
           }
         : null,
+      noCheck: raw?.no_check === true,
       page: raw?.page ?? null,
     };
   },
@@ -191,9 +209,11 @@ const defaultDeps: WindowCheckDeps = {
     }),
   release: (mark) =>
     invokeTauri<void>("message_store_record_heads", { scope: mark, heads: [] }),
-  replace: (mark, key, oldest, ids) =>
-    invokeTauri<void>("message_store_replace_window", {
+  replace: (mark, scope, key, oldest, ids) =>
+    invokeTauri<boolean>("message_store_replace_window", {
       scope: mark,
+      account: scope.pubkey,
+      relayUrl: scope.relayUrl,
       channelId: key.roomId,
       rootId: key.rootId,
       cursor: wireCursor(key.cursor),
@@ -201,7 +221,8 @@ const defaultDeps: WindowCheckDeps = {
       ids,
     }),
   withHeads: requestWithStoreHeads,
-  liveActivity: liveRoomActivity,
+  liveActivity: (key) =>
+    liveRoomActivity(liveActivityKey(key.roomId, key.rootId)),
   nowMs: () => Date.now(),
   log: (line) => console.info(line),
 };
@@ -248,18 +269,42 @@ function label(key: WindowKey) {
 }
 
 /** Relay order: newest first, then ascending id within a second. */
+function isOlder(row: RelayEvent, than: RelayEvent) {
+  return (
+    row.created_at < than.created_at ||
+    (row.created_at === than.created_at && row.id > than.id)
+  );
+}
+
 function oldestRow(rows: readonly RelayEvent[]): RelayEvent | null {
   let oldest: RelayEvent | null = null;
-  for (const row of rows) {
-    if (
-      !oldest ||
-      row.created_at < oldest.created_at ||
-      (row.created_at === oldest.created_at && row.id > oldest.id)
-    ) {
-      oldest = row;
-    }
-  }
+  for (const row of rows) if (!oldest || isOlder(row, oldest)) oldest = row;
   return oldest;
+}
+
+function newestRow(rows: readonly RelayEvent[]): RelayEvent | null {
+  let newest: RelayEvent | null = null;
+  for (const row of rows) if (!newest || isOlder(newest, row)) newest = row;
+  return newest;
+}
+
+/**
+ * The hex id just before `id` (same length), so a cursor `(at, before)`
+ * takes in `id` itself; null when there is none.
+ */
+export function hexIdBefore(id: string): string | null {
+  const lower = id.toLowerCase();
+  if (!/^[0-9a-f]+$/.test(lower)) return null;
+  const digits = [...lower];
+  for (let index = digits.length - 1; index >= 0; index -= 1) {
+    const value = Number.parseInt(digits[index], 16);
+    if (value > 0) {
+      digits[index] = (value - 1).toString(16);
+      return digits.join("");
+    }
+    digits[index] = "f";
+  }
+  return null;
 }
 
 type Ends = { count: number; oldestId: string | null };
@@ -289,26 +334,54 @@ function readStored(scope: StoreScope, key: WindowKey) {
   return deps.stored(scope, key).catch(() => null);
 }
 
-/** A check that never fails: an error is a relay without the check. */
+const NO_REPLY: WindowCheckReply = { answer: null, noCheck: false, page: null };
+
+/** A check that never fails: an error says nothing about the relay. */
 function checkQuietly(key: WindowKey): Promise<WindowCheckReply> {
   return deps
     .check(key)
-    .then((reply) => reply ?? { answer: null, page: null })
-    .catch(() => ({ answer: null, page: null }));
+    .then((reply) => reply ?? NO_REPLY)
+    .catch(() => NO_REPLY);
+}
+
+/**
+ * Learns the relay's mode from a real answer only: its check, or `off` for
+ * an answer without one. An error or empty answer leaves it as it was.
+ */
+function noteMode(scope: StoreScope, reply: WindowCheckReply) {
+  if (reply.answer) {
+    noteServerWindowCheckMode(scope.relayUrl, reply.answer.mode, deps.nowMs());
+  } else if (reply.noCheck) {
+    noteServerWindowCheckMode(scope.relayUrl, "off", deps.nowMs());
+  }
 }
 
 function release(mark: string | null) {
   if (mark !== null) void deps.release(mark).catch(() => {});
 }
 
-/** After a refetch, a store still different from the page guards the window. */
+/**
+ * After a refetch was applied, a store still different from the page (rows
+ * at or below the page's newest; later live rows do not count) guards the
+ * window. A store that cannot be read is not known to differ.
+ */
 async function guardIfStillDifferent(
   scope: StoreScope,
   key: WindowKey,
   page: PageRows,
 ) {
-  const after = await readStored(scope, key);
-  if (after && same(ends(after), pageEnds(page))) return;
+  const newest = newestRow(page.rows);
+  let below = key;
+  if (newest) {
+    const before = hexIdBefore(newest.id);
+    if (before === null) return;
+    below = {
+      ...key,
+      cursor: { createdAt: newest.created_at, eventId: before },
+    };
+  }
+  const after = await readStored(scope, below);
+  if (!after || same(ends(after), pageEnds(page))) return;
   guarded.set(guardKey(key), deps.nowMs() + WINDOW_CHECK_GUARD_MS);
   deps.log(
     `[window-check] ${label(key)} still differs after a refetch; today's path for 10 min`,
@@ -318,7 +391,8 @@ async function guardIfStillDifferent(
 /**
  * Fetches the page with its overlays and keeps it as the window's stretch in
  * the store. With `guard` (a refetch after a mismatch), a store that still
- * differs from the page puts the room or thread on today's path for a while.
+ * differs from the applied page puts the room or thread on today's path for
+ * a while; that is looked at behind the answer, never before it.
  */
 async function fetchAndKeep<T>(
   scope: StoreScope,
@@ -341,34 +415,31 @@ async function fetchAndKeep<T>(
     release(mark);
     return answer;
   }
-  const oldest = page.hasMore ? oldestRow(page.rows) : null;
-  try {
-    await deps.replace(
+  const kept = page;
+  const oldest = kept.hasMore ? oldestRow(kept.rows) : null;
+  void deps
+    .replace(
       mark,
+      scope,
       key,
       oldest ? { createdAt: oldest.created_at, eventId: oldest.id } : null,
-      page.ids,
-    );
-  } catch {
-    return answer;
-  }
-  if (guard) await guardIfStillDifferent(scope, key, page);
+      kept.ids,
+    )
+    .then((applied) => {
+      if (applied && guard) return guardIfStillDifferent(scope, key, kept);
+    })
+    .catch(() => {});
   return answer;
 }
 
-/** A check whose answer only teaches the relay's mode. */
+/** A check sent behind today's request, only to learn the relay's mode. */
 function probe(scope: StoreScope, key: WindowKey) {
-  void checkQuietly(key).then((reply) =>
-    noteServerWindowCheckMode(
-      scope.relayUrl,
-      reply.answer?.mode ?? "off",
-      deps.nowMs(),
-    ),
-  );
+  void checkQuietly(key).then((reply) => noteMode(scope, reply));
 }
 
 /** What a check (and its one re-check) came to. */
 type Checked =
+  | { kind: "fetch" }
   | { kind: "equal"; stored: StoredWindow }
   | {
       kind: "differ" | "shadowEqual";
@@ -378,42 +449,49 @@ type Checked =
   | { kind: "off"; page: RelayEvent[] | null };
 
 /**
- * Checks `stored` against the relay. Equal in mode `on`: the stored window
- * is kept as the page it stands for (page span), under a mark taken before
- * the check went out.
+ * Mode `on`: the check, and alongside it the store mark and stored read.
+ * A stored window below a cursor is drawn as soon as it is read. Equal: the
+ * stored window is kept as the page it stands for (page span).
  */
-async function checkStored(
+async function checkStored<T>(
   scope: StoreScope,
   key: WindowKey,
-  first: StoredWindow,
+  io: WindowIo<T>,
 ): Promise<Checked> {
+  // The check goes out first; the mark (in memory, no store wait) is taken
+  // before the store read, so rows written after the read are never dropped.
+  let live = deps.liveActivity(key);
+  const checking = checkQuietly(key);
   const mark = await deps.mark(key.roomId).catch(() => null);
-  let stored = first;
-  let live = deps.liveActivity(key.roomId);
-  let reply = await checkQuietly(key);
-  noteServerWindowCheckMode(
-    scope.relayUrl,
-    reply.answer?.mode ?? "off",
-    deps.nowMs(),
-  );
+  let stored = await readStored(scope, key);
+  if (!stored?.fullyStored) {
+    release(mark);
+    void checking.then((reply) => noteMode(scope, reply));
+    return { kind: "fetch" };
+  }
+  if (key.cursor && io.paint) io.paint(io.fromStore(stored));
+  let reply = await checking;
+  noteMode(scope, reply);
   let answer = reply.answer;
-  const mode = effectiveWindowCheckMode(answer?.mode ?? "off");
+  // No answer: this window only takes today's path.
+  const mode = answer ? effectiveWindowCheckMode(answer.mode) : "off";
   if (!answer || mode === "off") {
     release(mark);
-    return { kind: "off", page: answer ? null : reply.page };
+    return { kind: "off", page: reply.noCheck ? reply.page : null };
   }
   let equal = same(ends(stored), answer);
-  if (!equal && deps.liveActivity(key.roomId) !== live) {
+  if (!equal && deps.liveActivity(key) !== live) {
     // Live rows arrived while the check was out: compare once more.
-    live = deps.liveActivity(key.roomId);
-    const again = await readStored(scope, key);
-    if (again?.fullyStored) {
-      reply = await checkQuietly(key);
-      if (reply.answer) {
-        stored = again;
-        answer = reply.answer;
-        equal = same(ends(stored), answer);
-      }
+    live = deps.liveActivity(key);
+    const [again, second] = await Promise.all([
+      readStored(scope, key),
+      checkQuietly(key),
+    ]);
+    if (again?.fullyStored && second.answer) {
+      stored = again;
+      reply = second;
+      answer = second.answer;
+      equal = same(ends(stored), answer);
     }
   }
   if (!equal || mode !== "on") {
@@ -424,38 +502,43 @@ async function checkStored(
     await deps
       .replace(
         mark,
+        scope,
         key,
         stored.hasMore ? stored.oldest : null,
         stored.events.map((event) => event.id),
       )
-      .catch(() => {});
+      .catch(() => false);
   }
   return { kind: "equal", stored };
 }
 
 /**
- * Shadow: the page is fetched (and kept) alongside the check, so the open is
- * no later than today's; the check is only logged.
+ * Shadow: today's page (kept) goes out at once, the stored read and the
+ * check alongside it; the comparison is only logged. A stored window below
+ * a cursor is drawn when it is read before the page.
  */
 async function shadowWindow<T>(
   scope: StoreScope,
   key: WindowKey,
   io: WindowIo<T>,
-  stored: StoredWindow,
 ): Promise<T> {
   const started = deps.nowMs();
-  const checked = checkQuietly(key).then((reply) => {
-    noteServerWindowCheckMode(
-      scope.relayUrl,
-      reply.answer?.mode ?? "off",
-      deps.nowMs(),
-    );
+  let answered = false;
+  const checking = checkQuietly(key).then((reply) => {
+    noteMode(scope, reply);
     return { reply, ms: deps.nowMs() - started };
   });
+  const reading = readStored(scope, key).then((stored) => {
+    if (stored?.fullyStored && key.cursor && io.paint && !answered) {
+      io.paint(io.fromStore(stored));
+    }
+    return stored;
+  });
   const result = await fetchAndKeep(scope, key, io, true);
+  answered = true;
   const pageMs = deps.nowMs() - started;
-  void checked.then(({ reply, ms }) => {
-    if (!reply.answer) return;
+  void Promise.all([checking, reading]).then(([{ reply, ms }, stored]) => {
+    if (!reply.answer || !stored?.fullyStored) return;
     const fetched = io.page(result);
     const equal = same(ends(stored), reply.answer);
     const agrees = fetched !== null && same(ends(stored), pageEnds(fetched));
@@ -479,23 +562,18 @@ export async function checkedWindow<T>(
   if (!scope) return io.fetch(false);
   const mode = windowCheckModeFor(scope.relayUrl, deps.nowMs());
   if (mode === "off" || isGuarded(key)) return io.fetch(false);
-
-  const stored = await readStored(scope, key);
-  if (!stored?.fullyStored) {
-    if (mode === "probe") {
-      probe(scope, key);
-      return io.fetch(false);
-    }
-    return fetchAndKeep(scope, key, io, false);
+  if (mode === "probe") {
+    // Not known yet: today's request at once, the check behind it.
+    probe(scope, key);
+    return io.fetch(false);
   }
-  if (mode === "shadow") return shadowWindow(scope, key, io, stored);
+  if (mode === "shadow") return shadowWindow(scope, key, io);
 
-  // `on`, or the mode is not known yet: the check goes first. Its answer,
-  // when equal or an old relay's page, records the head span today's
-  // request would have.
+  // `on`: an equal answer, or an old relay's page, records the head span
+  // today's request would have.
   const started = deps.nowMs();
   const head = io.head;
-  const run = () => checkStored(scope, key, stored);
+  const run = () => checkStored(scope, key, io);
   const checked = head
     ? await deps.withHeads([key.roomId], run, (out) => {
         const answer =
@@ -508,6 +586,7 @@ export async function checkedWindow<T>(
       })
     : await run();
   const checkMs = deps.nowMs() - started;
+  if (checked.kind === "fetch") return fetchAndKeep(scope, key, io, false);
   if (checked.kind === "off") {
     return checked.page && io.fromCheckPage
       ? io.fromCheckPage(checked.page)
@@ -518,7 +597,6 @@ export async function checkedWindow<T>(
     return io.fromStore(checked.stored);
   }
   if (checked.kind === "shadowEqual") {
-    // The relay said shadow on this first check: today's page, logged.
     const result = await io.fetch(false);
     deps.log(`[window-check] shadow ${label(key)} equal (check ${checkMs} ms)`);
     return result;

@@ -85,7 +85,12 @@ pub(crate) enum Input {
     /// A page the relay answered to the request marked `captured` (a
     /// [`Self::HeadSent`]) replaces its window's stored rows
     /// (docs/message-sync.md#window-check).
-    ReplaceWindow { page: WindowReplace, captured: u64 },
+    /// `applied` hears whether the page was applied.
+    ReplaceWindow {
+        page: WindowReplace,
+        captured: u64,
+        applied: Option<SyncSender<bool>>,
+    },
     /// Drop the head and page spans of `rooms` (a catch-up left a gap).
     ForgetWindows { rooms: Vec<String> },
 }
@@ -567,7 +572,12 @@ fn run(
                         }
                     }
                 }
-                Input::ReplaceWindow { page, captured } => {
+                Input::ReplaceWindow {
+                    page,
+                    captured,
+                    applied,
+                } => {
+                    let mut done = false;
                     let lost = flush(&mut conn, &mut rows, &lossy);
                     let closed = marks.close(captured).filter(|_| !lost);
                     let after = |map: &HashMap<String, u64>, room: &str| {
@@ -582,10 +592,16 @@ fn run(
                         {
                             born.entry(page.room.clone()).or_insert(sequence);
                             known.note(&page.room);
-                            if let Err(error) = window::replace(&mut conn, &page, &fresh) {
-                                eprintln!("kuzz-desktop: message store: window failed: {error}");
+                            match window::replace(&mut conn, &page, &fresh) {
+                                Ok(()) => done = true,
+                                Err(error) => {
+                                    eprintln!("kuzz-desktop: message store: window failed: {error}")
+                                }
                             }
                         }
+                    }
+                    if let Some(applied) = applied {
+                        let _ = applied.try_send(done);
                     }
                 }
                 Input::ForgetWindows { rooms } => {

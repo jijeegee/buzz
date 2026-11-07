@@ -814,28 +814,47 @@ pub(crate) fn stored_window(
 }
 
 /// Replaces a window's stored rows with `page`, the answer to the request
-/// marked `scope` (from [`head_sent`]).
+/// marked `scope` (from [`head_sent`]): whether it was applied (false when
+/// refused, failed, or not heard of in time).
 pub(crate) fn replace_window(
     relay_url: &str,
     account: &str,
     scope: Option<&str>,
     page: WindowReplace,
-) -> Result<(), String> {
-    let Some(store) = global() else { return Ok(()) };
+) -> Result<bool, String> {
+    let Some(store) = global() else {
+        return Ok(false);
+    };
     let lease = store
         .lease(relay_url, account)
         .ok_or("message store scope changed")?;
     let captured = captured(scope, &lease)?;
-    store.submit(&lease, writer::Input::ReplaceWindow { page, captured });
-    Ok(())
+    let (reply, answer) = std::sync::mpsc::sync_channel(1);
+    store.submit(
+        &lease,
+        writer::Input::ReplaceWindow {
+            page,
+            captured,
+            applied: Some(reply),
+        },
+    );
+    Ok(answer.recv_timeout(DRAIN_WAIT).unwrap_or(false))
 }
 
 /// Drops the head and page spans of `rooms`, whose catch-up was skipped or
 /// cut short, so their windows are fetched again.
-pub(crate) fn forget_windows(relay_url: &str, account: &str, rooms: Vec<String>) {
+/// Refused when `scope` (from [`scope_token`]) is no longer current.
+pub(crate) fn forget_windows(
+    relay_url: &str,
+    account: &str,
+    scope: Option<&str>,
+    rooms: Vec<String>,
+) {
     let Some(store) = global() else { return };
     if let Some(lease) = store.lease(relay_url, account) {
-        store.submit(&lease, writer::Input::ForgetWindows { rooms });
+        if captured(scope, &lease).is_ok() {
+            store.submit(&lease, writer::Input::ForgetWindows { rooms });
+        }
     }
 }
 

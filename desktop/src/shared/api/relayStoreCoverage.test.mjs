@@ -253,3 +253,26 @@ test("a repair that ends without completing releases the preload", async () => {
     restore();
   }
 });
+
+test("a catch-up gap forgets stored windows only while checks may run", async () => {
+  for (const active of [false, true]) {
+    const forgotten = [];
+    const { restore } = harness({ now: 10_000_000, points: { r1: 1 } });
+    const restoreForget = setStoreCoverageDeps({
+      windowChecksActive: () => active,
+      forgetWindows: async (roomIds, scope) => {
+        forgotten.push({ roomIds, scope });
+      },
+    });
+    // Too old to walk: a gap the store cannot see.
+    await catchUpFromStore(["r1"], 10_000_000, Promise.resolve("s9"));
+    await tick();
+    restoreForget();
+    restore();
+    // Mode off is today: the store is left alone.
+    assert.deepEqual(
+      forgotten,
+      active ? [{ roomIds: ["r1"], scope: "s9" }] : [],
+    );
+  }
+});
