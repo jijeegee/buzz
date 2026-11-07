@@ -24,6 +24,7 @@ mod chat_backfill;
 mod deletion_record_backfill;
 mod deletions;
 mod key_backups;
+mod settings;
 mod storage_snapshot_startup;
 
 use std::future::Future;
@@ -172,6 +173,13 @@ enum Command {
     /// transaction, skips rows that are already current and prints counts as
     /// JSON. Run once after migration 0067, before users log in.
     ReencryptKeyBackups,
+    /// Read or change relay-wide runtime settings (no restart needed; relays
+    /// pick a change up within 30 s), e.g.
+    /// `kuzz-admin settings set window_check_mode shadow`.
+    Settings {
+        #[command(subcommand)]
+        command: settings::SettingsCommand,
+    },
 }
 
 #[derive(Subcommand)]
@@ -248,6 +256,7 @@ async fn run(cli: Cli) -> Result<i32> {
             Ok(0)
         }
         Command::ReencryptKeyBackups => key_backups::run().await,
+        Command::Settings { command } => settings::run(command).await,
     }
 }
 
