@@ -21,6 +21,7 @@ import 'features/channels/channel_detail_page.dart';
 import 'features/channels/deep_link_dispatcher.dart';
 import 'features/channels/voice_note_recording.dart';
 import 'features/profile/user_status_cache_provider.dart';
+import 'features/profile/account_profile_cache.dart';
 import 'features/profile/settings_profile_header.dart';
 import 'features/profile/profile_edit_page.dart';
 import 'features/profile/profile_text_editor.dart';
@@ -145,6 +146,12 @@ class App extends HookConsumerWidget {
         );
       }
     });
+    // Any move to another account, however it came about, starts from Home:
+    // nothing opened under the last account stays on screen.
+    ref.listen(_shownAccountProvider, (previous, next) {
+      if (previous == null || next == null || previous == next) return;
+      _mobileRootNavigatorKey.currentState?.popUntil((route) => route.isFirst);
+    });
 
     useEffect(() {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -184,6 +191,7 @@ class App extends HookConsumerWidget {
       ref.listen(observerRelayProvider, (_, _) {});
       ref.watch(appLifecycleProvider);
       ref.listen(accountSessionKeeperProvider, (_, _) {});
+      ref.listen(accountProfileCacheProvider, (_, _) {});
       ref.listen(pushInboxPauseCursorProvider, (_, _) {});
       ref.listen(pushInboxDrainProvider, (_, _) {});
       ref.watch(userStatusCacheProvider);
@@ -241,7 +249,9 @@ class App extends HookConsumerWidget {
         topSectionGradient: kuzzDarkGradient,
       ),
       themeMode: effectiveMode,
-      routes: {addCommunityRouteName: (_) => const TokenSignInPage()},
+      routes: {
+        addCommunityRouteName: (_) => const TokenSignInPage(addAccount: true),
+      },
       // Above the navigator, so an age restriction cannot be bypassed by a
       // route that was pushed while the store signal request was in flight.
       builder: (context, child) => AppL10nScope(
@@ -268,11 +278,13 @@ class App extends HookConsumerWidget {
           AuthStatus.authenticated => DeepLinkDispatcher(
             child: PushTraySweeper(
               child: _TokenGateIfNeeded(
-                child: DeviceKeyNotice(
-                  child: HomePage(
-                    settingsPageBuilder: _buildSettingsPage,
-                    profilePageBuilder: _buildProfilePage,
-                    hasUnreadInbox: hasUnreadInbox,
+                child: _AccountScope(
+                  child: DeviceKeyNotice(
+                    child: HomePage(
+                      settingsPageBuilder: _buildSettingsPage,
+                      profilePageBuilder: _buildProfilePage,
+                      hasUnreadInbox: hasUnreadInbox,
+                    ),
                   ),
                 ),
               ),
@@ -311,6 +323,29 @@ class _SettingsPageContent extends ConsumerWidget {
       invitePageBuilder: (_) => const CommunityInvitePage(),
     );
   }
+}
+
+/// The account on screen. [activeCommunityProvider] holds its last value
+/// while it reloads, so this changes once per move to another account.
+final _shownAccountProvider = Provider<(String, String?)?>((ref) {
+  final community =
+      ref.watch(activeCommunityProvider).value ??
+      ref.watch(authProvider).value?.community;
+  return community == null ? null : (community.id, community.accountPubkey);
+});
+
+/// Home starts over for each account, like a fresh start: no tab, scroll
+/// position or open panel of the last account carries over.
+class _AccountScope extends ConsumerWidget {
+  const _AccountScope({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) => KeyedSubtree(
+    key: ValueKey(ref.watch(_shownAccountProvider)),
+    child: child,
+  );
 }
 
 /// Token communities only reach Home with a live token session; legacy

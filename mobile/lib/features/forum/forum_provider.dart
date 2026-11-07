@@ -18,6 +18,7 @@ final forumPostsProvider = FutureProvider.family<ForumPostsResponse, String>((
   ref,
   channelId,
 ) async {
+  ref.watch(myPubkeyProvider);
   final session = ref.watch(relaySessionProvider.notifier);
   final events = await session.fetchHistory(
     NostrFilters.forumPosts(channelId, limit: 50),
@@ -31,6 +32,7 @@ final forumThreadProvider =
       ForumThreadResponse,
       ({String channelId, String eventId})
     >((ref, args) async {
+      ref.watch(myPubkeyProvider);
       final session = ref.watch(relaySessionProvider.notifier);
 
       final results = await Future.wait([

@@ -19,10 +19,17 @@ import '../../shared/relay/relay.dart';
 /// the app returns to the foreground; a good list is re-read quietly on
 /// return to the foreground, so blocks made on another device show up.
 class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
+  String? _account;
+
   @override
   Future<Set<String>> build() async {
     final sessionKey = ref.watch(accountSessionProvider);
     final me = ref.watch(myPubkeyProvider);
+    if (_account != null && _account != me && state.hasValue) {
+      state = const AsyncData({});
+      state = const AsyncLoading();
+    }
+    _account = me;
     if (sessionKey == null || me == null || me.isEmpty) return const <String>{};
     final api = ref.watch(accountApiProvider(sessionKey));
 

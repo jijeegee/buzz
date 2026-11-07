@@ -1414,6 +1414,57 @@
   "@settingsSignOut": {
     "description": "Settings page, Sign out row and the confirm button of its dialog. Short."
   },
+  "settingsSignOutOf": "Sign out of {name}",
+  "@settingsSignOutOf": {
+    "description": "Settings page, Sign out row; {name} is the account on screen.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOfTitle": "Sign out of {name}?",
+  "@settingsSignOutOfTitle": {
+    "description": "Sign out confirmation dialog, title; {name} is the account on screen.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOtherStays": "{name} stays signed in on this phone.",
+  "@settingsSignOutOtherStays": {
+    "description": "Sign out confirmation dialog, body when one other account is signed in; {name} is that account.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      }
+    }
+  },
+  "settingsSignOutOthersStay": "{name} and {count, plural, =1{1 other} other{{count} others}} stay signed in on this phone.",
+  "@settingsSignOutOthersStay": {
+    "description": "Sign out confirmation dialog, body when several other accounts are signed in; {name} is the one used last, {count} the rest.",
+    "placeholders": {
+      "name": {
+        "type": "String"
+      },
+      "count": {
+        "type": "int"
+      }
+    }
+  },
+  "settingsAccountsSection": "Accounts",
+  "@settingsAccountsSection": {
+    "description": "Settings page, title of the list of accounts signed in on this phone. Short."
+  },
+  "settingsAddAccount": "Add account",
+  "@settingsAddAccount": {
+    "description": "Settings page, last row of the account list; opens sign-in. Short."
+  },
+  "settingsAccountNoName": "Account",
+  "@settingsAccountNoName": {
+    "description": "Settings page, name of an account whose profile has not loaded yet. Short."
+  },
   "settingsSignOutSubtitle": "Your communities stay on this device",
   "@settingsSignOutSubtitle": {
     "description": "Settings page, grey text under the Sign out row."

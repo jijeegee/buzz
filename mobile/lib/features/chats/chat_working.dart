@@ -431,7 +431,9 @@ class ActiveAgentTurnsNotifier
   @override
   Map<String, ChatWorkingSummary> build() {
     // A different account or server starts over.
-    ref.watch(relayConfigProvider.select((c) => '${c.baseUrl}|${c.nsec}'));
+    ref.watch(
+      relayConfigProvider.select((c) => '${c.baseUrl}|${c.communityId}'),
+    );
     _tracker = ActiveAgentTurns();
     _pruneTimer?.cancel();
     _pruneTimer = null;

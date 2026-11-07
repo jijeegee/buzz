@@ -541,6 +541,7 @@ final channelDetailsProvider = FutureProvider.family<ChannelDetails, String>((
   ref,
   channelId,
 ) async {
+  ref.watch(myPubkeyProvider);
   final session = ref.watch(relaySessionProvider.notifier);
   final events = await session.fetchHistory(
     NostrFilter(
@@ -658,6 +659,7 @@ final channelCanvasProvider = FutureProvider.family<ChannelCanvas, String>((
   ref,
   channelId,
 ) async {
+  ref.watch(myPubkeyProvider);
   final session = ref.watch(relaySessionProvider.notifier);
   final events = await session.fetchHistory(NostrFilters.canvas(channelId));
   if (events.isEmpty) {

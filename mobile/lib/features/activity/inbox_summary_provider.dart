@@ -36,10 +36,20 @@ class InboxSummaryNotifier extends AsyncNotifier<InboxSummaryState> {
   /// inactive → resumed (notification shade, system dialog) reloads nothing.
   bool _backgrounded = false;
 
+  (String, String?)? _scope;
+
   @override
   Future<InboxSummaryState> build() async {
-    ref.watch(relayConfigProvider);
-    ref.watch(myPubkeyProvider);
+    final baseUrl = ref.watch(relayConfigProvider).baseUrl;
+    final scope = (baseUrl, ref.watch(myPubkeyProvider));
+    // The last rows wait out a reconnect, but never another account.
+    if (_scope != null && _scope != scope && state.hasValue) {
+      state = const AsyncData(
+        InboxSummaryState(rows: [], next: null, sentRead: {}),
+      );
+      state = const AsyncLoading();
+    }
+    _scope = scope;
     final connected = ref.watch(
       relaySessionProvider.select((s) => s.status == SessionStatus.connected),
     );

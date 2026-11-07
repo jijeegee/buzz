@@ -249,6 +249,71 @@ void main() {
     expect(h.signups, hasLength(2));
   });
 
+  testWidgets('Add account asks about a new account as well', (tester) async {
+    final h = _Harness();
+    final other = Community.create(
+      name: 'Other',
+      relayUrl: backup.origin,
+      pubkey: 'o' * 64,
+      tokenAuth: true,
+    );
+    await h.storage.save(other);
+    await h.storage.saveActiveId(other.id);
+    await h.open(
+      tester,
+      page: const TokenSignInPage(
+        backupOrigin: backup.origin,
+        addAccount: true,
+      ),
+    );
+    await h.tapGoogle(tester);
+    expect(find.byKey(const Key('create-account')), findsOneWidget);
+
+    await tester.tap(find.byKey(const Key('create-account-confirm')));
+    await frames(tester);
+
+    expect(await h.storage.loadAll(), hasLength(2));
+    expect(
+      h.container.read(authProvider).value?.community?.googleBackupAccountId,
+      backup.account,
+    );
+  });
+
+  testWidgets('Add account of a key account already here only switches', (
+    tester,
+  ) async {
+    final h = _Harness()..needsSignup = false;
+    final keys = nostr.Keys.generate();
+    final here = Community.create(
+      name: 'Here',
+      relayUrl: backup.origin,
+      pubkey: keys.public,
+      nsec: keys.nsec,
+      googleBackupAccountId: backup.account,
+    );
+    final other = Community.create(
+      name: 'Other',
+      relayUrl: backup.origin,
+      pubkey: 'o' * 64,
+      tokenAuth: true,
+    );
+    await h.storage.save(here);
+    await h.storage.save(other);
+    await h.storage.saveActiveId(other.id);
+    await h.open(
+      tester,
+      page: const TokenSignInPage(
+        backupOrigin: backup.origin,
+        addAccount: true,
+      ),
+    );
+    await h.tapGoogle(tester);
+
+    expect(await h.storage.loadActiveId(), here.id);
+    expect(await h.storage.loadAll(), hasLength(2));
+    expect(h.server.proofs, isEmpty, reason: 'nothing touched the key backup');
+  });
+
   testWidgets('Connect Google does not ask', (tester) async {
     final keys = nostr.Keys.generate();
     final h = _Harness()..needsSignup = false;

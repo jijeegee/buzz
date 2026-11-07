@@ -348,6 +348,7 @@ class ChannelPreloader {
       start += maxThreadWindowsPerRequest
     ) {
       if (beforeRequest != null && !await beforeRequest()) return loaded;
+      final scope = _ref.read(channelHeadScopeProvider);
       final chunk = cold.sublist(
         start,
         (start + maxThreadWindowsPerRequest).clamp(0, cold.length),
@@ -362,6 +363,8 @@ class ChannelPreloader {
             .queryRelayWithStoreHeads([
               for (final thread in chunk) threadPreloadFilter(thread),
             ]);
+        // Replies fetched for the last account are not this one's.
+        if (_ref.read(channelHeadScopeProvider) != scope) return loaded;
         final windows = splitThreadWindows(events, chunk);
         final store = _ref.read(preloadedThreadsProvider.notifier);
         for (final MapEntry(key: thread, value: replies) in windows.entries) {
@@ -400,7 +403,10 @@ class PreloadedThreadsNotifier
   final DateTime Function() _now;
 
   @override
-  Map<ThreadRepliesArgs, PreloadedThread> build() => const {};
+  Map<ThreadRepliesArgs, PreloadedThread> build() {
+    ref.watch(channelHeadScopeProvider);
+    return const {};
+  }
 
   void seed(ThreadRepliesArgs thread, List<NostrEvent> replies) {
     final now = _now();

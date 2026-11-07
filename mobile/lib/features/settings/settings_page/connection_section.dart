@@ -58,11 +58,19 @@ class _SignOutSection extends HookConsumerWidget {
     final busy = useState(false);
     final error = useState<String?>(null);
     final hasBuiltInServer = ref.watch(hasBuiltInServerProvider);
+    final (:accounts, :active) = _watchAccounts(ref);
+    final name = active == null ? null : _knownAccountName(active);
+    final others = [
+      for (final account in accounts)
+        if (account.id != active?.id) _accountName(context, account),
+    ];
     Future<void> signOut() async {
       if (busy.value) return;
       final confirmed = await _confirmSignOut(
         context,
         hasBuiltInServer: hasBuiltInServer,
+        name: name,
+        others: others,
       );
       if (confirmed != true || !context.mounted || busy.value) return;
       busy.value = true;
@@ -89,7 +97,10 @@ class _SignOutSection extends HookConsumerWidget {
           icon: LucideIcons.logOutDir,
           title: busy.value
               ? context.l10n.settingsSigningOut
-              : context.l10n.settingsSignOut,
+              : name == null
+              ? context.l10n.settingsSignOut
+              : context.l10n.settingsSignOutOf(name),
+          titleColor: name == null ? null : context.colors.error,
           subtitle: hasBuiltInServer
               ? null
               : context.l10n.settingsSignOutSubtitle,
@@ -178,22 +189,36 @@ void _confirmRemoveCommunity(BuildContext context, WidgetRef ref) {
   );
 }
 
-/// Sign-out ends every community's session on this device, so it is
-/// confirmed first. Resolves to true only when the user chose to sign out.
+/// Sign-out ends the session of the account on screen, so it is confirmed
+/// first, naming who stays signed in. Resolves to true only when the user
+/// chose to sign out.
 Future<bool?> _confirmSignOut(
   BuildContext context, {
   required bool hasBuiltInServer,
+  required String? name,
+  required List<String> others,
 }) {
+  final l10n = context.l10n;
   return showKuzzDialog<bool>(
     context: context,
     builder: (dialogContext) => AlertDialog(
       key: const Key('settings-sign-out-dialog'),
-      title: Text(context.l10n.settingsSignOutTitle),
-      content: Text(
-        hasBuiltInServer
-            ? context.l10n.settingsSignOutBody
-            : context.l10n.settingsSignOutBodyCommunities,
+      title: Text(
+        name == null
+            ? l10n.settingsSignOutTitle
+            : l10n.settingsSignOutOfTitle(name),
       ),
+      content: Text(switch (others) {
+        [final other] => l10n.settingsSignOutOtherStays(other),
+        [final other, ...] => l10n.settingsSignOutOthersStay(
+          other,
+          others.length - 1,
+        ),
+        _ =>
+          hasBuiltInServer
+              ? l10n.settingsSignOutBody
+              : l10n.settingsSignOutBodyCommunities,
+      }),
       actions: [
         TextButton(
           key: const Key('settings-sign-out-cancel'),

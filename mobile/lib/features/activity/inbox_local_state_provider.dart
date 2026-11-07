@@ -1,14 +1,18 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
+import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme_provider.dart';
 
-const _localStateKey = 'activity_inbox_local_state_v1';
+/// Held by one account for all of them before this was per account; what is
+/// left of it cannot be told apart, so it is deleted.
+const _sharedStateKey = 'activity_inbox_local_state_v1';
 const _maxTrackedIds = 500;
 
-/// Local, per-device inbox row overrides — mirrors desktop's
+/// Local, per-account inbox row overrides — mirrors desktop's
 /// `useFeedItemState`:
 /// - [doneIds] marks channel-less rows (e.g. approvals without an `h` tag)
 ///   as read, since they have no NIP-RS context to advance.
@@ -25,10 +29,20 @@ class InboxLocalState {
 }
 
 class InboxLocalStateNotifier extends Notifier<InboxLocalState> {
+  String? _key;
+
   @override
   InboxLocalState build() {
     final prefs = ref.read(savedPrefsProvider);
-    final raw = prefs.getString(_localStateKey);
+    if (prefs.containsKey(_sharedStateKey)) {
+      unawaited(prefs.remove(_sharedStateKey));
+    }
+    final baseUrl = ref.watch(relayConfigProvider.select((c) => c.baseUrl));
+    final pubkey = ref.watch(myPubkeyProvider)?.toLowerCase();
+    final key = _key = pubkey == null
+        ? null
+        : '$_sharedStateKey:${storageScopeFor(baseUrl)}:$pubkey';
+    final raw = key == null ? null : prefs.getString(key);
     if (raw == null) return const InboxLocalState.empty();
     try {
       final decoded = jsonDecode(raw);
@@ -76,9 +90,11 @@ class InboxLocalStateNotifier extends Notifier<InboxLocalState> {
       doneIds: capped(doneIds),
       unreadIds: capped(unreadIds),
     );
+    final key = _key;
+    if (key == null) return;
     final prefs = ref.read(savedPrefsProvider);
     prefs.setString(
-      _localStateKey,
+      key,
       jsonEncode({
         'done': state.doneIds.toList(),
         'unread': state.unreadIds.toList(),

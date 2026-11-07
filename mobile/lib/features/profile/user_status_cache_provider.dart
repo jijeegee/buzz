@@ -14,6 +14,7 @@ class UserStatusCacheNotifier extends Notifier<Map<String, UserStatus?>> {
   static const _refreshInterval = Duration(seconds: 120);
 
   final Set<String> _tracked = {};
+  String? _account;
   final Set<String> _pending = {};
   Timer? _batchTimer;
   Timer? _refreshTimer;
@@ -25,6 +26,10 @@ class UserStatusCacheNotifier extends Notifier<Map<String, UserStatus?>> {
   Map<String, UserStatus?> build() {
     ref.watch(relayClientProvider);
     final sessionState = ref.watch(relaySessionProvider);
+    // Who the last account was looking at is not this one's to poll.
+    final account = ref.watch(myPubkeyProvider);
+    if (_account != account) _tracked.clear();
+    _account = account;
 
     ref.onDispose(() {
       _batchTimer?.cancel();

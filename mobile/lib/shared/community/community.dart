@@ -88,6 +88,13 @@ class Community {
   /// When this account last signed in or was switched to on this phone.
   /// Absent on older records. Read by [mostRecentlyUsedCommunity].
   final DateTime? lastUsedAt;
+
+  /// This account's name, photo and email as last loaded, so the account list
+  /// can draw every account from this phone. Absent until the account's
+  /// profile first loads while it is active.
+  final String? displayName;
+  final String? avatarUrl;
+  final String? email;
   final DateTime addedAt;
 
   const Community({
@@ -108,6 +115,9 @@ class Community {
     this.googleBackupAccountId,
     this.signInProvider,
     this.lastUsedAt,
+    this.displayName,
+    this.avatarUrl,
+    this.email,
     required this.addedAt,
   });
 
@@ -156,6 +166,9 @@ class Community {
     String? googleBackupAccountId,
     String? signInProvider,
     DateTime? lastUsedAt,
+    Object? displayName = _sentinel,
+    Object? avatarUrl = _sentinel,
+    Object? email = _sentinel,
   }) {
     return Community(
       id: id,
@@ -184,6 +197,11 @@ class Community {
           googleBackupAccountId ?? this.googleBackupAccountId,
       signInProvider: signInProvider ?? this.signInProvider,
       lastUsedAt: lastUsedAt ?? this.lastUsedAt,
+      displayName: displayName == _sentinel
+          ? this.displayName
+          : displayName as String?,
+      avatarUrl: avatarUrl == _sentinel ? this.avatarUrl : avatarUrl as String?,
+      email: email == _sentinel ? this.email : email as String?,
       addedAt: addedAt,
     );
   }
@@ -208,6 +226,9 @@ class Community {
       'googleBackupAccountId': googleBackupAccountId,
     if (signInProvider != null) 'signInProvider': signInProvider,
     if (lastUsedAt != null) 'lastUsedAt': lastUsedAt!.toIso8601String(),
+    if (displayName != null) 'displayName': displayName,
+    if (avatarUrl != null) 'avatarUrl': avatarUrl,
+    if (email != null) 'email': email,
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -261,6 +282,9 @@ class Community {
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
       signInProvider: json['signInProvider'] as String?,
       lastUsedAt: DateTime.tryParse(json['lastUsedAt'] as String? ?? ''),
+      displayName: json['displayName'] as String?,
+      avatarUrl: json['avatarUrl'] as String?,
+      email: json['email'] as String?,
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }
@@ -315,6 +339,26 @@ class Community {
           : newPushInboxToken(),
     );
   }
+
+  /// This record with [name] and [avatar] as the cached profile. A blank name
+  /// keeps the cached one. A photo stored inline can be large, and this
+  /// record is read whole everywhere, so one over [maxCachedAvatarLength] is
+  /// not kept.
+  Community withCachedProfile({
+    required String? name,
+    required String? avatar,
+  }) {
+    final trimmed = name?.trim();
+    return copyWith(
+      displayName: trimmed == null || trimmed.isEmpty ? displayName : trimmed,
+      avatarUrl: avatar != null && avatar.length <= maxCachedAvatarLength
+          ? avatar
+          : null,
+    );
+  }
+
+  /// Longest photo address kept in the record.
+  static const maxCachedAvatarLength = 2048;
 
   /// Derive a human-friendly community name from a relay URL.
   static String nameFromUrl(String url) {

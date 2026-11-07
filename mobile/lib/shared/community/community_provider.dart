@@ -769,6 +769,28 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
     await syncCommunitySnapshot(ref, updatedList);
   });
 
+  /// Applies [update] to the cached profile of row [id], unless it has gone
+  /// or signed out since. Nothing else on the row changes, so a live session
+  /// is left alone (see `relayConfigProvider`).
+  Future<void> cacheProfile(
+    String id,
+    Community Function(Community row) update,
+  ) => ref.read(communityTransitionProvider).runExclusive(() async {
+    final storage = ref.read(communityStorageProvider);
+    final current = await storage.loadAll();
+    final index = current.indexWhere((row) => row.id == id);
+    if (index < 0 || current[index].signedOut) return;
+    final row = current[index];
+    final updated = update(row);
+    if (updated.displayName == row.displayName &&
+        updated.avatarUrl == row.avatarUrl &&
+        updated.email == row.email) {
+      return;
+    }
+    await storage.save(updated);
+    state = AsyncData([...current]..[index] = updated);
+  });
+
   Future<void> renameCommunity(String id, String name) =>
       ref.read(communityTransitionProvider).runExclusive(() async {
         final storage = ref.read(communityStorageProvider);

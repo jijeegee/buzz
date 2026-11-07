@@ -35,6 +35,7 @@ class TokenSignInPage extends HookConsumerWidget {
     this.defaultCommunity = false,
     this.resumeSignedOut = false,
     this.connectGoogle = false,
+    this.addAccount = false,
   });
 
   /// Ordinary first-device entry. Every page without [lockedOrigin] or
@@ -49,6 +50,10 @@ class TokenSignInPage extends HookConsumerWidget {
   /// Opened from Settings to connect a signed-in account to Google. Pops
   /// with `true` once the account is connected.
   final bool connectGoogle;
+
+  /// Opened over a signed-in account. An account already signed in here is
+  /// switched to, keeping the session it has; the attempt then ends.
+  final bool addAccount;
 
   /// Canonical origin of an existing token community to sign back in to.
   final String? lockedOrigin;
@@ -187,7 +192,19 @@ class TokenSignInPage extends HookConsumerWidget {
             isCurrent?.call() != false &&
             controller.generation == sessionGeneration &&
             controller.state.status == TokenSessionStatus.signedIn;
-        if (keyBackup.value) {
+        final signedInRow = addAccount
+            ? (await ref.read(communityStorageProvider).loadAll()).where((row) {
+                return !row.signedOut &&
+                    SessionKey.ofCommunity(row) ==
+                        SessionKey(sessionOrigin, principal);
+              }).firstOrNull
+            : null;
+        if (signedInRow != null) {
+          if (!canCommit()) return;
+          await ref
+              .read(communityListProvider.notifier)
+              .switchCommunity(signedInRow.id);
+        } else if (keyBackup.value) {
           final community = await ref
               .read(googleKeyBackupServiceProvider(sessionOrigin))
               .resolve(

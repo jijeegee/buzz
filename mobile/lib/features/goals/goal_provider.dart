@@ -35,6 +35,7 @@ final goalTreeProvider = FutureProvider.family<GoalBoard, String>((
   ref,
   channelId,
 ) async {
+  ref.watch(myPubkeyProvider);
   ref.watch(relaySessionProvider.notifier);
   var read = await _readGoals(ref, goalViewFilter(channelId, GoalView.active));
   for (var cursor = read.next; cursor != null; cursor = read.next) {

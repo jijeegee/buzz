@@ -12,6 +12,7 @@ import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/token.dart';
+import '../../shared/community/add_community_route.dart';
 import '../../shared/community/community_membership_provider.dart';
 import '../../shared/community/community_removal.dart';
 import '../../shared/l10n/l10n.dart';
@@ -25,6 +26,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
+import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
 import '../../shared/widgets/ios_glass_navigation_button.dart';
@@ -44,6 +46,7 @@ import 'theme_picker_page.dart';
 import '../sign_in/token_sign_in_page.dart';
 
 part 'settings_page/account_section.dart';
+part 'settings_page/accounts_section.dart';
 part 'settings_page/community_section.dart';
 part 'settings_page/connection_section.dart';
 part 'settings_page/notifications_section.dart';
@@ -262,6 +265,7 @@ class SettingsPage extends HookConsumerWidget {
               children: isProfile
                   ? [profileHeader, const KuzzIdSettings()]
                   : [
+                      const _AccountsSection(),
                       const _GeneralSection(),
                       _CommunitySection(invitePageBuilder: invitePageBuilder),
                       if (tokenSession != null)

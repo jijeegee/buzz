@@ -76,6 +76,7 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
   bool _hasHydrated = false;
   int _lastCreatedAt = 0;
   int _build = 0;
+  String? _shownPubkey;
   Future<void> _patchQueue = Future.value();
 
   @override
@@ -91,7 +92,14 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
     );
     _hasHydrated = false;
     final build = ++_build;
-    if (!state.hasValue) unawaited(_drawSaved(config, pubkey, build));
+    // The last account's profile must not stay on screen until this one's
+    // loads. Loading alone would keep it: a rebuild carries the last value.
+    if (_shownPubkey != pubkey && _shownPubkey != null && state.hasValue) {
+      state = const AsyncData(null);
+      state = const AsyncLoading();
+    }
+    _shownPubkey = pubkey;
+    if (state.value == null) unawaited(_drawSaved(config, pubkey, build));
     return _fetch(context);
   }
 
@@ -108,7 +116,7 @@ class ProfileNotifier extends AsyncNotifier<UserProfile?> {
         !ref.mounted ||
         build != _build ||
         _hasHydrated ||
-        state.hasValue ||
+        state.value != null ||
         saved.profile.pubkey != pubkey?.toLowerCase()) {
       return;
     }

@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
+import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -27,9 +28,16 @@ String get invitationNoLongerValidMessage =>
 /// the relay's invitation ping.
 class GroupInvitationsNotifier extends AsyncNotifier<List<GroupInvitation>> {
   int _serial = 0;
+  String? _account;
 
   @override
   Future<List<GroupInvitation>> build() {
+    final account = ref.watch(myPubkeyProvider);
+    if (_account != null && _account != account && state.hasValue) {
+      state = const AsyncData([]);
+      state = const AsyncLoading();
+    }
+    _account = account;
     final api = ref.watch(groupsApiProvider);
     _serial++;
     return api.invitations();

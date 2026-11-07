@@ -36,6 +36,46 @@ void main() {
     expect(token.copyWith(name: 'Renamed').tokenAuth, isTrue);
   });
 
+  test('the cached profile round-trips and is absent on older records', () {
+    final older = Community.fromJson({
+      'id': 'row',
+      'name': 'Relay',
+      'relayUrl': 'https://relay.example',
+      'addedAt': '2026-01-01T00:00:00.000Z',
+    });
+    expect(older.displayName, isNull);
+    expect(older.avatarUrl, isNull);
+    expect(older.email, isNull);
+    expect(older.toJson().keys, isNot(contains('email')));
+
+    final cached = Community.fromJson(
+      older
+          .withCachedProfile(name: ' Jiho ', avatar: 'https://a.example/j.png')
+          .copyWith(email: 'jiho@example.com')
+          .toJson(),
+    );
+    expect(cached.displayName, 'Jiho');
+    expect(cached.avatarUrl, 'https://a.example/j.png');
+    expect(cached.email, 'jiho@example.com');
+  });
+
+  test('the cached profile keeps a name, and no oversized photo', () {
+    final row = Community.fromJson({
+      'id': 'row',
+      'name': 'Relay',
+      'relayUrl': 'https://relay.example',
+      'addedAt': '2026-01-01T00:00:00.000Z',
+      'displayName': 'Jiho',
+      'avatarUrl': 'https://a.example/j.png',
+    });
+    final updated = row.withCachedProfile(
+      name: '  ',
+      avatar: 'data:image/png;base64,${'a' * Community.maxCachedAvatarLength}',
+    );
+    expect(updated.displayName, 'Jiho');
+    expect(updated.avatarUrl, isNull);
+  });
+
   test('push choice round-trips and is absent on legacy records', () {
     final legacy = Community.fromJson({
       'id': 'one',
