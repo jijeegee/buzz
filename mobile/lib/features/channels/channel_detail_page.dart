@@ -30,7 +30,7 @@ import '../chats/chats_page.dart' show AgentConversationsList;
 import '../goals/goal_provider.dart';
 import '../goals/goals_page.dart';
 import '../groups/group_preview.dart' show GroupJoinBar;
-import '../../shared/widgets/kuzz_mark.dart';
+import '../../shared/widgets/dot_morph.dart';
 import '../../shared/widgets/avatar_image.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/bouncing_dots_indicator.dart';

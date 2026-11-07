@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:kuzz/shared/widgets/kuzz_mark.dart';
+import 'package:kuzz/shared/widgets/dot_morph.dart';
 import 'package:kuzz/shared/widgets/kuzz_refresh_indicator.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -9,7 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import '../../helpers/widget_helpers.dart';
 
 void main() {
-  testWidgets('shows the mark while pulling to refresh', (tester) async {
+  testWidgets('shows the dots while pulling to refresh', (tester) async {
     const contentKey = ValueKey('loading-content');
     var refreshes = 0;
     final refreshCompleter = Completer<void>();
@@ -39,23 +39,22 @@ void main() {
     await tester.pump(const Duration(milliseconds: 16));
     await tester.pump(const Duration(milliseconds: 300));
 
-    final markFinder = find.byType(KuzzLoadingMark);
+    final markFinder = find.byType(DotMorphView);
     final loadingTop = tester.getTopLeft(listFinder).dy;
     final loadingContentTop = tester.getTopLeft(find.byKey(contentKey)).dy;
     final gapTransform = tester.widget<Transform>(
       find.byKey(const ValueKey('kuzz-refresh-retained-gap')),
     );
     expect(markFinder, findsOneWidget);
-    expect(tester.widget<KuzzLoadingMark>(markFinder).active, isTrue);
     expect(refreshes, 1);
     expect(gapTransform.transform.getTranslation().y, closeTo(72, 1));
     expect(loadingTop - restingTop, closeTo(72, 1));
-    final pulse = tester.widget<ScaleTransition>(
-      find.descendant(of: markFinder, matching: find.byType(ScaleTransition)),
-    );
-    final initialScale = pulse.scale.value;
-    await tester.pump(const Duration(milliseconds: 120));
-    expect(pulse.scale.value, isNot(initialScale));
+    final morph = tester.widget<DotMorphView>(markFinder).morph;
+    final loadingDots = List.of(morph.positions);
+    for (var frame = 0; frame < 70; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(morph.positions, isNot(orderedEquals(loadingDots)));
 
     refreshCompleter.complete();
     await tester.pump();
@@ -108,7 +107,7 @@ void main() {
     await gesture.moveBy(const Offset(0, 12));
     await tester.pump();
 
-    final markFinder = find.byType(KuzzLoadingMark);
+    final markFinder = find.byType(DotMorphView);
     expect(markFinder, findsNothing);
     expect(
       tester.getTopLeft(find.byKey(contentKey)).dy,
@@ -130,7 +129,10 @@ void main() {
         .storage[0];
     expect(partialScale, greaterThan(0.6));
     expect(partialScale, lessThan(1));
-    expect(tester.widget<KuzzLoadingMark>(markFinder).active, isFalse);
+    final partialDots = List.of(
+      tester.widget<DotMorphView>(markFinder).morph.positions,
+    );
+    expect(partialDots, isNot(orderedEquals(DotScene.refresh.shape('k'))));
     expect(hapticCalls, isEmpty);
 
     await gesture.moveBy(const Offset(0, 120));
@@ -176,7 +178,7 @@ void main() {
     await tester.pumpAndSettle();
   });
 
-  testWidgets('keeps the mark static when motion is disabled', (tester) async {
+  testWidgets('shows a still K when motion is disabled', (tester) async {
     await tester.pumpWidget(
       MediaQuery(
         data: const MediaQueryData(disableAnimations: true),
@@ -201,12 +203,13 @@ void main() {
     );
     await tester.pump();
 
-    final mark = find.byType(KuzzLoadingMark);
-    expect(find.byType(KuzzMark), findsOneWidget);
-    expect(
-      find.descendant(of: mark, matching: find.byType(ScaleTransition)),
-      findsNothing,
-    );
+    final morph = tester.widget<DotMorphView>(find.byType(DotMorphView)).morph;
+    final k = DotScene.refresh.shape('k');
+    expect(morph.positions, orderedEquals(k));
+    for (var frame = 0; frame < 30; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(morph.positions, orderedEquals(k));
   });
 
   testWidgets('provides elastic always-scrollable physics', (tester) async {

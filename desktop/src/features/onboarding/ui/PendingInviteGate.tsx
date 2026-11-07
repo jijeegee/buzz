@@ -3,7 +3,7 @@ import { useCommunityOnboarding } from "@/features/onboarding/communityOnboardin
 import { useT } from "@/shared/i18n";
 import { useSystemColorScheme } from "@/shared/theme/useSystemColorScheme";
 import { Button } from "@/shared/ui/button";
-import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
+import { DotMorphLoader } from "@/shared/ui/dot-morph/DotMorphLoader";
 import { StartupWindowDragRegion } from "@/shared/ui/StartupWindowDragRegion";
 
 /**
@@ -27,7 +27,7 @@ export function PendingInviteGate() {
     >
       <StartupWindowDragRegion />
       <div className="relative flex w-full max-w-[500px] flex-col items-center text-center">
-        <KuzzMark className="h-auto w-24" />
+        <DotMorphLoader loader="inviteWait" />
         <h1 className="mt-6 text-3xl font-semibold tracking-tight">
           {singleServer
             ? t("onboarding.pendingInvite.titleInvite")

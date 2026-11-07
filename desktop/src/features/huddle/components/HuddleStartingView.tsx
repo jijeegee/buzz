@@ -1,5 +1,5 @@
 import { ThemeGrainientBackground } from "@/app/ThemeGrainientBackground";
-import { KuzzMark } from "@/shared/ui/kuzz-logo/KuzzMark";
+import { DotMorphLoader } from "@/shared/ui/dot-morph/DotMorphLoader";
 import { useT } from "@/shared/i18n";
 
 /** Immediate feedback shown while the native huddle session is being prepared. */
@@ -14,7 +14,7 @@ export function HuddleStartingView() {
     >
       <ThemeGrainientBackground />
       <span className="sr-only">{t("huddle.starting")}</span>
-      <KuzzMark className="relative z-10 h-auto w-28" />
+      <DotMorphLoader className="relative z-10" loader="huddle" />
     </div>
   );
 }

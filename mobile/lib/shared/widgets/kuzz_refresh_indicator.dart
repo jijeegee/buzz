@@ -5,11 +5,13 @@ import 'package:flutter/services.dart';
 import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../theme/theme.dart';
 import '../l10n/l10n.dart';
-import 'kuzz_mark.dart';
+import 'dot_morph.dart';
 
-/// Replaces the standard pull-to-refresh spinner with the Kuzz mark.
+/// Replaces the standard pull-to-refresh spinner with Kuzz dots.
+///
+/// Pulling gathers scattered dots into the K. While loading, the K turns into
+/// a robot and a person; when done, the dots scatter again.
 ///
 /// Flutter continues to own the gesture, refresh lifecycle, and accessibility
 /// semantics. This widget maps those states into the elastic pull, retained
@@ -17,7 +19,7 @@ import 'kuzz_mark.dart';
 class KuzzRefreshIndicator extends HookConsumerWidget {
   /// Called when the user completes a pull, to load fresh data.
   ///
-  /// The mark keeps pulsing until this future settles, so it should complete
+  /// The dots keep moving until this future settles, so it should complete
   /// only once the refresh is done.
   final Future<void> Function() onRefresh;
 
@@ -231,10 +233,11 @@ class KuzzRefreshIndicator extends HookConsumerWidget {
                       child: Transform.scale(
                         key: const ValueKey('kuzz-refresh-scale'),
                         scale: markScale,
-                        child: KuzzLoadingMark(
-                          height: _markHeight,
-                          color: context.colors.primary,
-                          active: isLoading,
+                        child: _RefreshDots(
+                          pull: dragRevealProgress,
+                          loading: isLoading,
+                          done: status.value == RefreshIndicatorStatus.done,
+                          color: Theme.of(context).colorScheme.onSurface,
                         ),
                       ),
                     ),
@@ -245,5 +248,67 @@ class KuzzRefreshIndicator extends HookConsumerWidget {
           ),
       ],
     );
+  }
+}
+
+class _RefreshDots extends HookWidget {
+  final double pull;
+  final bool loading;
+  final bool done;
+  final Color color;
+
+  const _RefreshDots({
+    required this.pull,
+    required this.loading,
+    required this.done,
+    required this.color,
+  });
+
+  static const _gather = Duration(milliseconds: 260);
+  static const _scatter = Duration(milliseconds: 300);
+  static const _cycle = <DotStep>[
+    ('k', Duration(milliseconds: 420), Duration(milliseconds: 520)),
+    ('r', Duration(milliseconds: 420), Duration(milliseconds: 520)),
+    ('p', Duration(milliseconds: 420), Duration(milliseconds: 520)),
+  ];
+
+  @override
+  Widget build(BuildContext context) {
+    final still = MediaQuery.disableAnimationsOf(context);
+    final morph = useMemoized(
+      () => DotMorph(DotScene.refresh, still ? 'k' : dustShape),
+    );
+    useEffect(() => morph.dispose, [morph]);
+    final timeline = useRef<DotTimeline?>(null);
+
+    useEffect(() {
+      if (still) return null;
+      if (done) {
+        timeline.value = null;
+        morph.go(dustShape, _scatter);
+      } else if (loading) {
+        morph.go('k', _gather);
+        timeline.value = DotTimeline(morph, _cycle);
+      } else {
+        timeline.value = null;
+      }
+      return null;
+    }, [loading, done, still]);
+
+    useEffect(() {
+      if (!still && !loading) morph.blend(dustShape, 'k', pull);
+      return null;
+    }, [pull, loading, still]);
+
+    useDotFrames(!still && loading, (elapsed) {
+      final active = timeline.value;
+      if (active != null) {
+        active.tick(elapsed);
+      } else {
+        morph.tick(elapsed);
+      }
+    });
+
+    return DotMorphView(morph: morph, color: color);
   }
 }
