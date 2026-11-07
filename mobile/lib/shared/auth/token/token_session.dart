@@ -148,6 +148,17 @@ class _StaleGeneration implements Exception {
   const _StaleGeneration();
 }
 
+/// Refused `/auth/refresh` codes that mean the account's session is over.
+/// Anything else may be a proxy or a bad request and must not end an account.
+const refreshEndedCodes = {
+  'device_key_required',
+  'invalid_token',
+  'principal_disabled',
+  'refresh_reused',
+  'token_expired',
+  'token_revoked',
+};
+
 /// Owns one account's token session (plan §3.2 mobile row).
 ///
 /// - The refresh token lives in [RefreshTokenStore] (keychain); the access
@@ -347,14 +358,17 @@ class TokenSessionController {
   ///
   /// Only an attempt signs in: the grant's account is not known in advance,
   /// and an account's record must never hold another account's session.
+  /// See [runOidcLogin] for [confirmSignup].
   Future<bool> signIn({
     String provider = 'google',
     String identityMode = 'token',
+    SignupConfirm? confirmSignup,
   }) {
     if (!isAttempt) throw StateError('Sign-in runs on an attempt');
     return _signingIn ??= _runSignIn(
       provider,
       identityMode,
+      confirmSignup,
     ).whenComplete(() => _signingIn = null);
   }
 
@@ -751,7 +765,11 @@ class TokenSessionController {
     return rotated.accessToken;
   }
 
-  Future<bool> _runSignIn(String provider, String identityMode) async {
+  Future<bool> _runSignIn(
+    String provider,
+    String identityMode,
+    SignupConfirm? confirmSignup,
+  ) async {
     if (_disposed) return false;
     // Fence the login against a sign-out (or dispose) that happens while
     // the browser or the code exchange is still pending: such a grant must
@@ -778,6 +796,7 @@ class TokenSessionController {
         installId: installId,
         identityMode: identityMode,
         callbackScheme: callbackScheme,
+        confirmSignup: confirmSignup,
       );
     } on WebAuthCancelledException {
       if (_isCurrent(startGeneration)) _emit(_settledState(null));

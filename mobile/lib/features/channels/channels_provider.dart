@@ -95,7 +95,7 @@ class ChannelsNotifier extends AsyncNotifier<List<Channel>> {
   bool _unreadCatchUpOwed = false;
   int _nextLiveChunkGeneration = 0;
   final Set<String> _terminallyClosedLiveChunks = {};
-  String? _subscriptionRelayBaseUrl;
+  String? _subscriptionScope;
   Timer? _backstopTimer;
   final Map<String, int> _latestObservedByChannel = {};
   final Map<String, Map<String, ObservedUnreadEvent>>

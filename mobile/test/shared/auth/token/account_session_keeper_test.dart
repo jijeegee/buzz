@@ -177,6 +177,71 @@ void main() {
     expect(server.refreshCalls, 6);
   });
 
+  group('an inactive account whose refresh fails', () {
+    late Community active;
+    late Community inactive;
+
+    setUp(() async {
+      active = account(_first);
+      inactive = account(_second);
+      await seed(active);
+      await seed(inactive);
+      await storage.saveActiveId(active.id);
+      answerRotations(1);
+    });
+
+    Future<Community> saved(Community community) async =>
+        (await storage.loadAll()).singleWhere((c) => c.id == community.id);
+
+    test('with a session-ended code is signed out, alone', () async {
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'token_revoked'),
+      );
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(inactive)).signedOut, isTrue);
+      expect((await saved(active)).signedOut, isFalse);
+      expect(await storage.loadActiveId(), active.id);
+      expect(tokens.data[SessionKey(_origin, _second)], isNull);
+      expect(tokens.data[SessionKey(_origin, _first)], isNotNull);
+    });
+
+    test('with a transient failure stays signed in', () async {
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(503, 'unavailable'),
+      );
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(inactive)).signedOut, isFalse);
+      expect(tokens.data[SessionKey(_origin, _second)], isNotNull);
+    });
+
+    test('with a code that does not end sessions stays signed in', () async {
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'not_a_session_code'),
+      );
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(inactive)).signedOut, isFalse);
+    });
+
+    test('with a local storage error stays signed in', () async {
+      tokens.readError = StateError('keychain locked');
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(inactive)).signedOut, isFalse);
+      expect((await saved(active)).signedOut, isFalse);
+    });
+  });
+
   test('coming back refreshes each account near expiry', () async {
     final active = account(_first);
     final other = account(_second);

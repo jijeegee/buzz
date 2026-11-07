@@ -24,7 +24,6 @@ class RecordingAuth extends AuthNotifier {
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
     TokenSessionController? attempt,
   }) async => saved = community;
   @override
@@ -32,7 +31,6 @@ class RecordingAuth extends AuthNotifier {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
     TokenSessionController? attempt,
   }) => throw StateError('Google custody must never select token messaging');
 }
@@ -44,7 +42,6 @@ class ReturningTokenAuth extends RecordingAuth {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
     TokenSessionController? attempt,
   }) async {
     tokenPrincipal = principalId;
@@ -159,7 +156,7 @@ Future<Community> _retainedKeyCommunity(
 
 void main() {
   testWidgets(
-    'signed-out key community continues with Google by linking its key',
+    'a Google account with no row leaves the signed-out key row alone',
     (tester) async {
       final keys = nostr.Keys.generate();
       final storage = CommunityStorage(secure: FakeSecureStorage());
@@ -190,17 +187,21 @@ void main() {
         container.read(authProvider).value?.status,
         AuthStatus.authenticated,
       );
-      // The retained key itself was linked: no replacement was generated.
-      expect(server.secret, keys.secret);
+      // Linking a key is Connect Google only: this is a new account.
+      expect(server.secret, isNot(keys.secret));
       expect(server.proofs, hasLength(1));
-      final saved = (await storage.loadAll()).single;
-      expect(saved.id, retained.id);
-      expect(saved.signedOut, isFalse);
-      expect(saved.nsec, keys.nsec);
-      expect(saved.pubkey, keys.public);
-      expect(saved.googleBackupAccountId, backup.account);
+      final rows = await storage.loadAll();
+      expect(rows, hasLength(2));
+      final kept = rows.singleWhere((row) => row.id == retained.id);
+      expect(kept.signedOut, isTrue);
+      expect(kept.nsec, keys.nsec);
+      expect(kept.googleBackupAccountId, isNull);
+      final added = rows.singleWhere((row) => row.id != retained.id);
+      expect(added.signedOut, isFalse);
+      expect(added.pubkey, isNot(keys.public));
+      expect(added.googleBackupAccountId, backup.account);
       // The method it signed in with is recorded on this phone.
-      expect(saved.signInProvider, 'google');
+      expect(added.signInProvider, 'google');
     },
   );
 
@@ -243,13 +244,13 @@ void main() {
   );
 
   testWidgets(
-    'a Google account linked to another Kuzz account offers a different one',
+    'a signed-out page sign-in with another account opens that account',
     (tester) async {
       final keys = nostr.Keys.generate();
+      final paired = nostr.Keys.generate();
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      await _retainedKeyCommunity(storage, keys);
-      final server = backup.BackupServer()
-        ..secret = nostr.Keys.generate().secret;
+      final retained = await _retainedKeyCommunity(storage, keys);
+      final server = backup.BackupServer()..secret = paired.secret;
       final container = await _pumpSignedOut(
         tester,
         storage: storage,
@@ -261,33 +262,16 @@ void main() {
       await frames(tester);
 
       expect(
-        find.text(
-          'This sign-in is linked to a different Kuzz account. '
-          'Try a different account.',
-        ),
-        findsOneWidget,
-      );
-      expect(
-        find.descendant(
-          of: google,
-          matching: find.text('Use a different Google account'),
-        ),
-        findsOneWidget,
-      );
-      // A way out remains (rule 6), but never a switch to the other identity.
-      expect(
-        find.byKey(const Key('community-recovery-remove')),
-        findsOneWidget,
-      );
-      expect(
         container.read(authProvider).value?.status,
-        AuthStatus.unauthenticated,
+        AuthStatus.authenticated,
       );
-      final saved = (await storage.loadAll()).single;
-      expect(saved.signedOut, isTrue);
-      expect(saved.nsec, keys.nsec);
-      expect(saved.pubkey, keys.public);
-      expect(saved.googleBackupAccountId, isNull);
+      final rows = await storage.loadAll();
+      final kept = rows.singleWhere((row) => row.id == retained.id);
+      expect(kept.signedOut, isTrue);
+      expect(kept.nsec, keys.nsec);
+      expect(kept.googleBackupAccountId, isNull);
+      final added = rows.singleWhere((row) => row.id != retained.id);
+      expect(added.pubkey, paired.public);
       expect(server.proofs, isEmpty);
     },
   );
@@ -455,31 +439,24 @@ void main() {
         await tester.ensureVisible(returning);
         await tester.tap(returning);
         await frames(tester);
-        if (existingBackup) {
-          expect(find.textContaining('cannot replace'), findsOneWidget);
-          expect(launcher.opened, isEmpty);
-          expect(auth.tokenPrincipal, isNull);
-          expect((await storage.loadAll()).single.nsec, keys.nsec);
-        } else {
-          await tester.ensureVisible(
-            find.byKey(const Key('token-sign-in-google')),
-          );
-          await tester.tap(find.byKey(const Key('token-sign-in-google')));
-          await frames(tester);
-          expect(
-            launcher.opened.single.queryParameters['identity_mode'],
-            'token',
-          );
-          expect(auth.tokenPrincipal, 'p' * 64);
-          expect(auth.saved, isNull);
-          expect(backupStore.data, isEmpty);
-          expect(
-            server.requests.where(
-              (r) => r.url.path.startsWith('/auth/key-backup'),
-            ),
-            isEmpty,
-          );
-        }
+        await tester.ensureVisible(
+          find.byKey(const Key('token-sign-in-google')),
+        );
+        await tester.tap(find.byKey(const Key('token-sign-in-google')));
+        await frames(tester);
+        expect(
+          launcher.opened.single.queryParameters['identity_mode'],
+          'token',
+        );
+        expect(auth.tokenPrincipal, 'p' * 64);
+        expect(auth.saved, isNull);
+        expect(backupStore.data, isEmpty);
+        expect(
+          server.requests.where(
+            (r) => r.url.path.startsWith('/auth/key-backup'),
+          ),
+          isEmpty,
+        );
       },
     );
   }

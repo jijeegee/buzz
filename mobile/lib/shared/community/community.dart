@@ -84,6 +84,10 @@ class Community {
   /// recorded locally at sign-in. Absent on older records, which were all
   /// Google: read it through [signInMethod].
   final String? signInProvider;
+
+  /// When this account last signed in or was switched to on this phone.
+  /// Absent on older records. Read by [mostRecentlyUsedCommunity].
+  final DateTime? lastUsedAt;
   final DateTime addedAt;
 
   const Community({
@@ -103,6 +107,7 @@ class Community {
     this.signedOut = false,
     this.googleBackupAccountId,
     this.signInProvider,
+    this.lastUsedAt,
     required this.addedAt,
   });
 
@@ -150,6 +155,7 @@ class Community {
     bool? signedOut,
     String? googleBackupAccountId,
     String? signInProvider,
+    DateTime? lastUsedAt,
   }) {
     return Community(
       id: id,
@@ -177,6 +183,7 @@ class Community {
       googleBackupAccountId:
           googleBackupAccountId ?? this.googleBackupAccountId,
       signInProvider: signInProvider ?? this.signInProvider,
+      lastUsedAt: lastUsedAt ?? this.lastUsedAt,
       addedAt: addedAt,
     );
   }
@@ -200,6 +207,7 @@ class Community {
     if (googleBackupAccountId != null)
       'googleBackupAccountId': googleBackupAccountId,
     if (signInProvider != null) 'signInProvider': signInProvider,
+    if (lastUsedAt != null) 'lastUsedAt': lastUsedAt!.toIso8601String(),
     'addedAt': addedAt.toIso8601String(),
   };
 
@@ -252,12 +260,16 @@ class Community {
       signedOut: json['signedOut'] == true,
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
       signInProvider: json['signInProvider'] as String?,
+      lastUsedAt: DateTime.tryParse(json['lastUsedAt'] as String? ?? ''),
       addedAt: DateTime.parse(json['addedAt'] as String),
     );
   }
 
-  /// The sign-in method to show and to resume with: [signInProvider], or
-  /// `google` for records made before it was recorded.
+  /// The public key of this account's signing identity.
+  String? get accountPubkey => pubkey ?? _accountOf(nsec);
+
+  /// The sign-in method to show: [signInProvider], or `google` for records
+  /// made before it was recorded.
   String get signInMethod => signInProvider ?? 'google';
 
   /// Gives the resumed session its own push lease, separate from old cleanup.

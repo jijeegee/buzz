@@ -6,6 +6,7 @@ import 'package:http/http.dart' as http;
 import 'package:nostr/nostr.dart' as nostr;
 
 import '../community/community.dart';
+import '../community/community_accounts.dart';
 import '../community/community_provider.dart';
 import '../community/community_storage.dart';
 import '../device_key/device_proof.dart';
@@ -23,23 +24,11 @@ class KeyBackupException implements Exception {
   final int? statusCode;
   @override
   String toString() => message;
-
-  /// [code] for a Google account that belongs to a different Kuzz account
-  /// than this community; the user should pick another Google account.
-  static const accountMismatch = 'account_mismatch';
-
-  /// Whether choosing a different Google account is the way forward.
-  bool get isAccountMismatch =>
-      code == accountMismatch || code == 'key_already_linked';
 }
 
 // User-visible copy: plain English, no key or server jargon (product rule).
 KeyBackupException get _tryAgain =>
     KeyBackupException(appL10n.googleBackupConnectFailed);
-KeyBackupException get _mismatch => KeyBackupException(
-  appL10n.googleBackupAccountLinkedElsewhere,
-  code: KeyBackupException.accountMismatch,
-);
 
 /// Keeps an uncommitted client key across uncertain uploads and app restarts.
 /// It is never the active messaging identity until initialization succeeds.
@@ -93,28 +82,23 @@ class GoogleKeyBackupService {
   final Map<TokenSessionController, Future<Community>> _inFlight = {};
   static final _hexKey = RegExp(r'^[0-9a-f]{64}$');
 
-  /// Check before OIDC can replace the origin-scoped session record.
-  Future<void> checkLocalCompatibility() async {
-    _validateTransport();
-    final Community? existing;
-    try {
-      existing = await _existing();
-    } catch (_) {
-      throw KeyBackupException(appL10n.googleBackupReadSignInFailed);
-    }
-    if (existing?.tokenAuth == true) {
-      throw KeyBackupException(appL10n.googleBackupDifferentSignIn);
-    }
-  }
-
   /// Resolve and return a signed-key community with [session], the sign-in
   /// attempt: nothing here touches a stored session. The caller persists the
   /// result through AuthNotifier before exposing the authenticated app.
   /// Single-flight per attempt: another attempt is another account's sign-in.
+  ///
+  /// The row is the one of this account (see [findKeyAccountRow]). Its key
+  /// never goes to another account, and a key already paired with the account
+  /// always wins over the row's: the row's is discarded. An account with no
+  /// row gets a new one with a fresh key.
+  ///
+  /// With [connect] (Settings, "Connect Google") the row is the active one,
+  /// and its key is linked to this account. Only this path links a key.
   Future<Community> resolve({
     required TokenSessionController session,
+    bool connect = false,
     bool Function()? isCurrent,
-  }) => _inFlight[session] ??= _resolve(session, isCurrent)
+  }) => _inFlight[session] ??= _resolve(session, connect, isCurrent)
       .onError((Object error, StackTrace stack) {
         if (error is KeyBackupException) throw error;
         throw _tryAgain;
@@ -125,6 +109,7 @@ class GoogleKeyBackupService {
 
   Future<Community> _resolve(
     TokenSessionController session,
+    bool connect,
     bool Function()? isCurrent,
   ) async {
     final generation = session.generation;
@@ -137,8 +122,7 @@ class GoogleKeyBackupService {
     }
 
     guard();
-    await checkLocalCompatibility();
-    guard();
+    _validateTransport();
     if (session.identityMode != 'key_backup') {
       throw KeyBackupException(appL10n.googleBackupSignInWithGoogleFirst);
     }
@@ -147,46 +131,18 @@ class GoogleKeyBackupService {
       throw KeyBackupException(appL10n.googleBackupSignInAgain);
     }
     final status = await _status(session, account, guard);
-    // Two steps, because a key-only community records no Google account yet:
-    // its pubkey is only known from the backup status. Matching by account
-    // alone would create a second row for it.
+    // A key-only community records no Google account yet: its pubkey is only
+    // known from the backup status.
     final accountKey = status['pubkey'] as String?;
-    final existing = await _existing(account: account, pubkey: accountKey);
-    final local = existing == null ? null : _keys(existing.nsec);
-    final missingLocalKey =
-        existing != null && (existing.nsec == null || existing.nsec!.isEmpty);
-    if (existing != null &&
-        ((missingLocalKey && !_validHex(existing.pubkey)) ||
-            (!missingLocalKey && local == null) ||
-            (local != null &&
-                existing.pubkey != null &&
-                existing.pubkey != local.public))) {
-      throw KeyBackupException(appL10n.googleBackupCommunitySignInFailed);
-    }
+    Future<Community?> row() => connect
+        ? _connectRow(account, accountKey)
+        : _accountRow(account, accountKey);
+    final existing = await row();
     late nostr.Keys keys;
     if (status['state'] == 'ready') {
-      if (existing?.pubkey != null && existing!.pubkey != status['pubkey']) {
-        throw _mismatch;
-      }
-      keys = await _restore(session, status, local, guard);
+      keys = await _restore(session, status, guard);
     } else {
-      // A signed-out community that was never linked to Google may link the
-      // key it retained at sign-out (`local`, always used below as the
-      // candidate, so nothing is generated). One already linked to a Google
-      // account must be resumed by that account's backup, never re-linked.
-      if (missingLocalKey ||
-          (existing?.signedOut == true &&
-              existing?.googleBackupAccountId != null)) {
-        // The right Google account with no backup on the server is not a
-        // wrong-account choice; don't send the user to another account.
-        if (existing?.googleBackupAccountId == account) {
-          throw KeyBackupException(appL10n.googleBackupRestoreFailed);
-        }
-        throw KeyBackupException(
-          appL10n.googleBackupAccountNotConnected,
-          code: KeyBackupException.accountMismatch,
-        );
-      }
+      final local = existing == null ? null : _rowKey(existing);
       // Only a verified successful absent status authorizes key generation.
       final pending = await _pending.read(origin, account);
       guard();
@@ -209,26 +165,25 @@ class GoogleKeyBackupService {
         // Another first device won. Never retry initialization with a new key.
         final winner = await _status(session, account, guard);
         if (winner['state'] != 'ready') rethrow;
-        keys = await _restore(session, winner, null, guard);
+        keys = await _restore(session, winner, guard);
       }
     }
     if (session.state.principalId != account ||
         session.identityMode != 'key_backup') {
       throw KeyBackupException(appL10n.googleBackupAccountChanged);
     }
-    final now = await _existing(account: account, pubkey: accountKey);
+    final now = await row();
     guard();
     if (now?.id != existing?.id ||
         now?.nsec != existing?.nsec ||
         now?.pubkey != existing?.pubkey ||
-        now?.tokenAuth != existing?.tokenAuth) {
+        now?.tokenAuth != existing?.tokenAuth ||
+        now?.signedOut != existing?.signedOut) {
       throw KeyBackupException(appL10n.googleBackupCommunityChanged);
     }
-    return existing?.copyWith(
-          googleBackupAccountId: account,
-          pubkey: keys.public,
-          nsec: keys.nsec,
-        ) ??
+    return existing
+            ?.withCredentials(pubkey: keys.public, nsec: keys.nsec)
+            .copyWith(googleBackupAccountId: account) ??
         Community.create(
           name: Community.nameFromUrl(origin),
           relayUrl: origin,
@@ -238,29 +193,49 @@ class GoogleKeyBackupService {
         );
   }
 
-  /// The community at [origin], preferring the one of [account], then the
-  /// one holding [pubkey]. Without either match, the first at [origin].
-  Future<Community?> _existing({String? account, String? pubkey}) async {
-    final all = (await _communities.loadAll())
-        .where(
-          (community) => normalizeRelayOrigin(community.relayUrl) == origin,
-        )
-        .toList();
-    return all
-            .where(
-              (community) =>
-                  account != null && community.googleBackupAccountId == account,
-            )
-            .firstOrNull ??
-        all
-            .where(
-              (community) =>
-                  pubkey != null &&
-                  community.pubkey == pubkey &&
-                  !community.tokenAuth,
-            )
-            .firstOrNull ??
-        all.firstOrNull;
+  Future<Community?> _accountRow(String account, String? pubkey) async =>
+      findKeyAccountRow(
+        await _communities.loadAll(),
+        origin: origin,
+        account: account,
+        pubkey: pubkey,
+      );
+
+  /// The active row, when [account] may be connected to it: it has its own
+  /// key, no other Google account, and [pairedKey] (the key already paired
+  /// with [account], if any) is that key.
+  Future<Community> _connectRow(String account, String? pairedKey) async {
+    final activeId = await _communities.loadActiveId();
+    final active = communitiesOfService(
+      await _communities.loadAll(),
+      origin,
+    ).where((community) => community.id == activeId).firstOrNull;
+    if (active == null || active.tokenAuth) {
+      throw KeyBackupException(appL10n.googleBackupCommunitySignInFailed);
+    }
+    final linked = active.googleBackupAccountId;
+    if (linked != null && linked != account) {
+      throw KeyBackupException(appL10n.googleBackupCommunityLinkedElsewhere);
+    }
+    if (pairedKey != null && pairedKey != active.accountPubkey) {
+      throw KeyBackupException(appL10n.googleBackupAccountLinkedElsewhere);
+    }
+    return active;
+  }
+
+  /// The key [community] goes on with when its account has none on the
+  /// server yet. A row without a key cannot be helped from here.
+  nostr.Keys _rowKey(Community community) {
+    final nsec = community.nsec;
+    if (community.signedOut || nsec == null || nsec.isEmpty) {
+      throw KeyBackupException(appL10n.googleBackupRestoreFailed);
+    }
+    final keys = _keys(nsec);
+    if (keys == null ||
+        (community.pubkey != null && community.pubkey != keys.public)) {
+      throw KeyBackupException(appL10n.googleBackupCommunitySignInFailed);
+    }
+    return keys;
   }
 
   Future<Map<String, dynamic>> _status(
@@ -286,12 +261,8 @@ class GoogleKeyBackupService {
   Future<nostr.Keys> _restore(
     TokenSessionController session,
     Map<String, dynamic> status,
-    nostr.Keys? local,
     void Function() guard,
   ) async {
-    if (local != null && local.public != status['pubkey']) {
-      throw _mismatch;
-    }
     final result = await _request(
       session,
       'POST',

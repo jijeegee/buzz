@@ -8426,10 +8426,6 @@
       "text": "서버에서 로그아웃하지 못했어요",
       "from": "db861bc748fc"
     },
-    "communitySignInBeforeChanging": {
-      "text": "이 커뮤니티를 변경하려면 먼저 로그인해 주세요.",
-      "from": "33f15d7ac622"
-    },
     "ephemeralTooltipAfterDays": {
       "text": "임시 그룹이에요. {count, plural, other{{count}일}} 동안 활동이 없으면 정리돼요.",
       "from": "75bd06c12ade"
@@ -8705,10 +8701,6 @@
     "settingsAccountSharedNote": {
       "text": "이름, 사용자 이름, 사진은 이 서버의 모든 커뮤니티에서 공유돼요.",
       "from": "3f3a931f5e34"
-    },
-    "signInExistingIdentityConflict": {
-      "text": "이 기기에는 이미 이 서버의 계정 정보가 있어요. 기존 토큰 계정으로 대체할 수 없어요. Google 키 복구를 사용해 주세요.",
-      "from": "5ae11689d80e"
     },
     "signInReconnectingBanner": {
       "text": "서버에 다시 연결하는 중…",

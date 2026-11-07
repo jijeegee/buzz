@@ -35,7 +35,6 @@ class TokenSignInPage extends HookConsumerWidget {
     this.defaultCommunity = false,
     this.resumeSignedOut = false,
     this.connectGoogle = false,
-    this.signInProvider,
   });
 
   /// Ordinary first-device entry. Every page without [lockedOrigin] or
@@ -57,10 +56,6 @@ class TokenSignInPage extends HookConsumerWidget {
   /// The account whose session ended, when known: the page shows why.
   final SessionKey? lockedSession;
 
-  /// Signing back in to a known account: its own method (`google` or
-  /// `apple`, [Community.signInMethod]), the only button offered.
-  final String? signInProvider;
-
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final l10n = context.l10n;
@@ -77,17 +72,14 @@ class TokenSignInPage extends HookConsumerWidget {
           (lockedOrigin == null && configuredOrigin != null),
     );
     final dualMode = useState(false);
-    // The method of the newest sign-in attempt; a wrong-account retry
-    // uses it again.
-    final lastProvider = useState(signInProvider ?? 'google');
     final fixedOrigin = initialOrigin != null;
     final checking = useState(false);
     final completing = useState(false);
     final message = useState<String?>(null);
-    // The Google account (or Apple ID) chosen belongs to another Kuzz
-    // account: the way forward is choosing a different one (the relay always
-    // asks for the account chooser), never switching identities.
-    final accountMismatch = useState(false);
+    // The chosen sign-in has no Kuzz account yet: the question on screen, and
+    // the sign-in waiting for its answer.
+    final signup = useState<({SignupRequired prompt, String provider})?>(null);
+    final signupAnswer = useRef<Completer<SignupChoice>?>(null);
     // Fences relay checks: only the newest one may write its result.
     final checkGeneration = useRef(0);
     final attemptGeneration = useRef(0);
@@ -97,7 +89,14 @@ class TokenSignInPage extends HookConsumerWidget {
     final attempt = useRef<TokenSessionController?>(null);
     final session = useState<TokenSessionState?>(null);
 
+    void answerSignup(SignupChoice choice) {
+      final answer = signupAnswer.value;
+      signupAnswer.value = null;
+      if (answer != null && !answer.isCompleted) answer.complete(choice);
+    }
+
     void closeAttempt() {
+      answerSignup(SignupChoice.close);
       final controller = attempt.value;
       attempt.value = null;
       // Handed over, this ends nothing: the attempt holds no tokens anymore.
@@ -168,32 +167,6 @@ class TokenSignInPage extends HookConsumerWidget {
       }
     }
 
-    Future<void> selectExistingTokenAccount() async {
-      final sessionOrigin = origin.value;
-      if (sessionOrigin == null) return;
-      checking.value = true;
-      message.value = null;
-      try {
-        final communities = await ref.read(communityStorageProvider).loadAll();
-        if (!context.mounted) return;
-        if (communities.any(
-          (community) =>
-              !community.tokenAuth &&
-              normalizeRelayOrigin(community.relayUrl) == sessionOrigin,
-        )) {
-          message.value = l10n.signInExistingIdentityConflict;
-          return;
-        }
-        keyBackup.value = false;
-      } catch (_) {
-        if (context.mounted) {
-          message.value = l10n.signInIdentityCheckFailed;
-        }
-      } finally {
-        if (context.mounted) checking.value = false;
-      }
-    }
-
     /// Records the signed-in session as the active community; a signing-key
     /// community also records the [provider] it signed in with (null keeps
     /// the recorded one). In locked
@@ -209,17 +182,19 @@ class TokenSignInPage extends HookConsumerWidget {
       completing.value = true;
       try {
         final sessionGeneration = controller.generation;
-        final authAtStart = ref.read(authProvider).value;
         bool canCommit() =>
             context.mounted &&
             isCurrent?.call() != false &&
-            identical(ref.read(authProvider).value, authAtStart) &&
             controller.generation == sessionGeneration &&
             controller.state.status == TokenSessionStatus.signedIn;
         if (keyBackup.value) {
           final community = await ref
               .read(googleKeyBackupServiceProvider(sessionOrigin))
-              .resolve(session: controller, isCurrent: canCommit);
+              .resolve(
+                session: controller,
+                connect: connectGoogle,
+                isCurrent: canCommit,
+              );
           if (!canCommit()) return;
           final signedIn = community.copyWith(signInProvider: provider);
           await ref.read(signedCommunityAdmissionProvider)(signedIn);
@@ -229,7 +204,6 @@ class TokenSignInPage extends HookConsumerWidget {
               .authenticateWithCommunity(
                 signedIn,
                 isCurrent: canCommit,
-                resumeSignedOut: resumeSignedOut,
                 attempt: controller,
               );
         } else {
@@ -239,15 +213,12 @@ class TokenSignInPage extends HookConsumerWidget {
                 relayUrl: sessionOrigin,
                 principalId: principal,
                 isCurrent: canCommit,
-                resumeSignedOut: resumeSignedOut,
                 attempt: controller,
               );
         }
       } catch (error) {
         if (context.mounted) {
           completing.value = false;
-          accountMismatch.value =
-              error is KeyBackupException && error.isAccountMismatch;
           message.value = error is KeyBackupException
               ? error.message
               : l10n.signInFinishFailed;
@@ -259,6 +230,20 @@ class TokenSignInPage extends HookConsumerWidget {
       if (lockedOrigin != null && !resumeSignedOut) return;
       // Opened on top of onboarding: the authenticated home is underneath.
       unawaited(Navigator.of(context).maybePop(connectGoogle ? true : null));
+    }
+
+    /// Puts the question on screen until [answerSignup]. Connecting Google
+    /// does not ask: that account is the one on screen.
+    Future<SignupChoice> confirmSignup(
+      SignupRequired prompt,
+      String provider,
+    ) async {
+      if (!context.mounted) return SignupChoice.close;
+      final answer = signupAnswer.value = Completer<SignupChoice>();
+      signup.value = (prompt: prompt, provider: provider);
+      final choice = await answer.future;
+      if (context.mounted) signup.value = null;
+      return choice;
     }
 
     Future<void> signIn({String provider = 'google'}) async {
@@ -273,26 +258,13 @@ class TokenSignInPage extends HookConsumerWidget {
       try {
         message.value = null;
         ref.read(signInNoticeProvider.notifier).clear();
-        accountMismatch.value = false;
-        lastProvider.value = provider;
-        if (keyBackup.value) {
-          try {
-            await ref
-                .read(googleKeyBackupServiceProvider(sessionOrigin))
-                .checkLocalCompatibility();
-            if (!context.mounted) return;
-          } on KeyBackupException catch (error) {
-            if (context.mounted) {
-              accountMismatch.value = error.isAccountMismatch;
-              message.value = error.message;
-            }
-            return;
-          }
-        }
         final controller = startAttempt(sessionOrigin);
         final signedIn = await controller.signIn(
           provider: provider,
           identityMode: keyBackup.value ? 'key_backup' : 'token',
+          confirmSignup: keyBackup.value && !connectGoogle
+              ? (prompt) => confirmSignup(prompt, provider)
+              : null,
         );
         final principal = controller.state.principalId;
         if (!signedIn || principal == null || !context.mounted) return;
@@ -320,19 +292,23 @@ class TokenSignInPage extends HookConsumerWidget {
         session.value?.errorMessage ??
         endedSession?.errorMessage ??
         ref.watch(signInNoticeProvider);
-    // A known account signs back in with its own method only; connecting an
-    // older account is Google only.
-    final offersGoogle = signInProvider == null || signInProvider == 'google';
-    final offersApple =
-        !connectGoogle && (signInProvider == null || signInProvider == 'apple');
+    // Any account may sign in here; connecting an older account is Google
+    // only.
+    final offersApple = !connectGoogle;
     final signInWithApple = busy
         ? null
         : () => unawaited(signIn(provider: 'apple'));
-    final appleLabel = accountMismatch.value && lastProvider.value == 'apple'
-        ? l10n.signInUseDifferentApple
-        : resumeSignedOut
+    final appleLabel = resumeSignedOut
         ? l10n.signInContinueWithApple
         : l10n.signInWithApple;
+
+    if (signup.value case (:final prompt, :final provider)?) {
+      return _CreateAccountView(
+        email: prompt.email,
+        apple: provider == 'apple',
+        onAnswer: answerSignup,
+      );
+    }
 
     return Scaffold(
       appBar: lockedOrigin == null && Navigator.of(context).canPop()
@@ -414,32 +390,23 @@ class TokenSignInPage extends HookConsumerWidget {
                   child: Text(l10n.signInContinue),
                 ),
             ],
-            if (origin.value != null && offersGoogle)
+            if (origin.value != null)
               FilledButton(
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
                 child: Text(
-                  accountMismatch.value && lastProvider.value == 'google'
-                      ? l10n.signInUseDifferentGoogle
-                      : resumeSignedOut || connectGoogle
+                  resumeSignedOut || connectGoogle
                       ? l10n.settingsContinueWithGoogle
                       : l10n.signInWithGoogle,
                 ),
               ),
             if (origin.value != null && offersApple) ...[
-              if (offersGoogle) ...[
-                const SizedBox(height: Grid.xxs),
-                OutlinedButton(
-                  key: const Key('token-sign-in-apple'),
-                  onPressed: signInWithApple,
-                  child: Text(appleLabel),
-                ),
-              ] else
-                FilledButton(
-                  key: const Key('token-sign-in-apple'),
-                  onPressed: signInWithApple,
-                  child: Text(appleLabel),
-                ),
+              const SizedBox(height: Grid.xxs),
+              OutlinedButton(
+                key: const Key('token-sign-in-apple'),
+                onPressed: signInWithApple,
+                child: Text(appleLabel),
+              ),
             ],
             if (origin.value != null) const _TermsLine(),
             if (dualMode.value && origin.value != null && !fixedOrigin)
@@ -448,12 +415,8 @@ class TokenSignInPage extends HookConsumerWidget {
                 onPressed: busy
                     ? null
                     : () {
-                        if (keyBackup.value) {
-                          unawaited(selectExistingTokenAccount());
-                        } else {
-                          message.value = null;
-                          keyBackup.value = true;
-                        }
+                        message.value = null;
+                        keyBackup.value = !keyBackup.value;
                       },
                 child: Text(
                   keyBackup.value
@@ -493,6 +456,75 @@ class TokenSignInPage extends HookConsumerWidget {
               const CommunityRecoveryActions(),
             ],
           ],
+        ),
+      ),
+    );
+  }
+}
+
+/// "Create your Kuzz account": the chosen sign-in has no account yet, and
+/// nothing exists until "Create account". Going back stops here.
+class _CreateAccountView extends StatelessWidget {
+  const _CreateAccountView({
+    required this.email,
+    required this.apple,
+    required this.onAnswer,
+  });
+
+  final String? email;
+  final bool apple;
+  final void Function(SignupChoice choice) onAnswer;
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) onAnswer(SignupChoice.close);
+      },
+      child: Scaffold(
+        body: SafeArea(
+          child: ListView(
+            key: const Key('create-account'),
+            padding: const EdgeInsets.all(Grid.sm),
+            children: [
+              const SizedBox(height: Grid.lg),
+              Text(
+                l10n.signInCreateAccountTitle,
+                style: context.textTheme.headlineSmall,
+              ),
+              const SizedBox(height: Grid.xxs),
+              Text(
+                apple
+                    ? l10n.signInCreateAccountBodyApple
+                    : l10n.signInCreateAccountBody,
+                style: context.textTheme.bodyMedium?.copyWith(
+                  color: context.colors.onSurfaceVariant,
+                ),
+              ),
+              if (email case final email?) ...[
+                const SizedBox(height: Grid.xs),
+                Text(
+                  email,
+                  key: const Key('create-account-email'),
+                  style: context.textTheme.titleMedium,
+                ),
+              ],
+              const SizedBox(height: Grid.sm),
+              FilledButton(
+                key: const Key('create-account-confirm'),
+                onPressed: () => onAnswer(SignupChoice.create),
+                child: Text(l10n.signInCreateAccountConfirm),
+              ),
+              const SizedBox(height: Grid.xxs),
+              OutlinedButton(
+                key: const Key('create-account-different'),
+                onPressed: () => onAnswer(SignupChoice.different),
+                child: Text(l10n.signInCreateAccountDifferent),
+              ),
+            ],
+          ),
         ),
       ),
     );

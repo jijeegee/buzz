@@ -66,11 +66,15 @@ abstract interface class InviteJoinRecovery {
 class InviteJoinRecoveryScope {
   const InviteJoinRecoveryScope({
     required this.relayHttpOrigin,
+    required this.communityId,
     required this.nsec,
   });
 
   /// Canonical HTTP(S) origin used by the active relay session.
   final String relayHttpOrigin;
+
+  /// Account that must remain active: several can share one origin.
+  final String communityId;
 
   /// Signing identity that must remain active for the recovery lifetime.
   final String? nsec;
@@ -202,8 +206,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       state = _differentServiceState(invite);
       return;
     }
-    final communities = await ref.read(communityListProvider.future);
-    final existing = _existingCommunity(communities, invite.relayUrl);
+    final existing = await _inviteCommunity(invite.relayUrl);
     if (existing?.signedOut == true) {
       _pendingStarterSetupCommunity = null;
       state = InviteJoinState(
@@ -300,8 +303,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       requiresFreshInvite: false,
     );
     try {
-      final communities = await ref.read(communityListProvider.future);
-      final existing = _existingCommunity(communities, invite.relayUrl);
+      final existing = await _inviteCommunity(invite.relayUrl);
       if (existing?.signedOut == true) {
         throw InviteClaimException(
           appL10n.inviteSignInAgainFirst,
@@ -572,6 +574,20 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     }
   }
 
+  /// The account an invite for [relayUrl] is claimed with: the active one
+  /// when it is on that server, otherwise the one used most recently there.
+  Future<Community?> _inviteCommunity(String relayUrl) async {
+    final matching = _communitiesOfRelay(
+      await ref.read(communityListProvider.future),
+      relayUrl,
+    );
+    if (matching.length < 2) return matching.firstOrNull;
+    final activeId = await ref.read(communityStorageProvider).loadActiveId();
+    return matching.where((row) => row.id == activeId).firstOrNull ??
+        mostRecentlyUsedCommunity(matching) ??
+        matching.first;
+  }
+
   Future<void> _finishStarterSetup(Community community) async {
     try {
       // Authentication and community switches invalidate the scoped providers.
@@ -591,6 +607,7 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
           .read(inviteJoinRecoveryProvider)(
             InviteJoinRecoveryScope(
               relayHttpOrigin: config.baseUrl,
+              communityId: community.id,
               nsec: config.nsec,
             ),
           )
@@ -667,16 +684,17 @@ class InviteClaimException implements Exception {
   String toString() => message;
 }
 
-Community? _existingCommunity(List<Community> communities, String relayUrl) {
+List<Community> _communitiesOfRelay(
+  List<Community> communities,
+  String relayUrl,
+) {
   final invite = _relayOriginForComparison(relayUrl);
-  for (final community in communities) {
-    final current = _relayOriginForComparison(community.relayUrl);
-    if (current == null) continue;
-    if (current == invite) {
-      return community;
-    }
-  }
-  return null;
+  return [
+    for (final community in communities)
+      if (_relayOriginForComparison(community.relayUrl) case final current?
+          when current == invite)
+        community,
+  ];
 }
 
 ({bool secure, String host, int? port})? _relayOriginForComparison(String url) {

@@ -6,6 +6,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
 import '../../app_update/app_update.dart';
+import '../auth_provider.dart';
 import '../default_community.dart';
 import '../../community/community.dart';
 import '../../community/community_provider.dart';
@@ -233,6 +234,10 @@ final activeTokenSessionProvider = Provider<SessionKey?>(
 /// others one at a time; from there each keeps its own refresh timer. Timers
 /// do not run in the background, so on app resume any account near expiry is
 /// refreshed in the same order.
+///
+/// An account that is not on screen has no gate to show its session ended, so
+/// it is signed out here, for session-ended codes only: that deletes its key
+/// and messages, which a passing failure must never do.
 final accountSessionKeeperProvider = Provider<void>((ref) {
   final rows = ref.watch(communityListProvider);
   final active = ref.watch(activeCommunityProvider);
@@ -255,6 +260,28 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
     for (final account in signedIn)
       if (account.id != activeId) account.provider,
   ];
+
+  for (final account in signedIn) {
+    if (account.id == activeId) continue;
+    void signOutIfEnded(TokenSessionState session) {
+      if (session.status != TokenSessionStatus.signedOut ||
+          !refreshEndedCodes.contains(session.endedCode)) {
+        return;
+      }
+      unawaited(
+        ref
+            .read(authProvider.notifier)
+            .signOutCommunity(account.id, deviceOnly: true)
+            .catchError((Object error) {
+              debugPrint('Could not sign out an ended account: $error');
+            }),
+      );
+    }
+
+    final controller = ref.read(account.provider);
+    ref.onDispose(controller.addListener(signOutIfEnded));
+    signOutIfEnded(controller.state);
+  }
 
   // The controllers are read before the first wait: this provider rebuilds
   // whenever the list or active row changes, and that must not end a pass

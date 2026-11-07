@@ -18,6 +18,7 @@ import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import '../relay/signed_event_relay.dart';
 import 'community.dart';
+import 'community_accounts.dart';
 import 'community_storage.dart';
 import 'community_token_session.dart';
 
@@ -424,14 +425,24 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       }
       await storage.remove(id);
       if (removedIndex >= 0) {
-        final relayUrl = RelayConfig(
-          baseUrl: current[removedIndex].relayUrl,
-        ).baseUrl;
         final removed = current[removedIndex];
         final account = removed.pubkey ?? pubkeyFromNsec(removed.nsec);
         if (account != null) {
           unawaited(
             ref.read(messageStoreProvider).forget(removed.relayUrl, account),
+          );
+          unawaited(
+            ref
+                .read(channelHeadCacheProvider)
+                .clearAccount(
+                  ChannelHeadScope(
+                    relayUrl: RelayConfig(baseUrl: removed.relayUrl).baseUrl,
+                    pubkey: account,
+                  ),
+                )
+                .catchError((Object error) {
+                  developer.log('Failed to clear channel heads: $error');
+                }),
           );
         }
         // The NSE snapshot no longer has it (above): its inbox goes too.
@@ -439,13 +450,6 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           deletePushInboxFolders(ref.read(pushInboxRootProvider), [
             removed.pushInboxToken,
           ]),
-        );
-        unawaited(
-          ref.read(channelHeadCacheProvider).clearRelay(relayUrl).catchError((
-            Object error,
-          ) {
-            developer.log('Failed to clear channel heads: $error');
-          }),
         );
       }
 
@@ -457,7 +461,14 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       if (activeId == id) {
         final remaining = state.value ?? [];
         if (remaining.isNotEmpty) {
-          await storage.saveActiveId(remaining.first.id);
+          final next =
+              selectActiveCommunity(
+                remaining,
+                null,
+                builtInOrigin: ref.read(defaultCommunityOriginProvider),
+              ) ??
+              remaining.first;
+          await storage.saveActiveId(next.id);
           // Reassign list state so activeCommunityProvider picks up the new ID.
           state = AsyncData([...remaining]);
           if (invalidateAuthentication) ref.invalidate(authProvider);
@@ -486,17 +497,23 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       final storage = ref.read(communityStorageProvider);
       final activeId = await storage.loadActiveId();
       if (activeId == id) return;
-      final target = (await storage.loadAll())
+      final stored = await storage.loadAll();
+      final target = stored
           .where((community) => community.id == id)
           .firstOrNull;
       if (target != null) _requireAllowedServer(ref, target.relayUrl);
       await ref.read(communityTransitionProvider).run();
+      final used = target?.copyWith(lastUsedAt: DateTime.now());
+      if (used != null) await storage.save(used);
       await storage.saveActiveId(id);
       // Reassign list state to trigger activeCommunityProvider (which watches
       // communityListProvider.future) to rebuild and pick up the new active ID.
       // We can't use ref.invalidate(activeCommunityProvider) here because that
       // creates a circular dependency — activeCommunityProvider watches us.
-      state = AsyncData([...state.value ?? []]);
+      state = AsyncData([
+        for (final community in state.value ?? const <Community>[])
+          community.id == used?.id ? used! : community,
+      ]);
       // Invalidate auth so AuthState.community reflects the new active community.
       ref.invalidate(authProvider);
     });
@@ -795,14 +812,16 @@ final activeCommunityProvider = FutureProvider<Community?>((ref) async {
 /// Picks the community to use from [communities].
 ///
 /// With a built-in server ([builtInOrigin], see `hasBuiltInServerProvider`)
-/// only entries for that server (same host and port) are candidates: the
-/// stored [activeId] wins when it is one of them, otherwise the first one.
-/// Entries for other servers stay stored but are never selected, so they
-/// are never connected. Returns `null` when there is no candidate; the
-/// Google sign-in for the built-in server then creates its entry.
+/// only entries for that server (same host and port) are candidates. Entries
+/// for other servers stay stored but are never selected, so they are never
+/// connected. Without one (test harness only) every entry is a candidate.
+/// Returns `null` when there is no candidate; the Google sign-in for the
+/// built-in server then creates its entry.
 ///
-/// Without a built-in server (test harness only) this is the upstream rule:
-/// [activeId], otherwise the first stored community.
+/// The stored [activeId] wins while it is signed in, otherwise the most
+/// recently used signed-in account ([mostRecentlyUsedCommunity]). With none
+/// signed in it is the stored [activeId] or the first candidate, which shows
+/// the signed-out page.
 Community? selectActiveCommunity(
   List<Community> communities,
   String? activeId, {
@@ -816,10 +835,11 @@ Community? selectActiveCommunity(
               community,
         ];
   if (candidates.isEmpty) return null;
-  return candidates.firstWhere(
-    (community) => community.id == activeId,
-    orElse: () => candidates.first,
-  );
+  final stored = candidates
+      .where((community) => community.id == activeId)
+      .firstOrNull;
+  if (stored != null && !stored.signedOut) return stored;
+  return mostRecentlyUsedCommunity(candidates) ?? stored ?? candidates.first;
 }
 
 /// Refuses any server other than the built-in one (see

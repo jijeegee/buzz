@@ -62,10 +62,12 @@ void main() {
       'completeLogin posts the code and verifier and parses the grant',
       () async {
         final server = FakeAuthServer();
-        final grant = await AuthApi(
-          origin: origin,
-          client: server.client,
-        ).completeLogin(loginCode: 'bzl_x', codeVerifier: 'v' * 43);
+        final grant =
+            await AuthApi(
+                  origin: origin,
+                  client: server.client,
+                ).completeLogin(loginCode: 'bzl_x', codeVerifier: 'v' * 43)
+                as LoginGrant;
         final request = server.requests.single;
         expect(request.method, 'POST');
         expect(request.url.toString(), '$origin/auth/oidc/complete');

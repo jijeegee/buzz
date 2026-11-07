@@ -79,6 +79,7 @@ InviteJoinRecovery buildMobileInviteJoinRecovery(
 ) {
   final expectedConfig = ref.read(relayConfigProvider);
   if (expectedConfig.baseUrl != scope.relayHttpOrigin ||
+      expectedConfig.communityId != scope.communityId ||
       expectedConfig.nsec != scope.nsec) {
     throw StateError('Active community changed before invite recovery');
   }
@@ -87,6 +88,7 @@ InviteJoinRecovery buildMobileInviteJoinRecovery(
     isScopeCurrent: () {
       final currentConfig = ref.read(relayConfigProvider);
       return currentConfig.baseUrl == scope.relayHttpOrigin &&
+          currentConfig.communityId == scope.communityId &&
           currentConfig.nsec == scope.nsec;
     },
   );

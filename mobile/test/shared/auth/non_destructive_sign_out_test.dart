@@ -49,6 +49,14 @@ class _Harness {
     await container.read(communityListProvider.future);
   }
 
+  /// Signs out every signed-in account, the active one each time.
+  Future<void> signOutEveryAccount() async {
+    final auth = container.read(authProvider.notifier);
+    while ((await storage.loadAll()).any((c) => !c.signedOut)) {
+      await auth.signOut();
+    }
+  }
+
   void openContainer() {
     container = ProviderContainer(
       overrides: [
@@ -86,11 +94,11 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   test(
-    'partial remote logout failure preserves identities and can retry',
+    'a failed remote logout keeps the account and can retry; others stay',
     () async {
       final h = _Harness();
       await h.start();
-      h.failEnding = h.second.id;
+      h.failEnding = h.first.id;
       await expectLater(
         h.container.read(authProvider.notifier).signOut(),
         throwsStateError,
@@ -103,13 +111,11 @@ void main() {
       );
       h.failEnding = null;
       await h.container.read(authProvider.notifier).signOut();
-      expect(
-        (await h.storage.loadAll()).every(
-          (c) => c.signedOut && c.nsec == h.keys.nsec,
-        ),
-        isTrue,
-      );
-      expect(h.ended, [h.first.id, h.first.id, h.second.id]);
+      final saved = await h.storage.loadAll();
+      expect(saved.first.signedOut, isTrue);
+      expect(saved.first.nsec, h.keys.nsec);
+      expect(saved.last.signedOut, isFalse);
+      expect(h.ended, [h.first.id]);
     },
   );
 
@@ -118,7 +124,7 @@ void main() {
     (tester) async {
       final h = _Harness();
       await h.start();
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       await tester.pumpWidget(
         UncontrolledProviderScope(
           container: h.container,
@@ -142,7 +148,7 @@ void main() {
       await tester.pumpAndSettle();
       await tester.tap(find.byKey(const Key('signed-out-community')));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('Second').last);
+      await tester.tap(find.text('First').last);
       await tester.pumpAndSettle();
       expect((await h.storage.loadAll()).every((c) => c.signedOut), isTrue);
       expect(
@@ -173,7 +179,7 @@ void main() {
     () async {
       final h = _Harness();
       await h.start(googleAccount: 'google-account');
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       final saved = await h.storage.loadAll();
       final first = saved.singleWhere((c) => c.id == h.first.id);
       final second = saved.singleWhere((c) => c.id == h.second.id);
@@ -238,7 +244,7 @@ void main() {
     () async {
       final h = _Harness();
       await h.start();
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       final saved = await h.storage.loadAll();
       expect(saved.map((c) => c.id), [h.first.id, h.second.id]);
       expect(saved.every((c) => c.nsec == h.keys.nsec && c.signedOut), isTrue);
@@ -275,39 +281,40 @@ void main() {
     () async {
       final h = _Harness();
       await h.start();
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       final auth = h.container.read(authProvider.notifier);
       await expectLater(
         auth.signInWithPrivateKey(nostr.Keys.generate().nsec),
         throwsStateError,
       );
       await expectLater(
-        auth.authenticateWithCommunity(h.first),
+        auth.authenticateWithCommunity(h.second),
         throwsStateError,
       );
+      // The account shown on the signed-out page: the last one signed out.
       await auth.signInWithPrivateKey(h.keys.nsec);
       final saved = await h.storage.loadAll();
-      expect(saved.first.signedOut, isFalse);
-      expect(saved.last.signedOut, isTrue);
+      expect(saved.last.signedOut, isFalse);
+      expect(saved.first.signedOut, isTrue);
       expect(
-        saved.first.pushLeaseInstallationId,
-        isNot(h.first.pushLeaseInstallationId),
+        saved.last.pushLeaseInstallationId,
+        isNot(h.second.pushLeaseInstallationId),
       );
-      expect(saved.first.nsec, h.first.nsec);
+      expect(saved.last.nsec, h.second.nsec);
       expect(
         await h.container
             .read(communityListProvider.notifier)
             .markPushLeaseAccepted(
-              h.first.id,
+              h.second.id,
               subscriptions: [],
               generation: 99,
-              installationId: h.first.pushLeaseInstallationId,
+              installationId: h.second.pushLeaseInstallationId,
             ),
         isFalse,
       );
       expect(
         (await h.storage.loadAll())
-            .first
+            .last
             .pushSubscriptionState
             .acceptedGeneration,
         isNull,
@@ -341,30 +348,28 @@ void main() {
       await h.container
           .read(communityListProvider.notifier)
           .updateDesiredPushSubscriptions(h.first.id, []);
-      expect((await h.storage.loadAll()).every((c) => c.signedOut), isTrue);
-      expect(
-        h.container.read(authProvider).value?.status,
-        AuthStatus.unauthenticated,
-      );
+      final saved = await h.storage.loadAll();
+      expect(saved.first.signedOut, isTrue);
+      expect(saved.last.signedOut, isFalse);
+      expect(h.container.read(authProvider).value?.community?.id, h.second.id);
     },
   );
 
-  test('token resume cannot replace the identity retained at logout', () async {
+  test('another token account leaves the signed-out row alone', () async {
     final h = _Harness();
     await h.start(token: true);
     await h.container.read(authProvider.notifier).signOut();
-    await expectLater(
-      h.container
-          .read(authProvider.notifier)
-          .authenticateWithTokenSession(
-            relayUrl: h.first.relayUrl,
-            principalId: 'ab' * 32,
-            resumeSignedOut: true,
-          ),
-      throwsStateError,
-    );
-    expect((await h.storage.loadAll()).first.pubkey, h.first.pubkey);
-    expect((await h.storage.loadAll()).first.signedOut, isTrue);
+    await h.container
+        .read(authProvider.notifier)
+        .authenticateWithTokenSession(
+          relayUrl: h.first.relayUrl,
+          principalId: 'ab' * 32,
+        );
+    final rows = await h.storage.loadAll();
+    final kept = rows.singleWhere((row) => row.id == h.first.id);
+    expect(kept.pubkey, h.first.pubkey);
+    expect(kept.signedOut, isTrue);
+    expect(rows.where((row) => row.pubkey == 'ab' * 32), hasLength(1));
   });
 
   test(
@@ -381,7 +386,7 @@ void main() {
         throw PlatformException(code: 'storage_unavailable');
       });
       addTearDown(() => messenger.setMockMethodCallHandler(channel, null));
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       expect(
         h.container.read(authProvider).value?.status,
         AuthStatus.unauthenticated,
@@ -401,17 +406,17 @@ void main() {
           c.copyWith(pushNotificationsEnabled: true).withPushInboxToken(),
       ];
       await h.storage.saveAll(inboxed);
-      final before = inboxed.first.pushInboxToken;
+      final before = inboxed.last.pushInboxToken;
       expect(before, isNotNull);
 
-      await h.container.read(authProvider.notifier).signOut();
+      await h.signOutEveryAccount();
       final signedOut = await h.storage.loadAll();
       expect(signedOut.every((c) => c.pushInboxToken == null), isTrue);
 
       await h.container
           .read(authProvider.notifier)
           .signInWithPrivateKey(h.keys.nsec);
-      final resumed = (await h.storage.loadAll()).first;
+      final resumed = (await h.storage.loadAll()).last;
       expect(resumed.pushInboxToken, isNotNull);
       expect(resumed.pushInboxToken, isNot(before));
     },

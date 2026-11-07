@@ -27,7 +27,6 @@ class _RecordingAuthNotifier extends AuthNotifier {
     required String relayUrl,
     required String principalId,
     bool Function()? isCurrent,
-    bool resumeSignedOut = false,
     TokenSessionController? attempt,
   }) async {
     tokenSignIns.add((relayUrl: relayUrl, principalId: principalId));
@@ -191,40 +190,16 @@ void main() {
     expect(find.text('Sign in with Apple'), findsOneWidget);
   });
 
-  testWidgets('an Apple account signs back in with Apple only', (tester) async {
-    final h = _Harness(builtInOrigin: _origin);
-    await h.pump(
-      tester,
-      const TokenSignInPage(
-        lockedOrigin: _origin,
-        resumeSignedOut: true,
-        signInProvider: 'apple',
-      ),
-    );
-    expect(find.byKey(const Key('token-sign-in-google')), findsNothing);
-    expect(
-      find.descendant(
-        of: find.byKey(const Key('token-sign-in-apple')),
-        matching: find.text('Continue with Apple'),
-      ),
-      findsOneWidget,
-    );
-  });
-
-  testWidgets('a Google account signs back in with Google only', (
+  testWidgets('signing back in is not locked to the old provider', (
     tester,
   ) async {
     final h = _Harness(builtInOrigin: _origin);
     await h.pump(
       tester,
-      const TokenSignInPage(
-        lockedOrigin: _origin,
-        resumeSignedOut: true,
-        signInProvider: 'google',
-      ),
+      const TokenSignInPage(lockedOrigin: _origin, resumeSignedOut: true),
     );
-    expect(find.text('Continue with Google'), findsOneWidget);
-    expect(find.byKey(const Key('token-sign-in-apple')), findsNothing);
+    expect(find.byKey(const Key('token-sign-in-google')), findsOneWidget);
+    expect(find.byKey(const Key('token-sign-in-apple')), findsOneWidget);
   });
 
   testWidgets('a legacy relay offers no Google sign-in', (tester) async {

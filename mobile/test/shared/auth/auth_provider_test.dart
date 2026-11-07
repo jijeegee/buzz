@@ -106,37 +106,38 @@ void main() {
       expect(await storage.loadActiveId(), existing.id);
     },
   );
-  test(
-    'token sign-in cannot replace a Google-backed signing identity',
-    () async {
-      final storage = CommunityStorage(secure: FakeSecureStorage());
-      final keys = nostr.Keys.generate();
-      final existing = Community.create(
-        name: 'Original',
-        relayUrl: 'https://relay.test',
-        pubkey: keys.public,
-        nsec: keys.nsec,
-        googleBackupAccountId: 'account',
-      );
-      await storage.save(existing);
-      final container = ProviderContainer(
-        overrides: [communityStorageProvider.overrideWithValue(storage)],
-      );
-      addTearDown(container.dispose);
-      await container.read(authProvider.future);
-      await expectLater(
-        container
-            .read(authProvider.notifier)
-            .authenticateWithTokenSession(
-              relayUrl: existing.relayUrl,
-              principalId: 'unrelated-principal',
-            ),
-        throwsStateError,
-      );
-      expect((await storage.loadAll()).single.nsec, keys.nsec);
-      expect((await storage.loadAll()).single.tokenAuth, isFalse);
-    },
-  );
+  test('a token account next to a Google row gets its own row', () async {
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    final keys = nostr.Keys.generate();
+    final existing = Community.create(
+      name: 'Original',
+      relayUrl: 'https://relay.test',
+      pubkey: keys.public,
+      nsec: keys.nsec,
+      googleBackupAccountId: 'account',
+    );
+    await storage.save(existing);
+    final container = ProviderContainer(
+      overrides: [communityStorageProvider.overrideWithValue(storage)],
+    );
+    addTearDown(container.dispose);
+    await container.read(authProvider.future);
+    await container
+        .read(authProvider.notifier)
+        .authenticateWithTokenSession(
+          relayUrl: existing.relayUrl,
+          principalId: 'unrelated-principal',
+        );
+    final rows = await storage.loadAll();
+    expect(rows, hasLength(2));
+    final kept = rows.singleWhere((row) => row.id == existing.id);
+    expect(kept.nsec, keys.nsec);
+    expect(kept.tokenAuth, isFalse);
+    expect(
+      rows.where((row) => row.pubkey == 'unrelated-principal').single.tokenAuth,
+      isTrue,
+    );
+  });
   test('waits for transition teardown before replacing credentials', () async {
     final storage = CommunityStorage(secure: FakeSecureStorage());
     final active = Community.create(
@@ -535,7 +536,7 @@ void main() {
           .read(authProvider.notifier)
           .authenticateWithTokenSession(
             relayUrl: 'https://relay.example',
-            principalId: 'b' * 64,
+            principalId: keys.public,
           );
 
       // The tombstone is journaled with the legacy key before anything
@@ -548,7 +549,7 @@ void main() {
       final stored = (await storage.loadAll()).single;
       expect(stored.id, legacy.id);
       expect(stored.tokenAuth, isTrue);
-      expect(stored.pubkey, 'b' * 64);
+      expect(stored.pubkey, keys.public);
       expect(stored.nsec, isNull);
       expect(stored.pushNotificationsEnabled, isFalse);
       expect(stored.pushSubscriptionState.acceptedGeneration, isNull);
@@ -585,7 +586,7 @@ void main() {
             .read(authProvider.notifier)
             .authenticateWithTokenSession(
               relayUrl: 'https://relay.example',
-              principalId: 'b' * 64,
+              principalId: keys.public,
             ),
         throwsStateError,
       );

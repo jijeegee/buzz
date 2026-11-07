@@ -265,10 +265,11 @@ void main() {
       await tester.tap(find.byKey(const Key('community-recovery-sign-out')));
       await frames(tester);
 
-      // Ordinary sign-out: every community stays stored, signed out.
+      // Ordinary sign-out: this account only, and it stays stored.
       final remaining = await storage.loadAll();
       expect(remaining.length, 2);
-      expect(remaining.every((community) => community.signedOut), isTrue);
+      expect(remaining.firstWhere((c) => c.id == stalled.id).signedOut, isTrue);
+      expect(remaining.firstWhere((c) => c.id == other.id).signedOut, isFalse);
     });
 
     testWidgets('sign out works on this device with the server unreachable', (
@@ -305,7 +306,7 @@ void main() {
       // Signed out here without waiting on the server; nothing is removed.
       final remaining = await storage.loadAll();
       expect(remaining.length, 2);
-      expect(remaining.every((community) => community.signedOut), isTrue);
+      expect(remaining.firstWhere((c) => c.id == stalled.id).signedOut, isTrue);
       expect(tokens.data, isEmpty);
       expect(find.byKey(const Key('community-recovery-error')), findsNothing);
 

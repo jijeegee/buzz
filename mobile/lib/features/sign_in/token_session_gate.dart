@@ -23,12 +23,7 @@ import 'token_sign_in_page.dart';
 /// principal) keeps [child] usable under a non-blocking banner, so cached
 /// content and the app's own community switcher stay reachable
 /// (AGENTS.md rule 6).
-///
-/// A re-sign-in may be a different account. The community records the
-/// identity it shows, so [child] waits until that record matches the
-/// session's principal; a failed write is shown with a retry instead of
-/// letting the app run under the old identity (AGENTS.md rule 1).
-class TokenSessionGate extends HookConsumerWidget {
+class TokenSessionGate extends ConsumerWidget {
   const TokenSessionGate({
     super.key,
     required this.sessionKey,
@@ -43,33 +38,6 @@ class TokenSessionGate extends HookConsumerWidget {
     final session = ref.watch(tokenSessionProvider(sessionKey));
     final active = ref.watch(activeCommunityProvider).value;
     final principal = session.principalId;
-    final staleIdentity =
-        session.status == TokenSessionStatus.signedIn &&
-        principal != null &&
-        active != null &&
-        active.tokenAuth &&
-        active.pubkey != principal;
-    final attempt = useState(0);
-    final failure = useState<Object?>(null);
-    useEffect(() {
-      if (!staleIdentity) return null;
-      var current = true;
-      ref
-          .read(authProvider.notifier)
-          .authenticateWithTokenSession(
-            relayUrl: sessionKey.origin,
-            principalId: principal,
-          )
-          .then<void>(
-            (_) {},
-            onError: (Object error) {
-              debugPrint('Could not record the new token identity: $error');
-              if (current && context.mounted) failure.value = error;
-            },
-          );
-      return () => current = false;
-    }, [staleIdentity, principal, active?.pubkey, attempt.value]);
-
     final reconnecting =
         session.status == TokenSessionStatus.retrying ||
         session.status == TokenSessionStatus.stalled;
@@ -85,16 +53,6 @@ class TokenSessionGate extends HookConsumerWidget {
         active.pubkey == principal;
 
     return switch (session.status) {
-      TokenSessionStatus.signedIn when staleIdentity =>
-        failure.value == null
-            ? _GateSplash(semanticLabel: context.l10n.signInUpdatingAccount)
-            : _IdentityFailureView(
-                error: failure.value!,
-                onRetry: () {
-                  failure.value = null;
-                  attempt.value += 1;
-                },
-              ),
       TokenSessionStatus.signedIn => _SessionShell(child: child),
       // The stored account draws from device storage while its token
       // rotates; no banner (AGENTS.md rule 6).
@@ -189,47 +147,6 @@ class _GateSplash extends StatelessWidget {
       child: KuzzLoadingIndicator(size: 56, semanticLabel: semanticLabel),
     ),
   );
-}
-
-class _IdentityFailureView extends StatelessWidget {
-  const _IdentityFailureView({required this.error, required this.onRetry});
-
-  final Object error;
-  final VoidCallback onRetry;
-
-  @override
-  Widget build(BuildContext context) {
-    return Scaffold(
-      body: SafeArea(
-        child: ListView(
-          padding: const EdgeInsets.all(Grid.sm),
-          children: [
-            const SizedBox(height: Grid.lg),
-            Text(
-              context.l10n.signInSwitchAccountFailedTitle,
-              style: context.textTheme.headlineSmall,
-            ),
-            const SizedBox(height: Grid.xxs),
-            Semantics(
-              liveRegion: true,
-              child: Text(
-                context.l10n.signInSwitchAccountFailedBody('$error'),
-                style: context.textTheme.bodyMedium?.copyWith(
-                  color: context.colors.onSurfaceVariant,
-                ),
-              ),
-            ),
-            const SizedBox(height: Grid.sm),
-            FilledButton(
-              key: const Key('token-identity-retry'),
-              onPressed: onRetry,
-              child: Text(context.l10n.commonTryAgain),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
 }
 
 /// Keeps [child] at a stable position so showing or hiding the banner does
