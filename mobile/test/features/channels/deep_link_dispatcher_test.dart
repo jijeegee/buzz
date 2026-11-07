@@ -763,6 +763,9 @@ class _CountingCommunityStorage extends CommunityStorage {
     loadCalls++;
     return [];
   }
+
+  @override
+  Future<String?> loadActiveId() async => null;
 }
 
 class _ThrowingCommunityStorage extends CommunityStorage {

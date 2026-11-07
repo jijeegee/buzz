@@ -509,18 +509,26 @@ void reportPushLeaseCleanupError(Object error, StackTrace stackTrace) {
   debugPrintStack(stackTrace: stackTrace);
 }
 
-Future<void> registerKuzzPushCommunitySnapshot(List<Community> communities) =>
-    _registerKuzzPushCommunitySnapshot(communities, strict: false);
+Future<void> registerKuzzPushCommunitySnapshot(
+  List<Community> communities, {
+  String? activeCommunityId,
+}) => _registerKuzzPushCommunitySnapshot(
+  communities,
+  strict: false,
+  activeCommunityId: activeCommunityId,
+);
 
 /// Writes the age-gate snapshot through a native path that must acknowledge
 /// both the app-group store and signing-key update.
 Future<void> registerKuzzPushCommunitySnapshotStrict(
   List<Community> communities, {
   required bool settleFence,
+  String? activeCommunityId,
 }) => _registerKuzzPushCommunitySnapshot(
   communities,
   strict: true,
   settleFence: settleFence,
+  activeCommunityId: activeCommunityId,
 );
 
 /// Restores notification presentation without reading community storage.
@@ -556,6 +564,7 @@ Future<void> _registerKuzzPushCommunitySnapshot(
   List<Community> communities, {
   required bool strict,
   bool settleFence = false,
+  String? activeCommunityId,
 }) async {
   if (defaultTargetPlatform != TargetPlatform.iOS) return;
   try {
@@ -593,6 +602,7 @@ Future<void> _registerKuzzPushCommunitySnapshot(
         'section': 'communities',
         'communities': [for (final snapshot in snapshots) snapshot.toJson()],
         'signingKeys': signingKeys,
+        kuzzPushActiveCommunityKey: ?activeCommunityId,
         if (strict) 'settleFence': settleFence,
       },
     );

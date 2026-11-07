@@ -123,8 +123,12 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
   }
 
   public func resolve(completion: @escaping (KuzzPushResolution?) -> Void) {
-    let communities = loadCommunities().filter {
-      $0.pubkey?.isEmpty == false
+    // Only the active account shows; a snapshot without one is older than that.
+    let snapshot = loadSnapshot()
+    let activeID = snapshot?.activeCommunityId
+    let communities = (snapshot?.communities ?? []).filter {
+      (activeID == nil || $0.id == activeID)
+        && $0.pubkey?.isEmpty == false
         && loadPrivateKey($0.id) != nil
         && !$0.policies.isEmpty
     }
@@ -1030,11 +1034,12 @@ public final class KuzzPushNotificationResolver: KuzzPushNotificationResolving {
       ? String(npub.prefix(8)) + "…" + String(npub.suffix(4)) : npub
   }
 
+  private func loadSnapshot() -> PushLeaseSnapshot? {
+    loadCommunitiesData().flatMap { try? JSONDecoder().decode(PushLeaseSnapshot.self, from: $0) }
+  }
+
   private func loadCommunities() -> [PushLeaseCommunity] {
-    guard let data = loadCommunitiesData(),
-      let decoded = try? JSONDecoder().decode(PushLeaseSnapshot.self, from: data)
-    else { return [] }
-    return decoded.communities
+    loadSnapshot()?.communities ?? []
   }
 }
 

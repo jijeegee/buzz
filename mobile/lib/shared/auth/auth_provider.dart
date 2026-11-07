@@ -191,6 +191,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           rethrow;
         }
       }
+      final left = previousActiveId == community.id
+          ? null
+          : await revokeLeftAccountPushLease(ref, previousActiveId);
       await syncStoredCommunitySnapshot(ref);
 
       // Invalidate community providers so other consumers pick up the new data.
@@ -209,7 +212,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           ]),
         );
       }
-      if (revocationJournaled) _triggerPushLeaseRevocation();
+      if (revocationJournaled || left != null) _triggerPushLeaseRevocation();
     });
   }
 

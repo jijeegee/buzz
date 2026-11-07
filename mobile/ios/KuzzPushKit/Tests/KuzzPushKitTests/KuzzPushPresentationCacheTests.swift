@@ -715,6 +715,33 @@ struct KuzzPushPresentationCacheTests {
     #expect(snapshot.channels.isEmpty)
   }
 
+  @Test("Community replacement stores the active community")
+  func activeCommunity() throws {
+    let directory = try temporaryDirectory()
+    defer { try? FileManager.default.removeItem(at: directory) }
+    let store = KuzzPushPresentationCacheStore(containerURL: directory)
+    let community = PushLeaseCommunity(
+      id: "active",
+      name: "Active",
+      relayUrl: "https://relay.example",
+      pubkey: nil,
+      policies: []
+    )
+
+    try store.replaceCommunities([community], activeCommunityId: "active")
+    let stored = try loadSnapshot(directory)
+    #expect(stored.activeCommunityId == "active")
+    let data = try Data(
+      contentsOf: directory.appendingPathComponent(KuzzPushPresentationCacheStore.fileName)
+    )
+    let lease = try JSONDecoder().decode(PushLeaseSnapshot.self, from: data)
+    #expect(lease.activeCommunityId == "active")
+
+    try store.replaceCommunities([community])
+    let older = try loadSnapshot(directory)
+    #expect(older.activeCommunityId == nil)
+  }
+
   @Test("Cache deterministically evicts entries beyond its global bounds")
   func boundedEviction() {
     var snapshot = KuzzPushPresentationCacheSnapshot(

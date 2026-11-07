@@ -102,17 +102,34 @@ final communityStorageProvider = Provider<CommunityStorage>((ref) {
 typedef CommunitySnapshotWriter =
     Future<void> Function(List<Community> communities);
 
-/// Exports persisted communities to the notification service extension.
+/// Exports persisted communities to the notification service extension,
+/// with the id of the active one, the only account it may show.
 final communitySnapshotWriterProvider = Provider<CommunitySnapshotWriter>((
   ref,
 ) {
-  return registerKuzzPushCommunitySnapshot;
+  return (communities) async => registerKuzzPushCommunitySnapshot(
+    communities,
+    activeCommunityId: await _snapshotActiveId(
+      ref.read(communityStorageProvider),
+    ),
+  );
 });
+
+/// The active id for the extension's snapshot. Unreadable, it is left out and
+/// the extension keeps every account eligible, as before accounts.
+Future<String?> _snapshotActiveId(CommunityStorage storage) async {
+  try {
+    return await storage.loadActiveId();
+  } catch (_) {
+    return null;
+  }
+}
 
 final _communitySnapshotSyncProvider = Provider<_CommunitySnapshotSync>((ref) {
   return _CommunitySnapshotSync(
     ref.read(communitySnapshotWriterProvider),
     ref.read(communityStorageProvider).loadAll,
+    () => _snapshotActiveId(ref.read(communityStorageProvider)),
   );
 });
 
@@ -131,6 +148,14 @@ typedef CommunityPushLeaseRevocationEnqueuer =
 final communityPushLeaseRevocationEnqueuerProvider =
     Provider<CommunityPushLeaseRevocationEnqueuer>((ref) {
       return ref.read(kuzzPushLeaseRevocationOutboxProvider).enqueueCommunity;
+    });
+
+typedef CommunityPushLeaseRevocationWithdrawer =
+    Future<int?> Function(Community community);
+
+final communityPushLeaseRevocationWithdrawerProvider =
+    Provider<CommunityPushLeaseRevocationWithdrawer>((ref) {
+      return ref.read(kuzzPushLeaseRevocationOutboxProvider).withdrawCommunity;
     });
 
 typedef CommunityPushLeaseRevocationTrigger = Future<void> Function();
@@ -210,10 +235,11 @@ Future<void> _deactivateCommunityPushLease(
 }
 
 class _CommunitySnapshotSync {
-  _CommunitySnapshotSync(this._writer, this._read);
+  _CommunitySnapshotSync(this._writer, this._read, this._readActiveId);
 
   final CommunitySnapshotWriter _writer;
   final Future<List<Community>> Function() _read;
+  final Future<String?> Function() _readActiveId;
   String? _lastSuccessfulSnapshot;
   Future<void> _mutationTail = Future.value();
 
@@ -236,6 +262,7 @@ class _CommunitySnapshotSync {
     await registerKuzzPushCommunitySnapshotStrict(
       communities,
       settleFence: false,
+      activeCommunityId: await _readActiveId(),
     );
     _lastSuccessfulSnapshot = null;
   });
@@ -246,7 +273,7 @@ class _CommunitySnapshotSync {
     final effectiveCommunities = (await _read())
         .where((community) => !community.signedOut)
         .toList();
-    final contentFingerprint = effectiveCommunities
+    final communitiesFingerprint = effectiveCommunities
         .map(
           (community) => [
             community.id,
@@ -262,6 +289,8 @@ class _CommunitySnapshotSync {
           ].join('\u0000'),
         )
         .join('\u0001');
+    final contentFingerprint =
+        '${await _readActiveId()}\u0002$communitiesFingerprint';
     if (contentFingerprint == _lastSuccessfulSnapshot) return;
     await _writer(effectiveCommunities);
     _lastSuccessfulSnapshot = contentFingerprint;
@@ -286,6 +315,41 @@ Future<void> syncStoredCommunitySnapshot(Ref ref) async {
 /// Errors propagate; persisted signed-out records make this retryable at startup.
 Future<void> settleSignedOutCommunitySnapshot(Ref ref) =>
     ref.read(_communitySnapshotSyncProvider).settleSignOut();
+
+/// Ends push for account [id], which just stopped being active: notifications
+/// show for the active account only. Its push preference stays, and
+/// `KuzzPushBootstrap` publishes again when it comes back, at the same
+/// installation: the relay reactivates that address for a newer generation,
+/// and a new installation would be refused while the old lease still holds
+/// the endpoint. The row reserves the tombstone's generations, so that later
+/// publication outranks every attempt, and it withdraws what is still queued.
+///
+/// Local only: the caller fires the outbox afterwards. A failure leaves the
+/// lease to expire and never stops the switch, since only the active account
+/// shows anything. Returns the updated row when a revocation was queued.
+Future<Community?> revokeLeftAccountPushLease(Ref ref, String? id) async {
+  if (id == null) return null;
+  final storage = ref.read(communityStorageProvider);
+  try {
+    final left = (await storage.loadAll())
+        .where((community) => community.id == id)
+        .firstOrNull;
+    if (left == null || left.signedOut || !left.pushNotificationsEnabled) {
+      return null;
+    }
+    if (!await ref.read(communityPushLeaseRevocationEnqueuerProvider)(left)) {
+      return null;
+    }
+    final updated = left.copyWith(
+      pushSubscriptionState: left.pushSubscriptionState.withRevocationBlock(),
+    );
+    await storage.save(updated);
+    return updated;
+  } catch (error, stackTrace) {
+    reportPushLeaseCleanupError(error, stackTrace);
+    return null;
+  }
+}
 
 class CommunityListNotifier extends AsyncNotifier<List<Community>> {
   final Map<String, Future<void>> _tombstoneAttempts = {};
@@ -472,27 +536,31 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
               ) ??
               remaining.first;
           await storage.saveActiveId(next.id);
+          await syncCommunitySnapshot(ref, remaining);
           // Reassign list state so activeCommunityProvider picks up the new ID.
           state = AsyncData([...remaining]);
           if (invalidateAuthentication) ref.invalidate(authProvider);
         } else {
           await storage.clearActiveId();
+          await syncCommunitySnapshot(ref, remaining);
           // Invalidate auth so it re-evaluates against the now-empty storage
           // and transitions to unauthenticated.
           if (invalidateAuthentication) ref.invalidate(authProvider);
         }
       }
-      if (revocationJournaled) {
-        unawaited(
-          ref.read(communityPushLeaseRevocationTriggerProvider)().catchError((
-            Object error,
-            StackTrace stackTrace,
-          ) {
-            reportPushLeaseCleanupError(error, stackTrace);
-          }),
-        );
-      }
+      if (revocationJournaled) _triggerPushLeaseRevocation();
     });
+  }
+
+  void _triggerPushLeaseRevocation() {
+    unawaited(
+      ref.read(communityPushLeaseRevocationTriggerProvider)().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        reportPushLeaseCleanupError(error, stackTrace);
+      }),
+    );
   }
 
   Future<void> switchCommunity(String id) {
@@ -506,19 +574,27 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
           .firstOrNull;
       if (target != null) _requireAllowedServer(ref, target.relayUrl);
       await ref.read(communityTransitionProvider).run();
+      final left = await revokeLeftAccountPushLease(ref, activeId);
       final used = target?.copyWith(lastUsedAt: DateTime.now());
       if (used != null) await storage.save(used);
       await storage.saveActiveId(id);
+      await syncStoredCommunitySnapshot(ref);
       // Reassign list state to trigger activeCommunityProvider (which watches
       // communityListProvider.future) to rebuild and pick up the new active ID.
       // We can't use ref.invalidate(activeCommunityProvider) here because that
       // creates a circular dependency — activeCommunityProvider watches us.
       state = AsyncData([
         for (final community in state.value ?? const <Community>[])
-          community.id == used?.id ? used! : community,
+          if (community.id == used?.id)
+            used!
+          else if (community.id == left?.id)
+            left!
+          else
+            community,
       ]);
       // Invalidate auth so AuthState.community reflects the new active community.
       ref.invalidate(authProvider);
+      if (left != null) _triggerPushLeaseRevocation();
     });
   }
 
@@ -560,16 +636,26 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
       if (index < 0) throw StateError('Push community is unavailable.');
 
       final community = current[index];
+      final activeId = await storage.loadActiveId();
+      // A publication that outlives a switch would outrank its revocation.
+      if (activeId != null && activeId != id) {
+        throw StateError('Push account is no longer active.');
+      }
       if (community.signedOut ||
           (installationId != _unspecifiedInstallation &&
               community.pushLeaseInstallationId != installationId) ||
           !community.pushNotificationsEnabled) {
         throw StateError('Push notifications are disabled.');
       }
-      final cursor =
-          community.pushSubscriptionState.generationCursor ??
-          community.pushSubscriptionState.acceptedGeneration ??
-          0;
+      final withdrawn = await ref.read(
+        communityPushLeaseRevocationWithdrawerProvider,
+      )(community);
+      final cursor = max(
+        community.pushSubscriptionState.generationCursor ??
+            community.pushSubscriptionState.acceptedGeneration ??
+            0,
+        withdrawn ?? 0,
+      );
       final generation = cursor + 1;
       final updated = community.copyWith(
         pushSubscriptionState: community.pushSubscriptionState

@@ -64,6 +64,14 @@ final class PushLeaseTests: XCTestCase {
       snapshot.communities[0].policies.count,
       1
     )
+    XCTAssertNil(snapshot.activeCommunityId)
+  }
+
+  func testDecodesActiveCommunity() throws {
+    let json = #"{"activeCommunityId":"origin","communities":[]}"#
+    let snapshot = try JSONDecoder().decode(PushLeaseSnapshot.self, from: Data(json.utf8))
+
+    XCTAssertEqual(snapshot.activeCommunityId, "origin")
   }
 
   private func makeEvent(

@@ -78,6 +78,57 @@ final class KuzzPushNotificationResolverTests: XCTestCase {
     XCTAssertEqual(URLProtocolStub.requests.count, 1)
   }
 
+  func testResolveFetchesOnlyTheActiveCommunity() throws {
+    URLProtocolStub.handler = { request in
+      Self.response(request, status: 503, data: Data())
+    }
+    let data = try JSONEncoder().encode(
+      PushLeaseSnapshot(
+        communities: [
+          community(),
+          community(id: "other-id", relayUrl: "https://other.example"),
+        ],
+        activeCommunityId: "community-id"
+      ))
+    let result = resolve(
+      makeResolver(
+        communitiesData: data,
+        privateKeys: ["community-id": Self.privateKey, "other-id": Self.privateKey]
+      ))
+
+    XCTAssertNil(result)
+    XCTAssertEqual(URLProtocolStub.requests.map { $0.url?.host }, ["relay.example"])
+  }
+
+  func testResolveShowsNothingWhenOnlyAnInactiveCommunityRemains() throws {
+    let data = try JSONEncoder().encode(
+      PushLeaseSnapshot(communities: [community()], activeCommunityId: "other-id"))
+    let result = resolve(makeResolver(communitiesData: data))
+
+    XCTAssertNil(result)
+    XCTAssertTrue(URLProtocolStub.requests.isEmpty)
+  }
+
+  func testResolveWithoutActiveCommunityFetchesEveryCommunity() throws {
+    URLProtocolStub.handler = { request in
+      Self.response(request, status: 503, data: Data())
+    }
+    let data = try snapshotData([
+      community(),
+      community(id: "other-id", relayUrl: "https://other.example"),
+    ])
+    _ = resolve(
+      makeResolver(
+        communitiesData: data,
+        privateKeys: ["community-id": Self.privateKey, "other-id": Self.privateKey]
+      ))
+
+    XCTAssertEqual(
+      Set(URLProtocolStub.requests.compactMap { $0.url?.host }),
+      ["relay.example", "other.example"]
+    )
+  }
+
   func testDecodeResolutionFiltersOwnPubkeyEvent() {
     let result = KuzzPushNotificationResolver.decodeResolution(
       events: [event(pubkey: Self.ownPubkey, content: "This should be filtered")],

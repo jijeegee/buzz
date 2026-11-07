@@ -29,7 +29,8 @@ import 'push_thread_target.dart';
 ///
 /// The push gateway sends a data-only `{"k":"wake"}` FCM message. With the
 /// app off screen, KuzzPushMessagingService runs [runKuzzAndroidPushWake] in
-/// a short-lived Flutter engine. Per push-enabled community it signs a
+/// a short-lived Flutter engine. For the active community (a wake does not say
+/// who it is for, and a lease being revoked can still send one) it signs a
 /// relay `/query` (NIP-98 with the device tag) with the inbox rules of the
 /// iPhone notification extension, verifies and matches every event, keeps
 /// them in the push inbox for the app's drain, then posts one notification
@@ -211,7 +212,14 @@ class AndroidPushWake {
 
   Future<AndroidPushNotice?> run() async {
     final start = now();
-    final communities = (await loadCommunities()).where(eligible).toList();
+    final activeId = await loadActiveCommunityId();
+    // No active id on record: every eligible community, as before accounts.
+    final communities = [
+      for (final community in await loadCommunities())
+        if (eligible(community) &&
+            (activeId == null || community.id == activeId))
+          community,
+    ];
     if (communities.isEmpty) {
       debugPrint('[AndroidPush] wake: no push-enabled community');
       return null;
@@ -255,7 +263,6 @@ class AndroidPushWake {
     );
     final profile = await _profile(newest.event, newest.community, start);
     final rows = await roomRows;
-    final activeId = await loadActiveCommunityId();
     // N10: a sender profile is kept only for the community on screen.
     await _keep(
       fetches,
