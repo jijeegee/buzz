@@ -115,6 +115,7 @@ async fn thread_window_signed_large_aux_fails_with_recoverable_budget_error() {
         .as_str()
         .unwrap()
         .contains("payload byte budget"));
+    assert_eq!(body["code"], "window_budget", "{body}");
     let mut without_aux = filter;
     without_aux["include_aux"] = json!(false);
     let recovered = f.query(&without_aux).await;
