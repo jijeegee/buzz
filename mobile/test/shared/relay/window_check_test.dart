@@ -44,15 +44,14 @@ class _Fake {
     required this.stored,
     required this.answers,
     this.page = const [],
-    WindowCheckOverride override = WindowCheckOverride.follow,
+    this.override = WindowCheckOverride.follow,
     WindowFacts? afterReplace,
   }) : _afterReplace = afterReplace {
-    gate = WindowCheckGate(now: () => now, override: () => this.override);
-    this.override = override;
+    gate = WindowCheckGate(now: () => now, override: () => override);
   }
 
   late final WindowCheckGate gate;
-  late WindowCheckOverride override;
+  WindowCheckOverride override;
   DateTime now = DateTime(2026, 11, 8);
 
   /// `null`: not fully stored.
