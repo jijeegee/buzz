@@ -139,6 +139,44 @@ void main() {
     expect(rotated, ['bzr_a']);
   });
 
+  test('a rebuild during the resume pass leaves no account behind', () async {
+    final active = account(_first);
+    await seed(active);
+    await seed(account(_second));
+    await seed(account(_third));
+    await storage.saveActiveId(active.id);
+    answerRotations(3);
+    open();
+    await _settle();
+    expect(server.refreshCalls, 3);
+
+    final lifecycle =
+        container.read(appLifecycleProvider.notifier) as _Lifecycle;
+    lifecycle.go(AppLifecycleState.paused);
+    clock.now = clock.now.add(const Duration(minutes: 56));
+    server.holdRefreshes = true;
+    lifecycle.go(AppLifecycleState.resumed);
+    await _settle();
+    expect(server.heldRefreshes, hasLength(1), reason: 'one at a time');
+
+    // Push bookkeeping and renames rebuild the keeper mid-pass.
+    container.invalidate(activeCommunityProvider);
+    await _settle();
+    for (var i = 0; i < 2; i++) {
+      server.heldRefreshes.removeFirst().complete(
+        FakeAuthServer.rotated('bzs_late$i', 'bzr_late$i'),
+      );
+      await _settle();
+    }
+    expect(server.heldRefreshes, hasLength(1));
+    server.heldRefreshes.removeFirst().complete(
+      FakeAuthServer.rotated('bzs_late2', 'bzr_late2'),
+    );
+    await _settle();
+
+    expect(server.refreshCalls, 6);
+  });
+
   test('coming back refreshes each account near expiry', () async {
     final active = account(_first);
     final other = account(_second);

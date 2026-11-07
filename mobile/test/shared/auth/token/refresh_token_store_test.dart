@@ -19,6 +19,20 @@ String _record(String refresh, String principal) =>
 
 class _LockedStorage extends FakeSecureStorage {
   Object? readError;
+  int readAllCalls = 0;
+
+  @override
+  Future<Map<String, String>> readAll({
+    AppleOptions? iOptions,
+    AndroidOptions? aOptions,
+    LinuxOptions? lOptions,
+    WebOptions? webOptions,
+    AppleOptions? mOptions,
+    WindowsOptions? wOptions,
+  }) {
+    readAllCalls += 1;
+    return super.readAll();
+  }
 
   @override
   Future<String?> read({
@@ -193,6 +207,10 @@ void main() {
       final prefs = await SharedPreferences.getInstance();
       final addressKey = 'kuzz.auth.refresh.v1:$old';
       secure[addressKey] = _record('bzr_spent', _principal);
+      secure['kuzz.auth.refresh.v1:wss://jihobuzz.duckdns.org'] = _record(
+        'bzr_spent',
+        _principal,
+      );
       await migrateServiceScopedStorage(
         prefs: prefs,
         secure: secure,
@@ -202,6 +220,7 @@ void main() {
       final moved = SessionKey(current, _principal);
       final scoped = SecureRefreshTokenStore.legacyKeyFor(current);
       expect(secure[scoped], isNotNull);
+      final readsBeforeMove = secure.readAllCalls;
 
       expect((await store.read(moved))?.refreshToken, 'bzr_spent');
       await store.write(
@@ -213,7 +232,13 @@ void main() {
       );
 
       expect(secure[addressKey], isNull);
+      expect(secure['kuzz.auth.refresh.v1:wss://jihobuzz.duckdns.org'], isNull);
       expect(secure[scoped], isNull);
+      expect(
+        secure.readAllCalls,
+        readsBeforeMove,
+        reason: 'on Android one bad entry in readAll wipes the whole store',
+      );
 
       SharedPreferences.setMockInitialValues({});
       await migrateServiceScopedStorage(

@@ -124,8 +124,8 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           .where((saved) => saved.id == community.id)
           .firstOrNull;
       if (existing?.signedOut == true) {
-        final expected = existing!.pubkey ?? _pubkey(existing.nsec);
-        final supplied = community.pubkey ?? _pubkey(community.nsec);
+        final expected = _pubkeyOf(existing!);
+        final supplied = _pubkeyOf(community);
         if (!resumeSignedOut || expected == null || supplied != expected) {
           throw StateError('Sign in again with the account you used before.');
         }
@@ -138,9 +138,18 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         // system prompt follows on the first Home screen.
         community = community.withPushOnByDefault();
       }
-      await ref.read(communityTransitionProvider).run();
-      guard();
       final previousActiveId = await storage.loadActiveId();
+      // The same account signing in again leaves the screen it is on, so a
+      // huddle or read-aloud of that account keeps going.
+      final sameAccount =
+          existing != null &&
+          !existing.signedOut &&
+          previousActiveId == community.id &&
+          SessionKey.ofCommunity(existing) ==
+              SessionKey.ofCommunity(community) &&
+          _pubkeyOf(existing) == _pubkeyOf(community);
+      if (!sameAccount) await ref.read(communityTransitionProvider).run();
+      guard();
       await storage.save(community);
       await storage.saveActiveId(community.id);
       if (attempt != null) {
@@ -457,11 +466,14 @@ Community _signedOutCopy(Community community) {
   }
   return community.copyWith(
     signedOut: true,
-    pubkey: community.pubkey ?? _pubkey(community.nsec),
+    pubkey: _pubkeyOf(community),
     nsec: null,
     pushInboxToken: null,
   );
 }
+
+String? _pubkeyOf(Community community) =>
+    community.pubkey ?? _pubkey(community.nsec);
 
 String? _pubkey(String? nsec) {
   if (!_hasValidNsec(nsec)) return null;

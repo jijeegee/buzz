@@ -297,6 +297,9 @@ class TokenSessionController {
   Timer? _timer;
   bool _disposed = false;
 
+  /// [adopt] is storing a new session; neither session may be touched.
+  bool _adopting = false;
+
   Future<void>? _restoring;
   Future<bool>? _signingIn;
   Future<String?>? _inflight;
@@ -331,7 +334,11 @@ class TokenSessionController {
   }
 
   /// Restore the stored session (call once at start). Single-flight.
-  Future<void> restore() {
+  ///
+  /// Does nothing while [adopt] stores a new session: a read then would
+  /// rotate the new grant under the adoption.
+  Future<void> restore() async {
+    if (_adopting) return;
     return _restoring ??= _runRestore().whenComplete(() => _restoring = null);
   }
 
@@ -384,11 +391,16 @@ class TokenSessionController {
 
   /// Back from the background, where timers do not run: rotate when the
   /// access token is near expiry, or try a stalled session once more. A
-  /// backoff that is still armed stays in charge, and nothing is shown while
-  /// this runs.
+  /// session that stalled reading its record holds no refresh token yet, so
+  /// it reads again. A backoff that is still armed stays in charge, and
+  /// nothing is shown while this runs.
   Future<void> refreshIfExpiring() async {
-    if (_disposed || _restoring != null || _refreshToken == null) return;
+    if (_disposed || _adopting || _restoring != null) return;
     final status = _state.status;
+    if (_refreshToken == null) {
+      if (status == TokenSessionStatus.stalled) await restore();
+      return;
+    }
     if (status == TokenSessionStatus.stalled) {
       _failures = 0;
     } else if (!_canRefreshOnDemand) {
@@ -520,15 +532,20 @@ class TokenSessionController {
   /// The old session is then fenced, the new one persisted and published, and
   /// the old one ended best-effort with `/auth/sessions/end`, never
   /// `/auth/logout`, which revokes the whole device including the new grant.
-  /// A failed persist revokes the new grant and throws.
+  /// While the new session is stored the controller holds neither session,
+  /// so nothing can rotate the old token over the new grant. A failed persist
+  /// revokes the new grant and throws.
   Future<void> adopt(TokenSessionHandoff handoff) async {
     if (isAttempt) throw StateError('An attempt cannot adopt');
     await _settled();
     final previousAccess = _access?.token;
     _generation += 1;
     final generation = _generation;
+    _access = null;
+    _refreshToken = null;
     _cancelTimer();
     _failures = 0;
+    _adopting = true;
     try {
       await _persist(
         generation,
@@ -546,6 +563,8 @@ class TokenSessionController {
       await _revokeUnsaved(handoff.accessToken);
       if (_isCurrent(generation)) await _forget(errorMessage: _unsavedMessage);
       throw TokenSessionException(_unsavedMessage);
+    } finally {
+      _adopting = false;
     }
     if (!_isCurrent(generation)) {
       await _revokeUnsaved(handoff.accessToken);

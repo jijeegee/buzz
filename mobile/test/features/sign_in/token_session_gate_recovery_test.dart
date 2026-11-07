@@ -34,6 +34,8 @@ void main() {
   late ProviderContainer container;
   late Community stalled;
   late Community other;
+  late FakeClock clock;
+  late FakeWebAuthLauncher launcher;
 
   Future<void> pump(
     WidgetTester tester, {
@@ -59,7 +61,8 @@ void main() {
     await storage.save(other);
     await storage.saveActiveId(stalled.id);
     arrange?.call();
-    final clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
+    clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
+    launcher = FakeWebAuthLauncher(FakeWebAuthLauncher.success);
     container = ProviderContainer(
       overrides: [
         if (builtIn) defaultCommunityOriginProvider.overrideWithValue(_origin),
@@ -73,9 +76,10 @@ void main() {
         ),
         authHttpClientProvider.overrideWithValue(server.client),
         refreshTokenStoreProvider.overrideWithValue(tokens),
-        webAuthLauncherProvider.overrideWithValue(
-          FakeWebAuthLauncher(FakeWebAuthLauncher.success),
+        installIdStoreProvider.overrideWithValue(
+          InstallIdStore(storage: FakeSecureStorage()),
         ),
+        webAuthLauncherProvider.overrideWithValue(launcher),
         sessionClockProvider.overrideWithValue(clock.call),
         sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
         authDeviceNameProvider.overrideWithValue('Test phone'),
@@ -93,6 +97,36 @@ void main() {
     );
     await frames(tester);
   }
+
+  testWidgets('sign in again runs once and shows it is running', (
+    tester,
+  ) async {
+    await pump(tester);
+    tokens.readError = StateError('keychain locked');
+    container.invalidate(tokenSessionControllerProvider(_session));
+    await frames(tester);
+    final browser = launcher.gate = Completer<void>();
+    launcher.error = const WebAuthCancelledException();
+
+    final signIn = find.byKey(const Key('token-session-sign-in-again'));
+    await tester.tap(signIn);
+    await frames(tester);
+
+    expect(signIn, findsNothing);
+    expect(
+      find.byKey(const Key('token-session-sign-in-again-busy')),
+      findsOneWidget,
+    );
+    final retry = tester.widget<FilledButton>(
+      find.byKey(const Key('token-session-retry')),
+    );
+    expect(retry.onPressed, isNull);
+    expect(launcher.opened, hasLength(1));
+
+    browser.complete();
+    await frames(tester);
+    expect(signIn, findsOneWidget);
+  });
 
   testWidgets('a saved sign-in of the shown account draws the app before '
       'the rotation, with no banner; a refused rotation signs out', (

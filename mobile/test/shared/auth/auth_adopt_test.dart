@@ -125,6 +125,48 @@ void main() {
     expect((await storage.loadAll()), hasLength(1));
   });
 
+  group('the community transition', () {
+    late int transitions;
+    late Community community;
+
+    setUp(() async {
+      transitions = 0;
+      final unregister = container
+          .read(communityTransitionProvider)
+          .register(() async => transitions += 1);
+      addTearDown(unregister);
+      community = Community.create(
+        name: 'Relay',
+        relayUrl: _origin,
+        pubkey: _principal,
+        tokenAuth: true,
+      );
+      await storage.save(community);
+      await storage.saveActiveId(community.id);
+    });
+
+    Future<void> signIn(String principal) async {
+      final attempt = await signedInAttempt();
+      await container
+          .read(authProvider.notifier)
+          .authenticateWithTokenSession(
+            relayUrl: _origin,
+            principalId: principal,
+            attempt: attempt,
+          );
+    }
+
+    test('stays out of the same account signing in again', () async {
+      await signIn(_principal);
+      expect(transitions, 0);
+    });
+
+    test('runs for another account', () async {
+      await signIn('q' * 64);
+      expect(transitions, 1);
+    });
+  });
+
   test('a session that cannot be stored leaves no row and no token', () async {
     final attempt = await signedInAttempt();
     tokens.writeError = StateError('keychain unavailable');

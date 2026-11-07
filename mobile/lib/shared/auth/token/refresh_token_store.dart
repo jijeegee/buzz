@@ -4,7 +4,6 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 import '../../relay/service_address.dart';
-import '../../relay/service_scope_migration.dart';
 import 'session_key.dart';
 
 /// The durable half of a token session: the refresh token and the principal
@@ -174,31 +173,25 @@ class SecureRefreshTokenStore implements RefreshTokenStore {
   /// the session. Deleting the copies also means that migration can never
   /// bring a spent token back. The scoped record goes last: while it exists,
   /// a later read knows this cleanup is unfinished.
+  ///
+  /// The names are computed, never listed: on Android `readAll` decrypts
+  /// every entry, and one that cannot be decrypted makes the plugin wipe the
+  /// whole store (`resetOnError` defaults to true), every account included.
   Future<void> _deleteLegacyCopies(SessionKey key) async {
     final legacyKey = _legacyKeyFor(key.origin);
     final service = appServiceAddresses;
-    // The migration's two passes: older records were written without
-    // [iOptions], and iOS filters keychain queries by accessibility.
-    const passes = <IOSOptions?>[iOptions, null];
-    for (final options in passes) {
-      final all = options == null
-          ? await _storage.readAll()
-          : await _storage.readAll(iOptions: options);
-      for (final stored in all.keys) {
-        if (stored == legacyKey || !stored.startsWith('$keyPrefix.v1:')) {
-          continue;
-        }
-        final copiedTo = [
-          for (final origin in service.origins)
-            serviceScopedKey(stored, origin, service.scope),
-        ];
-        if (!copiedTo.contains(legacyKey)) continue;
-        if (options == null) {
-          await _storage.delete(key: stored);
-        } else {
-          await _storage.delete(key: stored, iOptions: options);
-        }
-      }
+    final copies = <String>{
+      if (service.isServiceAddress(key.origin))
+        for (final origin in service.origins) ...[
+          '$keyPrefix.v1:$origin',
+          '$keyPrefix.v1:${origin.replaceFirst('http', 'ws')}',
+        ],
+    }..remove(legacyKey);
+    for (final copy in copies) {
+      // The migration's two passes: older records were written without
+      // [iOptions], and iOS filters keychain queries by accessibility.
+      await _storage.delete(key: copy, iOptions: iOptions);
+      await _storage.delete(key: copy);
     }
     await _storage.delete(key: legacyKey, iOptions: iOptions);
   }

@@ -250,17 +250,22 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
           ),
   ];
   final ordered = [
-    ...signedIn.where((account) => account.id == activeId),
-    ...signedIn.where((account) => account.id != activeId),
+    for (final account in signedIn)
+      if (account.id == activeId) account.provider,
+    for (final account in signedIn)
+      if (account.id != activeId) account.provider,
   ];
 
+  // The controllers are read before the first wait: this provider rebuilds
+  // whenever the list or active row changes, and that must not end a pass
+  // halfway through the accounts.
   Future<void> forEachAccount(
     Future<void> Function(TokenSessionController controller) action,
   ) async {
-    for (final account in ordered) {
-      if (!ref.mounted) return;
+    final controllers = [for (final account in ordered) ref.read(account)];
+    for (final controller in controllers) {
       try {
-        await action(ref.read(account.provider));
+        await action(controller);
       } catch (error) {
         debugPrint('Could not refresh an account session: $error');
       }

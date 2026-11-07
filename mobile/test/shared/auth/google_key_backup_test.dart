@@ -297,6 +297,27 @@ void main() {
     },
   );
 
+  test('another attempt is not joined to the one running', () async {
+    final server = BackupServer()..secret = 'a' * 64;
+    final service = GoogleKeyBackupService(
+      origin: origin,
+      client: server.client,
+      communities: CommunityStorage(secure: FakeSecureStorage()),
+      pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+    );
+    final first = await signedInSession();
+    final second = await signedInSession();
+
+    final results = await Future.wait([
+      service.resolve(session: first),
+      service.resolve(session: first),
+      service.resolve(session: second),
+    ]);
+
+    expect(results[0], same(results[1]));
+    expect(results[2], isNot(same(results[0])));
+  });
+
   for (final cancel in [true, false]) {
     test(
       'stale backup absence is fenced: ${cancel ? "page cancellation" : "same-account new login"}',

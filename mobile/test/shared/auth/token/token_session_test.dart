@@ -691,6 +691,34 @@ void main() {
       );
     });
 
+    test(
+      'nothing rotates the old token while adopt stores the new one',
+      () async {
+        final attempt = await signedInAttempt();
+        final handoff = await attempt.controller.handoff();
+        final h = Harness();
+        await h.signedIn();
+        final gate = h.store.writeGate = Completer<void>();
+
+        final adopting = h.controller.adopt(handoff);
+        await settle();
+        expect(h.controller.currentAccessToken, isNull);
+        await h.controller.refreshAfterTokenExpired('bzs_2');
+        await h.controller.ensureFreshAccessToken();
+        await h.controller.refreshIfExpiring();
+        await h.controller.retryNow();
+        await settle();
+        gate.complete();
+        await adopting;
+        await settle();
+
+        expect(h.server.refreshCalls, 1, reason: 'only the first restore');
+        expect(h.store.data[key]?.refreshToken, 'bzr_login');
+        expect(h.controller.currentAccessToken, 'bzs_login');
+        expect(h.status, TokenSessionStatus.signedIn);
+      },
+    );
+
     test('a failed adopt revokes the new session and throws', () async {
       final attempt = await signedInAttempt();
       final handoff = await attempt.controller.handoff();
@@ -747,6 +775,22 @@ void main() {
       );
       await h.controller.refreshIfExpiring();
       expect(h.controller.currentAccessToken, 'bzs_3');
+    });
+
+    test('reads again when the record could not be read', () async {
+      final h = Harness(stored: stored1);
+      h.store.readError = StateError('keychain locked');
+      await h.controller.restore();
+      expect(h.status, TokenSessionStatus.stalled);
+
+      h.store.readError = null;
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+      );
+      await h.controller.refreshIfExpiring();
+
+      expect(h.status, TokenSessionStatus.signedIn);
+      expect(h.controller.currentAccessToken, 'bzs_2');
     });
 
     test('gives a stalled session one more try', () async {

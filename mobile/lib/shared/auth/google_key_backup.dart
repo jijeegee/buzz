@@ -90,7 +90,7 @@ class GoogleKeyBackupService {
   final CommunityStorage _communities;
   final PendingBackupKeyStore _pending;
   final nostr.Keys Function() _generateKeys;
-  Future<Community>? _inFlight;
+  final Map<TokenSessionController, Future<Community>> _inFlight = {};
   static final _hexKey = RegExp(r'^[0-9a-f]{64}$');
 
   /// Check before OIDC can replace the origin-scoped session record.
@@ -110,17 +110,17 @@ class GoogleKeyBackupService {
   /// Resolve and return a signed-key community with [session], the sign-in
   /// attempt: nothing here touches a stored session. The caller persists the
   /// result through AuthNotifier before exposing the authenticated app.
-  /// Single-flight.
+  /// Single-flight per attempt: another attempt is another account's sign-in.
   Future<Community> resolve({
     required TokenSessionController session,
     bool Function()? isCurrent,
-  }) => _inFlight ??= _resolve(session, isCurrent)
+  }) => _inFlight[session] ??= _resolve(session, isCurrent)
       .onError((Object error, StackTrace stack) {
         if (error is KeyBackupException) throw error;
         throw _tryAgain;
       })
       .whenComplete(() {
-        _inFlight = null;
+        _inFlight.remove(session);
       });
 
   Future<Community> _resolve(
