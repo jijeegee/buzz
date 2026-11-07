@@ -56,7 +56,9 @@ harness limit):
 node i18n/agents/pop.mjs $W/queue.txt 1      # next prompt path
 ```
 
-Start each as a background general-purpose agent with the prompt
+Start each as a background general-purpose agent on the **Sonnet** model
+(`model: sonnet`; owner's rule 2026-11-08: translators never run on Opus,
+and not on Haiku because quality drops for languages like th or hi) with the prompt
 `Read and follow the instructions in <path> exactly. Reply only with the one-line-per-chunk result.`
 When one finishes, start the next. If the harness says the concurrent limit is
 reached, put the path back with `pop.mjs $W/queue.txt --back <path>`.
