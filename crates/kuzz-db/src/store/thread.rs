@@ -1424,6 +1424,7 @@ impl Db {
     /// The channel rows strictly after `cursor`, oldest first, for paging
     /// toward the present from an anchor. A replica's cursor proof only
     /// covers rows at or below the cursor, so this routes like a head page.
+    #[allow(clippy::too_many_arguments)]
     #[datastore_span(name = "get_channel_window_newer", system = "postgresql")]
     pub async fn get_channel_window_newer_with_session(
         &self,
