@@ -2349,6 +2349,17 @@ CREATE TABLE provider_revoke_tokens (
 INSERT INTO _operator_global_tables (table_name, reason) VALUES
     ('provider_revoke_tokens', 'deployment-global encrypted provider revoke tokens of external sign-ins');
 
+-- Relay-wide runtime settings (migration 0103), read through a short cache
+-- and set with `kuzz-admin settings set`. Key `window_check_mode`.
+CREATE TABLE relay_runtime_settings (
+    key         TEXT PRIMARY KEY,
+    value       TEXT NOT NULL,
+    updated_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+INSERT INTO _operator_global_tables (table_name, reason) VALUES
+    ('relay_runtime_settings', 'deployment-global relay runtime settings set by operators');
+
 -- ── Relay admin actions (HTTP enforcement state machine) ──────────────────────
 -- One row per HTTP report-resolution enforcement action. Tracks the durable
 -- state machine from claim → enforcing → succeeded|failed|cancelled.

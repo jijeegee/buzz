@@ -239,6 +239,8 @@ impl RelayInfo {
             "nip-ar".to_string(),
             // Channel and thread windows page toward newer rows (`since` + `after_id`).
             "nip-cw-newer".to_string(),
+            // Window filters accept `check: true` (oldest row id + row count only).
+            "nip-cw-check".to_string(),
         ];
         if advertise_deletion_records {
             supported_extensions.push("kuzz-deletion-records".to_string());
@@ -697,6 +699,23 @@ mod tests {
         let ext = "kuzz-deletion-records".to_string();
         assert!(build(true).contains(&ext));
         assert!(!build(false).contains(&ext));
+    }
+
+    #[test]
+    fn window_check_extension_is_always_advertised() {
+        let ext = RelayInfo::build(
+            None,
+            None,
+            RelayCapabilityFlags::default(),
+            DEFAULT_MAX_FRAME_BYTES,
+            None,
+            None,
+            None,
+        )
+        .supported_extensions
+        .expect("extensions");
+        assert!(ext.contains(&"nip-cw-check".to_string()));
+        assert!(ext.contains(&"nip-cw-newer".to_string()));
     }
 
     /// NIP-WP → NIP-11 mirror: a set workspace icon is served in the standard

@@ -75,6 +75,7 @@ async fn select_window(
     community: CommunityId,
     request: &Request,
     history_reader: Option<&[u8]>,
+    blocked_dm_reader: Option<&[u8]>,
     budget: &mut ScanBudget,
 ) -> Result<ThreadWindow> {
     if !(1..=MAX_LIMIT).contains(&request.limit)
@@ -201,6 +202,22 @@ async fn select_window(
             .push_bind(reader.to_vec())
             .push("))");
     }
+    // Silent blocks: in a 1:1 DM, replies received while the reader blocked
+    // their author are not window rows (same rule as the room window).
+    if let Some(blocker) = blocked_dm_reader {
+        q.push(" AND NOT ((SELECT dm_is_one_to_one(")
+            .push_bind(community.as_uuid())
+            .push(", ")
+            .push_bind(request.channel)
+            .push(")) AND EXISTS (SELECT 1 FROM user_block_periods bp WHERE bp.community_id = ")
+            .push_bind(community.as_uuid())
+            .push(" AND bp.blocker = ")
+            .push_bind(blocker.to_vec())
+            .push(
+                " AND bp.blocked = e.pubkey AND bp.started_at <= e.received_at \
+                 AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))",
+            );
+    }
     q.push(order)
         .push(" LIMIT ")
         .push_bind(i64::from(request.limit) + 1);
@@ -244,6 +261,7 @@ async fn writer_window(
     community: CommunityId,
     request: &Request,
     history_reader: Option<&[u8]>,
+    blocked_dm_reader: Option<&[u8]>,
     budget: &mut ScanBudget,
 ) -> Result<ThreadWindow> {
     let conn = crate::observability::acquire_writer(
@@ -253,7 +271,15 @@ async fn writer_window(
     .await?;
     let mut tx = sqlx::Transaction::begin(conn, None).await?;
     set_deadline(&mut tx).await?;
-    let window = select_window(&mut tx, community, request, history_reader, budget).await?;
+    let window = select_window(
+        &mut tx,
+        community,
+        request,
+        history_reader,
+        blocked_dm_reader,
+        budget,
+    )
+    .await?;
     tx.rollback().await?;
     Ok(window)
 }
@@ -272,17 +298,61 @@ impl Db {
         request: &Request,
         budget: &mut ScanBudget,
     ) -> Result<(ThreadWindow, ReadSession)> {
-        self.get_thread_window_for_reader_with_session(community, request, None, budget)
+        self.get_thread_window_for_reader_with_session(community, request, None, None, budget)
             .await
     }
 
+    /// The window check (NIP-CW `check`): the same page as
+    /// [`Db::get_thread_window_for_reader_with_session`], always on the
+    /// writer (never a replica), plus the room's `accepted_sequence` read in
+    /// the same `REPEATABLE READ` snapshot.
+    #[datastore_span(name = "check_thread_window", system = "postgresql")]
+    pub async fn check_thread_window(
+        &self,
+        community: CommunityId,
+        request: &Request,
+        history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
+        budget: &mut ScanBudget,
+    ) -> Result<(ThreadWindow, i64)> {
+        let conn = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::SubscriptionHistory,
+        )
+        .await?;
+        let mut tx = sqlx::Transaction::begin(
+            conn,
+            Some(sqlx::SqlStr::from_static(
+                "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
+            )),
+        )
+        .await?;
+        set_deadline(&mut tx).await?;
+        let room_seq =
+            crate::thread::room_accepted_sequence(&mut tx, community, request.channel).await?;
+        let window = select_window(
+            &mut tx,
+            community,
+            request,
+            history_reader,
+            blocked_dm_reader,
+            budget,
+        )
+        .await?;
+        tx.rollback().await?;
+        Ok((window, room_seq))
+    }
+
     /// [`Db::get_thread_window_with_session`] without replies from before
-    /// `history_reader` joined a `since_join` room.
+    /// `history_reader` joined a `since_join` room, and, before the page
+    /// limit, without 1:1 DM replies the server received from someone while
+    /// `blocked_dm_reader` blocked them (see [`crate::blocks`]).
     pub async fn get_thread_window_for_reader_with_session(
         &self,
         community: CommunityId,
         request: &Request,
         history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
         budget: &mut ScanBudget,
     ) -> Result<(ThreadWindow, ReadSession)> {
         let cursor = request.cursor.as_ref().map(cursor_key).transpose()?;
@@ -309,7 +379,15 @@ impl Db {
         {
             let result = async {
                 set_deadline(&mut tx).await?;
-                select_window(&mut tx, community, request, history_reader, budget).await
+                select_window(
+                    &mut tx,
+                    community,
+                    request,
+                    history_reader,
+                    blocked_dm_reader,
+                    budget,
+                )
+                .await
             }
             .await;
             match result {
@@ -339,7 +417,15 @@ impl Db {
                 }
             }
         }
-        let window = writer_window(&self.pool, community, request, history_reader, budget).await?;
+        let window = writer_window(
+            &self.pool,
+            community,
+            request,
+            history_reader,
+            blocked_dm_reader,
+            budget,
+        )
+        .await?;
         Ok((
             window,
             ReadSession {

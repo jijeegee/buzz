@@ -162,12 +162,34 @@ async fn query(
     budget: &mut Budget,
 ) -> Result<Vec<Value>, Error> {
     let reader_bytes = reader.to_bytes();
+    // Silent blocks apply inside the page query, before LIMIT, so a page
+    // still fills up; `None` when the reader never blocked anyone.
+    let blocked_dm_reader = state
+        .blocked_dm_reader(tenant.community(), &reader_bytes)
+        .await;
+    let visible = |se: &kuzz_core::StoredEvent| {
+        event_in_accessible_channel(se, accessible)
+            && crate::handlers::req::event_visible_to_reader(&se.event, &reader_bytes)
+    };
+    if request.check {
+        return check(
+            state,
+            tenant,
+            reader,
+            request,
+            blocked_dm_reader.as_deref(),
+            &visible,
+            budget,
+        )
+        .await;
+    }
     let (window, mut session) = state
         .db
         .get_thread_window_for_reader_with_session(
             tenant.community(),
             request,
             Some(&reader_bytes),
+            blocked_dm_reader.as_deref(),
             &mut budget.scan,
         )
         .await
@@ -177,10 +199,6 @@ async fn query(
     if !window.root_in_channel {
         return Ok(vec![]);
     }
-    let visible = |se: &kuzz_core::StoredEvent| {
-        event_in_accessible_channel(se, accessible)
-            && crate::handlers::req::event_visible_to_reader(&se.event, &reader_bytes)
-    };
     let mut events = Vec::new();
     let page_start_bytes = budget.bytes;
     budget.bytes += 2;
@@ -254,6 +272,70 @@ async fn query(
             break;
         }
     }
+    let bounds = bounds_event(state, tenant, reader, request, &window, None)?;
+    append(&mut events, budget, &bounds)?;
+    metrics::histogram!("kuzz_thread_window_response_bytes")
+        .record((budget.bytes - page_start_bytes) as f64);
+    Ok(events)
+}
+
+/// A `check: true` thread window: the same reply page on the writer, answered
+/// by the `39007` bounds event alone with a `check` object (oldest reply,
+/// reply count, room sequence, mode). The root is not counted.
+async fn check(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    request: &Request,
+    blocked_dm_reader: Option<&[u8]>,
+    visible: &impl Fn(&kuzz_core::StoredEvent) -> bool,
+    budget: &mut Budget,
+) -> Result<Vec<Value>, Error> {
+    let reader_bytes = reader.to_bytes();
+    let (window, room_seq) = state
+        .db
+        .check_thread_window(
+            tenant.community(),
+            request,
+            Some(&reader_bytes),
+            blocked_dm_reader,
+            &mut budget.scan,
+        )
+        .await
+        .map_err(|e| database_error("window check", e))?;
+    if !window.root_in_channel {
+        return Ok(vec![]);
+    }
+    if !window.rows.iter().all(visible) {
+        return Err(unavailable(
+            "thread row authorization changed during selection",
+        ));
+    }
+    let mode = state
+        .window_check_mode()
+        .await
+        .map_err(|e| database_error("runtime setting", e))?;
+    let oldest = window
+        .rows
+        .last()
+        .map(|row| (&row.event.id, row.event.created_at));
+    let check = super::window_check_content(oldest, window.rows.len(), room_seq, mode);
+    let bounds = bounds_event(state, tenant, reader, request, &window, Some(check))?;
+    let mut events = Vec::new();
+    append(&mut events, budget, &bounds)?;
+    Ok(events)
+}
+
+/// The window's relay-signed `39007` bounds event; a check answer adds only
+/// its `check` object to the content.
+fn bounds_event(
+    state: &AppState,
+    tenant: &TenantContext,
+    reader: &nostr::PublicKey,
+    request: &Request,
+    window: &kuzz_db::thread_window::ThreadWindow,
+    check: Option<Value>,
+) -> Result<nostr::Event, Error> {
     let tags = [
         [
             "d".to_string(),
@@ -266,19 +348,18 @@ async fn query(
     .map(nostr::Tag::parse)
     .collect::<Result<Vec<_>, _>>()
     .map_err(|e| internal_error(&format!("thread bounds tags: {e}")))?;
-    let bounds = nostr::EventBuilder::new(
+    let mut content = json!({"version":1,"direction":request.direction.as_str(),
+        "has_more":window.has_more,"next_cursor":window.next_cursor});
+    if let Some(check) = check {
+        content["check"] = check;
+    }
+    nostr::EventBuilder::new(
         nostr::Kind::Custom(kuzz_core::kind::KIND_THREAD_WINDOW_BOUNDS as u16),
-        json!({"version":1,"direction":request.direction.as_str(),"has_more":window.has_more,
-            "next_cursor":window.next_cursor})
-        .to_string(),
+        content.to_string(),
     )
     .tags(tags)
     .sign_with_keys(&state.relay_keypair)
-    .map_err(|e| internal_error(&format!("thread bounds sign: {e}")))?;
-    append(&mut events, budget, &bounds)?;
-    metrics::histogram!("kuzz_thread_window_response_bytes")
-        .record((budget.bytes - page_start_bytes) as f64);
-    Ok(events)
+    .map_err(|e| internal_error(&format!("thread bounds sign: {e}")))
 }
 
 #[cfg(test)]

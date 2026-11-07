@@ -1295,6 +1295,8 @@ pub struct AppState {
     pub channel_history_cut_cache: Arc<moka::sync::Cache<(CommunityId, Uuid), bool>>,
     /// Silent-block lists and DM-ness of channels (see [`crate::blocks`]).
     pub blocks: Arc<crate::blocks::BlockCaches>,
+    /// Relay-wide runtime settings cache (see [`crate::runtime_settings`]).
+    pub runtime_settings: Arc<crate::runtime_settings::RuntimeSettingsCache>,
 
     /// Bounded channel for audit logging, absent when audit logging is disabled.
     pub audit_tx: Option<mpsc::Sender<kuzz_audit::NewAuditEntry>>,
@@ -1588,6 +1590,7 @@ impl AppState {
                     .build(),
             ),
             blocks: Arc::new(crate::blocks::BlockCaches::new()),
+            runtime_settings: Arc::new(crate::runtime_settings::RuntimeSettingsCache::new()),
             audit_tx: audit_enabled.then_some(audit_tx),
             media_storage: Arc::new(media_storage),
             storage_sweep: Arc::new(tokio::sync::Mutex::new(

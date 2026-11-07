@@ -513,6 +513,7 @@ mod postgres_tests {
             "agent_key_backups",
             "pairing_requests",
             "provider_revoke_tokens",
+            "relay_runtime_settings",
         ] {
             if normalized[insert_pos..].contains(&format!("'{value}'")) {
                 globals.insert(value.to_owned());
@@ -727,6 +728,13 @@ mod postgres_tests {
         migrations.sort_by_key(|migration| migration.version);
 
         // 0081-0086 are taken by the regions branches.
+        assert_eq!(migrations[95].version, 103);
+        assert!(migrations[95]
+            .sql
+            .as_str()
+            .contains("CREATE TABLE relay_runtime_settings"));
+        assert!(include_str!("../../../../schema/schema.sql")
+            .contains("CREATE TABLE relay_runtime_settings"));
         assert_eq!(migrations[93].version, 101);
         let pair_host = migrations[93].sql.as_str();
         assert!(pair_host.contains("ADD COLUMN same_computer BOOLEAN NOT NULL DEFAULT false"));
@@ -762,7 +770,7 @@ mod postgres_tests {
         );
         assert!(include_str!("../../../../schema/schema.sql")
             .contains("ON devices (principal_id, kind, device_pubkey)"));
-        assert_eq!(migrations.len(), 95);
+        assert_eq!(migrations.len(), 96);
         assert_eq!(migrations[82].version, 89);
         assert!(migrations[82]
             .sql

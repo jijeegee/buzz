@@ -75,6 +75,8 @@ pub mod push_runtime;
 pub mod readiness;
 /// Axum router construction.
 pub mod router;
+/// Relay-wide runtime settings read without a restart.
+pub mod runtime_settings;
 /// Shared application state.
 pub mod state;
 pub mod storage_sweep;

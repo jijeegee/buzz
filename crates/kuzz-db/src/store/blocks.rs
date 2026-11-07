@@ -50,6 +50,22 @@ macro_rules! hidden_by_block_period {
 }
 pub(crate) use hidden_by_block_period;
 
+/// SQL condition for room window pages (the thread window inlines the same
+/// rule with bound parameters): channel `channel` is a 1:1 DM and the reader
+/// blocked the author of event row `e` when the server received it. The same
+/// rule as the relay's read-time filter, evaluated before the page `LIMIT` so
+/// a page still fills up.
+/// `cid`, `channel` and `reader` are SQL expressions (placeholders); the DM
+/// test is an init plan, evaluated once per query.
+pub(crate) fn window_block_hidden_sql(cid: &str, channel: &str, reader: &str) -> String {
+    format!(
+        "((SELECT dm_is_one_to_one({cid}, {channel})) AND EXISTS (SELECT 1 FROM user_block_periods bp \
+         WHERE bp.community_id = {cid} AND bp.blocker = {reader} AND bp.blocked = e.pubkey \
+         AND bp.started_at <= e.received_at \
+         AND (bp.ended_at IS NULL OR e.received_at < bp.ended_at)))"
+    )
+}
+
 /// One person the reader blocked.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BlockRecord {

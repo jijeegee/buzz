@@ -79,6 +79,8 @@ pub mod relay_operators;
 pub mod reminder;
 /// Replaceable-event persistence and coordinate locking.
 pub mod replaceable;
+/// Relay-wide runtime settings changed without a restart.
+pub mod runtime_settings;
 /// Durable completed snapshots from the isolated media-storage worker.
 pub mod storage_accounting;
 /// Thread metadata persistence.
@@ -142,3 +144,6 @@ mod inbox_summary_postgres_tests;
 
 #[cfg(test)]
 mod group_chat_postgres_tests;
+
+#[cfg(test)]
+mod window_check_postgres_tests;

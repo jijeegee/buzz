@@ -637,13 +637,16 @@ pub async fn get_channel_window(
         kind_filter,
         direction,
         None,
+        None,
     )
     .await
 }
 
 /// [`get_channel_window`] with the `since_join` history cut of `history_reader`
 /// (`channel_history_floor`): rows from before that reader's current join are
-/// excluded before the `limit + 1` probe.
+/// excluded before the `limit + 1` probe. `blocked_dm_reader` likewise drops,
+/// before the probe, 1:1 DM rows the server received from someone while that
+/// reader blocked them (see [`crate::blocks`]).
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn get_channel_window_for_reader(
     pool: &PgPool,
@@ -654,6 +657,7 @@ pub(crate) async fn get_channel_window_for_reader(
     kind_filter: Option<&[u32]>,
     direction: Direction,
     history_reader: Option<&[u8]>,
+    blocked_dm_reader: Option<&[u8]>,
 ) -> Result<ChannelWindow> {
     let mut conn = crate::observability::acquire_writer(
         pool,
@@ -669,6 +673,7 @@ pub(crate) async fn get_channel_window_for_reader(
         kind_filter,
         direction,
         history_reader,
+        blocked_dm_reader,
     )
     .await
 }
@@ -688,6 +693,7 @@ pub(crate) async fn get_channel_window_on(
     kind_filter: Option<&[u32]>,
     direction: Direction,
     history_reader: Option<&[u8]>,
+    blocked_dm_reader: Option<&[u8]>,
 ) -> Result<ChannelWindow> {
     let newer = direction == Direction::Newer;
     if newer && cursor.is_none() {
@@ -768,6 +774,14 @@ pub(crate) async fn get_channel_window_on(
         param_idx += 1;
     }
 
+    if blocked_dm_reader.is_some() {
+        sql.push_str(&format!(
+            " AND NOT {}",
+            crate::blocks::window_block_hidden_sql("$1", "$2", &format!("${param_idx}"))
+        ));
+        param_idx += 1;
+    }
+
     let order = if newer {
         "e.created_at ASC, e.id DESC"
     } else {
@@ -782,6 +796,9 @@ pub(crate) async fn get_channel_window_on(
         q = q.bind(*ts).bind(id.clone());
     }
     if let Some(reader) = history_reader {
+        q = q.bind(reader.to_vec());
+    }
+    if let Some(reader) = blocked_dm_reader {
         q = q.bind(reader.to_vec());
     }
     // The +1 probe row is the server-internal has_more evidence.
@@ -896,6 +913,23 @@ pub(crate) async fn get_channel_window_on(
         has_more,
         next_cursor,
     })
+}
+
+/// The room's `channels.accepted_sequence` on `conn` (0 for an unknown room):
+/// the newest sequence the room had assigned in this session's snapshot.
+pub(crate) async fn room_accepted_sequence(
+    conn: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    channel_id: Uuid,
+) -> Result<i64> {
+    let seq: Option<i64> = sqlx::query_scalar(
+        "SELECT accepted_sequence FROM channels WHERE community_id = $1 AND id = $2",
+    )
+    .bind(community_id.as_uuid())
+    .bind(channel_id)
+    .fetch_optional(&mut *conn)
+    .await?;
+    Ok(seq.unwrap_or(0))
 }
 
 /// Look up a single thread_metadata row by event_id.
@@ -1283,6 +1317,7 @@ impl Db {
             cursor,
             kind_filter,
             None,
+            None,
         )
         .await
         .map(|(window, _session)| window)
@@ -1314,6 +1349,7 @@ impl Db {
     ///
     /// Every failure fails closed to the writer and is recorded in
     /// `kuzz_db_route_decision`.
+    #[allow(clippy::too_many_arguments)]
     #[datastore_span(name = "get_channel_window", system = "postgresql")]
     pub async fn get_channel_window_with_session(
         &self,
@@ -1323,6 +1359,7 @@ impl Db {
         cursor: Option<(DateTime<Utc>, Vec<u8>)>,
         kind_filter: Option<&[u32]>,
         history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         self.channel_window_routed(
             community_id,
@@ -1332,8 +1369,56 @@ impl Db {
             kind_filter,
             Direction::Older,
             history_reader,
+            blocked_dm_reader,
         )
         .await
+    }
+
+    /// The window check (NIP-CW `check`): the same page as
+    /// [`Db::get_channel_window_with_session`], always on the writer (never a
+    /// replica), plus the room's `accepted_sequence` read in the same
+    /// `REPEATABLE READ` snapshot, so the sequence covers exactly the rows the
+    /// page saw.
+    #[allow(clippy::too_many_arguments)]
+    #[datastore_span(name = "check_channel_window", system = "postgresql")]
+    pub async fn check_channel_window(
+        &self,
+        community_id: CommunityId,
+        channel_id: Uuid,
+        limit: u32,
+        cursor: Option<(DateTime<Utc>, Vec<u8>)>,
+        kind_filter: Option<&[u32]>,
+        history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
+    ) -> Result<(crate::thread::ChannelWindow, i64)> {
+        let conn = crate::observability::acquire_writer(
+            &self.pool,
+            crate::observability::WriterOperation::SubscriptionHistory,
+        )
+        .await?;
+        let mut tx = sqlx::Transaction::begin(
+            conn,
+            Some(sqlx::SqlStr::from_static(
+                "BEGIN ISOLATION LEVEL REPEATABLE READ, READ ONLY",
+            )),
+        )
+        .await?;
+        let room_seq =
+            crate::thread::room_accepted_sequence(&mut tx, community_id, channel_id).await?;
+        let window = crate::thread::get_channel_window_on(
+            &mut tx,
+            community_id,
+            channel_id,
+            limit,
+            cursor,
+            kind_filter,
+            Direction::Older,
+            history_reader,
+            blocked_dm_reader,
+        )
+        .await?;
+        tx.rollback().await?;
+        Ok((window, room_seq))
     }
 
     /// The channel rows strictly after `cursor`, oldest first, for paging
@@ -1348,6 +1433,7 @@ impl Db {
         cursor: (DateTime<Utc>, Vec<u8>),
         kind_filter: Option<&[u32]>,
         history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         self.channel_window_routed(
             community_id,
@@ -1357,10 +1443,12 @@ impl Db {
             kind_filter,
             Direction::Newer,
             history_reader,
+            blocked_dm_reader,
         )
         .await
     }
 
+    #[allow(clippy::too_many_arguments)]
     async fn channel_window_routed(
         &self,
         community_id: CommunityId,
@@ -1370,6 +1458,7 @@ impl Db {
         kind_filter: Option<&[u32]>,
         direction: Direction,
         history_reader: Option<&[u8]>,
+        blocked_dm_reader: Option<&[u8]>,
     ) -> Result<(crate::thread::ChannelWindow, ReadSession)> {
         let newer = direction == Direction::Newer;
         let path: &'static str = match (newer, cursor.is_some()) {
@@ -1400,6 +1489,7 @@ impl Db {
                     kind_filter,
                     direction,
                     history_reader,
+                    blocked_dm_reader,
                 )
                 .await
                 {
@@ -1442,6 +1532,7 @@ impl Db {
             kind_filter,
             direction,
             history_reader,
+            blocked_dm_reader,
         )
         .await?;
         Ok((

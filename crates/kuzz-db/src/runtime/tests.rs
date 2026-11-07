@@ -1173,7 +1173,7 @@ async fn channel_window_routes_head_to_writer_and_cursor_pages_to_replica() {
         m1.id.as_bytes().to_vec(),
     );
     let (newer, _) = db
-        .get_channel_window_newer_with_session(cid, channel, 10, m1_cursor, None, None)
+        .get_channel_window_newer_with_session(cid, channel, 10, m1_cursor, None, None, None)
         .await
         .expect("newer window");
     let newer_contents: Vec<String> = newer
@@ -1189,6 +1189,157 @@ async fn channel_window_routes_head_to_writer_and_cursor_pages_to_replica() {
             "fresh-writer-only".to_string()
         ],
         "newer page must be served by the writer"
+    );
+
+    drop_scratch_db(&admin, replica, &rname).await;
+    drop_scratch_db(&admin, writer, &wname).await;
+}
+
+/// Window checks (NIP-CW `check`) always read the writer: a cursor page the
+/// routed path serves from the replica is checked against the writer's rows,
+/// for room and thread windows alike.
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn window_checks_read_the_writer_not_the_replica() {
+    let admin = PgPool::connect(&admin_url().await)
+        .await
+        .expect("connect admin");
+    let (writer, wname) = create_scratch_db(&admin, "check_w").await;
+    let (replica, rname) = create_scratch_db(&admin, "check_r").await;
+
+    let author = nostr::Keys::generate();
+    let community = Uuid::new_v4();
+    let channel = Uuid::new_v4();
+    seed_community_channel(&writer, community, channel, &author).await;
+    seed_community_channel(&replica, community, channel, &author).await;
+
+    let base = 1_700_000_000u64;
+    let m1 = signed_event_at(&author, "m1", base);
+    let m2 = signed_event_at(&author, "m2", base + 10);
+    let m3 = signed_event_at(&author, "m3", base + 20);
+    for pool in [&writer, &replica] {
+        for ev in [&m1, &m2, &m3] {
+            insert_top_level(pool, community, channel, ev).await;
+        }
+    }
+    let writer_only = signed_event_at(&author, "writer-only", base + 3);
+    insert_top_level(&writer, community, channel, &writer_only).await;
+    let marker = signed_event_at(&author, "replica-only-marker", base + 5);
+    insert_top_level(&replica, community, channel, &marker).await;
+
+    // Thread under m3: shared r1 < r2, plus one reply on each side only.
+    let r1 = signed_event_at(&author, "r1", base + 30);
+    let r2 = signed_event_at(&author, "r2", base + 40);
+    for pool in [&writer, &replica] {
+        for reply in [&r1, &r2] {
+            insert_thread_reply(pool, community, channel, &m3, reply).await;
+        }
+    }
+    let writer_reply = signed_event_at(&author, "writer-only-reply", base + 31);
+    insert_thread_reply(&writer, community, channel, &m3, &writer_reply).await;
+    let replica_reply = signed_event_at(&author, "replica-only-reply", base + 32);
+    insert_thread_reply(&replica, community, channel, &m3, &replica_reply).await;
+
+    let db = Db::from_pools(writer.clone(), replica.clone());
+    db.fence().force_open_for_tests(chrono::Utc::now());
+    let cid = CommunityId::from_uuid(community);
+    let contents = |rows: Vec<String>| rows;
+
+    let cursor = (
+        chrono::DateTime::from_timestamp((base + 10) as i64, 0).unwrap(),
+        m2.id.as_bytes().to_vec(),
+    );
+    let (routed, session) = db
+        .get_channel_window_with_session(cid, channel, 10, Some(cursor.clone()), None, None, None)
+        .await
+        .expect("routed cursor window");
+    assert!(
+        session.is_replica(),
+        "fixture must route this page to the replica"
+    );
+    drop(session);
+    assert_eq!(
+        contents(
+            routed
+                .rows
+                .iter()
+                .map(|r| r.stored_event.event.content.clone())
+                .collect()
+        ),
+        vec!["replica-only-marker".to_string(), "m1".to_string()]
+    );
+    let (checked, room_seq) = db
+        .check_channel_window(cid, channel, 10, Some(cursor), None, None, None)
+        .await
+        .expect("room check");
+    assert_eq!(
+        contents(
+            checked
+                .rows
+                .iter()
+                .map(|r| r.stored_event.event.content.clone())
+                .collect()
+        ),
+        vec!["writer-only".to_string(), "m1".to_string()],
+        "the room check must be served by the writer"
+    );
+    let writer_seq: i64 = sqlx::query_scalar(
+        "SELECT accepted_sequence FROM channels WHERE community_id = $1 AND id = $2",
+    )
+    .bind(community)
+    .bind(channel)
+    .fetch_one(&writer)
+    .await
+    .expect("writer sequence");
+    assert_eq!(room_seq, writer_seq);
+
+    let request = kuzz_core::thread_window::Request::parse(&serde_json::json!({
+        "thread_window": true, "#h": [channel], "#e": [m3.id.to_hex()], "kinds": [9],
+        "limit": 10, "until": base + 40, "before_id": r2.id.to_hex()}))
+    .expect("thread request");
+    let (routed, session) = db
+        .get_thread_window_with_session(
+            cid,
+            &request,
+            &mut crate::thread_window::ScanBudget::default(),
+        )
+        .await
+        .expect("routed thread window");
+    assert!(
+        session.is_replica(),
+        "fixture must route this thread page to the replica"
+    );
+    drop(session);
+    assert_eq!(
+        contents(
+            routed
+                .rows
+                .iter()
+                .map(|r| r.event.content.clone())
+                .collect()
+        ),
+        vec!["replica-only-reply".to_string(), "r1".to_string()]
+    );
+    let (checked, _) = db
+        .check_thread_window(
+            cid,
+            &request,
+            None,
+            None,
+            &mut crate::thread_window::ScanBudget::default(),
+        )
+        .await
+        .expect("thread check");
+    assert_eq!(
+        contents(
+            checked
+                .rows
+                .iter()
+                .map(|r| r.event.content.clone())
+                .collect()
+        ),
+        vec!["writer-only-reply".to_string(), "r1".to_string()],
+        "the thread check must be served by the writer"
     );
 
     drop_scratch_db(&admin, replica, &rname).await;
@@ -1394,7 +1545,7 @@ async fn read_session_degrades_to_writer_when_replica_connection_dies() {
         .expect("head window");
     let cursor = head.next_cursor.expect("has_more implies next_cursor");
     let (_window, mut session) = db
-        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None)
+        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None, None)
         .await
         .expect("routed cursor window");
     assert!(
@@ -1478,7 +1629,7 @@ async fn routed_request_holds_one_snapshot_across_page_and_aux() {
 
     // Route the cursor page to the replica and HOLD the session.
     let (window, mut session) = db
-        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None)
+        .get_channel_window_with_session(cid, channel, 10, Some(cursor), None, None, None)
         .await
         .expect("routed cursor window");
     assert!(

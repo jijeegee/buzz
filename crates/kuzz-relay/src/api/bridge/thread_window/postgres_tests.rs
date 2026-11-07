@@ -529,7 +529,10 @@ async fn thread_window_router_aux_row_cap_and_corrupt_page() {
     f.copy_aux(&aux, 8200, "fixture").await;
     let (status, body) = f.post(&f.keys, "/query", json!([f.filter()])).await;
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE, "{body}");
-    assert!(body["error"].as_str().unwrap().contains("raw row budget"), "{body}");
+    assert!(
+        body["error"].as_str().unwrap().contains("raw row budget"),
+        "{body}"
+    );
     assert_eq!(body["code"], "window_budget", "{body}");
     // Keep 1,001 rows and corrupt one guaranteed to lie on the first raw page.
     sqlx::query("DELETE FROM events WHERE community_id=$1 AND kind=40003 AND id NOT IN \
@@ -632,4 +635,175 @@ async fn channel_window_newer_pages_oldest_first_with_signed_bounds() {
         let (status, _) = f.post(&f.keys, "/query", json!([bad])).await;
         assert_eq!(status, StatusCode::BAD_REQUEST, "{bad}");
     }
+}
+
+async fn set_check_mode(pool: &sqlx::PgPool, mode: Option<&str>) {
+    let query = match mode {
+        Some(_) => "INSERT INTO relay_runtime_settings (key, value) VALUES ('window_check_mode', $1) \
+                    ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now()",
+        None => "DELETE FROM relay_runtime_settings WHERE key = 'window_check_mode' AND $1::text IS NULL",
+    };
+    sqlx::query(query).bind(mode).execute(pool).await.unwrap();
+}
+
+/// The single relay-signed bounds event of `kind` and its `d` tag + content.
+fn only_bounds(response: &Value, kind: u16) -> (String, Value) {
+    let all = response.as_array().unwrap();
+    assert_eq!(
+        all.len(),
+        1,
+        "a check answers with its bounds only: {response}"
+    );
+    assert_eq!(all[0]["kind"], kind, "{response}");
+    let event: Event = serde_json::from_value(all[0].clone()).unwrap();
+    event.verify().unwrap();
+    let d = event
+        .tags
+        .iter()
+        .find(|tag| tag.kind() == nostr::TagKind::d())
+        .and_then(|tag| tag.content())
+        .unwrap()
+        .to_string();
+    (d, serde_json::from_str(&event.content).unwrap())
+}
+
+fn bounds_of(response: &Value, kind: u16) -> (String, Value) {
+    let bounds = response
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|v| v["kind"] == kind)
+        .cloned()
+        .collect::<Vec<_>>();
+    only_bounds(&Value::Array(bounds), kind)
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn window_check_answers_bounds_only_with_the_page_facts() {
+    let f = Fixture::new().await;
+    set_check_mode(&f.pool, None).await;
+    let base = f.root.created_at.as_secs();
+    let mut later = Vec::new();
+    for n in 1..=3 {
+        let message = event(&f.keys, f.channel, 9, &format!("later {n}"), None, base + n);
+        f.state
+            .db
+            .insert_event(f.community, &message, Some(f.channel))
+            .await
+            .unwrap();
+        later.push(message);
+    }
+    let replies = [f.reply(1).await, f.reply(2).await, f.reply(3).await];
+    let room_seq: i64 = sqlx::query_scalar(
+        "SELECT accepted_sequence FROM channels WHERE community_id = $1 AND id = $2",
+    )
+    .bind(f.community.as_uuid())
+    .bind(f.channel)
+    .fetch_one(&f.pool)
+    .await
+    .unwrap();
+
+    // Room window: the check matches the page it checks; unset mode = off.
+    let head = json!({"top_level":true,"#h":[f.channel],"kinds":[9],"limit":2,
+        "include_summaries":true,"include_aux":true});
+    let page = f.query(&head).await;
+    let (page_d, page_content) = bounds_of(&page, 39006);
+    let mut check = head.clone();
+    check["check"] = json!(true);
+    let (d, content) = only_bounds(&f.query(&check).await, 39006);
+    assert_eq!(d, page_d, "check keeps the d-tag rules");
+    assert_eq!(content["has_more"], page_content["has_more"]);
+    assert_eq!(content["next_cursor"], page_content["next_cursor"]);
+    assert_eq!(content["check"]["count"], 2);
+    assert_eq!(content["check"]["oldest_id"], later[1].id.to_hex());
+    assert_eq!(content["check"]["oldest_created_at"], base + 2);
+    assert_eq!(content["check"]["room_seq"], room_seq);
+    assert_eq!(content["check"]["mode"], "off");
+
+    // A short window below a cursor, then an empty one.
+    let mut below = check.clone();
+    below["until"] = json!(base + 1);
+    below["before_id"] = json!(later[0].id.to_hex());
+    let (_, content) = only_bounds(&f.query(&below).await, 39006);
+    assert_eq!(content["check"]["count"], 1);
+    assert_eq!(content["check"]["oldest_id"], f.root.id.to_hex());
+    assert_eq!(content["has_more"], false);
+    below["until"] = json!(base);
+    below["before_id"] = json!(f.root.id.to_hex());
+    let (_, content) = only_bounds(&f.query(&below).await, 39006);
+    assert_eq!(content["check"]["count"], 0);
+    assert_eq!(content["check"]["oldest_id"], Value::Null);
+    assert_eq!(content["check"]["oldest_created_at"], Value::Null);
+
+    // Thread window: replies only, same binding as the page.
+    let mut thread = f.filter();
+    thread["limit"] = json!(2);
+    let page = f.query(&thread).await;
+    let (page_d, _) = bounds_of(&page, 39007);
+    thread["check"] = json!(true);
+    let (d, content) = only_bounds(&f.query(&thread).await, 39007);
+    assert_eq!(d, page_d, "check does not enter the binding");
+    assert_eq!(content["version"], 1);
+    assert_eq!(content["has_more"], true);
+    assert_eq!(content["check"]["count"], 2);
+    assert_eq!(content["check"]["oldest_id"], replies[1].id.to_hex());
+    assert_eq!(content["check"]["mode"], "off");
+
+    // A deleted reply leaves the checked window.
+    f.tombstone(&replies[2]).await;
+    let (_, content) = only_bounds(&f.query(&thread).await, 39007);
+    assert_eq!(content["check"]["count"], 2);
+    assert_eq!(content["check"]["oldest_id"], replies[0].id.to_hex());
+    assert_eq!(content["has_more"], false);
+
+    // Invalid `check` types and newer checks are refused.
+    for bad in [json!("true"), json!(1), Value::Null] {
+        for base_filter in [&head, &f.filter()] {
+            let mut filter = base_filter.clone();
+            filter["check"] = bad.clone();
+            let (status, _) = f.post(&f.keys, "/query", json!([filter])).await;
+            assert_eq!(status, StatusCode::BAD_REQUEST, "{filter}");
+        }
+    }
+    for newer in [
+        json!({"top_level":true,"#h":[f.channel],"kinds":[9],"since":base,
+            "after_id":f.root.id.to_hex(),"check":true}),
+        json!({"thread_window":true,"#h":[f.channel],"#e":[f.root.id.to_hex()],
+            "kinds":[9],"since":base,"after_id":f.root.id.to_hex(),"check":true}),
+    ] {
+        let (status, _) = f.post(&f.keys, "/query", json!([newer])).await;
+        assert_eq!(status, StatusCode::BAD_REQUEST, "{newer}");
+    }
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn window_check_mode_follows_the_runtime_setting_through_the_cache() {
+    let f = Fixture::new().await;
+    let check = json!({"top_level":true,"#h":[f.channel],"kinds":[9],"limit":5,"check":true});
+    let mode = |response: Value| only_bounds(&response, 39006).1["check"]["mode"].clone();
+
+    set_check_mode(&f.pool, Some("shadow")).await;
+    assert_eq!(mode(f.query(&check).await), "shadow");
+    // Cached: a change is not seen until the entry expires.
+    set_check_mode(&f.pool, Some("on")).await;
+    assert_eq!(mode(f.query(&check).await), "shadow");
+    // A fresh cache (another pod, or after the TTL) reads the new value.
+    let mut fresh = (*f.state).clone();
+    fresh.runtime_settings = Arc::new(crate::runtime_settings::RuntimeSettingsCache::new());
+    let fresh = Arc::new(fresh);
+    let body = json!([check.clone()]);
+    let (status, response) = post(fresh.clone(), &f.host, &f.keys, "/query", body).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(mode(response), "on");
+    // An invalid stored value reads as off.
+    set_check_mode(&f.pool, Some("bogus")).await;
+    let mut fresh = (*f.state).clone();
+    fresh.runtime_settings = Arc::new(crate::runtime_settings::RuntimeSettingsCache::new());
+    let (status, response) =
+        post(Arc::new(fresh), &f.host, &f.keys, "/query", json!([check])).await;
+    assert_eq!(status, StatusCode::OK, "{response}");
+    assert_eq!(mode(response), "off");
+    set_check_mode(&f.pool, None).await;
 }
