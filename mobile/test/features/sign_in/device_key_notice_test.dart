@@ -6,16 +6,16 @@ import 'package:kuzz/shared/auth/token/token.dart';
 
 import '../../helpers/widget_helpers.dart';
 
-const _origin = 'https://relay.test';
+final _session = SessionKey('https://relay.test', 'p');
 
 void main() {
   Future<void> pump(WidgetTester tester, {required bool? deviceKey}) async {
     await tester.pumpWidget(
       WidgetHelpers.testable(
         overrides: [
-          accountOriginProvider.overrideWithValue(_origin),
-          activeGoogleKeyOriginProvider.overrideWithValue(null),
-          accountProfileProvider(_origin).overrideWith(
+          accountSessionProvider.overrideWithValue(_session),
+          activeGoogleKeySessionProvider.overrideWithValue(null),
+          accountProfileProvider(_session).overrideWith(
             (ref) async => AccountProfile(
               principalId: 'p',
               displayName: 'P',

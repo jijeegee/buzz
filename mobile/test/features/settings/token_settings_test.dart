@@ -81,7 +81,7 @@ void main() {
         // Surfaced, nothing removed.
         expect(find.textContaining('Could not reach the relay'), findsWidgets);
         expect((await h.storage.loadAll()).single.id, h.community.id);
-        expect(h.tokens.data[tokenOrigin]?.refreshToken, 'bzr_old');
+        expect(h.tokens.data[tokenSession]?.refreshToken, 'bzr_old');
 
         await tester.tap(find.byKey(const Key('remove-community-device-only')));
         await frames(tester);

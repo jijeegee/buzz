@@ -5,6 +5,7 @@ import 'package:flutter_hooks/flutter_hooks.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
 import '../../shared/auth/account/account_api.dart';
+import '../../shared/auth/token/session_key.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
@@ -26,13 +27,16 @@ String? kuzzIdError(String value) {
 
 /// Settings → Kuzz ID: the handle friends type to find me.
 class KuzzIdPage extends HookConsumerWidget {
-  const KuzzIdPage({super.key, required this.origin});
+  const KuzzIdPage({super.key, required this.sessionKey});
 
-  final String origin;
+  final SessionKey sessionKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final current = ref.watch(accountProfileProvider(origin)).value?.username;
+    final current = ref
+        .watch(accountProfileProvider(sessionKey))
+        .value
+        ?.username;
     final controller = useTextEditingController(text: current ?? '');
     final saving = useState(false);
     final error = useState<String?>(null);
@@ -58,7 +62,7 @@ class KuzzIdPage extends HookConsumerWidget {
       error.value = null;
       saving.value = true;
       final container = ProviderScope.containerOf(context, listen: false);
-      final api = ref.read(accountApiProvider(origin));
+      final api = ref.read(accountApiProvider(sessionKey));
       try {
         await api.setUsername(value);
       } catch (failure) {
@@ -70,7 +74,7 @@ class KuzzIdPage extends HookConsumerWidget {
         );
         return;
       }
-      container.invalidate(accountProfileProvider(origin));
+      container.invalidate(accountProfileProvider(sessionKey));
       if (!context.mounted) return;
       ScaffoldMessenger.maybeOf(context)?.showSnackBar(
         SnackBar(content: Text(context.l10n.settingsKuzzIdSaved)),

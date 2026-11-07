@@ -25,6 +25,7 @@ class RecordingAuth extends AuthNotifier {
     Community community, {
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async => saved = community;
   @override
   Future<void> authenticateWithTokenSession({
@@ -32,6 +33,7 @@ class RecordingAuth extends AuthNotifier {
     required String principalId,
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) => throw StateError('Google custody must never select token messaging');
 }
 
@@ -43,6 +45,7 @@ class ReturningTokenAuth extends RecordingAuth {
     required String principalId,
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     tokenPrincipal = principalId;
   }
@@ -60,8 +63,10 @@ Future<ProviderContainer> _pumpSignedOut(
   WidgetTester tester, {
   required CommunityStorage storage,
   required backup.BackupServer server,
+  FakeAuthServer? auth,
+  FakeRefreshTokenStore? backupStore,
 }) async {
-  final authServer = FakeAuthServer();
+  final authServer = auth ?? FakeAuthServer();
   authServer.nip11 = (_) => jsonResponse({
     'kuzz_key_backup': {
       'version': 1,
@@ -100,7 +105,7 @@ Future<ProviderContainer> _pumpSignedOut(
         InstallIdStore(storage: FakeSecureStorage()),
       ),
       keyBackupRefreshTokenStoreProvider.overrideWithValue(
-        FakeRefreshTokenStore(),
+        backupStore ?? FakeRefreshTokenStore(),
       ),
       pendingBackupKeyStoreProvider.overrideWithValue(
         PendingBackupKeyStore(storage: FakeSecureStorage()),
@@ -196,6 +201,44 @@ void main() {
       expect(saved.googleBackupAccountId, backup.account);
       // The method it signed in with is recorded on this phone.
       expect(saved.signInProvider, 'google');
+    },
+  );
+
+  testWidgets(
+    'a failed resolve ends the attempt and stores no session or row change',
+    (tester) async {
+      final keys = nostr.Keys.generate();
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final retained = await _retainedKeyCommunity(storage, keys);
+      final auth = FakeAuthServer();
+      final backupStore = FakeRefreshTokenStore();
+      final server = backup.BackupServer()..failStatus = true;
+      final container = await _pumpSignedOut(
+        tester,
+        storage: storage,
+        server: server,
+        auth: auth,
+        backupStore: backupStore,
+      );
+
+      final google = find.byKey(const Key('token-sign-in-google'));
+      await tester.ensureVisible(google);
+      await tester.tap(google);
+      await frames(tester);
+
+      expect(backupStore.writes, 0);
+      expect(backupStore.data, isEmpty);
+      final paths = auth.requests.map((request) => request.url.path);
+      expect(paths, contains('/auth/sessions/end'));
+      expect(paths, isNot(contains('/auth/logout')));
+      final saved = (await storage.loadAll()).single;
+      expect(saved.id, retained.id);
+      expect(saved.signedOut, isTrue);
+      expect(saved.googleBackupAccountId, isNull);
+      expect(
+        container.read(authProvider).value?.status,
+        AuthStatus.unauthenticated,
+      );
     },
   );
 
@@ -478,7 +521,8 @@ void main() {
       final auth = RecordingAuth();
       final clock = FakeClock(DateTime.now());
       final tokenStore = FakeRefreshTokenStore();
-      tokenStore.data[backup.origin] = const StoredTokenSession(
+      final oldToken = SessionKey(backup.origin, 'old-token-account');
+      tokenStore.data[oldToken] = const StoredTokenSession(
         refreshToken: 'keep-old-token',
         principalId: 'old-token-account',
       );
@@ -538,7 +582,7 @@ void main() {
       expect(auth.saved!.tokenAuth, isFalse);
       expect(auth.saved!.nsec, isNotNull);
       expect(auth.saved!.pubkey, isNot(backup.account));
-      expect(tokenStore.data[backup.origin]!.refreshToken, 'keep-old-token');
+      expect(tokenStore.data[oldToken]!.refreshToken, 'keep-old-token');
     },
   );
 }

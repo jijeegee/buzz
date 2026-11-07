@@ -12,7 +12,7 @@ import '../../shared/widgets/kuzz_loading_indicator.dart';
 import 'community_recovery_actions.dart';
 import 'token_sign_in_page.dart';
 
-/// Shows [child] only while the token community at [origin] has a usable
+/// Shows [child] only while the token account [sessionKey] has a usable
 /// session; otherwise the restore splash, the sign-in page, or a recovery
 /// view that always offers "Retry", "Sign in again", switching to another
 /// community and removing this one.
@@ -31,16 +31,16 @@ import 'token_sign_in_page.dart';
 class TokenSessionGate extends HookConsumerWidget {
   const TokenSessionGate({
     super.key,
-    required this.origin,
+    required this.sessionKey,
     required this.child,
   });
 
-  final String origin;
+  final SessionKey sessionKey;
   final Widget child;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final session = ref.watch(tokenSessionProvider(origin));
+    final session = ref.watch(tokenSessionProvider(sessionKey));
     final active = ref.watch(activeCommunityProvider).value;
     final principal = session.principalId;
     final staleIdentity =
@@ -57,7 +57,7 @@ class TokenSessionGate extends HookConsumerWidget {
       ref
           .read(authProvider.notifier)
           .authenticateWithTokenSession(
-            relayUrl: origin,
+            relayUrl: sessionKey.origin,
             principalId: principal,
           )
           .then<void>(
@@ -104,16 +104,50 @@ class TokenSessionGate extends HookConsumerWidget {
       TokenSessionStatus.restoring || TokenSessionStatus.resuming =>
         _GateSplash(semanticLabel: context.l10n.signInSigningIn),
       TokenSessionStatus.signedOut ||
-      TokenSessionStatus.signingIn => TokenSignInPage(lockedOrigin: origin),
+      TokenSessionStatus.signingIn => TokenSignInPage(
+        lockedOrigin: sessionKey.origin,
+        lockedSession: sessionKey,
+      ),
       TokenSessionStatus.retrying || TokenSessionStatus.stalled
           when reconnecting && principalMatches =>
         _SessionShell(
-          banner: _SessionRecoveryBanner(origin: origin, session: session),
+          banner: _SessionRecoveryBanner(
+            sessionKey: sessionKey,
+            session: session,
+          ),
           child: child,
         ),
       TokenSessionStatus.retrying || TokenSessionStatus.stalled =>
-        _SessionRecoveryView(origin: origin, session: session),
+        _SessionRecoveryView(sessionKey: sessionKey, session: session),
     };
+  }
+}
+
+/// "Sign in again": a sign-in attempt that the account takes over. Returns
+/// the failure to show, or `null`.
+Future<String?> _signInAgain(
+  BuildContext context,
+  WidgetRef ref,
+  SessionKey sessionKey,
+) async {
+  final failed = context.l10n.signInFinishFailed;
+  final attempt = ref.read(tokenSignInAttemptProvider)(sessionKey.origin);
+  try {
+    if (!await attempt.signIn()) return attempt.state.errorMessage;
+    await ref
+        .read(authProvider.notifier)
+        .authenticateWithTokenSession(
+          relayUrl: sessionKey.origin,
+          principalId: attempt.state.principalId!,
+          attempt: attempt,
+        );
+    return null;
+  } catch (error) {
+    debugPrint('Could not sign in again: ${error.runtimeType}');
+    return failed;
+  } finally {
+    // Handed over, this ends nothing: the attempt holds no tokens anymore.
+    unawaited(attempt.discard().whenComplete(attempt.dispose));
   }
 }
 
@@ -199,15 +233,18 @@ class _SessionShell extends StatelessWidget {
 }
 
 class _SessionRecoveryBanner extends ConsumerWidget {
-  const _SessionRecoveryBanner({required this.origin, required this.session});
+  const _SessionRecoveryBanner({
+    required this.sessionKey,
+    required this.session,
+  });
 
-  final String origin;
+  final SessionKey sessionKey;
   final TokenSessionState session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref
-        .read(tokenSessionProvider(origin).notifier)
+        .read(tokenSessionProvider(sessionKey).notifier)
         .controller;
     final retrying = session.status == TokenSessionStatus.retrying;
     return Material(
@@ -242,7 +279,8 @@ class _SessionRecoveryBanner extends ConsumerWidget {
               ),
               TextButton(
                 key: const Key('token-session-sign-in-again'),
-                onPressed: () => unawaited(controller.signIn()),
+                onPressed: () =>
+                    unawaited(_signInAgain(context, ref, sessionKey)),
                 child: Text(context.l10n.signInSignInAgain),
               ),
             ],
@@ -253,18 +291,25 @@ class _SessionRecoveryBanner extends ConsumerWidget {
   }
 }
 
-class _SessionRecoveryView extends ConsumerWidget {
-  const _SessionRecoveryView({required this.origin, required this.session});
+class _SessionRecoveryView extends HookConsumerWidget {
+  const _SessionRecoveryView({required this.sessionKey, required this.session});
 
-  final String origin;
+  final SessionKey sessionKey;
   final TokenSessionState session;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final controller = ref
-        .read(tokenSessionProvider(origin).notifier)
+        .read(tokenSessionProvider(sessionKey).notifier)
         .controller;
     final retrying = session.status == TokenSessionStatus.retrying;
+    final signInError = useState<String?>(null);
+
+    Future<void> signInAgain() async {
+      final error = await _signInAgain(context, ref, sessionKey);
+      if (context.mounted) signInError.value = error;
+    }
+
     return Scaffold(
       body: SafeArea(
         child: ListView(
@@ -281,7 +326,9 @@ class _SessionRecoveryView extends ConsumerWidget {
             Semantics(
               liveRegion: true,
               child: Text(
-                session.errorMessage ?? context.l10n.signInUnreachableBody,
+                signInError.value ??
+                    session.errorMessage ??
+                    context.l10n.signInUnreachableBody,
                 style: context.textTheme.bodyMedium?.copyWith(
                   color: context.colors.onSurfaceVariant,
                 ),
@@ -296,7 +343,7 @@ class _SessionRecoveryView extends ConsumerWidget {
             const SizedBox(height: Grid.xxs),
             TextButton(
               key: const Key('token-session-sign-in-again'),
-              onPressed: () => unawaited(controller.signIn()),
+              onPressed: () => unawaited(signInAgain()),
               child: Text(context.l10n.signInSignInAgain),
             ),
             const SizedBox(height: Grid.md),

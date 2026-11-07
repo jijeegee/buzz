@@ -61,6 +61,9 @@ class _Fixture {
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
         ),
+        installIdStoreProvider.overrideWithValue(
+          InstallIdStore(storage: FakeSecureStorage()),
+        ),
         pendingBackupKeyStoreProvider.overrideWithValue(
           PendingBackupKeyStore(storage: FakeSecureStorage()),
         ),

@@ -21,10 +21,10 @@ import '../../shared/relay/relay.dart';
 class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
   @override
   Future<Set<String>> build() async {
-    final origin = ref.watch(accountOriginProvider);
+    final sessionKey = ref.watch(accountSessionProvider);
     final me = ref.watch(myPubkeyProvider);
-    if (origin == null || me == null || me.isEmpty) return const <String>{};
-    final api = ref.watch(accountApiProvider(origin));
+    if (sessionKey == null || me == null || me.isEmpty) return const <String>{};
+    final api = ref.watch(accountApiProvider(sessionKey));
 
     void retryIfFailed() {
       if (!state.hasError) return;
@@ -62,14 +62,14 @@ class BlockedUsersNotifier extends AsyncNotifier<Set<String>> {
   }
 
   AccountApi _api() {
-    final origin = ref.read(accountOriginProvider);
-    if (origin == null) {
+    final sessionKey = ref.read(accountSessionProvider);
+    if (sessionKey == null) {
       throw const AccountApiException(
         'Blocking needs a Kuzz account.',
         statusCode: 403,
       );
     }
-    return ref.read(accountApiProvider(origin));
+    return ref.read(accountApiProvider(sessionKey));
   }
 
   /// Re-reads the list from the server without showing a loading state

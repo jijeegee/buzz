@@ -61,12 +61,12 @@ class AgentsPage extends HookConsumerWidget {
       ...runnerAgents,
       for (final external in externals.values) external.agent,
     ];
-    final origin = ref.watch(accountOriginProvider);
+    final sessionKey = ref.watch(accountSessionProvider);
     final devicesLoading =
-        origin != null &&
+        sessionKey != null &&
         ref.watch(
           accountDevicesProvider(
-            origin,
+            sessionKey,
           ).select((d) => d.isLoading && !d.hasValue),
         );
     final users = ref.watch(userCacheProvider);
@@ -215,7 +215,9 @@ class AgentsPage extends HookConsumerWidget {
 
     Future<void> refresh() async {
       ref.invalidate(agentDirectoryProvider);
-      if (origin != null) ref.invalidate(accountDevicesProvider(origin));
+      if (sessionKey != null) {
+        ref.invalidate(accountDevicesProvider(sessionKey));
+      }
       refreshMyAgentDefinitions(ref);
       if (pubkeys.isNotEmpty) {
         ref.read(presenceCacheProvider.notifier).track(pubkeys);

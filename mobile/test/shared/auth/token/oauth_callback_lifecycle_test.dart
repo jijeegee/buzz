@@ -105,7 +105,7 @@ void main() {
       );
       final scheme = await const FlutterWebAuth2Launcher().callbackScheme();
       expect(scheme, 'app.kuzz.parity-dev');
-      final h = Harness();
+      final h = Harness(attempt: true);
       addTearDown(h.controller.dispose);
       h.launcher.installedScheme = scheme;
       await h.controller.restore();
@@ -275,7 +275,7 @@ void main() {
     test(
       'late ${failure.runtimeType} cannot overwrite newer recovery state',
       () async {
-        final h = Harness();
+        final h = Harness(attempt: true);
         addTearDown(h.controller.dispose);
         await h.controller.restore();
         final browser = h.launcher.gate = Completer<void>();
@@ -283,10 +283,9 @@ void main() {
         final pending = h.controller.signIn();
         await Future<void>.delayed(Duration.zero);
         await h.controller.signOut();
-        h.store.readError = StateError('Keychain unavailable');
         await h.controller.restore();
         final settled = h.controller.state;
-        expect(settled.status, TokenSessionStatus.stalled);
+        expect(settled.status, TokenSessionStatus.signedOut);
         final notifications = h.states.length;
         browser.complete();
         expect(await pending, isFalse);
@@ -298,7 +297,7 @@ void main() {
   }
 
   test('duplicate taps share one login; cancelled retry can succeed', () async {
-    final h = Harness();
+    final h = Harness(attempt: true);
     addTearDown(h.controller.dispose);
     await h.controller.restore();
     final browser = h.launcher.gate = Completer<void>();
@@ -317,7 +316,7 @@ void main() {
   });
 
   test('late rejected-mode cleanup cannot overwrite newer recovery', () async {
-    final h = Harness();
+    final h = Harness(attempt: true);
     addTearDown(h.controller.dispose);
     await h.controller.restore();
     final cleanup = h.server.heldLogout = Completer<http.Response>();
@@ -326,7 +325,6 @@ void main() {
     await settle();
     expect(h.endedSessions, hasLength(1));
     await h.controller.forgetOnDevice();
-    h.store.readError = StateError('Keychain unavailable');
     await h.controller.restore();
     final settled = h.controller.state;
     final notifications = h.states.length;

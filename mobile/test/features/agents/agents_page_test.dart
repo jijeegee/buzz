@@ -75,7 +75,7 @@ void main() {
           // Signed out for settings: they open read-only, with no relay.
           myPubkeyProvider.overrideWithValue(null),
           // No account: no paired agents from the device list.
-          accountOriginProvider.overrideWithValue(null),
+          accountSessionProvider.overrideWithValue(null),
         ],
         child: MaterialApp(theme: AppTheme.light(), home: const AgentsPage()),
       ),

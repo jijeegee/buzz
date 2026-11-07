@@ -9,15 +9,23 @@ import 'token_auth_test_fakes.dart';
 
 const origin = 'https://relay.example';
 const principal = 'aa11';
+final key = SessionKey(origin, principal);
 const stored1 = StoredTokenSession(
   refreshToken: 'bzr_1',
   principalId: principal,
 );
 
 class Harness {
-  Harness({StoredTokenSession? stored, this.canResumeQuietly}) {
-    if (stored != null) store.data[origin] = stored;
+  Harness({
+    StoredTokenSession? stored,
+    this.canResumeQuietly,
+    this.attempt = false,
+  }) {
+    if (stored != null) store.data[key] = stored;
   }
+
+  /// Runs [controller] as a sign-in attempt instead of an account's session.
+  final bool attempt;
 
   final server = FakeAuthServer();
   final store = FakeRefreshTokenStore();
@@ -27,16 +35,24 @@ class Harness {
   final QuietResumeCheck? canResumeQuietly;
 
   late final TokenSessionController controller = () {
-    final controller = TokenSessionController(
-      origin: origin,
-      api: AuthApi(origin: origin, client: server.client),
-      store: store,
-      launcher: launcher,
-      clock: clock.call,
-      timerFactory: clock.createTimer,
-      deviceName: 'Test phone',
-      canResumeQuietly: canResumeQuietly,
-    );
+    final api = AuthApi(origin: origin, client: server.client);
+    final controller = attempt
+        ? TokenSessionController.attempt(
+            origin: origin,
+            api: api,
+            launcher: launcher,
+            clock: clock.call,
+            timerFactory: clock.createTimer,
+            deviceName: 'Test phone',
+          )
+        : TokenSessionController(
+            key: key,
+            api: api,
+            store: store,
+            clock: clock.call,
+            timerFactory: clock.createTimer,
+            canResumeQuietly: canResumeQuietly,
+          );
     controller.addListener(states.add);
     return controller;
   }();
@@ -52,7 +68,7 @@ class Harness {
 
   /// Restore into a signed-in session holding `bzs_2` / `bzr_2`.
   Future<void> signedIn({int ttl = 3600}) async {
-    store.data[origin] = stored1;
+    store.data[key] = stored1;
     server.refreshResponses.add(
       (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2', ttl: ttl),
     );
@@ -94,7 +110,7 @@ void main() {
         gate.complete();
         await restoring;
         expect(
-          h.store.data[origin],
+          h.store.data[key],
           const StoredTokenSession(
             refreshToken: 'bzr_2',
             principalId: principal,
@@ -182,7 +198,7 @@ void main() {
         TokenSessionStatus.resuming,
         TokenSessionStatus.signedOut,
       ]);
-      expect(h.store.data[origin], isNull);
+      expect(h.store.data[key], isNull);
     });
 
     test('a terminal 401 signs out and deletes the stored session', () async {
@@ -247,7 +263,7 @@ void main() {
         await h.controller.restore();
         expect(h.status, TokenSessionStatus.retrying);
         expect(h.controller.state.principalId, principal);
-        expect(h.store.data[origin], stored1);
+        expect(h.store.data[key], stored1);
       });
     }
 
@@ -273,7 +289,7 @@ void main() {
         expect(h.status, TokenSessionStatus.stalled);
         expect(h.clock.active, isEmpty, reason: 'no unbounded retry loop');
         expect(
-          h.store.data[origin],
+          h.store.data[key],
           stored1,
           reason: 'transient failures keep the session',
         );
@@ -336,7 +352,7 @@ void main() {
       h.clock.advance(const Duration(minutes: 55));
       await settle();
       expect(h.controller.currentAccessToken, 'bzs_3');
-      expect(h.store.data[origin]!.refreshToken, 'bzr_3');
+      expect(h.store.data[key]!.refreshToken, 'bzr_3');
       expect(h.clock.active.single.delay, const Duration(minutes: 55));
     });
 
@@ -425,35 +441,29 @@ void main() {
   });
 
   group('sign in', () {
-    test(
-      'logs in, stores the refresh, and publishes the access token',
-      () async {
-        final h = Harness();
-        await h.controller.restore();
-        expect(await h.controller.signIn(), isTrue);
-        expect(h.status, TokenSessionStatus.signedIn);
-        expect(h.controller.state.principalId, 'p' * 64);
-        expect(h.controller.currentAccessToken, 'bzs_login');
-        expect(
-          h.store.data[origin],
-          StoredTokenSession(refreshToken: 'bzr_login', principalId: 'p' * 64),
-        );
-        expect(
-          h.launcher.opened.single.queryParameters['device_name'],
-          'Test phone',
-        );
-        expect(
-          h.states.map((s) => s.status),
-          containsAllInOrder([
-            TokenSessionStatus.signingIn,
-            TokenSessionStatus.signedIn,
-          ]),
-        );
-      },
-    );
+    test('logs in and publishes the access token, storing nothing', () async {
+      final h = Harness(attempt: true);
+      await h.controller.restore();
+      expect(await h.controller.signIn(), isTrue);
+      expect(h.status, TokenSessionStatus.signedIn);
+      expect(h.controller.state.principalId, 'p' * 64);
+      expect(h.controller.currentAccessToken, 'bzs_login');
+      expect(h.store.writes, 0);
+      expect(
+        h.launcher.opened.single.queryParameters['device_name'],
+        'Test phone',
+      );
+      expect(
+        h.states.map((s) => s.status),
+        containsAllInOrder([
+          TokenSessionStatus.signingIn,
+          TokenSessionStatus.signedIn,
+        ]),
+      );
+    });
 
     test('cancel returns to signed out without an error', () async {
-      final h = Harness();
+      final h = Harness(attempt: true);
       await h.controller.restore();
       h.launcher.error = const WebAuthCancelledException();
       expect(await h.controller.signIn(), isFalse);
@@ -462,7 +472,7 @@ void main() {
     });
 
     test('a rejected login surfaces the reason', () async {
-      final h = Harness();
+      final h = Harness(attempt: true);
       await h.controller.restore();
       h.launcher.respond = (start) => Uri.parse('app.kuzz://auth/cb').replace(
         queryParameters: {
@@ -476,25 +486,9 @@ void main() {
     });
 
     test(
-      'a failed persist revokes the new device session and stays signed out',
-      () async {
-        final h = Harness();
-        await h.controller.restore();
-        h.store.writeError = StateError('keychain unavailable');
-        expect(await h.controller.signIn(), isFalse);
-        expect(h.status, TokenSessionStatus.signedOut);
-        expect(h.controller.currentAccessToken, isNull);
-        expect(
-          h.endedSessions.single.headers['Authorization'],
-          'Bearer bzs_login',
-        );
-      },
-    );
-
-    test(
       'sign-out while the browser is open discards and revokes the late login',
       () async {
-        final h = Harness();
+        final h = Harness(attempt: true);
         await h.controller.restore();
         h.launcher.gate = Completer<void>();
         final signIn = h.controller.signIn();
@@ -519,7 +513,7 @@ void main() {
     test(
       'sign-out while the login code is being exchanged discards the grant',
       () async {
-        final h = Harness();
+        final h = Harness(attempt: true);
         await h.controller.restore();
         final exchange = Completer<http.Response>();
         h.server.heldComplete = exchange;
@@ -554,7 +548,7 @@ void main() {
     test(
       'dispose while the browser is open never persists the login',
       () async {
-        final h = Harness();
+        final h = Harness(attempt: true);
         await h.controller.restore();
         h.launcher.gate = Completer<void>();
         final signIn = h.controller.signIn();
@@ -575,6 +569,205 @@ void main() {
         );
       },
     );
+
+    test('only an attempt signs in', () async {
+      final h = Harness();
+      await h.controller.restore();
+      expect(h.controller.signIn, throwsStateError);
+    });
+  });
+
+  group('attempt and account', () {
+    Future<Harness> signedInAttempt() async {
+      final h = Harness(attempt: true);
+      expect(await h.controller.signIn(), isTrue);
+      return h;
+    }
+
+    test('an attempt has no timer and rotates in memory', () async {
+      final h = await signedInAttempt();
+      expect(h.clock.active, isEmpty);
+      h.clock.now = h.clock.now.add(const Duration(minutes: 59, seconds: 30));
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_3', 'bzr_3'),
+      );
+      expect(await h.controller.ensureFreshAccessToken(), 'bzs_3');
+      expect(h.clock.active, isEmpty);
+      expect(h.store.writes, 0);
+    });
+
+    test('handoff waits for a rotation in flight and carries its result, '
+        'and leaves the attempt empty', () async {
+      final h = await signedInAttempt();
+      h.clock.now = h.clock.now.add(const Duration(minutes: 59, seconds: 30));
+      h.server.holdRefreshes = true;
+      final rotation = h.controller.ensureFreshAccessToken();
+      await settle();
+      expect(h.server.heldRefreshes, hasLength(1));
+
+      var done = false;
+      final handoff = h.controller.handoff()..whenComplete(() => done = true);
+      await settle();
+      expect(done, isFalse, reason: 'must not drop the rotated token');
+
+      h.server.heldRefreshes.removeFirst().complete(
+        FakeAuthServer.rotated('bzs_3', 'bzr_3'),
+      );
+      await rotation;
+      final result = await handoff;
+      expect(result.refreshToken, 'bzr_3');
+      expect(result.accessToken, 'bzs_3');
+      expect(result.principalId, 'p' * 64);
+      expect(h.controller.currentAccessToken, isNull);
+
+      // Nothing left to end: the account owns the session now.
+      await h.controller.discard();
+      expect(h.endedSessions, isEmpty);
+    });
+
+    test('adopt publishes and stores the session under its own key', () async {
+      final attempt = await signedInAttempt();
+      final handoff = await attempt.controller.handoff();
+      final h = Harness();
+      await h.controller.restore();
+
+      await h.controller.adopt(handoff);
+
+      expect(h.status, TokenSessionStatus.signedIn);
+      expect(h.controller.state.principalId, 'p' * 64);
+      expect(h.controller.currentAccessToken, 'bzs_login');
+      expect(h.store.data[key]?.refreshToken, 'bzr_login');
+      expect(h.clock.active, hasLength(1), reason: 'the account keeps fresh');
+      expect(h.endedSessions, isEmpty, reason: 'nothing to end');
+    });
+
+    test(
+      'adopt over a session ends that session only, never the device',
+      () async {
+        final attempt = await signedInAttempt();
+        final handoff = await attempt.controller.handoff();
+        final h = Harness();
+        await h.signedIn();
+
+        await h.controller.adopt(handoff);
+        await settle();
+
+        expect(h.logouts, isEmpty);
+        expect(h.endedSessions.single.headers['Authorization'], 'Bearer bzs_2');
+        expect(h.controller.currentAccessToken, 'bzs_login');
+        expect(h.store.data[key]?.refreshToken, 'bzr_login');
+      },
+    );
+
+    test('adopt waits for the rotation of the account it replaces', () async {
+      final attempt = await signedInAttempt();
+      final handoff = await attempt.controller.handoff();
+      final h = Harness();
+      await h.signedIn();
+      h.server.holdRefreshes = true;
+      final rotation = h.controller.refreshAfterTokenExpired('bzs_2');
+      await settle();
+
+      var done = false;
+      final adopting = h.controller.adopt(handoff)
+        ..whenComplete(() => done = true);
+      await settle();
+      expect(done, isFalse);
+      expect(h.store.data[key]?.refreshToken, 'bzr_2');
+
+      h.server.heldRefreshes.removeFirst().complete(
+        FakeAuthServer.rotated('bzs_3', 'bzr_3'),
+      );
+      await rotation;
+      await adopting;
+      await settle();
+
+      expect(h.store.data[key]?.refreshToken, 'bzr_login');
+      expect(h.controller.currentAccessToken, 'bzs_login');
+      expect(
+        h.endedSessions.single.headers['Authorization'],
+        'Bearer bzs_3',
+        reason: 'the rotated session is the one that ends',
+      );
+    });
+
+    test('a failed adopt revokes the new session and throws', () async {
+      final attempt = await signedInAttempt();
+      final handoff = await attempt.controller.handoff();
+      final h = Harness();
+      await h.controller.restore();
+      h.store.writeError = StateError('keychain unavailable');
+
+      await expectLater(
+        h.controller.adopt(handoff),
+        throwsA(isA<TokenSessionException>()),
+      );
+
+      expect(h.status, TokenSessionStatus.signedOut);
+      expect(h.controller.currentAccessToken, isNull);
+      expect(
+        h.endedSessions.single.headers['Authorization'],
+        'Bearer bzs_login',
+      );
+    });
+
+    test(
+      'a discarded attempt ends its session with /auth/sessions/end',
+      () async {
+        final h = await signedInAttempt();
+        await h.controller.discard();
+        expect(h.logouts, isEmpty);
+        expect(
+          h.endedSessions.single.headers['Authorization'],
+          'Bearer bzs_login',
+        );
+        expect(h.controller.currentAccessToken, isNull);
+        await expectLater(
+          h.controller.handoff(),
+          throwsA(isA<TokenSessionException>()),
+        );
+      },
+    );
+  });
+
+  group('refreshIfExpiring', () {
+    test('leaves a token well before expiry alone', () async {
+      final h = Harness();
+      await h.signedIn();
+      await h.controller.refreshIfExpiring();
+      expect(h.server.refreshCalls, 1);
+    });
+
+    test('rotates near expiry, as after a stretch in the background', () async {
+      final h = Harness();
+      await h.signedIn();
+      h.clock.now = h.clock.now.add(const Duration(minutes: 56));
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_3', 'bzr_3'),
+      );
+      await h.controller.refreshIfExpiring();
+      expect(h.controller.currentAccessToken, 'bzs_3');
+    });
+
+    test('gives a stalled session one more try', () async {
+      final h = Harness(stored: stored1);
+      for (var i = 0; i < 6; i++) {
+        h.server.refreshResponses.add(
+          (_) => FakeAuthServer.authError(503, 'unavailable'),
+        );
+      }
+      await h.controller.restore();
+      for (final delay in TokenSessionController.retryDelays) {
+        h.clock.advance(delay);
+        await settle();
+      }
+      expect(h.status, TokenSessionStatus.stalled);
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+      );
+      await h.controller.refreshIfExpiring();
+      expect(h.status, TokenSessionStatus.signedIn);
+    });
   });
 
   group('sign out', () {
@@ -601,7 +794,7 @@ void main() {
         throwsA(isA<TokenSessionException>()),
       );
       expect(h.status, TokenSessionStatus.signedIn);
-      expect(h.store.data[origin]!.refreshToken, 'bzr_2');
+      expect(h.store.data[key]!.refreshToken, 'bzr_2');
       expect(h.controller.currentAccessToken, 'bzs_2');
     });
 
@@ -671,7 +864,7 @@ void main() {
     final before = h.states.length;
     // community_token_session.dart: delete the record, then invalidate
     // (dispose) the controller.
-    await h.store.delete(origin);
+    await h.store.delete(key);
     h.controller.dispose();
     expect(h.clock.active, isEmpty);
     h.server.heldRefreshes.removeFirst().complete(
@@ -679,7 +872,7 @@ void main() {
     );
     await settle();
     expect(
-      h.store.data.containsKey(origin),
+      h.store.data.containsKey(key),
       isFalse,
       reason: 'a late rotation must not re-persist a removed session',
     );

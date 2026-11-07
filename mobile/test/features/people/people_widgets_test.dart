@@ -564,7 +564,7 @@ void main() {
     });
 
     testWidgets('Kuzz ID validates and reports a taken ID', (tester) async {
-      await pumpPage(tester, const KuzzIdPage(origin: peopleOrigin));
+      await pumpPage(tester, KuzzIdPage(sessionKey: peopleSession));
       final field = find.byKey(const Key('kuzz-id-field'));
       expect(find.text('me'), findsOneWidget);
 

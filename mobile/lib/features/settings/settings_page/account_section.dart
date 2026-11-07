@@ -5,9 +5,9 @@ part of '../settings_page.dart';
 /// also edits its global profile here. Account deletion sits folded at the
 /// bottom of Settings.
 class _AccountSection extends ConsumerWidget {
-  const _AccountSection({required this.origin, this.googleKey = false});
+  const _AccountSection({required this.sessionKey, this.googleKey = false});
 
-  final String origin;
+  final SessionKey sessionKey;
 
   /// Signed in with Google holding the account key. Its profile is edited
   /// from the profile header, so the identity row is a label, not a button.
@@ -15,7 +15,7 @@ class _AccountSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final profile = ref.watch(accountProfileProvider(origin)).value;
+    final profile = ref.watch(accountProfileProvider(sessionKey)).value;
     final name = profile?.displayName;
     final username = profile?.username;
     final email = profile?.email;
@@ -29,7 +29,8 @@ class _AccountSection extends ConsumerWidget {
     void openDevices() => unawaited(
       Navigator.of(context).push(
         MaterialPageRoute<void>(
-          builder: (_) => DevicesPage(origin: origin, agents: !googleKey),
+          builder: (_) =>
+              DevicesPage(sessionKey: sessionKey, agents: !googleKey),
         ),
       ),
     );
@@ -66,7 +67,7 @@ class _AccountSection extends ConsumerWidget {
                     : name,
                 subtitle: username == null ? null : '@$username',
                 trailing: const _RowChevron(),
-                onTap: () => unawaited(_openAccountPage(context, origin)),
+                onTap: () => unawaited(_openAccountPage(context, sessionKey)),
               ),
           ],
         ),
@@ -87,7 +88,9 @@ class _AccountSection extends ConsumerWidget {
   }
 }
 
-Future<void> _openAccountPage(BuildContext context, String origin) =>
+Future<void> _openAccountPage(BuildContext context, SessionKey sessionKey) =>
     Navigator.of(context).push(
-      MaterialPageRoute<void>(builder: (_) => AccountPage(origin: origin)),
+      MaterialPageRoute<void>(
+        builder: (_) => AccountPage(sessionKey: sessionKey),
+      ),
     );

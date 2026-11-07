@@ -1,7 +1,6 @@
 import 'package:kuzz/features/invites/invite_join_provider.dart';
 import 'package:kuzz/features/invites/invite_join_sheet.dart';
 import 'package:kuzz/shared/auth/default_community.dart';
-import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 
@@ -83,44 +82,35 @@ void main() {
       expect(find.text(fixture.label), findsOneWidget);
     });
   }
-  for (final fixture in [
-    (
-      status: TokenSessionStatus.signedOut,
-      label: 'Sign in with Google to join',
-      session: 'Not signed in',
-    ),
-    (status: TokenSessionStatus.signedIn, label: 'Join', session: 'Signed in'),
-  ]) {
-    testWidgets('a token relay invite shows sign-in state '
-        '(${fixture.status.name}) and no device-key warning', (tester) async {
-      const origin = 'https://new.example.com';
-      await tester.pumpWidget(
-        WidgetHelpers.testable(
-          child: const InviteJoinSheet(),
-          overrides: [
-            inviteJoinProvider.overrideWith(
-              () => _StaticInviteJoinNotifier(
-                const InviteJoinState(
-                  status: InviteJoinStatus.confirming,
-                  host: 'new.example.com',
-                  tokenRelayOrigin: origin,
-                  tokenAuthChecked: true,
-                ),
+  testWidgets('a token relay invite asks to sign in, with no device-key '
+      'warning', (tester) async {
+    const origin = 'https://new.example.com';
+    await tester.pumpWidget(
+      WidgetHelpers.testable(
+        child: const InviteJoinSheet(),
+        overrides: [
+          inviteJoinProvider.overrideWith(
+            () => _StaticInviteJoinNotifier(
+              const InviteJoinState(
+                status: InviteJoinStatus.confirming,
+                host: 'new.example.com',
+                tokenRelayOrigin: origin,
+                tokenAuthChecked: true,
               ),
             ),
-            tokenSessionProvider(
-              origin,
-            ).overrideWith(() => _StaticTokenSession(origin, fixture.status)),
-          ],
-        ),
-      );
-      await tester.pump();
+          ),
+        ],
+      ),
+    );
+    await tester.pump();
 
-      expect(find.widgetWithText(FilledButton, fixture.label), findsOneWidget);
-      expect(find.text(fixture.session), findsOneWidget);
-      expect(find.textContaining('only copy of this identity'), findsNothing);
-    });
-  }
+    expect(
+      find.widgetWithText(FilledButton, 'Sign in with Google to join'),
+      findsOneWidget,
+    );
+    expect(find.text('Not signed in'), findsOneWidget);
+    expect(find.textContaining('only copy of this identity'), findsNothing);
+  });
 
   testWidgets('with the built-in server the sheet never names the server', (
     tester,
@@ -187,13 +177,4 @@ class _RecoveryErrorInviteJoinNotifier extends InviteJoinNotifier {
         'Starter setup could not reach the relay. Retry when the connection is available.',
     isStarterSetupRecovery: true,
   );
-}
-
-class _StaticTokenSession extends TokenSessionNotifier {
-  _StaticTokenSession(super.origin, this._status);
-
-  final TokenSessionStatus _status;
-
-  @override
-  TokenSessionState build() => TokenSessionState(status: _status);
 }

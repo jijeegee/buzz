@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart' as http_testing;
+import 'package:kuzz/shared/auth/token/token_session.dart';
 import 'package:nostr/nostr.dart' as nostr;
 import 'package:pointycastle/digests/sha256.dart';
 
@@ -653,6 +654,7 @@ class _RecordingAuthNotifier extends AuthNotifier {
     Community community, {
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     final storage = ref.read(communityStorageProvider);
     await storage.save(community);

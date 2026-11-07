@@ -35,9 +35,9 @@ const peopleSearchDebounce = Duration(milliseconds: 300);
 final sharedPeopleProvider = FutureProvider.autoDispose
     .family<List<PersonSummary>, String>((ref, query) async {
       final q = query.trim();
-      final origin = ref.watch(accountOriginProvider);
-      if (q.isEmpty || origin == null) return const [];
-      return ref.watch(accountApiProvider(origin)).sharedPeople(q);
+      final sessionKey = ref.watch(accountSessionProvider);
+      if (q.isEmpty || sessionKey == null) return const [];
+      return ref.watch(accountApiProvider(sessionKey)).sharedPeople(q);
     }, retry: (_, _) => null);
 
 bool _matches(String query, UserProfile? profile, String name) {
@@ -339,7 +339,7 @@ class _SharedResults extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    if (ref.watch(accountOriginProvider) == null) {
+    if (ref.watch(accountSessionProvider) == null) {
       return const SizedBox.shrink();
     }
     final header = _SectionHeader(

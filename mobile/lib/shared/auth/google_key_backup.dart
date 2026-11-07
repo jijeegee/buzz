@@ -66,7 +66,6 @@ final googleKeyBackupServiceProvider =
       return GoogleKeyBackupService(
         origin: origin,
         client: ref.watch(authHttpClientProvider),
-        session: ref.watch(keyBackupSessionControllerProvider(origin)),
         communities: ref.watch(communityStorageProvider),
         pending: ref.watch(pendingBackupKeyStoreProvider),
       );
@@ -78,19 +77,16 @@ class GoogleKeyBackupService {
   GoogleKeyBackupService({
     required this.origin,
     required http.Client client,
-    required TokenSessionController session,
     required CommunityStorage communities,
     required PendingBackupKeyStore pending,
     nostr.Keys Function()? generateKeys,
   }) : _client = client,
-       _session = session,
        _communities = communities,
        _pending = pending,
        _generateKeys = generateKeys ?? nostr.Keys.generate;
 
   final String origin;
   final http.Client _client;
-  final TokenSessionController _session;
   final CommunityStorage _communities;
   final PendingBackupKeyStore _pending;
   final nostr.Keys Function() _generateKeys;
@@ -111,24 +107,31 @@ class GoogleKeyBackupService {
     }
   }
 
-  /// Resolve and return a signed-key community. The caller persists it through
-  /// AuthNotifier before exposing the authenticated app. Single-flight.
-  Future<Community> resolve({bool Function()? isCurrent}) =>
-      _inFlight ??= _resolve(isCurrent)
-          .onError((Object error, StackTrace stack) {
-            if (error is KeyBackupException) throw error;
-            throw _tryAgain;
-          })
-          .whenComplete(() {
-            _inFlight = null;
-          });
+  /// Resolve and return a signed-key community with [session], the sign-in
+  /// attempt: nothing here touches a stored session. The caller persists the
+  /// result through AuthNotifier before exposing the authenticated app.
+  /// Single-flight.
+  Future<Community> resolve({
+    required TokenSessionController session,
+    bool Function()? isCurrent,
+  }) => _inFlight ??= _resolve(session, isCurrent)
+      .onError((Object error, StackTrace stack) {
+        if (error is KeyBackupException) throw error;
+        throw _tryAgain;
+      })
+      .whenComplete(() {
+        _inFlight = null;
+      });
 
-  Future<Community> _resolve(bool Function()? isCurrent) async {
-    final generation = _session.generation;
+  Future<Community> _resolve(
+    TokenSessionController session,
+    bool Function()? isCurrent,
+  ) async {
+    final generation = session.generation;
     void guard() {
       if (isCurrent?.call() == false ||
-          generation != _session.generation ||
-          _session.state.status != TokenSessionStatus.signedIn) {
+          generation != session.generation ||
+          session.state.status != TokenSessionStatus.signedIn) {
         throw KeyBackupException(appL10n.googleBackupSignInChanged);
       }
     }
@@ -136,14 +139,19 @@ class GoogleKeyBackupService {
     guard();
     await checkLocalCompatibility();
     guard();
-    if (_session.identityMode != 'key_backup') {
+    if (session.identityMode != 'key_backup') {
       throw KeyBackupException(appL10n.googleBackupSignInWithGoogleFirst);
     }
-    final account = _session.state.principalId;
+    final account = session.state.principalId;
     if (account == null) {
       throw KeyBackupException(appL10n.googleBackupSignInAgain);
     }
-    final existing = await _existing();
+    final status = await _status(session, account, guard);
+    // Two steps, because a key-only community records no Google account yet:
+    // its pubkey is only known from the backup status. Matching by account
+    // alone would create a second row for it.
+    final accountKey = status['pubkey'] as String?;
+    final existing = await _existing(account: account, pubkey: accountKey);
     final local = existing == null ? null : _keys(existing.nsec);
     final missingLocalKey =
         existing != null && (existing.nsec == null || existing.nsec!.isEmpty);
@@ -155,13 +163,12 @@ class GoogleKeyBackupService {
                 existing.pubkey != local.public))) {
       throw KeyBackupException(appL10n.googleBackupCommunitySignInFailed);
     }
-    final status = await _status(account, guard);
     late nostr.Keys keys;
     if (status['state'] == 'ready') {
       if (existing?.pubkey != null && existing!.pubkey != status['pubkey']) {
         throw _mismatch;
       }
-      keys = await _restore(status, local, guard);
+      keys = await _restore(session, status, local, guard);
     } else {
       // A signed-out community that was never linked to Google may link the
       // key it retained at sign-out (`local`, always used below as the
@@ -191,7 +198,7 @@ class GoogleKeyBackupService {
       await _pending.write(origin, account, candidate.nsec);
       guard();
       try {
-        await _initialize(account, candidate, guard);
+        await _initialize(session, account, candidate, guard);
         keys = candidate;
       } on KeyBackupException catch (error) {
         if (error.statusCode != 409 ||
@@ -200,16 +207,16 @@ class GoogleKeyBackupService {
           rethrow;
         }
         // Another first device won. Never retry initialization with a new key.
-        final winner = await _status(account, guard);
+        final winner = await _status(session, account, guard);
         if (winner['state'] != 'ready') rethrow;
-        keys = await _restore(winner, null, guard);
+        keys = await _restore(session, winner, null, guard);
       }
     }
-    if (_session.state.principalId != account ||
-        _session.identityMode != 'key_backup') {
+    if (session.state.principalId != account ||
+        session.identityMode != 'key_backup') {
       throw KeyBackupException(appL10n.googleBackupAccountChanged);
     }
-    final now = await _existing();
+    final now = await _existing(account: account, pubkey: accountKey);
     guard();
     if (now?.id != existing?.id ||
         now?.nsec != existing?.nsec ||
@@ -231,20 +238,42 @@ class GoogleKeyBackupService {
         );
   }
 
-  Future<Community?> _existing() async {
-    final all = await _communities.loadAll();
-    return all
+  /// The community at [origin], preferring the one of [account], then the
+  /// one holding [pubkey]. Without either match, the first at [origin].
+  Future<Community?> _existing({String? account, String? pubkey}) async {
+    final all = (await _communities.loadAll())
         .where(
           (community) => normalizeRelayOrigin(community.relayUrl) == origin,
         )
-        .firstOrNull;
+        .toList();
+    return all
+            .where(
+              (community) =>
+                  account != null && community.googleBackupAccountId == account,
+            )
+            .firstOrNull ??
+        all
+            .where(
+              (community) =>
+                  pubkey != null &&
+                  community.pubkey == pubkey &&
+                  !community.tokenAuth,
+            )
+            .firstOrNull ??
+        all.firstOrNull;
   }
 
   Future<Map<String, dynamic>> _status(
+    TokenSessionController session,
     String account,
     void Function() guard,
   ) async {
-    final status = await _request('GET', '/auth/key-backup', guard: guard);
+    final status = await _request(
+      session,
+      'GET',
+      '/auth/key-backup',
+      guard: guard,
+    );
     if (status['account_id'] != account ||
         status['version'] != 1 ||
         !(status['state'] == 'absent' && status['pubkey'] == null ||
@@ -255,6 +284,7 @@ class GoogleKeyBackupService {
   }
 
   Future<nostr.Keys> _restore(
+    TokenSessionController session,
     Map<String, dynamic> status,
     nostr.Keys? local,
     void Function() guard,
@@ -263,6 +293,7 @@ class GoogleKeyBackupService {
       throw _mismatch;
     }
     final result = await _request(
+      session,
       'POST',
       '/auth/key-backup/restore',
       guard: guard,
@@ -287,11 +318,13 @@ class GoogleKeyBackupService {
   }
 
   Future<void> _initialize(
+    TokenSessionController session,
     String account,
     nostr.Keys keys,
     void Function() guard,
   ) async {
     final challenge = await _request(
+      session,
       'POST',
       '/auth/key-backup/challenge',
       guard: guard,
@@ -315,6 +348,7 @@ class GoogleKeyBackupService {
       ],
     );
     final result = await _request(
+      session,
       'POST',
       '/auth/key-backup',
       guard: guard,
@@ -326,13 +360,14 @@ class GoogleKeyBackupService {
   }
 
   Future<Map<String, dynamic>> _request(
+    TokenSessionController session,
     String method,
     String path, {
     Map<String, dynamic>? body,
     required void Function() guard,
   }) async {
     guard();
-    final token = await _session.ensureFreshAccessToken();
+    final token = await session.ensureFreshAccessToken();
     guard();
     if (token == null) {
       throw KeyBackupException(appL10n.googleBackupSignInWithGoogleAgain);

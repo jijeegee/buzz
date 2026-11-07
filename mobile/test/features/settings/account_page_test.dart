@@ -46,7 +46,7 @@ Future<TokenSettingsHarness> _pumpAccount(
   addTearDown(service.dispose);
   await h.pump(
     tester,
-    const AccountPage(origin: tokenOrigin),
+    AccountPage(sessionKey: tokenSession),
     overrides: [mediaUploadServiceProvider.overrideWithValue(service)],
   );
   return h;
@@ -117,7 +117,7 @@ void main() {
     addTearDown(service.dispose);
     await h.pump(
       tester,
-      const AccountPage(origin: tokenOrigin),
+      AccountPage(sessionKey: tokenSession),
       overrides: [mediaUploadServiceProvider.overrideWithValue(service)],
     );
 
@@ -177,7 +177,7 @@ void main() {
     addTearDown(service.dispose);
     await h.pump(
       tester,
-      const AccountPage(origin: tokenOrigin),
+      AccountPage(sessionKey: tokenSession),
       overrides: [mediaUploadServiceProvider.overrideWithValue(service)],
     );
 

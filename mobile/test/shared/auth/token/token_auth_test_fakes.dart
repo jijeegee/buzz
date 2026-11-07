@@ -8,7 +8,7 @@ import 'package:http/testing.dart';
 
 /// In-memory [RefreshTokenStore] with injectable failures.
 class FakeRefreshTokenStore implements RefreshTokenStore {
-  final Map<String, StoredTokenSession> data = {};
+  final Map<SessionKey, StoredTokenSession> data = {};
   Object? writeError;
   Object? readError;
   Object? deleteError;
@@ -19,28 +19,28 @@ class FakeRefreshTokenStore implements RefreshTokenStore {
   Completer<void>? writeGate;
 
   @override
-  Future<StoredTokenSession?> read(String origin) async {
+  Future<StoredTokenSession?> read(SessionKey key) async {
     final error = readError;
     if (error != null) throw error;
-    return data[origin];
+    return data[key];
   }
 
   @override
-  Future<void> write(String origin, StoredTokenSession session) async {
+  Future<void> write(SessionKey key, StoredTokenSession session) async {
     final gate = writeGate;
     if (gate != null) await gate.future;
     final error = writeError;
     if (error != null) throw error;
     writes += 1;
-    data[origin] = session;
+    data[key] = session;
   }
 
   @override
-  Future<void> delete(String origin) async {
+  Future<void> delete(SessionKey key) async {
     final error = deleteError;
     if (error != null) throw error;
     deletes += 1;
-    data.remove(origin);
+    data.remove(key);
   }
 }
 

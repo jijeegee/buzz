@@ -21,6 +21,7 @@ class RelayConfig {
     this.nsec,
     this.tokenAuth = false,
     this.principalId,
+    this.communityId,
   }) : _baseUrl = baseUrl;
 
   /// Relay origin exactly as the active community stored it.
@@ -34,6 +35,10 @@ class RelayConfig {
 
   /// The token session's principal (hex pubkey) when [tokenAuth].
   final String? principalId;
+
+  /// The community this configuration connects, when there is one. A socket
+  /// keeps it: the active community can change under an old socket.
+  final String? communityId;
 
   /// The origin as persisted, before scheme canonicalization.
   ///
@@ -119,9 +124,14 @@ class RelayConfigNotifier extends Notifier<RelayConfig> {
           baseUrl: context.relayUrl!,
           tokenAuth: true,
           principalId: context.principalId,
+          communityId: context.id,
         );
       }
-      return RelayConfig(baseUrl: context.relayUrl!, nsec: context.nsec);
+      return RelayConfig(
+        baseUrl: context.relayUrl!,
+        nsec: context.nsec,
+        communityId: context.id,
+      );
     }
 
     // No usable community: never fall back to another server than the

@@ -280,31 +280,32 @@ void main() {
       final store = SecureRefreshTokenStore(storage: secure);
       const a = StoredTokenSession(refreshToken: 'bzr_a', principalId: 'pa');
       const b = StoredTokenSession(refreshToken: 'bzr_b', principalId: 'pb');
-      await store.write('https://a.example', a);
-      await store.write('https://b.example', b);
-      expect(await store.read('https://a.example'), a);
-      expect(await store.read('https://b.example'), b);
+      final keyA = SessionKey('https://a.example', 'pa');
+      final keyB = SessionKey('https://b.example', 'pb');
+      await store.write(keyA, a);
+      await store.write(keyB, b);
+      expect(await store.read(keyA), a);
+      expect(await store.read(keyB), b);
       expect(
-        await secure.read(
-          key: SecureRefreshTokenStore.keyFor('https://a.example'),
-        ),
+        await secure.read(key: SecureRefreshTokenStore.keyFor(keyA)),
         isNotNull,
       );
-      await store.delete('https://a.example');
-      expect(await store.read('https://a.example'), isNull);
-      expect(await store.read('https://b.example'), b);
+      await store.delete(keyA);
+      expect(await store.read(keyA), isNull);
+      expect(await store.read(keyB), b);
     });
 
     test('a corrupt record reads as absent and is removed', () async {
       final secure = FakeSecureStorage();
+      final key = SessionKey(origin, 'p');
       await secure.write(
-        key: SecureRefreshTokenStore.keyFor(origin),
+        key: SecureRefreshTokenStore.keyFor(key),
         value: '{not json',
       );
       final store = SecureRefreshTokenStore(storage: secure);
-      expect(await store.read(origin), isNull);
+      expect(await store.read(key), isNull);
       expect(
-        await secure.read(key: SecureRefreshTokenStore.keyFor(origin)),
+        await secure.read(key: SecureRefreshTokenStore.keyFor(key)),
         isNull,
       );
     });

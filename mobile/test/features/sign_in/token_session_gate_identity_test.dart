@@ -12,7 +12,8 @@ const _origin = 'https://relay.test';
 final _oldPrincipal = 'q' * 64;
 final _newPrincipal = 'p' * 64;
 
-/// The real notifier, with injectable failures for the identity write.
+/// Records the identity without moving the session to a new key, with
+/// injectable failures for the identity write.
 class _FlakyAuthNotifier extends AuthNotifier {
   int failuresLeft = 0;
   int attempts = 0;
@@ -23,16 +24,18 @@ class _FlakyAuthNotifier extends AuthNotifier {
     required String principalId,
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     attempts += 1;
     if (failuresLeft > 0) {
       failuresLeft -= 1;
       throw StateError('keychain unavailable');
     }
-    await super.authenticateWithTokenSession(
-      relayUrl: relayUrl,
-      principalId: principalId,
-    );
+    final storage = ref.read(communityStorageProvider);
+    final saved = (await storage.loadAll()).single;
+    final community = saved.withCredentials(pubkey: principalId);
+    await storage.save(community);
+    await authenticateWithCommunity(community);
   }
 }
 
@@ -66,7 +69,7 @@ void main() {
     );
     await storage.save(community);
     await storage.saveActiveId(community.id);
-    tokens.data[_origin] = StoredTokenSession(
+    tokens.data[SessionKey(_origin, _oldPrincipal)] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: _newPrincipal,
     );
@@ -97,8 +100,11 @@ void main() {
     await tester.pumpWidget(
       UncontrolledProviderScope(
         container: container,
-        child: const MaterialApp(
-          home: TokenSessionGate(origin: _origin, child: home),
+        child: MaterialApp(
+          home: TokenSessionGate(
+            sessionKey: SessionKey(_origin, _oldPrincipal),
+            child: home,
+          ),
         ),
       ),
     );

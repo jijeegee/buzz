@@ -181,6 +181,7 @@ class App extends HookConsumerWidget {
       // rebuilt MaterialApp (and every Theme dependent) once per frame.
       ref.listen(observerRelayProvider, (_, _) {});
       ref.watch(appLifecycleProvider);
+      ref.listen(accountSessionKeeperProvider, (_, _) {});
       ref.listen(pushInboxPauseCursorProvider, (_, _) {});
       ref.listen(pushInboxDrainProvider, (_, _) {});
       ref.watch(userStatusCacheProvider);
@@ -319,13 +320,13 @@ class _TokenGateIfNeeded extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final origin = ref.watch(activeTokenOriginProvider);
-    if (origin == null) return child;
+    final sessionKey = ref.watch(activeTokenSessionProvider);
+    if (sessionKey == null) return child;
     // A session that ends while the app is shown (signed out elsewhere, or a
     // resumed one whose first rotation is refused) must not leave a chat
     // pushed above the sign-in page. A sign-out, switch or removal moves its
     // own screens (and may still show why it failed), so it is left alone.
-    ref.listen(tokenSessionProvider(origin), (previous, next) {
+    ref.listen(tokenSessionProvider(sessionKey), (previous, next) {
       if (next.status != TokenSessionStatus.signedOut) return;
       if (ref.read(communityTransitionProvider).isBusy) return;
       if (previous?.status
@@ -339,8 +340,8 @@ class _TokenGateIfNeeded extends ConsumerWidget {
       }
     });
     return TokenSessionGate(
-      key: ValueKey(origin),
-      origin: origin,
+      key: ValueKey(sessionKey),
+      sessionKey: sessionKey,
       child: child,
     );
   }

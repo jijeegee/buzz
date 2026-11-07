@@ -7,6 +7,7 @@ import 'package:lucide_icons_flutter/lucide_icons.dart';
 
 import '../../shared/auth/account/account_api.dart';
 import '../../shared/auth/auth.dart';
+import '../../shared/auth/token/session_key.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_list.dart';
@@ -19,10 +20,10 @@ const accountDeletionConfirmWord = 'delete';
 /// Settings › Account: disconnect every agent of the account at once, as on
 /// desktop. Agents on a computer reconnect the next time they start.
 class DisconnectAgentsRow extends HookConsumerWidget {
-  const DisconnectAgentsRow({super.key, required this.origin});
+  const DisconnectAgentsRow({super.key, required this.sessionKey});
 
-  /// Canonical origin of the token relay.
-  final String origin;
+  /// The account of the token relay.
+  final SessionKey sessionKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,7 +41,7 @@ class DisconnectAgentsRow extends HookConsumerWidget {
       final l10n = context.l10n;
       String message;
       try {
-        await ref.read(accountApiProvider(origin)).revokeAllBotTokens();
+        await ref.read(accountApiProvider(sessionKey)).revokeAllBotTokens();
         message = l10n.settingsDevicesRevokeBotsDone;
       } catch (failure) {
         message = l10n.settingsDevicesRevokeBotsFailed('$failure');
@@ -66,10 +67,10 @@ class DisconnectAgentsRow extends HookConsumerWidget {
 /// Deleting takes two steps — what happens, then typing
 /// [accountDeletionConfirmWord].
 class AccountDeletionSection extends HookConsumerWidget {
-  const AccountDeletionSection({super.key, required this.origin});
+  const AccountDeletionSection({super.key, required this.sessionKey});
 
-  /// Canonical origin of the token relay.
-  final String origin;
+  /// The account of the token relay.
+  final SessionKey sessionKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -114,7 +115,7 @@ class AccountDeletionSection extends HookConsumerWidget {
       error.value = null;
       busy.value = true;
       try {
-        await ref.read(accountApiProvider(origin)).deleteAccount();
+        await ref.read(accountApiProvider(sessionKey)).deleteAccount();
       } catch (failure) {
         if (context.mounted) error.value = '$failure';
         return;

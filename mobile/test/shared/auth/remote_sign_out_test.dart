@@ -8,7 +8,7 @@ import 'package:kuzz/shared/relay/relay_socket.dart';
 
 import 'token/token_auth_test_fakes.dart';
 
-const _origin = 'https://relay.test';
+final _session = SessionKey('https://relay.test', 'p');
 
 class _RecordingAuth extends AuthNotifier {
   final signOuts = <bool>[];
@@ -56,9 +56,9 @@ void main() {
     final container = ProviderContainer(
       overrides: [
         authProvider.overrideWith(() => auth),
-        accountOriginProvider.overrideWithValue(_origin),
-        activeGoogleKeyOriginProvider.overrideWithValue(_origin),
-        accountApiProvider(_origin).overrideWithValue(api),
+        accountSessionProvider.overrideWithValue(_session),
+        activeGoogleKeySessionProvider.overrideWithValue(_session),
+        accountApiProvider(_session).overrideWithValue(api),
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
         ),
@@ -81,7 +81,7 @@ void main() {
     await c.read(authProvider.future);
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
-      origin: _origin,
+      session: _session,
     );
     expect(api.calls, 1);
     // Only the refused community, never every account.
@@ -97,7 +97,7 @@ void main() {
     await c.read(authProvider.future);
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
-      origin: _origin,
+      session: _session,
     );
     expect(auth.communitySignOuts, isEmpty);
   });
@@ -124,7 +124,7 @@ void main() {
       await c.read(authProvider.future);
       await c.read(remoteSignOutCheckProvider)(
         communityId: 'community-a',
-        origin: _origin,
+        session: _session,
       );
       expect(auth.communitySignOuts, isEmpty);
     }

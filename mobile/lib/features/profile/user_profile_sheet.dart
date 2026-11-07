@@ -112,7 +112,7 @@ class UserProfileSheet extends HookConsumerWidget {
     final isBlocked = ref.watch(
       blockedPubkeysProvider.select((ids) => ids.contains(pk)),
     );
-    final canBlock = ref.watch(accountOriginProvider) != null;
+    final canBlock = ref.watch(accountSessionProvider) != null;
 
     // The contextual label from the opening surface, so the sheet names the
     // identity exactly as the row that was tapped.

@@ -7,6 +7,7 @@ import 'install_id_store.dart';
 import 'oidc_login.dart';
 import 'refresh_token_store.dart';
 import 'google_account_picker.dart';
+import 'session_key.dart';
 import 'web_auth_launcher.dart';
 import '../../l10n/l10n.dart';
 
@@ -121,12 +122,33 @@ class _AccessToken {
   final DateTime expiresAt;
 }
 
+/// What a finished sign-in attempt hands to its account's controller.
+@immutable
+class TokenSessionHandoff {
+  const TokenSessionHandoff({
+    required this.refreshToken,
+    required this.accessToken,
+    required this.accessExpiresAt,
+    required this.principalId,
+    required this.identityMode,
+  });
+
+  final String refreshToken;
+  final String accessToken;
+  final DateTime accessExpiresAt;
+  final String principalId;
+  final String identityMode;
+
+  @override
+  String toString() => 'TokenSessionHandoff(principal=$principalId)';
+}
+
 /// A queued store operation belonged to a session that has since ended.
 class _StaleGeneration implements Exception {
   const _StaleGeneration();
 }
 
-/// Owns one relay origin's token session (plan §3.2 mobile row).
+/// Owns one account's token session (plan §3.2 mobile row).
 ///
 /// - The refresh token lives in [RefreshTokenStore] (keychain); the access
 ///   token only in memory.
@@ -144,12 +166,59 @@ class _StaleGeneration implements Exception {
 ///   session is being dropped (device-only community removal deletes the
 ///   stored refresh and then invalidates the controller) or the app is
 ///   exiting, so a late write would resurrect a removed session.
+///
+/// Before sign-in the account is unknown, so signing in runs on a separate
+/// [TokenSessionController.attempt]. It keeps its session in memory and has
+/// no timers. Once the account is known its tokens move to that account's
+/// controller: [handoff] on the attempt, then [adopt] on the account.
 class TokenSessionController {
   TokenSessionController({
-    required this.origin,
+    required SessionKey key,
     required AuthApi api,
     required RefreshTokenStore store,
+    SessionClock? clock,
+    SessionTimerFactory? timerFactory,
+    QuietResumeCheck? canResumeQuietly,
+  }) : this._(
+         key: key,
+         isAttempt: false,
+         api: api,
+         store: store,
+         clock: clock,
+         timerFactory: timerFactory,
+         canResumeQuietly: canResumeQuietly,
+       );
+
+  /// One sign-in attempt at [origin]: its session stays in memory until
+  /// [handoff]. On-demand refresh works and rotates in memory.
+  TokenSessionController.attempt({
+    required String origin,
+    required AuthApi api,
     required WebAuthLauncher launcher,
+    GoogleAccountPicker? accountPicker,
+    SessionClock? clock,
+    SessionTimerFactory? timerFactory,
+    String? deviceName,
+    InstallIdStore? installIds,
+  }) : this._(
+         key: SessionKey(origin, 'sign-in-attempt'),
+         isAttempt: true,
+         api: api,
+         store: MemoryRefreshTokenStore(),
+         launcher: launcher,
+         accountPicker: accountPicker,
+         clock: clock,
+         timerFactory: timerFactory,
+         deviceName: deviceName,
+         installIds: installIds,
+       );
+
+  TokenSessionController._({
+    required this.key,
+    required this.isAttempt,
+    required AuthApi api,
+    required RefreshTokenStore store,
+    WebAuthLauncher? launcher,
     GoogleAccountPicker? accountPicker,
     SessionClock? clock,
     SessionTimerFactory? timerFactory,
@@ -183,7 +252,14 @@ class TokenSessionController {
   /// Lower bound for proactive refresh timers.
   static const minTimerDelay = Duration(seconds: 30);
 
-  final String origin;
+  /// The account this controller owns. An attempt's principal is a
+  /// placeholder: only its in-memory store sees it.
+  final SessionKey key;
+
+  /// Whether this controller is one sign-in attempt, not an account's session.
+  final bool isAttempt;
+
+  String get origin => key.origin;
 
   /// Shown in the relay's device list (`device_name`, ≤ 64 chars).
   final String? deviceName;
@@ -193,7 +269,7 @@ class TokenSessionController {
 
   final AuthApi _api;
   final RefreshTokenStore _store;
-  final WebAuthLauncher _launcher;
+  final WebAuthLauncher? _launcher;
 
   /// The phone's own Google account picker, tried before the browser.
   final GoogleAccountPicker? _accountPicker;
@@ -259,12 +335,16 @@ class TokenSessionController {
     return _restoring ??= _runRestore().whenComplete(() => _restoring = null);
   }
 
-  /// Run the Google (or [provider]) login. Returns whether it signed in;
-  /// failures are reported in [state]. Single-flight.
+  /// Run the Google (or [provider]) login on this attempt. Returns whether it
+  /// signed in; failures are reported in [state]. Single-flight.
+  ///
+  /// Only an attempt signs in: the grant's account is not known in advance,
+  /// and an account's record must never hold another account's session.
   Future<bool> signIn({
     String provider = 'google',
     String identityMode = 'token',
   }) {
+    if (!isAttempt) throw StateError('Sign-in runs on an attempt');
     return _signingIn ??= _runSignIn(
       provider,
       identityMode,
@@ -300,6 +380,27 @@ class TokenSessionController {
     if (inflight != null) return inflight;
     if (_refreshToken == null || !_canRefreshOnDemand) return null;
     return _refresh();
+  }
+
+  /// Back from the background, where timers do not run: rotate when the
+  /// access token is near expiry, or try a stalled session once more. A
+  /// backoff that is still armed stays in charge, and nothing is shown while
+  /// this runs.
+  Future<void> refreshIfExpiring() async {
+    if (_disposed || _restoring != null || _refreshToken == null) return;
+    final status = _state.status;
+    if (status == TokenSessionStatus.stalled) {
+      _failures = 0;
+    } else if (!_canRefreshOnDemand) {
+      return;
+    } else {
+      final access = _access;
+      if (access != null &&
+          access.expiresAt.difference(_clock()) > refreshLead) {
+        return;
+      }
+    }
+    await _refresh();
   }
 
   /// The recovery affordance for [TokenSessionStatus.stalled] /
@@ -389,6 +490,95 @@ class TokenSessionController {
   /// propagates.
   Future<void> forgetOnDevice() => _forget(propagateDeleteFailure: true);
 
+  /// End this attempt's work and give its tokens to the account: waits for
+  /// any rotation in flight and the store queue (a rotation result must never
+  /// be lost: the relay has consumed the token before it), then stops the
+  /// attempt. Throws [TokenSessionException] when it holds no session.
+  Future<TokenSessionHandoff> handoff() async {
+    if (!isAttempt) throw StateError('Only an attempt hands off');
+    await _settled();
+    final refresh = _refreshToken;
+    final principal = _principalId;
+    final access = _access;
+    if (_disposed || refresh == null || principal == null || access == null) {
+      throw TokenSessionException(appL10n.tokenSessionEnded);
+    }
+    _stopAttempt();
+    return TokenSessionHandoff(
+      refreshToken: refresh,
+      accessToken: access.token,
+      accessExpiresAt: access.expiresAt,
+      principalId: principal,
+      identityMode: _identityMode,
+    );
+  }
+
+  /// Take over the session of a finished sign-in attempt.
+  ///
+  /// A rotation or restore of this account still running finishes first: the
+  /// relay has already consumed its token, so its result must not be dropped.
+  /// The old session is then fenced, the new one persisted and published, and
+  /// the old one ended best-effort with `/auth/sessions/end`, never
+  /// `/auth/logout`, which revokes the whole device including the new grant.
+  /// A failed persist revokes the new grant and throws.
+  Future<void> adopt(TokenSessionHandoff handoff) async {
+    if (isAttempt) throw StateError('An attempt cannot adopt');
+    await _settled();
+    final previousAccess = _access?.token;
+    _generation += 1;
+    final generation = _generation;
+    _cancelTimer();
+    _failures = 0;
+    try {
+      await _persist(
+        generation,
+        StoredTokenSession(
+          refreshToken: handoff.refreshToken,
+          principalId: handoff.principalId,
+          identityMode: handoff.identityMode,
+        ),
+      );
+    } on _StaleGeneration {
+      await _revokeUnsaved(handoff.accessToken);
+      throw TokenSessionException(appL10n.tokenSessionEnded);
+    } catch (error) {
+      debugPrint('Token session persist failed for $origin: $error');
+      await _revokeUnsaved(handoff.accessToken);
+      if (_isCurrent(generation)) await _forget(errorMessage: _unsavedMessage);
+      throw TokenSessionException(_unsavedMessage);
+    }
+    if (!_isCurrent(generation)) {
+      await _revokeUnsaved(handoff.accessToken);
+      throw TokenSessionException(appL10n.tokenSessionEnded);
+    }
+    _refreshToken = handoff.refreshToken;
+    _principalId = handoff.principalId;
+    _identityMode = handoff.identityMode;
+    _publish(
+      handoff.accessToken,
+      handoff.accessExpiresAt.difference(_clock()),
+      handoff.principalId,
+    );
+    if (previousAccess != null) unawaited(_revokeUnsaved(previousAccess));
+  }
+
+  /// End this session on the relay, best-effort and for this session only,
+  /// and forget it here. For an attempt that will not be adopted, or an
+  /// account a re-sign-in replaced. Never throws.
+  Future<void> discard() async {
+    final access = _access?.token;
+    if (isAttempt) {
+      _stopAttempt();
+    } else {
+      try {
+        await _forget(propagateDeleteFailure: true);
+      } catch (error) {
+        debugPrint('Token session delete failed for $origin: $error');
+      }
+    }
+    if (access != null) await _revokeUnsaved(access);
+  }
+
   /// Stop timers and notifications and fence in-flight rotations (see the
   /// class doc).
   void dispose() {
@@ -402,6 +592,31 @@ class TokenSessionController {
   // --- internals -----------------------------------------------------------
 
   bool _isCurrent(int generation) => !_disposed && generation == _generation;
+
+  /// Waits until no restore, rotation or store write is running.
+  Future<void> _settled() async {
+    while (true) {
+      final Future<Object?>? running = _restoring ?? _inflight;
+      if (running != null) {
+        try {
+          await running;
+        } catch (error) {
+          debugPrint('Token session work failed for $origin: $error');
+        }
+        continue;
+      }
+      await _storeQueue;
+      if (_restoring == null && _inflight == null) return;
+    }
+  }
+
+  /// An attempt holds nothing after it is handed off or abandoned.
+  void _stopAttempt() {
+    _generation += 1;
+    _access = null;
+    _refreshToken = null;
+    _principalId = null;
+  }
 
   bool get _canRefreshOnDemand => switch (_state.status) {
     TokenSessionStatus.retrying ||
@@ -424,7 +639,8 @@ class TokenSessionController {
     );
     final StoredTokenSession? stored;
     try {
-      stored = await _store.read(origin);
+      // In the queue: the store may move an old record here.
+      stored = await _serialized(() => _store.read(key));
     } catch (error) {
       if (!_isCurrent(generation)) return;
       debugPrint('Token session read failed for $origin: $error');
@@ -530,12 +746,13 @@ class TokenSessionController {
     );
     final LoginGrant grant;
     try {
-      final callbackScheme = await _launcher.callbackScheme();
+      final launcher = _launcher!;
+      final callbackScheme = await launcher.callbackScheme();
       final installId = await _installIds?.readOrCreate();
       if (!_isCurrent(startGeneration)) return false;
       grant = await runOidcLogin(
         api: _api,
-        launcher: _launcher,
+        launcher: launcher,
         accountPicker: _accountPicker,
         provider: provider,
         deviceName: deviceName,
@@ -692,7 +909,7 @@ class TokenSessionController {
     try {
       await _serialized(() async {
         if (generation != _generation) return;
-        await _store.delete(origin);
+        await _store.delete(key);
       });
     } catch (error) {
       // The relay-side session is already gone, so the leftover record can
@@ -709,14 +926,15 @@ class TokenSessionController {
     }
   }
 
-  /// Best-effort revoke of a session whose refresh could not be saved. If
-  /// this also fails, the relay's refresh-reuse detection revokes it when
-  /// the stale refresh is next presented. Only that session: a logout would
-  /// also end a newer sign-in of this device.
+  /// Best-effort revoke of a session whose refresh could not be saved or
+  /// that a newer sign-in replaced. If this also fails, the relay's
+  /// refresh-reuse detection revokes it when the stale refresh is next
+  /// presented. Only that session: a logout would also end a newer sign-in
+  /// of this device.
   Future<void> _revokeUnsaved(String accessToken) async {
     try {
       await _api.endSession(accessToken);
-    } on AuthApiException catch (error) {
+    } catch (error) {
       debugPrint('Could not revoke unsaved session on $origin: $error');
     }
   }
@@ -724,7 +942,7 @@ class TokenSessionController {
   Future<void> _persist(int generation, StoredTokenSession session) =>
       _serialized(() async {
         if (generation != _generation) throw const _StaleGeneration();
-        await _store.write(origin, session);
+        await _store.write(key, session);
       });
 
   /// Store operations run one at a time, each re-checking its generation
@@ -738,7 +956,7 @@ class TokenSessionController {
 
   void _armTimer(Duration delay) {
     _cancelTimer();
-    if (_disposed) return;
+    if (_disposed || isAttempt) return;
     final generation = _generation;
     _timer = _timerFactory(delay, () {
       _timer = null;

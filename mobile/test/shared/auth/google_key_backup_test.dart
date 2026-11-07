@@ -86,15 +86,38 @@ Future<TokenSessionController> signedInSession({FakeAuthServer? server}) async {
     'refresh': 'bzr_login',
     'expires_in': 3600,
   });
-  final session = TokenSessionController(
+  final session = TokenSessionController.attempt(
     origin: origin,
     api: AuthApi(origin: origin, client: authServer.client),
-    store: FakeRefreshTokenStore(),
     launcher: FakeWebAuthLauncher(FakeWebAuthLauncher.success),
   );
   addTearDown(session.dispose);
   expect(await session.signIn(identityMode: 'key_backup'), isTrue);
   return session;
+}
+
+/// The service together with the sign-in attempt it resolves with.
+class _Backup {
+  _Backup({
+    required String origin,
+    required http.Client client,
+    required this.session,
+    required CommunityStorage communities,
+    required PendingBackupKeyStore pending,
+    nostr.Keys Function()? generateKeys,
+  }) : service = GoogleKeyBackupService(
+         origin: origin,
+         client: client,
+         communities: communities,
+         pending: pending,
+         generateKeys: generateKeys,
+       );
+
+  final GoogleKeyBackupService service;
+  final TokenSessionController session;
+
+  Future<Community> resolve({bool Function()? isCurrent}) =>
+      service.resolve(session: session, isCurrent: isCurrent);
 }
 
 void main() {
@@ -113,7 +136,7 @@ void main() {
         ).copyWith(signedOut: true),
       );
       final server = BackupServer();
-      final service = GoogleKeyBackupService(
+      final service = _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),
@@ -142,6 +165,38 @@ void main() {
       expect((await storage.loadAll()).single.signedOut, isTrue);
     },
   );
+  test('a key-only community is found by its key, not duplicated', () async {
+    final keys = nostr.Keys.generate();
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    await storage.save(
+      Community.create(
+        name: 'Another account',
+        relayUrl: origin,
+        pubkey: nostr.Keys.generate().public,
+        googleBackupAccountId: 'account-two',
+      ),
+    );
+    final legacy = Community.create(
+      name: 'Key only',
+      relayUrl: origin,
+      pubkey: keys.public,
+      nsec: keys.nsec,
+    );
+    await storage.save(legacy);
+    final server = BackupServer()..secret = keys.secret;
+
+    final resolved = await _Backup(
+      origin: origin,
+      client: server.client,
+      session: await signedInSession(),
+      communities: storage,
+      pending: PendingBackupKeyStore(storage: FakeSecureStorage()),
+      generateKeys: () => throw StateError('must not generate'),
+    ).resolve();
+
+    expect(resolved.id, legacy.id);
+    expect(resolved.googleBackupAccountId, account);
+  });
   test(
     'signed-out unlinked key links its retained key, never a new one',
     () async {
@@ -156,7 +211,7 @@ void main() {
         ).copyWith(signedOut: true),
       );
       final server = BackupServer();
-      final restored = await GoogleKeyBackupService(
+      final restored = await _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),
@@ -187,7 +242,7 @@ void main() {
       );
       final server = BackupServer()..secret = nostr.Keys.generate().secret;
       await expectLater(
-        GoogleKeyBackupService(
+        _Backup(
           origin: origin,
           client: server.client,
           session: await signedInSession(),
@@ -223,7 +278,7 @@ void main() {
       for (final mobileFirst in [true, false]) {
         final server = BackupServer();
         if (!mobileFirst) server.secret = key.secret;
-        final result = await GoogleKeyBackupService(
+        final result = await _Backup(
           origin: origin,
           client: server.client,
           session: await signedInSession(),
@@ -252,7 +307,7 @@ void main() {
         var current = true;
         var generated = 0;
         var requests = 0;
-        final service = GoogleKeyBackupService(
+        final service = _Backup(
           origin: origin,
           client: MockClient((request) {
             requests++;
@@ -306,7 +361,7 @@ void main() {
       );
       await storage.save(existing);
       final server = BackupServer()..secret = keys.secret;
-      final service = GoogleKeyBackupService(
+      final service = _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),
@@ -342,7 +397,7 @@ void main() {
       final auth = FakeAuthServer();
       final session = await signedInSession(server: auth);
       final server = BackupServer();
-      final community = await GoogleKeyBackupService(
+      final community = await _Backup(
         origin: origin,
         client: server.client,
         session: session,
@@ -369,7 +424,7 @@ void main() {
       final server = BackupServer()..secret = remote.secret;
       final storage = CommunityStorage(secure: FakeSecureStorage());
       final session = await signedInSession();
-      final service = GoogleKeyBackupService(
+      final service = _Backup(
         origin: origin,
         client: server.client,
         session: session,
@@ -400,7 +455,7 @@ void main() {
       final server = BackupServer();
       final session = await signedInSession();
       var generated = 0;
-      GoogleKeyBackupService device() => GoogleKeyBackupService(
+      _Backup device() => _Backup(
         origin: origin,
         client: server.client,
         session: session,
@@ -456,7 +511,7 @@ void main() {
     );
     await storage.save(existing);
     final server = BackupServer();
-    final result = await GoogleKeyBackupService(
+    final result = await _Backup(
       origin: origin,
       client: server.client,
       session: await signedInSession(),
@@ -472,7 +527,7 @@ void main() {
   test('status and restore failures never generate a replacement', () async {
     final server = BackupServer()..failStatus = true;
     var generated = 0;
-    final service = GoogleKeyBackupService(
+    final service = _Backup(
       origin: origin,
       client: server.client,
       session: await signedInSession(),
@@ -499,7 +554,7 @@ void main() {
       final secure = FakeSecureStorage();
       final session = await signedInSession();
       var generated = 0;
-      GoogleKeyBackupService service() => GoogleKeyBackupService(
+      _Backup service() => _Backup(
         origin: origin,
         client: server.client,
         session: session,
@@ -528,7 +583,7 @@ void main() {
         ..raceSecret = nostr.Keys.generate().secret
         ..raceStatus = 503;
       final storage = CommunityStorage(secure: FakeSecureStorage());
-      final service = GoogleKeyBackupService(
+      final service = _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),
@@ -544,7 +599,7 @@ void main() {
     'concurrent initialization restores winner only on new device',
     () async {
       final server = BackupServer()..raceSecret = nostr.Keys.generate().secret;
-      final result = await GoogleKeyBackupService(
+      final result = await _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),
@@ -567,7 +622,7 @@ void main() {
       );
       await storage.save(existing);
       final server = BackupServer();
-      final service = GoogleKeyBackupService(
+      final service = _Backup(
         origin: origin,
         client: server.client,
         session: await signedInSession(),

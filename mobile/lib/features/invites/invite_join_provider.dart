@@ -10,8 +10,8 @@ import 'package:nostr/nostr.dart' as nostr;
 import '../../shared/auth/auth.dart';
 import '../../shared/auth/default_community.dart';
 import '../../shared/auth/token/relay_origin.dart';
+import '../../shared/auth/token/session_key.dart';
 import '../../shared/auth/token/token_auth_descriptor.dart';
-import '../../shared/auth/token/token_session.dart';
 import '../../shared/auth/token/token_session_provider.dart';
 import '../../shared/deeplink/deep_link.dart';
 import '../../shared/l10n/l10n.dart';
@@ -33,11 +33,11 @@ final inviteKeyGeneratorProvider = Provider<InviteKeyGenerator>((ref) {
 typedef InviteKeyGenerator = nostr.Keys Function();
 
 /// Bearer source for claiming an invite on a token-auth community, keyed by
-/// its canonical relay origin (the community need not be active yet).
+/// its account (the community need not be active yet).
 final inviteClaimAccessTokensProvider =
-    Provider.family<RelayAccessTokens, String>(
-      (ref, origin) => ControllerRelayAccessTokens(
-        ref.watch(tokenSessionControllerProvider(origin)),
+    Provider.family<RelayAccessTokens, SessionKey>(
+      (ref, key) => ControllerRelayAccessTokens(
+        ref.watch(tokenSessionControllerProvider(key)),
       ),
     );
 
@@ -311,9 +311,16 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       if (existing != null && existing.tokenAuth) {
         final wasActive =
             (await ref.read(activeCommunityProvider.future))?.id == existing.id;
+        final session = SessionKey.ofCommunity(existing);
+        if (session == null) {
+          throw InviteClaimException(
+            _signInToUseInvite(existing.name),
+            userFacing: true,
+          );
+        }
         await _claimWithBearer(
           invite,
-          origin: normalizeRelayOrigin(existing.relayUrl),
+          tokens: ref.read(inviteClaimAccessTokensProvider(session)),
           communityName: existing.name,
         );
         await ref
@@ -445,46 +452,43 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
 
   /// Joins a token relay this device has no community for: signs the
   /// principal in (system browser) BEFORE claiming, claims with its bearer,
-  /// then saves a token community for that principal. Never creates a key.
+  /// then saves a token community for that principal, which takes the session
+  /// over from the sign-in attempt. Never creates a key.
   Future<void> _joinTokenRelay(InviteDeepLink invite, String origin) async {
     final displayName = Community.nameFromUrl(invite.relayUrl);
-    final controller = ref.read(tokenSessionControllerProvider(origin));
-    if (controller.state.status.isRestoring) {
-      await controller.restore();
-    }
-    var token = await controller.ensureFreshAccessToken();
-    if (token == null) {
-      if (controller.state.status != TokenSessionStatus.signedOut) {
-        // Stalled/retrying: a stored session exists but cannot rotate now.
+    final attempt = ref.read(tokenSignInAttemptProvider)(origin);
+    final Community community;
+    try {
+      final token = await attempt.signIn()
+          ? await attempt.ensureFreshAccessToken()
+          : null;
+      final principalId = attempt.state.principalId;
+      if (token == null || principalId == null) {
         throw InviteClaimException(
-          appL10n.inviteRelayUnreachable,
+          _signInToUseInvite(displayName),
           userFacing: true,
         );
       }
-      if (await controller.signIn()) {
-        token = await controller.ensureFreshAccessToken();
-      }
-    }
-    final principalId = controller.state.principalId;
-    if (token == null || principalId == null) {
-      throw InviteClaimException(
-        _signInToUseInvite(displayName),
-        userFacing: true,
+      final claim = await _claimWithBearer(
+        invite,
+        tokens: ControllerRelayAccessTokens(attempt),
+        communityName: displayName,
       );
+      community = Community.create(
+        name: _communityNameFromClaim(claim, invite.relayUrl),
+        relayUrl: invite.relayUrl,
+        pubkey: principalId,
+        starterSetupIncomplete: true,
+        tokenAuth: true,
+      );
+      await ref
+          .read(authProvider.notifier)
+          .authenticateWithCommunity(community, attempt: attempt);
+    } finally {
+      // Handed over, this ends nothing: the attempt holds no tokens anymore.
+      await attempt.discard();
+      attempt.dispose();
     }
-    final claim = await _claimWithBearer(
-      invite,
-      origin: origin,
-      communityName: displayName,
-    );
-    final community = Community.create(
-      name: _communityNameFromClaim(claim, invite.relayUrl),
-      relayUrl: invite.relayUrl,
-      pubkey: principalId,
-      starterSetupIncomplete: true,
-      tokenAuth: true,
-    );
-    await ref.read(authProvider.notifier).authenticateWithCommunity(community);
     _pendingStarterSetupCommunity = community;
     state = state.copyWith(isStarterSetupRecovery: true);
     await startStarterSetupRecovery();
@@ -500,12 +504,12 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
     unawaited(ref.read(relaySessionProvider.notifier).reconnect());
   }
 
-  /// Claims [invite] for the token principal signed in at [origin]
+  /// Claims [invite] for the token principal [tokens] belongs to
   /// (`already_member` is a success) and returns the claim body. Throws when
   /// the relay rejects it.
   Future<Map<String, dynamic>> _claimWithBearer(
     InviteDeepLink invite, {
-    required String origin,
+    required RelayAccessTokens tokens,
     required String communityName,
   }) async {
     final relayUri = Uri.parse(invite.relayUrl);
@@ -515,7 +519,6 @@ class InviteJoinNotifier extends Notifier<InviteJoinState> {
       'code': invite.code,
       if (invite.policyReceipt != null) 'policy_receipt': invite.policyReceipt,
     });
-    final tokens = ref.read(inviteClaimAccessTokensProvider(origin));
     final client = ref.read(inviteJoinHttpClientProvider);
     final http.Response response;
     try {

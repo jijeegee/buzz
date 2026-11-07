@@ -44,6 +44,12 @@ void main() {
 
   tearDown(() => container.dispose());
 
+  Future<void> seed(Community community) async {
+    await communityStorage.save(community);
+    container.invalidate(communityListProvider);
+    await container.read(communityListProvider.future);
+  }
+
   ProviderContainer createContainer({
     bool pushSupported = false,
     String? builtInOrigin,
@@ -113,21 +119,6 @@ void main() {
       expect(snapshots, hasLength(1));
     });
 
-    test('addCommunity adds to list', () async {
-      container = createContainer();
-      await container.read(communityListProvider.future);
-
-      final ws = Community.create(
-        name: 'Test',
-        relayUrl: 'https://test.example.com',
-      );
-      await container.read(communityListProvider.notifier).addCommunity(ws);
-
-      final communities = await container.read(communityListProvider.future);
-      expect(communities, hasLength(1));
-      expect(communities.first.name, 'Test');
-    });
-
     test(
       'push notifications default off and opt-in survives restart',
       () async {
@@ -137,9 +128,7 @@ void main() {
           name: 'Test',
           relayUrl: 'https://test.example.com',
         );
-        await container
-            .read(communityListProvider.notifier)
-            .addCommunity(community);
+        await seed(community);
         expect(
           (await container.read(
             communityListProvider.future,
@@ -182,8 +171,8 @@ void main() {
               pushNotificationsEnabled: true,
               pushSubscriptionState: subscriptionState,
             );
+        await seed(community);
         final notifier = container.read(communityListProvider.notifier);
-        await notifier.addCommunity(community);
 
         expect(await notifier.reservePushLeaseGeneration(community.id), 5);
         expect(await notifier.reservePushLeaseGeneration(community.id), 6);
@@ -210,8 +199,8 @@ void main() {
               desired: [subscription],
             ).withAccepted(subscriptions: [subscription], generation: 6),
           );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       expect(
         await notifier.markPushLeaseAccepted(
@@ -251,8 +240,8 @@ void main() {
               desired: [original],
             ),
           );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       final generation = await notifier.reservePushLeaseGeneration(
         community.id,
@@ -295,8 +284,8 @@ void main() {
               desired: [subscription],
             ),
           );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       expect(await notifier.reservePushLeaseGeneration(community.id), 1);
       await notifier.setPushNotificationsEnabled(community.id, false);
@@ -331,8 +320,8 @@ void main() {
               desired: [subscription],
             ).withAccepted(subscriptions: [subscription], generation: 7),
           );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       await notifier.setPushNotificationsEnabled(community.id, false);
 
@@ -381,9 +370,7 @@ void main() {
                 desired: [subscription],
               ).withAccepted(subscriptions: [subscription], generation: 7),
             );
-        await container
-            .read(communityListProvider.notifier)
-            .addCommunity(community);
+        await seed(community);
 
         await container
             .read(communityListProvider.notifier)
@@ -423,7 +410,7 @@ void main() {
         name: 'Test',
         relayUrl: 'https://test.example.com',
       );
-      await container.read(communityListProvider.notifier).addCommunity(ws);
+      await seed(ws);
       await container
           .read(communityListProvider.notifier)
           .removeCommunity(ws.id);
@@ -447,8 +434,8 @@ void main() {
         name: 'Test',
         relayUrl: 'https://test.example.com',
       );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       await notifier.removeCommunity(community.id);
 
@@ -478,8 +465,8 @@ void main() {
         name: 'Test',
         relayUrl: 'https://test.example.com',
       );
+      await seed(community);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(community);
 
       await expectLater(
         notifier.removeCommunity(community.id),
@@ -506,9 +493,9 @@ void main() {
           name: 'Two',
           relayUrl: 'https://two.example.com',
         );
+        await seed(ws1);
+        await seed(ws2);
         final notifier = container.read(communityListProvider.notifier);
-        await notifier.addCommunity(ws1);
-        await notifier.addCommunity(ws2);
         await notifier.switchCommunity(ws1.id);
         final teardown = Completer<void>();
         container
@@ -541,7 +528,7 @@ void main() {
         name: 'Original',
         relayUrl: 'https://test.example.com',
       );
-      await container.read(communityListProvider.notifier).addCommunity(ws);
+      await seed(ws);
       await container
           .read(communityListProvider.notifier)
           .renameCommunity(ws.id, 'Renamed');
@@ -562,9 +549,9 @@ void main() {
         name: 'Two',
         relayUrl: 'https://two.example.com',
       );
+      await seed(ws1);
+      await seed(ws2);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(ws1);
-      await notifier.addCommunity(ws2);
       await notifier.switchCommunity(ws1.id);
       final teardown = Completer<void>();
       container
@@ -631,9 +618,9 @@ void main() {
           name: 'Two',
           relayUrl: 'https://two.example.com',
         );
+        await seed(ws1);
+        await seed(ws2);
         final notifier = container.read(communityListProvider.notifier);
-        await notifier.addCommunity(ws1);
-        await notifier.addCommunity(ws2);
         await notifier.switchCommunity(ws1.id);
         container.read(communityTransitionProvider).register(() async {
           throw StateError('native cleanup failed');
@@ -658,9 +645,9 @@ void main() {
         relayUrl: 'https://two.example.com',
       );
 
+      await seed(ws1);
+      await seed(ws2);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(ws1);
-      await notifier.addCommunity(ws2);
       await notifier.switchCommunity(ws2.id);
 
       final activeId = await communityStorage.loadActiveId();
@@ -808,9 +795,9 @@ void main() {
     test('the switch records the choice', () async {
       final community = keyCommunity('team');
       container = createContainer();
-      final notifier = container.read(communityListProvider.notifier);
       await container.read(communityListProvider.future);
-      await notifier.addCommunity(community);
+      await seed(community);
+      final notifier = container.read(communityListProvider.notifier);
 
       await notifier.setPushNotificationsEnabled(community.id, true);
       expect(
@@ -840,8 +827,8 @@ void main() {
         name: 'Test',
         relayUrl: 'https://test.example.com',
       );
+      await seed(ws);
       final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(ws);
       await notifier.switchCommunity(ws.id);
 
       final active = await container.read(activeCommunityProvider.future);
@@ -871,8 +858,7 @@ void main() {
         name: 'Fallback',
         relayUrl: 'https://test.example.com',
       );
-      final notifier = container.read(communityListProvider.notifier);
-      await notifier.addCommunity(ws);
+      await seed(ws);
 
       // Set an invalid active ID.
       await communityStorage.saveActiveId('nonexistent-id');

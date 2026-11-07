@@ -2,8 +2,8 @@ import 'dart:async';
 
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 
-import '../auth/token/relay_origin.dart';
 import '../auth/google_key_backup.dart';
+import '../auth/token/session_key.dart';
 import '../auth/token/token_session.dart';
 import '../auth/token/token_session_provider.dart';
 import 'community.dart';
@@ -25,25 +25,18 @@ typedef CommunityTokenSessionEnder =
 final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
   (ref) {
     return (community, {required deviceOnly}) async {
-      if (!community.tokenAuth && community.googleBackupAccountId == null) {
-        return;
-      }
-      final String origin;
-      try {
-        origin = normalizeRelayOrigin(community.relayUrl);
-      } on FormatException {
-        return;
-      }
-      final provider = community.googleBackupAccountId != null
-          ? keyBackupSessionControllerProvider(origin)
-          : tokenSessionControllerProvider(origin);
+      final key = SessionKey.ofCommunity(community);
+      if (key == null) return;
+      final provider = sessionControllerProviderOf(community, key);
       final controller = ref.read(provider);
       if (deviceOnly) {
         // Through the controller's store queue: a rotation write in flight
         // must not land after the delete and resurrect the record.
         await controller.forgetOnDevice();
         if (community.googleBackupAccountId case final account?) {
-          await ref.read(pendingBackupKeyStoreProvider).delete(origin, account);
+          await ref
+              .read(pendingBackupKeyStoreProvider)
+              .delete(key.origin, account);
         }
         // A fresh controller restores from the now-empty store.
         ref.invalidate(provider);
@@ -56,7 +49,9 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
       }
       await controller.signOut();
       if (community.googleBackupAccountId case final account?) {
-        await ref.read(pendingBackupKeyStoreProvider).delete(origin, account);
+        await ref
+            .read(pendingBackupKeyStoreProvider)
+            .delete(key.origin, account);
       }
     };
   },
@@ -70,11 +65,9 @@ final communityTokenSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
 /// ([TokenSessionController.revokeOnServerBestEffort]).
 final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>(
   (ref) => (community, {required deviceOnly}) async {
-    if (!community.tokenAuth && community.googleBackupAccountId == null) return;
-    final origin = normalizeRelayOrigin(community.relayUrl);
-    final provider = community.googleBackupAccountId != null
-        ? keyBackupSessionControllerProvider(origin)
-        : tokenSessionControllerProvider(origin);
+    final key = SessionKey.ofCommunity(community);
+    if (key == null) return;
+    final provider = sessionControllerProviderOf(community, key);
     final controller = ref.read(provider);
     if (deviceOnly) {
       unawaited(controller.revokeOnServerBestEffort());

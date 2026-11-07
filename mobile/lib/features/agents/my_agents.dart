@@ -120,11 +120,11 @@ List<MyExternalAgent> myExternalAgentsFrom({
 final myExternalAgentsProvider = Provider.autoDispose<List<MyExternalAgent>>((
   ref,
 ) {
-  final origin = ref.watch(accountOriginProvider);
-  if (origin == null) return const [];
+  final sessionKey = ref.watch(accountSessionProvider);
+  if (sessionKey == null) return const [];
   return myExternalAgentsFrom(
     devices:
-        ref.watch(accountDevicesProvider(origin)).value ??
+        ref.watch(accountDevicesProvider(sessionKey)).value ??
         const <AccountDevice>[],
     directory:
         ref.watch(agentDirectoryProvider).asData?.value ??

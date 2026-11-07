@@ -15,6 +15,9 @@ import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import 'default_community.dart';
 import 'token/relay_origin.dart';
+import 'token/session_key.dart';
+import 'token/token_session.dart';
+import 'token/token_session_provider.dart';
 import '../l10n/l10n.dart';
 
 enum AuthStatus { unknown, unauthenticated, authenticated }
@@ -89,10 +92,17 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   /// Authenticate with a community. Saves it and switches to it.
   /// Writes to storage directly to avoid circular dependency with community
   /// providers.
+  ///
+  /// With [attempt] the community's account takes over that sign-in's
+  /// session here too: row and session commit together, inside one exclusive
+  /// transition, row first, so there is never a stored token without a row.
+  /// If the session cannot be taken over the row is put back and this throws.
+  /// The attempt stays the caller's to discard.
   Future<void> authenticateWithCommunity(
     Community community, {
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) {
     final generation = _logoutGeneration;
     return ref.read(communityTransitionProvider).runExclusive(() async {
@@ -130,8 +140,26 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       }
       await ref.read(communityTransitionProvider).run();
       guard();
+      final previousActiveId = await storage.loadActiveId();
       await storage.save(community);
       await storage.saveActiveId(community.id);
+      if (attempt != null) {
+        try {
+          await _adopt(community, attempt);
+        } catch (_) {
+          if (existing != null) {
+            await storage.save(existing);
+          } else {
+            await storage.remove(community.id);
+          }
+          if (previousActiveId != null) {
+            await storage.saveActiveId(previousActiveId);
+          } else {
+            await storage.clearActiveId();
+          }
+          rethrow;
+        }
+      }
       await syncStoredCommunitySnapshot(ref);
 
       // Invalidate community providers so other consumers pick up the new data.
@@ -144,11 +172,22 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     });
   }
 
+  /// Moves [attempt]'s session to the account of [community].
+  Future<void> _adopt(
+    Community community,
+    TokenSessionController attempt,
+  ) async {
+    final key = SessionKey.ofCommunity(community);
+    if (key == null) throw StateError('Sign-in has no account to go to');
+    final handoff = await attempt.handoff();
+    await ref.read(sessionControllerProviderOf(community, key)).adopt(handoff);
+  }
+
   /// Record a completed token sign-in for [relayUrl] and switch to it.
   ///
   /// Reuses the stored community for the same relay origin (marking it as
   /// token-authenticated and setting [principalId] as its identity),
-  /// otherwise creates one.
+  /// otherwise creates one. See [authenticateWithCommunity] for [attempt].
   ///
   /// A reused legacy community's push lease was published by its `nsec`, so
   /// its revocation is durably journaled with that key first (AGENTS.md
@@ -160,6 +199,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     required String principalId,
     bool Function()? isCurrent,
     bool resumeSignedOut = false,
+    TokenSessionController? attempt,
   }) async {
     final generation = _logoutGeneration;
     final origin = normalizeRelayOrigin(relayUrl);
@@ -206,12 +246,20 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
             pubkey: principalId,
             tokenAuth: true,
           );
+    final replaced = existing != null && existing.tokenAuth
+        ? SessionKey.ofCommunity(existing)
+        : null;
     await authenticateWithCommunity(
       community,
       isCurrent: () =>
           generation == _logoutGeneration && isCurrent?.call() != false,
       resumeSignedOut: resumeSignedOut,
+      attempt: attempt,
     );
+    // The row now names another account: no row owns the old session.
+    if (replaced != null && replaced.principal != principalId) {
+      unawaited(ref.read(tokenSessionControllerProvider(replaced)).discard());
+    }
     if (revocationJournaled) {
       unawaited(
         ref

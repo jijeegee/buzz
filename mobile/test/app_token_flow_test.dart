@@ -19,6 +19,7 @@ import 'shared/community/community_storage_test.dart' show FakeSecureStorage;
 
 const _origin = 'https://relay.test';
 final _principal = 'ab' * 32;
+final _session = SessionKey(_origin, _principal);
 
 class _AllowedAgeSignalNotifier extends AgeSignalNotifier {
   @override
@@ -53,7 +54,7 @@ class _AppHarness {
     );
     await storage.save(community);
     await storage.saveActiveId(community.id);
-    tokens.data[_origin] = StoredTokenSession(
+    tokens.data[_session] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: _principal,
     );
@@ -85,6 +86,9 @@ class _AppHarness {
         sessionClockProvider.overrideWithValue(clock.call),
         sessionTimerFactoryProvider.overrideWithValue(clock.createTimer),
         authDeviceNameProvider.overrideWithValue('Test phone'),
+        installIdStoreProvider.overrideWithValue(
+          InstallIdStore(storage: FakeSecureStorage()),
+        ),
       ],
     );
     addTearDown(container.dispose);
@@ -132,7 +136,7 @@ void main() {
     final stored = (await h.storage.loadAll()).single;
     expect(stored.tokenAuth, isTrue);
     expect(stored.pubkey, _principal);
-    expect(h.tokens.data[_origin]?.refreshToken, 'bzr_login');
+    expect(h.tokens.data[_session]?.refreshToken, 'bzr_login');
     await h.unmount(tester);
   });
 
@@ -148,7 +152,7 @@ void main() {
 
     expect(find.byType(HomePage), findsOneWidget);
     expect(find.byType(TokenSignInPage), findsNothing);
-    expect(h.tokens.data[_origin]?.refreshToken, 'bzr_new');
+    expect(h.tokens.data[_session]?.refreshToken, 'bzr_new');
     await h.unmount(tester);
   });
 

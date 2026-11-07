@@ -12,7 +12,7 @@ import '../../features/age_gate/age_signal_provider.dart';
 import '../app_update/app_update.dart' show appVersion;
 import '../auth/auth.dart';
 import '../auth/remote_sign_out.dart';
-import '../auth/token/relay_origin.dart';
+import '../auth/token/session_key.dart';
 import '../auth/token/token_session.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
@@ -163,6 +163,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   /// Token community transport auth (plan §3.4); `null` in legacy mode.
   RelayAccessTokens? _accessTokens;
+
+  /// The community the current socket was opened for.
+  String? _socketCommunityId;
   final List<void Function()> _tokenListenerRemovers = [];
 
   /// Parked without a reconnect timer until the token session issues a
@@ -264,27 +267,24 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   /// The relay refused this socket as signed out elsewhere: confirm with
   /// the account of the community this socket belongs to, and sign out
-  /// only that community.
+  /// only that community. The socket names its community from when it
+  /// connected, never the active one: the active community can change under
+  /// a socket, even to another account on the same server.
   void _checkRemoteSignOut() {
-    final community = ref.read(activeCommunityProvider).value;
+    final communityId = _socketCommunityId;
+    if (communityId == null) return;
+    final community = ref
+        .read(communityListProvider)
+        .value
+        ?.where((item) => item.id == communityId)
+        .firstOrNull;
     if (community == null) return;
-    if (!community.tokenAuth && community.googleBackupAccountId == null) {
-      return; // No account to confirm with.
-    }
-    final String origin;
-    try {
-      origin = normalizeRelayOrigin(community.relayUrl);
-      if (normalizeRelayOrigin(ref.read(relayConfigProvider).baseUrl) !=
-          origin) {
-        return; // The active community changed under this socket.
-      }
-    } on FormatException {
-      return;
-    }
+    final session = SessionKey.ofCommunity(community);
+    if (session == null) return; // No account to confirm with.
     unawaited(
       ref.read(remoteSignOutCheckProvider)(
-        communityId: community.id,
-        origin: origin,
+        communityId: communityId,
+        session: session,
       ),
     );
   }
@@ -783,6 +783,7 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     );
 
     _socket?.dispose();
+    _socketCommunityId = config.communityId;
     final socket = _socketFactory(
       wsUrl: config.wsUrl,
       nsec: config.nsec,

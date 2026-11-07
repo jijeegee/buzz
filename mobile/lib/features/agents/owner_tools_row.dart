@@ -17,12 +17,12 @@ import '../settings/account_actions.dart';
 /// until the page is opened again.
 final agentToolLevelProvider = FutureProvider.autoDispose
     .family<AgentToolLevel?, String>((ref, agentPubkey) async {
-      final origin = ref.watch(accountOriginProvider);
-      if (origin == null) return null;
+      final sessionKey = ref.watch(accountSessionProvider);
+      if (sessionKey == null) return null;
       final key = agentPubkey.toLowerCase();
-      final levels = await ref.watch(accountApiProvider(origin)).toolLevels([
-        key,
-      ]);
+      final levels = await ref.watch(accountApiProvider(sessionKey)).toolLevels(
+        [key],
+      );
       return levels[key];
     }, retry: (_, _) => null);
 
@@ -136,8 +136,8 @@ class OwnerToolsRow extends HookConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final saving = useState(false);
     final error = useState<String?>(null);
-    final origin = ref.watch(accountOriginProvider);
-    if (origin == null) return const SizedBox.shrink();
+    final sessionKey = ref.watch(accountSessionProvider);
+    if (sessionKey == null) return const SizedBox.shrink();
     final loaded = ref.watch(agentToolLevelProvider(agentPubkey));
     // Nothing while loading, or for a key the relay doesn't list as this
     // owner's agent; a failed read shows the row off and locked.
@@ -166,7 +166,7 @@ class OwnerToolsRow extends HookConsumerWidget {
       error.value = null;
       try {
         await ref
-            .read(accountApiProvider(origin))
+            .read(accountApiProvider(sessionKey))
             .setToolLevel(
               agentPubkey,
               level: value ? 'full' : 'limited',

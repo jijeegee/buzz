@@ -149,9 +149,9 @@ class CommunityRecoveryActions extends HookConsumerWidget {
 final _hasSignedInSessionProvider = Provider<bool>((ref) {
   final active = ref.watch(activeCommunityProvider).value;
   if (active == null || active.signedOut) return false;
-  final origin = ref.watch(activeTokenOriginProvider);
-  if (origin == null) return true;
-  return switch (ref.watch(tokenSessionProvider(origin)).status) {
+  final sessionKey = ref.watch(activeTokenSessionProvider);
+  if (sessionKey == null) return true;
+  return switch (ref.watch(tokenSessionProvider(sessionKey)).status) {
     TokenSessionStatus.signedIn ||
     TokenSessionStatus.resuming ||
     TokenSessionStatus.retrying ||

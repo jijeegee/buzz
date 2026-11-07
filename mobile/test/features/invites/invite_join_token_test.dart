@@ -37,8 +37,8 @@ void main() {
           generatedKeys++;
           return nostr.Keys.generate();
         }),
-        inviteClaimAccessTokensProvider.overrideWith((ref, origin) {
-          tokenOrigins.add(origin);
+        inviteClaimAccessTokensProvider.overrideWith((ref, key) {
+          tokenOrigins.add(key.origin);
           return tokens;
         }),
         inviteJoinHttpClientProvider.overrideWithValue(

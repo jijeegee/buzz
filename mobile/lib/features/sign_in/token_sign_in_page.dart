@@ -30,6 +30,7 @@ class TokenSignInPage extends HookConsumerWidget {
   const TokenSignInPage({
     super.key,
     this.lockedOrigin,
+    this.lockedSession,
     this.backupOrigin,
     this.defaultCommunity = false,
     this.resumeSignedOut = false,
@@ -52,6 +53,9 @@ class TokenSignInPage extends HookConsumerWidget {
 
   /// Canonical origin of an existing token community to sign back in to.
   final String? lockedOrigin;
+
+  /// The account whose session ended, when known: the page shows why.
+  final SessionKey? lockedSession;
 
   /// Signing back in to a known account: its own method (`google` or
   /// `apple`, [Community.signInMethod]), the only button offered.
@@ -88,19 +92,43 @@ class TokenSignInPage extends HookConsumerWidget {
     final checkGeneration = useRef(0);
     final attemptGeneration = useRef(0);
     final attemptBusy = useRef(false);
+    // The running sign-in. Its session stays in memory until the account is
+    // known and takes it over; the stored accounts are never touched here.
+    final attempt = useRef<TokenSessionController?>(null);
+    final session = useState<TokenSessionState?>(null);
+
+    void closeAttempt() {
+      final controller = attempt.value;
+      attempt.value = null;
+      // Handed over, this ends nothing: the attempt holds no tokens anymore.
+      if (controller != null) {
+        unawaited(controller.discard().whenComplete(controller.dispose));
+      }
+    }
+
+    TokenSessionController startAttempt(String sessionOrigin) {
+      closeAttempt();
+      final controller = ref.read(tokenSignInAttemptProvider)(sessionOrigin);
+      controller.addListener((next) {
+        if (context.mounted && identical(attempt.value, controller)) {
+          session.value = next;
+        }
+      });
+      attempt.value = controller;
+      session.value = null;
+      return controller;
+    }
+
     useEffect(() {
       return () {
         attemptGeneration.value++;
+        closeAttempt();
       };
     }, const []);
 
-    final session = origin.value == null
+    final endedSession = lockedSession == null
         ? null
-        : ref.watch(
-            keyBackup.value
-                ? keyBackupSessionProvider(origin.value!)
-                : tokenSessionProvider(origin.value!),
-          );
+        : ref.watch(tokenSessionProvider(lockedSession!));
 
     Future<void> checkRelay() async {
       final generation = ++checkGeneration.value;
@@ -169,22 +197,17 @@ class TokenSignInPage extends HookConsumerWidget {
     /// Records the signed-in session as the active community; a signing-key
     /// community also records the [provider] it signed in with (null keeps
     /// the recorded one). In locked
-    /// mode the community already exists and `TokenSessionGate` owns
-    /// identity changes.
+    /// mode `TokenSessionGate` replaces this page once the session is back.
+    /// [controller] is the attempt; its account takes it over here.
     Future<void> enterCommunity(
+      TokenSessionController controller,
       String sessionOrigin,
       String principal, {
       bool Function()? isCurrent,
       String? provider,
     }) async {
-      if (lockedOrigin != null && !resumeSignedOut) return;
       completing.value = true;
       try {
-        final controller = ref.read(
-          keyBackup.value
-              ? keyBackupSessionControllerProvider(sessionOrigin)
-              : tokenSessionControllerProvider(sessionOrigin),
-        );
         final sessionGeneration = controller.generation;
         final authAtStart = ref.read(authProvider).value;
         bool canCommit() =>
@@ -196,7 +219,7 @@ class TokenSignInPage extends HookConsumerWidget {
         if (keyBackup.value) {
           final community = await ref
               .read(googleKeyBackupServiceProvider(sessionOrigin))
-              .resolve(isCurrent: canCommit);
+              .resolve(session: controller, isCurrent: canCommit);
           if (!canCommit()) return;
           final signedIn = community.copyWith(signInProvider: provider);
           await ref.read(signedCommunityAdmissionProvider)(signedIn);
@@ -207,6 +230,7 @@ class TokenSignInPage extends HookConsumerWidget {
                 signedIn,
                 isCurrent: canCommit,
                 resumeSignedOut: resumeSignedOut,
+                attempt: controller,
               );
         } else {
           await ref
@@ -216,6 +240,7 @@ class TokenSignInPage extends HookConsumerWidget {
                 principalId: principal,
                 isCurrent: canCommit,
                 resumeSignedOut: resumeSignedOut,
+                attempt: controller,
               );
         }
       } catch (error) {
@@ -231,6 +256,7 @@ class TokenSignInPage extends HookConsumerWidget {
       }
       if (!context.mounted) return;
       completing.value = false;
+      if (lockedOrigin != null && !resumeSignedOut) return;
       // Opened on top of onboarding: the authenticated home is underneath.
       unawaited(Navigator.of(context).maybePop(connectGoogle ? true : null));
     }
@@ -263,11 +289,7 @@ class TokenSignInPage extends HookConsumerWidget {
             return;
           }
         }
-        final controller = ref.read(
-          keyBackup.value
-              ? keyBackupSessionControllerProvider(sessionOrigin)
-              : tokenSessionControllerProvider(sessionOrigin),
-        );
+        final controller = startAttempt(sessionOrigin);
         final signedIn = await controller.signIn(
           provider: provider,
           identityMode: keyBackup.value ? 'key_backup' : 'token',
@@ -275,6 +297,7 @@ class TokenSignInPage extends HookConsumerWidget {
         final principal = controller.state.principalId;
         if (!signedIn || principal == null || !context.mounted) return;
         await enterCommunity(
+          controller,
           sessionOrigin,
           principal,
           isCurrent: isCurrent,
@@ -282,19 +305,20 @@ class TokenSignInPage extends HookConsumerWidget {
         );
       } finally {
         attemptBusy.value = false;
+        // Anything not handed over by now is abandoned: its session ends.
+        closeAttempt();
         if (context.mounted) completing.value = false;
       }
     }
 
-    final status = session?.status;
     final busy =
         checking.value ||
         completing.value ||
-        (status?.isRestoring ?? false) ||
-        status == TokenSessionStatus.signingIn;
+        session.value?.status == TokenSessionStatus.signingIn;
     final errorText =
         message.value ??
-        session?.errorMessage ??
+        session.value?.errorMessage ??
+        endedSession?.errorMessage ??
         ref.watch(signInNoticeProvider);
     // A known account signs back in with its own method only; connecting an
     // older account is Google only.
@@ -309,13 +333,6 @@ class TokenSignInPage extends HookConsumerWidget {
         : resumeSignedOut
         ? l10n.signInContinueWithApple
         : l10n.signInWithApple;
-    final restoredPrincipal =
-        !keyBackup.value &&
-            !resumeSignedOut &&
-            lockedOrigin == null &&
-            status == TokenSessionStatus.signedIn
-        ? session?.principalId
-        : null;
 
     return Scaffold(
       appBar: lockedOrigin == null && Navigator.of(context).canPop()
@@ -397,17 +414,7 @@ class TokenSignInPage extends HookConsumerWidget {
                   child: Text(l10n.signInContinue),
                 ),
             ],
-            if (restoredPrincipal != null)
-              FilledButton(
-                key: const Key('token-sign-in-continue'),
-                onPressed: busy
-                    ? null
-                    : () => unawaited(
-                        enterCommunity(origin.value!, restoredPrincipal),
-                      ),
-                child: Text(l10n.signInContinueSaved),
-              )
-            else if (origin.value != null && offersGoogle)
+            if (origin.value != null && offersGoogle)
               FilledButton(
                 key: const Key('token-sign-in-google'),
                 onPressed: busy ? null : () => unawaited(signIn()),
@@ -419,9 +426,7 @@ class TokenSignInPage extends HookConsumerWidget {
                       : l10n.signInWithGoogle,
                 ),
               ),
-            if (restoredPrincipal == null &&
-                origin.value != null &&
-                offersApple) ...[
+            if (origin.value != null && offersApple) ...[
               if (offersGoogle) ...[
                 const SizedBox(height: Grid.xxs),
                 OutlinedButton(
@@ -436,8 +441,7 @@ class TokenSignInPage extends HookConsumerWidget {
                   child: Text(appleLabel),
                 ),
             ],
-            if (restoredPrincipal == null && origin.value != null)
-              const _TermsLine(),
+            if (origin.value != null) const _TermsLine(),
             if (dualMode.value && origin.value != null && !fixedOrigin)
               TextButton(
                 key: const Key('token-sign-in-existing-account'),

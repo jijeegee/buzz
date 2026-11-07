@@ -9,6 +9,7 @@ import '../token/token_auth_test_fakes.dart';
 import 'fake_account_server.dart';
 
 const _origin = 'https://relay.test';
+final _session = SessionKey(_origin, 'p' * 64);
 final _bob = 'b' * 64;
 final _cat = 'c' * 64;
 
@@ -37,15 +38,15 @@ void main() {
   });
 
   Future<AccountApi> signedIn() async {
-    store.data[_origin] = StoredTokenSession(
+    store.data[_session] = StoredTokenSession(
       refreshToken: 'bzr_old',
       principalId: 'p' * 64,
     );
     server.auth.refreshResponses.add(
       (_) => FakeAuthServer.rotated('bzs_1', 'bzr_1'),
     );
-    await container.read(tokenSessionControllerProvider(_origin)).restore();
-    return container.read(accountApiProvider(_origin));
+    await container.read(tokenSessionControllerProvider(_session)).restore();
+    return container.read(accountApiProvider(_session));
   }
 
   group('profile', () {
@@ -80,7 +81,7 @@ void main() {
 
       await expectLater(api.me(), throwsA(isA<AccountApiException>()));
       final session = container
-          .read(tokenSessionControllerProvider(_origin))
+          .read(tokenSessionControllerProvider(_session))
           .state;
       expect(session.status, TokenSessionStatus.signedOut);
       expect(session.endedCode, 'device_key_required');

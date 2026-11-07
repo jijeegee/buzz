@@ -184,10 +184,10 @@ class _AccessForm extends HookConsumerWidget {
       error.value = null;
       try {
         // Owner tools first: with the level on, a failed call fails the save.
-        final origin = ref.read(accountOriginProvider);
-        if (origin != null) {
+        final sessionKey = ref.read(accountSessionProvider);
+        if (sessionKey != null) {
           await writeToolLevelBeforeSave(
-            ref.read(accountApiProvider(origin)),
+            ref.read(accountApiProvider(sessionKey)),
             agentPubkey,
             current: ref
                 .read(agentToolLevelProvider(agentPubkey))

@@ -41,11 +41,12 @@ class DeviceKeyNotice extends HookConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final origin = ref.watch(accountOriginProvider);
+    final sessionKey = ref.watch(accountSessionProvider);
     final googleKey =
-        origin != null && ref.watch(activeGoogleKeyOriginProvider) == origin;
+        sessionKey != null &&
+        ref.watch(activeGoogleKeySessionProvider) == sessionKey;
     final session = googleKey
-        ? ref.watch(keyBackupSessionProvider(origin))
+        ? ref.watch(keyBackupSessionProvider(sessionKey))
         : null;
     final ended =
         session?.status == TokenSessionStatus.signedOut &&
@@ -80,9 +81,9 @@ class DeviceKeyNotice extends HookConsumerWidget {
       return null;
     }, [ended]);
 
-    final profile = origin == null
+    final profile = sessionKey == null
         ? null
-        : ref.watch(accountProfileProvider(origin)).value;
+        : ref.watch(accountProfileProvider(sessionKey)).value;
     final banner = profile?.deviceKey == false && !ended
         ? _DeviceKeyBanner(
             onSignIn: busy.value

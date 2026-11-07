@@ -4,7 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:http/http.dart' as http;
 
-import '../auth/token/relay_origin.dart';
+import '../auth/token/session_key.dart';
 import '../auth/token/token_session.dart';
 import '../auth/token/token_session_provider.dart';
 import 'relay_provider.dart';
@@ -37,7 +37,7 @@ abstract interface class RelayAccessTokens {
   );
 }
 
-/// [RelayAccessTokens] backed by the origin's [TokenSessionController].
+/// [RelayAccessTokens] backed by one account's [TokenSessionController].
 class ControllerRelayAccessTokens implements RelayAccessTokens {
   ControllerRelayAccessTokens(this._controller);
 
@@ -76,16 +76,17 @@ class ControllerRelayAccessTokens implements RelayAccessTokens {
 /// `null` as [RelayTokenUnavailableException] (fail closed, never NIP-42).
 final relayAccessTokensProvider = Provider<RelayAccessTokens?>((ref) {
   final config = ref.watch(relayConfigProvider);
-  if (!config.tokenAuth) return null;
-  final String origin;
+  final principal = config.principalId;
+  if (!config.tokenAuth || principal == null) return null;
+  final SessionKey key;
   try {
-    origin = normalizeRelayOrigin(config.baseUrl);
+    key = SessionKey(config.baseUrl, principal);
   } on FormatException catch (error) {
     debugPrint('[RelayAccessTokens] no canonical origin: $error');
     return null;
   }
   return ControllerRelayAccessTokens(
-    ref.watch(tokenSessionControllerProvider(origin)),
+    ref.watch(tokenSessionControllerProvider(key)),
   );
 });
 

@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/agents/owner_tools_row.dart';
 import 'package:kuzz/shared/auth/account/account_api.dart';
+import 'package:kuzz/shared/auth/token/session_key.dart';
 import 'package:kuzz/shared/theme/theme.dart';
 
 const _origin = 'https://relay.test';
@@ -129,7 +130,7 @@ void main() {
       await tester.pumpWidget(
         ProviderScope(
           overrides: [
-            accountOriginProvider.overrideWithValue(_origin),
+            accountSessionProvider.overrideWithValue(SessionKey(_origin, 'me')),
             accountApiProvider.overrideWith((ref, _) => api),
           ],
           child: MaterialApp(
