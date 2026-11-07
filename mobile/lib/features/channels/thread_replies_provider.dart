@@ -374,33 +374,30 @@ _openThreadWindowResponse(
     channelId: args.channelId,
     rootId: args.rootId,
   );
-  // Checked against the relay: an equal window from the store stands in for
-  // the page (window_check.dart).
-  final check = session.wantsWindowCheck(args.channelId, root: args.rootId)
-      ? await session.decideWindow(
-          filter,
-          room: args.channelId,
-          root: args.rootId,
-        )
-      : null;
-  if (check?.stored case final stored?) {
-    return (events: stored, stored: false, askedAt: askedAt);
-  }
-  final relay = check.relayed(
-    queryThreadWindow(
-      session.queryRelayWithStoreHeads,
-      filter,
-      rootId: args.rootId,
-      held: window.heldOverlayIds,
-    ),
+  // Checked against the relay (window_check.dart): in mode on the store's
+  // window draws at once and an equal check answers in the page's place.
+  final check = session.openWindow(
+    filter,
+    room: args.channelId,
+    root: args.rootId,
+  );
+  final relay = queryThreadWindow(
+    (filters) => session.queryRelayWithStoreHeads(filters, via: check?.query),
+    filter,
+    rootId: args.rootId,
+    held: window.heldOverlayIds,
   );
   if (window.hasLoaded) {
     return (events: await relay, stored: false, askedAt: askedAt);
   }
-  final stored = readStore(
-    session,
-    args,
-  ).then<List<NostrEvent>?>((events) => events, onError: (_) => null);
+  final checked = check?.stored;
+  Future<List<NostrEvent>?> readStored() async =>
+      (checked == null ? null : await checked) ??
+      await readStore(session, args);
+  final stored = readStored().then<List<NostrEvent>?>(
+    (events) => events,
+    onError: (_) => null,
+  );
   final storeFirst = await Future.any([
     relay.then((_) => false, onError: (_) => false),
     stored.then((events) => events != null),
@@ -670,24 +667,19 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
         cursor: cursor,
       );
       // Checked against the relay, as the newest window.
-      final check = session.wantsWindowCheck(args.channelId, root: args.rootId)
-          ? await session.decideWindow(
-              filter,
-              room: args.channelId,
-              root: args.rootId,
-              before: (cursor.createdAt, cursor.eventId),
-            )
-          : null;
+      final check = session.openWindow(
+        filter,
+        room: args.channelId,
+        root: args.rootId,
+        before: (cursor.createdAt, cursor.eventId),
+      );
       final page = parseThreadWindowPage(
-        check?.stored ??
-            await check.relayed(
-              queryThreadWindow(
-                session.queryRelay,
-                filter,
-                rootId: args.rootId,
-                held: heldOverlayIds,
-              ),
-            ),
+        await queryThreadWindow(
+          check?.query ?? session.queryRelay,
+          filter,
+          rootId: args.rootId,
+          held: heldOverlayIds,
+        ),
         channelId: args.channelId,
         rootId: args.rootId,
       );

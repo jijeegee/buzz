@@ -4,6 +4,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:sqflite_common_ffi/sqflite_ffi.dart';
 
 import 'package:kuzz/shared/message_store/message_store.dart';
+import 'package:kuzz/shared/relay/nostr_models.dart';
+import 'package:kuzz/shared/relay/store_heads.dart';
 
 const _relay = 'wss://relay.example';
 const _account =
@@ -175,5 +177,57 @@ void main() {
     expect(bounds['kind'], 39006);
     expect((bounds['tags'] as List).first, ['d', '$_room:head']);
     expect(bounds['content'], contains('"has_more":true'));
+  });
+
+  test('an equal stored window records the head span a page would', () async {
+    store.submit(lease, [_row('a1', 1000), _row('a2', 2000), _row('a3', 3000)]);
+    StoreHeadAnswer answerOf(List<Map<String, dynamic>> response) =>
+        storeHeadAnswers([
+          (roomId: _room, rootId: null, kinds: _roomKinds),
+        ], response.map(NostrEvent.fromJson).toList()).single;
+    final stored = await read(room(), 3);
+    // The stored window read the way queryRelayWithStoreHeads reads a page.
+    final whole = answerOf(stored.toResponse(hasMore: false));
+    expect(whole.hasMore, isFalse);
+    expect(whole.ids, {'a1', 'a2', 'a3'});
+    final more = answerOf(stored.toResponse(hasMore: true));
+    expect(more.nextCursor, (1000, 'a1'));
+    // The room's live REQ has been live since 10000.
+    store.extendCoverage(lease, [_room], 10000, 20000);
+    Future<Object?> certain() => store.certainRoomHead(
+      lease,
+      room: _room,
+      kinds: _roomKinds,
+      limit: 3,
+      liveAt: 20000,
+    );
+    expect(await certain(), isNull);
+    final mark = store.headSent(lease, [_room]);
+    expect(
+      store.recordHeads(mark, lease, [
+        StoreHeadSpan(
+          room: _room,
+          root: null,
+          kinds: _roomKinds,
+          liveAt: 10000,
+          oldest: whole.nextCursor,
+          ids: whole.ids,
+        ),
+      ]),
+      isTrue,
+    );
+    // The room is now certain, as after a fetched page.
+    expect(await certain(), isNotNull);
+  });
+
+  test('a stored thread window is read as its page too', () async {
+    store.submit(lease, [_row('a1', 1000), _row('t1', 1100, root: 'a1')]);
+    final thread = (room: _room, root: 'a1', kinds: _threadKinds, before: null);
+    final response = (await read(thread, 50)).toResponse(hasMore: false);
+    final answer = storeHeadAnswers([
+      (roomId: _room, rootId: 'a1', kinds: _threadKinds),
+    ], response.map(NostrEvent.fromJson).toList()).single;
+    expect(answer.ids, contains('t1'));
+    expect(answer.hasMore, isFalse);
   });
 }

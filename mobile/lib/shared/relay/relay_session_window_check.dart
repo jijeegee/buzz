@@ -3,33 +3,23 @@ part of 'relay_session.dart';
 /// Room and thread windows opened from the store and checked against the
 /// relay (window_check.dart).
 extension RelaySessionWindowCheck on RelaySessionNotifier {
-  /// Whether opening [room]'s window (thread [root]'s) goes through the
-  /// check now; when false the caller opens it exactly as before.
-  bool wantsWindowCheck(String room, {String? root}) =>
-      _messageStore != null &&
-      _storeLease != null &&
-      storeOpensEnabled &&
-      _windowChecks.before(_windowCheckKey(room, root)) != null;
-
-  /// Decides how [page] (a room window, or a thread window of [root],
-  /// below [before] or the newest) opens: from the store when the check is
-  /// equal in mode `on`, else fetched as before, with what to do once the
-  /// page answers ([WindowCheckDecision.onPage]).
-  Future<WindowCheckDecision> decideWindow(
+  /// Opens [page] (a room window, or a thread window of [root], below
+  /// [before] or the newest) through the check, or `null` when it opens as
+  /// before. The open's `query` stands in for [queryRelay] (pass it as
+  /// `via` to [queryRelayWithStoreHeads] for a newest window).
+  CheckedWindowOpen? openWindow(
     NostrFilter page, {
     required String room,
     String? root,
     (int, String)? before,
-  }) async {
+  }) {
     final store = _messageStore;
     final lease = _storeLease;
-    if (store == null || lease == null || !storeOpensEnabled) {
-      return WindowCheckDecision.today;
-    }
+    if (store == null || lease == null || !storeOpensEnabled) return null;
     final window = (room: room, root: root, kinds: page.kinds, before: before);
     Future<StoredCheckWindow?> read(int limit) =>
         store.checkWindow(lease, window, limit: limit);
-    return decideWindowCheck(
+    return openWindowCheck(
       gate: _windowChecks,
       key: _windowCheckKey(room, root),
       label:
@@ -46,8 +36,7 @@ extension RelaySessionWindowCheck on RelaySessionNotifier {
               _storedEvents(stored.toResponse(hasMore: hasMore)) ?? const [],
         );
       },
-      check: () async =>
-          parseWindowCheckAnswer(await queryRelay([windowCheckFilter(page)])),
+      check: (sent) => queryRelay([windowCheckFilter(sent)]),
       beginReplace: () {
         final capture = store.headSent(lease, [room]);
         return (events) async {
@@ -72,6 +61,7 @@ extension RelaySessionWindowCheck on RelaySessionNotifier {
         };
       },
       liveRows: () => _liveRowsByRoom[room] ?? 0,
+      fetch: queryRelay,
     );
   }
 }

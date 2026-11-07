@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -8,6 +9,7 @@ import 'package:kuzz/shared/relay/window_check.dart';
 const _key = 'room-1';
 const _kinds = [9];
 const _limit = 3;
+final _filter = NostrFilter(kinds: _kinds, limit: _limit);
 
 NostrEvent _row(String id, int at) => NostrEvent(
   id: id,
@@ -37,6 +39,18 @@ NostrEvent _bounds({required bool hasMore, Map<String, Object?>? check}) =>
 WindowCheckAnswer _answer(String? oldest, int count, WindowCheckMode mode) =>
     WindowCheckAnswer(oldestId: oldest, count: count, mode: mode);
 
+/// The relay's answer to a check: the bounds event alone.
+List<NostrEvent> _checked(WindowCheckAnswer answer) => [
+  _bounds(
+    hasMore: false,
+    check: {
+      'oldest_id': answer.oldestId,
+      'count': answer.count,
+      'mode': answer.mode.name,
+    },
+  ),
+];
+
 /// One fake window open: a store, a relay check and a page, counting what
 /// was asked of each.
 class _Fake {
@@ -56,19 +70,29 @@ class _Fake {
 
   /// `null`: not fully stored.
   WindowFacts? stored;
-  final List<WindowCheckAnswer?> answers;
+
+  /// Each check's answer: a check answer, raw events (a relay that does not
+  /// know the check), or an error to throw.
+  final List<Object> answers;
   List<NostrEvent> page;
   final WindowFacts? _afterReplace;
   int live = 0;
   void Function()? onCheck;
 
+  /// Holds the check's answer back until completed.
+  Completer<void>? checkHeld;
+
   int reads = 0;
   int checks = 0;
   int marks = 0;
+  int fetches = 0;
   final replaced = <List<NostrEvent>?>[];
   final logs = <String>[];
 
-  Future<WindowCheckDecision> decide() => decideWindowCheck(
+  /// The store's window, as the open drew it.
+  final storedWindow = [_row('stored', 1)];
+
+  CheckedWindowOpen? begin() => openWindowCheck(
     gate: gate,
     key: _key,
     label: 'room $_key',
@@ -81,15 +105,21 @@ class _Fake {
       return CheckedStoreWindow(
         facts: facts,
         response: ({required hasMore}) => [
-          _row('stored', 1),
+          ...storedWindow,
           _bounds(hasMore: hasMore),
         ],
       );
     },
-    check: () async {
+    check: (sent) async {
       checks++;
       onCheck?.call();
-      return answers.removeAt(0);
+      await checkHeld?.future;
+      final answer = answers.removeAt(0);
+      return switch (answer) {
+        final WindowCheckAnswer answer => _checked(answer),
+        final List<NostrEvent> events => events,
+        _ => throw answer,
+      };
     },
     beginReplace: () {
       marks++;
@@ -100,27 +130,30 @@ class _Fake {
       };
     },
     liveRows: () => live,
+    fetch: (filters) async {
+      fetches++;
+      return page;
+    },
     log: logs.add,
   );
 
-  /// Opens the window as the providers do: from the store when the
-  /// decision has it, else the page (counted).
-  int fetches = 0;
-  Future<List<NostrEvent>> open() async {
-    final decision = gate.before(_key) == null
-        ? WindowCheckDecision.today
-        : await decide();
-    if (decision.stored case final stored?) return stored;
-    final events = await decision.relayed(
-      Future(() {
-        fetches++;
-        return page;
-      }),
-    );
-    // Let onPage finish.
+  /// Opens the window as the providers do: draws the store's window when
+  /// the open has one, then takes the page through the open's query.
+  Future<({List<NostrEvent>? drawn, List<NostrEvent> page})> open() async {
+    final open = begin();
+    if (open == null) {
+      fetches++;
+      return (drawn: null, page: page);
+    }
+    final drawn = await open.stored;
+    final events = await open.query([_filter]);
+    // Let the work after the page finish.
     await pumpEventQueue();
-    return events;
+    return (drawn: drawn, page: events);
   }
+
+  /// The relay said on in an earlier check this session.
+  void serverOn() => gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
 }
 
 final _page = [
@@ -130,46 +163,55 @@ final _page = [
   _bounds(hasMore: true),
 ];
 
+bool _hasMore(List<NostrEvent> events) =>
+    jsonDecode(events.last.content)['has_more'] == true;
+
 void main() {
-  test('equal in mode on: opened from the store, no page fetched', () async {
+  test('mode on draws the store at once, before the check is sent', () async {
     final fake = _Fake(
       stored: (oldestId: 'a1', count: 3),
       answers: [_answer('a1', 3, WindowCheckMode.on)],
       page: _page,
-    );
-    // The session's first check (a probe beside the page) said on.
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
-    final events = await fake.open();
-    expect(fake.fetches, 0);
+    )..serverOn();
+    fake.checkHeld = Completer();
+    final open = fake.begin()!;
+    final drawn = await open.stored;
+    expect(drawn!.first.id, 'stored');
+    expect(fake.checks, 0);
+    // The check goes out with the page's query and holds only it.
+    final page = open.query([_filter]);
+    await pumpEventQueue();
     expect(fake.checks, 1);
+    fake.checkHeld!.complete();
+    final events = await page;
+    // Equal: the stored window answers again; no page was fetched.
     expect(events.first.id, 'stored');
-    // A full window says the relay has more.
-    expect(jsonDecode(events.last.content)['has_more'], isTrue);
+    expect(_hasMore(events), isTrue);
+    expect(fake.fetches, 0);
     expect(fake.marks, 0);
   });
 
-  test('a missing row refetches the page and replaces its range', () async {
+  test('a missing row: drawn from the store, then refetched', () async {
     final fake = _Fake(
       stored: (oldestId: 'a0', count: 3),
       answers: [_answer('a1', 3, WindowCheckMode.on)],
       page: _page,
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
-    final events = await fake.open();
+    )..serverOn();
+    final opened = await fake.open();
+    expect(opened.drawn!.first.id, 'stored');
+    expect(opened.page, _page);
     expect(fake.fetches, 1);
-    expect(events, _page);
     expect(fake.replaced, [_page]);
     expect(fake.gate.isHeld(_key), isFalse);
   });
 
   test('a leftover deleted row refetches', () async {
     final fake = _Fake(
-      // The relay deleted a2: it counts one row fewer, oldest further down.
+      // The relay deleted a row: its oldest is further down.
       stored: (oldestId: 'a1', count: 3),
       answers: [_answer('a0', 3, WindowCheckMode.on)],
       page: _page,
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
+    )..serverOn();
     await fake.open();
     expect(fake.fetches, 1);
     expect(fake.replaced, hasLength(1));
@@ -180,17 +222,16 @@ void main() {
       stored: (oldestId: 'a1', count: 1),
       answers: [_answer('a1', 2, WindowCheckMode.on)],
       page: [_row('a2', 2000), _row('a1', 1000), _bounds(hasMore: false)],
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
+    )..serverOn();
     await fake.open();
     expect(fake.fetches, 1);
     expect(fake.replaced.single, hasLength(3));
   });
 
-  test('a window not fully stored fetches its page as before', () async {
-    final fake = _Fake(stored: null, answers: [], page: _page);
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
-    await fake.open();
+  test('a window not fully stored draws as before and fetches', () async {
+    final fake = _Fake(stored: null, answers: [], page: _page)..serverOn();
+    final opened = await fake.open();
+    expect(opened.drawn, isNull);
     expect(fake.checks, 0);
     expect(fake.fetches, 1);
     expect(fake.replaced, [_page]);
@@ -202,11 +243,10 @@ void main() {
       answers: [_answer('a1', 3, WindowCheckMode.on)],
       page: _page,
       afterReplace: (oldestId: 'a0', count: 3),
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
+    )..serverOn();
     await fake.open();
     expect(fake.gate.isHeld(_key), isTrue);
-    expect(fake.gate.before(_key), isNull);
+    expect(fake.begin(), isNull);
     // Another window is not held.
     expect(fake.gate.before('room-2'), WindowCheckMode.on);
     fake.now = fake.now.add(windowCheckRetry);
@@ -221,8 +261,7 @@ void main() {
         _answer('a1', 3, WindowCheckMode.on),
       ],
       page: _page,
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
+    )..serverOn();
     fake.onCheck = () {
       fake.live++;
       fake.stored = (oldestId: 'a1', count: 3);
@@ -238,9 +277,11 @@ void main() {
       answers: [_answer('a1', 3, WindowCheckMode.shadow)],
       page: _page,
     );
-    final events = await fake.open();
+    final opened = await fake.open();
+    // Shadow draws as before: the open offers no store window.
+    expect(opened.drawn, isNull);
+    expect(opened.page, _page);
     expect(fake.fetches, 1);
-    expect(events, _page);
     expect(fake.checks, 1);
     expect(fake.logs.single, contains('shadow equal'));
     // Equal: the mark is only released.
@@ -265,8 +306,7 @@ void main() {
       answers: [_answer('a1', 3, WindowCheckMode.on)],
       page: _page,
       override: WindowCheckOverride.shadow,
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
+    )..serverOn();
     await fake.open();
     expect(fake.fetches, 1);
   });
@@ -279,16 +319,12 @@ void main() {
     );
     // The first open of a session probes beside the page.
     final first = await fake.open();
-    expect(first, _page);
+    expect(first.page, _page);
     expect(fake.checks, 1);
     expect(fake.replaced, [null]);
-    // Then off: no store read, no check, no mark.
-    final reads = fake.reads;
-    expect(fake.gate.before(_key), isNull);
-    final second = await fake.open();
-    expect(second, _page);
-    expect(fake.reads, reads);
-    expect(fake.checks, 1);
+    // Then off: no open, so no store read, check or mark.
+    expect(fake.begin(), isNull);
+    expect(fake.reads, 1);
     expect(fake.marks, 1);
     fake.now = fake.now.add(windowCheckRetry);
     expect(fake.gate.before(_key), WindowCheckMode.shadow);
@@ -300,22 +336,66 @@ void main() {
       answers: [],
       page: _page,
       override: WindowCheckOverride.off,
-    );
-    fake.gate.noteAnswer(_answer(null, 0, WindowCheckMode.on));
-    final events = await fake.open();
-    expect(events, _page);
+    )..serverOn();
+    expect(fake.begin(), isNull);
     expect(fake.reads + fake.checks + fake.marks, 0);
   });
 
-  test('a relay without the check is taken as off', () async {
+  test('a room relay without the check: its page answer is used', () async {
     final fake = _Fake(
       stored: (oldestId: 'a1', count: 3),
-      answers: [null],
+      // The relay ignores `check` and answers the page.
+      answers: [_page],
+      page: _page,
+      override: WindowCheckOverride.on,
+    );
+    final opened = await fake.open();
+    expect(opened.page, _page);
+    expect(fake.fetches, 0);
+    // Not asked again for 10 minutes, whatever the override.
+    expect(fake.begin(), isNull);
+    fake.now = fake.now.add(windowCheckRetry);
+    expect(fake.gate.before(_key), WindowCheckMode.on);
+  });
+
+  test('a thread relay failing the check: the page as before, '
+      'no error', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [StateError('unknown field check')],
+      page: _page,
+      override: WindowCheckOverride.on,
+    );
+    final opened = await fake.open();
+    expect(opened.page, _page);
+    expect(fake.fetches, 1);
+    expect(fake.begin(), isNull);
+  });
+
+  test('a shadow probe failing the check changes nothing', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [StateError('unknown field check')],
       page: _page,
     );
-    await fake.open();
-    expect(fake.gate.before(_key), isNull);
+    final opened = await fake.open();
+    expect(opened.page, _page);
+    expect(fake.fetches, 1);
     expect(fake.replaced, [null]);
+    expect(fake.begin(), isNull);
+  });
+
+  test('later calls of the query are plain fetches', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+      page: _page,
+    )..serverOn();
+    final open = fake.begin()!;
+    await open.query([_filter]);
+    await open.query([_filter]);
+    expect(fake.checks, 1);
+    expect(fake.fetches, 1);
   });
 
   test('the check answer is read from the bounds event', () {
@@ -337,11 +417,6 @@ void main() {
     expect(answer.roomSeq, 7);
     expect(answer.mode, WindowCheckMode.shadow);
     expect(parseWindowCheckAnswer([_bounds(hasMore: false)]), isNull);
-    expect(
-      windowCheckFilter(
-        NostrFilter(kinds: const [9], limit: 3),
-      ).toJson()['check'],
-      isTrue,
-    );
+    expect(windowCheckFilter(_filter).toJson()['check'], isTrue);
   });
 }

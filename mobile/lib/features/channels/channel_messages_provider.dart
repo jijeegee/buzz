@@ -409,15 +409,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     RelaySessionNotifier session,
     ChannelPageCursor? cursor, {
     WindowPageDirection direction = WindowPageDirection.older,
-    WindowCheckDecision? check,
+    CheckedWindowOpen? check,
   }) async {
-    final events =
-        check?.stored ??
-        await check.relayed(
-          session.queryRelay([
-            _channelWindowFilter(cursor, direction: direction),
-          ]),
-        );
+    final events = await (check?.query ?? session.queryRelay)([
+      _channelWindowFilter(cursor, direction: direction),
+    ]);
     return parseChannelWindowResponse(
       events,
       channelId,
@@ -1106,13 +1102,11 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       try {
         final pageVersion = ++_threadQuerySerial;
         // Checked against the relay, as the newest window.
-        final check = session.wantsWindowCheck(channelId)
-            ? await session.decideWindow(
-                _channelWindowFilter(cursor),
-                room: channelId,
-                before: (cursor.createdAt, cursor.eventId),
-              )
-            : null;
+        final check = session.openWindow(
+          _channelWindowFilter(cursor),
+          room: channelId,
+          before: (cursor.createdAt, cursor.eventId),
+        );
         final page = await _fetchWindowPage(session, cursor, check: check);
         _windowStore = appendOlderChannelWindow(_windowStore, page);
         _storeOnlyIds.removeAll(page.rows.map((row) => row.event.id));

@@ -113,15 +113,18 @@ typedef PageWindow = ({
   (int, String)? oldest,
   Set<String> ids,
   bool hasMore,
+  bool bounded,
 });
 
 PageWindow pageWindowFacts(List<NostrEvent> page, List<int> kinds) {
   NostrEvent? oldest;
   final ids = <String>{};
   var hasMore = false;
+  var bounded = false;
   for (final event in page) {
     if (event.kind == EventKind.channelWindowBounds ||
         event.kind == _threadBoundsKind) {
+      bounded = true;
       try {
         final content = jsonDecode(event.content);
         hasMore = content is Map && content['has_more'] == true;
@@ -139,6 +142,7 @@ PageWindow pageWindowFacts(List<NostrEvent> page, List<int> kinds) {
     oldest: oldest == null ? null : (oldest.createdAt, oldest.id),
     ids: ids,
     hasMore: hasMore,
+    bounded: bounded,
   );
 }
 
@@ -169,14 +173,19 @@ class WindowCheckGate {
 
   WindowCheckMode? _serverMode;
   DateTime? _serverModeAt;
+  bool _unsupported = false;
   final Map<String, DateTime> _held = {};
 
   WindowCheckOverride get _override =>
       override?.call() ?? WindowCheckOverride.follow;
 
+  bool get _waiting =>
+      (_serverMode == WindowCheckMode.off || _unsupported) &&
+      _now().difference(_serverModeAt!) < windowCheckRetry;
+
   /// How the window [key] opens now: `null` as before (no check), `shadow`
   /// (check beside the page, also while the relay's mode is unknown) or
-  /// `on` (check first).
+  /// `on` (store first, check after).
   WindowCheckMode? before(String key) {
     final override = _override;
     if (override == WindowCheckOverride.off) return null;
@@ -185,6 +194,9 @@ class WindowCheckGate {
       if (_now().isBefore(held)) return null;
       _held.remove(key);
     }
+    // A relay that does not know the check is not asked again for a while,
+    // whatever the override.
+    if (_unsupported && _waiting) return null;
     switch (override) {
       case WindowCheckOverride.shadow:
         return WindowCheckMode.shadow;
@@ -197,19 +209,18 @@ class WindowCheckGate {
     final server = _serverMode;
     if (server == null) return WindowCheckMode.shadow;
     if (server == WindowCheckMode.off) {
-      final at = _serverModeAt!;
-      return _now().difference(at) >= windowCheckRetry
-          ? WindowCheckMode.shadow
-          : null;
+      return _waiting ? null : WindowCheckMode.shadow;
     }
     return server;
   }
 
   /// Notes the relay's mode from [answer] (`null`: the relay does not know
-  /// the check, taken as `off`) and returns the mode in force.
+  /// the check, or failed it; taken as `off`) and returns the mode in force.
   WindowCheckMode noteAnswer(WindowCheckAnswer? answer) {
     _serverMode = answer?.mode ?? WindowCheckMode.off;
+    _unsupported = answer == null;
     _serverModeAt = _now();
+    if (answer == null) return WindowCheckMode.off;
     return switch (_override) {
       WindowCheckOverride.follow => _serverMode!,
       WindowCheckOverride.off => WindowCheckMode.off,
@@ -223,13 +234,16 @@ class WindowCheckGate {
 
   /// Whether the check is known to be in use: by the override, or by the
   /// relay's latest answer.
-  bool get active => switch (_override) {
-    WindowCheckOverride.follow =>
-      _serverMode == WindowCheckMode.shadow ||
-          _serverMode == WindowCheckMode.on,
-    WindowCheckOverride.off => false,
-    WindowCheckOverride.shadow || WindowCheckOverride.on => true,
-  };
+  bool get active {
+    if (_unsupported) return false;
+    return switch (_override) {
+      WindowCheckOverride.follow =>
+        _serverMode == WindowCheckMode.shadow ||
+            _serverMode == WindowCheckMode.on,
+      WindowCheckOverride.off => false,
+      WindowCheckOverride.shadow || WindowCheckOverride.on => true,
+    };
+  }
 
   bool isHeld(String key) {
     final held = _held[key];
@@ -237,31 +251,25 @@ class WindowCheckGate {
   }
 }
 
-/// What a window open does after the decision.
-class WindowCheckDecision {
-  const WindowCheckDecision._({this.stored, this.onPage});
+/// A `/query` for a window's page (or its fallbacks).
+typedef WindowQuery =
+    Future<List<NostrEvent>> Function(List<NostrFilter> filters);
 
-  static const today = WindowCheckDecision._();
+/// A window opening through the check.
+class CheckedWindowOpen {
+  const CheckedWindowOpen._({required this.stored, required this.query});
 
-  /// The store's window, checked equal: open from it, fetch no page.
-  final List<NostrEvent>? stored;
+  /// Mode `on`: the store's window, to draw at once (before the check
+  /// answers); resolves `null` when the store cannot stand for the page.
+  /// `null` in shadow: the window draws as before.
+  final Future<List<NostrEvent>?>? stored;
 
-  /// Called with the page fetched as before (shadow logging, replacing the
-  /// stored rows, the loop guard). Never throws.
-  final Future<void> Function(List<NostrEvent> page)? onPage;
-}
-
-extension WindowCheckPage on WindowCheckDecision? {
-  /// [page] (fetched as before), handed to [WindowCheckDecision.onPage] once
-  /// it answers.
-  Future<List<NostrEvent>> relayed(Future<List<NostrEvent>> page) {
-    final onPage = this?.onPage;
-    if (onPage == null) return page;
-    return page.then((events) {
-      unawaited(onPage(events));
-      return events;
-    });
-  }
+  /// Stands in for the plain `/query` of the window's page. Its first call
+  /// is the page: in mode `on` it checks the stored window and answers with
+  /// it again when equal (no page fetched), else fetches the page; in
+  /// shadow it fetches the page and checks beside it. Later calls (a
+  /// thread window's narrower fallbacks) are plain fetches.
+  final WindowQuery query;
 }
 
 /// Replaces the stored rows of a fetched [page]'s key range, then reads the
@@ -269,40 +277,46 @@ extension WindowCheckPage on WindowCheckDecision? {
 /// `null` page only releases the store mark taken for it.
 typedef WindowReplace = Future<WindowFacts?> Function(List<NostrEvent>? page);
 
-/// The one open path of a room or thread window ([key]; [label] for logs):
-/// draw from the store, check it, and either stand on it or fetch the page
-/// as before.
+/// The one open path of a room or thread window ([key]; [label] for logs),
+/// or `null` when it opens as before (mode off, or held).
 ///
 /// [readStored] answers `null` when the window is not fully stored.
-/// [beginReplace] is called before any page goes out (it marks the store,
-/// so rows written after are never taken for deleted ones). [liveRows]
-/// counts live rows received for the room: a difference while rows arrived
-/// is checked once more before the page is fetched.
-Future<WindowCheckDecision> decideWindowCheck({
+/// [check] asks the relay's check for the page filter it is given (the one
+/// actually sent) and returns the raw answer. [beginReplace] is called
+/// before any page goes out (it marks the store, so rows written after
+/// are never taken for deleted ones). [liveRows] counts live rows received
+/// for the room: a difference while rows arrived is checked once more
+/// before the page is fetched. [fetch] is the plain page query.
+CheckedWindowOpen? openWindowCheck({
   required WindowCheckGate gate,
   required String key,
   required String label,
   required List<int> kinds,
   required int limit,
   required Future<CheckedStoreWindow?> Function() readStored,
-  required Future<WindowCheckAnswer?> Function() check,
+  required Future<List<NostrEvent>> Function(NostrFilter page) check,
   required WindowReplace Function() beginReplace,
   required int Function() liveRows,
+  required WindowQuery fetch,
   void Function(String message)? log,
-}) async {
+}) {
   final pre = gate.before(key);
-  if (pre == null) return WindowCheckDecision.today;
+  if (pre == null) return null;
   void note(String message) =>
       (log ?? debugPrint)('[WindowCheck] $label $message');
   final clock = Stopwatch()..start();
 
-  Future<WindowCheckAnswer?> ask() => check().then<WindowCheckAnswer?>(
-    (answer) => answer,
-    onError: (error) {
-      note('check failed: $error');
-      return null;
-    },
-  );
+  /// The relay's answer, and its events: a relay that does not know the
+  /// check answers the page itself. Failures (a thread window's parser
+  /// rejecting `check`) are `null`: the window opens as before.
+  Future<(WindowCheckAnswer?, List<NostrEvent>?)> ask(NostrFilter page) =>
+      check(page).then(
+        (events) => (parseWindowCheckAnswer(events), events),
+        onError: (Object error) {
+          note('check failed: $error');
+          return (null, null);
+        },
+      );
   Future<CheckedStoreWindow?> read() => readStored().then<CheckedStoreWindow?>(
     (stored) => stored,
     onError: (_) => null,
@@ -323,14 +337,43 @@ Future<WindowCheckDecision> decideWindowCheck({
     }
   }
 
+  /// Fetches the page under a fresh store mark, then [after] it.
+  Future<List<NostrEvent>> fetchThen(
+    List<NostrFilter> filters,
+    WindowReplace replace,
+    Future<void> Function(List<NostrEvent> page) after,
+  ) async {
+    final List<NostrEvent> page;
+    try {
+      page = await fetch(filters);
+    } catch (_) {
+      unawaited(replace(null).catchError((_) => null));
+      rethrow;
+    }
+    unawaited(
+      after(page).catchError((Object error) => note('after page: $error')),
+    );
+    return page;
+  }
+
+  var asked = false;
+
   if (pre == WindowCheckMode.shadow) {
     // Beside the page: nothing waits for the check.
     final replace = beginReplace();
     final stored = read();
-    final answer = stored.then((window) => window == null ? null : ask());
-    return WindowCheckDecision._(
-      onPage: (page) async {
-        try {
+    return CheckedWindowOpen._(
+      stored: null,
+      query: (filters) {
+        if (asked || filters.length != 1) return fetch(filters);
+        asked = true;
+        Future<(WindowCheckAnswer?, List<NostrEvent>?)?> asking() async {
+          final window = await stored;
+          return window == null ? null : ask(filters.single);
+        }
+
+        final answer = asking();
+        return fetchThen(filters, replace, (page) async {
           final pageMs = clock.elapsedMilliseconds;
           final window = await stored;
           if (window == null) {
@@ -339,7 +382,7 @@ Future<WindowCheckDecision> decideWindowCheck({
             await replace(gate.active ? page : null);
             return;
           }
-          final result = await answer;
+          final (result, _) = (await answer)!;
           final mode = gate.noteAnswer(result);
           if (result == null || mode == WindowCheckMode.off) {
             await replace(null);
@@ -351,74 +394,72 @@ Future<WindowCheckDecision> decideWindowCheck({
             '${clock.elapsedMilliseconds} ms, page $pageMs ms)',
           );
           equal ? await replace(null) : await settle(replace, page);
-        } catch (error) {
-          note('shadow failed: $error');
-        }
+        });
       },
     );
   }
 
-  // Mode on: check first, fetch only when it differs.
-  var window = await read();
-  if (window == null) {
-    note('not fully stored: page fetched');
-    final replace = beginReplace();
-    return WindowCheckDecision._(
-      onPage: (page) async {
-        try {
+  // Mode on: the store's window draws at once; the check follows.
+  final window = read();
+  return CheckedWindowOpen._(
+    stored: window.then(
+      (window) => window?.response(hasMore: window.facts.count >= limit),
+    ),
+    query: (filters) async {
+      if (asked || filters.length != 1) return fetch(filters);
+      asked = true;
+      var stored = await window;
+      if (stored == null) {
+        note('not fully stored: page fetched');
+        final replace = beginReplace();
+        return fetchThen(filters, replace, (page) async {
           await replace(page);
-        } catch (error) {
-          note('replace failed: $error');
-        }
-      },
-    );
-  }
-  final live = liveRows();
-  var answer = await ask();
-  var mode = gate.noteAnswer(answer);
-  if (answer == null || mode == WindowCheckMode.off) {
-    return WindowCheckDecision.today;
-  }
-  var equal = _sameFacts(window.facts, answer);
-  if (!equal && liveRows() != live) {
-    // Rows arrived while the check was out: ask once more.
-    final again = await read();
-    final second = again == null ? null : await ask();
-    if (again != null && second != null) {
-      window = again;
-      answer = second;
-      mode = gate.noteAnswer(second);
-      if (mode == WindowCheckMode.off) return WindowCheckDecision.today;
-      equal = _sameFacts(again.facts, second);
-    }
-  }
-  final checkMs = clock.elapsedMilliseconds;
-  if (equal) {
-    if (mode == WindowCheckMode.on) {
-      note('equal: opened from the store ($checkMs ms)');
-      return WindowCheckDecision._(
-        stored: window.response(hasMore: answer.count >= limit),
-      );
-    }
-    return WindowCheckDecision._(
-      onPage: (_) async => note(
-        'shadow equal (check $checkMs ms, page '
-        '${clock.elapsedMilliseconds} ms)',
-      ),
-    );
-  }
-  note(
-    'different (stored ${window.facts.count} ${window.facts.oldestId}, '
-    'relay ${answer.count} ${answer.oldestId}): page fetched',
-  );
-  final replace = beginReplace();
-  return WindowCheckDecision._(
-    onPage: (page) async {
-      try {
-        await settle(replace, page);
-      } catch (error) {
-        note('refetch failed: $error');
+        });
       }
+      final live = liveRows();
+      var (answer, events) = await ask(filters.single);
+      var mode = gate.noteAnswer(answer);
+      if (answer == null) {
+        // A relay without the check answered the page itself.
+        final page = events;
+        if (page != null && pageWindowFacts(page, kinds).bounded) return page;
+        return fetch(filters);
+      }
+      if (mode == WindowCheckMode.off) return fetch(filters);
+      var equal = _sameFacts(stored.facts, answer);
+      if (!equal && liveRows() != live) {
+        // Rows arrived while the check was out: ask once more.
+        final again = await read();
+        if (again != null) {
+          final (second, _) = await ask(filters.single);
+          if (second != null) {
+            stored = again;
+            answer = second;
+            mode = gate.noteAnswer(second);
+            if (mode == WindowCheckMode.off) return fetch(filters);
+            equal = _sameFacts(again.facts, second);
+          }
+        }
+      }
+      final checkMs = clock.elapsedMilliseconds;
+      if (equal && mode == WindowCheckMode.on) {
+        note('equal: the stored window stands ($checkMs ms)');
+        return stored.response(hasMore: answer.count >= limit);
+      }
+      if (equal) {
+        final page = await fetch(filters);
+        note(
+          'shadow equal (check $checkMs ms, page '
+          '${clock.elapsedMilliseconds} ms)',
+        );
+        return page;
+      }
+      note(
+        'different (stored ${stored.facts.count} ${stored.facts.oldestId}, '
+        'relay ${answer.count} ${answer.oldestId}): page fetched',
+      );
+      final replace = beginReplace();
+      return fetchThen(filters, replace, (page) => settle(replace, page));
     },
   );
 }
