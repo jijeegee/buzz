@@ -114,6 +114,95 @@ impl Fixture {
         event
     }
 
+    /// A reaction by the author to `target`.
+    async fn reaction(&self, target: &Event) -> Event {
+        let event = self.sign(&self.author, 7, vec![vec!["e".into(), target.id.to_hex()]]);
+        self.state
+            .db
+            .insert_event(self.tenant.community(), &event, Some(self.channel))
+            .await
+            .expect("insert");
+        event
+    }
+
+    async fn deleted(&self, target: &Event) -> bool {
+        sqlx::query_scalar(
+            "SELECT deleted_at IS NOT NULL FROM events WHERE community_id=$1 AND id=$2",
+        )
+        .bind(self.tenant.community().as_uuid())
+        .bind(target.id.as_bytes().as_slice())
+        .fetch_one(&self.pool)
+        .await
+        .expect("row")
+    }
+
+    /// Drive a staff delete of `target` to its end.
+    async fn staff_delete(&self, target: &Event) {
+        let staff = Keys::generate().public_key().to_bytes();
+        let author = self.author.public_key().to_bytes();
+        let input = kuzz_db::relay_admin_actions::DirectActionInput {
+            community_id: self.tenant.community(),
+            request_id: Uuid::new_v4(),
+            actor_pubkey: staff.as_slice(),
+            actor_role: "operator",
+            actor_authority: "relay_operator",
+            action: "delete",
+            reason: None,
+            timeout_secs: None,
+            timeout_until: None,
+            target_pubkey: Some(author.as_slice()),
+            target_event_id: Some(target.id.as_bytes().as_slice()),
+            channel_id: Some(self.channel),
+        };
+        let kuzz_db::relay_admin_actions::DirectClaim::Claimed(rec) = self
+            .state
+            .db
+            .claim_direct_action(&input)
+            .await
+            .expect("claim")
+        else {
+            panic!("expected a new claim");
+        };
+        super::report_resolution::drive_direct_action(&self.state, &self.tenant, &rec, None)
+            .await
+            .expect("drive delete");
+    }
+
+    /// The next live relay 9005, skipping other channel traffic.
+    async fn next_live_record(&mut self) -> Option<Event> {
+        loop {
+            let event = self.next_live().await?;
+            if event.kind == Kind::Custom(9005) {
+                return Some(event);
+            }
+        }
+    }
+
+    /// Make every relay record insert in this channel fail until dropped.
+    async fn fail_records(&self) -> FailRecords {
+        let name = format!("fail_records_{}", self.channel.simple());
+        sqlx::query(
+            "CREATE OR REPLACE FUNCTION fail_relay_record() RETURNS trigger \
+             LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected record failure'; END $$",
+        )
+        .execute(&self.pool)
+        .await
+        .expect("function");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "CREATE TRIGGER {name} BEFORE INSERT ON events FOR EACH ROW \
+             WHEN (NEW.kind = 9005 AND NEW.channel_id = '{}'::uuid) \
+             EXECUTE FUNCTION fail_relay_record()",
+            self.channel
+        )))
+        .execute(&self.pool)
+        .await
+        .expect("trigger");
+        FailRecords {
+            pool: self.pool.clone(),
+            name,
+        }
+    }
+
     fn deletion(&self, keys: &Keys, kind: u16, target: &Event) -> Event {
         self.sign(keys, kind, vec![vec!["e".into(), target.id.to_hex()]])
     }
@@ -154,6 +243,24 @@ impl Fixture {
     }
 }
 
+/// Drops the trigger [`Fixture::fail_records`] created.
+struct FailRecords {
+    pool: sqlx::PgPool,
+    name: String,
+}
+
+impl FailRecords {
+    async fn remove(self) {
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            "DROP TRIGGER {} ON events",
+            self.name
+        )))
+        .execute(&self.pool)
+        .await
+        .expect("drop trigger");
+    }
+}
+
 #[tokio::test]
 #[ignore = "requires Postgres and Redis"]
 async fn non_author_kind5_stores_and_publishes_one_record() {
@@ -182,38 +289,76 @@ async fn non_author_kind5_stores_and_publishes_one_record() {
 async fn staff_delete_stores_and_publishes_one_record() {
     let mut f = Fixture::new().await;
     let target = f.message().await;
-    let staff = Keys::generate().public_key().to_bytes();
-    let author = f.author.public_key().to_bytes();
-    let input = kuzz_db::relay_admin_actions::DirectActionInput {
-        community_id: f.tenant.community(),
-        request_id: Uuid::new_v4(),
-        actor_pubkey: staff.as_slice(),
-        actor_role: "operator",
-        actor_authority: "relay_operator",
-        action: "delete",
-        reason: None,
-        timeout_secs: None,
-        timeout_until: None,
-        target_pubkey: Some(author.as_slice()),
-        target_event_id: Some(target.id.as_bytes().as_slice()),
-        channel_id: Some(f.channel),
-    };
-    let kuzz_db::relay_admin_actions::DirectClaim::Claimed(rec) =
-        f.state.db.claim_direct_action(&input).await.expect("claim")
-    else {
-        panic!("expected a new claim");
-    };
-    super::report_resolution::drive_direct_action(&f.state, &f.tenant, &rec, None)
-        .await
-        .expect("drive delete");
+    f.staff_delete(&target).await;
     assert_eq!(f.records(&target).await, 1);
-    let live = loop {
-        let event = f.next_live().await.expect("record delivered after commit");
-        if event.kind == Kind::Custom(9005) {
-            break event;
-        }
-    };
+    let live = f
+        .next_live_record()
+        .await
+        .expect("record delivered after commit");
     f.assert_record_for(&live, &target);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn overlay_deletes_store_and_publish_records() {
+    let mut f = Fixture::new().await;
+    let message = f.message().await;
+
+    // The agent owner's kind 5 of the agent's reaction.
+    let reaction = f.reaction(&message).await;
+    let by_owner = f.deletion(&f.owner, 5, &reaction);
+    super::side_effects::handle_side_effects(&f.tenant, 5, &by_owner, &f.state)
+        .await
+        .expect("kind 5 side effects");
+    assert!(f.deleted(&reaction).await);
+    assert_eq!(f.records(&reaction).await, 1);
+    let live = f.next_live_record().await.expect("record delivered");
+    f.assert_record_for(&live, &reaction);
+
+    // Staff removal of a reaction and of an edit.
+    for kind in [7, 40003] {
+        let overlay = f.sign(&f.author, kind, vec![vec!["e".into(), message.id.to_hex()]]);
+        f.state
+            .db
+            .insert_event(f.tenant.community(), &overlay, Some(f.channel))
+            .await
+            .expect("insert");
+        f.staff_delete(&overlay).await;
+        assert!(f.deleted(&overlay).await);
+        assert_eq!(f.records(&overlay).await, 1, "kind {kind}");
+        let live = f.next_live_record().await.expect("record delivered");
+        f.assert_record_for(&live, &overlay);
+    }
+    assert!(!f.deleted(&message).await);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres and Redis"]
+async fn a_failed_record_rolls_back_the_kind5_delete() {
+    let mut f = Fixture::new().await;
+    let target = f.message().await;
+    let reaction = f.reaction(&target).await;
+    let failing = f.fail_records().await;
+    for row in [&target, &reaction] {
+        let by_owner = f.deletion(&f.owner, 5, row);
+        let error = super::side_effects::handle_side_effects(&f.tenant, 5, &by_owner, &f.state)
+            .await
+            .expect_err("the delete fails with its record");
+        assert!(
+            format!("{error:#}").contains("injected record failure"),
+            "{error:#}"
+        );
+        assert!(!f.deleted(row).await, "nothing hidden");
+    }
+    assert!(f.next_live_record().await.is_none(), "nothing published");
+
+    // The author's own kind 5 needs no record and still deletes.
+    let by_author = f.deletion(&f.author, 5, &target);
+    super::side_effects::handle_side_effects(&f.tenant, 5, &by_author, &f.state)
+        .await
+        .expect("author delete");
+    assert!(f.deleted(&target).await);
+    failing.remove().await;
 }
 
 #[tokio::test]

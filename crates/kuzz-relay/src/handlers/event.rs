@@ -580,8 +580,29 @@ pub(crate) async fn fan_out_event_to_local_subscribers(
     community_id: CommunityId,
     stored: &StoredEvent,
 ) {
+    let matches = local_readers(state, community_id, stored).await;
+    send_event_to_local_readers(state, stored, matches);
+}
+
+/// The local subscriptions `stored` would reach now: matching subscriptions
+/// that pass the access gate.
+pub(crate) async fn local_readers(
+    state: &AppState,
+    community_id: CommunityId,
+    stored: &StoredEvent,
+) -> Vec<(crate::subscription::ConnId, crate::subscription::SubId)> {
     let matches = state.sub_registry.fan_out_scoped(community_id, stored);
-    let matches = filter_fanout_by_access(state, community_id, stored, matches, None).await;
+    filter_fanout_by_access(state, community_id, stored, matches, None).await
+}
+
+/// Write `stored` to `matches`, readers [`local_readers`] resolved. A caller
+/// that resolves them before a change that would lock them out (a room
+/// deletion) still reaches them with the event announcing that change.
+pub(crate) fn send_event_to_local_readers(
+    state: &AppState,
+    stored: &StoredEvent,
+    matches: Vec<(crate::subscription::ConnId, crate::subscription::SubId)>,
+) {
     metrics::histogram!("kuzz_fanout_recipients").record(matches.len() as f64);
     if matches.is_empty() {
         return;

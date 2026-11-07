@@ -1895,7 +1895,8 @@ would stay 0.
 - Rows changed without a new seq (soft-delete updates, visibility or
   history-policy changes, expiry) are missed by catch-up today; under
   `gated` the miss lasts until the room is opened or gets a new commit. R4
-  deletion records cover non-author deletes.
+  deletion records cover staff and non-author deletes of rows and overlays
+  (5, 7, 9005, 40003); such a delete commits only together with its record.
 - 40009 has a seq but is not a coverage kind; offline renames come back
   through the thread-name batch. 39005 is never stored.
 - Backdated `created_at` is bounded at ±900 s by the relay. R4 backfill

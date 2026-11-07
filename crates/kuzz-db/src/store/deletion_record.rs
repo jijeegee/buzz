@@ -5,7 +5,9 @@
 //! device stores never learn about: stores hide a stored row only for a 9005,
 //! or a kind:5 with the target's own pubkey. These paths therefore also store a
 //! relay-signed 9005 (`h`=channel, `e`=target, `k`=target kind, empty content)
-//! naming the removed row.
+//! naming the removed row. Overlays (reactions, edits, deletions) a device
+//! stores beside the rows get the same record, so a removed reaction or edit
+//! leaves device stores too.
 //!
 //! Invariants:
 //! - One relay record per target. The insert holds the channel lock, then a
@@ -15,13 +17,16 @@
 //! - `created_at` is the signing time, taken inside the transaction right
 //!   before the insert. Migration 0021 rejects channel rows older than commit
 //!   time, so a signed record is never reused across transactions.
-//! - Only soft-deleted content rows with a channel get a record.
+//! - Only soft-deleted content or overlay rows with a channel get a record.
+//! - A delete that needs a record commits only with it: the delete and the
+//!   record share one transaction, and when every attempt fails nothing is
+//!   deleted (no removal devices cannot see).
 
 use chrono::{DateTime, Utc};
 use kuzz_core::CommunityId;
 use kuzz_datastore_tracing::datastore_span;
 use nostr::{Event, EventBuilder, Keys, Kind, Tag, Timestamp};
-use sqlx::{Acquire, PgPool, Postgres, Transaction};
+use sqlx::{PgPool, Postgres, Transaction};
 use uuid::Uuid;
 
 use crate::{Db, DbError, Result};
@@ -36,12 +41,23 @@ pub const DELETION_RECORD_CONTENT_KINDS: [i32; 17] = [
     48101, 48102, 48103,
 ];
 
-/// Attempts [`Db::write_deletion_record`] makes, each with a fresh signature.
+/// Overlay kinds that get a record: deletions, reactions, admin removals and
+/// edits. Mirrors the device stores' overlay kinds (`classify.rs` `AUX_KINDS`).
+pub const DELETION_RECORD_OVERLAY_KINDS: [i32; 4] = [5, 7, 9005, 40003];
+
+/// Every kind that gets a record: content and overlay kinds.
+pub const DELETION_RECORD_KINDS: [i32; 21] = [
+    9, 40001, 40002, 40008, 40099, 43001, 43002, 43003, 43004, 43005, 43006, 45001, 45003, 48100,
+    48101, 48102, 48103, 5, 7, 9005, 40003,
+];
+
+/// Attempts a recorded delete or [`Db::write_deletion_record`] makes, each in
+/// a fresh transaction with a fresh signature.
 const WRITE_ATTEMPTS: usize = 3;
 
 /// Whether a removed row of `kind` gets a deletion record.
-pub fn is_deletion_record_content_kind(kind: i32) -> bool {
-    DELETION_RECORD_CONTENT_KINDS.contains(&kind)
+pub fn is_deletion_record_kind(kind: i32) -> bool {
+    DELETION_RECORD_KINDS.contains(&kind)
 }
 
 /// Whether `event` is a relay-signed deletion record (it must stay undeletable).
@@ -57,9 +73,16 @@ pub struct AdminDeleteOutcome {
     /// The record this transaction stored, set only after a successful commit.
     /// Publish it to the channel; `None` means nothing new to deliver.
     pub record: Option<Event>,
-    /// The delete committed without its record after every attempt failed.
-    /// Log it; the backfill command writes the missing record.
-    pub record_failed: bool,
+}
+
+/// Result of [`Db::soft_delete_event_with_record`].
+#[derive(Debug)]
+pub struct RecordedDelete {
+    /// The row went from visible to deleted in this call.
+    pub deleted: bool,
+    /// The record stored with the delete, set only after a successful commit.
+    /// Publish it to the channel; `None` means nothing new to deliver.
+    pub record: Option<Event>,
 }
 
 /// One target the backfill would record.
@@ -93,8 +116,8 @@ fn sign_record(keys: &Keys, channel_id: Uuid, target_id: &[u8], kind: i32) -> Re
 /// Store a relay-signed record for `target_id` in the caller's transaction.
 ///
 /// Returns the inserted record, or `None` when the target is missing, not
-/// soft-deleted, has no channel, is not a content kind, or already has a relay
-/// record. The caller commits; the record is visible (and may be published)
+/// soft-deleted, has no channel, is not a recorded kind, or already has a
+/// relay record. The caller commits; the record is visible (and may be published)
 /// only after that commit succeeds.
 pub(crate) async fn record_deletion_in_tx(
     tx: &mut Transaction<'_, Postgres>,
@@ -115,16 +138,13 @@ pub(crate) async fn record_deletion_in_tx(
     let Some((kind, Some(channel_id), target_created_at, true)) = target else {
         return Ok(None);
     };
-    if !is_deletion_record_content_kind(kind) {
+    if !is_deletion_record_kind(kind) {
         return Ok(None);
     }
 
     // Channel lock first (the insert trigger takes the same key), then the
     // target lock, so every record writer acquires them in one order.
-    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-        .bind(format!("kuzz_channel_membership:{community}:{channel_id}"))
-        .execute(&mut **tx)
-        .await?;
+    lock_channel(tx, community, channel_id).await?;
     sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
         .bind(format!(
             "kuzz_deletion_record:{community}:{}",
@@ -161,6 +181,45 @@ pub(crate) async fn record_deletion_in_tx(
     Ok(inserted.then_some(record))
 }
 
+/// Take the channel lock (the key the channel insert trigger takes).
+async fn lock_channel(
+    tx: &mut sqlx::PgConnection,
+    community: &Uuid,
+    channel_id: Uuid,
+) -> std::result::Result<(), sqlx::Error> {
+    sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
+        .bind(format!("kuzz_channel_membership:{community}:{channel_id}"))
+        .execute(&mut *tx)
+        .await
+        .map(|_| ())
+}
+
+/// Before a delete that writes a record: take the channel lock the record
+/// insert needs, so it is held before the delete locks thread_metadata rows,
+/// matching channel inserts (channel lock in the insert trigger, then
+/// thread_metadata). Recorded kinds only: head kinds take the head
+/// replacement lock first and get no record.
+async fn lock_channel_for_record(
+    tx: &mut sqlx::PgConnection,
+    community_id: CommunityId,
+    target_id: &[u8],
+) -> std::result::Result<(), sqlx::Error> {
+    let community = community_id.as_uuid();
+    let row: Option<(i32, Option<Uuid>)> = sqlx::query_as(
+        "SELECT kind, channel_id FROM events WHERE community_id = $1 AND id = $2 LIMIT 1",
+    )
+    .bind(community)
+    .bind(target_id)
+    .fetch_optional(&mut *tx)
+    .await?;
+    if let Some((kind, Some(channel_id))) = row {
+        if is_deletion_record_kind(kind) {
+            lock_channel(tx, community, channel_id).await?;
+        }
+    }
+    Ok(())
+}
+
 /// Soft-delete `target_event_id`, store its relay record when `record_keys` is
 /// set, and commit the step marker, all in one transaction fenced by
 /// `action_id` AND the caller's `lease_token`.
@@ -169,10 +228,9 @@ pub(crate) async fn record_deletion_in_tx(
 /// committed (soft-delete is already-done = success), and the record is written
 /// if the target has none yet.
 ///
-/// A record failure never fails the delete. The record is retried inside the
-/// transaction (savepoint) and, when the commit itself rejects it, with a fresh
-/// transaction; after [`WRITE_ATTEMPTS`] the delete and marker commit without
-/// it and [`AdminDeleteOutcome::record_failed`] is set (the backfill repairs it).
+/// The delete commits only with its record. A failed record write or a commit
+/// that rejects the record retries with a fresh transaction and signature;
+/// after [`WRITE_ATTEMPTS`] the error is returned and nothing was deleted.
 #[allow(clippy::too_many_arguments)]
 pub async fn execute_delete_with_record(
     pool: &PgPool,
@@ -192,20 +250,26 @@ pub async fn execute_delete_with_record(
         parent_event_id,
         root_event_id,
     };
-    let Some(keys) = record_keys else {
-        return delete_once(pool, &target, None).await.map_err(Into::into);
-    };
-    for attempt in 1..=WRITE_ATTEMPTS {
-        match delete_once(pool, &target, Some(keys)).await {
-            Err(DeleteError::RecordCommit(error)) => {
-                tracing::debug!(%error, attempt, "deletion record commit retry");
+    retry_record(|| delete_once(pool, &target, record_keys)).await
+}
+
+/// Run `attempt` until it succeeds, fails for a reason other than its record,
+/// or [`WRITE_ATTEMPTS`] record failures happened (then that error).
+async fn retry_record<T, F, Fut>(mut attempt: F) -> Result<T>
+where
+    F: FnMut() -> Fut,
+    Fut: std::future::Future<Output = std::result::Result<T, DeleteError>>,
+{
+    let mut tries = 0;
+    loop {
+        tries += 1;
+        match attempt().await {
+            Err(DeleteError::Record(error)) if tries < WRITE_ATTEMPTS => {
+                tracing::debug!(%error, tries, "deletion record retry");
             }
             other => return other.map_err(Into::into),
         }
     }
-    let mut outcome = delete_once(pool, &target, None).await?;
-    outcome.record_failed = true;
-    Ok(outcome)
 }
 
 struct DeleteTarget<'a> {
@@ -218,8 +282,8 @@ struct DeleteTarget<'a> {
 }
 
 enum DeleteError {
-    /// The commit failed after a record was inserted; nothing was committed.
-    RecordCommit(DbError),
+    /// The record write, or the commit after it, failed; nothing was committed.
+    Record(DbError),
     Other(DbError),
 }
 
@@ -238,8 +302,32 @@ impl From<sqlx::Error> for DeleteError {
 impl From<DeleteError> for DbError {
     fn from(error: DeleteError) -> Self {
         match error {
-            DeleteError::RecordCommit(error) | DeleteError::Other(error) => error,
+            DeleteError::Record(error) | DeleteError::Other(error) => error,
         }
+    }
+}
+
+/// Write the record for the target just deleted in `tx`, then commit. Both
+/// failures count as record failures when a record was due.
+async fn record_and_commit(
+    mut tx: Transaction<'_, Postgres>,
+    community_id: CommunityId,
+    target_id: &[u8],
+    record_keys: Option<&Keys>,
+) -> std::result::Result<Option<Event>, DeleteError> {
+    let Some(keys) = record_keys else {
+        tx.commit().await?;
+        return Ok(None);
+    };
+    let record = record_deletion_in_tx(&mut tx, community_id, target_id, keys)
+        .await
+        .map_err(DeleteError::Record)?;
+    match tx.commit().await {
+        Ok(()) => Ok(record),
+        // Deferred checks (the 0021 created_at fence) run at commit and can
+        // reject the record; retry with a fresh signature.
+        Err(error) if record.is_some() => Err(DeleteError::Record(error.into())),
+        Err(error) => Err(error.into()),
     }
 }
 
@@ -251,9 +339,7 @@ async fn delete_once(
     let lost = AdminDeleteOutcome {
         committed: false,
         record: None,
-        record_failed: false,
     };
-    let community = target.community_id.as_uuid();
     let mut tx = pool.begin().await?;
 
     let owned: bool = sqlx::query_scalar(
@@ -283,26 +369,8 @@ async fn delete_once(
         .fetch_optional(&mut *tx)
         .await?;
 
-    // The record insert takes the channel lock. Take it before the delete
-    // locks thread_metadata rows, matching channel inserts (channel lock in
-    // the insert trigger, then thread_metadata). Content kinds only: head kinds
-    // take the head replacement lock first and get no record.
     if record_keys.is_some() {
-        let row: Option<(i32, Option<Uuid>)> = sqlx::query_as(
-            "SELECT kind, channel_id FROM events WHERE community_id = $1 AND id = $2 LIMIT 1",
-        )
-        .bind(community)
-        .bind(target.target_event_id)
-        .fetch_optional(&mut *tx)
-        .await?;
-        if let Some((kind, Some(channel_id))) = row {
-            if is_deletion_record_content_kind(kind) {
-                sqlx::query("SELECT pg_advisory_xact_lock(hashtextextended($1, 0))")
-                    .bind(format!("kuzz_channel_membership:{community}:{channel_id}"))
-                    .execute(&mut *tx)
-                    .await?;
-            }
-        }
+        lock_channel_for_record(&mut tx, target.community_id, target.target_event_id).await?;
     }
 
     // Canonical delete + thread_metadata counters, fenced by this transaction.
@@ -316,34 +384,6 @@ async fn delete_once(
         target.root_event_id,
     )
     .await?;
-
-    let mut record = None;
-    let mut record_failed = false;
-    if let Some(keys) = record_keys {
-        record_failed = true;
-        for attempt in 1..=WRITE_ATTEMPTS {
-            let mut savepoint = tx.begin().await?;
-            match record_deletion_in_tx(
-                &mut savepoint,
-                target.community_id,
-                target.target_event_id,
-                keys,
-            )
-            .await
-            {
-                Ok(written) => {
-                    savepoint.commit().await?;
-                    record = written;
-                    record_failed = false;
-                    break;
-                }
-                Err(error) => {
-                    savepoint.rollback().await?;
-                    tracing::debug!(%error, attempt, "deletion record write retry");
-                }
-            }
-        }
-    }
 
     let marker = sqlx::query(
         r#"
@@ -366,20 +406,80 @@ async fn delete_once(
         return Ok(lost);
     }
 
-    match tx.commit().await {
-        Ok(()) => Ok(AdminDeleteOutcome {
-            committed: true,
-            record,
-            record_failed,
-        }),
-        // Deferred checks (the 0021 created_at fence) run at commit and can
-        // reject the record; retry with a fresh signature or without it.
-        Err(error) if record.is_some() => Err(DeleteError::RecordCommit(error.into())),
-        Err(error) => Err(error.into()),
-    }
+    let record =
+        record_and_commit(tx, target.community_id, target.target_event_id, record_keys).await?;
+    Ok(AdminDeleteOutcome {
+        committed: true,
+        record,
+    })
+}
+
+/// Soft-delete `target_id` (and its thread counters) and, when `record_keys`
+/// is set, store its relay record in the same transaction; see
+/// [`Db::soft_delete_event_with_record`].
+pub async fn soft_delete_event_with_record(
+    pool: &PgPool,
+    community_id: CommunityId,
+    target_id: &[u8],
+    parent_event_id: Option<&[u8]>,
+    root_event_id: Option<&[u8]>,
+    record_keys: Option<&Keys>,
+) -> Result<RecordedDelete> {
+    retry_record(|| async move {
+        let connection = crate::observability::acquire_writer(
+            pool,
+            crate::observability::WriterOperation::EventWrite,
+        )
+        .await?;
+        let mut tx = sqlx::Transaction::begin(connection, None).await?;
+        if record_keys.is_some() {
+            lock_channel_for_record(&mut tx, community_id, target_id).await?;
+        }
+        let deleted = crate::event::soft_delete_event_and_update_thread_in_tx(
+            &mut tx,
+            community_id,
+            target_id,
+            parent_event_id,
+            root_event_id,
+        )
+        .await?;
+        // An already-deleted row was recorded (or not) by its first delete.
+        let keys = record_keys.filter(|_| deleted);
+        let record = record_and_commit(tx, community_id, target_id, keys).await?;
+        Ok(RecordedDelete { deleted, record })
+    })
+    .await
 }
 
 impl Db {
+    /// Soft-delete `target_id` and decrement its thread counters; when
+    /// `record_keys` is set, also store its relay record in the same
+    /// transaction (channel lock before the counters).
+    ///
+    /// The delete commits only with its record: a failed record write or a
+    /// commit that rejects it retries with a fresh transaction and signature,
+    /// and after [`WRITE_ATTEMPTS`] the error is returned with nothing deleted.
+    /// A row that was already deleted is left as it is and gets no record.
+    #[datastore_span(name = "soft_delete_event_with_record", system = "postgresql")]
+    pub async fn soft_delete_event_with_record(
+        &self,
+        community_id: CommunityId,
+        target_id: &[u8],
+        parent_event_id: Option<&[u8]>,
+        root_event_id: Option<&[u8]>,
+        record_keys: Option<&Keys>,
+    ) -> Result<RecordedDelete> {
+        soft_delete_event_with_record(
+            &self.pool,
+            community_id,
+            target_id,
+            parent_event_id,
+            root_event_id,
+            record_keys,
+        )
+        .await
+    }
+
     /// [`execute_delete_with_record`] on this database.
     #[allow(clippy::too_many_arguments)]
     #[datastore_span(name = "execute_delete_with_marker_and_record", system = "postgresql")]
@@ -452,8 +552,8 @@ impl Db {
         .await?)
     }
 
-    /// One page of soft-deleted content rows that lack a relay record, ordered
-    /// by target id after `after`.
+    /// One page of soft-deleted content and overlay rows that lack a relay
+    /// record, ordered by target id after `after`.
     ///
     /// Candidates: targets of succeeded staff deletes (direct or by report) and
     /// targets of kind:5 deletions signed by someone other than the target's
@@ -506,7 +606,7 @@ impl Db {
         )
         .bind(community_id.as_uuid())
         .bind(after)
-        .bind(&DELETION_RECORD_CONTENT_KINDS[..])
+        .bind(&DELETION_RECORD_KINDS[..])
         .bind(relay_pubkey.to_bytes().as_slice())
         .bind(i64::from(limit))
         .fetch_all(&self.pool)

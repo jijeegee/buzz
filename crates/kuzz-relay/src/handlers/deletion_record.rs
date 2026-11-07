@@ -1,19 +1,19 @@
 //! Relay-signed kind:9005 deletion records (see `kuzz_db::deletion_record`).
 //!
 //! The relay owns the signing key; the store writes the record inside the
-//! deleting (or a follow-up) transaction. Records are published to the channel
-//! only after their transaction committed and only when one was inserted.
+//! deleting transaction, and a delete whose record cannot be stored does not
+//! happen. Records are published to the channel only after their transaction
+//! committed and only when one was inserted.
 
 use std::sync::Arc;
 
 use kuzz_core::tenant::TenantContext;
 use kuzz_core::StoredEvent;
 use kuzz_db::deletion_record::{
-    is_deletion_record_content_kind, is_relay_deletion_record, AdminDeleteOutcome,
+    is_deletion_record_kind, is_relay_deletion_record, AdminDeleteOutcome,
 };
 use kuzz_pubsub::EventTopic;
 use nostr::Event;
-use tracing::warn;
 use uuid::Uuid;
 
 use crate::state::AppState;
@@ -50,67 +50,29 @@ pub(crate) async fn publish_deletion_record(
     .await;
 }
 
-/// After a kind:5 soft-deleted `target`, record it when the signer is not the
-/// target's raw author: device stores honour a kind:5 only from that pubkey.
-///
-/// The deletion is already committed and stays; a failed record write is
-/// logged and left to `kuzz-admin backfill-deletion-records`.
-pub(crate) async fn record_non_author_deletion(
-    tenant: &TenantContext,
-    state: &Arc<AppState>,
-    deletion: &Event,
-    target: &StoredEvent,
-) {
-    if deletion.pubkey == target.event.pubkey
-        || target.channel_id.is_none()
-        || !is_deletion_record_content_kind(i32::from(target.event.kind.as_u16()))
-    {
-        return;
-    }
-    match state
-        .db
-        .write_deletion_record(
-            tenant.community(),
-            target.event.id.as_bytes(),
-            &state.relay_keypair,
-        )
-        .await
-    {
-        Ok(Some(record)) => publish_deletion_record(tenant, state, &record).await,
-        Ok(None) => {}
-        Err(error) => {
-            count_record_failure("kind5");
-            warn!(
-                %error,
-                target = %target.event.id.to_hex(),
-                "deletion record write failed; the backfill command repairs it"
-            );
-        }
-    }
+/// Whether a kind:5 `deletion` of `target` needs a relay record: device
+/// stores honour a kind:5 only from the target's raw author, so another
+/// signer's (agent owner, actor) removal of a channel row or overlay needs one.
+pub(crate) fn kind5_needs_record(deletion: &Event, target: &StoredEvent) -> bool {
+    deletion.pubkey != target.event.pubkey
+        && target.channel_id.is_some()
+        && is_deletion_record_kind(i32::from(target.event.kind.as_u16()))
 }
 
-/// After a staff delete: publish the committed record, or log that the delete
-/// committed without one (the backfill command repairs it).
+/// Count a delete that was due a record and failed (nothing was deleted).
+pub(crate) fn count_record_failure(path: &'static str) {
+    metrics::counter!("kuzz_deletion_record_failures_total", "path" => path).increment(1);
+}
+
+/// After a staff delete: publish the record committed with it, if any.
 pub(crate) async fn finish_staff_delete(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     outcome: &AdminDeleteOutcome,
-    target: &[u8],
 ) {
     if let Some(record) = &outcome.record {
         publish_deletion_record(tenant, state, record).await;
     }
-    if outcome.record_failed {
-        count_record_failure("staff");
-        warn!(
-            target = %hex::encode(target),
-            "staff delete committed without its deletion record; the backfill command repairs it"
-        );
-    }
-}
-
-fn count_record_failure(path: &'static str) {
-    metrics::counter!("kuzz_deletion_record_failures_total", "path" => path).increment(1);
 }
 
 fn record_channel(record: &Event) -> Option<Uuid> {

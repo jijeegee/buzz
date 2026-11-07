@@ -1201,14 +1201,7 @@ pub async fn emit_system_message(
     content: serde_json::Value,
     idempotency_ts: chrono::DateTime<chrono::Utc>,
 ) -> anyhow::Result<()> {
-    let channel_tag = Tag::parse(["h", &channel_id.to_string()])?;
-
-    let ts = nostr::Timestamp::from(idempotency_ts.timestamp() as u64);
-    let event = EventBuilder::new(Kind::Custom(40099), content.to_string())
-        .tags([channel_tag])
-        .custom_created_at(ts)
-        .sign_with_keys(&state.relay_keypair)
-        .map_err(|e| anyhow::anyhow!("failed to sign system message: {e}"))?;
+    let event = sign_system_message(state, channel_id, &content, idempotency_ts)?;
 
     // Durable insert is the completion boundary — propagate failure.
     let (stored, was_inserted) = state
@@ -1226,11 +1219,41 @@ pub async fn emit_system_message(
     Ok(())
 }
 
+/// A relay-signed system message (kind 40099) for `channel_id`, stamped
+/// `created_at`.
+fn sign_system_message(
+    state: &AppState,
+    channel_id: Uuid,
+    content: &serde_json::Value,
+    created_at: chrono::DateTime<chrono::Utc>,
+) -> anyhow::Result<Event> {
+    let channel_tag = Tag::parse(["h", &channel_id.to_string()])?;
+    let ts = nostr::Timestamp::from(created_at.timestamp() as u64);
+    EventBuilder::new(Kind::Custom(40099), content.to_string())
+        .tags([channel_tag])
+        .custom_created_at(ts)
+        .sign_with_keys(&state.relay_keypair)
+        .map_err(|e| anyhow::anyhow!("failed to sign system message: {e}"))
+}
+
 /// Live delivery of a stored relay-signed event: Redis for other pods, then
 /// local subscribers directly, so local readers never depend on the Redis
 /// loopback (which `mark_local_event` then skips). Same order as
 /// `dispatch_persistent_event`. Best effort; clients repair from storage.
 pub(crate) async fn publish_relay_event(
+    tenant: &TenantContext,
+    state: &Arc<AppState>,
+    topic: EventTopic,
+    stored: &StoredEvent,
+) {
+    publish_relay_event_to_other_pods(tenant, state, topic, stored).await;
+    crate::handlers::event::fan_out_event_to_local_subscribers(state, tenant.community(), stored)
+        .await;
+}
+
+/// The Redis half of [`publish_relay_event`]; marks the event local first so
+/// this pod skips its own loopback.
+async fn publish_relay_event_to_other_pods(
     tenant: &TenantContext,
     state: &Arc<AppState>,
     topic: EventTopic,
@@ -1250,8 +1273,6 @@ pub(crate) async fn publish_relay_event(
             "relay event Redis publish failed: {e}"
         );
     }
-    crate::handlers::event::fan_out_event_to_local_subscribers(state, tenant.community(), stored)
-        .await;
 }
 
 /// Sign and fan out a fresh relay-signed `kind:39005` thread-summary overlay
@@ -2804,7 +2825,21 @@ async fn handle_delete_group(
 ) -> anyhow::Result<()> {
     let channel_id =
         extract_h_tag_channel(event).ok_or_else(|| anyhow::anyhow!("missing h tag"))?;
-    let actor_bytes = event.pubkey.to_bytes().to_vec();
+    let actor_hex = hex::encode(event.pubkey.to_bytes());
+
+    // The `channel_deleted` line is signed and its live readers resolved while
+    // the room still exists: once it is deleted the access gate admits nobody
+    // and the user streams drop it, so readers would never learn why it went.
+    let notice = StoredEvent::new(
+        sign_system_message(
+            state,
+            channel_id,
+            &serde_json::json!({ "type": "channel_deleted", "actor": actor_hex }),
+            chrono::Utc::now(),
+        )?,
+        Some(channel_id),
+    );
+    let readers = crate::handlers::event::local_readers(state, tenant.community(), &notice).await;
 
     // Soft-delete the channel.
     let deleted = state
@@ -2830,22 +2865,24 @@ async fn handle_delete_group(
         warn!(channel = %channel_id, error = %e, "failed to clean up NIP-29 discovery events");
     }
 
+    // Durable insert first; delivery (only of a new row) reaches the readers
+    // resolved above before their streams drop the room below.
+    let stored = state
+        .db
+        .insert_event(tenant.community(), &notice.event, Some(channel_id))
+        .await
+        .map_err(|e| anyhow::anyhow!("system message insert failed: {e}"));
+    if let Ok((stored, true)) = &stored {
+        publish_relay_event_to_other_pods(tenant, state, EventTopic::Channel(channel_id), stored)
+            .await;
+        crate::handlers::event::send_event_to_local_readers(state, stored, readers);
+    }
+
     // Deleted channel: clear both membership and accessible-channels caches.
     // Stale is_member=true entries would bypass the DB's deleted_at guard.
     state.invalidate_channel_deleted(tenant);
     super::user_stream::remove_deleted_room(state, tenant.community(), channel_id).await;
-
-    let actor_hex = hex::encode(&actor_bytes);
-    emit_system_message(
-        tenant,
-        state,
-        channel_id,
-        serde_json::json!({
-            "type": "channel_deleted", "actor": actor_hex
-        }),
-        chrono::Utc::now(),
-    )
-    .await?;
+    stored?;
 
     info!(channel = %channel_id, "NIP-29 DELETE_GROUP processed");
     Ok(())
@@ -3139,21 +3176,32 @@ async fn handle_standard_deletion_event(
         let parent_id = meta.as_ref().and_then(|m| m.parent_event_id.clone());
         let root_id = meta.as_ref().and_then(|m| m.root_event_id.clone());
 
-        let deleted = state
+        // Another signer's removal is stored with a relay record in the same
+        // transaction, or not at all: devices honour only the author's kind 5.
+        let record_keys = super::deletion_record::kind5_needs_record(event, &target_event)
+            .then_some(&state.relay_keypair);
+        let outcome = state
             .db
-            .soft_delete_event_and_update_thread(
+            .soft_delete_event_with_record(
                 tenant.community(),
                 &target_id,
                 parent_id.as_deref(),
                 root_id.as_deref(),
+                record_keys,
             )
-            .await?;
+            .await
+            .inspect_err(|_| {
+                if record_keys.is_some() {
+                    super::deletion_record::count_record_failure("kind5");
+                }
+            })?;
 
-        if !deleted {
+        if !outcome.deleted {
             continue;
         }
-        super::deletion_record::record_non_author_deletion(tenant, state, event, &target_event)
-            .await;
+        if let Some(record) = &outcome.record {
+            super::deletion_record::publish_deletion_record(tenant, state, record).await;
+        }
 
         // Thread counters were decremented in the same transaction — push a
         // fresh relay-signed 39005 so live badge counts also count *down*.

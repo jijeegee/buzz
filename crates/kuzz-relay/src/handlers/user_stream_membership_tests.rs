@@ -253,6 +253,50 @@ async fn a_channel_delete_drops_the_room_for_every_stream() {
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
+async fn a_channel_delete_reaches_the_stream_before_the_room_drops() {
+    let mut h = harness(64, |_| on()).await;
+    let room = h.room(true, 0).await;
+    live_stream(&mut h).await;
+    let delete = EventBuilder::new(Kind::Custom(9008), "")
+        .tags([Tag::parse(["h", &room.to_string()]).unwrap()])
+        .sign_with_keys(&h.keys)
+        .unwrap();
+    crate::handlers::side_effects::handle_side_effects(&h.conn.tenant, 9008, &delete, &h.state)
+        .await
+        .expect("delete group");
+    assert!(carried(&h).is_empty());
+
+    let frames = h.frames();
+    assert_eq!(frames.len(), 1, "{frames:?}");
+    assert_eq!(frames[0][0], "EVENT");
+    assert_eq!(frames[0][1], "s");
+    let notice = &frames[0][2];
+    assert_eq!(notice["kind"], 40099);
+    assert_eq!(
+        notice["pubkey"],
+        h.state.relay_keypair.public_key().to_hex()
+    );
+    let content: serde_json::Value =
+        serde_json::from_str(notice["content"].as_str().expect("content")).expect("json");
+    assert_eq!(content["type"], "channel_deleted");
+    // The line is stored, so devices that were offline fetch it later.
+    let stored: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM events WHERE community_id = $1 AND channel_id = $2 AND kind = 40099",
+    )
+    .bind(h.community.as_uuid())
+    .bind(room)
+    .fetch_one(&h.pool)
+    .await
+    .expect("count");
+    assert_eq!(stored, 1);
+
+    // Nothing reaches the stream for the room after it dropped.
+    h.message(room, "after the delete").await;
+    assert!(h.frames().is_empty());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
 async fn accessible_all_from_another_pod_reruns_query_a() {
     let mut h = harness(64, |_| on()).await;
     let left = h.room(true, 0).await;

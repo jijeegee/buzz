@@ -197,6 +197,23 @@ impl Fixture {
             .expect("succeed");
     }
 
+    /// A row of `kind` by the author in the channel, naming `target` in an
+    /// `e` tag (an overlay of it).
+    async fn overlay(&self, kind: u16, target: &Event) -> Event {
+        let h = Tag::parse(["h", &self.channel.to_string()]).expect("h");
+        let e = Tag::parse(["e", &target.id.to_hex()]).expect("e");
+        self.store(&self.author, kind, vec![h, e], Some(self.channel))
+            .await
+    }
+
+    async fn step_marker(&self, action: Uuid) -> Option<String> {
+        sqlx::query_scalar("SELECT step_marker FROM relay_admin_actions WHERE id = $1")
+            .bind(action)
+            .fetch_one(&self.pool)
+            .await
+            .expect("marker")
+    }
+
     async fn candidates(&self) -> Vec<DeletionRecordCandidate> {
         self.db
             .deletion_record_backfill_candidates(
@@ -208,6 +225,25 @@ impl Fixture {
             .await
             .expect("candidates")
     }
+}
+
+/// A pool whose commits the replica fence (migration 0021) rejects for every
+/// new channel row, as it would a record signed too early: record writes on
+/// it always fail, deletes alone still commit.
+async fn fenced_pool() -> PgPool {
+    sqlx::postgres::PgPoolOptions::new()
+        .max_connections(2)
+        .after_connect(|conn, _| {
+            Box::pin(async move {
+                sqlx::query("SELECT set_config('kuzz.created_at_floor', '0.000001', false)")
+                    .execute(conn)
+                    .await
+                    .map(|_| ())
+            })
+        })
+        .connect(&crate::test_support::database_url())
+        .await
+        .expect("fenced pool")
 }
 
 fn tag_value(event: &Event, name: &str) -> Option<String> {
@@ -316,13 +352,118 @@ async fn channel_less_and_non_content_targets_get_no_record() {
     assert_eq!(f.records(loose.id.as_bytes()).await, 0);
 
     let h = Tag::parse(["h", &f.channel.to_string()]).expect("h");
-    let reaction = f.store(&f.author, 7, vec![h], Some(f.channel)).await;
-    f.soft_delete(reaction.id.as_bytes()).await;
+    let other_kind = f.store(&f.author, 1, vec![h], Some(f.channel)).await;
+    f.soft_delete(other_kind.id.as_bytes()).await;
     let written =
-        f.db.write_deletion_record(f.community, reaction.id.as_bytes(), &f.relay)
+        f.db.write_deletion_record(f.community, other_kind.id.as_bytes(), &f.relay)
             .await
             .expect("write");
     assert!(written.is_none());
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn overlay_deletes_get_records() {
+    let f = Fixture::new().await;
+    let message = f.message().await;
+    for kind in super::deletion_record::DELETION_RECORD_OVERLAY_KINDS {
+        let kind = u16::try_from(kind).expect("kind");
+        // Staff delete of an overlay.
+        let staff = f.overlay(kind, &message).await;
+        let outcome = f.delete(staff.id.as_bytes(), None).await;
+        assert!(outcome.committed);
+        assert_record_shape(&f, outcome.record.as_ref().expect("record"), &staff);
+        assert!(f.deleted(staff.id.as_bytes()).await);
+
+        // Another signer's kind 5 of an overlay.
+        let other = f.overlay(kind, &message).await;
+        let outcome =
+            f.db.soft_delete_event_with_record(
+                f.community,
+                other.id.as_bytes(),
+                None,
+                None,
+                Some(&f.relay),
+            )
+            .await
+            .expect("recorded delete");
+        assert!(outcome.deleted);
+        assert_record_shape(&f, outcome.record.as_ref().expect("record"), &other);
+        assert_eq!(f.records(other.id.as_bytes()).await, 1, "kind {kind}");
+    }
+    assert!(!f.deleted(message.id.as_bytes()).await);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn recorded_soft_delete_stores_one_record_with_the_delete() {
+    let f = Fixture::new().await;
+    let target = f.message().await;
+    let id = target.id.as_bytes();
+
+    let first =
+        f.db.soft_delete_event_with_record(f.community, id, None, None, Some(&f.relay))
+            .await
+            .expect("recorded delete");
+    assert!(first.deleted);
+    assert_record_shape(&f, first.record.as_ref().expect("record"), &target);
+    assert!(f.deleted(id).await);
+    assert_eq!(f.records(id).await, 1);
+
+    // Already deleted: nothing changes and nothing new to publish.
+    let again =
+        f.db.soft_delete_event_with_record(f.community, id, None, None, Some(&f.relay))
+            .await
+            .expect("recorded delete");
+    assert!(!again.deleted && again.record.is_none());
+    assert_eq!(f.records(id).await, 1);
+
+    // Without keys it is a plain delete.
+    let plain = f.message().await;
+    let outcome =
+        f.db.soft_delete_event_with_record(f.community, plain.id.as_bytes(), None, None, None)
+            .await
+            .expect("plain delete");
+    assert!(outcome.deleted && outcome.record.is_none());
+    assert_eq!(f.records(plain.id.as_bytes()).await, 0);
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn recorded_soft_delete_rolls_back_without_its_record() {
+    let f = Fixture::new().await;
+    let fenced = fenced_pool().await;
+    let target = f.message().await;
+    let reaction = f.overlay(7, &target).await;
+    for row in [&target, &reaction] {
+        let id = row.id.as_bytes();
+        let error = super::deletion_record::soft_delete_event_with_record(
+            &fenced,
+            f.community,
+            id,
+            None,
+            None,
+            Some(&f.relay),
+        )
+        .await
+        .expect_err("no delete without its record");
+        assert!(error.to_string().contains("replica-fence"), "{error}");
+        assert!(!f.deleted(id).await, "the delete rolled back");
+        assert_eq!(f.records(id).await, 0);
+    }
+
+    // A delete that needs no record still commits on the same pool.
+    let plain = super::deletion_record::soft_delete_event_with_record(
+        &fenced,
+        f.community,
+        target.id.as_bytes(),
+        None,
+        None,
+        None,
+    )
+    .await
+    .expect("plain delete");
+    assert!(plain.deleted);
 }
 
 #[tokio::test]
@@ -477,6 +618,18 @@ async fn backfill_candidates_cover_staff_and_non_author_deletes_once() {
 #[tokio::test]
 #[ignore = "requires Postgres"]
 async fn staff_delete_takes_the_channel_lock_before_thread_counters() {
+    channel_lock_before_thread_counters(true).await;
+}
+
+#[tokio::test]
+#[ignore = "requires Postgres"]
+async fn recorded_soft_delete_takes_the_channel_lock_before_thread_counters() {
+    channel_lock_before_thread_counters(false).await;
+}
+
+/// A recorded delete of a reply (staff, or a non-author kind 5) waits for a
+/// channel writer holding the channel lock instead of deadlocking with it.
+async fn channel_lock_before_thread_counters(staff: bool) {
     use crate::event::{insert_event_with_thread_metadata, ThreadMetadataParams};
     let f = Fixture::new().await;
     let at =
@@ -533,26 +686,50 @@ async fn staff_delete_takes_the_channel_lock_before_thread_counters() {
     let (action, token) = f.action(&reply, None, 60).await;
     let (pool, community, relay) = (f.pool.clone(), f.community, f.relay.clone());
     let (target, parent) = (reply.clone(), root.clone());
-    let staff = tokio::spawn(async move {
-        execute_delete_with_record(
-            &pool,
-            action,
-            token,
-            community,
-            &target,
-            Some(&parent),
-            Some(&parent),
-            Some(&relay),
-        )
-        .await
+    let delete = tokio::spawn(async move {
+        if staff {
+            execute_delete_with_record(
+                &pool,
+                action,
+                token,
+                community,
+                &target,
+                Some(&parent),
+                Some(&parent),
+                Some(&relay),
+            )
+            .await
+            .map(|outcome| outcome.committed.then_some(outcome.record).flatten())
+        } else {
+            super::deletion_record::soft_delete_event_with_record(
+                &pool,
+                community,
+                &target,
+                Some(&parent),
+                Some(&parent),
+                Some(&relay),
+            )
+            .await
+            .map(|outcome| outcome.deleted.then_some(outcome.record).flatten())
+        }
     });
     tokio::time::sleep(std::time::Duration::from_millis(300)).await;
     assert!(
-        !staff.is_finished(),
-        "staff delete waits for the channel lock"
+        !delete.is_finished(),
+        "the delete waits for the channel lock"
     );
 
-    // Deadlocks if the staff delete already holds the parent's counter row.
+    // The waiting delete holds no counter row yet. (A deadlock would not
+    // fail the test by itself: the aborted delete retries and succeeds.)
+    sqlx::query(
+        "SELECT 1 FROM thread_metadata WHERE community_id = $1 AND event_id = $2 \
+         FOR UPDATE NOWAIT",
+    )
+    .bind(f.community.as_uuid())
+    .bind(&root)
+    .execute(&mut *writer)
+    .await
+    .expect("the waiting delete holds no thread counter row");
     sqlx::query(
         "UPDATE thread_metadata SET reply_count = reply_count + 1 \
          WHERE community_id = $1 AND event_id = $2",
@@ -564,36 +741,21 @@ async fn staff_delete_takes_the_channel_lock_before_thread_counters() {
     .expect("writer updates thread counters without a deadlock");
     writer.commit().await.expect("writer commits");
 
-    let outcome = staff.await.expect("join").expect("staff delete");
-    assert!(outcome.committed && !outcome.record_failed);
-    assert!(outcome.record.is_some());
+    let record = delete.await.expect("join").expect("recorded delete");
+    assert!(record.is_some(), "deleted with its record");
     assert_eq!(f.records(&reply).await, 1);
 }
 
 #[tokio::test]
 #[ignore = "requires Postgres"]
-async fn record_commit_failure_keeps_the_delete_and_marker() {
+async fn record_failure_rolls_back_the_delete_and_marker() {
     let f = Fixture::new().await;
     let target = f.message().await;
     let id = target.id.as_bytes();
-    // The replica fence (migration 0021) then rejects every new channel row
-    // at commit, as it would a record signed too early.
-    let fenced = sqlx::postgres::PgPoolOptions::new()
-        .max_connections(2)
-        .after_connect(|conn, _| {
-            Box::pin(async move {
-                sqlx::query("SELECT set_config('kuzz.created_at_floor', '0.000001', false)")
-                    .execute(conn)
-                    .await
-                    .map(|_| ())
-            })
-        })
-        .connect(&crate::test_support::database_url())
-        .await
-        .expect("fenced pool");
+    let fenced = fenced_pool().await;
 
     let (action, token) = f.action(id, None, 60).await;
-    let outcome = execute_delete_with_record(
+    let error = execute_delete_with_record(
         &fenced,
         action,
         token,
@@ -604,25 +766,31 @@ async fn record_commit_failure_keeps_the_delete_and_marker() {
         Some(&f.relay),
     )
     .await
-    .expect("delete commits without the record");
-    assert!(outcome.committed && outcome.record_failed);
-    assert!(outcome.record.is_none());
-    assert!(f.deleted(id).await);
+    .expect_err("no delete without its record");
+    assert!(error.to_string().contains("replica-fence"), "{error}");
+    assert!(!f.deleted(id).await, "the delete rolled back");
     assert_eq!(f.records(id).await, 0);
-    let marker: Option<String> =
-        sqlx::query_scalar("SELECT step_marker FROM relay_admin_actions WHERE id = $1")
-            .bind(action)
-            .fetch_one(&f.pool)
-            .await
-            .expect("marker");
-    assert_eq!(marker.as_deref(), Some("mutation_committed"));
-    // The backfill then finds it.
-    sqlx::query("UPDATE relay_admin_actions SET state = 'failed' WHERE id = $1")
-        .bind(action)
-        .execute(&f.pool)
-        .await
-        .expect("fail action");
-    assert_eq!(f.candidates().await.len(), 1);
+    assert_eq!(f.step_marker(action).await, None);
+
+    // The same action succeeds once the record can be stored.
+    let outcome = execute_delete_with_record(
+        &f.pool,
+        action,
+        token,
+        f.community,
+        id,
+        None,
+        None,
+        Some(&f.relay),
+    )
+    .await
+    .expect("delete");
+    assert!(outcome.committed && outcome.record.is_some());
+    assert!(f.deleted(id).await);
+    assert_eq!(
+        f.step_marker(action).await.as_deref(),
+        Some("mutation_committed")
+    );
 }
 
 #[tokio::test]
