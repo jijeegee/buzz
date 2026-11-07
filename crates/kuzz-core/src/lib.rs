@@ -54,6 +54,8 @@ pub mod thread_name;
 pub mod thread_window;
 /// Schnorr signature and event ID verification.
 pub mod verification;
+/// NIP-CW window check mode.
+pub mod window_check;
 
 pub use error::VerificationError;
 pub use event::StoredEvent;

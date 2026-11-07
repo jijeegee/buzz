@@ -74,6 +74,9 @@ pub struct Request {
     pub direction: Direction,
     /// Include root/retained-row edits, reactions and deletion closure.
     pub include_aux: bool,
+    /// Answer only the bounds event with the window's oldest row and row
+    /// count (NIP-CW `check`). Does not change [`Self::binding`].
+    pub check: bool,
 }
 
 fn event_id(v: &Value) -> Result<String, String> {
@@ -139,6 +142,7 @@ impl Request {
             "since",
             "after_id",
             "include_aux",
+            "check",
         ];
         if object.keys().any(|key| !FIELDS.contains(&key.as_str())) {
             return Err("thread_window: unsupported or conflicting filter field".into());
@@ -185,6 +189,13 @@ impl Request {
                 .as_bool()
                 .ok_or("thread_window: include_aux must be boolean")?,
         };
+        let check = match raw.get("check") {
+            None => false,
+            Some(v) => v.as_bool().ok_or("thread_window: check must be boolean")?,
+        };
+        if check && direction == Direction::Newer {
+            return Err("thread_window: check supports older pages only".into());
+        }
         Ok(Self {
             channel,
             root,
@@ -194,6 +205,7 @@ impl Request {
             cursor,
             direction,
             include_aux,
+            check,
         })
     }
 
@@ -240,6 +252,8 @@ mod tests {
             ("depth_limit", json!(101)),
             ("depth_limit", json!(-1)),
             ("include_aux", json!("true")),
+            ("check", json!("true")),
+            ("check", json!(1)),
             ("thread_cursor", json!(0)),
             ("threadCursorId", json!(null)),
             ("top_level", json!(false)),
@@ -289,6 +303,7 @@ mod tests {
         explicit["limit"] = json!(50);
         explicit["depth_limit"] = json!(100);
         explicit["include_aux"] = json!(false);
+        explicit["check"] = json!(true);
         explicit["#e"] = json!(["AB".repeat(32)]);
         assert_eq!(expected, binding(&explicit));
         for (key, val) in [
@@ -339,6 +354,13 @@ mod tests {
             Request::parse(&filter()).unwrap().direction,
             Direction::Older
         );
+        let mut checked = newer.clone();
+        checked["check"] = json!(true);
+        assert!(Request::parse(&checked).is_err(), "check is older-only");
+        let mut checked = filter();
+        checked["check"] = json!(true);
+        assert!(Request::parse(&checked).unwrap().check);
+        assert!(!Request::parse(&filter()).unwrap().check);
         let mut mixed = newer.clone();
         mixed["until"] = json!(9);
         mixed["before_id"] = json!("cd".repeat(32));
