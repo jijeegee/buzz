@@ -205,6 +205,32 @@ pub async fn disconnect_external_agent(
     .map_err(api_error)
 }
 
+/// Set a paired agent's name, picture and description
+/// (`PUT /auth/agents/{pubkey}/profile`).
+#[tauri::command]
+pub async fn set_external_agent_profile(
+    app: AppHandle,
+    pubkey: String,
+    display_name: String,
+    avatar_url: Option<String>,
+    about: Option<String>,
+) -> Result<(), String> {
+    let state = app.state::<AppState>();
+    let origin = state.current_auth_origin();
+    let session = super::commands::fresh_session(&state, &origin).await?;
+    api::set_external_agent_profile(
+        &state.http_client,
+        &origin,
+        &session.access,
+        &pubkey,
+        &display_name,
+        avatar_url.as_deref(),
+        about.as_deref(),
+    )
+    .await
+    .map_err(api_error)
+}
+
 /// Whether Hermes is installed here and whether it can be connected.
 #[tauri::command]
 pub async fn get_hermes_status() -> HermesStatus {

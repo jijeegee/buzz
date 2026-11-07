@@ -66,7 +66,7 @@ const MAX_WORKSPACE_ICON_DATA_URL_LEN: usize = 98_304;
 /// Validate a workspace icon: empty (clear), an http(s) URL, or an inline
 /// `data:image/*` URL (what the desktop publishes — it renders across
 /// workspaces without cross-relay media fetches).
-fn validate_workspace_icon(icon: &str) -> Result<(), String> {
+pub(crate) fn validate_workspace_icon(icon: &str) -> Result<(), String> {
     if icon.is_empty() {
         return Ok(());
     }

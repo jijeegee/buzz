@@ -673,6 +673,28 @@ async fn agent_actions_are_kept_ninety_days_and_go_with_the_account() {
     .await
     .unwrap();
     log(other_owner, other_agent).await;
+    let profile = crate::identity::ExternalAgentProfile {
+        display_name: "Sales".to_owned(),
+        avatar_url: None,
+        about: None,
+    };
+    let external = nostr::Keys::generate().public_key().to_bytes();
+    sqlx::query(
+        "INSERT INTO key_registry (pubkey, principal_id, role) VALUES ($1, $2, 'external')",
+    )
+    .bind(external.as_slice())
+    .bind(owner.as_bytes().as_slice())
+    .execute(db.pool())
+    .await
+    .unwrap();
+    assert!(db
+        .set_external_agent_profile(&owner, &external, &profile)
+        .await
+        .unwrap());
+    assert_eq!(
+        db.external_agent_profile(&external).await.unwrap(),
+        Some(profile)
+    );
     db.disable_principal(&owner, Some(Duration::days(30)))
         .await
         .unwrap();
@@ -686,6 +708,15 @@ async fn agent_actions_are_kept_ninety_days_and_go_with_the_account() {
         PurgeOutcome::Purged(_)
     ));
     assert_eq!(count(owner_key).await, 0);
+    assert_eq!(db.external_agent_profile(&external).await.unwrap(), None);
+    let profile_left: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM key_registry          WHERE pubkey = $1 AND (profile_name IS NOT NULL OR profile_set_at IS NOT NULL)",
+    )
+    .bind(external.as_slice())
+    .fetch_one(db.pool())
+    .await
+    .unwrap();
+    assert_eq!(profile_left, 0);
     assert_eq!(count(agent).await, 0);
     assert_eq!(count(other_owner).await, 1);
     assert_eq!(stored(&db, &agent).await, (None, None, None));

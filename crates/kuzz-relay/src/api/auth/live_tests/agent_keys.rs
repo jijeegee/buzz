@@ -192,6 +192,7 @@ pub(super) async fn call_proven_by(
     let mut request = match method {
         "GET" => inst.get(path),
         "DELETE" => inst.delete(path),
+        "PUT" => inst.put(path),
         _ => inst.post(path),
     }
     .bearer_auth(&who.access);

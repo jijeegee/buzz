@@ -15,6 +15,7 @@ import '../../shared/widgets/modal_presentation.dart';
 import '../channels/mentions/mention_candidates_provider.dart';
 import 'agent_settings_provider.dart';
 import 'external_agent_access.dart';
+import 'external_agent_profile_sheet.dart';
 import 'my_agent_actions.dart';
 import 'owner_tools_row.dart';
 
@@ -69,6 +70,19 @@ class _ExternalAgentSheet extends ConsumerWidget {
             onPressed: onMessage,
             icon: const Icon(LucideIcons.messageSquare, size: 18),
             label: Text(context.l10n.agentsMessage),
+          ),
+          const SizedBox(height: Grid.xxs),
+          OutlinedButton.icon(
+            key: const Key('agent-profile-edit'),
+            onPressed: () => unawaited(
+              showExternalAgentProfileSheet(
+                context,
+                agentPubkey: agentPubkey,
+                name: name,
+              ),
+            ),
+            icon: const Icon(LucideIcons.pencil, size: 18),
+            label: Text(context.l10n.agentProfileEdit),
           ),
           const SizedBox(height: Grid.xs),
           Text(

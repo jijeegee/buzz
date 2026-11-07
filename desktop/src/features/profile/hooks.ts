@@ -342,6 +342,14 @@ export function evictUsersBatchEntries(
   }
 }
 
+/** Read every held profile again: an owner edited an agent on another device. */
+export function refreshAllUserProfiles(queryClient: QueryClient) {
+  evictUsersBatchEntries(queryClient, []);
+  queryClient.removeQueries({ queryKey: ["users-batch-entry"] });
+  void queryClient.invalidateQueries({ queryKey: ["users-batch"] });
+  void queryClient.invalidateQueries({ queryKey: ["user-profile"] });
+}
+
 const usersBatchLoaders = new WeakMap<
   QueryClient,
   ReturnType<typeof createUsersBatchLoader>

@@ -27,6 +27,7 @@ mod audio;
 mod device_http;
 mod device_keys;
 mod device_ws;
+mod external_profile;
 mod friends;
 mod groups;
 mod invites;
@@ -259,6 +260,10 @@ impl Instance {
 
     fn post(&self, path: &str) -> reqwest::RequestBuilder {
         self.http.post(self.url(path)).header("host", &self.host)
+    }
+
+    fn put(&self, path: &str) -> reqwest::RequestBuilder {
+        self.http.put(self.url(path)).header("host", &self.host)
     }
 
     fn delete(&self, path: &str) -> reqwest::RequestBuilder {

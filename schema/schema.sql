@@ -2262,6 +2262,12 @@ CREATE TABLE key_registry (
     respond_class     TEXT CONSTRAINT key_registry_respond_class_check
                       CHECK (respond_class IN ('owner-only', 'allowlist', 'anyone')),
     tool_set_at       TIMESTAMPTZ,
+    -- What an owner set for an external agent (migration 0102): profile_set_at
+    -- makes the owner the only writer of its kind:0.
+    profile_name       TEXT,
+    profile_avatar_url TEXT,
+    profile_about      TEXT,
+    profile_set_at     TIMESTAMPTZ,
     CONSTRAINT key_registry_tool_shape
         CHECK (tool_level IS NULL OR tool_community_id IS NOT NULL),
     CONSTRAINT key_registry_full_never_anyone

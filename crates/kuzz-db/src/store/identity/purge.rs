@@ -164,7 +164,9 @@ pub(super) async fn purge_account(
     // Key-mode agents stay registered but revoked, so their keys stay refused.
     let agent_keys: Vec<Vec<u8>> = sqlx::query_scalar(
         "UPDATE key_registry SET revoked_at = COALESCE(revoked_at, now()), tool_level = NULL, \
-                tool_community_id = NULL, respond_class = NULL, tool_set_at = NULL \
+                tool_community_id = NULL, respond_class = NULL, tool_set_at = NULL, \
+                profile_name = NULL, profile_avatar_url = NULL, profile_about = NULL, \
+                profile_set_at = NULL \
          WHERE principal_id = $1 RETURNING pubkey",
     )
     .bind(id)

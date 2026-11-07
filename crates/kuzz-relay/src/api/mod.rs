@@ -405,7 +405,7 @@ pub mod relay_members {
     /// only while no owner is recorded: a later kind 10100 change survives
     /// every reconnect. A key already bound this process costs no query.
     pub async fn bind_external_owner(
-        state: &AppState,
+        state: &std::sync::Arc<AppState>,
         tenant: &TenantContext,
         agent: &nostr::PublicKey,
         owner: &[u8; 32],
@@ -436,6 +436,12 @@ pub mod relay_members {
             .await;
         if finish_owner_link(state, tenant, agent, &owner_key, write).await {
             bound.insert(seen, *owner);
+            // A community new to this agent needs its owner-set profile (the
+            // agent's own kind:0 is refused there). Runs once per process, or
+            // again after a failed publish forgets this bind.
+            if let Ok(key) = kuzz_core::principal::PrincipalId::from_slice(&agent.to_bytes()) {
+                crate::identity::profile::spawn_external_agent_profile_publish(state, tenant, key);
+            }
             OwnerBind::Bound
         } else {
             tracing::warn!(agent = %agent.to_hex(), "paired owner could not be recorded");

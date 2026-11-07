@@ -725,6 +725,31 @@ pub(crate) async fn set_agent_tool_level(
     Ok(set.result)
 }
 
+/// `PUT /auth/agents/{pubkey}/profile`: the owner's name, picture and
+/// description for their external agent, as absolute state.
+pub(crate) async fn set_external_agent_profile(
+    client: &reqwest::Client,
+    origin: &str,
+    access: &str,
+    pubkey: &str,
+    display_name: &str,
+    avatar_url: Option<&str>,
+    about: Option<&str>,
+) -> Result<(), ApiError> {
+    call(
+        client,
+        reqwest::Method::PUT,
+        agent_path(origin, pubkey, "profile")?,
+        access,
+        Some(serde_json::json!({
+            "display_name": display_name,
+            "avatar_url": avatar_url,
+            "about": about,
+        })),
+    )
+    .await
+}
+
 /// `POST /auth/agents/{pubkey}/revoke`: retire the agent's key on the relay
 /// (only from the device hosting it; `409 not_host` otherwise).
 pub(crate) async fn revoke_agent(

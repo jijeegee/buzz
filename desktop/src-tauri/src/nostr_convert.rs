@@ -76,7 +76,9 @@ pub(crate) fn profile_valid_oa_owner_pubkey(event: &Event) -> Option<String> {
     let json = serde_json::to_string(auth_tag).ok()?;
     // The structural parser also enforces canonical lowercase key/signature hex.
     kuzz_sdk_pkg::nip_oa::parse_auth_tag(&json).ok()?;
-    event.verify().ok()?;
+    // A relay-stamped kind:0 (owner-edited agent) has no signature to check.
+    kuzz_core_pkg::draft::verify_served_event(event)
+        .then_some(())?;
     let owner = kuzz_sdk_pkg::nip_oa::verify_auth_tag(&json, &event.pubkey).ok()?;
     let conditions = auth_tag.get(2)?;
     // Syntax/ranges were checked by the SDK; evaluate every signed clause as-is.

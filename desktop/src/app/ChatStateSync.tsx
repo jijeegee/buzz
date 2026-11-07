@@ -11,6 +11,7 @@ import { useChatStatePing } from "@/features/chats/useChatStatePing";
 import { useServerChatList } from "@/features/chats/useServerChatList";
 import { AGENT_PAIRINGS_KEY } from "@/features/agents/externalConnect/useExternalAgents";
 import { groupInvitationsQueryKey } from "@/features/groups/hooks";
+import { refreshAllUserProfiles } from "@/features/profile/hooks";
 import { AUTH_DEVICES_QUERY_KEY } from "@/shared/api/useAuthDeviceNames";
 import { useRelayConnection } from "@/shared/api/useRelayConnection";
 
@@ -75,6 +76,8 @@ export function ChatStateSync({
           queryClient.invalidateQueries({ queryKey: AUTH_DEVICES_QUERY_KEY }),
         );
       void queryClient.invalidateQueries({ queryKey: AGENT_PAIRINGS_KEY });
+      // An owner-edited agent's name and picture.
+      refreshAllUserProfiles(queryClient);
     },
   );
   const chatList = useServerChatList({

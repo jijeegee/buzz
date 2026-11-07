@@ -379,7 +379,7 @@ async fn check_nip98_replay_with_guard(
 /// ever uses HTTP. A failure does not refuse the request: the next one tries
 /// again.
 pub(crate) async fn admit_bridge_key(
-    state: &AppState,
+    state: &Arc<AppState>,
     tenant: &TenantContext,
     headers: &HeaderMap,
     pubkey: &nostr::PublicKey,
