@@ -378,7 +378,15 @@ pub fn validate_link_proof(
         ["account", account],
         ["action", "initialize"],
     ];
-    if proof.tags.len() != required.len()
+    // Phone apps 0.6.27 and earlier also sign a `device` tag here. Link
+    // proofs are exempt from device admission, so it is accepted and ignored.
+    let device_tags = proof
+        .tags
+        .iter()
+        .filter(|tag| tag.as_slice().first().map(String::as_str) == Some("device"))
+        .count();
+    if device_tags > 1
+        || proof.tags.len() != required.len() + device_tags
         || required.iter().any(|required| {
             proof
                 .tags
