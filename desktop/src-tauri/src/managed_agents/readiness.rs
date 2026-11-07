@@ -210,6 +210,21 @@ pub(crate) fn resolve_effective_agent_env(
     resolve_effective_agent_env_with_def(record, personas, runtime, global, harness_def)
 }
 
+/// Env keys that make Claude Code or Codex bill an API key or another cloud
+/// instead of the tool's own sign-in, or send that sign-in to another
+/// endpoint. Never taken from the global (Settings) layer for those tools.
+const CLI_TOOL_BILLING_KEYS: &[&str] = &[
+    "ANTHROPIC_API_KEY",
+    "ANTHROPIC_AUTH_TOKEN",
+    "ANTHROPIC_BASE_URL",
+    "CLAUDE_CODE_USE_BEDROCK",
+    "CLAUDE_CODE_USE_VERTEX",
+    "CLAUDE_CODE_USE_FOUNDRY",
+    "OPENAI_API_KEY",
+    "OPENAI_BASE_URL",
+    "CODEX_API_KEY",
+];
+
 /// Inner implementation that accepts a pre-fetched `harness_def` to avoid a
 /// second registry lookup when the caller (e.g. `resolve_effective_harness_descriptor`)
 /// already has the definition in hand.
@@ -255,7 +270,20 @@ fn resolve_effective_agent_env_with_def(
     // Injected before persona/agent so per-agent values win on collision.
     // `merged_user_env` with an empty "lower" map applies reserved/malformed-key
     // filtering to the global map for free.
-    let global_env = merged_user_env(&BTreeMap::new(), &global.env_vars);
+    let mut global_env = merged_user_env(&BTreeMap::new(), &global.env_vars);
+    // Settings API keys are for Kuzz's own model calls. A tool that signs in
+    // with its own account (catalog `subscription_provider`: Claude Code,
+    // Codex) never gets them, or it bills the key instead of that sign-in.
+    // Keys set on the agent itself (layer 3b) and keys in the OS env still
+    // reach the tool.
+    if runtime.is_some_and(|rt| rt.subscription_provider.is_some()) {
+        // Case-insensitive: Windows env names are.
+        global_env.retain(|key, _| {
+            !CLI_TOOL_BILLING_KEYS
+                .iter()
+                .any(|billing| billing.eq_ignore_ascii_case(key))
+        });
+    }
     env.extend(global_env);
 
     // Layer 3b: merged user env — live persona env under the record's own
