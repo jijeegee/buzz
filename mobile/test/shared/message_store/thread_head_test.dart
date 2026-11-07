@@ -115,4 +115,88 @@ void main() {
       }
     }
   });
+
+  test('the thread head carries the overlays of its rows and root', () async {
+    Map<String, dynamic> event(
+      String id,
+      int kind,
+      int createdAt,
+      List<List<String>> tags,
+    ) => {
+      'id': id,
+      'kind': kind,
+      'pubkey': 'p1',
+      'created_at': createdAt,
+      'tags': tags,
+      'content': '',
+      'sig': '',
+    };
+    final dir = await Directory.systemTemp.createTemp('message_store_thread');
+    final store = MessageStore(
+      factory: () => databaseFactoryFfi,
+      directory: () async => dir.path,
+    );
+    final lease = store.lease(_relay, _account)!;
+    try {
+      store.submit(lease, [
+        event('root-1', 9, 100, [
+          ['h', 'room-1'],
+        ]),
+        event('a1', 9, 110, [
+          ['h', 'room-1'],
+          ['e', 'root-1', '', 'root'],
+          ['e', 'root-1', '', 'reply'],
+        ]),
+        // A reaction on the reply, then its removal; one on the root.
+        event('x1', 7, 120, [
+          ['e', 'a1'],
+        ]),
+        event('dx1', 5, 121, [
+          ['e', 'x1'],
+        ]),
+        event('x2', 7, 122, [
+          ['e', 'root-1'],
+        ]),
+        // On another room's message: not this thread's.
+        event('x3', 7, 123, [
+          ['e', 'other'],
+        ]),
+      ]);
+      store.extendCoverage(lease, ['room-1'], 0, 1000);
+      await store.flushed();
+      final db = await databaseFactoryFfi.openDatabase(
+        await store.pathOf(lease),
+        options: OpenDatabaseOptions(singleInstance: false),
+      );
+      final StoredThreadHead head;
+      try {
+        head = await readThreadHead(
+          db,
+          room: 'room-1',
+          root: 'root-1',
+          kinds: const [9],
+          limit: 10,
+          liveAt: null,
+        );
+      } finally {
+        await db.close();
+      }
+      expect([for (final row in head.rows) row['id']], ['a1']);
+      expect([
+        for (final aux in head.overlays) aux['id'],
+      ], unorderedEquals(['x1', 'x2', 'dx1']));
+      final page = parseThreadWindowPage(
+        head.toResponse('room-1', 'root-1').map(NostrEvent.fromJson).toList(),
+        channelId: 'room-1',
+        rootId: 'root-1',
+      )!;
+      expect([for (final e in page.events) e.id], ['a1']);
+      expect([
+        for (final e in page.overlays) e.id,
+      ], unorderedEquals(['x1', 'x2', 'dx1']));
+    } finally {
+      await store.forget(_relay, _account);
+      await dir.delete(recursive: true);
+    }
+  });
 }

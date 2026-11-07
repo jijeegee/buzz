@@ -10,6 +10,16 @@ Widget _trackActiveThreadScrollPosition(
   },
 );
 
+/// Older pages walked to reach a linked reply before giving up (desktop: 10).
+const _deepLinkMaxOlderPages = 10;
+
+/// [events] with the thread head's [event], when the page resolved it, so
+/// the reactions, edits and deletions of it apply.
+List<NostrEvent> _withHeadEvent(List<NostrEvent> events, NostrEvent? event) =>
+    event == null || events.any((e) => e.id == event.id)
+    ? events
+    : mergeThreadEvents(events, [event]);
+
 /// [events] the window does not rule out, with the stored replies past its
 /// relay cut, which it does not hold.
 List<NostrEvent> _uncoveredThreadEvents(

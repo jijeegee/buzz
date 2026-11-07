@@ -56,15 +56,18 @@ NostrFilter channelPreloadFilter(
 );
 
 /// The newest-first reply window of one thread.
-NostrFilter threadPreloadFilter(ThreadRepliesArgs thread) => NostrFilter(
+NostrFilter threadPreloadFilter(
+  ThreadRepliesArgs thread, {
+  bool includeAux = true,
+}) => NostrFilter(
   kinds: _threadWindowKinds,
   tags: {
     '#h': [thread.channelId],
     '#e': [thread.rootId],
   },
   limit: threadPreloadReplies,
-  // Rows only: reactions and edits reach thread rows through their own paths.
-  extensions: const {'thread_window': true, 'include_aux': false},
+  // With the aux closure, as the thread's own window asks.
+  extensions: {'thread_window': true, 'include_aux': includeAux},
 );
 
 /// Splits one multi-window `/query` response into per-room windows.
@@ -95,9 +98,9 @@ Map<String, List<NostrEvent>> splitChannelWindows(
   return windows;
 }
 
-/// Splits one multi-thread `/query` response into per-thread replies, at each
-/// `39007` bounds overlay tagged with its room (`h`) and root (`e`). The
-/// overlays themselves are dropped. Mirrors desktop's `split_thread_windows`.
+/// Splits one multi-thread `/query` response into per-thread replies (with
+/// their aux closure), at each `39007` bounds overlay tagged with its room
+/// (`h`) and root (`e`). The bounds themselves are dropped. Mirrors desktop's `split_thread_windows`.
 Map<ThreadRepliesArgs, List<NostrEvent>> splitThreadWindows(
   List<NostrEvent> events,
   Iterable<ThreadRepliesArgs> threads,
@@ -372,11 +375,20 @@ class ChannelPreloader {
         _attemptedAt['thread:${thread.rootId}'] = attemptedAt;
       }
       try {
-        final events = await _ref
-            .read(relaySessionProvider.notifier)
-            .queryRelayWithStoreHeads([
-              for (final thread in chunk) threadPreloadFilter(thread),
+        final session = _ref.read(relaySessionProvider.notifier);
+        Future<List<NostrEvent>> ask({required bool includeAux}) =>
+            session.queryRelayWithStoreHeads([
+              for (final thread in chunk)
+                threadPreloadFilter(thread, includeAux: includeAux),
             ]);
+        // One thread's aux history over the batch budget fails them all:
+        // the rows alone still preload (NIP-CW), as before overlays; the
+        // thread's own window asks for them when it opens.
+        final events = await ask(includeAux: true).catchError(
+          (Object error) => isWindowBudgetError(error)
+              ? ask(includeAux: false)
+              : Future<List<NostrEvent>>.error(error),
+        );
         // Replies fetched for the last account are not this one's.
         if (_ref.read(channelHeadScopeProvider) != scope) return loaded;
         final windows = splitThreadWindows(events, chunk);
@@ -399,7 +411,8 @@ final channelPreloaderProvider = Provider<ChannelPreloader>(
   ChannelPreloader.new,
 );
 
-/// The newest replies preloaded for a thread, with when they were loaded.
+/// The newest replies preloaded for a thread, with the reactions, edits and
+/// deletions aimed at them and its root, and when they were loaded.
 typedef PreloadedThread = ({List<NostrEvent> replies, DateTime loadedAt});
 
 /// Preloaded newest replies per thread. An opening thread shows them with its

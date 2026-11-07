@@ -6,6 +6,7 @@
 library;
 
 import 'dart:convert';
+import 'dart:math';
 
 import 'package:sqflite/sqflite.dart';
 
@@ -208,6 +209,29 @@ Future<List<Map<String, dynamic>>> _overlays(
   return rows.map((row) => _parse(row['raw'])).nonNulls.toList();
 }
 
+/// The stored aux closure of [targets], as a relay window carries it:
+/// reactions, edits and deletions aimed at them, then deletions of those.
+Future<List<Map<String, dynamic>>> readStoredOverlays(
+  DatabaseExecutor db,
+  List<String> targets,
+) async {
+  final aux = <Map<String, dynamic>>[];
+  // SQLite binds at most 999 values per statement.
+  for (var i = 0; i < targets.length; i += 500) {
+    final batch = targets.sublist(i, min(i + 500, targets.length));
+    aux.addAll(await _overlays(db, batch, '5, 7, 9005, 40003'));
+  }
+  final auxIds = [for (final event in aux) event['id'] as String? ?? ''];
+  final seen = auxIds.toSet();
+  for (var i = 0; i < auxIds.length; i += 500) {
+    final batch = auxIds.sublist(i, min(i + 500, auxIds.length));
+    for (final removal in await _overlays(db, batch, '5, 9005')) {
+      if (seen.add(removal['id'] as String? ?? '')) aux.add(removal);
+    }
+  }
+  return aux;
+}
+
 /// [room]'s newest [limit] top-level rows of [kinds], with their overlays
 /// and thread summaries. [liveAt] is when the room's live REQ reached EOSE
 /// on the current connection, if it is live. [includePushed] (a paint only)
@@ -273,12 +297,7 @@ Future<StoredRoomHead> readRoomHead(
     }
   }
 
-  final aux = await _overlays(db, rowIds, '5, 7, 9005, 40003');
-  final auxIds = [for (final event in aux) event['id'] as String? ?? ''];
-  final seen = auxIds.toSet();
-  for (final removal in await _overlays(db, auxIds, '5, 9005')) {
-    if (seen.add(removal['id'] as String? ?? '')) aux.add(removal);
-  }
+  final aux = await readStoredOverlays(db, rowIds);
 
   var stored = rowIds.isEmpty
       ? <Map<String, dynamic>>[]

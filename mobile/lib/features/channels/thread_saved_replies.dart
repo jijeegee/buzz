@@ -29,10 +29,15 @@ final paintableThreadHeadProvider = Provider<StoredThreadHeadReader>(
 /// push inbox wrote were fetched.
 typedef StoredThreadReplies = ({
   List<NostrEvent> events,
+  List<NostrEvent> overlays,
   Map<String, int?> pushedAt,
 });
 
-const StoredThreadReplies _noStoredReplies = (events: [], pushedAt: {});
+const StoredThreadReplies _noStoredReplies = (
+  events: [],
+  overlays: [],
+  pushedAt: {},
+);
 
 /// A thread's newest replies as the device store holds them, empty when it
 /// holds none. Not yet confirmed: the thread's relay page replaces them
@@ -56,6 +61,7 @@ final storedThreadRepliesProvider = FutureProvider.autoDispose
         if (page == null) return _noStoredReplies;
         return (
           events: page.events,
+          overlays: page.overlays,
           pushedAt: storedPushedAt(events, threadWindowBoundsKind),
         );
       } catch (error) {
@@ -94,19 +100,35 @@ final storedNewerRepliesProvider = Provider.autoDispose
 /// with the device store's newer than its newest (a push drained since),
 /// oldest first; else the device store's. Older stored replies are left
 /// out: the preload, from the relay, may have dropped them as deleted.
+/// The reactions, edits and deletions both hold ride along.
 final savedThreadRepliesProvider = Provider.autoDispose
     .family<List<NostrEvent>, ThreadRepliesArgs>((ref, args) {
-      final preloaded = ref.watch(preloadedThreadRepliesProvider(args));
+      const aux = EventKind.channelAuxEventKinds;
+      final preloadedEvents = ref.watch(preloadedThreadRepliesProvider(args));
+      final preloaded = [
+        for (final event in preloadedEvents)
+          if (!aux.contains(event.kind)) event,
+      ];
       final stored =
-          ref.watch(storedThreadRepliesProvider(args)).value?.events ??
-          const [];
-      if (preloaded.isEmpty) return stored;
+          ref.watch(storedThreadRepliesProvider(args)).value ??
+          _noStoredReplies;
+      final overlays = mergeThreadEvents(stored.overlays, [
+        for (final event in preloadedEvents)
+          if (aux.contains(event.kind)) event,
+      ]);
+      if (preloaded.isEmpty) {
+        return overlays.isEmpty
+            ? stored.events
+            : mergeThreadEvents(stored.events, overlays);
+      }
       final newest = preloaded.map((reply) => reply.createdAt).reduce(max);
       final newer = [
-        for (final reply in stored)
+        for (final reply in stored.events)
           if (reply.createdAt > newest) reply,
       ];
-      return newer.isEmpty ? preloaded : mergeThreadEvents(preloaded, newer);
+      return newer.isEmpty && overlays.isEmpty
+          ? preloaded
+          : mergeThreadEvents(preloaded, [...newer, ...overlays]);
     });
 
 /// Whether the device store's replies are still being looked up for the

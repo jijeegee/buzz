@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:hooks_riverpod/misc.dart' show KeepAliveLink;
 
@@ -249,10 +250,27 @@ final threadRepliesProvider = FutureProvider.autoDispose
       window.pendingRelayPage = null;
       try {
         final askedAt = relayAskTime();
-        final replies = await fetchCompleteThreadReplies(session, args);
+        window.beginScan();
+        List<NostrEvent>? overlays = <NostrEvent>[];
+        List<NostrEvent> replies;
+        try {
+          replies = await fetchCompleteThreadReplies(
+            session,
+            args,
+            overlays: overlays,
+          );
+        } on RelayException catch (error) {
+          // The aux closure can outgrow the request's budget or deadline
+          // (503); the replies alone still settle the thread, keeping the
+          // overlays it holds.
+          if (error.statusCode != 503) rethrow;
+          debugPrint('[ThreadReplies] scan with overlays failed: $error');
+          overlays = null;
+          replies = await fetchCompleteThreadReplies(session, args);
+        }
         // A complete scan holds the whole thread: nothing older to page.
         window.noteRelayRows(askedAt, replies);
-        window.replaceComplete(replies);
+        window.replaceComplete(replies, overlays);
         // Explicit markers also settle unacknowledged local sends, whose
         // absence cannot prove deletion even in an insertion-complete scan.
         final missingIds =
@@ -352,9 +370,12 @@ _openThreadWindowResponse(
     return (events: await pending, stored: false, askedAt: askedAt);
   }
   final askedAt = relayAskTime();
-  final relay = session.queryRelayWithStoreHeads([
+  final relay = queryThreadWindow(
+    session.queryRelayWithStoreHeads,
     threadWindowFilter(channelId: args.channelId, rootId: args.rootId),
-  ]);
+    rootId: args.rootId,
+    held: window.heldOverlayIds,
+  );
   if (window.hasLoaded) {
     return (events: await relay, stored: false, askedAt: askedAt);
   }
@@ -428,8 +449,55 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   /// ([openAt], [jumpToLatest]), so a list can reset its scroll position.
   int get windowGeneration => _windowGeneration;
 
-  ThreadWindow foldNewest(ThreadWindowPage page) =>
-      state = mergeNewestThreadPage(state, page);
+  ThreadWindow foldNewest(ThreadWindowPage page) {
+    _recordPage(page.events, page.overlays);
+    final first = state == null;
+    final next = mergeNewestThreadPage(state, page);
+    // The first page may predate overlays that arrived live while it was
+    // asked; deletions among them arrived the same way.
+    return state = first ? withThreadOverlays(next, _liveAux) : next;
+  }
+
+  /// Overlays that arrived live (oldest first, at most [_liveAuxCap]):
+  /// since the window was created, or since the running scan began.
+  final List<NostrEvent> _liveAux = [];
+  static const _liveAuxCap = 256;
+
+  /// A complete scan starts: what arrives live from now on is newer than
+  /// it and survives [replaceComplete].
+  void beginScan() => _liveAux.clear();
+
+  /// Ids of the reactions, edits and removals this window holds.
+  Iterable<String> get heldOverlayIds => _heldOverlays().map((e) => e.id);
+
+  List<NostrEvent> _heldOverlays() => [
+    for (final event in state?.events ?? const <NostrEvent>[])
+      if (EventKind.channelAuxEventKinds.contains(event.kind)) event,
+  ];
+
+  /// Tells the room what this window holds, so reactions and removals aimed
+  /// at any of its replies (not only the newest page's) reach it live.
+  void _recordPage(
+    Iterable<NostrEvent> rows, [
+    Iterable<NostrEvent> overlays = const [],
+  ]) {
+    final channel = channelMessagesProvider(args.channelId);
+    if (!ref.exists(channel)) return;
+    ref.read(channel.notifier).replyOwnership
+      ..record(rows)
+      ..recordOverlays(args.rootId, overlays);
+  }
+
+  /// Keeps a reaction, edit or deletion that arrived live. Returns false
+  /// when no page has loaded yet ([foldLiveThreadAux]).
+  bool foldLiveAux(NostrEvent event) {
+    if (!EventKind.channelAuxEventKinds.contains(event.kind)) return false;
+    _liveAux.add(event);
+    if (_liveAux.length > _liveAuxCap) _liveAux.removeAt(0);
+    final next = foldLiveThreadAux(state, event);
+    if (next != null && !identical(next, state)) state = next;
+    return true;
+  }
 
   /// Folds a reply that arrived live instead of refetching the thread.
   /// Returns false when the window cannot place it ([foldLiveThreadReply]).
@@ -469,6 +537,10 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       final newer = pages[1];
       if (older == null || newer == null) return false;
       noteRelayRows(askedAt, [...older.events, ...newer.events]);
+      _recordPage(
+        [...older.events, ...newer.events],
+        [...older.overlays, ...newer.overlays],
+      );
       state = mergeMiddleThreadPages(state, older, newer);
       return true;
     } catch (_) {
@@ -493,6 +565,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       // openAt or jumpToLatest may have replaced the window meanwhile.
       if (state?.state.newerCursor != cursor) return false;
       noteRelayRows(askedAt, page.events);
+      _recordPage(page.events, page.overlays);
       state = mergeNewerThreadPage(state, page);
       return true;
     } finally {
@@ -511,6 +584,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       return false;
     }
     noteRelayRows(askedAt, page.events);
+    _recordPage(page.events, page.overlays);
     state = restartThreadWindowAtNewest(state, page);
     return true;
   }
@@ -521,23 +595,36 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
   ) async {
     final session = ref.read(relaySessionProvider.notifier);
     return parseThreadWindowPage(
-      await session.queryRelay([
+      await queryThreadWindow(
+        session.queryRelay,
         threadWindowFilter(
           channelId: args.channelId,
           rootId: args.rootId,
           cursor: cursor,
           direction: direction,
         ),
-      ]),
+        rootId: args.rootId,
+        held: heldOverlayIds,
+      ),
       channelId: args.channelId,
       rootId: args.rootId,
       direction: direction,
     );
   }
 
-  void replaceComplete(List<NostrEvent> replies) {
+  /// Replaces the window with a complete scan. Its [overlays] replace the
+  /// held ones too: this scan skips deleted aux, so a removed reaction is
+  /// known only by its absence. Overlays that arrived live during the scan
+  /// ([beginScan]) are kept. Null [overlays] (a scan without them) keeps
+  /// those held.
+  void replaceComplete(
+    List<NostrEvent> replies, [
+    List<NostrEvent>? overlays = const [],
+  ]) {
+    final kept = overlays ?? _heldOverlays();
+    _recordPage(replies, kept);
     state = ThreadWindow(
-      events: List.of(replies),
+      events: mergeThreadEvents([...replies, ...kept], _liveAux),
       // Covered to its newest row, so a later newest page connects to it
       // instead of restarting from that page.
       state: ThreadWindowState(
@@ -560,13 +647,16 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
     try {
       final session = ref.read(relaySessionProvider.notifier);
       final page = parseThreadWindowPage(
-        await session.queryRelay([
+        await queryThreadWindow(
+          session.queryRelay,
           threadWindowFilter(
             channelId: args.channelId,
             rootId: args.rootId,
             cursor: cursor,
           ),
-        ]),
+          rootId: args.rootId,
+          held: heldOverlayIds,
+        ),
         channelId: args.channelId,
         rootId: args.rootId,
       );
@@ -574,6 +664,7 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
       // A newest-page reload may have restarted the window meanwhile; this
       // page then no longer borders what is held.
       if (state?.state.olderCursor != cursor) return false;
+      _recordPage(page.events, page.overlays);
       state = mergeOlderThreadPage(state, page);
       return page.events.isNotEmpty;
     } finally {
@@ -589,11 +680,16 @@ final threadWindowProvider = NotifierProvider.autoDispose
 
 /// Exhaustively scans a thread using insertion-complete cursor pages.
 /// [isCurrent] lets a background refresh stop between pages after disposal.
+/// Returns the replies. With [overlays], each page also asks for its aux
+/// closure (reactions, edits, deletions of the replies and the root), which
+/// is collected there; a recount passes none and pays nothing for it.
 Future<List<NostrEvent>> fetchCompleteThreadReplies(
   RelaySessionNotifier session,
   ThreadRepliesArgs args, {
   bool Function()? isCurrent,
+  List<NostrEvent>? overlays,
 }) async {
+  final overlayIds = <String>{};
   final replies = <NostrEvent>[];
   // -1 precedes unsigned Nostr timestamps. A non-null cursor selects the
   // insertion-complete route and writer-verified EOF instead of a stale head.
@@ -605,9 +701,18 @@ Future<List<NostrEvent>> fetchCompleteThreadReplies(
     if (isCurrent != null && !isCurrent()) {
       throw StateError('Thread scan superseded');
     }
-    final events = await session.queryRelay([
-      _threadRepliesFilter(args, cursor),
+    final page = await session.queryRelay([
+      _threadRepliesFilter(args, cursor, includeAux: overlays != null),
     ]);
+    // Split before paging: the cursor and the page size count replies only.
+    final events = <NostrEvent>[];
+    for (final event in page) {
+      if (EventKind.channelAuxEventKinds.contains(event.kind)) {
+        if (overlays != null && overlayIds.add(event.id)) overlays.add(event);
+      } else {
+        events.add(event);
+      }
+    }
     replies.addAll(events);
     if (events.length < 200) return replies;
     final last = events.last;
@@ -618,8 +723,9 @@ Future<List<NostrEvent>> fetchCompleteThreadReplies(
 
 NostrFilter _threadRepliesFilter(
   ThreadRepliesArgs args,
-  _ThreadCursor? cursor,
-) {
+  _ThreadCursor? cursor, {
+  bool includeAux = false,
+}) {
   return NostrFilter(
     kinds: EventKind.channelTimelineContentKinds,
     tags: {
@@ -632,6 +738,7 @@ NostrFilter _threadRepliesFilter(
       'depth_limit': 0x7fffffff,
       if (cursor != null) 'thread_cursor': cursor.createdAt,
       if (cursor != null) 'thread_cursor_id': cursor.eventId,
+      if (includeAux) 'include_aux': true,
     },
   );
 }

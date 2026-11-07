@@ -22,6 +22,9 @@ class _WindowSession extends RelaySessionNotifier {
   /// Rooms and threads the reader cannot see emit nothing.
   final Set<String> hidden = {};
 
+  /// Thread windows with their aux closure exceed the relay budget.
+  bool auxOverBudget = false;
+
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
 
@@ -31,6 +34,13 @@ class _WindowSession extends RelaySessionNotifier {
     Duration timeout = const Duration(seconds: 8),
   }) async {
     requests.add(filters);
+    if (auxOverBudget &&
+        filters.any((filter) => filter.extensions['include_aux'] == true)) {
+      throw RelayException(
+        503,
+        jsonEncode({'error': 'over budget', 'code': 'window_budget'}),
+      );
+    }
     return [
       for (final filter in filters)
         if (!hidden.contains(filter.tags['#h']!.single))
@@ -386,6 +396,25 @@ void main() {
       // Already tried: nothing is requested again.
       await preloader.preloadThreads(threads);
       expect(session.requests, hasLength(2));
+    });
+
+    test('threads over the aux budget still preload their rows', () async {
+      session.auxOverBudget = true;
+      final preloader = container.read(channelPreloaderProvider);
+      final thread = ThreadRepliesArgs(channelId: 'room', rootId: 'root-0');
+      final loaded = await preloader.preloadThreads([thread]);
+
+      expect(loaded, 1);
+      expect(
+        [for (final r in session.requests) r.single.extensions['include_aux']],
+        [true, false],
+      );
+      expect(
+        container
+            .read(preloadedThreadRepliesProvider(thread))
+            .map((event) => event.id),
+        ['root-0-reply'],
+      );
     });
 
     test('a stopped preload sends no further thread requests', () async {

@@ -1,4 +1,7 @@
 import 'dart:convert';
+import 'dart:math';
+
+import 'package:flutter/foundation.dart';
 
 import '../../shared/relay/relay.dart';
 import 'channel_event_order.dart';
@@ -63,7 +66,13 @@ class ThreadWindowCursor {
 /// One page of a thread as the relay serves it: newest first for an older
 /// page, oldest first for a newer one.
 class ThreadWindowPage {
+  /// The reply rows the page covers.
   final List<NostrEvent> events;
+
+  /// The page's aux closure: reactions, edits and deletions aimed at its rows
+  /// or the root, and deletions of those (NIP-CW `include_aux`). Never rows,
+  /// so paging, cursors and row bookkeeping read [events] alone.
+  final List<NostrEvent> overlays;
   final bool hasMore;
 
   /// Cursor for the next page in [direction], when [hasMore].
@@ -72,6 +81,7 @@ class ThreadWindowPage {
 
   const ThreadWindowPage({
     required this.events,
+    this.overlays = const [],
     required this.hasMore,
     this.nextCursor,
     this.direction = WindowPageDirection.older,
@@ -171,7 +181,10 @@ ThreadWindow mergeNewestThreadPage(
   ThreadWindow? cached,
   ThreadWindowPage page,
 ) {
-  final pageIds = {for (final event in page.events) event.id};
+  final pageIds = {
+    for (final event in page.events) event.id,
+    for (final event in page.overlays) event.id,
+  };
   final pageRows = page.events.where(_isReplyRow);
   final pageOldest = _oldestOf(pageRows);
   final pageNewest = _newestOf(pageRows);
@@ -183,7 +196,7 @@ ThreadWindow mergeNewestThreadPage(
   final newerRows = pageNewest == null
       ? previousRows
       : previousRows.where((event) => _isNewerThan(event, pageNewest));
-  final keep = [...page.events, ...newerRows, ...carried];
+  final keep = [...page.events, ...page.overlays, ...newerRows, ...carried];
   if (pageOldest == null || !page.hasMore) {
     // The page holds the whole thread.
     return ThreadWindow(
@@ -196,7 +209,9 @@ ThreadWindow mergeNewestThreadPage(
     // A window opened at a reply has not paged up to this newest page yet:
     // restarting from the page would drop what the reader is looking at.
     // Keep it; its newer pages close the gap.
-    if (cached != null && cached.state.hasNewer) return cached;
+    if (cached != null && cached.state.hasNewer) {
+      return withThreadOverlays(cached, page.overlays);
+    }
     final older = _olderState(page);
     return ThreadWindow(
       events: _sorted(keep),
@@ -244,11 +259,41 @@ ThreadWindow? foldLiveThreadReply(ThreadWindow? cached, NostrEvent reply) {
   );
 }
 
+/// Adds [overlays] to [window] without touching its rows or state.
+ThreadWindow withThreadOverlays(
+  ThreadWindow window,
+  List<NostrEvent> overlays,
+) {
+  if (overlays.isEmpty) return window;
+  final held = {for (final event in window.events) event.id};
+  final added = [
+    for (final event in overlays)
+      if (!held.contains(event.id)) event,
+  ];
+  if (added.isEmpty) return window;
+  return ThreadWindow(
+    events: _sorted([...window.events, ...added]),
+    state: window.state,
+  );
+}
+
+/// Folds a reaction, edit or deletion that arrived live into a held window,
+/// so the thread keeps it while closed and draws it when reopened. Returns
+/// null when there is no window or [event] is not an aux kind; a room
+/// refresh never prunes what the window holds.
+ThreadWindow? foldLiveThreadAux(ThreadWindow? cached, NostrEvent event) {
+  if (cached == null || !EventKind.channelAuxEventKinds.contains(event.kind)) {
+    return null;
+  }
+  return withThreadOverlays(cached, [event]);
+}
+
 /// Folds an older page (fetched from `olderCursor`) into the cached replies.
 /// Mirrors desktop's `mergeOlderThreadPage`.
 ThreadWindow mergeOlderThreadPage(ThreadWindow? cached, ThreadWindowPage page) {
   final events = _sorted([
     ...page.events,
+    ...page.overlays,
     ...(cached?.events ?? const <NostrEvent>[]),
   ]);
   final older = _olderState(page);
@@ -281,7 +326,13 @@ ThreadWindow mergeMiddleThreadPages(
   final carried = (cached?.events ?? const <NostrEvent>[]).where(
     (event) => !_isReplyRow(event),
   );
-  final events = _sorted([...older.events, ...newer.events, ...carried]);
+  final events = _sorted([
+    ...older.events,
+    ...older.overlays,
+    ...newer.events,
+    ...newer.overlays,
+    ...carried,
+  ]);
   final olderState = _olderState(older);
   final newerState = _newerState(newer);
   return ThreadWindow(
@@ -321,6 +372,7 @@ ThreadWindow mergeNewerThreadPage(ThreadWindow? cached, ThreadWindowPage page) {
   final events = _sorted([
     ...(cached?.events ?? const <NostrEvent>[]),
     ...page.events,
+    ...page.overlays,
   ]);
   final newerState = _newerState(page);
   return ThreadWindow(
@@ -364,10 +416,12 @@ NostrFilter threadWindowFilter({
     limit: limit,
     until: newer ? null : cursor?.createdAt,
     since: newer ? cursor!.createdAt : null,
-    // Rows only: reactions and edits reach thread rows through their own paths.
+    // With the aux closure, as room windows: reactions, edits and deletions
+    // made while the thread was not open reach its rows only this way
+    // (docs/message-sync.md#placing-an-event).
     extensions: {
       'thread_window': true,
-      'include_aux': false,
+      'include_aux': true,
       if (cursor != null) newer ? 'after_id' : 'before_id': cursor.eventId,
     },
   );
@@ -414,12 +468,123 @@ ThreadWindowPage? parseThreadWindowPage(
             eventId: next['id'] as String,
           )
         : null;
+    final aux = EventKind.channelAuxEventKinds;
     return ThreadWindowPage(
-      events: List.unmodifiable(segment),
+      events: List.unmodifiable(segment.where((e) => !aux.contains(e.kind))),
+      overlays: List.unmodifiable(segment.where((e) => aux.contains(e.kind))),
       hasMore: hasMore && nextCursor != null,
       nextCursor: hasMore ? nextCursor : null,
       direction: direction,
     );
   }
   return null;
+}
+
+/// Rows a window over the relay's budget is asked again with.
+const threadWindowReducedReplies = 20;
+
+NostrFilter _windowVariant(NostrFilter filter, {int? limit, bool? aux}) =>
+    NostrFilter(
+      kinds: filter.kinds,
+      tags: filter.tags,
+      limit: limit ?? filter.limit,
+      since: filter.since,
+      until: filter.until,
+      extensions: {...filter.extensions, 'include_aux': ?aux},
+    );
+
+/// Asks [query] for the thread window [filter] (one window with its aux
+/// closure). A window over the relay's budget ([isWindowBudgetError]) is
+/// asked again with fewer rows, then without its closure, whose overlays are
+/// then asked by the rows' and root's ids, as NIP-CW prescribes. Removals
+/// are also asked for the overlays already [held]: the relay leaves a
+/// removed reaction out, so only this finds its removal. If that last
+/// request fails too, the rows stand alone: overlays already held or
+/// arriving live still apply.
+Future<List<NostrEvent>> queryThreadWindow(
+  Future<List<NostrEvent>> Function(List<NostrFilter> filters) query,
+  NostrFilter filter, {
+  required String rootId,
+  Iterable<String> held = const [],
+}) async {
+  try {
+    return await query([filter]);
+  } catch (error) {
+    if (!isWindowBudgetError(error)) rethrow;
+  }
+  if (filter.limit > threadWindowReducedReplies) {
+    try {
+      return await query([
+        _windowVariant(filter, limit: threadWindowReducedReplies),
+      ]);
+    } catch (error) {
+      if (!isWindowBudgetError(error)) rethrow;
+    }
+  }
+  final rowsOnly = await query([
+    _windowVariant(
+      filter,
+      limit: min(filter.limit, threadWindowReducedReplies),
+      aux: false,
+    ),
+  ]);
+  final bounds = rowsOnly.indexWhere((e) => e.kind == threadWindowBoundsKind);
+  if (bounds < 0) return rowsOnly;
+  final ids = [for (final event in rowsOnly.take(bounds)) event.id, rootId];
+  List<NostrEvent> overlays;
+  try {
+    overlays = await _queryAimedAt(query, ids, EventKind.channelAuxEventKinds);
+    // Second hop: removals of those (a withdrawn reaction).
+    final second = {...overlays.map((event) => event.id), ...held};
+    if (second.isNotEmpty) {
+      overlays = [
+        ...overlays,
+        ...await _queryAimedAt(query, second.toList(), const [
+          EventKind.deletion,
+          EventKind.nip29DeleteEvent,
+        ]),
+      ];
+    }
+  } catch (error) {
+    // Half a closure could show a withdrawn reaction: keep none.
+    debugPrint('[ThreadWindow] overlays of an over-budget window: $error');
+    overlays = const [];
+  }
+  return [...rowsOnly.take(bounds), ...overlays, ...rowsOnly.skip(bounds)];
+}
+
+/// Every event of [kinds] whose `e` tag names one of [targets], paged newest
+/// first by `until` until a page brings nothing new (at most 20 pages).
+Future<List<NostrEvent>> _queryAimedAt(
+  Future<List<NostrEvent>> Function(List<NostrFilter> filters) query,
+  List<String> targets,
+  List<int> kinds,
+) async {
+  const pageSize = 500;
+  final found = <String, NostrEvent>{};
+  for (var i = 0; i < targets.length; i += pageSize) {
+    final batch = targets.sublist(i, min(i + pageSize, targets.length));
+    int? until;
+    for (var page = 0; page < 20; page++) {
+      final events = await query([
+        NostrFilter(
+          kinds: kinds,
+          tags: {'#e': batch},
+          limit: pageSize,
+          until: until,
+        ),
+      ]);
+      var added = 0;
+      for (final event in events) {
+        if (found.containsKey(event.id)) continue;
+        found[event.id] = event;
+        added++;
+      }
+      if (events.length < pageSize || added == 0) break;
+      // Inclusive: events sharing the oldest second are asked again and
+      // deduplicated by id.
+      until = events.map((event) => event.createdAt).reduce(min);
+    }
+  }
+  return found.values.toList();
 }
