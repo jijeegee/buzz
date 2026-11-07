@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/features/channels/channel_head_cache.dart';
 import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/google_key_backup.dart';
 import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:kuzz/shared/community/community_token_session.dart';
 import 'package:kuzz/shared/message_store/message_store.dart';
@@ -40,6 +41,8 @@ class _Harness {
   final heads = _RecordingHeads();
   final ended = <String>[];
   final journaled = <String>[];
+  final pending = PendingBackupKeyStore(storage: FakeSecureStorage());
+  Object? enderError;
   late final ProviderContainer container;
 
   AuthNotifier get auth => container.read(authProvider.notifier);
@@ -56,6 +59,7 @@ class _Harness {
         authHttpClientProvider.overrideWithValue(FakeAuthServer().client),
         messageStoreProvider.overrideWithValue(messages),
         channelHeadCacheProvider.overrideWithValue(heads),
+        pendingBackupKeyStoreProvider.overrideWithValue(pending),
         communityPushLeaseRevocationEnqueuerProvider.overrideWithValue((
           community,
         ) async {
@@ -66,6 +70,7 @@ class _Harness {
           community, {
           required deviceOnly,
         }) async {
+          if (enderError case final error?) throw error;
           ended.add(community.id);
         }),
       ],
@@ -89,6 +94,31 @@ Community _google(String account, nostr.Keys keys, {DateTime? lastUsedAt}) =>
     ).copyWith(lastUsedAt: lastUsedAt);
 
 void main() {
+  test('logout deletes the pending key of that account only', () async {
+    final pending = PendingBackupKeyStore(storage: FakeSecureStorage());
+    final container = ProviderContainer(
+      overrides: [
+        keyBackupRefreshTokenStoreProvider.overrideWithValue(
+          FakeRefreshTokenStore(),
+        ),
+        authHttpClientProvider.overrideWithValue(FakeAuthServer().client),
+        pendingBackupKeyStoreProvider.overrideWithValue(pending),
+      ],
+    );
+    addTearDown(container.dispose);
+    final keys = nostr.Keys.generate();
+    await pending.write(_origin, 'account-a', keys.nsec);
+    await pending.write(_origin, 'account-b', keys.nsec);
+
+    await container.read(communityLogoutSessionEnderProvider)(
+      _google('account-a', keys),
+      deviceOnly: true,
+    );
+
+    expect(await pending.read(_origin, 'account-a'), isNull);
+    expect(await pending.read(_origin, 'account-b'), isNotNull);
+  });
+
   final monday = DateTime.utc(2026, 11, 2);
   final tuesday = DateTime.utc(2026, 11, 3);
   final wednesday = DateTime.utc(2026, 11, 4);
@@ -145,6 +175,85 @@ void main() {
       expect(h.container.read(authProvider).value?.community?.id, a.id);
       expect(h.messages.forgotten, [keysB.public]);
       expect(h.heads.cleared, [keysB.public]);
+    });
+
+    test('sign-out ends the account on screen when it is called', () async {
+      final h = _Harness();
+      await h.start([a, b]);
+      final hold = Completer<void>();
+      final queue = h.container.read(communityTransitionProvider);
+      unawaited(queue.runExclusive(() => hold.future));
+
+      // A notification tap ahead of the sign-out moves the app to B first.
+      final switching = h.container
+          .read(communityListProvider.notifier)
+          .switchCommunity(b.id);
+      final signingOut = h.auth.signOut();
+      hold.complete();
+      await Future.wait([switching, signingOut]);
+
+      expect((await h.row(a.id)).signedOut, isTrue);
+      expect((await h.row(b.id)).signedOut, isFalse);
+      expect(await h.storage.loadActiveId(), b.id);
+    });
+
+    test('an offline sign-out leaves nothing journaled', () async {
+      final h = _Harness();
+      await h.start([a, b]);
+      h.enderError = const TokenSessionException('offline');
+
+      await expectLater(
+        h.auth.signOut(),
+        throwsA(isA<TokenSessionException>()),
+      );
+
+      expect(h.journaled, isEmpty);
+      expect((await h.row(a.id)).signedOut, isFalse);
+    });
+
+    test('a fallback with no key goes to its sign-in page', () async {
+      final keyless = Community.create(
+        name: 'Keyless',
+        relayUrl: _origin,
+        pubkey: keysB.public,
+        googleBackupAccountId: 'account-b',
+      );
+      final h = _Harness();
+      await h.start([a, keyless]);
+
+      await h.auth.signOut();
+
+      final state = h.container.read(authProvider).value;
+      expect(state?.status, AuthStatus.unauthenticated);
+      expect(state?.community?.id, keyless.id);
+    });
+
+    test('a fallback that can never sign in is dropped, as at start', () async {
+      final unusable = Community.create(
+        name: 'Unusable',
+        relayUrl: _origin,
+        pubkey: keysB.public,
+      );
+      final h = _Harness();
+      await h.start([a, unusable]);
+
+      await h.auth.signOut();
+
+      expect((await h.storage.loadAll()).map((row) => row.id), [a.id]);
+      expect(
+        h.container.read(authProvider).value?.status,
+        AuthStatus.unauthenticated,
+      );
+    });
+
+    test('a key the row holds leaves no pending copy behind', () async {
+      final h = _Harness();
+      await h.start([a]);
+      await h.pending.write(_origin, 'account-b', keysB.nsec);
+
+      await h.auth.authenticateWithCommunity(b);
+
+      expect(await h.pending.read(_origin, 'account-b'), isNull);
     });
 
     test('the last account signed out shows the signed-out page', () async {

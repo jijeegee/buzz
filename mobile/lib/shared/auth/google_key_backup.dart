@@ -31,7 +31,8 @@ KeyBackupException get _tryAgain =>
     KeyBackupException(appL10n.googleBackupConnectFailed);
 
 /// Keeps an uncommitted client key across uncertain uploads and app restarts.
-/// It is never the active messaging identity until initialization succeeds.
+/// It is never the active messaging identity until initialization succeeds,
+/// and is gone once the account's row holds the key or the account signs out.
 class PendingBackupKeyStore {
   PendingBackupKeyStore({FlutterSecureStorage? storage})
     : _storage = storage ?? const FlutterSecureStorage();
@@ -151,8 +152,10 @@ class GoogleKeyBackupService {
       if (candidate == null) {
         throw _tryAgain;
       }
-      await _pending.write(origin, account, candidate.nsec);
-      guard();
+      if (local == null) {
+        await _pending.write(origin, account, candidate.nsec);
+        guard();
+      }
       try {
         await _initialize(session, account, candidate, guard);
         keys = candidate;

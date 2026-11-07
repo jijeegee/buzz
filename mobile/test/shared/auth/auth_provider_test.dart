@@ -247,14 +247,16 @@ void main() {
     teardown.complete();
     await Future.wait([switching, signingOut]);
 
-    expect(await storage.loadActiveId(), active.id);
+    // The row on screen when sign-out was tapped goes, not the one the
+    // switch ahead of it left active.
+    expect(await storage.loadActiveId(), replacement.id);
     expect(
       (await storage.loadAll()).map((community) => community.id),
-      unorderedEquals([active.id]),
+      unorderedEquals([replacement.id]),
     );
     final auth = await container.read(authProvider.future);
     expect(auth.status, AuthStatus.authenticated);
-    expect(auth.community?.id, active.id);
+    expect(auth.community?.id, replacement.id);
   });
 
   test(

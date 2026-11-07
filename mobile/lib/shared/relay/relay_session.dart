@@ -14,6 +14,7 @@ import '../auth/auth.dart';
 import '../auth/remote_sign_out.dart';
 import '../auth/token/session_key.dart';
 import '../auth/token/token_session.dart';
+import '../auth/token/token_session_provider.dart';
 import '../message_store/message_store.dart';
 import '../message_store/message_store_provider.dart';
 import '../theme/theme_provider.dart' show savedPrefsProvider;
@@ -285,6 +286,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       ref.read(remoteSignOutCheckProvider)(
         communityId: communityId,
         session: session,
+        isCurrent: ref
+            .read(sessionControllerProviderOf(community, session))
+            .sessionFence(),
       ),
     );
   }

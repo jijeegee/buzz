@@ -148,17 +148,6 @@ class _StaleGeneration implements Exception {
   const _StaleGeneration();
 }
 
-/// Refused `/auth/refresh` codes that mean the account's session is over.
-/// Anything else may be a proxy or a bad request and must not end an account.
-const refreshEndedCodes = {
-  'device_key_required',
-  'invalid_token',
-  'principal_disabled',
-  'refresh_reused',
-  'token_expired',
-  'token_revoked',
-};
-
 /// Owns one account's token session (plan §3.2 mobile row).
 ///
 /// - The refresh token lives in [RefreshTokenStore] (keychain); the access
@@ -169,9 +158,9 @@ const refreshEndedCodes = {
 /// - Refresh is single-flight, and every result and store write is fenced by
 ///   a generation counter bumped on sign-in and sign-out, so a late rotation
 ///   can never resurrect a signed-out session (AGENTS.md rule 2).
-/// - 400/401 from `/auth/refresh` sign out; transient failures back off
-///   [retryDelays] and then stop in [TokenSessionStatus.stalled]
-///   (AGENTS.md rule 4).
+/// - A [refreshEndedCodes] refusal from `/auth/refresh` signs out; every other
+///   failure backs off [retryDelays] and then stops in
+///   [TokenSessionStatus.stalled] (AGENTS.md rule 4).
 /// - [dispose] bumps the generation: a rotation still in flight is neither
 ///   persisted nor published. The controller is only disposed when its
 ///   session is being dropped (device-only community removal deletes the
@@ -303,6 +292,17 @@ class TokenSessionController {
 
   /// Changes on login, logout and disposal; custody results must stay in it.
   int get generation => _generation;
+
+  int _sessionEpoch = 0;
+
+  /// A check that holds until a newer session takes over from [adopt], or
+  /// this controller goes away. Whatever was concluded about the session of
+  /// this moment (it ended, the relay refused it) no longer applies then.
+  bool Function() sessionFence() {
+    final epoch = _sessionEpoch;
+    return () => !_disposed && epoch == _sessionEpoch;
+  }
+
   _AccessToken? _access;
   int _failures = 0;
   Timer? _timer;
@@ -548,10 +548,13 @@ class TokenSessionController {
   /// `/auth/logout`, which revokes the whole device including the new grant.
   /// While the new session is stored the controller holds neither session,
   /// so nothing can rotate the old token over the new grant. A failed persist
-  /// revokes the new grant and throws.
+  /// revokes the new grant, leaves the old session in charge and throws: it
+  /// was neither ended nor overwritten, so the account keeps it.
   Future<void> adopt(TokenSessionHandoff handoff) async {
     if (isAttempt) throw StateError('An attempt cannot adopt');
     await _settled();
+    final oldAccess = _access;
+    final oldRefresh = _refreshToken;
     final previousAccess = _access?.token;
     _generation += 1;
     final generation = _generation;
@@ -560,6 +563,7 @@ class TokenSessionController {
     _cancelTimer();
     _failures = 0;
     _adopting = true;
+    Object? persistFailure;
     try {
       await _persist(
         generation,
@@ -569,24 +573,25 @@ class TokenSessionController {
           identityMode: handoff.identityMode,
         ),
       );
-    } on _StaleGeneration {
-      await _revokeUnsaved(handoff.accessToken);
-      throw TokenSessionException(appL10n.tokenSessionEnded);
     } catch (error) {
-      debugPrint('Token session persist failed for $origin: $error');
-      await _revokeUnsaved(handoff.accessToken);
-      if (_isCurrent(generation)) await _forget(errorMessage: _unsavedMessage);
-      throw TokenSessionException(_unsavedMessage);
+      persistFailure = error;
     } finally {
       _adopting = false;
     }
-    if (!_isCurrent(generation)) {
+    if (persistFailure is _StaleGeneration || !_isCurrent(generation)) {
       await _revokeUnsaved(handoff.accessToken);
       throw TokenSessionException(appL10n.tokenSessionEnded);
+    }
+    if (persistFailure != null) {
+      debugPrint('Token session persist failed for $origin: $persistFailure');
+      _resume(oldRefresh, oldAccess);
+      await _revokeUnsaved(handoff.accessToken);
+      throw TokenSessionException(_unsavedMessage);
     }
     _refreshToken = handoff.refreshToken;
     _principalId = handoff.principalId;
     _identityMode = handoff.identityMode;
+    _sessionEpoch += 1;
     _publish(
       handoff.accessToken,
       handoff.accessExpiresAt.difference(_clock()),
@@ -641,6 +646,21 @@ class TokenSessionController {
       await _storeQueue;
       if (_restoring == null && _inflight == null) return;
     }
+  }
+
+  /// Goes on with a session [adopt] set aside. One that was never read from
+  /// the store is read now: its restore was held back during [adopt].
+  void _resume(String? refresh, _AccessToken? access) {
+    _refreshToken = refresh;
+    _access = access;
+    if (refresh == null) {
+      if (_state.status == TokenSessionStatus.restoring) unawaited(restore());
+      return;
+    }
+    final lead = access == null
+        ? Duration.zero
+        : access.expiresAt.difference(_clock()) - refreshLead;
+    _armTimer(lead < minTimerDelay ? minTimerDelay : lead);
   }
 
   /// An attempt holds nothing after it is handed off or abandoned.

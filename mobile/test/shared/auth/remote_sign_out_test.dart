@@ -13,6 +13,7 @@ final _session = SessionKey('https://relay.test', 'p');
 class _RecordingAuth extends AuthNotifier {
   final signOuts = <bool>[];
   final communitySignOuts = <(String, bool)>[];
+  final fences = <bool Function()?>[];
 
   @override
   Future<AuthState> build() async =>
@@ -27,8 +28,10 @@ class _RecordingAuth extends AuthNotifier {
   Future<void> signOutCommunity(
     String communityId, {
     bool deviceOnly = false,
+    bool Function()? isCurrent,
   }) async {
     communitySignOuts.add((communityId, deviceOnly));
+    fences.add(isCurrent);
   }
 }
 
@@ -82,11 +85,33 @@ void main() {
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
       session: _session,
+      isCurrent: () => true,
     );
     expect(api.calls, 1);
     // Only the refused community, never every account.
     expect(auth.communitySignOuts, [('community-a', true)]);
     expect(auth.signOuts, isEmpty);
+  });
+
+  test('the sign-out carries the fence of the session asked about', () async {
+    var current = true;
+    final api = _FakeAccountApi(
+      () async => throw const AccountApiException(
+        'revoked',
+        statusCode: 401,
+        code: 'token_revoked',
+      ),
+    );
+    final c = container(api);
+    await c.read(authProvider.future);
+    await c.read(remoteSignOutCheckProvider)(
+      communityId: 'community-a',
+      session: _session,
+      isCurrent: () => current,
+    );
+    expect(auth.fences.single!(), isTrue);
+    current = false;
+    expect(auth.fences.single!(), isFalse);
   });
 
   test('a live account session keeps this phone signed in', () async {
@@ -98,6 +123,7 @@ void main() {
     await c.read(remoteSignOutCheckProvider)(
       communityId: 'community-a',
       session: _session,
+      isCurrent: () => true,
     );
     expect(auth.communitySignOuts, isEmpty);
   });
@@ -125,6 +151,7 @@ void main() {
       await c.read(remoteSignOutCheckProvider)(
         communityId: 'community-a',
         session: _session,
+        isCurrent: () => true,
       );
       expect(auth.communitySignOuts, isEmpty);
     }

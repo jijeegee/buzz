@@ -71,7 +71,7 @@ class PendingDeepLinkNotifier extends Notifier<KuzzDeepLink?> {
   /// Selects the device-local community carried by a structured push target.
   /// Ordinary shared deep links have no community ID and remain unchanged.
   /// With a built-in server, a target on any other server is unavailable:
-  /// nothing is switched.
+  /// nothing is switched. So is an account that is signed out.
   Future<DeepLinkCommunityPreparation> prepareCommunity(
     KuzzDeepLink link,
   ) async {
@@ -85,6 +85,7 @@ class PendingDeepLinkNotifier extends Notifier<KuzzDeepLink?> {
           .where((community) => community.id == communityId)
           .firstOrNull;
       if (target == null ||
+          target.signedOut ||
           !isServerAllowed(
             target.relayUrl,
             builtInOrigin: ref.read(defaultCommunityOriginProvider),

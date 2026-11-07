@@ -2,8 +2,10 @@ import 'package:flutter/widgets.dart' show AppLifecycleState;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/shared/auth/auth.dart';
+import 'package:kuzz/shared/auth/google_key_backup.dart';
 import 'package:kuzz/shared/auth/token/token.dart';
 import 'package:kuzz/shared/relay/relay.dart';
+import 'package:nostr/nostr.dart' as nostr;
 
 import '../../community/community_storage_test.dart' show FakeSecureStorage;
 import 'token_auth_test_fakes.dart';
@@ -72,6 +74,9 @@ void main() {
         refreshTokenStoreProvider.overrideWithValue(tokens),
         keyBackupRefreshTokenStoreProvider.overrideWithValue(
           FakeRefreshTokenStore(),
+        ),
+        pendingBackupKeyStoreProvider.overrideWithValue(
+          PendingBackupKeyStore(storage: FakeSecureStorage()),
         ),
         installIdStoreProvider.overrideWithValue(
           InstallIdStore(storage: FakeSecureStorage()),
@@ -239,6 +244,87 @@ void main() {
 
       expect((await saved(inactive)).signedOut, isFalse);
       expect((await saved(active)).signedOut, isFalse);
+    });
+  });
+
+  group('a live row with no stored session', () {
+    Community keyRow(String account) {
+      final keys = nostr.Keys.generate();
+      return Community.create(
+        name: account,
+        relayUrl: _origin,
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: account,
+      );
+    }
+
+    Future<Community> saved(Community community) async =>
+        (await storage.loadAll()).singleWhere((c) => c.id == community.id);
+
+    test('is marked signed out, alone, when it is not on screen', () async {
+      final active = account(_first);
+      final orphan = account(_second);
+      await seed(active);
+      await storage.save(orphan);
+      await storage.saveActiveId(active.id);
+      answerRotations(1);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(orphan)).signedOut, isTrue);
+      expect((await saved(active)).signedOut, isFalse);
+      expect(await storage.loadActiveId(), active.id);
+      expect(tokens.data[SessionKey(_origin, _first)], isNotNull);
+    });
+
+    test('with a key reaches the sign-in page when it is active', () async {
+      final orphan = keyRow('account-a');
+      await storage.save(orphan);
+      await storage.saveActiveId(orphan.id);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      final auth = container.read(authProvider).value;
+      expect(auth?.status, AuthStatus.unauthenticated);
+      expect(auth?.community?.id, orphan.id);
+      expect((await saved(orphan)).signedOut, isTrue);
+    });
+
+    test('with a key gives way to another account when it is active', () async {
+      final orphan = keyRow('account-a');
+      final other = account(_first);
+      await storage.save(orphan);
+      await seed(other);
+      await storage.saveActiveId(orphan.id);
+      answerRotations(1);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(orphan)).signedOut, isTrue);
+      expect(await storage.loadActiveId(), other.id);
+      expect(container.read(authProvider).value?.community?.id, other.id);
+    });
+
+    test('with no key stays for its gate when it is active', () async {
+      final orphan = account(_first);
+      await storage.save(orphan);
+      await storage.saveActiveId(orphan.id);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      expect((await saved(orphan)).signedOut, isFalse);
+      expect(
+        container
+            .read(tokenSessionControllerProvider(SessionKey(_origin, _first)))
+            .state
+            .status,
+        TokenSessionStatus.signedOut,
+      );
     });
   });
 

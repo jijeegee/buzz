@@ -235,9 +235,15 @@ final activeTokenSessionProvider = Provider<SessionKey?>(
 /// do not run in the background, so on app resume any account near expiry is
 /// refreshed in the same order.
 ///
-/// An account that is not on screen has no gate to show its session ended, so
-/// it is signed out here, for session-ended codes only: that deletes its key
-/// and messages, which a passing failure must never do.
+/// An account with no session left is signed out here, and only that one,
+/// unless its gate shows the sign-in page: an active token account has one. A
+/// row can be live with no stored session after a crash halfway through a
+/// sign-out; the status is all a restart has to go on, so that counts the same
+/// as a refused refresh. Signing out deletes the key and messages: a passing
+/// failure is never [TokenSessionStatus.signedOut], it keeps the session.
+///
+/// The session may be replaced before the queued sign-out runs: a sign-in
+/// already in progress wins (see [TokenSessionController.sessionFence]).
 final accountSessionKeeperProvider = Provider<void>((ref) {
   final rows = ref.watch(communityListProvider);
   final active = ref.watch(activeCommunityProvider);
@@ -251,6 +257,7 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
         if (SessionKey.ofCommunity(community) case final key?)
           (
             id: community.id,
+            tokenAuth: community.tokenAuth,
             provider: sessionControllerProviderOf(community, key),
           ),
   ];
@@ -262,23 +269,27 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
   ];
 
   for (final account in signedIn) {
-    if (account.id == activeId) continue;
+    final active = account.id == activeId;
+    if (active && account.tokenAuth) continue;
+    final controller = ref.read(account.provider);
     void signOutIfEnded(TokenSessionState session) {
-      if (session.status != TokenSessionStatus.signedOut ||
-          !refreshEndedCodes.contains(session.endedCode)) {
-        return;
-      }
+      if (session.status != TokenSessionStatus.signedOut) return;
+      // On screen, `DeviceKeyNotice` signs this one out and says why.
+      if (active && session.endedCode == 'device_key_required') return;
       unawaited(
         ref
             .read(authProvider.notifier)
-            .signOutCommunity(account.id, deviceOnly: true)
+            .signOutCommunity(
+              account.id,
+              deviceOnly: true,
+              isCurrent: controller.sessionFence(),
+            )
             .catchError((Object error) {
               debugPrint('Could not sign out an ended account: $error');
             }),
       );
     }
 
-    final controller = ref.read(account.provider);
     ref.onDispose(controller.addListener(signOutIfEnded));
     signOutIfEnded(controller.state);
   }

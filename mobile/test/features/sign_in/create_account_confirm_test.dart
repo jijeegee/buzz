@@ -38,6 +38,9 @@ class _Harness {
   /// The account does not exist yet.
   bool needsSignup = true;
 
+  /// What the relay knows of the new account. Apple may withhold it.
+  String? signupEmail = _email;
+
   /// Answers to `signup` before it succeeds.
   final signupFailures = <http.Response>[];
   late final ProviderContainer container;
@@ -56,7 +59,7 @@ class _Harness {
         ? jsonResponse({
             'needs_signup': true,
             'signup_token': 'bzn_ticket',
-            'email': _email,
+            'email': signupEmail,
           })
         : jsonResponse(_grant());
     final client = MockClient((request) async {
@@ -224,6 +227,26 @@ void main() {
     expect(h.signups, hasLength(2));
     expect(h.server.proofs, hasLength(1));
     expect(await h.storage.loadAll(), hasLength(1));
+  });
+
+  testWidgets('with no email a new sign-in always asks', (tester) async {
+    final h = _Harness()..signupEmail = null;
+    h.signupFailures.add(FakeAuthServer.authError(401, 'device_proof_stale'));
+    await h.open(tester);
+    await h.tapGoogle(tester);
+
+    await tester.tap(find.byKey(const Key('create-account-confirm')));
+    await frames(tester);
+
+    // Nothing shows the second sign-in is the same account.
+    expect(find.byKey(const Key('create-account')), findsOneWidget);
+    expect(h.signups, hasLength(1));
+
+    await tester.tap(find.byKey(const Key('create-account-confirm')));
+    await frames(tester);
+
+    expect(find.byKey(const Key('create-account')), findsNothing);
+    expect(h.signups, hasLength(2));
   });
 
   testWidgets('Connect Google does not ask', (tester) async {

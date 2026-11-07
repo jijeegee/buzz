@@ -88,7 +88,9 @@ void main() {
         ..refreshResponses.addAll([
           (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2', ttl: 600),
           (_) => FakeAuthServer.authError(401, 'refresh_reused'),
+          (_) => FakeAuthServer.authError(400, 'invalid_token'),
           (_) => FakeAuthServer.authError(400, 'invalid_request'),
+          (_) => http.Response('Unauthorized', 401),
           (_) => FakeAuthServer.authError(503, 'unavailable'),
           (_) => FakeAuthServer.authError(429, 'rate_limited'),
           (_) => jsonResponse({'access': 'only'}),
@@ -115,6 +117,9 @@ void main() {
         (AuthFailureKind.terminal, 401, 'refresh_reused'),
       );
       expect((await failure()).kind, AuthFailureKind.terminal);
+      // No session-ended code: this may be a proxy, not the relay's verdict.
+      expect((await failure()).kind, AuthFailureKind.transient);
+      expect((await failure()).kind, AuthFailureKind.transient);
       expect((await failure()).kind, AuthFailureKind.transient);
       expect((await failure()).kind, AuthFailureKind.transient);
       final malformed = await failure();

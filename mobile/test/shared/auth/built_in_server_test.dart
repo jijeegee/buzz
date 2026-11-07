@@ -413,6 +413,39 @@ void main() {
       expect(state.differentService, isFalse);
     });
 
+    test('a notification for a signed-out account switches nothing', () async {
+      PendingDeepLinkNotifier.debugUriStreamOverride = const Stream.empty();
+      addTearDown(() => PendingDeepLinkNotifier.debugUriStreamOverride = null);
+      final storage = CommunityStorage(secure: FakeSecureStorage());
+      final active = _token('Kuzz', 'wss://kuzz.example:8443');
+      final gone = _token(
+        'Gone',
+        'wss://kuzz.example:8443',
+      ).copyWith(signedOut: true);
+      await storage.save(active);
+      await storage.save(gone);
+      await storage.saveActiveId(active.id);
+      final container = ProviderContainer(
+        overrides: [
+          communityStorageProvider.overrideWithValue(storage),
+          defaultCommunityOriginProvider.overrideWithValue(_builtIn),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      final preparation = await container
+          .read(pendingDeepLinkProvider.notifier)
+          .prepareCommunity(
+            MessageDeepLink(
+              communityId: gone.id,
+              channelId: 'channel',
+              messageId: 'message',
+            ),
+          );
+      expect(preparation, DeepLinkCommunityPreparation.unavailable);
+      expect(await storage.loadActiveId(), active.id);
+    });
+
     test('a notification for another server switches nothing', () async {
       PendingDeepLinkNotifier.debugUriStreamOverride = const Stream.empty();
       addTearDown(() => PendingDeepLinkNotifier.debugUriStreamOverride = null);

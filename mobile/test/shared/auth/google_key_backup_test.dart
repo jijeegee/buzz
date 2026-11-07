@@ -158,6 +158,31 @@ void main() {
       expect((await storage.loadAll()).single.signedOut, isTrue);
     },
   );
+  test('a row that holds its key writes no pending copy', () async {
+    final keys = nostr.Keys.generate();
+    final storage = CommunityStorage(secure: FakeSecureStorage());
+    await storage.save(
+      Community.create(
+        name: 'Saved',
+        relayUrl: origin,
+        pubkey: keys.public,
+        nsec: keys.nsec,
+        googleBackupAccountId: account,
+      ),
+    );
+    final pending = PendingBackupKeyStore(storage: FakeSecureStorage());
+
+    await _Backup(
+      origin: origin,
+      client: BackupServer().client,
+      session: await signedInSession(),
+      communities: storage,
+      pending: pending,
+      generateKeys: () => throw StateError('must not generate'),
+    ).resolve();
+
+    expect(await pending.read(origin, account), isNull);
+  });
   test('a key-only community is found by its key, not duplicated', () async {
     final keys = nostr.Keys.generate();
     final storage = CommunityStorage(secure: FakeSecureStorage());

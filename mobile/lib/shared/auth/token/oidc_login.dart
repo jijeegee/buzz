@@ -71,25 +71,25 @@ Future<LoginGrant> runOidcLogin({
     confirmSignup: confirmSignup != null,
   );
   var clockCorrected = false;
-  // Already answered "create": a stale proof must not ask twice.
+  // Already answered "create" for this email: a stale proof must not ask
+  // twice. Without an email nothing shows it is the same account, so it asks.
   String? confirmedEmail;
-  var confirmed = false;
   while (true) {
     try {
       switch (await attempt()) {
         case final LoginGrant grant:
           return grant;
         case final SignupRequired signup:
-          final choice = confirmed && signup.email == confirmedEmail
+          final choice =
+              confirmedEmail != null && signup.email == confirmedEmail
               ? SignupChoice.create
               : await _askSignup(confirmSignup, signup);
           switch (choice) {
             case SignupChoice.create:
-              confirmed = true;
               confirmedEmail = signup.email;
               return await api.completeSignup(signup);
             case SignupChoice.different:
-              confirmed = false;
+              confirmedEmail = null;
             case SignupChoice.close:
               throw const WebAuthCancelledException();
           }

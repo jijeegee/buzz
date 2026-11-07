@@ -115,6 +115,7 @@ void main() {
         remoteSignOutCheckProvider.overrideWithValue(({
           required communityId,
           required session,
+          required isCurrent,
         }) async {
           checks.add((communityId, session));
         }),

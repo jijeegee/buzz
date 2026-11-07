@@ -15,6 +15,7 @@ import '../push/push_inbox.dart';
 import '../push/push_subscription.dart';
 import '../relay/relay_provider.dart';
 import 'default_community.dart';
+import 'google_key_backup.dart';
 import 'token/relay_origin.dart';
 import 'token/session_key.dart';
 import 'token/token_session.dart';
@@ -199,6 +200,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       state = AsyncData(
         AuthState(status: AuthStatus.authenticated, community: community),
       );
+      await _dropPendingKey(community);
       if (keyChanged) {
         _forgetAccountData(existing);
         unawaited(
@@ -209,6 +211,22 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       }
       if (revocationJournaled) _triggerPushLeaseRevocation();
     });
+  }
+
+  /// [community]'s row holds its key now. A leftover is only a stray copy, so
+  /// failing to delete it fails nothing.
+  Future<void> _dropPendingKey(Community community) async {
+    final account = community.googleBackupAccountId;
+    if (account == null) return;
+    try {
+      await ref
+          .read(pendingBackupKeyStoreProvider)
+          .delete(community.relayUrl, account);
+    } catch (error) {
+      debugPrint(
+        '[AuthNotifier] pending key not deleted: ${error.runtimeType}',
+      );
+    }
   }
 
   /// Moves [attempt]'s session to the account of [community].
@@ -286,16 +304,18 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     if (revocationJournaled) _triggerPushLeaseRevocation();
   }
 
-  /// Remove the active community. A token community's device session is
+  /// Remove the community on screen when this is called, even if another
+  /// becomes active before it runs. A token community's device session is
   /// revoked on the relay first; when the relay cannot be reached this throws
   /// `TokenSessionException` and removes nothing. [deviceOnly] skips the
   /// relay (see `CommunityListNotifier.removeCommunity`).
   Future<void> removeActiveCommunity({bool deviceOnly = false}) {
+    final shown = state.value?.community?.id;
     return () async {
       final storage = ref.read(communityStorageProvider);
       await ref
           .read(communityListProvider.notifier)
-          .removeActiveCommunityForSignOut(deviceOnly: deviceOnly);
+          .removeActiveCommunityForSignOut(id: shown, deviceOnly: deviceOnly);
 
       // Community removal already persisted the outbox, deleted credentials,
       // selected the next active community, and removed NSE state. Authentication
@@ -311,10 +331,12 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     }();
   }
 
-  /// Ends the active account's session; every other account stays signed in
-  /// and the most recently used one becomes active. The account stays
-  /// listed. A person key backed up to Google is deleted from this phone; a
-  /// key with no backup is kept, since nothing else could restore it.
+  /// Ends the session of the account on screen when this is called, even if
+  /// another becomes active before it runs; every other account stays signed
+  /// in and the most recently used one becomes active if this one was. The
+  /// account stays listed. A person key backed up to Google is deleted from
+  /// this phone; a key with no backup is kept, since nothing else could
+  /// restore it.
   Future<void> signOut({bool deviceOnly = false}) {
     // At once: a sign-in of this account must not finish behind the sign-out.
     final shown = state.value?.community?.id;
@@ -322,28 +344,44 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
     return ref.read(communityTransitionProvider).runExclusive(() async {
       final storage = ref.read(communityStorageProvider);
       final communities = await storage.loadAll();
-      final active = selectActiveCommunity(
-        communities,
-        await storage.loadActiveId(),
-        builtInOrigin: ref.read(defaultCommunityOriginProvider),
-      );
-      if (active == null) return;
-      if (active.id != shown) _noteSignOut(active.id);
-      await _signOutAccount(active, communities, deviceOnly: deviceOnly);
+      final target = shown == null
+          ? selectActiveCommunity(
+              communities,
+              await storage.loadActiveId(),
+              builtInOrigin: ref.read(defaultCommunityOriginProvider),
+            )
+          : communities.where((row) => row.id == shown).firstOrNull;
+      if (target == null) return;
+      if (target.id != shown) _noteSignOut(target.id);
+      await _signOutAccount(target, communities, deviceOnly: deviceOnly);
     });
   }
 
   /// Ends the session of one community only (the relay signed it out from
-  /// another device); every other account stays signed in. When it is the
-  /// active community, this goes on as [signOut] does.
-  Future<void> signOutCommunity(String communityId, {bool deviceOnly = false}) {
-    _noteSignOut(communityId);
+  /// another device, or it has no session left); every other account stays
+  /// signed in. When it is the active community, this goes on as [signOut]
+  /// does.
+  ///
+  /// With [isCurrent] the reason is about a session that a sign-in may
+  /// replace while this waits its turn. It is asked when the turn comes, and
+  /// without it nothing happens: the row and the session in it are newer.
+  Future<void> signOutCommunity(
+    String communityId, {
+    bool deviceOnly = false,
+    bool Function()? isCurrent,
+  }) {
+    if (isCurrent == null) _noteSignOut(communityId);
     return ref.read(communityTransitionProvider).runExclusive(() async {
+      if (isCurrent?.call() == false) return;
       final communities = await ref.read(communityStorageProvider).loadAll();
       final target = communities
           .where((community) => community.id == communityId)
           .firstOrNull;
       if (target == null) return;
+      if (isCurrent != null) {
+        if (target.signedOut) return;
+        _noteSignOut(communityId);
+      }
       await _signOutAccount(target, communities, deviceOnly: deviceOnly);
     });
   }
@@ -364,13 +402,15 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         target.id;
     var hasRevocations = false;
     if (!target.signedOut) {
-      hasRevocations = await ref.read(
-        communityPushLeaseRevocationEnqueuerProvider,
-      )(target);
+      // First: a failure here leaves the account as it was, with nothing
+      // queued against a session that is still going.
       await ref.read(communityLogoutSessionEnderProvider)(
         target,
         deviceOnly: deviceOnly,
       );
+      hasRevocations = await ref.read(
+        communityPushLeaseRevocationEnqueuerProvider,
+      )(target);
     }
     // Another account's huddle or read-aloud has nothing to do with this one.
     if (wasActive) await ref.read(communityTransitionProvider).run();
@@ -402,9 +442,9 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
       ref.invalidate(communityListProvider);
       if (next != null) {
         ref.invalidate(activeCommunityProvider);
-        state = AsyncData(
-          AuthState(status: AuthStatus.authenticated, community: next),
-        );
+        // The start-up path: [next] may not be usable as it stands.
+        ref.invalidateSelf();
+        await future;
       }
       if (hasRevocations) _triggerPushLeaseRevocation();
       return;

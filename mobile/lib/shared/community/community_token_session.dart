@@ -78,8 +78,11 @@ final communityLogoutSessionEnderProvider = Provider<CommunityTokenSessionEnder>
       await controller.signOut();
     }
     // Propagate a secure-storage failure instead of claiming credentials were
-    // cleared. Pending backup material is deliberately untouched by logout.
+    // cleared.
     await controller.forgetOnDevice();
+    if (community.googleBackupAccountId case final account?) {
+      await ref.read(pendingBackupKeyStoreProvider).delete(key.origin, account);
+    }
     ref.invalidate(provider);
   },
 );

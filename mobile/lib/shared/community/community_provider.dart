@@ -380,14 +380,17 @@ class CommunityListNotifier extends AsyncNotifier<List<Community>> {
         deviceOnly: deviceOnly,
       );
 
-  /// Removes the active community through the same local-first path as the
-  /// community list while allowing [AuthNotifier] to publish its final state.
-  Future<void> removeActiveCommunityForSignOut({bool deviceOnly = false}) =>
-      _removeCommunity(
-        null,
-        invalidateAuthentication: false,
-        deviceOnly: deviceOnly,
-      );
+  /// Removes community [id], or without one the active community, through the
+  /// same local-first path as the community list while allowing [AuthNotifier]
+  /// to publish its final state.
+  Future<void> removeActiveCommunityForSignOut({
+    String? id,
+    bool deviceOnly = false,
+  }) => _removeCommunity(
+    id,
+    invalidateAuthentication: false,
+    deviceOnly: deviceOnly,
+  );
 
   Future<void> _removeCommunity(
     String? requestedId, {

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:hooks_riverpod/hooks_riverpod.dart';
 import 'package:kuzz/shared/auth/auth.dart';
@@ -189,6 +191,95 @@ void main() {
     expect(
       container.read(authProvider).value?.status,
       isNot(AuthStatus.authenticated),
+    );
+  });
+
+  test('a failed takeover leaves the row with the session it had', () async {
+    final row = Community.create(
+      name: 'Saved',
+      relayUrl: _origin,
+      pubkey: _principal,
+      tokenAuth: true,
+    );
+    await storage.save(row);
+    await storage.saveActiveId(row.id);
+    tokens.data[_key] = StoredTokenSession(
+      refreshToken: 'bzr_saved',
+      principalId: _principal,
+    );
+    server.refreshResponses.add(
+      (_) => FakeAuthServer.rotated('bzs_saved', 'bzr_saved2'),
+    );
+    final controller = container.read(tokenSessionControllerProvider(_key));
+    await controller.restore();
+    final attempt = await signedInAttempt();
+    tokens.writeError = StateError('keychain unavailable');
+
+    await expectLater(
+      container
+          .read(authProvider.notifier)
+          .authenticateWithTokenSession(
+            relayUrl: _origin,
+            principalId: _principal,
+            attempt: attempt,
+          ),
+      throwsA(isA<TokenSessionException>()),
+    );
+
+    expect((await storage.loadAll()).single.signedOut, isFalse);
+    expect(tokens.data[_key]?.refreshToken, 'bzr_saved2');
+    expect(controller.currentAccessToken, 'bzs_saved');
+  });
+
+  test('a sign-in beats the sign-out queued behind it', () async {
+    final row = Community.create(
+      name: 'Saved',
+      relayUrl: _origin,
+      pubkey: _principal,
+      tokenAuth: true,
+    );
+    await storage.save(row);
+    await storage.saveActiveId(row.id);
+    tokens.data[_key] = StoredTokenSession(
+      refreshToken: 'bzr_saved',
+      principalId: _principal,
+    );
+    server.refreshResponses.add(
+      (_) => FakeAuthServer.authError(401, 'token_revoked'),
+    );
+    await container.read(authProvider.future);
+    final controller = container.read(tokenSessionControllerProvider(_key));
+    await controller.restore();
+    final attempt = await signedInAttempt();
+    final auth = container.read(authProvider.notifier);
+
+    // The order the keeper produces: the sign-in is ahead in the queue when
+    // the ended session's sign-out joins it.
+    final hold = Completer<void>();
+    unawaited(
+      container
+          .read(communityTransitionProvider)
+          .runExclusive(() => hold.future),
+    );
+    final signIn = auth.authenticateWithTokenSession(
+      relayUrl: _origin,
+      principalId: _principal,
+      attempt: attempt,
+    );
+    await pumpEventQueue();
+    final signOut = auth.signOutCommunity(
+      row.id,
+      deviceOnly: true,
+      isCurrent: controller.sessionFence(),
+    );
+    hold.complete();
+    await Future.wait([signIn, signOut]);
+
+    expect((await storage.loadAll()).single.signedOut, isFalse);
+    expect(tokens.data[_key]?.refreshToken, 'bzr_login');
+    expect(
+      container.read(tokenSessionControllerProvider(_key)).currentAccessToken,
+      'bzs_login',
     );
   });
 

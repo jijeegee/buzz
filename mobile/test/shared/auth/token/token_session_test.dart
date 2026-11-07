@@ -212,14 +212,28 @@ void main() {
       expect(h.clock.active, isEmpty);
     });
 
-    test('a 400 is terminal too', () async {
+    test('a 400 with a session-ended code is terminal too', () async {
       final h = Harness(stored: stored1);
       h.server.refreshResponses.add(
-        (_) => FakeAuthServer.authError(400, 'invalid_request'),
+        (_) => FakeAuthServer.authError(400, 'invalid_token'),
       );
       await h.controller.restore();
       expect(h.status, TokenSessionStatus.signedOut);
       expect(h.store.data, isEmpty);
+    });
+
+    test('a refusal with no session-ended code keeps the session', () async {
+      for (final refusal in [
+        FakeAuthServer.authError(400, 'invalid_request'),
+        FakeAuthServer.authError(401, 'not_a_session_code'),
+        http.Response('Unauthorized', 401),
+      ]) {
+        final h = Harness(stored: stored1);
+        h.server.refreshResponses.add((_) => refusal);
+        await h.controller.restore();
+        expect(h.status, TokenSessionStatus.retrying);
+        expect(h.store.data, isNotEmpty);
+      }
     });
 
     test('device_key_required is terminal and says why', () async {
@@ -738,6 +752,64 @@ void main() {
         'Bearer bzs_login',
       );
     });
+
+    test('a failed adopt leaves the account on the session it had', () async {
+      final attempt = await signedInAttempt();
+      final handoff = await attempt.controller.handoff();
+      final h = Harness(stored: stored1);
+      h.server.refreshResponses.add(
+        (_) => FakeAuthServer.rotated('bzs_2', 'bzr_2'),
+      );
+      await h.controller.restore();
+      final saved = h.store.data[key];
+      h.store.writeError = StateError('keychain unavailable');
+
+      await expectLater(
+        h.controller.adopt(handoff),
+        throwsA(isA<TokenSessionException>()),
+      );
+
+      expect(h.status, TokenSessionStatus.signedIn);
+      expect(h.controller.currentAccessToken, 'bzs_2');
+      expect(h.store.data[key], saved);
+      expect(h.clock.active, isNotEmpty, reason: 'it keeps renewing itself');
+      expect(
+        h.endedSessions.single.headers['Authorization'],
+        'Bearer bzs_login',
+      );
+    });
+
+    test(
+      'the session fence breaks only when a newer session arrives',
+      () async {
+        final attempt = await signedInAttempt();
+        final handoff = await attempt.controller.handoff();
+        final h = Harness(stored: stored1);
+        h.server.refreshResponses.add(
+          (_) => FakeAuthServer.authError(401, 'token_revoked'),
+        );
+        await h.controller.restore();
+        // What a queued sign-out holds: the session ended, and said so.
+        final ended = h.controller.sessionFence();
+        expect(ended(), isTrue);
+
+        h.store.writeError = StateError('keychain unavailable');
+        await expectLater(
+          h.controller.adopt(handoff),
+          throwsA(isA<TokenSessionException>()),
+        );
+        expect(ended(), isTrue, reason: 'nothing replaced the ended session');
+
+        final retry = await signedInAttempt();
+        h.store.writeError = null;
+        await h.controller.adopt(await retry.controller.handoff());
+        expect(ended(), isFalse);
+
+        final live = h.controller.sessionFence();
+        h.controller.dispose();
+        expect(live(), isFalse);
+      },
+    );
 
     test(
       'a discarded attempt ends its session with /auth/sessions/end',

@@ -66,7 +66,15 @@ class DeviceKeyNotice extends HookConsumerWidget {
       try {
         await ref
             .read(authProvider.notifier)
-            .signOutCommunity(active.id, deviceOnly: ended);
+            .signOutCommunity(
+              active.id,
+              deviceOnly: ended,
+              isCurrent: ended
+                  ? ref
+                        .read(keyBackupSessionControllerProvider(sessionKey!))
+                        .sessionFence()
+                  : null,
+            );
       } catch (_) {
         messenger?.showSnackBar(
           SnackBar(content: Text(appL10n.settingsSignOutFailed)),

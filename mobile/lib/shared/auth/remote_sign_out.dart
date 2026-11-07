@@ -14,20 +14,29 @@ import 'token/session_key.dart';
 /// answer leaves everything as it is.
 ///
 /// Both are named by the caller, never read from the active community: it can
-/// change under the socket that was refused.
+/// change under the socket that was refused. [isCurrent] holds while the
+/// session asked about is still the account's: a sign-in finishing during the
+/// check replaced it, and is not signed out by the old session's refusal.
 typedef RemoteSignOutCheck =
     Future<void> Function({
       required String communityId,
       required SessionKey session,
+      required bool Function() isCurrent,
     });
 
 final remoteSignOutCheckProvider = Provider<RemoteSignOutCheck>((ref) {
   final running = <String, Future<void>>{};
-  return ({required communityId, required session}) => running[communityId] ??=
-      _check(ref, communityId: communityId, session: session).whenComplete(() {
-        // A block body: returning the removed future would wait on itself.
-        running.remove(communityId);
-      });
+  return ({required communityId, required session, required isCurrent}) =>
+      running[communityId] ??=
+          _check(
+            ref,
+            communityId: communityId,
+            session: session,
+            isCurrent: isCurrent,
+          ).whenComplete(() {
+            // A block body: returning the removed future would wait on itself.
+            running.remove(communityId);
+          });
 });
 
 /// Relay codes meaning the account session no longer exists.
@@ -41,6 +50,7 @@ Future<void> _check(
   Ref ref, {
   required String communityId,
   required SessionKey session,
+  required bool Function() isCurrent,
 }) async {
   try {
     await ref.read(accountApiProvider(session)).me();
@@ -55,5 +65,5 @@ Future<void> _check(
   }
   await ref
       .read(authProvider.notifier)
-      .signOutCommunity(communityId, deviceOnly: true);
+      .signOutCommunity(communityId, deviceOnly: true, isCurrent: isCurrent);
 }
