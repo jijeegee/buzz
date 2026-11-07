@@ -193,6 +193,13 @@ bool _hasReplies(Map<String, dynamic> summary) {
 
 String _marks(int count) => List.filled(count, '?').join(', ');
 
+/// Rows older than a cursor in relay order (`created_at DESC, id ASC`);
+/// bound with [storedOlderArgs].
+const storedOlderThan = 'AND (created_at < ? OR (created_at = ? AND id > ?))';
+
+List<Object>? storedOlderArgs((int, String)? before) =>
+    before == null ? null : [before.$1, before.$1, before.$2];
+
 Future<List<Map<String, dynamic>>> _overlays(
   DatabaseExecutor db,
   List<String> targets,
@@ -237,7 +244,8 @@ Future<List<Map<String, dynamic>>> readStoredOverlays(
 /// on the current connection, if it is live. [includePushed] (a paint only)
 /// also takes rows only the push inbox wrote, and counts pushed replies
 /// newer than a row's stored summary into it; the relay's window replaces
-/// both, and nothing is written.
+/// both, and nothing is written. [before] reads the window below that
+/// `(created_at, id)` instead of the newest (never certain).
 Future<StoredRoomHead> readRoomHead(
   DatabaseExecutor db, {
   required String room,
@@ -245,6 +253,7 @@ Future<StoredRoomHead> readRoomHead(
   required int limit,
   required int? liveAt,
   bool includePushed = false,
+  (int, String)? before,
 }) async {
   final rows = <Map<String, dynamic>>[];
   final rowIds = <String>[];
@@ -262,8 +271,9 @@ Future<StoredRoomHead> readRoomHead(
         // Rows only the push inbox wrote claim no coverage: a certain window
         // leaves them out; a paint draws them until the relay's copy.
         '${includePushed ? '' : 'AND id NOT IN (SELECT id FROM pushed_rows) '}'
+        '${before == null ? '' : '$storedOlderThan '}'
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
-        [room, page, offset],
+        [room, ...?storedOlderArgs(before), page, offset],
       );
       offset += candidates.length;
       final deleted = await storedDeletedIds(db, candidates);
@@ -314,7 +324,7 @@ Future<StoredRoomHead> readRoomHead(
   var certain = false;
   final cursor = nextCursor;
   final full = rows.length == limit;
-  if (liveAt != null) {
+  if (liveAt != null && before == null) {
     final received =
         cursor != null &&
         full &&

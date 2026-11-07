@@ -23,9 +23,14 @@ import 'thread_head.dart';
 
 export 'clock_check.dart' show clockTrusted, noteServerDate;
 import 'stored_event.dart';
+import 'window_check_store.dart';
+
+export 'window_check_store.dart'
+    show StoredCheckWindow, StoreWindowKey, StoreWindowPage;
 
 part 'message_store_pushed.dart';
 part 'message_store_user_stream.dart';
+part 'message_store_window.dart';
 
 const messageStoreSchemaVersion = 1;
 
@@ -796,6 +801,12 @@ class MessageStore {
         if (head is _StoredMarkOp) {
           writer.queue.removeAt(0);
           await _applyStoredMarkOp(writer, head);
+          writer.advance(1);
+          continue;
+        }
+        if (head is _WindowReplaceOp || head is _WindowRefetchOp) {
+          writer.queue.removeAt(0);
+          await _applyWindowOp(writer, head);
           writer.advance(1);
           continue;
         }
