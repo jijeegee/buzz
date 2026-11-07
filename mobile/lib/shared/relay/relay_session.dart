@@ -33,6 +33,7 @@ import 'relay_session_types.dart';
 import 'relay_socket.dart';
 import 'room_bundle_coverage.dart';
 import 'user_stream.dart';
+import 'window_check.dart';
 
 export 'nip98.dart' show buildNip98AuthHeader;
 export 'relay_session_types.dart';
@@ -42,6 +43,7 @@ part 'relay_session_live_filters.dart';
 part 'relay_session_replay.dart';
 part 'relay_session_store.dart';
 part 'relay_session_user_stream.dart';
+part 'relay_session_window_check.dart';
 
 class _HistorySubscription {
   final List<NostrEvent> events = [];
@@ -183,6 +185,11 @@ class RelaySessionNotifier extends Notifier<SessionState> {
 
   /// Loaded at startup; null where not provided (tests).
   SharedPreferences? _prefs;
+
+  /// Window checks of this session (window_check.dart), and the event
+  /// frames received per room.
+  WindowCheckGate _windowChecks = WindowCheckGate();
+  final Map<String, int> _liveRowsByRoom = {};
   late final _storeCoverage = RoomBundleCoverage(
     scope: () => switch ((_messageStore, _storeLease)) {
       (final store?, final lease?) => (store: store, lease: lease),
@@ -208,6 +215,10 @@ class RelaySessionNotifier extends Notifier<SessionState> {
     } catch (_) {
       _prefs = null; // Not provided: the last result stays unknown.
     }
+    _windowChecks = WindowCheckGate(
+      override: () =>
+          windowCheckOverrideOf(_prefs?.getString(windowCheckOverrideKey)),
+    );
     _storeLease = _messageStore!.lease(
       config.baseUrl,
       ref.read(myPubkeyProvider),
@@ -890,7 +901,9 @@ class RelaySessionNotifier extends Notifier<SessionState> {
       !_disposed && generation == _connectionGeneration;
 
   void _handleMessage(List<dynamic> data) {
-    if (data.isEmpty || _userStreamOwns(data)) return;
+    if (data.isEmpty) return;
+    _noteLiveRow(_liveRowsByRoom, data);
+    if (_userStreamOwns(data)) return;
     final type = data[0] as String;
 
     switch (type) {
