@@ -4514,7 +4514,7 @@
   },
   "ownerToolsLabel": "Owner tools",
   "@ownerToolsLabel": {
-    "description": "Agent settings: name of the per-agent switch that lets the agent act for its owner. Korean product name: 주인 권한 도구. Short."
+    "description": "Agent settings: name of the per-agent switch that lets the agent act for its owner. Korean product name: 소유자 권한 도구. Short."
   },
   "ownerToolsOn": "On",
   "@ownerToolsOn": {
