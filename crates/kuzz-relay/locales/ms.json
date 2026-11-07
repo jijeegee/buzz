@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Terima kasih atas laporan anda kepada {community}. Laporan anda telah disemak dan tindakan telah diambil.",
+  "moderation.reportResolved.dismissed": "Terima kasih atas laporan anda kepada {community}. Laporan anda telah disemak; tiada tindakan diambil.",
+  "moderation.reportResolved.escalated": "Terima kasih atas laporan anda kepada {community}. Laporan anda telah dinaikkan untuk semakan lanjut.",
+  "moderation.reportResolved.other": "Terima kasih atas laporan anda kepada {community}. Laporan anda telah disemak.",
+  "moderation.contentActioned": "Seorang moderator dalam {community} telah mengambil tindakan terhadap kandungan anda.",
+  "moderation.banned": "Anda telah disekat daripada {community}.",
+  "moderation.timedOut": "Anda telah digantung sementara dalam {community} sehingga {until}.",
+  "moderation.timedOutNoEnd": "Anda telah digantung sementara dalam {community}.",
+  "moderation.reason": "Sebab: {reason}",
+  "groups.landing.title": "{name} di Kuzz",
+  "groups.landing.members": "{count, plural, other {# ahli}}",
+  "groups.landing.open": "Buka dalam Kuzz",
+  "groups.landing.noApp": "Belum ada Kuzz? Tanya orang yang berkongsi pautan ini.",
+  "groups.landing.notFoundTitle": "Pautan tidak ditemui",
+  "groups.landing.notFoundHeading": "Pautan ini tidak berfungsi",
+  "groups.landing.notFoundHint": "Pautan mungkin telah ditetapkan semula atau kumpulan itu mungkin sudah tiada. Minta pautan baharu daripada orang yang berkongsinya.",
+  "groups.landing.rateLimitedTitle": "Cuba lagi sebentar lagi",
+  "groups.landing.rateLimitedHeading": "Terlalu banyak permintaan",
+  "groups.landing.rateLimitedHint": "Cuba lagi dalam seminit."
+}

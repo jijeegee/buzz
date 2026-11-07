@@ -24,8 +24,11 @@
 		<string>ja</string>
 		<string>ko</string>
 		<string>vi</string>
+		<string>th</string>
 		<string>tr</string>
 		<string>it</string>
+		<string>fil</string>
+		<string>ms</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>$(APP_DISPLAY_NAME)</string>

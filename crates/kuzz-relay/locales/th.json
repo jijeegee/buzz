@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "ขอบคุณสำหรับรายงานของคุณถึง {community} รายงานของคุณได้รับการตรวจสอบและดำเนินการแล้ว",
+  "moderation.reportResolved.dismissed": "ขอบคุณที่รายงานไปยัง {community} เราตรวจสอบรายงานของคุณแล้วและไม่ได้ดำเนินการใดๆ",
+  "moderation.reportResolved.escalated": "ขอบคุณที่รายงานไปยัง {community} รายงานของคุณถูกส่งต่อเพื่อตรวจสอบเพิ่มเติม",
+  "moderation.reportResolved.other": "ขอบคุณที่รายงานไปยัง {community} เราตรวจสอบรายงานของคุณแล้ว",
+  "moderation.contentActioned": "ผู้ตรวจสอบใน {community} ได้ดำเนินการกับเนื้อหาของคุณ",
+  "moderation.banned": "คุณถูกแบนจาก {community}",
+  "moderation.timedOut": "คุณถูกระงับการโพสต์ใน {community} จนถึง {until}",
+  "moderation.timedOutNoEnd": "คุณถูกระงับการโพสต์ใน {community}",
+  "moderation.reason": "เหตุผล: {reason}",
+  "groups.landing.title": "{name} บน Kuzz",
+  "groups.landing.members": "{count, plural, other {สมาชิก # คน}}",
+  "groups.landing.open": "เปิดใน Kuzz",
+  "groups.landing.noApp": "ยังไม่มี Kuzz ใช่ไหม ลองถามคนที่แชร์ลิงก์นี้",
+  "groups.landing.notFoundTitle": "ไม่พบลิงก์",
+  "groups.landing.notFoundHeading": "ลิงก์นี้ใช้ไม่ได้",
+  "groups.landing.notFoundHint": "ลิงก์อาจถูกรีเซ็ตหรือกลุ่มอาจไม่มีอยู่แล้ว ขอลิงก์ใหม่จากคนที่แชร์ให้คุณ",
+  "groups.landing.rateLimitedTitle": "ลองใหม่อีกครั้งในอีกสักครู่",
+  "groups.landing.rateLimitedHeading": "ส่งคำขอมากเกินไป",
+  "groups.landing.rateLimitedHint": "ลองใหม่อีกครั้งในอีก 1 นาที"
+}
