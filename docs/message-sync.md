@@ -758,7 +758,10 @@ closed). It is the read a first open makes, with one answer:
 
 A thread does the same: while its page is open or as it is reopened, it reads
 the store, a drain reads it again, and a thread holding a window (a retained one
-included) shows the stored replies past that window's cut. The relay page keeps
+included) shows the stored replies past that window's cut. A retained thread
+keeps its store read and a drain reads it again while the page is closed, so a
+reopen draws the drained replies on its first frame; the reopen reads the store
+once more behind them. The relay page keeps
 holding only what the relay sent, so its next page removes the rest.
 
 The **relay cut** is what the last relay window that landed ruled on: the later

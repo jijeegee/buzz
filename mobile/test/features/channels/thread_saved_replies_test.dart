@@ -92,13 +92,18 @@ class _Store {
 
 String _hex(int n) => fixtureId(n);
 
-ProviderContainer _threadContainer(_Relay relay, _Store store) {
+ProviderContainer _threadContainer(
+  _Relay relay,
+  _Store store, {
+  void Function()? onRead,
+}) {
   final container = ProviderContainer(
     overrides: [
       relaySessionProvider.overrideWith(() => relay),
-      paintableThreadHeadProvider.overrideWithValue(
-        (_, _) async => store.read(),
-      ),
+      paintableThreadHeadProvider.overrideWithValue((_, _) async {
+        onRead?.call();
+        return store.read();
+      }),
       storedThreadHeadProvider.overrideWithValue((_, _) async => null),
       relayInfoProvider.overrideWith(
         (ref) async => RelayInfo(supportedExtensions: {newerWindowExtension}),
@@ -109,21 +114,30 @@ ProviderContainer _threadContainer(_Relay relay, _Store store) {
   return container;
 }
 
-/// A thread holding the relay's page, and the replies shown past it.
+/// A thread holding the relay's page, its page closed, and the replies shown
+/// past it when the page opens again.
 Future<void> _holdRelayPage(ProviderContainer container) async {
-  container.listen(threadRepliesProvider(_args), (_, _) {});
+  final page = container.listen(threadRepliesProvider(_args), (_, _) {});
   await container.read(threadRepliesProvider(_args).future);
+  page.close();
+  await pumpEventQueue();
 }
 
+/// The page opens again over a held thread, if any.
 Future<List<String>> _newer(ProviderContainer container) async {
+  final page = container.exists(threadRepliesProvider(_args))
+      ? container.listen(threadRepliesProvider(_args), (_, _) {})
+      : null;
   final listening = container.listen(
     storedNewerRepliesProvider(_args),
     (_, _) {},
   );
+  await pumpEventQueue();
   await container.read(storedThreadRepliesProvider(_args).future);
   await pumpEventQueue();
   final ids = [for (final reply in listening.read()) reply.id];
   listening.close();
+  page?.close();
   await pumpEventQueue();
   return ids;
 }
@@ -232,6 +246,33 @@ void main() {
       final pushed = _reply(_hex(4), 104);
       store.push(pushed);
       expect(await _newer(container), [pushed.id]);
+    });
+
+    test('a drain while the thread is closed reaches its first frame on '
+        'reopen', () async {
+      final store = _Store()..rows.addAll(relayRows);
+      var reads = 0;
+      final container = _threadContainer(
+        _Relay(relayRows),
+        store,
+        onRead: () {
+          reads++;
+        },
+      );
+      await _holdRelayPage(container);
+      expect(await _newer(container), isEmpty);
+
+      final pushed = _reply(_hex(4), 104);
+      store.push(pushed);
+      final before = reads;
+      container.read(pushInboxRevisionProvider.notifier).bump();
+      await pumpEventQueue();
+      expect(reads, before + 1, reason: 'read while the page is closed');
+
+      // Reopen: the first frame already holds the pushed reply.
+      container.listen(threadRepliesProvider(_args), (_, _) {});
+      final first = container.read(storedNewerRepliesProvider(_args));
+      expect([for (final reply in first) reply.id], [pushed.id]);
     });
 
     test('leaves replies at or before the cut', () async {
