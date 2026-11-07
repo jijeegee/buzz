@@ -39,8 +39,8 @@ type WelcomeAgent = {
   persona_id: string;
   status: string;
 };
-// Pollen retains the builtin:bumble persona identity.
-const WELCOME_PERSONAS = ["builtin:bumble", "builtin:fizz", "builtin:honey"];
+// The single Kuzi starter keeps the builtin:fizz persona identity.
+const WELCOME_PERSONAS = ["builtin:fizz"];
 
 /** Wait for bootstrap identities so a scenario can author their relay events. */
 export async function waitForWelcomeTeam(page: Page): Promise<WelcomeAgent[]> {

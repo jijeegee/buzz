@@ -741,7 +741,7 @@ fn built_in_persona_version_update(
     now: &str,
 ) -> Option<(String, String)> {
     let mut current =
-        crate::managed_agents::built_in_persona_definition(&legacy_match.persona_id, now)?;
+        crate::managed_agents::legacy_stock_persona_definition(&legacy_match.persona_id, now)?;
     let new_version = crate::managed_agents::persona_events::persona_content_hash(
         &crate::managed_agents::persona_events::persona_event_content(&current),
     );
@@ -757,7 +757,8 @@ fn built_in_persona_version_update(
 }
 
 fn replace_builtin_avatar(record: &mut serde_json::Value, persona_id: &str, now: &str) -> bool {
-    let Some(replacement) = crate::managed_agents::built_in_persona_avatar_url(persona_id) else {
+    let Some(replacement) = crate::managed_agents::legacy_stock_persona_avatar_url(persona_id)
+    else {
         return false;
     };
     let Some(record) = record.as_object_mut() else {

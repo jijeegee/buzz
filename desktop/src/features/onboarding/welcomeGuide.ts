@@ -26,7 +26,7 @@ import type {
 import { normalizePubkey } from "@/shared/lib/pubkey";
 import { isWelcomeTeamOwed, setWelcomeTeamOwed } from "./welcome";
 
-export const WELCOME_GUIDE_AGENT_NAME = "Fizz";
+export const WELCOME_GUIDE_AGENT_NAME = "Kuzi";
 export const WELCOME_GUIDE_PERSONA_ID = "builtin:fizz";
 export const WELCOME_TEAM_ID = "builtin-team:welcome";
 export const WELCOME_GUIDE_INTRO_MARKER = "kuzz-welcome-intro.v1";
@@ -34,7 +34,7 @@ const LEGACY_WELCOME_GUIDE_AGENT_NAME = "Kit";
 export const LEGACY_WELCOME_GUIDE_SYSTEM_PROMPT =
   "You are Kit, Sprout's friendly welcome guide. Help new users understand the community, channels, messages, and agents. Keep introductions concise, practical, and warm.";
 export const WELCOME_GUIDE_INTRO_MESSAGE =
-  "Hi, I'm Fizz. Welcome to Kuzz.\n\nI can help you get oriented, answer questions, and make the first few steps feel less mysterious.\n\nFeel free to ask me what else you can do in Kuzz, or just talk through what you want to build.";
+  "Hi, I'm Kuzi. Welcome to Kuzz.\n\nI can help you get oriented, answer questions, and make the first few steps feel less mysterious.\n\nFeel free to ask me what else you can do in Kuzz, or just talk through what you want to build.";
 
 export type WelcomeTeamRole = "lead" | "teammate";
 
@@ -44,14 +44,17 @@ export type WelcomeTeamStarterDefinition = Readonly<{
   role: WelcomeTeamRole;
 }>;
 
-/** Stable identities used to provision the Rust-seeded Welcome Team. */
+/**
+ * Stable identities used to provision the Rust-seeded Welcome Team: the one
+ * Kuzi starter (persona id `builtin:fizz`). Honey and Pollen agents from
+ * older installs are left as they are and are no longer provisioned.
+ */
 export const WELCOME_TEAM_STARTERS = [
-  { name: "Fizz", personaId: "builtin:fizz", role: "lead" },
-  { name: "Honey", personaId: "builtin:honey", role: "teammate" },
-  { name: "Pollen", personaId: "builtin:bumble", role: "teammate" },
+  { name: "Kuzi", personaId: "builtin:fizz", role: "lead" },
 ] as const satisfies readonly WelcomeTeamStarterDefinition[];
 
-export type WelcomeTeamAgents = [ManagedAgent, ManagedAgent, ManagedAgent];
+/** The lead first, then any teammates. */
+export type WelcomeTeamAgents = [ManagedAgent, ...ManagedAgent[]];
 
 const welcomeTeamPromises = new Map<string, Promise<WelcomeTeamAgents>>();
 
@@ -358,7 +361,7 @@ async function welcomeStarterRunsElsewhere(
 /**
  * Ensure the complete built-in Welcome Team is ready for kickoff.
  * The team itself is Rust-seeded; this only activates personas, creates any
- * missing relay-scoped instances, and adds all three to Welcome as bots.
+ * missing relay-scoped instances, and adds them to Welcome as bots.
  */
 async function provisionWelcomeTeam(
   channelId: string,
@@ -431,14 +434,14 @@ async function provisionWelcomeTeam(
     const created = await createManagedAgent(desired);
     agents.push(created.agent);
   }
-  const [lead, honey, pollen] = agents;
-  if (!lead || !honey || !pollen) {
+  const [lead, ...teammates] = agents;
+  if (!lead || agents.length !== WELCOME_TEAM_STARTERS.length) {
     throw new Error("Welcome Team provisioning did not return every starter.");
   }
-  const welcomeAgents: WelcomeTeamAgents = [lead, honey, pollen];
+  const welcomeAgents: WelcomeTeamAgents = [lead, ...teammates];
   const leadPubkey = lead.pubkey;
-  for (const index of [1, 2] as const) {
-    const teammate = welcomeAgents[index];
+  for (let index = 1; index < welcomeAgents.length; index += 1) {
+    const teammate = welcomeAgents[index] as ManagedAgent;
     const accessUpdate = welcomeTeammateAccessUpdate(
       teammate,
       leadPubkey,

@@ -37,12 +37,18 @@ const fizz = agent("Fizz", "builtin:fizz", "f".repeat(64));
 const honey = agent("Honey", "builtin:honey", "h".repeat(64));
 const pollen = agent("Pollen", "builtin:bumble", "b".repeat(64));
 
-test("resolveWelcomeAgentSet orders agents by stable persona identity", () => {
-  assert.deepEqual(resolveWelcomeAgentSet([pollen, fizz, honey]), {
-    lead: fizz,
-    teammates: [honey, pollen],
+test("resolveWelcomeAgentSet resolves the single Kuzi starter by persona identity", () => {
+  const kuzi = agent("Kuzi", "builtin:fizz", "k".repeat(64));
+  assert.deepEqual(resolveWelcomeAgentSet([pollen, kuzi, honey]), {
+    lead: kuzi,
+    teammates: [],
   });
-  assert.equal(resolveWelcomeAgentSet([fizz, honey]), null);
+  // An upgraded install keeps its Fizz-named agent; identity is the persona.
+  assert.deepEqual(resolveWelcomeAgentSet([fizz]), {
+    lead: fizz,
+    teammates: [],
+  });
+  assert.equal(resolveWelcomeAgentSet([honey, pollen]), null);
 });
 
 test("opener uses current agent names and requests bounded simultaneous intros", () => {

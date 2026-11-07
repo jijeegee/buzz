@@ -50,21 +50,48 @@ fn merge_personas_adds_missing_built_ins() {
         .iter()
         .map(|record| record.display_name.as_str())
         .collect();
-    assert_eq!(display_names, vec!["Fizz", "Honey", "Pollen", "Host"]);
+    assert_eq!(display_names, vec!["Kuzi", "Host"]);
     let active_ids: Vec<&str> = records
         .iter()
         .filter(|record| record.is_active)
         .map(|record| record.id.as_str())
         .collect();
-    assert_eq!(
-        active_ids,
-        vec![
-            "builtin:fizz",
-            "builtin:honey",
-            "builtin:bumble",
-            "builtin:host"
-        ]
-    );
+    assert_eq!(active_ids, vec!["builtin:fizz", "builtin:host"]);
+}
+
+#[test]
+fn merge_personas_keeps_stored_pre_kuzi_starters_working() {
+    let now = "2026-11-07T00:00:00Z";
+    let stored: Vec<AgentDefinition> = ["builtin:fizz", "builtin:honey", "builtin:bumble"]
+        .iter()
+        .map(|id| {
+            let mut record = super::legacy_stock_persona_definition(id, "2026-03-19T00:00:00Z")
+                .expect("legacy stock persona");
+            record.is_builtin = true;
+            record
+        })
+        .collect();
+
+    let (records, changed) = merge_personas(stored.clone(), now);
+
+    assert!(changed);
+    for original in &stored {
+        let merged = records
+            .iter()
+            .find(|record| record.id == original.id)
+            .expect("stored starter must stay");
+        // Content is untouched: no rename of the stored Fizz, no retirement.
+        assert_eq!(merged.display_name, original.display_name);
+        assert_eq!(merged.system_prompt, original.system_prompt);
+        assert_eq!(merged.avatar_url, original.avatar_url);
+        assert_eq!(merged.name_pool, original.name_pool);
+        assert!(merged.is_active);
+    }
+    let builtin = |id: &str| records.iter().find(|r| r.id == id).unwrap().is_builtin;
+    assert!(builtin("builtin:fizz"));
+    // Honey and Pollen are no longer seeded: demoted to normal personas.
+    assert!(!builtin("builtin:honey"));
+    assert!(!builtin("builtin:bumble"));
 }
 
 #[test]

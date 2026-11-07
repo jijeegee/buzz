@@ -34,8 +34,10 @@ struct BuiltInTeam {
 const BUILT_IN_TEAMS: &[BuiltInTeam] = &[BuiltInTeam {
     id: "builtin-team:welcome",
     name: "Welcome Team",
-    description: Some("A friendly starter trio ready to help you plan, create, and ship."),
-    persona_ids: &["builtin:fizz", "builtin:honey", "builtin:bumble"],
+    description: Some("A friendly starter agent ready to help you plan, create, and ship."),
+    // Only the Kuzi starter (id `builtin:fizz`). A stored copy keeps whatever
+    // members it already has: merge_teams preserves existing membership.
+    persona_ids: &["builtin:fizz"],
 }];
 
 // Built-in teams that have been retired. A stored copy that still exactly
