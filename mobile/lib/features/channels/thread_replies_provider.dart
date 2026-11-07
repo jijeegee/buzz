@@ -673,17 +673,69 @@ class ThreadWindowNotifier extends Notifier<ThreadWindow?> {
         root: args.rootId,
         before: (cursor.createdAt, cursor.eventId),
       );
+      final relay = queryThreadWindow(
+        check?.query ?? session.queryRelay,
+        filter,
+        rootId: args.rootId,
+        held: heldOverlayIds,
+      );
+      // Mode on: the store's older window draws at once; the check's answer
+      // follows, and a different page replaces it.
+      final drawing = check?.stored;
+      List<NostrEvent>? storedEvents;
+      if (drawing != null) {
+        // The page may fail while the store draws; it is awaited below.
+        unawaited(relay.then((_) {}, onError: (Object _) {}));
+        storedEvents = await drawing.catchError((Object _) => null);
+      }
+      final drawn = storedEvents == null
+          ? null
+          : parseThreadWindowPage(
+              storedEvents,
+              channelId: args.channelId,
+              rootId: args.rootId,
+            );
+      var shown = false;
+      if (drawn != null && ref.mounted && state?.state.olderCursor == cursor) {
+        _recordPage(drawn.events, drawn.overlays);
+        state = mergeOlderThreadPage(state, drawn);
+        shown = true;
+      }
+      final events = await relay;
+      if (identical(events, storedEvents) && drawn != null) {
+        return shown && drawn.events.isNotEmpty;
+      }
       final page = parseThreadWindowPage(
-        await queryThreadWindow(
-          check?.query ?? session.queryRelay,
-          filter,
-          rootId: args.rootId,
-          held: heldOverlayIds,
-        ),
+        events,
         channelId: args.channelId,
         rootId: args.rootId,
       );
       if (!ref.mounted || page == null) return false;
+      final held = state;
+      if (shown && held != null) {
+        // The stored page's rows the relay's lacks go, unless the window
+        // started over meanwhile.
+        final drawnCursor = drawn!.hasMore ? drawn.nextCursor : null;
+        if (held.state.olderCursor != drawnCursor) return false;
+        final kept = {for (final event in page.events) event.id};
+        final gone = {
+          for (final event in drawn.events)
+            if (!kept.contains(event.id)) event.id,
+        };
+        state = ThreadWindow(
+          events: [
+            for (final event in held.events)
+              if (!gone.contains(event.id)) event,
+          ],
+          state: ThreadWindowState(
+            hasOlder: true,
+            olderCursor: cursor,
+            newestCovered: held.state.newestCovered,
+            hasNewer: held.state.hasNewer,
+            newerCursor: held.state.newerCursor,
+          ),
+        );
+      }
       // A newest-page reload may have restarted the window meanwhile; this
       // page then no longer borders what is held.
       if (state?.state.olderCursor != cursor) return false;

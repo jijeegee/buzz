@@ -376,6 +376,22 @@ Map<String, ChannelWindowLiveThreadSummary> _retainLiveSummariesAfterPage(
   };
 }
 
+/// Puts the relay's older [page] in place of [stale], the same page drawn
+/// from the device store first (window_check.dart). Pages after [stale]
+/// went on from its cursor, so they go too and load again on scroll.
+ChannelWindowStore replaceOlderChannelWindowPage(
+  ChannelWindowStore current,
+  ChannelWindowPage stale,
+  ChannelWindowPage page,
+) {
+  final at = current.pages.indexWhere((held) => identical(held, stale));
+  if (at <= 0) throw Exception('The stored page is not an older page held.');
+  return appendOlderChannelWindow(
+    current.copyWith(pages: current.pages.sublist(0, at)),
+    page,
+  );
+}
+
 ChannelWindowStore appendOlderChannelWindow(
   ChannelWindowStore current,
   ChannelWindowPage page,

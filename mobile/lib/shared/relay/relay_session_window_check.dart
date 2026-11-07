@@ -40,11 +40,14 @@ extension RelaySessionWindowCheck on RelaySessionNotifier {
       beginReplace: () {
         final capture = store.headSent(lease, [room]);
         return (events) async {
-          if (events == null) {
+          final fetched = events == null
+              ? null
+              : pageWindowFacts(events, page.kinds);
+          // Never for an answer without bounds (a refused window).
+          if (fetched == null || !fetched.bounded) {
             store.recordHeads(capture, lease, const []);
             return null;
           }
-          final fetched = pageWindowFacts(events, page.kinds);
           final queued = store.replaceWindow(capture, _storeLease, (
             window: window,
             ids: fetched.ids,
@@ -52,12 +55,14 @@ extension RelaySessionWindowCheck on RelaySessionNotifier {
             hasMore: fetched.hasMore,
           ));
           if (!queued) return null;
-          // The stored window as the page's: as many rows as it held.
-          final again = await read(
-            fetched.hasMore ? fetched.facts.count : page.limit,
-          );
+          // The stored window as the page's, for the loop guard: rows
+          // newer than its newest arrived live since and are left out.
+          final again = await read(page.limit + windowGuardSlack);
           if (again == null) return null;
-          return (oldestId: again.oldest?.$2, count: again.rows.length);
+          return storedAsPage([
+            for (final row in again.rows)
+              (row['created_at'] as int, row['id'] as String),
+          ], fetched);
         };
       },
       liveRows: () => _liveRowsByRoom[room] ?? 0,

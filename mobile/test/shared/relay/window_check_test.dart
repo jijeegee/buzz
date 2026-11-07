@@ -82,6 +82,9 @@ class _Fake {
   /// Holds the check's answer back until completed.
   Completer<void>? checkHeld;
 
+  /// Holds the store read back until completed.
+  Completer<void>? readHeld;
+
   int reads = 0;
   int checks = 0;
   int marks = 0;
@@ -100,6 +103,7 @@ class _Fake {
     limit: _limit,
     readStored: () async {
       reads++;
+      await readHeld?.future;
       final facts = stored;
       if (facts == null) return null;
       return CheckedStoreWindow(
@@ -229,10 +233,15 @@ void main() {
   });
 
   test('a window not fully stored draws as before and fetches', () async {
-    final fake = _Fake(stored: null, answers: [], page: _page)..serverOn();
+    final fake = _Fake(
+      stored: null,
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+      page: _page,
+    )..serverOn();
     final opened = await fake.open();
     expect(opened.drawn, isNull);
-    expect(fake.checks, 0);
+    // The check went out beside the store read; the page did not wait.
+    expect(fake.checks, 1);
     expect(fake.fetches, 1);
     expect(fake.replaced, [_page]);
   });
@@ -284,8 +293,9 @@ void main() {
     expect(fake.fetches, 1);
     expect(fake.checks, 1);
     expect(fake.logs.single, contains('shadow equal'));
-    // Equal: the mark is only released.
-    expect(fake.replaced, [null]);
+    // The relay's mode was unknown: a probe takes no store mark.
+    expect(fake.replaced, isEmpty);
+    expect(fake.marks, 0);
   });
 
   test('shadow different: the page replaces the stored range', () async {
@@ -293,7 +303,7 @@ void main() {
       stored: (oldestId: 'a0', count: 3),
       answers: [_answer('a1', 3, WindowCheckMode.shadow)],
       page: _page,
-    );
+    )..gate.noteAnswer(_answer(null, 0, WindowCheckMode.shadow));
     await fake.open();
     expect(fake.fetches, 1);
     expect(fake.replaced, [_page]);
@@ -321,11 +331,11 @@ void main() {
     final first = await fake.open();
     expect(first.page, _page);
     expect(fake.checks, 1);
-    expect(fake.replaced, [null]);
+    expect(fake.replaced, isEmpty);
     // Then off: no open, so no store read, check or mark.
     expect(fake.begin(), isNull);
     expect(fake.reads, 1);
-    expect(fake.marks, 1);
+    expect(fake.marks, 0);
     fake.now = fake.now.add(windowCheckRetry);
     expect(fake.gate.before(_key), WindowCheckMode.shadow);
   });
@@ -370,6 +380,7 @@ void main() {
     expect(opened.page, _page);
     expect(fake.fetches, 1);
     expect(fake.begin(), isNull);
+    expect(fake.gate.before('room-2'), WindowCheckMode.on);
   });
 
   test('a shadow probe failing the check changes nothing', () async {
@@ -381,8 +392,10 @@ void main() {
     final opened = await fake.open();
     expect(opened.page, _page);
     expect(fake.fetches, 1);
-    expect(fake.replaced, [null]);
+    expect(fake.replaced, isEmpty);
+    // Only this window waits; the relay's mode is not taken as off.
     expect(fake.begin(), isNull);
+    expect(fake.gate.before('room-2'), WindowCheckMode.shadow);
   });
 
   test('later calls of the query are plain fetches', () async {
@@ -396,6 +409,107 @@ void main() {
     await open.query([_filter]);
     expect(fake.checks, 1);
     expect(fake.fetches, 1);
+  });
+
+  test('the equal answer is the very window drawn', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+    )..serverOn();
+    final open = fake.begin()!;
+    final drawn = await open.stored;
+    expect(identical(await open.query([_filter]), drawn), isTrue);
+  });
+
+  test('the check goes out without waiting for the store read', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+      page: _page,
+    )..serverOn();
+    fake.readHeld = Completer();
+    final open = fake.begin()!;
+    final page = open.query([_filter]);
+    await pumpEventQueue();
+    expect(fake.checks, 1);
+    expect(fake.fetches, 0);
+    fake.readHeld!.complete();
+    expect((await page).first.id, 'stored');
+    expect(fake.fetches, 0);
+  });
+
+  test('not fully stored: the page goes out without the check', () async {
+    final fake = _Fake(
+      stored: null,
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+      page: _page,
+    )..serverOn();
+    fake.checkHeld = Completer();
+    final page = await fake.begin()!.query([_filter]);
+    expect(page, _page);
+    expect(fake.fetches, 1);
+    fake.checkHeld!.complete();
+  });
+
+  test('a page without bounds never replaces stored rows', () async {
+    // A relay that refused the window answers `[]`.
+    final on = _Fake(
+      stored: (oldestId: 'a0', count: 3),
+      answers: [_answer('a1', 3, WindowCheckMode.on)],
+      page: const [],
+    )..serverOn();
+    await on.open();
+    expect(on.replaced, [null]);
+    expect(on.gate.isHeld(_key), isFalse);
+    final notStored = _Fake(stored: null, answers: [], page: const [])
+      ..serverOn();
+    await notStored.open();
+    expect(notStored.replaced, [null]);
+    final shadow = _Fake(
+      stored: (oldestId: 'a0', count: 3),
+      answers: [_answer('a1', 3, WindowCheckMode.shadow)],
+      page: const [],
+    )..gate.noteAnswer(_answer(null, 0, WindowCheckMode.shadow));
+    await shadow.open();
+    expect(shadow.replaced, [null]);
+  });
+
+  test('a check answered without bounds is a failure, not off', () async {
+    final fake = _Fake(
+      stored: (oldestId: 'a1', count: 3),
+      answers: [const <NostrEvent>[]],
+      page: _page,
+    )..serverOn();
+    final opened = await fake.open();
+    expect(opened.page, _page);
+    expect(fake.gate.before('room-2'), WindowCheckMode.on);
+  });
+
+  test('the loop guard leaves out rows newer than the page', () {
+    final page = pageWindowFacts(_page, _kinds);
+    // A live row (4000) arrived after the page.
+    final stored = [(4000, 'live'), (3000, 'a3'), (2000, 'a2'), (1000, 'a1')];
+    expect(storedAsPage(stored, page), page.facts);
+    // A row the replace did not remove still shows.
+    expect(
+      storedAsPage([
+        (3000, 'a3'),
+        (2500, 'x'),
+        (2000, 'a2'),
+        (1000, 'a1'),
+      ], page),
+      isNot(page.facts),
+    );
+    // A page with no more counts down to the start.
+    final whole = pageWindowFacts([
+      _row('a2', 2000),
+      _row('a1', 1000),
+      _bounds(hasMore: false),
+    ], _kinds);
+    expect(
+      storedAsPage([(2000, 'a2'), (1000, 'a1'), (500, 'a0')], whole),
+      isNot(whole.facts),
+    );
   });
 
   test('the check answer is read from the bounds event', () {

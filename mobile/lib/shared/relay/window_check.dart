@@ -111,6 +111,7 @@ typedef WindowFacts = ({String? oldestId, int count});
 typedef PageWindow = ({
   WindowFacts facts,
   (int, String)? oldest,
+  (int, String)? newest,
   Set<String> ids,
   bool hasMore,
   bool bounded,
@@ -118,6 +119,7 @@ typedef PageWindow = ({
 
 PageWindow pageWindowFacts(List<NostrEvent> page, List<int> kinds) {
   NostrEvent? oldest;
+  NostrEvent? newest;
   final ids = <String>{};
   var hasMore = false;
   var bounded = false;
@@ -134,16 +136,38 @@ PageWindow pageWindowFacts(List<NostrEvent> page, List<int> kinds) {
       break;
     }
     if (!kinds.contains(event.kind)) continue;
+    newest ??= event;
     oldest = event;
     ids.add(event.id);
   }
   return (
     facts: (oldestId: oldest?.id, count: ids.length),
     oldest: oldest == null ? null : (oldest.createdAt, oldest.id),
+    newest: newest == null ? null : (newest.createdAt, newest.id),
     ids: ids,
     hasMore: hasMore,
     bounded: bounded,
   );
+}
+
+/// Live rows the loop guard's re-read allows for above a fetched page.
+const windowGuardSlack = 64;
+
+/// [rows] (stored, newest first, `(created_at, id)`) as the window of the
+/// fetched [page], for the loop guard: rows newer than the page's newest
+/// row arrived since and are left out; then as many as the page held when
+/// it has more, else all down to the start. `null` for an empty page.
+WindowFacts? storedAsPage(List<(int, String)> rows, PageWindow page) {
+  final newest = page.newest;
+  if (newest == null) return null;
+  final below = [
+    for (final row in rows)
+      if (!(row.$1 > newest.$1 ||
+          (row.$1 == newest.$1 && row.$2.compareTo(newest.$2) < 0)))
+        row,
+  ];
+  final taken = page.hasMore ? below.take(page.facts.count).toList() : below;
+  return (oldestId: taken.lastOrNull?.$2, count: taken.length);
 }
 
 bool _sameFacts(WindowFacts stored, WindowCheckAnswer answer) =>
@@ -306,27 +330,56 @@ CheckedWindowOpen? openWindowCheck({
       (log ?? debugPrint)('[WindowCheck] $label $message');
   final clock = Stopwatch()..start();
 
-  /// The relay's answer, and its events: a relay that does not know the
-  /// check answers the page itself. Failures (a thread window's parser
-  /// rejecting `check`) are `null`: the window opens as before.
-  Future<(WindowCheckAnswer?, List<NostrEvent>?)> ask(NostrFilter page) =>
-      check(page).then(
-        (events) => (parseWindowCheckAnswer(events), events),
-        onError: (Object error) {
-          note('check failed: $error');
-          return (null, null);
-        },
-      );
+  /// The relay's answer to a check. A relay that does not know the check
+  /// answers with a bounds event and no `check` (`unsupported`; a room's
+  /// answer is then the page itself, `events`). Anything else (an error, an
+  /// answer without bounds) is a failure: this window opens as before and
+  /// is not checked again for a while; the relay's mode stays as it was.
+  Future<_Asked> ask(NostrFilter page) => check(page).then(
+    (events) {
+      final answer = parseWindowCheckAnswer(events);
+      if (answer != null) return _Asked(answer: answer);
+      if (pageWindowFacts(events, kinds).bounded) {
+        return _Asked(unsupported: true, events: events);
+      }
+      note('check answered without bounds');
+      return const _Asked();
+    },
+    onError: (Object error) {
+      note('check failed: $error');
+      return const _Asked();
+    },
+  );
+
+  /// Notes [asked] with the gate: the mode in force, or `null` when the
+  /// check failed.
+  WindowCheckMode? noteAsked(_Asked asked) {
+    if (asked.answer == null && !asked.unsupported) {
+      gate.hold(key);
+      return null;
+    }
+    return gate.noteAnswer(asked.answer);
+  }
+
   Future<CheckedStoreWindow?> read() => readStored().then<CheckedStoreWindow?>(
     (stored) => stored,
     onError: (_) => null,
   );
 
+  /// Replaces the page's range, never for an answer without bounds (a
+  /// relay that refused the window): that only releases the mark.
+  Future<WindowFacts?> replaceWith(
+    WindowReplace replace,
+    List<NostrEvent>? page,
+  ) => replace(
+    page != null && pageWindowFacts(page, kinds).bounded ? page : null,
+  );
+
   /// Replaces the page's range; still different after: held to the old path.
   Future<void> settle(WindowReplace replace, List<NostrEvent> page) async {
     final fetched = pageWindowFacts(page, kinds);
-    final stored = await replace(page);
-    if (stored == null) return;
+    final stored = await replaceWith(replace, page);
+    if (stored == null || !fetched.bounded) return;
     if (stored != fetched.facts) {
       gate.hold(key);
       note(
@@ -359,36 +412,43 @@ CheckedWindowOpen? openWindowCheck({
   var asked = false;
 
   if (pre == WindowCheckMode.shadow) {
-    // Beside the page: nothing waits for the check.
-    final replace = beginReplace();
+    // Beside the page: nothing waits for the check. A probe (the relay's
+    // mode unknown, or `off` and due again) only learns the mode: it takes
+    // no store mark and replaces nothing.
+    final probe = !gate.active;
+    final WindowReplace replace = probe ? (_) async => null : beginReplace();
     final stored = read();
     return CheckedWindowOpen._(
       stored: null,
       query: (filters) {
         if (asked || filters.length != 1) return fetch(filters);
         asked = true;
-        Future<(WindowCheckAnswer?, List<NostrEvent>?)?> asking() async {
+        Future<_Asked?> asking() async {
           final window = await stored;
-          return window == null ? null : ask(filters.single);
+          return window == null && probe ? null : ask(filters.single);
         }
 
         final answer = asking();
         return fetchThen(filters, replace, (page) async {
           final pageMs = clock.elapsedMilliseconds;
           final window = await stored;
+          final result = await answer;
+          final mode = result == null ? null : noteAsked(result);
+          final inUse = mode != null && mode != WindowCheckMode.off;
           if (window == null) {
-            // Only while the check is known to be in use: a probe of a
-            // relay that may be `off` changes nothing.
-            await replace(gate.active ? page : null);
+            // Not fully stored: the page stands for the stored rows while
+            // the check is in use.
+            await (inUse && !probe
+                ? replaceWith(replace, page)
+                : replace(null));
             return;
           }
-          final (result, _) = (await answer)!;
-          final mode = gate.noteAnswer(result);
-          if (result == null || mode == WindowCheckMode.off) {
+          final checked = result?.answer;
+          if (checked == null || !inUse) {
             await replace(null);
             return;
           }
-          final equal = _sameFacts(window.facts, result);
+          final equal = _sameFacts(window.facts, checked);
           note(
             'shadow ${equal ? 'equal' : 'different'} (check '
             '${clock.elapsedMilliseconds} ms, page $pageMs ms)',
@@ -399,52 +459,67 @@ CheckedWindowOpen? openWindowCheck({
     );
   }
 
-  // Mode on: the store's window draws at once; the check follows.
+  // Mode on: the store's window draws at once; the check goes out with the
+  // page's query, beside the store read.
   final window = read();
+  final drawn = window.then(
+    (window) => window?.response(hasMore: window.facts.count >= limit),
+  );
   return CheckedWindowOpen._(
-    stored: window.then(
-      (window) => window?.response(hasMore: window.facts.count >= limit),
-    ),
+    stored: drawn,
     query: (filters) async {
       if (asked || filters.length != 1) return fetch(filters);
       asked = true;
-      var stored = await window;
-      if (stored == null) {
+      final live = liveRows();
+      final asking = ask(filters.single);
+      final first = await window;
+      if (first == null) {
         note('not fully stored: page fetched');
+        unawaited(asking.then(noteAsked));
         final replace = beginReplace();
         return fetchThen(filters, replace, (page) async {
-          await replace(page);
+          await replaceWith(replace, page);
         });
       }
-      final live = liveRows();
-      var (answer, events) = await ask(filters.single);
-      var mode = gate.noteAnswer(answer);
-      if (answer == null) {
+      final result = await asking;
+      var mode = noteAsked(result);
+      if (result.unsupported && result.events != null) {
         // A relay without the check answered the page itself.
-        final page = events;
-        if (page != null && pageWindowFacts(page, kinds).bounded) return page;
+        return result.events!;
+      }
+      var answer = result.answer;
+      if (answer == null || mode == null || mode == WindowCheckMode.off) {
         return fetch(filters);
       }
-      if (mode == WindowCheckMode.off) return fetch(filters);
+      var stored = first;
       var equal = _sameFacts(stored.facts, answer);
       if (!equal && liveRows() != live) {
         // Rows arrived while the check was out: ask once more.
         final again = await read();
         if (again != null) {
-          final (second, _) = await ask(filters.single);
-          if (second != null) {
+          final second = await ask(filters.single);
+          final secondMode = noteAsked(second);
+          final secondAnswer = second.answer;
+          if (secondAnswer != null && secondMode != null) {
             stored = again;
-            answer = second;
-            mode = gate.noteAnswer(second);
+            answer = secondAnswer;
+            mode = secondMode;
             if (mode == WindowCheckMode.off) return fetch(filters);
-            equal = _sameFacts(again.facts, second);
+            equal = _sameFacts(again.facts, secondAnswer);
           }
         }
       }
       final checkMs = clock.elapsedMilliseconds;
       if (equal && mode == WindowCheckMode.on) {
         note('equal: the stored window stands ($checkMs ms)');
-        return stored.response(hasMore: answer.count >= limit);
+        final hasMore = answer.count >= limit;
+        // The very window drawn, when nothing changed: callers see it is
+        // the same and draw nothing again.
+        if (identical(stored, first) &&
+            hasMore == (first.facts.count >= limit)) {
+          return (await drawn)!;
+        }
+        return stored.response(hasMore: hasMore);
       }
       if (equal) {
         final page = await fetch(filters);
@@ -462,4 +537,15 @@ CheckedWindowOpen? openWindowCheck({
       return fetchThen(filters, replace, (page) => settle(replace, page));
     },
   );
+}
+
+/// One check's outcome inside [openWindowCheck].
+class _Asked {
+  const _Asked({this.answer, this.unsupported = false, this.events});
+
+  final WindowCheckAnswer? answer;
+
+  /// The relay answered with bounds and no `check`.
+  final bool unsupported;
+  final List<NostrEvent>? events;
 }
