@@ -17,6 +17,7 @@ import {
   WINDOW_CHECK_REASK_MS,
 } from "./windowCheckMode.ts";
 
+const BR = String.fromCharCode(10);
 const RELAY = "wss://relay.test";
 const key = { roomId: "room", rootId: null, cursor: null, limit: 3 };
 
@@ -25,7 +26,7 @@ const rows = [row("c", 30), row("b", 20), row("a", 10)];
 
 function storedWindow(overrides = {}) {
   return {
-    events: ["stored"],
+    events: rows,
     count: 3,
     oldest: { createdAt: 10, eventId: "a" },
     hasMore: true,
@@ -36,7 +37,14 @@ function storedWindow(overrides = {}) {
 
 /** A fake relay and store; `stores` are read one after another. */
 function setup({ stores, checks = [], live = () => 0, now = () => 1_000 }) {
-  const calls = { stored: 0, check: 0, replace: [], release: [], log: [] };
+  const calls = {
+    stored: 0,
+    check: 0,
+    replace: [],
+    release: [],
+    heads: [],
+    log: [],
+  };
   const restore = setWindowCheckDeps({
     stored: async () => {
       const next = stores[Math.min(calls.stored, stores.length - 1)];
@@ -46,7 +54,15 @@ function setup({ stores, checks = [], live = () => 0, now = () => 1_000 }) {
     check: async () => {
       const next = checks[Math.min(calls.check, checks.length - 1)];
       calls.check += 1;
-      return next ?? null;
+      if (next instanceof Error) throw next;
+      return next && "page" in next
+        ? next
+        : { answer: next ?? null, page: null };
+    },
+    withHeads: async (roomIds, request, answers) => {
+      const answer = await request();
+      calls.heads.push(...answers(answer).map((head) => ({ roomIds, head })));
+      return answer;
     },
     mark: async () => "mark",
     release: async (mark) => {
@@ -98,10 +114,44 @@ test("an equal check opens the stored window without a page", async () => {
   restore = fake.restore;
   const page = io();
   const answer = await checkedWindow(client(), key, page.io);
-  assert.deepEqual(answer, ["stored"]);
+  assert.equal(answer, rows);
   assert.deepEqual(page.fetches, []);
   assert.equal(fake.calls.check, 1);
-  assert.deepEqual(fake.calls.replace, []);
+});
+
+test("an equal check records what its page would have", async () => {
+  const fake = setup({ stores: [storedWindow()], checks: [equalAnswer] });
+  restore = fake.restore;
+  const page = io();
+  page.io.head = (events) => ({ roomId: "room", events });
+  await checkedWindow(client(), key, page.io);
+  // The page span, under the mark taken before the check.
+  assert.deepEqual(fake.calls.replace, [
+    {
+      mark: "mark",
+      windowKey: key,
+      oldest: { createdAt: 10, eventId: "a" },
+      ids: ["c", "b", "a"],
+    },
+  ]);
+  // The head span a newest window's request records.
+  assert.deepEqual(fake.calls.heads, [
+    { roomIds: ["room"], head: { roomId: "room", events: rows } },
+  ]);
+});
+
+test("a different check records no head of its own and frees its mark", async () => {
+  const fake = setup({
+    stores: [storedWindow({ count: 2 }), storedWindow()],
+    checks: [equalAnswer],
+  });
+  restore = fake.restore;
+  const page = io();
+  page.io.head = (events) => ({ roomId: "room", events });
+  await checkedWindow(client(), key, page.io);
+  assert.deepEqual(fake.calls.heads, []);
+  assert.deepEqual(fake.calls.release, ["mark"]);
+  assert.equal(fake.calls.replace.length, 1, "only the refetched page");
 });
 
 test("a row missing from the store refetches and replaces its stretch", async () => {
@@ -204,7 +254,48 @@ test("a window still different after its refetch takes today's path for a while"
   assert.equal(fake.calls.check, 3, "checked again after the guard");
 });
 
-test("shadow fetches an equal window anyway and logs whether it agreed", async () => {
+const tick = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+test("shadow fetches alongside the check, never after it", async () => {
+  noteServerWindowCheckMode(RELAY, "shadow", 1_000);
+  const fake = setup({ stores: [storedWindow()] });
+  restore = fake.restore;
+  let answerCheck = () => {};
+  const restoreCheck = setWindowCheckDeps({
+    check: () =>
+      new Promise((resolve) => {
+        answerCheck = () =>
+          resolve({ answer: { ...equalAnswer, mode: "shadow" }, page: null });
+      }),
+  });
+  const page = io();
+  // The check never answers before the page: the open does not wait on it.
+  assert.equal(await checkedWindow(client(), key, page.io), "relay");
+  assert.deepEqual(page.fetches, [true]);
+  assert.equal(fake.calls.replace.length, 1, "the page is kept");
+  answerCheck();
+  await tick();
+  restoreCheck();
+  assert.match(fake.calls.log.join(BR), /shadow room room equal, page agrees/);
+});
+
+test("shadow logs a different window and keeps the page", async () => {
+  noteServerWindowCheckMode(RELAY, "shadow", 1_000);
+  const fake = setup({
+    stores: [storedWindow({ count: 2 }), storedWindow()],
+    checks: [{ ...equalAnswer, mode: "shadow" }],
+  });
+  restore = fake.restore;
+  const page = io();
+  await checkedWindow(client(), key, page.io);
+  await tick();
+  assert.deepEqual(page.fetches, [true]);
+  assert.equal(fake.calls.replace.length, 1);
+  assert.match(fake.calls.log.join(BR), /shadow room room differ/);
+});
+
+test("a first check that says shadow fetches today's page", async () => {
+  resetWindowCheckModes();
   const fake = setup({
     stores: [storedWindow()],
     checks: [{ ...equalAnswer, mode: "shadow" }],
@@ -214,23 +305,60 @@ test("shadow fetches an equal window anyway and logs whether it agreed", async (
   assert.equal(await checkedWindow(client(), key, page.io), "relay");
   assert.deepEqual(page.fetches, [false]);
   assert.deepEqual(fake.calls.replace, []);
-  assert.match(
-    fake.calls.log.join("\n"),
-    /shadow room room equal, page agrees/,
-  );
 });
 
-test("shadow refetches and replaces a different window like on", async () => {
+test("a thread check that fails is today's path, without a word", async () => {
+  const threadKey = { ...key, rootId: "root" };
   const fake = setup({
-    stores: [storedWindow({ count: 2 }), storedWindow()],
-    checks: [{ ...equalAnswer, mode: "shadow" }],
+    stores: [storedWindow()],
+    checks: [new Error("unknown filter field")],
   });
   restore = fake.restore;
   const page = io();
-  await checkedWindow(client(), key, page.io);
-  assert.deepEqual(page.fetches, [true]);
-  assert.equal(fake.calls.replace.length, 1);
-  assert.match(fake.calls.log.join("\n"), /differ, refetched/);
+  assert.equal(await checkedWindow(client(), threadKey, page.io), "relay");
+  assert.deepEqual(page.fetches, [false]);
+  assert.deepEqual(fake.calls.log, []);
+  assert.deepEqual(fake.calls.release, ["mark"]);
+  // Counted as off: the next open asks nothing.
+  const next = io();
+  await checkedWindow(client(), threadKey, next.io);
+  assert.deepEqual(next.fetches, [false]);
+  assert.equal(fake.calls.check, 1);
+});
+
+test("an old relay's page answer to a room check is the page", async () => {
+  resetWindowCheckModes();
+  let now = 1_000;
+  const oldPage = [row("c", 30), { id: "bounds", kind: 39006 }];
+  const fake = setup({
+    stores: [storedWindow()],
+    checks: [{ answer: null, page: oldPage }],
+    now: () => now,
+  });
+  restore = fake.restore;
+  const first = io();
+  first.io.fromCheckPage = (events) => events;
+  first.io.head = (events) => ({ roomId: "room", events });
+  assert.equal(await checkedWindow(client(), key, first.io), oldPage);
+  assert.deepEqual(first.fetches, [], "one request, not two");
+  assert.deepEqual(fake.calls.heads, [
+    { roomIds: ["room"], head: { roomId: "room", events: oldPage } },
+  ]);
+
+  // Within ten minutes: today's request only.
+  now += WINDOW_CHECK_REASK_MS - 1;
+  const second = io();
+  await checkedWindow(client(), key, second.io);
+  assert.deepEqual(second.fetches, [false]);
+  assert.equal(fake.calls.check, 1);
+
+  // Then asked again, once.
+  now += 1;
+  const third = io();
+  third.io.fromCheckPage = (events) => events;
+  await checkedWindow(client(), key, third.io);
+  assert.equal(fake.calls.check, 2);
+  assert.deepEqual(third.fetches, []);
 });
 
 test("off is today's path, asked again after ten minutes", async () => {
@@ -298,7 +426,7 @@ test("live rows arriving during the check compare once more", async () => {
     check: async () => {
       fake.calls.check += 1;
       live += 1;
-      return equalAnswer;
+      return { answer: equalAnswer, page: null };
     },
   });
   const page = io();

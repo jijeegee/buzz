@@ -102,8 +102,32 @@ fn check_answer(events: &[nostr::Event], thread: bool) -> Option<WindowCheckAnsw
     })
 }
 
+/// What a check got back: the check, or, from a relay without the check
+/// that answered a room check with the whole page, that page.
+#[derive(serde::Serialize, Debug, PartialEq)]
+pub struct WindowCheckResult {
+    check: Option<WindowCheckAnswer>,
+    page: Option<Vec<serde_json::Value>>,
+}
+
+fn check_result(events: &[nostr::Event], thread: bool) -> WindowCheckResult {
+    let check = check_answer(events, thread);
+    let one_bounds = events
+        .iter()
+        .filter(|event| event.kind.as_u16() == KIND_ROOM_BOUNDS)
+        .count()
+        == 1;
+    let page = (check.is_none() && !thread && one_bounds).then(|| {
+        events
+            .iter()
+            .filter_map(|event| serde_json::to_value(event).ok())
+            .collect()
+    });
+    WindowCheckResult { check, page }
+}
+
 /// Asks the relay to check one window: the same page query, answered with
-/// its bounds only. `None` when the relay has no check.
+/// its bounds only. No check when the relay has none.
 #[tauri::command]
 pub async fn check_window(
     channel_id: String,
@@ -111,7 +135,7 @@ pub async fn check_window(
     cursor: Option<ThreadCursor>,
     limit_rows: Option<u32>,
     state: State<'_, AppState>,
-) -> Result<Option<WindowCheckAnswer>, String> {
+) -> Result<WindowCheckResult, String> {
     let filter = check_filter(
         &channel_id,
         root_id.as_deref(),
@@ -119,7 +143,7 @@ pub async fn check_window(
         window_limit(limit_rows),
     );
     let events = query_relay(&state, &[filter]).await?;
-    Ok(check_answer(&events, root_id.is_some()))
+    Ok(check_result(&events, root_id.is_some()))
 }
 
 /// A window as the store holds it.
@@ -286,7 +310,14 @@ mod tests {
     #[test]
     fn a_relay_without_the_check_answers_none() {
         let page = bounds(KIND_ROOM_BOUNDS, r#"{"has_more":false,"next_cursor":null}"#);
-        assert_eq!(check_answer(&[page], false), None);
+        assert_eq!(check_answer(&[page.clone()], false), None);
         assert_eq!(check_answer(&[], false), None);
+        // An old relay's room answer is the page itself: used as the page.
+        let result = check_result(&[page.clone()], false);
+        assert_eq!(result.check, None);
+        assert_eq!(result.page.as_ref().map(Vec::len), Some(1));
+        // Never for a thread, nor for an answer that is no page.
+        assert_eq!(check_result(&[page], true).page, None);
+        assert_eq!(check_result(&[], false).page, None);
     }
 }

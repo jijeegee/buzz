@@ -1005,15 +1005,22 @@ window (newest or older) by one path (`windowCheck.ts`):
    counts the same kinds by the same top-level rule, without deleted rows
    (thread windows never count the root). Reactions and edits are not
    checked.
-3. Equal: mode `on` draws the stored window and asks for no page; `shadow`
-   still fetches and logs whether the page agreed. Different: if live rows
+3. Equal: mode `on` answers with the stored window and asks for no page,
+   recording what that page would have (its page span, and for a newest
+   window its head span). `shadow` fetches the page alongside the check
+   (never after it) and logs whether they agreed. Different: if live rows
    for the room arrived while the check was out, it checks once more;
-   otherwise the page is fetched and replaces the stored range as in 1. A
-   window still different right after its refetch takes the old path for 10
-   minutes (per room or thread).
+   otherwise the page is fetched, replaces the stored range as in 1, and
+   the open redraws with it. A window still different right after its
+   refetch takes the old path for 10 minutes (per room or thread).
+
+A newest room or thread window paints its stored rows first in every mode
+(`openChannelWindowEvents`, `loadNewestThreadReplies`); the check runs
+behind the paint, in place of the relay request that follows it today.
 
 The mode is the relay's, from its latest check answer (a relay without the
-check counts as `off`), unless Settings > Experiments > Window check
+check, or whose check fails, counts as `off`; one that answers a room check
+with the whole page has that page used), unless Settings > Experiments > Window check
 overrides it. The first window of a run always sends a check; `off` is the
 old path, asked again after 10 minutes. A catch-up that skips a room (7-day
 limit) or gives it up (page cap) forgets its head and page spans, so its

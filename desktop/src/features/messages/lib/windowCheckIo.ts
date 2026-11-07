@@ -6,6 +6,10 @@
 import type { PageRows, WindowCursor, WindowIo } from "./windowCheck";
 import { getChannelWindowEvents } from "@/shared/api/channelWindow";
 import {
+  recordsStoreHead,
+  roomWindowAnswer,
+} from "@/shared/api/relayStoreHeads";
+import {
   getThreadWindows,
   type ThreadWindowPage,
 } from "@/shared/api/threadWindow";
@@ -68,11 +72,16 @@ export function roomWindowIo(
   limit: number,
   options: { storeHead?: boolean } = {},
 ): WindowIo<RelayEvent[]> {
+  const records = cursor === null && recordsStoreHead(options, limit);
   return {
     fetch: () => getChannelWindowEvents(roomId, cursor, limit, options),
     page: roomPageRows,
     // The store answers a room window in the relay's shape, bounds included.
     fromStore: (stored) => stored.events,
+    fromCheckPage: (events) => events,
+    ...(records
+      ? { head: (events: RelayEvent[]) => roomWindowAnswer(roomId, events) }
+      : {}),
   };
 }
 
@@ -84,6 +93,7 @@ export function threadWindowIo(
   limit: number,
   options: { storeHead?: boolean } = {},
 ): WindowIo<ThreadWindowPage | null> {
+  const records = cursor === null && recordsStoreHead(options, limit);
   return {
     fetch: async (includeAux) => {
       const [page] = await getThreadWindows(
@@ -102,5 +112,19 @@ export function threadWindowIo(
       nextCursor: stored.hasMore ? stored.oldest : null,
       direction: "older",
     }),
+    ...(records
+      ? {
+          head: (page: ThreadWindowPage | null) =>
+            page
+              ? {
+                  roomId: channelId,
+                  rootId,
+                  hasMore: page.hasMore,
+                  nextCursor: page.nextCursor,
+                  events: page.events,
+                }
+              : null,
+        }
+      : {}),
   };
 }
