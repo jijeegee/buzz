@@ -9,6 +9,7 @@ import 'package:kuzz/features/activity/feed_item.dart';
 import 'package:kuzz/features/activity/inbox_local_state_provider.dart';
 import 'package:kuzz/features/activity/inbox_summary.dart';
 import 'package:kuzz/features/activity/inbox_summary_provider.dart';
+import 'package:kuzz/features/activity/reminders_provider.dart';
 import 'package:kuzz/features/age_gate/age_signal_provider.dart';
 import 'package:kuzz/features/channels/channel_preload.dart';
 import 'package:kuzz/features/channels/thread_replies_provider.dart';
@@ -274,6 +275,7 @@ void main() {
       h.container.listen(inboxSummaryProvider, (_, _) {}),
       h.container.listen(profileProvider, (_, next) => record(next.value)),
       h.container.listen(blockedUsersProvider, (_, _) {}),
+      h.container.listen(remindersProvider, (_, next) => record(next.value)),
     ];
     addTearDown(() {
       for (final subscription in subscriptions) {
@@ -298,12 +300,25 @@ void main() {
     h.container.read(blockedUsersProvider.notifier).state = const AsyncData({
       'blocked-by-jiho',
     });
+    final reminders = [
+      const Reminder(
+        id: 'r-jiho',
+        notBefore: null,
+        status: 'pending',
+        target: null,
+        note: 'from Jiho',
+        createdAt: 1,
+        eventId: 'e-jiho',
+      ),
+    ];
+    h.container.read(remindersProvider.notifier).state = AsyncData(reminders);
 
     await h.openSettings(tester);
     await h.tapRow(tester, h.nodal);
 
     expect(shown, isNot(contains(same(feed))));
     expect(shown, isNot(contains(same(profile))));
+    expect(shown, isNot(contains(same(reminders))));
     expect(h.container.read(inboxSummaryProvider).value?.sentRead, isEmpty);
     expect(
       h.container.read(blockedUsersProvider).value ?? const <String>{},

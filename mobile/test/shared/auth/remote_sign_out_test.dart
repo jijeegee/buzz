@@ -29,6 +29,7 @@ class _RecordingAuth extends AuthNotifier {
     String communityId, {
     bool deviceOnly = false,
     bool Function()? isCurrent,
+    bool unfinishedOnly = false,
   }) async {
     communitySignOuts.add((communityId, deviceOnly));
     fences.add(isCurrent);

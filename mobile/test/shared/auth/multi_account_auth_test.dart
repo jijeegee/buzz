@@ -40,6 +40,7 @@ class _Harness {
   final messages = _RecordingStore();
   final heads = _RecordingHeads();
   final ended = <String>[];
+  final markedWhenEnded = <bool>[];
   final journaled = <String>[];
   final pending = PendingBackupKeyStore(storage: FakeSecureStorage());
   Object? enderError;
@@ -70,6 +71,10 @@ class _Harness {
           community, {
           required deviceOnly,
         }) async {
+          final row = (await storage.loadAll()).singleWhere(
+            (saved) => saved.id == community.id,
+          );
+          markedWhenEnded.add(row.signingOut);
           if (enderError case final error?) throw error;
           ended.add(community.id);
         }),
@@ -209,6 +214,30 @@ void main() {
 
       expect(h.journaled, isEmpty);
       expect((await h.row(a.id)).signedOut, isFalse);
+      expect((await h.row(a.id)).signingOut, isFalse);
+    });
+
+    test('sign-out marks the row before ending its session', () async {
+      final h = _Harness();
+      await h.start([a, b]);
+
+      await h.auth.signOutCommunity(b.id, deviceOnly: true);
+
+      expect(h.markedWhenEnded, [true]);
+      final row = await h.row(b.id);
+      expect(row.signedOut, isTrue);
+      expect(row.signingOut, isFalse);
+    });
+
+    test('signing in again clears a cut-short sign-out', () async {
+      final h = _Harness();
+      await h.start([a.copyWith(signingOut: true), b], activeId: b.id);
+
+      await h.auth.authenticateWithCommunity(
+        (await h.row(a.id)).copyWith(signingOut: true),
+      );
+
+      expect((await h.row(a.id)).signingOut, isFalse);
     });
 
     test('a fallback with no key goes to its sign-in page', () async {

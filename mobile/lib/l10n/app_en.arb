@@ -1461,6 +1461,10 @@
   "@settingsAddAccount": {
     "description": "Settings page, last row of the account list; opens sign-in. Short."
   },
+  "settingsSwitchAccountFailed": "Couldn’t switch accounts. Try again.",
+  "@settingsSwitchAccountFailed": {
+    "description": "Settings page, short message at the bottom of the screen when tapping another account in the account list fails."
+  },
   "settingsAccountNoName": "Account",
   "@settingsAccountNoName": {
     "description": "Settings page, name of an account whose profile has not loaded yet. Short."
@@ -1473,11 +1477,11 @@
   "@settingsSignOutTitle": {
     "description": "Sign out confirmation dialog, title. Short."
   },
-  "settingsSignOutBody": "You’ll be signed out on this device. Sign in to come back — your messages stay here.",
+  "settingsSignOutBody": "You’ll be signed out on this device. Your messages are removed from it and come back when you sign in again.",
   "@settingsSignOutBody": {
     "description": "Sign out confirmation dialog, body."
   },
-  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Sign in to come back — your communities and messages stay here.",
+  "settingsSignOutBodyCommunities": "You’ll be signed out of all your communities on this device. Your messages are removed from it and come back when you sign in again.",
   "@settingsSignOutBodyCommunities": {
     "description": "Sign out confirmation dialog, body when the user has several communities."
   },
@@ -2193,6 +2197,10 @@
   "signInWelcome": "Welcome to Kuzz",
   "@signInWelcome": {
     "description": "Sign-in page, big heading for a new user. 'Kuzz' is the app name."
+  },
+  "signInAddAccountTitle": "Add an account",
+  "@signInAddAccountTitle": {
+    "description": "Sign-in page opened from Settings > Add account, big heading. Another account is already signed in on this phone. Short."
   },
   "signInExistingAccountTitle": "Existing account sign-in",
   "@signInExistingAccountTitle": {

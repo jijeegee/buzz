@@ -31,6 +31,7 @@ Future<void> _settle() async {
 void main() {
   late FakeAuthServer server;
   late FakeRefreshTokenStore tokens;
+  late FakeRefreshTokenStore keyTokens;
   late CommunityStorage storage;
   late FakeClock clock;
   late List<String> rotated;
@@ -72,9 +73,7 @@ void main() {
         communitySnapshotWriterProvider.overrideWithValue((_) async {}),
         authHttpClientProvider.overrideWithValue(server.client),
         refreshTokenStoreProvider.overrideWithValue(tokens),
-        keyBackupRefreshTokenStoreProvider.overrideWithValue(
-          FakeRefreshTokenStore(),
-        ),
+        keyBackupRefreshTokenStoreProvider.overrideWithValue(keyTokens),
         pendingBackupKeyStoreProvider.overrideWithValue(
           PendingBackupKeyStore(storage: FakeSecureStorage()),
         ),
@@ -98,6 +97,7 @@ void main() {
   setUp(() {
     server = FakeAuthServer();
     tokens = FakeRefreshTokenStore();
+    keyTokens = FakeRefreshTokenStore();
     storage = CommunityStorage(secure: FakeSecureStorage());
     clock = FakeClock(DateTime.utc(2026, 10, 5, 12));
     rotated = [];
@@ -279,8 +279,68 @@ void main() {
       expect(tokens.data[SessionKey(_origin, _first)], isNotNull);
     });
 
-    test('with a key reaches the sign-in page when it is active', () async {
+    test('with a key is left alone, key and all, when it is active', () async {
+      // A phone restored from a backup: the row came back, the
+      // this-device-only session did not.
       final orphan = keyRow('account-a');
+      await storage.save(orphan);
+      await storage.saveActiveId(orphan.id);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      final row = await saved(orphan);
+      expect(row.signedOut, isFalse);
+      expect(row.nsec, orphan.nsec);
+      expect(container.read(authProvider).value?.community?.id, orphan.id);
+    });
+
+    test('with a key is left alone when it is not on screen', () async {
+      final active = account(_first);
+      final orphan = keyRow('account-a');
+      await seed(active);
+      await storage.save(orphan);
+      await storage.saveActiveId(active.id);
+      answerRotations(1);
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      final row = await saved(orphan);
+      expect(row.signedOut, isFalse);
+      expect(row.nsec, orphan.nsec);
+    });
+
+    test('with a key and a refused refresh is signed out', () async {
+      final active = account(_first);
+      final ended = keyRow('account-a');
+      await seed(active);
+      await storage.save(ended);
+      keyTokens.data[SessionKey(
+        _origin,
+        'account-a',
+      )] = const StoredTokenSession(
+        refreshToken: 'bzr_key',
+        principalId: 'account-a',
+      );
+      await storage.saveActiveId(active.id);
+      answerRotations(1);
+      server.refreshResponses.add(
+        (_) => FakeAuthServer.authError(401, 'token_revoked'),
+      );
+      open();
+      await container.read(authProvider.future);
+      await _settle();
+
+      final row = await saved(ended);
+      expect(row.signedOut, isTrue);
+      expect(row.nsec, isNull);
+      expect((await saved(active)).signedOut, isFalse);
+    });
+
+    test('with a key and a cut-short sign-out reaches the sign-in page '
+        'when it is active', () async {
+      final orphan = keyRow('account-a').copyWith(signingOut: true);
       await storage.save(orphan);
       await storage.saveActiveId(orphan.id);
       open();
@@ -293,8 +353,9 @@ void main() {
       expect((await saved(orphan)).signedOut, isTrue);
     });
 
-    test('with a key gives way to another account when it is active', () async {
-      final orphan = keyRow('account-a');
+    test('with a key and a cut-short sign-out gives way to another account '
+        'when it is active', () async {
+      final orphan = keyRow('account-a').copyWith(signingOut: true);
       final other = account(_first);
       await storage.save(orphan);
       await seed(other);
@@ -326,6 +387,26 @@ void main() {
         TokenSessionStatus.signedOut,
       );
     });
+  });
+
+  test('a sign-out cut short is finished, even with a live session', () async {
+    final active = account(_first);
+    final marked = account(_second).copyWith(signingOut: true);
+    await seed(active);
+    await seed(marked);
+    await storage.saveActiveId(active.id);
+    answerRotations(1);
+    open();
+    await container.read(authProvider.future);
+    await _settle();
+
+    final rows = await storage.loadAll();
+    final row = rows.singleWhere((c) => c.id == marked.id);
+    expect(row.signedOut, isTrue);
+    expect(row.signingOut, isFalse);
+    expect(tokens.data[SessionKey(_origin, _second)], isNull);
+    expect(rotated, ['bzr_a'], reason: 'the marked account is not restored');
+    expect(rows.singleWhere((c) => c.id == active.id).signedOut, isFalse);
   });
 
   test('coming back refreshes each account near expiry', () async {

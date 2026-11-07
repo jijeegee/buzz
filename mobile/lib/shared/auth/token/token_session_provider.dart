@@ -235,12 +235,18 @@ final activeTokenSessionProvider = Provider<SessionKey?>(
 /// do not run in the background, so on app resume any account near expiry is
 /// refreshed in the same order.
 ///
-/// An account with no session left is signed out here, and only that one,
-/// unless its gate shows the sign-in page: an active token account has one. A
-/// row can be live with no stored session after a crash halfway through a
-/// sign-out; the status is all a restart has to go on, so that counts the same
-/// as a refused refresh. Signing out deletes the key and messages: a passing
-/// failure is never [TokenSessionStatus.signedOut], it keeps the session.
+/// An account whose session ended is signed out here, and only that one,
+/// unless its gate shows the sign-in page: an active token account has one.
+/// Signing out deletes the key and messages, so a key account (Google holds
+/// its key) is only signed out when the relay said its session is over (a
+/// [refreshEndedCodes] code). With no stored session and no such code (a
+/// phone restored from a backup brings the rows but not the
+/// this-device-only session) its key stays: messaging still works, and its
+/// account pages say it is signed out. A passing failure is never
+/// [TokenSessionStatus.signedOut], it keeps the session.
+///
+/// A sign-out cut short (the app killed halfway) left its row marked
+/// [Community.signingOut]; it is finished here, whatever the session says.
 ///
 /// The session may be replaced before the queued sign-out runs: a sign-in
 /// already in progress wins (see [TokenSessionController.sessionFence]).
@@ -258,24 +264,21 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
           (
             id: community.id,
             tokenAuth: community.tokenAuth,
+            signingOut: community.signingOut,
             provider: sessionControllerProviderOf(community, key),
           ),
   ];
   final ordered = [
     for (final account in signedIn)
-      if (account.id == activeId) account.provider,
+      if (account.id == activeId && !account.signingOut) account.provider,
     for (final account in signedIn)
-      if (account.id != activeId) account.provider,
+      if (account.id != activeId && !account.signingOut) account.provider,
   ];
 
   for (final account in signedIn) {
     final active = account.id == activeId;
-    if (active && account.tokenAuth) continue;
     final controller = ref.read(account.provider);
-    void signOutIfEnded(TokenSessionState session) {
-      if (session.status != TokenSessionStatus.signedOut) return;
-      // On screen, `DeviceKeyNotice` signs this one out and says why.
-      if (active && session.endedCode == 'device_key_required') return;
+    void signOut({bool unfinishedOnly = false}) {
       unawaited(
         ref
             .read(authProvider.notifier)
@@ -283,11 +286,28 @@ final accountSessionKeeperProvider = Provider<void>((ref) {
               account.id,
               deviceOnly: true,
               isCurrent: controller.sessionFence(),
+              unfinishedOnly: unfinishedOnly,
             )
             .catchError((Object error) {
               debugPrint('Could not sign out an ended account: $error');
             }),
       );
+    }
+
+    if (account.signingOut) {
+      signOut(unfinishedOnly: true);
+      continue;
+    }
+    if (active && account.tokenAuth) continue;
+    void signOutIfEnded(TokenSessionState session) {
+      if (session.status != TokenSessionStatus.signedOut) return;
+      if (!account.tokenAuth &&
+          !refreshEndedCodes.contains(session.endedCode)) {
+        return;
+      }
+      // On screen, `DeviceKeyNotice` signs this one out and says why.
+      if (active && session.endedCode == 'device_key_required') return;
+      signOut();
     }
 
     ref.onDispose(controller.addListener(signOutIfEnded));

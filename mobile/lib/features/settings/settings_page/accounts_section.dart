@@ -148,14 +148,16 @@ class _AccountRow extends ConsumerWidget {
           ? null
           : () {
               unawaited(HapticFeedback.selectionClick());
+              final messenger = ScaffoldMessenger.maybeOf(context);
+              final failed = context.l10n.settingsSwitchAccountFailed;
               unawaited(
                 ref
                     .read(communityListProvider.notifier)
                     .switchCommunity(account.id)
-                    .catchError(
-                      (Object error) =>
-                          debugPrint('[Settings] switch failed: $error'),
-                    ),
+                    .catchError((Object error) {
+                      debugPrint('[Settings] switch failed: $error');
+                      messenger?.showSnackBar(SnackBar(content: Text(failed)));
+                    }),
               );
             },
     );

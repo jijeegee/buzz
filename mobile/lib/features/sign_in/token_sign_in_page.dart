@@ -347,6 +347,8 @@ class TokenSignInPage extends HookConsumerWidget {
                   ? l10n.signInSignInAgain
                   : connectGoogle
                   ? l10n.settingsProtectAccountSection
+                  : addAccount
+                  ? l10n.signInAddAccountTitle
                   : keyBackup.value
                   ? l10n.signInWelcome
                   : dualMode.value

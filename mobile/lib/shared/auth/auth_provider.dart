@@ -155,7 +155,10 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         // system prompt follows on the first Home screen.
         community = community.withPushOnByDefault();
       }
-      community = community.copyWith(lastUsedAt: DateTime.now());
+      community = community.copyWith(
+        lastUsedAt: DateTime.now(),
+        signingOut: false,
+      );
       final previousActiveId = await storage.loadActiveId();
       // The same account signing in again leaves the screen it is on, so a
       // huddle or read-aloud of that account keeps going.
@@ -368,10 +371,14 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
   /// With [isCurrent] the reason is about a session that a sign-in may
   /// replace while this waits its turn. It is asked when the turn comes, and
   /// without it nothing happens: the row and the session in it are newer.
+  ///
+  /// With [unfinishedOnly] it only finishes a sign-out that was cut short
+  /// ([Community.signingOut] still set when its turn comes).
   Future<void> signOutCommunity(
     String communityId, {
     bool deviceOnly = false,
     bool Function()? isCurrent,
+    bool unfinishedOnly = false,
   }) {
     if (isCurrent == null) _noteSignOut(communityId);
     return ref.read(communityTransitionProvider).runExclusive(() async {
@@ -381,6 +388,7 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
           .where((community) => community.id == communityId)
           .firstOrNull;
       if (target == null) return;
+      if (unfinishedOnly && (target.signedOut || !target.signingOut)) return;
       if (isCurrent != null) {
         if (target.signedOut) return;
         _noteSignOut(communityId);
@@ -405,12 +413,33 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
         target.id;
     var hasRevocations = false;
     if (!target.signedOut) {
-      // First: a failure here leaves the account as it was, with nothing
-      // queued against a session that is still going.
-      await ref.read(communityLogoutSessionEnderProvider)(
-        target,
-        deviceOnly: deviceOnly,
-      );
+      // Marked first, so a sign-out cut short after the session ends is
+      // finished on the next launch (accountSessionKeeperProvider).
+      if (!target.signingOut) {
+        await storage.saveAll([
+          for (final community in communities)
+            community.id == target.id
+                ? community.copyWith(signingOut: true)
+                : community,
+        ]);
+      }
+      // A failure here leaves the account as it was, with nothing queued
+      // against a session that is still going.
+      try {
+        await ref.read(communityLogoutSessionEnderProvider)(
+          target,
+          deviceOnly: deviceOnly,
+        );
+      } catch (_) {
+        if (!target.signingOut) {
+          try {
+            await storage.saveAll(communities);
+          } catch (error) {
+            debugPrint('[AuthNotifier] could not clear sign-out mark: $error');
+          }
+        }
+        rethrow;
+      }
       hasRevocations = await ref.read(
         communityPushLeaseRevocationEnqueuerProvider,
       )(target);
@@ -537,10 +566,15 @@ class AuthNotifier extends AsyncNotifier<AuthState> {
 /// account); one with no backup is kept.
 Community _signedOutCopy(Community community) {
   if (community.googleBackupAccountId == null) {
-    return community.copyWith(signedOut: true, pushInboxToken: null);
+    return community.copyWith(
+      signedOut: true,
+      signingOut: false,
+      pushInboxToken: null,
+    );
   }
   return community.copyWith(
     signedOut: true,
+    signingOut: false,
     pubkey: community.accountPubkey,
     nsec: null,
     pushInboxToken: null,

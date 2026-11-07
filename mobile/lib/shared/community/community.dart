@@ -77,6 +77,12 @@ class Community {
   /// but only explicit, identity-verified sign-in may resume this community.
   final bool signedOut;
 
+  /// A sign-out of this account has begun and not finished. Written before
+  /// the session is ended, so a sign-out cut short (the app killed halfway)
+  /// is finished on the next launch instead of being taken for a lost
+  /// session. Cleared by the sign-out itself and by any sign-in.
+  final bool signingOut;
+
   /// Google account authorizing custody only; messaging still uses [nsec].
   final String? googleBackupAccountId;
 
@@ -112,6 +118,7 @@ class Community {
     this.starterSetupIncomplete = false,
     this.tokenAuth = false,
     this.signedOut = false,
+    this.signingOut = false,
     this.googleBackupAccountId,
     this.signInProvider,
     this.lastUsedAt,
@@ -163,6 +170,7 @@ class Community {
     bool? starterSetupIncomplete,
     bool? tokenAuth,
     bool? signedOut,
+    bool? signingOut,
     String? googleBackupAccountId,
     String? signInProvider,
     DateTime? lastUsedAt,
@@ -193,6 +201,7 @@ class Community {
           starterSetupIncomplete ?? this.starterSetupIncomplete,
       tokenAuth: tokenAuth ?? this.tokenAuth,
       signedOut: signedOut ?? this.signedOut,
+      signingOut: signingOut ?? this.signingOut,
       googleBackupAccountId:
           googleBackupAccountId ?? this.googleBackupAccountId,
       signInProvider: signInProvider ?? this.signInProvider,
@@ -222,6 +231,7 @@ class Community {
     'starterSetupIncomplete': starterSetupIncomplete,
     if (tokenAuth) 'authMode': 'token',
     if (signedOut) 'signedOut': true,
+    if (signingOut) 'signingOut': true,
     if (googleBackupAccountId != null)
       'googleBackupAccountId': googleBackupAccountId,
     if (signInProvider != null) 'signInProvider': signInProvider,
@@ -279,6 +289,7 @@ class Community {
       starterSetupIncomplete: json['starterSetupIncomplete'] as bool? ?? false,
       tokenAuth: json['authMode'] == 'token',
       signedOut: json['signedOut'] == true,
+      signingOut: json['signingOut'] == true,
       googleBackupAccountId: json['googleBackupAccountId'] as String?,
       signInProvider: json['signInProvider'] as String?,
       lastUsedAt: DateTime.tryParse(json['lastUsedAt'] as String? ?? ''),

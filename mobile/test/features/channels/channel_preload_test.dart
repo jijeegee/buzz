@@ -139,6 +139,8 @@ void main() {
     late _WindowSession session;
     late ProviderContainer container;
     late DateTime now;
+    // The account on screen.
+    var scope = _scope;
     // The store side: rooms with a live token, and those the store holds
     // certainly.
     final liveRooms = <String>{};
@@ -152,10 +154,11 @@ void main() {
       root = await Directory.systemTemp.createTemp('channel_preload_test');
       session = _WindowSession();
       now = DateTime(2026, 1, 1, 12);
+      scope = _scope;
       container = ProviderContainer(
         overrides: [
           relaySessionProvider.overrideWith(() => session),
-          channelHeadScopeProvider.overrideWithValue(_scope),
+          channelHeadScopeProvider.overrideWith((ref) => scope),
           channelHeadCacheProvider.overrideWithValue(
             ChannelHeadCache(() async => root),
           ),
@@ -344,6 +347,18 @@ void main() {
       now = now.add(preloadRetryAfter);
       await preloader.preloadRooms([(channelId: 'cold', latestAt: future)]);
       expect(session.requests, hasLength(3));
+    });
+
+    test('another account does not inherit the rooms tried', () async {
+      final preloader = container.read(channelPreloaderProvider);
+      await preloader.preloadRooms([(channelId: 'cold', latestAt: 1)]);
+      expect(session.requests, hasLength(1));
+
+      scope = ChannelHeadScope(relayUrl: _scope.relayUrl, pubkey: 'b' * 64);
+      container.invalidate(channelHeadScopeProvider);
+      await preloader.preloadRooms([(channelId: 'cold', latestAt: 1)]);
+
+      expect(session.requests, hasLength(2));
     });
 
     test('loads threads four per request into the preload store', () async {

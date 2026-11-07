@@ -149,7 +149,19 @@ class ChannelPreloader {
   final Ref _ref;
   final DateTime Function() _now;
   final StorePreloadBridge? _store;
-  final Map<String, DateTime> _attemptedAt = {};
+  final Map<String, DateTime> _attempts = {};
+  ChannelHeadScope? _attemptsScope;
+
+  /// When each room or thread was last tried, for the account on screen
+  /// only: another account's tries say nothing about this one's rooms.
+  Map<String, DateTime> get _attemptedAt {
+    final scope = _ref.read(channelHeadScopeProvider);
+    if (scope != _attemptsScope) {
+      _attempts.clear();
+      _attemptsScope = scope;
+    }
+    return _attempts;
+  }
 
   /// Whether a background request may go out now: the session is connected
   /// and the relay is not pushing back.
@@ -276,7 +288,9 @@ class ChannelPreloader {
       }
       cold.add(channelId);
     }
-    if (cold.isEmpty) return const [];
+    if (cold.isEmpty || _ref.read(channelHeadScopeProvider) != scope) {
+      return const [];
+    }
     final attemptedAt = _now();
     for (final channelId in cold) {
       _attemptedAt['room:$channelId'] = attemptedAt;
