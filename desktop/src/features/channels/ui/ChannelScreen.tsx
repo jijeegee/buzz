@@ -91,7 +91,6 @@ import { useChannelTargetReset } from "./useChannelTargetReset";
 import { useChannelRouteTarget } from "./useChannelRouteTarget";
 import { useChannelOpenReadState } from "./useChannelOpenReadState";
 import { useChannelOpenAnchor } from "./useChannelOpenAnchor";
-import { readingPositionScope } from "@/features/channels/readingPositionStore";
 import { useThreadOpenServerRead } from "./useThreadOpenServerRead";
 import { useThreadRootOpen } from "./useThreadRootOpen";
 import { useChannelUnreadState } from "./useChannelUnreadState";
@@ -654,10 +653,9 @@ export function ChannelScreen({
       setThreadReplyTargetId,
       setThreadScrollTargetId,
     });
-  const positionScope = readingPositionScope(
-    currentPubkey,
-    activeCommunity?.relayUrl,
-  );
+  // Rooms, DMs and threads open at the first unread message or the newest,
+  // never where the reader left them: no reading position is kept.
+  const positionScope = null;
   const windowCommit = useChannelWindowCommit(queryClient, activeChannelId);
   const openAnchor = useChannelOpenAnchor({
     channelId: activeChannelId,
