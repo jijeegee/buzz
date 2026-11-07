@@ -22,6 +22,7 @@ use super::head::{self, HeadSpan};
 use super::purge;
 use super::room_seq::{self, SeqWrite};
 use super::snapshot;
+use super::window::{self, WindowReplace};
 
 /// What a receive hands the writer. Parsing happens on the writer thread.
 /// Each input queued for a file takes the next number of that file's
@@ -81,6 +82,12 @@ pub(crate) enum Input {
     Heads { heads: Vec<HeadSpan>, captured: u64 },
     /// Replace launch snapshot `kind` (docs/message-sync.md#launch-snapshots).
     Snapshot { kind: String, blob: String },
+    /// A page the relay answered to the request marked `captured` (a
+    /// [`Self::HeadSent`]) replaces its window's stored rows
+    /// (docs/message-sync.md#window-check).
+    ReplaceWindow { page: WindowReplace, captured: u64 },
+    /// Drop the head and page spans of `rooms` (a catch-up left a gap).
+    ForgetWindows { rooms: Vec<String> },
 }
 
 #[cfg(test)]
@@ -124,7 +131,9 @@ fn rows_of(input: Input) -> (Vec<Filed>, Option<Arc<str>>) {
         | Input::Barrier(_)
         | Input::HeadSent { .. }
         | Input::Heads { .. }
-        | Input::Snapshot { .. } => (Vec::new(), None),
+        | Input::Snapshot { .. }
+        | Input::ReplaceWindow { .. }
+        | Input::ForgetWindows { .. } => (Vec::new(), None),
     }
 }
 
@@ -556,6 +565,35 @@ fn run(
                                 eprintln!("kuzz-desktop: message store: head failed: {error}");
                             }
                         }
+                    }
+                }
+                Input::ReplaceWindow { page, captured } => {
+                    let lost = flush(&mut conn, &mut rows, &lossy);
+                    let closed = marks.close(captured).filter(|_| !lost);
+                    let after = |map: &HashMap<String, u64>, room: &str| {
+                        map.get(room).is_some_and(|&at| at > captured)
+                    };
+                    // As for a head: only for the mark's rooms, never for a
+                    // room forgotten or with a history change since it.
+                    if let Some(head::Closed { rooms, fresh }) = closed {
+                        if rooms.contains(&page.room)
+                            && !after(&forgot, &page.room)
+                            && !after(&history, &page.room)
+                        {
+                            born.entry(page.room.clone()).or_insert(sequence);
+                            known.note(&page.room);
+                            if let Err(error) = window::replace(&mut conn, &page, &fresh) {
+                                eprintln!("kuzz-desktop: message store: window failed: {error}");
+                            }
+                        }
+                    }
+                }
+                Input::ForgetWindows { rooms } => {
+                    flush(&mut conn, &mut rows, &lossy);
+                    if let Err(error) = window::forget_windows(&mut conn, &rooms) {
+                        eprintln!(
+                            "kuzz-desktop: message store: forgetting windows failed: {error}"
+                        );
                     }
                 }
                 other => {

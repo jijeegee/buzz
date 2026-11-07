@@ -37,6 +37,24 @@ impl RoomHead {
     /// The window in the shape of a relay channel-window response: rows,
     /// overlays, summaries and one `39006` bounds event for `room`'s head.
     pub(crate) fn into_response(self, room: &str) -> Vec<Value> {
+        self.into_window_response(room, None)
+    }
+
+    /// As [`Self::into_response`] for the window below `before` (the
+    /// bounds key names the cursor, as the relay's does).
+    pub(crate) fn into_window_response(
+        self,
+        room: &str,
+        before: Option<(i64, &str)>,
+    ) -> Vec<Value> {
+        let key = match before {
+            None => format!("{}:head", room.to_ascii_lowercase()),
+            Some((at, id)) => format!(
+                "{}:{at}:{}",
+                room.to_ascii_lowercase(),
+                id.to_ascii_lowercase()
+            ),
+        };
         let next_cursor = self
             .next_cursor
             .map(|(created_at, id)| json!({ "created_at": created_at, "id": id }));
@@ -46,7 +64,7 @@ impl RoomHead {
             "sig": "0".repeat(128),
             "kind": 39006,
             "created_at": 0,
-            "tags": [["d", format!("{}:head", room.to_ascii_lowercase())], ["h", room]],
+            "tags": [["d", key], ["h", room]],
             "content": json!({ "has_more": next_cursor.is_some(), "next_cursor": next_cursor })
                 .to_string(),
         });
@@ -118,15 +136,29 @@ fn id_of(event: &Value) -> String {
         .to_owned()
 }
 
-/// `room`'s newest `limit` top-level rows of `kinds`, with their overlays
-/// and thread summaries. `live_at` is when the room's live REQ reached EOSE
-/// on the current connection, if it is live.
-pub(crate) fn room_head(
+/// The overlays (reactions, edits, deletions) of the rows `row_ids`, and
+/// the removals of those overlays.
+pub(crate) fn overlays_of(conn: &Connection, row_ids: &[String]) -> rusqlite::Result<Vec<Value>> {
+    let mut aux = overlays(conn, row_ids, AUX_KINDS)?;
+    let aux_ids: Vec<String> = aux.iter().map(id_of).collect();
+    let seen: HashSet<String> = aux_ids.iter().cloned().collect();
+    for removal in overlays(conn, &aux_ids, AUX_REMOVAL_KINDS)? {
+        if !seen.contains(&id_of(&removal)) {
+            aux.push(removal);
+        }
+    }
+    Ok(aux)
+}
+
+/// `room`'s `limit` top-level rows of `kinds` below `before` (`(created_at,
+/// id)` in relay order, exclusive; `None`: the newest), with their overlays
+/// and thread summaries; never certain.
+pub(crate) fn room_window(
     conn: &Connection,
     room: &str,
     kinds: &[u64],
     limit: usize,
-    live_at: Option<i64>,
+    before: Option<(i64, &str)>,
 ) -> rusqlite::Result<RoomHead> {
     let mut head = RoomHead::default();
     if kinds.is_empty() || limit == 0 {
@@ -140,9 +172,11 @@ pub(crate) fn room_head(
     let mut candidates = conn.prepare(&format!(
         "SELECT id, pubkey, created_at, root, raw FROM events \
          WHERE room = ?1 AND kind IN ({kind_list}) AND (root IS NULL OR broadcast = 1) \
+         AND (?2 IS NULL OR created_at < ?2 OR (created_at = ?2 AND id > ?3)) \
          ORDER BY created_at DESC, id ASC"
     ))?;
-    let mut found = candidates.query(params![room])?;
+    let (before_at, before_id) = before.map_or((None, ""), |(at, id)| (Some(at), id));
+    let mut found = candidates.query(params![room, before_at, before_id])?;
     let mut row_ids = Vec::new();
     while let Some(row) = found.next()? {
         let (id, author, created_at): (String, String, i64) =
@@ -167,14 +201,7 @@ pub(crate) fn room_head(
     }
     drop(found);
 
-    head.aux = overlays(conn, &row_ids, AUX_KINDS)?;
-    let aux_ids: Vec<String> = head.aux.iter().map(id_of).collect();
-    let seen: HashSet<String> = aux_ids.iter().cloned().collect();
-    for removal in overlays(conn, &aux_ids, AUX_REMOVAL_KINDS)? {
-        if !seen.contains(&id_of(&removal)) {
-            head.aux.push(removal);
-        }
-    }
+    head.aux = overlays_of(conn, &row_ids)?;
 
     if !row_ids.is_empty() {
         let marks = vec!["?"; row_ids.len()].join(", ");
@@ -188,7 +215,23 @@ pub(crate) fn room_head(
             .filter(has_replies)
             .collect();
     }
+    Ok(head)
+}
 
+/// `room`'s newest `limit` top-level rows of `kinds`, with their overlays
+/// and thread summaries. `live_at` is when the room's live REQ reached EOSE
+/// on the current connection, if it is live.
+pub(crate) fn room_head(
+    conn: &Connection,
+    room: &str,
+    kinds: &[u64],
+    limit: usize,
+    live_at: Option<i64>,
+) -> rusqlite::Result<RoomHead> {
+    let mut head = room_window(conn, room, kinds, limit, None)?;
+    if kinds.is_empty() || limit == 0 {
+        return Ok(head);
+    }
     let full = head.rows.len() == limit;
     let received = match (live_at, &head.next_cursor) {
         (Some(live_at), Some((oldest, _))) if full => conn

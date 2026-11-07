@@ -2,7 +2,9 @@ use tauri::State;
 
 use crate::{app_state::AppState, models::ChannelPageCursor, relay::query_relay};
 
-pub(crate) const TIMELINE_KINDS: [u32; 11] = [
+/// The room window's row kinds, the same list mobile asks for
+/// (`channelTimelineContentKinds`): pages, checks and store reads use it.
+pub(crate) const TIMELINE_KINDS: [u32; 12] = [
     9,
     40002,
     40008,
@@ -14,9 +16,10 @@ pub(crate) const TIMELINE_KINDS: [u32; 11] = [
     43005,
     43006,
     kuzz_core_pkg::kind::KIND_HUDDLE_STARTED,
+    kuzz_core_pkg::kind::KIND_HUDDLE_ENDED,
 ];
 
-fn build_channel_window_filter(
+pub(crate) fn build_channel_window_filter(
     channel_id: &str,
     cap: u32,
     cursor: Option<&ChannelPageCursor>,

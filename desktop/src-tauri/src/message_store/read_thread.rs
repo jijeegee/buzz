@@ -44,9 +44,28 @@ pub(crate) fn thread_head(
     limit: usize,
     live_at: Option<i64>,
 ) -> rusqlite::Result<ThreadHead> {
+    if kinds.is_empty() || limit == 0 {
+        return Ok(ThreadHead::default());
+    }
+    let (mut head, oldest) = thread_window(conn, room, root, kinds, limit, None)?;
+    certify(conn, room, root, &mut head, oldest, live_at)?;
+    Ok(head)
+}
+
+/// The `limit` replies of `kinds` at any depth under `root` in `room` below
+/// `before` (`(created_at, id)` in relay order, exclusive; `None`: the
+/// newest), never certain, and the oldest of them.
+pub(crate) fn thread_window(
+    conn: &Connection,
+    room: &str,
+    root: &str,
+    kinds: &[u64],
+    limit: usize,
+    before: Option<(i64, &str)>,
+) -> rusqlite::Result<(ThreadHead, Option<(i64, String)>)> {
     let mut head = ThreadHead::default();
     if kinds.is_empty() || limit == 0 {
-        return Ok(head);
+        return Ok((head, None));
     }
     let kind_list = kinds
         .iter()
@@ -56,9 +75,11 @@ pub(crate) fn thread_head(
     let mut candidates = conn.prepare(&format!(
         "SELECT id, pubkey, created_at, raw FROM events \
          WHERE room = ?1 AND root = ?2 AND kind IN ({kind_list}) \
+         AND (?3 IS NULL OR created_at < ?3 OR (created_at = ?3 AND id > ?4)) \
          ORDER BY created_at DESC, id ASC"
     ))?;
-    let mut found = candidates.query(params![room, root])?;
+    let (before_at, before_id) = before.map_or((None, ""), |(at, id)| (Some(at), id));
+    let mut found = candidates.query(params![room, root, before_at, before_id])?;
     let mut oldest = None;
     while let Some(row) = found.next()? {
         let (id, author, created_at): (String, String, i64) =
@@ -77,10 +98,21 @@ pub(crate) fn thread_head(
         }
     }
     drop(found);
+    head.next_cursor = oldest.clone().filter(|_| head.has_more);
+    Ok((head, oldest))
+}
 
+/// Sets whether `head` (newest replies, oldest `oldest`) is certain.
+fn certify(
+    conn: &Connection,
+    room: &str,
+    root: &str,
+    head: &mut ThreadHead,
+    oldest: Option<(i64, String)>,
+    live_at: Option<i64>,
+) -> rusqlite::Result<()> {
     let Some(live_at) = live_at else {
-        head.next_cursor = oldest.filter(|_| head.has_more);
-        return Ok(head);
+        return Ok(());
     };
     let oldest_row = oldest.as_ref().map(|(at, id)| (*at, id.as_str()));
     let stream = thread_head_stream(root);
@@ -106,8 +138,7 @@ pub(crate) fn thread_head(
                 None => false,
             }
         } && super::coverage::is_current(conn)?;
-    head.next_cursor = oldest.filter(|_| head.has_more);
-    Ok(head)
+    Ok(())
 }
 
 /// `root` of `room` as the store holds it, and whether a stored deletion

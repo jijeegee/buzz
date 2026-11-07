@@ -53,18 +53,40 @@ impl ThreadWindowPage {
     }
 }
 
-fn build_thread_window_filter(request: &ThreadWindowRequest, limit: u32) -> serde_json::Value {
+fn build_thread_window_filter(
+    request: &ThreadWindowRequest,
+    limit: u32,
+    include_aux: bool,
+) -> serde_json::Value {
+    thread_window_filter(
+        &request.channel_id,
+        &request.root_id,
+        request.cursor.as_ref(),
+        limit,
+        include_aux,
+    )
+}
+
+/// One thread-window filter. Without `include_aux`, like the legacy subtree
+/// read, rows only: reactions and edits reach thread rows through their own
+/// paths; a page fetched by the window check asks for them
+/// (docs/message-sync.md#window-check).
+pub(crate) fn thread_window_filter(
+    channel_id: &str,
+    root_id: &str,
+    cursor: Option<&ThreadCursor>,
+    limit: u32,
+    include_aux: bool,
+) -> serde_json::Value {
     let mut filter = serde_json::json!({
         "thread_window": true,
-        "#h": [request.channel_id],
-        "#e": [request.root_id],
+        "#h": [channel_id],
+        "#e": [root_id],
         "kinds": THREAD_ROW_KINDS,
         "limit": limit,
-        // Like the legacy subtree read, rows only: reactions and edits reach
-        // thread rows through their own paths.
-        "include_aux": false,
+        "include_aux": include_aux,
     });
-    if let Some(cursor) = &request.cursor {
+    if let Some(cursor) = cursor {
         filter["until"] = serde_json::json!(cursor.created_at);
         filter["before_id"] = serde_json::json!(cursor.event_id);
     }
@@ -136,6 +158,7 @@ fn split_thread_windows(
 pub async fn get_thread_windows(
     threads: Vec<ThreadWindowRequest>,
     limit_rows: Option<u32>,
+    include_aux: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<Vec<ThreadWindowPage>, String> {
     if threads.len() > MAX_BATCH_THREADS {
@@ -149,7 +172,7 @@ pub async fn get_thread_windows(
     let limit = limit_rows.unwrap_or(50).clamp(1, 200);
     let filters: Vec<_> = threads
         .iter()
-        .map(|thread| build_thread_window_filter(thread, limit))
+        .map(|thread| build_thread_window_filter(thread, limit, include_aux.unwrap_or(false)))
         .collect();
     let events = query_relay(&state, &filters).await?;
     Ok(split_thread_windows(events, &threads))
