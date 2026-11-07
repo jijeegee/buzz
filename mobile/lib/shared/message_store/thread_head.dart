@@ -19,6 +19,7 @@ class StoredThreadHead {
     required this.rows,
     required this.hasMore,
     required this.nextCursor,
+    this.overlays = const [],
     this.pushedAt = const {},
   });
 
@@ -35,16 +36,21 @@ class StoredThreadHead {
   /// `(created_at, id)` of the oldest reply, when [hasMore].
   final (int, String)? nextCursor;
 
+  /// The stored aux closure of the rows and the root, as the relay sends it
+  /// with `include_aux` ([readStoredOverlays]).
+  final List<Map<String, dynamic>> overlays;
+
   /// The replies only the push inbox wrote, and when each was fetched
   /// ([readPushedAt]); a paint only.
   final Map<String, int?> pushedAt;
 
-  /// The window in the shape of a relay thread-window response: the rows
-  /// and one `39007` bounds event for [room]'s thread [root].
+  /// The window in the shape of a relay thread-window response: the rows,
+  /// their overlays and one `39007` bounds event for [room]'s thread [root].
   List<Map<String, dynamic>> toResponse(String room, String root) {
     final cursor = nextCursor;
     return [
       ...rows,
+      ...overlays,
       {
         'id': '0' * 64,
         'pubkey': '0' * 64,
@@ -182,6 +188,10 @@ Future<StoredThreadHead> readThreadHead(
     rows: rows,
     hasMore: hasMore,
     nextCursor: hasMore ? oldest : null,
+    overlays: await readStoredOverlays(db, [
+      for (final row in rows) row['id']! as String,
+      root,
+    ]),
     pushedAt: includePushed
         ? await readPushedAt(db, [for (final row in rows) row['id']! as String])
         : const {},

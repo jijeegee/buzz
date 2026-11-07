@@ -143,3 +143,17 @@ Duration? relayProviderRetry(int retryCount, Object error) {
   if (isRelayDeadlineError(error)) return null;
   return ProviderContainer.defaultRetry(retryCount, error);
 }
+
+/// Returns true when [error] is a thread window over the relay's work or
+/// byte budget (HTTP 503 with `"code": "window_budget"`). NIP-CW: a smaller
+/// window, or one without its aux closure, may pass; the same one will not.
+bool isWindowBudgetError(Object error) {
+  if (error is! RelayException || error.statusCode != 503) return false;
+  try {
+    final decoded = jsonDecode(error.body);
+    return decoded is Map<String, dynamic> &&
+        decoded['code'] == 'window_budget';
+  } on FormatException {
+    return false;
+  }
+}

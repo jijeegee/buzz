@@ -6,9 +6,12 @@ part of '../thread_detail_page.dart';
 /// (the relay answered without it). Nothing on the page waits for it.
 /// [unconfirmed] while its root is still in doubt: only a
 /// [ThreadDetailPage.headMayBeNested] head, until the lookup found it (drawn
-/// or not), came back without it, proved it deleted, or failed.
+/// or not), came back without it, proved it deleted, or failed. [event] is
+/// the head's event when resolved here, so the thread's reactions, edits and
+/// deletions of it apply.
 ({
   TimelineMessage head,
+  NostrEvent? event,
   bool resolving,
   bool missing,
   bool deleted,
@@ -19,6 +22,7 @@ _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
   if (passed != null) {
     return (
       head: passed,
+      event: null,
       resolving: false,
       missing: false,
       deleted: false,
@@ -47,6 +51,7 @@ _watchThreadHead(WidgetRef ref, ThreadDetailPage page, String? currentPubkey) {
           content: '',
           rootId: page.rootId,
         ),
+    event: head == null ? null : event,
     resolving: head == null && !root.missing,
     missing: head == null && root.missing,
     deleted: root.deleted,

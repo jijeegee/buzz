@@ -207,6 +207,53 @@ void main() {
     },
   );
 
+  test('reactions in a preload ride along and never move its newest', () {
+    // Newer than every reply: only replies set what counts as newer.
+    final reaction = NostrEvent(
+      id: 'x',
+      pubkey: 'c' * 64,
+      createdAt: 500,
+      kind: EventKind.reaction,
+      tags: const [
+        ['e', 'r1'],
+      ],
+      content: '+',
+      sig: '',
+    );
+    ProviderContainer open(List<NostrEvent> preloaded) {
+      final container = ProviderContainer(
+        overrides: [
+          relaySessionProvider.overrideWith(_Offline.new),
+          paintableThreadHeadProvider.overrideWithValue(
+            (_, _) async => serveThreadWindow(_channel, _root, [
+              _reply('r1', 10),
+              _reply('r4', 40),
+            ], NostrFilter(kinds: const [], limit: 50)),
+          ),
+          preloadedThreadRepliesProvider.overrideWith((ref, args) => preloaded),
+        ],
+      );
+      addTearDown(container.dispose);
+      container.listen(savedThreadRepliesProvider(_args), (_, _) {});
+      return container;
+    }
+
+    Future<List<String>> saved(ProviderContainer container) async {
+      await container.read(storedThreadRepliesProvider(_args).future);
+      return [
+        for (final e in container.read(savedThreadRepliesProvider(_args))) e.id,
+      ];
+    }
+
+    return Future.wait([
+      saved(
+        open([_reply('r1', 10), _reply('r3', 30), reaction]),
+      ).then((ids) => expect(ids, ['r1', 'r3', 'r4', 'x'])),
+      // A preload of reactions alone: the stored replies stand, with them.
+      saved(open([reaction])).then((ids) => expect(ids, ['r1', 'r4', 'x'])),
+    ]);
+  });
+
   group('stored replies past the relay cut', () {
     final relayRows = [for (var n = 1; n <= 3; n++) _reply(_hex(n), 100 + n)];
 

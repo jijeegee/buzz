@@ -24,6 +24,7 @@ import 'window_anchor.dart';
 
 part 'channel_messages_provider/account_scope.dart';
 part 'channel_messages_provider/open_at.dart';
+part 'channel_messages_provider/reply_bounds.dart';
 part 'channel_messages_provider/store_head.dart';
 part 'channel_messages_provider/stored_paint.dart';
 part 'channel_messages_provider/thread_live.dart';
@@ -455,6 +456,7 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     // Update the thread independently of the selected channel-history path.
     // The websocket fallback does not merge through the window store.
     _updateThreadReplies(event, authoritative: authoritative);
+    _updateThreadAux(event);
     // A live summary can race the initial channel-window query. Buffer it in
     // the window store even before that query installs its first page, rather
     // than treating metadata as an ordinary websocket timeline event.
@@ -541,6 +543,14 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
     ref.read(threadRepliesStaleProvider(args).notifier).markStale();
   }
 
+  /// The window of a held thread rooted at [rootId], loaded or not.
+  ThreadWindowNotifier? _heldThreadWindow(String rootId) {
+    final window = threadWindowProvider(
+      ThreadRepliesArgs(channelId: channelId, rootId: rootId),
+    );
+    return ref.exists(window) ? ref.read(window.notifier) : null;
+  }
+
   /// The window of a held thread whose last query succeeded and is not
   /// loading, else null. A failed refresh (after a reconnect) may leave a gap
   /// under the replies it still shows.
@@ -595,61 +605,6 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       _reconcileLiveSummaryPayloads(event);
     }
     return true;
-  }
-
-  List<NostrEvent> _boundedReplies(Iterable<NostrEvent> events) {
-    final sorted = events.toList()
-      ..sort((a, b) => compareThreadRepliesChronologically(b, a));
-    final counts = <String?, int>{};
-    final seen = <String>{};
-    final retained = <NostrEvent>[];
-    for (final event in sorted) {
-      if (!seen.add(event.id)) continue;
-      final root = event.threadReference.rootId;
-      final count = counts[root] ?? 0;
-      if (count >= _maxCachedRepliesPerRoot) continue;
-      retained.add(event);
-      counts[root] = count + 1;
-      if (retained.length == _maxCachedReplies) break;
-    }
-    return retained;
-  }
-
-  List<NostrEvent> _boundEventReplies(List<NostrEvent> events) {
-    final replies = events.where(
-      (event) =>
-          EventKind.channelTimelineContentKinds.contains(event.kind) &&
-          event.threadReference.parentId != null,
-    );
-    final retained = _boundedReplies(replies).map((event) => event.id).toSet();
-    _reconcileEvictedReplies(replies, retained);
-    return events
-        .where(
-          (event) =>
-              !EventKind.channelTimelineContentKinds.contains(event.kind) ||
-              event.threadReference.parentId == null ||
-              retained.contains(event.id),
-        )
-        .toList();
-  }
-
-  void _trimReplyOverlay() {
-    final replies = _windowStore.liveOverlay
-        .where((event) => event.threadReference.parentId != null)
-        .toList();
-    if (replies.length <= _maxCachedRepliesPerRoot) return;
-    final retained = _boundedReplies(replies).map((event) => event.id).toSet();
-    if (retained.length == replies.length) return;
-    _reconcileEvictedReplies(replies, retained);
-    _windowStore = _windowStore.copyWith(
-      liveOverlay: _windowStore.liveOverlay
-          .where(
-            (event) =>
-                event.threadReference.parentId == null ||
-                retained.contains(event.id),
-          )
-          .toList(),
-    );
   }
 
   void _confirmIndexedLocalReplies(Iterable<String> ids) {
@@ -1009,7 +964,12 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
   bool _isCurrentInit(int initVersion) => initVersion == _initVersion;
 
   bool _holdsEvent(String id) =>
-      _lastKnownMessages?.any((event) => event.id == id) ?? false;
+      (_lastKnownMessages?.any((event) => event.id == id) ?? false) ||
+      _threadHoldsEvent(id);
+
+  /// Which thread holds each reply and overlay seen; thread windows record
+  /// every page they load here.
+  ThreadReplyOwnership get replyOwnership => _replyOwnership;
 
   void _clearSubscription() {
     _unsubscribe?.call();

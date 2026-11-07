@@ -92,9 +92,6 @@ part 'thread_detail_page/root.dart';
 
 const _landingHighlightDuration = Duration(seconds: 3);
 const _landingHighlightDelay = Duration(milliseconds: 50);
-
-/// Older pages walked to reach a linked reply before giving up (desktop: 10).
-const _deepLinkMaxOlderPages = 10;
 const _landingHighlightTransitionDuration = Duration(milliseconds: 300);
 const _landingHighlightOpacity = 0.12;
 
@@ -232,9 +229,11 @@ class ThreadDetailPage extends HookConsumerWidget {
     final queryRootId = threadHead.rootId ?? threadHead.id;
     // Created before the thread query, which settles own pending replies
     // through it only when it exists. Nothing waits for its rows.
-    final liveChannelEvents =
-        ref.watch(channelMessagesProvider(channelId)).value ??
-        const <NostrEvent>[];
+    // With the head's own event, so the thread's overlays of it apply.
+    final liveChannelEvents = _withHeadEvent(
+      ref.watch(channelMessagesProvider(channelId)).value ?? const [],
+      resolvedHead.event,
+    );
     final repliesArgs = ThreadRepliesArgs(
       channelId: channelId,
       rootId: queryRootId,
@@ -281,7 +280,8 @@ class ThreadDetailPage extends HookConsumerWidget {
         relayReplyState.value != null ||
         (relayReplyState.hasError && !relayReplyState.retrying);
     final liveDeletionHidesHead =
-        resolvedHead.deleted || _isDeletedBy(liveChannelEvents, threadHead.id);
+        resolvedHead.deleted ||
+        _isDeletedBy([...liveChannelEvents, ...?replyEvents], threadHead.id);
     // Replies preloaded from the inbox (else stored on the device) paint with
     // the route snapshot until the full scan lands; they never replace it.
     final preloadedReplies = relayRepliesAvailable

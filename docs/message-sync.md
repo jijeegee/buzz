@@ -98,7 +98,8 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
      yet);
    - otherwise to the room of the event it references, the last `e` tag first:
      an event routed earlier (so a removal follows its reaction), or an event
-     loaded in an open room. The room must be one the chunk carries.
+     loaded in an open room (on mobile, also a reply, root or overlay a held
+     thread window holds). The room must be one the chunk carries.
 3. An event whose room cannot be told is dropped. It references nothing on
    screen, and a page that later loads its target carries it in the page's aux
    closure.
@@ -107,7 +108,11 @@ the room's `h` tag, so the room's stream carries its threads, followed or not.
 
 - **Open room and its threads** (the timeline, the thread panel, reply
   badges): every event of the room once, thread summaries included.
-  Duplicates from overlapping chunks or a room's own REQ are dropped.
+  Duplicates from overlapping chunks or a room's own REQ are dropped. On
+  mobile a held thread window (open, or closed within its retention) keeps
+  each reaction, edit and removal aimed at one of its replies, its root or an
+  overlay it holds. A room refresh never prunes it, so a thread reopened
+  without a request shows them, as does a reply loaded from an older page.
 - **All-rooms consumers** (unread, notifications, chat list, inbox): member
   rooms only, never thread summaries or room metadata. Each keeps its
   existing duplicate handling.
@@ -889,8 +894,11 @@ the relay. Cases: `test-fixtures/message-store-thread-head.json`.
 - **Rows:** replies of the thread-window kinds (9, 40002) whose root is the
   thread's root, at any depth, newest 50 by `created_at DESC, id ASC`. The
   root itself is not a row. A reply targeted by a removal (9005) or by its
-  author's deletion (5) is left out. No overlays or summaries, as the relay
-  sends none (`include_aux` false).
+  author's deletion (5) is left out. No summaries. Desktop reads no
+  overlays, as its window asks for none (`include_aux` false); mobile asks
+  for the aux closure and reads the stored one of the rows and the root
+  (reactions, edits and removals aimed at them, then removals of those),
+  placed after the rows.
 - **Bounds:** a full window has more (`next_cursor` = the oldest reply). The
   answer ends with one unsigned `39007` bounds event (`h` = room, `e` = root,
   content `{version: 1, direction: "older", has_more, next_cursor}`).
@@ -1384,7 +1392,7 @@ aimed at them (edits, reactions, removals: ids of events whose `e` tag names
 a shared row, leaving out any its own answer removes, as the relay does) and
 their thread reply counts (`reply_count` of the newest 39005 per root; the
 rest of a summary depends on the reader's blocks). Nothing newer than the
-store's newest event is compared there. Thread pages carry neither. Each run
+store's newest event is compared there. Threads compare replies only. Each run
 keeps counts (matches and differences per room and thread stream, and
 differences by type) and logs them at most once a minute as
 `[message-store] comparisons this run`: the evidence for turning off the

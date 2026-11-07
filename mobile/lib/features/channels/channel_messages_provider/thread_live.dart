@@ -30,6 +30,40 @@ extension _ThreadLive on ChannelMessagesNotifier {
     }
   }
 
+  /// A reaction, edit or deletion reached the room. The held thread whose
+  /// reply, root or overlay it names keeps it in its window, which a room
+  /// refresh never prunes, so a closed thread shows it when reopened and a
+  /// reply loaded from an older page keeps it
+  /// (docs/message-sync.md#placing-an-event).
+  void _updateThreadAux(NostrEvent event) {
+    if (!EventKind.channelAuxEventKinds.contains(event.kind)) return;
+    final roots = <String>{};
+    for (final tag in event.tags) {
+      if (tag.length < 2 || tag[0] != 'e') continue;
+      final target = tag[1];
+      roots.add(
+        _replyOwnership.rootFor(target) ??
+            _replyOwnership.overlayRootFor(target) ??
+            target,
+      );
+    }
+    for (final rootId in roots) {
+      final window = _heldThreadWindow(rootId);
+      if (window == null) continue;
+      if (window.foldLiveAux(event)) {
+        _replyOwnership.recordOverlays(rootId, [event]);
+      }
+    }
+  }
+
+  /// Whether a held thread names [eventId]: one of its replies, its root, or
+  /// an overlay it holds. The router then places reactions and removals
+  /// aimed at it in this room.
+  bool _threadHoldsEvent(String eventId) =>
+      _replyOwnership.rootFor(eventId) != null ||
+      _replyOwnership.overlayRootFor(eventId) != null ||
+      _heldThreadWindow(eventId) != null;
+
   /// Folds [reply] into the window of [args] without asking the relay.
   /// Refused while the thread's query is loading or its last refresh failed
   /// (its page may not hold the reply, or a gap may lie under it), while other sends in the thread await proof (only a scan settles

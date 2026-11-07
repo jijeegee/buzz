@@ -18,6 +18,7 @@ class _FakeRelaySession extends RelaySessionNotifier {
   Completer<List<NostrEvent>>? nextQueryGate;
   List<NostrEvent>? threadWindow;
   int threadWindowQueries = 0;
+  bool slowThreadWindow = false;
 
   @override
   SessionState build() => const SessionState(status: SessionStatus.connected);
@@ -35,6 +36,8 @@ class _FakeRelaySession extends RelaySessionNotifier {
     // complete scan, which these tests exercise.
     if (filters.any((filter) => filter.extensions['thread_window'] == true)) {
       threadWindowQueries++;
+      // A network answer: later than any store read, not a microtask race.
+      if (slowThreadWindow) await Future<void>.delayed(Duration.zero);
       return threadWindow ?? const [];
     }
     queryCount++;
@@ -86,6 +89,7 @@ void main() {
     () async {
       var storeReads = 0;
       final session = _FakeRelaySession()
+        ..slowThreadWindow = true
         ..threadWindow = [
           _reply('newer', 3),
           _reply('kept', 1),
@@ -132,6 +136,7 @@ void main() {
 
   test('a relay page sets the cut; a page from the store does not', () async {
     final session = _FakeRelaySession()
+      ..slowThreadWindow = true
       ..threadWindow = [_reply('newer', 3), _reply('kept', 1), _threadBounds()];
     final container = ProviderContainer(
       overrides: [
