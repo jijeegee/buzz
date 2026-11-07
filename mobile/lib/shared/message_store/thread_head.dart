@@ -89,7 +89,8 @@ Future<bool> _covered(
 /// The newest [limit] replies of [kinds] at any depth under [root] in
 /// [room]. [liveAt] is when the room's live REQ reached EOSE on the current
 /// connection, if it is live. [includePushed] (a paint) also takes rows only
-/// the push inbox wrote; the relay's page replaces them.
+/// the push inbox wrote; the relay's page replaces them. [before] reads
+/// the replies below that `(created_at, id)` instead (never certain).
 Future<StoredThreadHead> readThreadHead(
   DatabaseExecutor db, {
   required String room,
@@ -98,6 +99,7 @@ Future<StoredThreadHead> readThreadHead(
   required int limit,
   required int? liveAt,
   bool includePushed = false,
+  (int, String)? before,
 }) async {
   final rows = <Map<String, dynamic>>[];
   (int, String)? oldest;
@@ -114,8 +116,9 @@ Future<StoredThreadHead> readThreadHead(
         // A certain window leaves out rows only the push inbox wrote: they
         // claim no coverage. A paint draws them until the relay's copy.
         '${includePushed ? '' : 'AND id NOT IN (SELECT id FROM pushed_rows) '}'
+        '${before == null ? '' : '$storedOlderThan '}'
         'ORDER BY created_at DESC, id ASC LIMIT ? OFFSET ?',
-        [room, root, page, offset],
+        [room, root, ...?storedOlderArgs(before), page, offset],
       );
       offset += candidates.length;
       final deleted = await storedDeletedIds(db, candidates);
@@ -147,7 +150,7 @@ Future<StoredThreadHead> readThreadHead(
   }
 
   var certain = false;
-  if (liveAt != null) {
+  if (liveAt != null && before == null) {
     // A head span of the thread's own window (docs/message-sync.md#head-spans).
     certain = await storeHeadVouches(
       db,

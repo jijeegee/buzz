@@ -8,6 +8,7 @@ import '../../shared/widgets/app_list.dart';
 import '../../shared/widgets/app_list_card.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
+import 'window_check_setting.dart';
 
 /// Builds the rows contributed by one experiment.
 typedef ExperimentRowsBuilder =
@@ -15,7 +16,9 @@ typedef ExperimentRowsBuilder =
 
 /// Mobile experiments, in display order. Add a builder here to surface a new
 /// experiment under Settings → Experiments.
-const List<ExperimentRowsBuilder> mobileExperiments = [];
+const List<ExperimentRowsBuilder> mobileExperiments = [
+  if (windowCheckControlShown) windowCheckExperimentRows,
+];
 
 /// The Experiments row in Settings. Experiments are switched on their own
 /// screen, not on the Settings page; the row hides when there are none.

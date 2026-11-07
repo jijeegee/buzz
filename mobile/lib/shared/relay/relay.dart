@@ -18,3 +18,4 @@ export 'relay_socket.dart';
 export 'room_live_request.dart';
 export 'service_address.dart';
 export 'signed_event_relay.dart';
+export 'window_check.dart';

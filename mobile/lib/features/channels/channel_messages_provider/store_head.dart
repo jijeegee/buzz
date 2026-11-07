@@ -147,15 +147,21 @@ extension _StoreHead on ChannelMessagesNotifier {
     final initVersion = _initVersion;
     final filter = _channelWindowFilter(null);
     _relayAskedAt = relayAskTime();
+    // Checked against the relay (window_check.dart): in mode on the store's
+    // window draws at once and an equal check answers in the page's place.
+    final check = session.openWindow(filter, room: channelId);
     // Records the room's head span when its live REQ stays live
     // (docs/message-sync.md#head-spans).
-    final relay = session.queryRelayWithStoreHeads([filter]);
+    final relay = session.queryRelayWithStoreHeads([filter], via: check?.query);
     if (_relayHistoryArrived || _preloadedFromRelay) return relay;
-    final stored = _storedRoomHead(
-      session,
-      channelId,
-      filter,
-    ).then<List<NostrEvent>?>((events) => events, onError: (_) => null);
+    final checked = check?.stored;
+    Future<List<NostrEvent>?> readStored() async =>
+        (checked == null ? null : await checked) ??
+        await _storedRoomHead(session, channelId, filter);
+    final stored = readStored().then<List<NostrEvent>?>(
+      (events) => events,
+      onError: (_) => null,
+    );
     final storeFirst = await Future.any([
       relay.then((_) => false, onError: (_) => false),
       stored.then((events) => events != null),

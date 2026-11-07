@@ -142,6 +142,48 @@ void main() {
       expect(refreshed.pages.single.rows.single.event.id, 'b');
     });
 
+    test('an older page drawn from the store gives way to the relay page', () {
+      const cursor = ChannelPageCursor(createdAt: 10, eventId: 'a');
+      final head = replaceNewestChannelWindow(
+        const ChannelWindowStore.empty(),
+        _page(rows: [_row('a', createdAt: 10)], hasMore: true),
+      );
+      final stale = _page(
+        startCursor: cursor,
+        rows: [_row('gone', createdAt: 9), _row('y', createdAt: 8)],
+        hasMore: true,
+      );
+      var store = appendOlderChannelWindow(head, stale);
+      // A page loaded on from the stored one goes with it.
+      store = appendOlderChannelWindow(
+        store,
+        _page(
+          startCursor: const ChannelPageCursor(createdAt: 8, eventId: 'y'),
+          rows: [_row('x', createdAt: 7)],
+        ),
+      );
+      final replaced = replaceOlderChannelWindowPage(
+        store,
+        stale,
+        _page(
+          startCursor: cursor,
+          rows: [_row('y', createdAt: 8), _row('x', createdAt: 7)],
+        ),
+      );
+      expect(replaced.pages, hasLength(2));
+      expect(
+        [
+          for (final page in replaced.pages)
+            for (final row in page.rows) row.event.id,
+        ],
+        ['a', 'y', 'x'],
+      );
+      expect(
+        () => replaceOlderChannelWindowPage(head, stale, stale),
+        throwsException,
+      );
+    });
+
     test(
       'keeps the loaded boundary closed but accepts exhausted live rows',
       () {

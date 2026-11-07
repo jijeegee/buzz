@@ -1100,17 +1100,59 @@ class ChannelMessagesNotifier extends Notifier<AsyncValue<List<NostrEvent>>> {
       }
       try {
         final pageVersion = ++_threadQuerySerial;
-        final page = await _fetchWindowPage(session, cursor);
-        _windowStore = appendOlderChannelWindow(_windowStore, page);
-        _storeOnlyIds.removeAll(page.rows.map((row) => row.event.id));
-        _reconcilePageSummaries(page, pageVersion);
-        _reachedOldest = !channelWindowHasMore(_windowStore);
-        final flattened = _withDeepLinkEvents(
-          flattenChannelWindowEvents(_windowStore),
+        // Checked against the relay, as the newest window.
+        final check = session.openWindow(
+          _channelWindowFilter(cursor),
+          room: channelId,
+          before: (cursor.createdAt, cursor.eventId),
         );
-        _lastKnownMessages = flattened;
-        _reconcileRetainedSummaryPayloads(page.rows.map((row) => row.event));
-        state = AsyncData(flattened);
+        ChannelWindowPage parse(List<NostrEvent> events) =>
+            parseChannelWindowResponse(events, channelId, cursor);
+        void show(ChannelWindowPage page, {ChannelWindowPage? replacing}) {
+          _windowStore = replacing == null
+              ? appendOlderChannelWindow(_windowStore, page)
+              : replaceOlderChannelWindowPage(_windowStore, replacing, page);
+          _storeOnlyIds.removeAll(page.rows.map((row) => row.event.id));
+          _reconcilePageSummaries(page, pageVersion);
+          _reachedOldest = !channelWindowHasMore(_windowStore);
+          final flattened = _withDeepLinkEvents(
+            flattenChannelWindowEvents(_windowStore),
+          );
+          _lastKnownMessages = flattened;
+          _reconcileRetainedSummaryPayloads(page.rows.map((row) => row.event));
+          state = AsyncData(flattened);
+        }
+
+        // Mode on: the store's older window draws at once; the check's
+        // answer follows, and a different page replaces it.
+        final relay = (check?.query ?? session.queryRelay)([
+          _channelWindowFilter(cursor),
+        ]);
+        final drawing = check?.stored;
+        List<NostrEvent>? storedEvents;
+        if (drawing != null) {
+          // The page may fail while the store draws; it is awaited below.
+          unawaited(relay.then((_) {}, onError: (Object _) {}));
+          storedEvents = await drawing.catchError((Object _) => null);
+        }
+        ChannelWindowPage? drawn;
+        try {
+          drawn = storedEvents == null ? null : parse(storedEvents);
+          if (drawn != null) show(drawn);
+        } catch (error) {
+          drawn = null;
+        }
+        final events = await relay;
+        if (drawn != null && identical(events, storedEvents)) {
+          return drawn.rows.isNotEmpty || drawn.aux.isNotEmpty;
+        }
+        final page = parse(events);
+        if (drawn != null &&
+            !_windowStore.pages.any((held) => identical(held, drawn))) {
+          // The window started over meanwhile: this page borders nothing.
+          return false;
+        }
+        show(page, replacing: drawn);
         return page.rows.isNotEmpty || page.aux.isNotEmpty;
       } catch (error) {
         debugPrint(

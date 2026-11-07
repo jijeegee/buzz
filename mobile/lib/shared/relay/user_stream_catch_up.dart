@@ -424,6 +424,9 @@ class UserStreamCatchUp {
       for (final room in walk) room: resume[room]!,
     }, job.liveAt);
     result.stale.addAll(plan.stale);
+    // Stale rooms are left to opening them: their stored windows wait for
+    // their pages, as do the rooms of a batch that gave up.
+    store.markWindowsRefetch(lease, plan.stale);
     final roomsDone = job.roomsDone;
     if (roomsDone != null) {
       // Audit walks are extra: a gated equal room is done at its class.
@@ -462,6 +465,9 @@ class UserStreamCatchUp {
       if (!done.completed && (job.stopped?.call() ?? false)) break;
       for (final room in batch.rooms) {
         completed[room] = done.completed;
+      }
+      if (!done.completed && !switched()) {
+        store.markWindowsRefetch(lease, batch.rooms);
       }
       for (final room in batch.rooms) {
         (sampled.contains(room) ? result.audited : result.walked).add(room);

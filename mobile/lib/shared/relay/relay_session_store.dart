@@ -234,8 +234,12 @@ extension RelaySessionStore on RelaySessionNotifier {
   /// (docs/message-sync.md#head-spans). The request is marked in the store
   /// first, so rows written after it are never taken for deleted ones.
   Future<List<NostrEvent>> queryRelayWithStoreHeads(
-    List<NostrFilter> filters,
-  ) async {
+    List<NostrFilter> filters, {
+    WindowQuery? via,
+  }) async {
+    // A checked window's query (window_check.dart): an equal stored window
+    // answers in the page's place and records the same head span.
+    final query = via ?? queryRelay;
     final sent = [for (final filter in filters) storeHeadFilter(filter)];
     final windows = [for (final filter in sent) ?storeHeadWindowOf(filter)];
     final generation = _connectionGeneration;
@@ -255,10 +259,10 @@ extension RelaySessionStore on RelaySessionNotifier {
     final capture = tokens.isEmpty
         ? null
         : store?.headSent(_storeLease, tokens.keys.toList());
-    if (store == null || capture == null) return queryRelay(sent);
+    if (store == null || capture == null) return query(sent);
     var heads = <StoreHeadSpan>[];
     try {
-      final events = await queryRelay(sent);
+      final events = await query(sent);
       bool holds(String roomId) =>
           generation == _connectionGeneration &&
           tokens[roomId]!.every(
