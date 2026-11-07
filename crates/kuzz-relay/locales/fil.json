@@ -1,0 +1,21 @@
+{
+  "moderation.reportResolved.resolved": "Salamat sa report mo sa {community}. Nasuri at inaksyunan ang report mo.",
+  "moderation.reportResolved.dismissed": "Salamat sa report mo sa {community}. Nasuri na ang report mo; walang aksyong ginawa.",
+  "moderation.reportResolved.escalated": "Salamat sa report mo sa {community}. Ipinasa ang report mo para sa karagdagang pagsusuri.",
+  "moderation.reportResolved.other": "Salamat sa report mo sa {community}. Nasuri na ang report mo.",
+  "moderation.contentActioned": "May moderator sa {community} na gumawa ng aksyon sa content mo.",
+  "moderation.banned": "Na-ban ka sa {community}.",
+  "moderation.timedOut": "Na-timeout ka sa {community} hanggang {until}.",
+  "moderation.timedOutNoEnd": "Na-timeout ka sa {community}.",
+  "moderation.reason": "Dahilan: {reason}",
+  "groups.landing.title": "{name} sa Kuzz",
+  "groups.landing.members": "{count, plural, one {# miyembro} other {# miyembro}}",
+  "groups.landing.open": "Buksan sa Kuzz",
+  "groups.landing.noApp": "Wala ka pang Kuzz? Itanong sa nag-share ng link na ito.",
+  "groups.landing.notFoundTitle": "Hindi nahanap ang link",
+  "groups.landing.notFoundHeading": "Hindi gumagana ang link na ito",
+  "groups.landing.notFoundHint": "Maaaring na-reset na ito o wala na ang grupo. Humingi ng bagong link sa nag-share nito.",
+  "groups.landing.rateLimitedTitle": "Subukan ulit mamaya",
+  "groups.landing.rateLimitedHeading": "Masyadong maraming request",
+  "groups.landing.rateLimitedHint": "Subukan ulit pagkalipas ng isang minuto."
+}
