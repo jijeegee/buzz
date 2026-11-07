@@ -9,7 +9,6 @@ import '../community/community.dart';
 import '../community/community_accounts.dart';
 import '../community/community_provider.dart';
 import '../community/community_storage.dart';
-import '../device_key/device_proof.dart';
 import '../relay/service_address.dart';
 import 'token/token.dart';
 import '../l10n/l10n.dart';
@@ -309,7 +308,8 @@ class GoogleKeyBackupService {
         !_validHex(challenge['challenge'])) {
       throw _tryAgain;
     }
-    final proof = await signDeviceTaggedEvent(
+    // Proves possession of the key, not of this device: no device tag.
+    final proof = nostr.Event.from(
       kind: 27235,
       content: '',
       secretKey: keys.secret,

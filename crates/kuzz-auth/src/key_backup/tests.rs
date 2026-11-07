@@ -127,6 +127,30 @@ fn key_backup_link_proof_binds_account_action_key_url_time_and_signature() {
     assert!(validate_link_proof(&extra, &account, &pubkey, &challenge, url, 1000).is_err());
 }
 
+#[test]
+fn key_backup_link_proof_ignores_one_phone_device_tag() {
+    let keys = Keys::generate();
+    let account = "12".repeat(32);
+    let challenge = "34".repeat(32);
+    let url = "https://relay.example/auth/key-backup";
+    let pubkey = keys.public_key().to_hex();
+    let base = proof(&keys, &account, &challenge, url, 1000);
+    let with = |extra: Vec<Tag>| {
+        EventBuilder::new(Kind::HttpAuth, "")
+            .tags(base.tags.clone().into_iter().chain(extra))
+            .custom_created_at(Timestamp::from_secs(1000))
+            .sign_with_keys(&keys)
+            .unwrap()
+    };
+    let device = || Tag::parse(["device", &"56".repeat(32), &"78".repeat(64)]).unwrap();
+    let tagged = with(vec![device()]);
+    validate_link_proof(&tagged, &account, &pubkey, &challenge, url, 1000).unwrap();
+    let twice = with(vec![device(), device()]);
+    assert!(validate_link_proof(&twice, &account, &pubkey, &challenge, url, 1000).is_err());
+    let other = with(vec![device(), Tag::parse(["note", "x"]).unwrap()]);
+    assert!(validate_link_proof(&other, &account, &pubkey, &challenge, url, 1000).is_err());
+}
+
 /// Version 1 envelope as the relay wrote it before the protocol rename.
 fn legacy_v1(account: &[u8; 32], key: &Keys) -> EncryptedKeyBackup {
     let raw = key.secret_key().to_secret_bytes();
