@@ -10,7 +10,7 @@ import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/profile/user_profile.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -303,7 +303,7 @@ class PeoplePage extends HookConsumerWidget {
       body: SafeArea(
         top: false,
         bottom: false,
-        child: BeeRefreshIndicator(
+        child: KuzzRefreshIndicator(
           edgeOffset: topHeight,
           onRefresh: refresh,
           child: ListView(

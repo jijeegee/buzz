@@ -96,7 +96,7 @@ import 'package:kuzz/shared/widgets/app_list_card.dart';
 import 'package:kuzz/shared/widgets/avatar_image.dart';
 import 'package:kuzz/shared/widgets/frosted_app_bar.dart';
 import 'package:kuzz/shared/widgets/frosted_scaffold.dart';
-import 'package:kuzz/shared/widgets/flapping_bee.dart';
+import 'package:kuzz/shared/widgets/kuzz_mark.dart';
 import 'package:kuzz/shared/widgets/keyboard_dismiss_on_drag.dart';
 import 'package:kuzz/shared/widgets/ios_glass_navigation_button.dart';
 import 'package:kuzz/shared/widgets/lucide_star_icon.dart';
@@ -6292,26 +6292,29 @@ void main() {
       await tester.pump();
       await tester.pump();
 
-      final loadingBee = find.byKey(const ValueKey('huddle-loading-bee'));
-      expect(loadingBee, findsOneWidget);
-      expect(find.byType(FlappingBee), findsOneWidget);
-      expect(tester.widget<FlappingBee>(loadingBee).width, 60);
+      final loadingMark = find.byKey(const ValueKey('huddle-loading-mark'));
+      expect(loadingMark, findsOneWidget);
+      expect(tester.widget<KuzzLoadingMark>(loadingMark).height, 40);
       expect(find.bySemanticsLabel('Joining Huddle'), findsOneWidget);
       expect(
         find.byKey(const ValueKey('huddle-participant-avatar-self')),
         findsNothing,
       );
-      final initialFlap = tester.widget<FlappingBee>(loadingBee).flapAmount;
-      await tester.pump(const Duration(milliseconds: 120));
+      final pulse = find.descendant(
+        of: loadingMark,
+        matching: find.byType(ScaleTransition),
+      );
+      final initialScale = tester.widget<ScaleTransition>(pulse).scale.value;
+      await tester.pump(const Duration(milliseconds: 300));
       expect(
-        tester.widget<FlappingBee>(loadingBee).flapAmount,
-        isNot(initialFlap),
+        tester.widget<ScaleTransition>(pulse).scale.value,
+        isNot(initialScale),
       );
 
       connectGate.complete();
       await tester.pumpAndSettle();
 
-      expect(loadingBee, findsNothing);
+      expect(loadingMark, findsNothing);
       expect(
         find.byKey(const ValueKey('huddle-participant-avatar-self')),
         findsOneWidget,

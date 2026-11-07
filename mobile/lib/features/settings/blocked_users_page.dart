@@ -5,7 +5,7 @@ import 'package:hooks_riverpod/hooks_riverpod.dart';
 import '../../shared/l10n/l10n.dart';
 import '../../shared/profile/user_cache_provider.dart';
 import '../../shared/theme/theme.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../people/blocked_users_provider.dart';
 import '../people/person_actions.dart';
@@ -69,7 +69,7 @@ class BlockedUsersPage extends HookConsumerWidget {
         ),
       );
     } else if (sorted.isEmpty) {
-      body = BeeRefreshIndicator(
+      body = KuzzRefreshIndicator(
         onRefresh: refresh,
         child: LayoutBuilder(
           builder: (context, constraints) => SingleChildScrollView(
@@ -90,7 +90,7 @@ class BlockedUsersPage extends HookConsumerWidget {
         ),
       );
     } else {
-      body = BeeRefreshIndicator(
+      body = KuzzRefreshIndicator(
         onRefresh: refresh,
         child: ListView(
           physics: const AlwaysScrollableScrollPhysics(),

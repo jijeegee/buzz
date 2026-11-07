@@ -41,7 +41,7 @@ type BackupTestFlowProps = {
   onProgressChange: React.Dispatch<React.SetStateAction<BackupTestProgress>>;
 };
 
-const BURST_EMOJIS = ["🎉", "✨", "🐝", "🍯", "🔑", "💛"] as const;
+const BURST_EMOJIS = ["🎉", "✨", "🔑", "💛"] as const;
 const BURST_PARTICLE_COUNT = 18;
 
 type BurstParticle = {

@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 
 import '../theme/theme.dart';
+import 'kuzz_mark.dart';
 
 /// Product name shown where the server (community) name used to be.
 const appBrandName = 'Kuzz';
@@ -25,12 +26,7 @@ class AppBrandLogo extends StatelessWidget {
           shape: BoxShape.circle,
         ),
         alignment: Alignment.center,
-        padding: EdgeInsets.all(size * 0.2),
-        child: Image.asset(
-          'assets/images/kuzz-icon.png',
-          fit: BoxFit.contain,
-          excludeFromSemantics: true,
-        ),
+        child: KuzzMark(height: size * 0.5, color: context.colors.primary),
       ),
     );
   }

@@ -54,7 +54,7 @@ class _ChannelsBody extends StatelessWidget {
           )
         : loadedChannels == null
         ? const SizedBox.shrink()
-        : BeeRefreshIndicator(
+        : KuzzRefreshIndicator(
             edgeOffset: barHeight,
             onRefresh: onRefresh,
             child: CustomScrollView(

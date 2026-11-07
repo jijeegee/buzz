@@ -1,13 +1,9 @@
-export const KUZZ_RELEASES_URL = "https://github.com/block/buzz/releases";
-/** Official iOS download destination. */
-export const KUZZ_IOS_APP_STORE_URL = "https://apps.apple.com/app/id6779728271";
-/** Official Android download destination. */
-export const KUZZ_ANDROID_PLAY_STORE_URL =
-  "https://play.google.com/store/apps/details?id=xyz.block.buzz.mobile";
-const KUZZ_RELEASES_API_URL =
-  "https://api.github.com/repos/block/buzz/releases?per_page=10";
-const CACHE_KEY = "kuzz.latestDownload.v1";
-const CACHE_TTL_MS = 60 * 60 * 1000;
+/** The kuzz.app home page, which lists every download. */
+export const KUZZ_DOWNLOADS_URL = "https://kuzz.app";
+export const KUZZ_WINDOWS_DOWNLOAD_URL = "https://kuzz.app/download/windows";
+export const KUZZ_MAC_DOWNLOAD_URL = "https://kuzz.app/download/mac";
+export const KUZZ_IOS_DOWNLOAD_URL = "https://kuzz.app/download/ios";
+export const KUZZ_ANDROID_DOWNLOAD_URL = "https://kuzz.app/download/android";
 
 export type KuzzDownloadPlatform = {
   operatingSystem:
@@ -18,12 +14,6 @@ export type KuzzDownloadPlatform = {
     | "android"
     | "unknown";
   architecture: "arm64" | "x64" | "unknown";
-};
-
-type GitHubRelease = {
-  draft: boolean;
-  prerelease: boolean;
-  assets: Array<{ name: string; browser_download_url: string }>;
 };
 
 type UserAgentData = {
@@ -117,101 +107,30 @@ export async function detectKuzzDownloadPlatform(
         `${values.architecture ?? ""} ${values.bitness ?? ""}`,
       );
     } catch {
-      // Privacy settings may reject high-entropy client hints. The matcher
-      // below applies the safest compatible fallback for the detected OS.
+      // Privacy settings may reject high-entropy client hints; the architecture
+      // from the user agent stays in place.
     }
   }
 
   return { operatingSystem, architecture };
 }
 
-function assetPattern(platform: KuzzDownloadPlatform): RegExp | undefined {
-  switch (platform.operatingSystem) {
-    case "macos":
-      if (platform.architecture === "arm64") return /_aarch64\.dmg$/i;
-      if (platform.architecture === "x64") return /_x64\.dmg$/i;
-      return undefined;
-    case "windows":
-      return /_x64-setup[^/]*\.exe$/i;
-    case "linux":
-      return platform.architecture === "arm64"
-        ? undefined
-        : /_amd64\.AppImage$/i;
-    default:
-      return undefined;
-  }
-}
-
-export function selectKuzzDownloadUrl(
-  releases: GitHubRelease[],
-  platform: KuzzDownloadPlatform,
-): string | undefined {
-  const pattern = assetPattern(platform);
-  if (!pattern) return undefined;
-
-  for (const release of releases) {
-    if (release.draft || release.prerelease) continue;
-    const asset = release.assets.find(({ name }) => pattern.test(name));
-    if (asset) return asset.browser_download_url;
-  }
-  return undefined;
-}
-
 export async function resolveKuzzDownloadUrlForPlatform(
   platform: KuzzDownloadPlatform,
 ): Promise<string> {
-  if (platform.operatingSystem === "ios") return KUZZ_IOS_APP_STORE_URL;
-  if (platform.operatingSystem === "android")
-    return KUZZ_ANDROID_PLAY_STORE_URL;
-
-  try {
-    const cached = JSON.parse(sessionStorage.getItem(CACHE_KEY) ?? "null") as {
-      expiresAt: number;
-      platform: KuzzDownloadPlatform;
-      url: string;
-    } | null;
-    if (
-      cached &&
-      cached.expiresAt > Date.now() &&
-      cached.platform.operatingSystem === platform.operatingSystem &&
-      cached.platform.architecture === platform.architecture
-    ) {
-      return cached.url;
-    }
-  } catch {
-    // Storage is only an optimization.
+  switch (platform.operatingSystem) {
+    case "ios":
+      return KUZZ_IOS_DOWNLOAD_URL;
+    case "android":
+      return KUZZ_ANDROID_DOWNLOAD_URL;
+    case "windows":
+      return KUZZ_WINDOWS_DOWNLOAD_URL;
+    case "macos":
+      // Kuzz ships an Apple silicon build only.
+      return platform.architecture === "arm64"
+        ? KUZZ_MAC_DOWNLOAD_URL
+        : KUZZ_DOWNLOADS_URL;
+    default:
+      return KUZZ_DOWNLOADS_URL;
   }
-
-  try {
-    const response = await fetch(KUZZ_RELEASES_API_URL, {
-      headers: { Accept: "application/vnd.github+json" },
-    });
-    if (!response.ok) return KUZZ_RELEASES_URL;
-    const url = selectKuzzDownloadUrl(
-      (await response.json()) as GitHubRelease[],
-      platform,
-    );
-    if (!url) return KUZZ_RELEASES_URL;
-    try {
-      sessionStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({
-          expiresAt: Date.now() + CACHE_TTL_MS,
-          platform,
-          url,
-        }),
-      );
-    } catch {
-      // Storage is only an optimization.
-    }
-    return url;
-  } catch {
-    return KUZZ_RELEASES_URL;
-  }
-}
-
-export async function resolveKuzzDownloadUrl(): Promise<string> {
-  return resolveKuzzDownloadUrlForPlatform(
-    await detectKuzzDownloadPlatform(navigator),
-  );
 }

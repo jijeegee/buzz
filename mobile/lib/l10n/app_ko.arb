@@ -25,8 +25,6 @@
   "refreshPullLabel": "당겨서 새로고침",
   "loadingLabel": "불러오는 중",
   "loadErrorRetry": "다시 시도",
-  "beeLabel": "Kuzz 꿀벌",
-  "beeHint": "탭하면 날개를 파닥여요",
   "clipboardCopied": "클립보드에 복사했어요",
   "identityUnknown": "알 수 없는 사용자",
   "accentNeutral": "기본",

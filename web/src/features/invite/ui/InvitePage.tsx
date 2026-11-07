@@ -1,7 +1,7 @@
 import kuzzAppIcon from "@/assets/app-icon@3x.png";
 import { claimInviteInBrowser } from "@/features/invite/invite-api";
 import {
-  KUZZ_RELEASES_URL,
+  KUZZ_DOWNLOADS_URL,
   type KuzzDownloadPlatform,
   detectKuzzDownloadPlatform,
   resolveKuzzDownloadUrlForPlatform,
@@ -54,7 +54,7 @@ export function InvitePage({ code }: { code: string }) {
   const [browserJoinError, setBrowserJoinError] = React.useState<string | null>(
     null,
   );
-  const [downloadUrl, setDownloadUrl] = React.useState(KUZZ_RELEASES_URL);
+  const [downloadUrl, setDownloadUrl] = React.useState(KUZZ_DOWNLOADS_URL);
   const [needsMacChoice, setNeedsMacChoice] = React.useState(false);
   const [showMacChoice, setShowMacChoice] = React.useState(false);
   const [choosingMacDownload, setChoosingMacDownload] = React.useState(false);
@@ -314,11 +314,11 @@ export function InvitePage({ code }: { code: string }) {
           </span>
           <a
             className="font-medium text-black underline-offset-4 hover:text-black/70 hover:underline focus-visible:underline"
-            href={KUZZ_RELEASES_URL}
+            href={KUZZ_DOWNLOADS_URL}
             rel="noreferrer"
             target="_blank"
           >
-            Browse releases
+            All downloads
           </a>
         </p>
       </div>
@@ -356,7 +356,7 @@ export function InvitePage({ code }: { code: string }) {
               <a
                 aria-disabled={choosingMacDownload}
                 className="rounded-2xl border border-black p-5 text-black no-underline hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                href={KUZZ_RELEASES_URL}
+                href={KUZZ_DOWNLOADS_URL}
                 onClick={(event) =>
                   void chooseMacDownload(event, {
                     operatingSystem: "macos",
@@ -372,7 +372,7 @@ export function InvitePage({ code }: { code: string }) {
               <a
                 aria-disabled={choosingMacDownload}
                 className="rounded-2xl border border-black p-5 text-black no-underline hover:bg-black hover:text-white focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-black aria-disabled:pointer-events-none aria-disabled:opacity-50"
-                href={KUZZ_RELEASES_URL}
+                href={KUZZ_DOWNLOADS_URL}
                 onClick={(event) =>
                   void chooseMacDownload(event, {
                     operatingSystem: "macos",

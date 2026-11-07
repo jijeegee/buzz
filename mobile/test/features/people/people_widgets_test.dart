@@ -15,7 +15,7 @@ import 'package:kuzz/shared/auth/account/account_api.dart';
 import 'package:kuzz/shared/identity_names/identity_names_provider.dart';
 import 'package:kuzz/shared/relay/relay.dart';
 import 'package:kuzz/shared/theme/theme.dart';
-import 'package:kuzz/shared/widgets/bee_refresh_indicator.dart';
+import 'package:kuzz/shared/widgets/kuzz_refresh_indicator.dart';
 
 import 'people_fixture.dart';
 
@@ -162,7 +162,7 @@ void main() {
       session.follow(peopleKeys.public, [ann, bob, cat], createdAt: 200);
       api.blocked.add(ann);
       await tester
-          .widget<BeeRefreshIndicator>(find.byType(BeeRefreshIndicator))
+          .widget<KuzzRefreshIndicator>(find.byType(KuzzRefreshIndicator))
           .onRefresh();
       await tester.pumpAndSettle();
 
@@ -556,7 +556,7 @@ void main() {
 
       api.blocked.add(bob);
       await tester
-          .widget<BeeRefreshIndicator>(find.byType(BeeRefreshIndicator))
+          .widget<KuzzRefreshIndicator>(find.byType(KuzzRefreshIndicator))
           .onRefresh();
       await tester.pumpAndSettle();
       expect(find.text('Ann'), findsOneWidget);

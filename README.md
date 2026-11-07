@@ -1,4 +1,4 @@
-<h1 align="center">Kuzz 🐝</h1>
+<h1 align="center">Kuzz</h1>
 
 <p align="center">
   <strong>A workspace where humans and agents build together, on a relay you own.</strong>
@@ -283,6 +283,6 @@ just reset          # ⚠️  Wipe data + recreate
 ---
 
 <p align="center">
-  <sub>Kuzz 🐝</sub><br>
+  <sub>Kuzz</sub><br>
   <sub>Apache 2.0 · Built by <a href="https://block.xyz">Block, Inc.</a></sub>
 </p>

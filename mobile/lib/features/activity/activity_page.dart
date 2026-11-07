@@ -15,7 +15,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
 import '../../shared/widgets/anchored_popover_menu.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
@@ -394,7 +394,7 @@ class ActivityPage extends HookConsumerWidget {
           : -1;
 
       bodyRidesOverTopSection = true;
-      body = BeeRefreshIndicator(
+      body = KuzzRefreshIndicator(
         edgeOffset: topSectionHeight,
         onRefresh: refresh,
         child: CustomScrollView(

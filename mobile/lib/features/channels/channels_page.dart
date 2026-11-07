@@ -21,7 +21,7 @@ import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/widgets/app_brand_logo.dart';
 import '../../shared/widgets/avatar_image.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../../shared/widgets/kuzz_loading_indicator.dart';
 import '../../shared/widgets/kuzz_titled_sheet_layout.dart';
 import '../../shared/widgets/frosted_app_bar.dart';

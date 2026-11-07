@@ -16,7 +16,7 @@ import '../../shared/read_state/read_state_provider.dart';
 import '../../shared/relay/relay.dart';
 import '../../shared/theme/theme.dart';
 import '../../shared/utils/string_utils.dart';
-import '../../shared/widgets/bee_refresh_indicator.dart';
+import '../../shared/widgets/kuzz_refresh_indicator.dart';
 import '../../shared/widgets/conversation_row_parts.dart';
 import '../../shared/widgets/frosted_app_bar.dart';
 import '../../shared/widgets/frosted_scaffold.dart';
@@ -358,7 +358,7 @@ class ChatsPage extends HookConsumerWidget {
       };
       bool pinnedRow(ChatListRow row) =>
           isPinnedChatRow(row, starred, pinnedThreads);
-      body = BeeRefreshIndicator(
+      body = KuzzRefreshIndicator(
         edgeOffset: topSectionHeight,
         onRefresh: refresh,
         child: CustomScrollView(
