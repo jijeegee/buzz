@@ -96,13 +96,24 @@ export function DotMorphLoader({
     const restingKey = steps[steps.length - 1][0];
     const morph = new DotMorph(scene, still ? restingKey : steps[0][0]);
     const timeline = new DotTimeline(morph, steps);
-    const scale = window.devicePixelRatio || 1;
-    canvas.width = Math.round(scene.width * scale);
-    canvas.height = Math.round(scene.height * scale);
+
+    // Colors and pixel ratio are read once and again when the theme changes,
+    // not every frame.
+    let foreground = "";
+    let accent = ACCENT_LIGHT;
+    let scale = 0;
+    const readStyle = () => {
+      foreground = getComputedStyle(canvas).color;
+      accent = canvas.closest(".dark") ? ACCENT_DARK : ACCENT_LIGHT;
+      const ratio = window.devicePixelRatio || 1;
+      if (ratio !== scale) {
+        scale = ratio;
+        canvas.width = Math.round(scene.width * scale);
+        canvas.height = Math.round(scene.height * scale);
+      }
+    };
 
     const draw = () => {
-      const foreground = getComputedStyle(canvas).color;
-      const accent = canvas.closest(".dark") ? ACCENT_DARK : ACCENT_LIGHT;
       const size = scene.dotSize * scale;
       const half = size / 2;
       const points = morph.positions;
@@ -127,10 +138,27 @@ export function DotMorphLoader({
       }
     };
 
-    if (still) {
+    readStyle();
+    draw();
+    const themeObserver = new MutationObserver(() => {
+      readStyle();
       draw();
-      return;
-    }
+    });
+    themeObserver.observe(document.documentElement, {
+      attributes: true,
+      attributeFilter: ["class", "style", "data-theme"],
+    });
+    // Moving the window to a screen with another scale changes the ratio.
+    const onResize = () => {
+      readStyle();
+      draw();
+    };
+    window.addEventListener("resize", onResize);
+    const stopWatching = () => {
+      themeObserver.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+    if (still) return stopWatching;
 
     let frame = 0;
     let last = performance.now();
@@ -140,9 +168,11 @@ export function DotMorphLoader({
       draw();
       frame = window.requestAnimationFrame(step);
     };
-    draw();
     frame = window.requestAnimationFrame(step);
-    return () => window.cancelAnimationFrame(frame);
+    return () => {
+      window.cancelAnimationFrame(frame);
+      stopWatching();
+    };
   }, [scene, steps]);
 
   return (

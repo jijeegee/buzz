@@ -148,15 +148,20 @@ class DotMorph extends ChangeNotifier {
 }
 
 /// Plays steps in order, forever. The first step appears without a transition.
+///
+/// [firstWait] replaces the first step's transition and hold, for a timeline
+/// that joins a shape the dots are already moving to.
 class DotTimeline {
   final DotMorph morph;
   final List<DotStep> steps;
   int _index;
   double _waitMs;
 
-  DotTimeline(this.morph, this.steps)
+  DotTimeline(this.morph, this.steps, {Duration? firstWait})
     : _index = steps.length > 1 ? 1 : 0,
-      _waitMs = _ms(steps.first.$2) + _ms(steps.first.$3);
+      _waitMs = firstWait != null
+          ? _ms(firstWait)
+          : _ms(steps.first.$2) + _ms(steps.first.$3);
 
   static double _ms(Duration d) => d.inMicroseconds / 1000;
 
@@ -176,22 +181,31 @@ class DotTimeline {
 void useDotFrames(bool enabled, void Function(Duration elapsed) onFrame) {
   final vsync = useSingleTickerProvider();
   final callback = useRef(onFrame)..value = onFrame;
-  useEffect(() {
-    if (!enabled) return null;
-    var last = Duration.zero;
-    final ticker = vsync.createTicker((now) {
+  final last = useRef(Duration.zero);
+  // One ticker for the widget's life: the provider allows only one.
+  final ticker = useMemoized(
+    () => vsync.createTicker((now) {
       // Cap a frame so a stalled app does not skip a whole transition.
-      final step = now - last;
-      last = now;
+      final step = now - last.value;
+      last.value = now;
       callback.value(
         step > const Duration(milliseconds: 50)
             ? const Duration(milliseconds: 50)
             : step,
       );
-    });
-    ticker.start();
-    return ticker.dispose;
-  }, [vsync, enabled]);
+    }),
+    [vsync],
+  );
+  useEffect(() => ticker.dispose, [ticker]);
+  useEffect(() {
+    if (enabled && !ticker.isActive) {
+      last.value = Duration.zero;
+      ticker.start();
+    } else if (!enabled && ticker.isActive) {
+      ticker.stop();
+    }
+    return null;
+  }, [ticker, enabled]);
 }
 
 /// Paints a [DotMorph] in [color], with a few accent dots.
@@ -273,7 +287,7 @@ class DotMorphLoader extends HookWidget {
     final still = MediaQuery.disableAnimationsOf(context);
     final morph = useMemoized(
       () => DotMorph(scene, still ? steps.last.$1 : steps.first.$1),
-      [scene, still],
+      [scene, steps, still],
     );
     useEffect(() => morph.dispose, [morph]);
     final timeline = useMemoized(() => DotTimeline(morph, steps), [morph]);

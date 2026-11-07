@@ -12,7 +12,7 @@ void main() {
   testWidgets('shows the dots while pulling to refresh', (tester) async {
     const contentKey = ValueKey('loading-content');
     var refreshes = 0;
-    final refreshCompleter = Completer<void>();
+    var refreshCompleter = Completer<void>();
 
     await tester.pumpWidget(
       WidgetHelpers.testable(
@@ -49,12 +49,12 @@ void main() {
     expect(refreshes, 1);
     expect(gapTransform.transform.getTranslation().y, closeTo(72, 1));
     expect(loadingTop - restingTop, closeTo(72, 1));
+    // The K gathers, then turns into the robot from 300 ms to 720 ms.
     final morph = tester.widget<DotMorphView>(markFinder).morph;
-    final loadingDots = List.of(morph.positions);
-    for (var frame = 0; frame < 70; frame++) {
+    for (var frame = 0; frame < 50; frame++) {
       await tester.pump(const Duration(milliseconds: 16));
     }
-    expect(morph.positions, isNot(orderedEquals(loadingDots)));
+    expect(morph.positions, orderedEquals(DotScene.refresh.shape('r')));
 
     refreshCompleter.complete();
     await tester.pump();
@@ -68,6 +68,26 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.getTopLeft(listFinder).dy, closeTo(restingTop, 1));
     expect(markFinder, findsNothing);
+
+    // A second pull starts again from scattered dots.
+    refreshCompleter = Completer<void>();
+    await tester.timedDrag(
+      listFinder,
+      const Offset(0, 320),
+      const Duration(milliseconds: 500),
+    );
+    await tester.pump(const Duration(milliseconds: 16));
+    await tester.pump(const Duration(milliseconds: 300));
+    expect(refreshes, 2);
+    for (var frame = 0; frame < 50; frame++) {
+      await tester.pump(const Duration(milliseconds: 16));
+    }
+    expect(
+      tester.widget<DotMorphView>(markFinder).morph.positions,
+      orderedEquals(DotScene.refresh.shape('r')),
+    );
+    refreshCompleter.complete();
+    await tester.pumpAndSettle();
   });
 
   testWidgets('tracks each stage of an active pull', (tester) async {

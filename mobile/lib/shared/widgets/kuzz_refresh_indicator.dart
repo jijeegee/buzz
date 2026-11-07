@@ -179,7 +179,10 @@ class KuzzRefreshIndicator extends HookConsumerWidget {
     final visibleGap = pullDistance.value + retainedGap;
     final top =
         edgeOffset + (visibleGap - _markHeight) * _markVerticalAlignment;
-    final opacity = isLoading ? 1 - completionProgress : dragRevealProgress;
+    // Fade late in the settle so the dots are seen scattering.
+    final opacity = isLoading
+        ? 1 - completionProgress * completionProgress
+        : dragRevealProgress;
     final markScale = isLoading
         ? 1.0
         : _markInitialScale + (1 - _markInitialScale) * dragRevealProgress;
@@ -265,7 +268,10 @@ class _RefreshDots extends HookWidget {
   });
 
   static const _gather = Duration(milliseconds: 260);
-  static const _scatter = Duration(milliseconds: 300);
+  // The K turns into the robot right after it gathers.
+  static const _firstTurn = Duration(milliseconds: 300);
+  // Matches the indicator's settle, which removes the dots when it ends.
+  static const _scatter = KuzzRefreshIndicator._settleDuration;
   static const _cycle = <DotStep>[
     ('k', Duration(milliseconds: 420), Duration(milliseconds: 520)),
     ('r', Duration(milliseconds: 420), Duration(milliseconds: 520)),
@@ -288,7 +294,7 @@ class _RefreshDots extends HookWidget {
         morph.go(dustShape, _scatter);
       } else if (loading) {
         morph.go('k', _gather);
-        timeline.value = DotTimeline(morph, _cycle);
+        timeline.value = DotTimeline(morph, _cycle, firstWait: _firstTurn);
       } else {
         timeline.value = null;
       }

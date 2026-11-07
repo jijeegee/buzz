@@ -104,6 +104,7 @@ export class DotMorph {
     this.to = this.shape(key);
     this.progress = durationMs > 0 ? 0 : 1;
     this.duration = Math.max(1, durationMs);
+    if (durationMs <= 0) this.tick(0);
   }
 
   get settled(): boolean {
